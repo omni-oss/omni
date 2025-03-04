@@ -1,0 +1,16 @@
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+build-std = ["std", "core", "alloc", "proc_macro"]
+
+[unstable]
+codegen-backend = true
+
+[profile.dev]
+codegen-backend = "cranelift"
+
+[env]
+ORT_STRATEGY = { value = "system" }
+ORT_LIB_LOCATION = { value = "vendor/lib", relative = true }

@@ -1,0 +1,10 @@
+[package]
+name = "omni"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+deno_core = { workspace = true }
+oxc = { workspace = true }
+eyre = { workspace = true }

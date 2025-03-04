@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["cli/*", "crates/graph"]
+default-members = ["cli/omni"]
+
+[workspace.package]
+rust-version = "1.87.0"
+edition = "2024"
+version = "0.0.0-semantically-released"
+
+[profile.release]
+opt-level = 3            # optimize for speed but increase binary size
+codegen-units = 1        # less parallel compilation but more optimization can be done
+lto = true               # can perform faster but slower compilation
+strip = "debuginfo"      # strip debug info from binary to reduce binary size
+debug = false
+debug-assertions = false
+overflow-checks = false
+
+[profile.dev]
+opt-level = "s"
+
+
+[workspace.dependencies]
+serde = { version = "^1.0.218", features = ["derive", "rc", "alloc"] }
+serde_json = "^1.0.140"
+tracing = "^0.1.41"
+tracing-subscriber = "^0.3.19"
+thiserror = "^2.0.12"
+eyre = "^0.6.12"
+time = { version = "^0.3.37", features = [] }
+derive_more = { version = "^2.0.1", features = ["full"] }
+strum = { version = "^0.27.1", features = ["derive"] }
+tokio = { version = "^1.43.0", features = [
+    "rt",
+    "rt-multi-thread",
+    "tracing",
+    "sync",
+    "fs",
+    "net",
+    "socket2",
+    "time",
+    "macros",
+] }
+itertools = { version = "^0.14.0" }
+rayon = { version = "^1.10.0" }
+reqwest = { version = "^0.12.12", features = [
+    "charset",
+    "blocking",
+    "rustls-tls",
+    "http2",
+], default-features = false }
+deno_core = { version = "^0.340.0" }
+oxc = { version = "*", features = ["full"] }
