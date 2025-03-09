@@ -1,0 +1,11 @@
+[package]
+name = "env"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+
+[dependencies]
+derive_more = { workspace = true }
+thiserror = { workspace = true }
+convert_case = { workspace = true }

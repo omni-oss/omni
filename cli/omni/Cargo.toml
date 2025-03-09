@@ -3,8 +3,20 @@ name = "omni"
 rust-version.workspace = true
 edition.workspace = true
 version.workspace = true
+authors.workspace = true
 
 [dependencies]
 deno_core = { workspace = true }
 oxc = { workspace = true }
+eyre = { workspace = true }
+clap = { workspace = true }
+clap_complete = { workspace = true }
+shadow-rs = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+env = { path = "../../crates/env" }
+
+[build-dependencies]
+shadow-rs = { workspace = true, features = ["default"] }
 eyre = { workspace = true }
