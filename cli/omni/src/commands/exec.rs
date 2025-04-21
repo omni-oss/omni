@@ -29,9 +29,18 @@ pub struct ExecCommand {
 pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     ctx.load_projects()?;
     let vars = ctx.get_all_env_vars();
-    let projects = ctx
-        .get_projects()
-        .expect("Should be able to get projects after load");
+    let filter = if let Some(filter) = &command.args.filter {
+        filter
+    } else {
+        "*"
+    };
+    let projects = ctx.get_filtered_projects(filter)?;
+
+    if projects.is_empty() {
+        tracing::error!("No project found for filter: {}", filter);
+        return Ok(());
+    }
+
     let mut cmd = process::Command::new(&command.args.command);
 
     tracing::debug!(

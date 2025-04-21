@@ -205,6 +205,22 @@ impl Context {
             .as_ref()
             .expect("Should be able to load projects"))
     }
+
+    pub fn get_filtered_projects(
+        &self,
+        glob_filter: &str,
+    ) -> eyre::Result<Vec<&Project>> {
+        let glob = Glob::new(glob_filter)?;
+        let matcher = glob.compile_matcher();
+        let result = self
+            .get_projects()
+            .expect("Should be able to get projects after load");
+
+        Ok(result
+            .iter()
+            .filter(|p| matcher.is_match(&p.name))
+            .collect())
+    }
 }
 
 fn get_root_dir() -> eyre::Result<PathBuf> {

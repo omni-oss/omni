@@ -25,11 +25,20 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
     }
 
     ctx.load_projects()?;
+    let filter = if let Some(filter) = &command.filter {
+        filter
+    } else {
+        "*"
+    };
 
-    let projects = ctx
-        .get_projects()
-        .expect("Should be able to get projects after load")
-        .clone();
+    let projects = ctx.get_filtered_projects(filter)?;
+
+    if projects.is_empty() {
+        tracing::error!("No project found for filter: {}", filter);
+        return Ok(());
+    }
+
+    let projects = projects.iter().map(|a| (*a).clone()).collect::<Vec<_>>();
 
     tracing::debug!("Projects: {:?}", projects);
 
