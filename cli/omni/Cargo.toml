@@ -9,6 +9,7 @@ authors.workspace = true
 deno_core = { workspace = true }
 oxc = { workspace = true }
 eyre = { workspace = true }
+color-eyre = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
 clap_complete = { workspace = true }

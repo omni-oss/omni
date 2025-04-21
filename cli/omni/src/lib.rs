@@ -11,22 +11,23 @@ mod context;
 mod core;
 
 fn set_tracing_level(level: u8) -> eyre::Result<()> {
-    let level = match level {
-        1 => tracing::Level::ERROR,
-        2 => tracing::Level::WARN,
-        3 => tracing::Level::INFO,
-        4 => tracing::Level::DEBUG,
-        5.. => tracing::Level::TRACE,
-        0 => return Ok(()),
-    };
-
-    tracing_subscriber::fmt().with_max_level(level).init();
+    tracing_subscriber::fmt()
+        .with_max_level(match level {
+            1 => tracing::Level::ERROR,
+            2 => tracing::Level::WARN,
+            3 => tracing::Level::INFO,
+            4 => tracing::Level::DEBUG,
+            5.. => tracing::Level::TRACE,
+            0 => return Ok(()),
+        })
+        .init();
 
     Ok(())
 }
 
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
     let cli = Cli::parse();
 
     set_tracing_level(cli.args.verbose + 1)?;

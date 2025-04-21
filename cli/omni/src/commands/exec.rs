@@ -37,8 +37,7 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     let projects = ctx.get_filtered_projects(filter)?;
 
     if projects.is_empty() {
-        tracing::error!("No project found for filter: {}", filter);
-        return Ok(());
+        eyre::bail!("No project found for filter: {}", filter);
     }
 
     let mut cmd = process::Command::new(&command.args.command);

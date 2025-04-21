@@ -34,8 +34,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
     let projects = ctx.get_filtered_projects(filter)?;
 
     if projects.is_empty() {
-        tracing::error!("No project found for filter: {}", filter);
-        return Ok(());
+        eyre::bail!("No project found for filter: {}", filter);
     }
 
     let projects = projects.iter().map(|a| (*a).clone()).collect::<Vec<_>>();
@@ -96,7 +95,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
     }
 
     if task_executed == 0 {
-        tracing::warn!("No task found for: {}", command.task);
+        eyre::bail!("No tasks were executed: {}", command.task);
     }
 
     Ok(())
