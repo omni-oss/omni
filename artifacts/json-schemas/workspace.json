@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WorkspaceConfiguration",
+  "type": "object",
+  "required": [
+    "projects"
+  ],
+  "properties": {
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

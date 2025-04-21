@@ -1,9 +1,14 @@
+#![allow(dead_code)]
+
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
 
-pub mod build;
-pub mod commands;
-pub mod context;
+mod build;
+mod commands;
+mod configurations;
+mod constants;
+mod context;
+mod core;
 
 fn set_tracing_level(level: u8) -> eyre::Result<()> {
     let level = match level {
@@ -26,14 +31,23 @@ pub async fn main() -> eyre::Result<()> {
 
     set_tracing_level(cli.args.verbose + 1)?;
 
-    let context = context::build(&cli.args)?;
+    let mut context = context::build(&cli.args)?;
 
     match cli.subcommand {
         CliSubcommands::Exec(ref exec) => {
-            commands::exec::run(exec, &context).await?;
+            commands::exec::run(exec, &mut context).await?;
         }
         CliSubcommands::Env(ref env) => {
             commands::env::run(env, &context).await?;
+        }
+        CliSubcommands::Config(ref config) => {
+            commands::config::run(config, &context).await?;
+        }
+        CliSubcommands::Completion(ref completion) => {
+            commands::completion::run(completion, &context).await?;
+        }
+        CliSubcommands::Run(ref run) => {
+            commands::run::run(run, &mut context).await?;
         }
     }
 

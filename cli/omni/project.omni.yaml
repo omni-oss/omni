@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: omni-cli
+
+tasks:
+  list:
+    command: ls -la
+
+dependencies:
+  - deno_core
+  - oxc

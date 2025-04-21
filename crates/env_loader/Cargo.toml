@@ -1,0 +1,12 @@
+[package]
+name = "env_loader"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+
+[dependencies]
+tracing = { workspace = true }
+thiserror = { workspace = true }
+env = { path = "../env" }
+eyre = { workspace = true }

@@ -1,6 +1,7 @@
 use std::process::Stdio;
 
 use clap::Args;
+use eyre::Context as _;
 use tokio::process;
 
 use crate::context::Context;
@@ -11,6 +12,12 @@ pub struct ExecArgs {
     command: String,
     #[arg(num_args(0..))]
     args: Vec<String>,
+    #[arg(
+        long,
+        short,
+        help = "Run the command based on the project name matching the filter"
+    )]
+    filter: Option<String>,
 }
 
 #[derive(Args)]
@@ -19,27 +26,43 @@ pub struct ExecCommand {
     args: ExecArgs,
 }
 
-pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
+    ctx.load_projects()?;
+    let vars = ctx.get_all_env_vars();
+    let projects = ctx
+        .get_projects()
+        .expect("Should be able to get projects after load");
     let mut cmd = process::Command::new(&command.args.command);
 
-    tracing::info!(
+    tracing::debug!(
         "executing command: {} {:?}",
         command.args.command,
         command.args.args
     );
+    tracing::debug!("Projects: {:?}", projects);
 
-    let exit = cmd
-        .args(&command.args.args)
-        .envs(ctx.get_all_env())
-        .stderr(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stdin(Stdio::inherit())
-        .spawn()?
-        .wait()
-        .await?;
+    for p in projects {
+        let exit = cmd
+            .args(&command.args.args)
+            .current_dir(&p.dir)
+            .envs(vars)
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stdin(Stdio::inherit())
+            .spawn()
+            .wrap_err_with(|| {
+                format!(
+                    "failed to execute command: {} {}",
+                    command.args.command,
+                    command.args.args.join(" ")
+                )
+            })?
+            .wait()
+            .await?;
 
-    if !exit.success() {
-        eyre::bail!("command exited with non-zero status: {}", exit);
+        if !exit.success() {
+            eyre::bail!("command exited with non-zero status: {}", exit);
+        }
     }
 
     Ok(())

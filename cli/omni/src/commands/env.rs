@@ -24,7 +24,7 @@ pub struct EnvCommand {
 pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {
-            let env = ctx.get_env(key);
+            let env = ctx.get_env_var(key);
 
             if let Some(env) = env {
                 print!("{}", env);
@@ -36,7 +36,7 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             }
         }
         EnvSubcommands::All => {
-            for (key, value) in ctx.get_all_env() {
+            for (key, value) in ctx.get_all_env_vars() {
                 println!("{}={}", key, value);
             }
         }

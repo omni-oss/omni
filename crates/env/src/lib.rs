@@ -71,89 +71,90 @@ pub fn parse(
                     | lexer::TokenType::DoubleQuotedString => {
                         val = Some(token);
                     }
-                    lexer::TokenType::Eol => match (key, eq) {
-                        (Some(ident), Some(_)) => {
-                            if let Some(string) = val {
-                                let unescaped = unescape(&string.lexeme);
-                                let expanded = if config.expand
-                                    && matches!(
+                    lexer::TokenType::Eol | lexer::TokenType::Eof => {
+                        match (key, eq) {
+                            (Some(ident), Some(_)) => {
+                                if let Some(string) = val {
+                                    let unescaped = unescape(&string.lexeme);
+                                    let expanded = if config.expand
+                                        && matches!(
                                 string.token_type,
                                 lexer::TokenType::UnqoutedString
                                     | lexer::TokenType::DoubleQuotedString
                             ) {
-                                    expand(&unescaped, &combined)
-                                } else {
-                                    unescaped
-                                };
+                                        expand(&unescaped, &combined)
+                                    } else {
+                                        unescaped
+                                    };
 
-                                env.insert(
-                                    ident.lexeme.clone(),
-                                    expanded.clone(),
-                                );
-                                combined.insert(ident.lexeme.clone(), expanded);
-                            } else {
-                                env.insert(
-                                    ident.lexeme.clone(),
-                                    "".to_string(),
-                                );
-                                combined.insert(
-                                    ident.lexeme.clone(),
-                                    "".to_string(),
-                                );
+                                    env.insert(
+                                        ident.lexeme.clone(),
+                                        expanded.clone(),
+                                    );
+                                    combined
+                                        .insert(ident.lexeme.clone(), expanded);
+                                } else {
+                                    env.insert(
+                                        ident.lexeme.clone(),
+                                        "".to_string(),
+                                    );
+                                    combined.insert(
+                                        ident.lexeme.clone(),
+                                        "".to_string(),
+                                    );
+                                }
                             }
-                        }
-                        (None, Some(eq)) => {
-                            let repr: ParseErrorRepr = SyntaxError::new(
-                                eq.line,
-                                eq.column,
-                                "Expected identifier".to_string(),
-                                Some(report_long_message(
-                                    text,
+                            (None, Some(eq)) => {
+                                let repr: ParseErrorRepr = SyntaxError::new(
                                     eq.line,
                                     eq.column,
-                                    "Expected identifier",
-                                )),
-                            )
-                            .into();
-                            stx_errors.push(repr.into());
-                        }
-                        (Some(ident), None) => {
-                            let repr: ParseErrorRepr = SyntaxError::new(
-                                ident.line,
-                                ident.column,
-                                "Expected '='".to_string(),
-                                Some(report_long_message(
-                                    text,
-                                    ident.line,
-                                    ident.column,
-                                    "Expected '='",
-                                )),
-                            )
-                            .into();
-
-                            stx_errors.push(repr.into());
-                        }
-                        (None, None) => {
-                            if let Some(string) = val {
-                                let repr: ParseErrorRepr = SyntaxError::new(
-                                    string.line,
-                                    string.column,
                                     "Expected identifier".to_string(),
                                     Some(report_long_message(
                                         text,
-                                        string.line,
-                                        string.column,
+                                        eq.line,
+                                        eq.column,
                                         "Expected identifier",
+                                    )),
+                                )
+                                .into();
+                                stx_errors.push(repr.into());
+                            }
+                            (Some(ident), None) => {
+                                let repr: ParseErrorRepr = SyntaxError::new(
+                                    ident.line,
+                                    ident.column,
+                                    "Expected '='".to_string(),
+                                    Some(report_long_message(
+                                        text,
+                                        ident.line,
+                                        ident.column,
+                                        "Expected '='",
                                     )),
                                 )
                                 .into();
 
                                 stx_errors.push(repr.into());
                             }
+                            (None, None) => {
+                                if let Some(string) = val {
+                                    let repr: ParseErrorRepr =
+                                        SyntaxError::new(
+                                            string.line,
+                                            string.column,
+                                            "Expected identifier".to_string(),
+                                            Some(report_long_message(
+                                                text,
+                                                string.line,
+                                                string.column,
+                                                "Expected identifier",
+                                            )),
+                                        )
+                                        .into();
+
+                                    stx_errors.push(repr.into());
+                                }
+                            }
                         }
-                    },
-                    lexer::TokenType::Eof => {
-                        break;
                     }
                 }
             }
@@ -200,6 +201,14 @@ mod tests {
 
         assert_eq!(env.get("TEST"), Some(&"VALUE".to_string()));
         assert_eq!(env.get("TEST2"), Some(&"VALUE2".to_string()));
+    }
+
+    #[test]
+    fn test_parse_single_line() {
+        let text = "TEST=VALUE";
+        let env = parse_default(text).unwrap();
+
+        assert_eq!(env.get("TEST"), Some(&"VALUE".to_string()));
     }
 
     #[test]

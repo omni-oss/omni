@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProjectConfiguration",
+  "type": "object",
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "dependencies": {
+      "default": null,
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "implicit_dependencies": {
+      "default": true,
+      "type": "boolean"
+    },
+    "implicit_tasks": {
+      "default": true,
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "tasks": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/definitions/TaskConfiguration"
+      }
+    }
+  },
+  "definitions": {
+    "TaskConfiguration": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "dependencies": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
