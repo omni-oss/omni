@@ -27,7 +27,6 @@ fn set_tracing_level(level: u8) -> eyre::Result<()> {
 
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
-    color_eyre::install()?;
     let cli = Cli::parse();
 
     set_tracing_level(cli.args.verbose + 1)?;

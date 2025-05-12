@@ -1,0 +1,11 @@
+[package]
+name = "omni_core"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+schemars = { workspace = true }
+derive_more = { workspace = true }
+petgraph = { workspace = true }

@@ -9,7 +9,6 @@ authors.workspace = true
 deno_core = { workspace = true }
 oxc = { workspace = true }
 eyre = { workspace = true }
-color-eyre = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
 clap_complete = { workspace = true }
@@ -17,7 +16,7 @@ shadow-rs = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-env_loader = { path = "../../crates/env_loader" }
+env_loader = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yml = { workspace = true }
@@ -26,6 +25,7 @@ walkdir = { workspace = true }
 globset = { workspace = true }
 ignore = { workspace = true }
 regex = { workspace = true }
+omni_core = { workspace = true }
 
 
 [build-dependencies]

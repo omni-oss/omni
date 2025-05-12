@@ -80,7 +80,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
                 .stdin(Stdio::inherit())
                 .spawn()
                 .wrap_err_with(|| {
-                    format!("failed to execute command: {} {:?}", prog, args)
+                    format!("failed to execute command: {prog} {args:?}")
                 })?
                 .wait()
                 .await?;

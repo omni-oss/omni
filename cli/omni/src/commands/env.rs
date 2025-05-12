@@ -27,7 +27,7 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             let env = ctx.get_env_var(key);
 
             if let Some(env) = env {
-                print!("{}", env);
+                print!("{env}");
             } else {
                 tracing::warn!(
                     "environmental variable does not exists: {}",
@@ -37,7 +37,7 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
         }
         EnvSubcommands::All => {
             for (key, value) in ctx.get_all_env_vars() {
-                println!("{}={}", key, value);
+                println!("{key}={value}");
             }
         }
     }

@@ -172,7 +172,12 @@ impl Context {
             projects.push(Project::new(
                 project.name,
                 PathBuf::from(dir),
-                project.dependencies,
+                project
+                    .dependencies
+                    .iter()
+                    .cloned()
+                    .map(Into::into)
+                    .collect(),
                 project
                     .tasks
                     .unwrap_or_default()
@@ -187,7 +192,10 @@ impl Context {
                         {
                             if *merge_dependencies {
                                 mapped.dependencies.extend(
-                                    project_dependencies.iter().cloned(),
+                                    project_dependencies
+                                        .iter()
+                                        .cloned()
+                                        .map(Into::into),
                                 );
                             }
                         }

@@ -8,5 +8,5 @@ authors.workspace = true
 [dependencies]
 tracing = { workspace = true }
 thiserror = { workspace = true }
-env = { path = "../env" }
+env = { workspace = true }
 eyre = { workspace = true }

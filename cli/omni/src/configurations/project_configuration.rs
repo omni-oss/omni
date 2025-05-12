@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::Path};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::TaskConfiguration;
+use super::{DependencyConfiguration, TaskConfiguration};
 
 fn default_true() -> bool {
     true
@@ -16,7 +16,7 @@ pub struct ProjectConfiguration {
     pub implicit_tasks: bool,
     pub tasks: Option<HashMap<String, TaskConfiguration>>,
     #[serde(default)]
-    pub dependencies: Vec<String>,
+    pub dependencies: Vec<DependencyConfiguration>,
     #[serde(default = "default_true")]
     pub implicit_dependencies: bool,
 }
