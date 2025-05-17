@@ -96,18 +96,14 @@ impl Expansion {
                         }
                     }
                     FallbackMode::UnsetOrEmpty => {
-                        if value.is_some()
-                            && !value.expect("Should have value").is_empty()
+                        expanded = if let Some(value) = value
+                            && !value.is_empty()
                         {
-                            expanded = expanded.replacen(
-                                to_replace,
-                                value.unwrap(),
-                                1,
-                            );
+                            expanded.replacen(to_replace, value, 1)
                         } else {
                             let fb = expand(fallback, envs);
-                            expanded = expanded.replacen(to_replace, &fb, 1);
-                        }
+                            expanded.replacen(to_replace, &fb, 1)
+                        };
                     }
                 }
             }

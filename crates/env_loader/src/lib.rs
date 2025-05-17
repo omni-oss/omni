@@ -76,12 +76,13 @@ pub fn load(
             }
         }
 
-        if let Some(Some(root_dir)) = abs_root_dir.as_ref() {
-            if dir == root_dir {
-                tracing::debug!("Reached root dir");
-                // We've reached topmost dir
-                break;
-            }
+        let Some(Some(root_dir)) = abs_root_dir.as_ref() else {
+            continue;
+        };
+        if dir == root_dir {
+            tracing::debug!("Reached root dir");
+            // We've reached topmost dir
+            break;
         }
     }
 
