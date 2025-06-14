@@ -14,10 +14,7 @@ use crate::{
     configurations::{
         ProjectConfiguration, TaskConfiguration, WorkspaceConfiguration,
     },
-    constants::{
-        PROJECT_OMNI_YAML, PROJECT_OMNI_YML, WORKSPACE_OMNI_YAML,
-        WORKSPACE_OMNI_YML,
-    },
+    constants,
     core::{Project, Task},
 };
 
@@ -76,6 +73,7 @@ impl Context {
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>(),
             extra_envs: Some(&env_vars),
+            matcher: None,
         };
 
         let env = env_loader::load(&config)?;
@@ -126,7 +124,7 @@ impl Context {
         let matcher = match_b.build()?;
 
         for f in ignore::WalkBuilder::new(&self.root_dir)
-            .add_custom_ignore_filename(".omniignore")
+            .add_custom_ignore_filename(constants::OMNI_IGNORE)
             .build()
         {
             let f = f?;
@@ -139,20 +137,17 @@ impl Context {
             let dir_str = dir.to_string();
 
             if matcher.is_match(&dir_str) && f.path().is_dir() {
-                let project_yaml = f.path().join(PROJECT_OMNI_YAML);
-                let project_yml = f.path().join(PROJECT_OMNI_YML);
+                let project_files = constants::SUPPORTED_EXTENSIONS
+                    .iter()
+                    .map(|ext| constants::PROJECT_OMNI.replace("{ext}", ext));
 
-                if project_yaml.exists() && project_yaml.is_file() {
-                    tracing::debug!("Found project directory: {}", dir);
-
-                    paths.push((dir_str, project_yaml));
-                    continue;
-                }
-                if project_yml.exists() && project_yml.is_file() {
-                    tracing::debug!("Found project directory: {}", dir);
-
-                    paths.push((dir_str, project_yml));
-                    continue;
+                for project_file in project_files {
+                    let p = f.path().join(&project_file);
+                    if p.exists() && p.is_file() {
+                        tracing::debug!("Found project directory: {}", dir);
+                        paths.push((dir_str, f.path().join(&project_file)));
+                        break;
+                    }
                 }
             }
         }
@@ -235,13 +230,15 @@ fn get_root_dir() -> eyre::Result<PathBuf> {
     let current_dir = env::current_dir()?;
 
     for p in current_dir.ancestors() {
-        let f = p.join(WORKSPACE_OMNI_YAML);
-        if f.exists() && f.is_file() {
-            return Ok(p.to_path_buf());
-        }
-        let f = p.join(WORKSPACE_OMNI_YML);
-        if f.exists() && f.is_file() {
-            return Ok(p.to_path_buf());
+        let workspace_files = constants::SUPPORTED_EXTENSIONS
+            .iter()
+            .map(|ext| constants::WORKSPACE_OMNI.replace("{ext}", ext));
+
+        for workspace_file in workspace_files {
+            let f = p.join(workspace_file);
+            if f.exists() && f.is_file() {
+                return Ok(p.to_path_buf());
+            }
         }
     }
 
@@ -251,22 +248,30 @@ fn get_root_dir() -> eyre::Result<PathBuf> {
 fn get_workspace_configuration(
     root_dir: &Path,
 ) -> eyre::Result<WorkspaceConfiguration> {
-    let yaml = root_dir.join(WORKSPACE_OMNI_YAML);
-    let yml = root_dir.join(WORKSPACE_OMNI_YML);
-    let p = if yaml.exists() && yaml.is_file() {
-        yaml
-    } else if yml.exists() && yml.is_file() {
-        yml
-    } else {
-        return Err(eyre::eyre!("Could not find workspace configuration file"));
-    };
+    let workspace_files = constants::SUPPORTED_EXTENSIONS
+        .iter()
+        .map(|ext| constants::WORKSPACE_OMNI.replace("{ext}", ext));
 
-    let f = OpenOptions::new().read(true).open(&p)?;
+    let mut ws_path = None;
+
+    for workspace_file in workspace_files {
+        let f = root_dir.join(workspace_file);
+        if f.exists() && f.is_file() {
+            ws_path = Some(f);
+            break;
+        }
+    }
+
+    let ws_path = ws_path.ok_or_else(|| {
+        eyre::eyre!("Could not find workspace configuration file")
+    })?;
+
+    let f = OpenOptions::new().read(true).open(&ws_path)?;
     let w = serde_yml::from_reader::<_, WorkspaceConfiguration>(f)
         .wrap_err_with(|| {
             format!(
                 "Failed to load workspace configuration '{}'",
-                p.to_string_lossy()
+                ws_path.to_string_lossy()
             )
         })?;
 
@@ -297,10 +302,9 @@ pub fn build(cli: &CliArgs) -> eyre::Result<Context> {
         env_files,
         workspace: get_workspace_configuration(&root_dir)?,
         root_dir,
-        env_root_dir_marker: cli
-            .env_root_dir_marker
-            .clone()
-            .unwrap_or_else(|| "workspace.omni.yaml".to_string()),
+        env_root_dir_marker: cli.env_root_dir_marker.clone().unwrap_or_else(
+            || constants::WORKSPACE_OMNI.replace("{ext}", "yaml"),
+        ),
     };
 
     Ok(ctx)

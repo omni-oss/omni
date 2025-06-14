@@ -7,14 +7,21 @@
   ],
   "properties": {
     "dependencies": {
-      "default": null,
-      "type": [
-        "array",
-        "null"
-      ],
+      "default": [],
+      "type": "array",
       "items": {
-        "type": "string"
+        "$ref": "#/definitions/String"
       }
+    },
+    "env": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ProjectEnvConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "implicit_dependencies": {
       "default": true,
@@ -38,6 +45,97 @@
     }
   },
   "definitions": {
+    "ListConfig_for_String": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "append"
+          ],
+          "properties": {
+            "append": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "prepend"
+          ],
+          "properties": {
+            "prepend": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "append",
+            "prepend"
+          ],
+          "properties": {
+            "append": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "prepend": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "replace"
+          ],
+          "properties": {
+            "replace": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ProjectEnvConfiguration": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ListConfig_for_String"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "String": {
+      "type": "string"
+    },
     "TaskConfiguration": {
       "anyOf": [
         {
@@ -56,8 +154,12 @@
               "default": [],
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/definitions/String"
               }
+            },
+            "merge_project_dependencies": {
+              "default": true,
+              "type": "boolean"
             }
           }
         }

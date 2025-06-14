@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use schemars::{schema::RootSchema, schema_for};
+use schemars::{Schema as SchemarsSchema, schema_for};
 
 use crate::{
     configurations::{ProjectConfiguration, WorkspaceConfiguration},
@@ -43,7 +43,7 @@ pub struct PrintSchemaArgs {
 }
 
 fn output_schema(
-    schema: &RootSchema,
+    schema: &SchemarsSchema,
     args: &PrintSchemaArgs,
 ) -> eyre::Result<()> {
     if args.pretty {

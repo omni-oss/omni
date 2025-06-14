@@ -1,9 +1,12 @@
 [package]
 name = "env_loader"
 rust-version.workspace = true
-edition.workspace = true
+#edition.workspace = true
+edition = "2024"
 version.workspace = true
 authors.workspace = true
+repository.workspace = true
+
 
 [dependencies]
 tracing = { workspace = true }

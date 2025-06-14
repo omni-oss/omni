@@ -1,12 +1,15 @@
 use std::{collections::HashMap, path::Path};
 
+use config_utils::ListConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::utils;
 
 use super::{DependencyConfiguration, TaskConfiguration};
 
 fn default_true() -> bool {
-    true
+    false
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
@@ -19,12 +22,16 @@ pub struct ProjectConfiguration {
     pub dependencies: Vec<DependencyConfiguration>,
     #[serde(default = "default_true")]
     pub implicit_dependencies: bool,
+    pub env: Option<ProjectEnvConfiguration>,
 }
 
 impl ProjectConfiguration {
     pub fn load<'a>(path: impl Into<&'a Path>) -> eyre::Result<Self> {
-        let f = std::fs::File::open(path.into())?;
-        let p = serde_yml::from_reader(f)?;
-        Ok(p)
+        utils::fs::load_config(path)
     }
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
+pub struct ProjectEnvConfiguration {
+    pub files: Option<ListConfig<String>>,
 }

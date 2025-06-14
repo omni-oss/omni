@@ -9,6 +9,7 @@ mod configurations;
 mod constants;
 mod context;
 mod core;
+mod utils;
 
 fn set_tracing_level(level: u8) -> eyre::Result<()> {
     tracing_subscriber::fmt()

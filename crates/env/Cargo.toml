@@ -1,9 +1,11 @@
 [package]
 name = "env"
 rust-version.workspace = true
-edition.workspace = true
+#edition.workspace = true
+edition = "2024"
 version.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 derive_more = { workspace = true }

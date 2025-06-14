@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -60,13 +62,13 @@ impl Serialize for DependencyConfiguration {
 }
 
 impl JsonSchema for DependencyConfiguration {
-    fn schema_name() -> String {
+    fn schema_name() -> Cow<'static, str> {
         String::schema_name()
     }
 
     fn json_schema(
-        generator: &mut schemars::r#gen::SchemaGenerator,
-    ) -> schemars::schema::Schema {
+        generator: &mut schemars::SchemaGenerator,
+    ) -> schemars::Schema {
         String::json_schema(generator)
     }
 }

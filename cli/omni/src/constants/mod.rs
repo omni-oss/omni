@@ -1,4 +1,4 @@
-pub const WORKSPACE_OMNI_YAML: &str = "workspace.omni.yaml";
-pub const WORKSPACE_OMNI_YML: &str = "workspace.omni.yml";
-pub const PROJECT_OMNI_YAML: &str = "project.omni.yaml";
-pub const PROJECT_OMNI_YML: &str = "project.omni.yml";
+pub const SUPPORTED_EXTENSIONS: [&str; 4] = ["yml", "yaml", "json", "toml"];
+pub const WORKSPACE_OMNI: &str = "workspace.omni.{ext}";
+pub const PROJECT_OMNI: &str = "project.omni.{ext}";
+pub const OMNI_IGNORE: &str = ".omniignore";

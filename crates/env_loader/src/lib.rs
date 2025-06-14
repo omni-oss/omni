@@ -17,6 +17,7 @@ pub struct EnvConfig<'a> {
     pub start_dir: Option<&'a str>,
     /// The env files to load. Values from later files will override earlier ones.
     pub env_files: &'a [&'a str],
+    pub matcher: Option<&'a HashMap<String, String>>,
     /// Extra env vars to use when parsing env files.
     pub extra_envs: Option<&'a HashMap<String, String>>,
 }
@@ -105,6 +106,15 @@ pub fn load(
             },
         )
         .map_err(EnvLoaderErrorRepr::ParseEnvError)?;
+
+        if let Some(matcher) = &config.matcher {
+            if matcher
+                .iter()
+                .all(|(k, v)| parsed.get(k).map(|s| s == v).unwrap_or(false))
+            {
+                continue;
+            }
+        }
 
         env.extend(parsed);
     }

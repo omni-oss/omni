@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/cli/omni/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/config_utils/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/env/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/env_loader/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/js_executor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/omni_core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/project_resolver/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/bench_util/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/ext/http/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/ext/url/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/ext/web/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/ext/webidl/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/runtime/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/deno/tests/util/server/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

@@ -96,10 +96,13 @@ impl Expansion {
                         }
                     }
                     FallbackMode::UnsetOrEmpty => {
-                        expanded = if let Some(value) = value
-                            && !value.is_empty()
-                        {
-                            expanded.replacen(to_replace, value, 1)
+                        expanded = if let Some(value) = value {
+                            if !value.is_empty() {
+                                expanded.replacen(to_replace, value, 1)
+                            } else {
+                                let fb = expand(fallback, envs);
+                                expanded.replacen(to_replace, &fb, 1)
+                            }
                         } else {
                             let fb = expand(fallback, envs);
                             expanded.replacen(to_replace, &fb, 1)

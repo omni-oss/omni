@@ -6,6 +6,16 @@
     "projects"
   ],
   "properties": {
+    "env": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/WorkspaceEnvConfiguration"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "name": {
       "type": [
         "string",
@@ -16,6 +26,22 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    }
+  },
+  "definitions": {
+    "WorkspaceEnvConfiguration": {
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     }
   }
