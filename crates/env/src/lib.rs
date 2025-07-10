@@ -202,6 +202,7 @@ mod tests {
         let text = r#"
             TEST=VALUE
             TEST2=VALUE2
+            # Comment
             "#;
         let env = parse_default(text).unwrap();
 
@@ -220,8 +221,10 @@ mod tests {
     #[test]
     fn test_interpolation() {
         let text = r#"
+            # Comment
             TEST=VALUE
             TEST2=${TEST}
+            
             "#;
 
         let env = parse_default(text).unwrap();
@@ -234,6 +237,8 @@ mod tests {
         let text = r#"
             TEST=VALUE
             TEST2=${EXTERNAL_TEST}
+
+            # Comment
             "#;
 
         let env = parse(
