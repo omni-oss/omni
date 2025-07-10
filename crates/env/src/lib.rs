@@ -223,12 +223,12 @@ mod tests {
         let text = r#"
             # Comment
             TEST=VALUE
-            TEST2=${TEST}
+            TEST2=${TEST}-value
             
             "#;
 
         let env = parse_default(text).unwrap();
-        assert_eq!(env.get("TEST2"), Some(&"VALUE".to_string()));
+        assert_eq!(env.get("TEST2"), Some(&"VALUE-value".to_string()));
         assert_eq!(env.get("TEST"), Some(&"VALUE".to_string()));
     }
 
@@ -236,7 +236,7 @@ mod tests {
     fn test_interpolation_with_extra_envs() {
         let text = r#"
             TEST=VALUE
-            TEST2=${EXTERNAL_TEST}
+            TEST2=${EXTERNAL_TEST}-value
 
             # Comment
             "#;
@@ -256,7 +256,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(env.get("TEST2"), Some(&"EXTERNAL_VALUE".to_string()));
+        assert_eq!(env.get("TEST2"), Some(&"EXTERNAL_VALUE-value".to_string()));
         assert_eq!(env.get("TEST"), Some(&"VALUE".to_string()));
     }
 }
