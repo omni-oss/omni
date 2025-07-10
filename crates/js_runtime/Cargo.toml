@@ -14,10 +14,10 @@ default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
 
 [dependencies]
+system_traits = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 thiserror = { workspace = true }
-system_traits = { workspace = true }
 eyre = { workspace = true }
 url = { workspace = true }
 trace = { workspace = true }

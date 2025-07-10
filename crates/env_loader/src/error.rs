@@ -33,27 +33,27 @@ impl From<std::io::Error> for EnvLoaderError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EnvLoaderErrorRepr {
-    #[error("EnvLoaderErrorRepr::CantLoadCurrentDir")]
+    #[error("Can't load current dir")]
     CantLoadCurrentDir,
 
-    #[error("EnvLoaderErrorRepr::PathDoesNotExist => {0}")]
+    #[error("Path does not exist: {0}")]
     PathDoesNotExist(String),
 
-    #[error("EnvLoaderErrorRepr::CantReadFile => {0}")]
+    #[error("Can't read file: {0}")]
     CantReadFile(String),
 
-    #[error("EnvLoaderErrorRepr::CantLoadRootFile => {0}")]
+    #[error("Can't load root file: {0}")]
     CantLoadRootFile(String),
 
-    #[error("EnvLoaderErrorRepr::CantLoadStartDir => {0}")]
+    #[error("Can't load start dir: {0}")]
     CantLoadStartDir(String),
 
-    #[error("EnvLoaderErrorRepr::CantParseEnv")]
+    #[error("Can't parse env: {0:?}")]
     CantParseEnv(Vec<ParseError>),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    #[error("EnvLoaderErrorRepr::UnknownError => {0}")]
+    #[error("Unkown error: {0}")]
     Unknown(eyre::Error),
 }

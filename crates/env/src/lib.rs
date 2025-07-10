@@ -72,6 +72,7 @@ pub fn parse(
                         val = Some(token);
                     }
                     lexer::TokenType::Eol | lexer::TokenType::Eof => {
+                        // We're matching only key and eq here because value may be empty
                         match (key, eq) {
                             (Some(ident), Some(_)) => {
                                 if let Some(string) = val {
@@ -155,6 +156,11 @@ pub fn parse(
                                 }
                             }
                         }
+
+                        // Reset the state
+                        val = None;
+                        eq = None;
+                        key = None;
                     }
                 }
             }

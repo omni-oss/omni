@@ -6,6 +6,8 @@ use std::{
 };
 
 use async_trait::async_trait;
+use futures::{AsyncRead, AsyncWrite};
+use system_traits::auto_impl;
 
 use crate::{JsRuntimeError, JsRuntimeSys, error};
 
@@ -68,6 +70,13 @@ pub trait JsRuntime {
     ) -> Result<Self::ExitValue, Self::Error>;
 }
 
+#[auto_impl]
+pub trait DelegatingJsRuntimeTransport:
+    AsyncRead + AsyncWrite + Send + Sync
+{
+}
+
+#[derive(Debug)]
 pub struct DelegatingJsRuntime<TSys: JsRuntimeSys> {
     sys: TSys,
 }
@@ -112,6 +121,7 @@ where
         sys.env_current_dir_async()
             .await
             .expect("Failed to get current directory")
+            .join("./.omni/tmp")
     };
 
     if !sys.fs_exists_async(&temp_dir).await? {

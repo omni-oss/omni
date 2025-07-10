@@ -88,11 +88,11 @@ impl Expansion {
 
                 match mode {
                     FallbackMode::Unset => {
-                        if let Some(value) = value {
-                            expanded = expanded.replacen(to_replace, value, 1);
+                        expanded = if let Some(value) = value {
+                            expanded.replacen(to_replace, value, 1)
                         } else {
                             let fb = expand(fallback, envs);
-                            expanded = expanded.replacen(to_replace, &fb, 1);
+                            expanded.replacen(to_replace, &fb, 1)
                         }
                     }
                     FallbackMode::UnsetOrEmpty => {

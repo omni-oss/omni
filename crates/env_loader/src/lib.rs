@@ -14,6 +14,7 @@ pub struct EnvConfig<'a> {
     pub start_dir: Option<&'a str>,
     /// The env files to load. Values from later files will override earlier ones.
     pub env_files: &'a [&'a str],
+    /// Filter out env files that don't have the specified env vars.
     pub matcher: Option<&'a HashMap<String, String>>,
     /// Extra env vars to use when parsing env files.
     pub extra_envs: Option<&'a HashMap<String, String>>,
@@ -68,7 +69,7 @@ where
     let mut files = vec![];
     for dir in start_dir.ancestors().collect::<Vec<_>>().into_iter() {
         trace::debug!("Looking for env files in dir: {:?}", dir);
-        for env_file in config.env_files {
+        for env_file in config.env_files.iter().rev() {
             let env_file = dir.join(env_file);
 
             trace::debug!("Checking env file: {:?}", env_file);
@@ -94,7 +95,7 @@ where
 
     trace::debug!("Loading env files: {:?}", files);
 
-    for file in files.iter() {
+    for file in files.iter().rev() {
         let contents = sys.fs_read_to_string(file).map_err(|_| {
             EnvLoaderErrorRepr::CantReadFile(file.to_string_lossy().to_string())
         })?;
@@ -122,4 +123,88 @@ where
     trace::debug!("Loaded env vars: {:?}", env);
 
     Ok(env)
+}
+
+#[cfg(test)]
+mod tests {
+    use system_traits::{
+        EnvSetCurrentDir, FsCreateDirAll, FsWrite, impls::InMemorySysSync,
+    };
+
+    use super::*;
+
+    fn create_sys() -> impl EnvLoaderSys {
+        let sys = InMemorySysSync::default();
+
+        sys.fs_create_dir_all("/root/nested/project")
+            .expect("Can't create root dir");
+
+        sys.fs_write("/root/.env", include_str!("../test_fixtures/.env.root"))
+            .expect("Can't write root env file");
+        sys.fs_write(
+            "/root/.env.local",
+            include_str!("../test_fixtures/.env.root.local"),
+        )
+        .expect("Can't write root local env file");
+
+        sys.fs_write(
+            "/root/nested/.env",
+            include_str!("../test_fixtures/.env.nested"),
+        )
+        .expect("Can't write nested env file");
+        sys.fs_write(
+            "/root/nested/.env.local",
+            include_str!("../test_fixtures/.env.nested.local"),
+        )
+        .expect("Can't write nested local env file");
+        sys.fs_write(
+            "/root/nested/project/.env",
+            include_str!("../test_fixtures/.env.project"),
+        )
+        .expect("Can't write project env file");
+        sys.fs_write(
+            "/root/nested/project/.env.local",
+            include_str!("../test_fixtures/.env.project.local"),
+        )
+        .expect("Can't write project local env file");
+        sys.env_set_current_dir("/root/nested/project")
+            .expect("Can't set current dir");
+
+        sys
+    }
+
+    #[test]
+    fn test_load_order() {
+        let config = EnvConfig {
+            env_files: &[".env", ".env.local"],
+            extra_envs: None,
+            matcher: None,
+            root_file: Some("/root"),
+            start_dir: Some("/root/nested/project"),
+        };
+
+        let sys = create_sys();
+        let env = load(&config, sys).expect("Can't load env");
+
+        assert_eq!(env.get("ROOT_ENV").map(|s| s.as_str()), Some("root"));
+        assert_eq!(
+            env.get("ROOT_LOCAL_ENV").map(|s| s.as_str()),
+            Some("root-local")
+        );
+        assert_eq!(env.get("EMPTY_ENV").map(|s| s.as_str()), Some(""));
+        assert_eq!(env.get("NESTED_ENV").map(|s| s.as_str()), Some("nested"));
+        assert_eq!(
+            env.get("NESTED_LOCAL_ENV").map(|s| s.as_str()),
+            Some("nested-local")
+        );
+        assert_eq!(env.get("PROJECT_ENV").map(|s| s.as_str()), Some("project"));
+        assert_eq!(
+            env.get("PROJECT_LOCAL_ENV").map(|s| s.as_str()),
+            Some("project-local")
+        );
+        assert_eq!(
+            env.get("SHARED_ENV").map(|s| s.as_str()),
+            Some("root-local-nested-local-project-local")
+        );
+    }
 }
