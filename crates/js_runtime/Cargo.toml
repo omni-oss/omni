@@ -1,0 +1,26 @@
+[package]
+name = "js_runtime"
+authors.workspace = true
+edition.workspace = true
+# edition = "2024"
+rust-version.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }
+system_traits = { workspace = true }
+eyre = { workspace = true }
+url = { workspace = true }
+trace = { workspace = true }
+serde = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }

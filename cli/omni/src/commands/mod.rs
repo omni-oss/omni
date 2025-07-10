@@ -77,4 +77,6 @@ pub enum CliSubcommands {
     Completion(CompletionCommand),
     #[command(about = "")]
     Run(RunCommand),
+    #[command(about = "")]
+    JsTest,
 }

@@ -8,6 +8,10 @@ use std::{
 use env_loader::EnvLoaderError;
 use eyre::Context as _;
 use globset::{Glob, GlobSetBuilder};
+use system_traits::{
+    EnvCurrentDir, FsCanonicalize, FsMetadata, FsRead, auto_impl,
+    impls::RealSysSync,
+};
 
 use crate::{
     commands::CliArgs,
@@ -19,16 +23,62 @@ use crate::{
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Context {
+pub struct Context<TSys: ContextSys = RealSysSync> {
     envs_map: HashMap<String, String>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     projects: Option<Vec<Project>>,
     workspace: WorkspaceConfiguration,
     root_dir: PathBuf,
+    sys: TSys,
 }
 
-impl Context {
+#[auto_impl]
+pub trait ContextSys:
+    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone
+{
+}
+
+impl<TSys: ContextSys> Context<TSys> {
+    pub fn from_args_and_sys(
+        cli: &CliArgs,
+        sys: TSys,
+    ) -> eyre::Result<Context<TSys>> {
+        let envs_map = HashMap::new();
+
+        let env = cli.env.as_deref().unwrap_or("development");
+        let env_files = cli
+            .env_file
+            .iter()
+            .map(|s| {
+                if s.contains("{ENV}") {
+                    s.replace("{ENV}", env)
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let root_dir = get_root_dir()?;
+
+        let ctx = Context {
+            projects: None,
+            envs_map,
+            env_files,
+            workspace: get_workspace_configuration(&root_dir)?,
+            root_dir,
+            env_root_dir_marker: cli
+                .env_root_dir_marker
+                .clone()
+                .unwrap_or_else(|| {
+                    constants::WORKSPACE_OMNI.replace("{ext}", "yaml")
+                }),
+            sys,
+        };
+
+        Ok(ctx)
+    }
+
     pub fn get_env_var(&self, key: &str) -> Option<&str> {
         self.envs_map.get(key).map(|s| s.as_str())
     }
@@ -76,7 +126,7 @@ impl Context {
             matcher: None,
         };
 
-        let env = env_loader::load(&config)?;
+        let env = env_loader::load(&config, self.sys.clone())?;
         self.envs_map.extend(env);
 
         Ok(())
@@ -184,15 +234,14 @@ impl Context {
                             merge_project_dependencies: merge_dependencies,
                             ..
                         } = v
+                            && *merge_dependencies
                         {
-                            if *merge_dependencies {
-                                mapped.dependencies.extend(
-                                    project_dependencies
-                                        .iter()
-                                        .cloned()
-                                        .map(Into::into),
-                                );
-                            }
+                            mapped.dependencies.extend(
+                                project_dependencies
+                                    .iter()
+                                    .cloned()
+                                    .map(Into::into),
+                            );
                         }
 
                         (k.clone(), mapped)
@@ -207,6 +256,10 @@ impl Context {
             .projects
             .as_ref()
             .expect("Should be able to load projects"))
+    }
+
+    pub fn root_dir(&self) -> &Path {
+        &self.root_dir
     }
 
     pub fn get_filtered_projects(
@@ -276,36 +329,4 @@ fn get_workspace_configuration(
         })?;
 
     Ok(w)
-}
-
-pub fn build(cli: &CliArgs) -> eyre::Result<Context> {
-    let envs_map = HashMap::new();
-
-    let env = cli.env.as_deref().unwrap_or("development");
-    let env_files = cli
-        .env_file
-        .iter()
-        .map(|s| {
-            if s.contains("{ENV}") {
-                s.replace("{ENV}", env)
-            } else {
-                s.to_string()
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let root_dir = get_root_dir()?;
-
-    let ctx = Context {
-        projects: None,
-        envs_map,
-        env_files,
-        workspace: get_workspace_configuration(&root_dir)?,
-        root_dir,
-        env_root_dir_marker: cli.env_root_dir_marker.clone().unwrap_or_else(
-            || constants::WORKSPACE_OMNI.replace("{ext}", "yaml"),
-        ),
-    };
-
-    Ok(ctx)
 }

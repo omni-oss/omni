@@ -1,14 +1,13 @@
 [package]
 name = "omni"
 rust-version.workspace = true
-#edition.workspace = true
-edition = "2024"
+edition.workspace = true
+# edition = "2024"
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-deno_core = { workspace = true }
 #oxc = { workspace = true }
 eyre = { workspace = true }
 clap = { workspace = true }
@@ -30,6 +29,12 @@ regex = { workspace = true }
 omni_core = { workspace = true }
 config_utils = { workspace = true }
 toml = { workspace = true }
+js_runtime = { workspace = true }
+system_traits = { workspace = true, features = [
+    "real-async-tokio",
+    "real-sync",
+] }
+tracing-log = { workspace = true }
 
 
 [build-dependencies]

@@ -10,9 +10,23 @@ pub struct EnvLoaderError {
 impl EnvLoaderError {
     pub fn unknown(msg: &str) -> Self {
         Self {
-            repr: EnvLoaderErrorRepr::UnknownError(eyre::eyre!(
-                msg.to_string()
-            )),
+            repr: EnvLoaderErrorRepr::Unknown(eyre::eyre!(msg.to_string())),
+        }
+    }
+}
+
+impl From<eyre::Error> for EnvLoaderError {
+    fn from(value: eyre::Error) -> Self {
+        Self {
+            repr: EnvLoaderErrorRepr::Unknown(value),
+        }
+    }
+}
+
+impl From<std::io::Error> for EnvLoaderError {
+    fn from(value: std::io::Error) -> Self {
+        Self {
+            repr: EnvLoaderErrorRepr::Io(value),
         }
     }
 }
@@ -34,9 +48,12 @@ pub enum EnvLoaderErrorRepr {
     #[error("EnvLoaderErrorRepr::CantLoadStartDir => {0}")]
     CantLoadStartDir(String),
 
-    #[error("EnvLoaderErrorRepr::ParseEnvError")]
-    ParseEnvError(Vec<ParseError>),
+    #[error("EnvLoaderErrorRepr::CantParseEnv")]
+    CantParseEnv(Vec<ParseError>),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 
     #[error("EnvLoaderErrorRepr::UnknownError => {0}")]
-    UnknownError(eyre::Error),
+    Unknown(eyre::Error),
 }

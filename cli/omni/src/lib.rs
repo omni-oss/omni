@@ -2,6 +2,8 @@
 
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
+use js_runtime::{DelegatingJsRuntime, JsRuntime};
+use system_traits::impls::{RealSysSync, TokioRealSysAsync};
 
 mod build;
 mod commands;
@@ -11,7 +13,7 @@ mod context;
 mod core;
 mod utils;
 
-fn set_tracing_level(level: u8) -> eyre::Result<()> {
+fn init_tracing(level: u8) -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(match level {
             1 => tracing::Level::ERROR,
@@ -30,9 +32,11 @@ fn set_tracing_level(level: u8) -> eyre::Result<()> {
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
-    set_tracing_level(cli.args.verbose + 1)?;
+    init_tracing(cli.args.verbose + 1)?;
 
-    let mut context = context::build(&cli.args)?;
+    let sys = RealSysSync;
+    let mut context =
+        context::Context::from_args_and_sys(&cli.args, sys.clone())?;
 
     match cli.subcommand {
         CliSubcommands::Exec(ref exec) => {
@@ -49,6 +53,15 @@ pub async fn main() -> eyre::Result<()> {
         }
         CliSubcommands::Run(ref run) => {
             commands::run::run(run, &mut context).await?;
+        }
+        CliSubcommands::JsTest => {
+            let async_sys = TokioRealSysAsync;
+            let mut rt = DelegatingJsRuntime::new(async_sys);
+            rt.run(
+                "console.log('Hello, World!');".into(),
+                Some(context.root_dir()),
+            )
+            .await?;
         }
     }
 

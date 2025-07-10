@@ -7,9 +7,14 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+
 
 [dependencies]
-tracing = { workspace = true }
+trace = { workspace = true }
 thiserror = { workspace = true }
 env = { workspace = true }
 eyre = { workspace = true }
+system_traits = { workspace = true }

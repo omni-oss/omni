@@ -1,8 +1,8 @@
 [package]
 name = "omni_core"
 rust-version.workspace = true
-#edition.workspace = true
-edition = "2024"
+edition.workspace = true
+# edition = "2024"
 version.workspace = true
 repository.workspace = true
 
