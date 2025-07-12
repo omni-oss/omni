@@ -207,13 +207,14 @@ impl<TSys: ContextSys> Context<TSys> {
         let mut projects = vec![];
 
         for (dir, conf) in paths {
-            let project = ProjectConfiguration::load(&conf as &Path)
-                .wrap_err_with(|| {
-                    format!(
-                        "Failed to load project configuration file at {}",
-                        conf.display()
-                    )
-                })?;
+            let project =
+                ProjectConfiguration::load(&conf as &Path, self.sys.clone())
+                    .wrap_err_with(|| {
+                        format!(
+                            "Failed to load project configuration file at {}",
+                            conf.display()
+                        )
+                    })?;
 
             let project_dependencies = project.dependencies.to_vec();
             projects.push(Project::new(
@@ -338,14 +339,20 @@ fn get_workspace_configuration(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dir_walker::impls::{
+        InMemoryDirEntry, InMemoryDirWalker, InMemoryMetadata,
+    };
     use system_traits::impls::InMemorySys;
     use system_traits::*;
 
     fn create_sys() -> InMemorySys {
         let sys = InMemorySys::default();
 
-        sys.fs_create_dir_all("/root/nested/project")
-            .expect("Can't create root dir");
+        sys.fs_create_dir_all("/root/nested/project-1")
+            .expect("Can't create project-1 dir");
+
+        sys.fs_create_dir_all("/root/nested/project-2")
+            .expect("Can't create project-2 dir");
 
         sys.fs_write(
             "/root/.env",
@@ -368,22 +375,46 @@ mod tests {
             include_str!("../../test_fixtures/.env.nested.local"),
         )
         .expect("Can't write nested local env file");
+
         sys.fs_write(
-            "/root/nested/project/.env",
-            include_str!("../../test_fixtures/.env.project"),
+            "/root/nested/project-1/.env",
+            include_str!("../../test_fixtures/.env.project-1"),
         )
         .expect("Can't write project env file");
         sys.fs_write(
-            "/root/nested/project/.env.local",
-            include_str!("../../test_fixtures/.env.project.local"),
+            "/root/nested/project-1/.env.local",
+            include_str!("../../test_fixtures/.env.project-1.local"),
         )
         .expect("Can't write project local env file");
+        sys.fs_write(
+            "/root/nested/project-1/project.omni.yaml",
+            include_str!("../../test_fixtures/project-1.omni.yaml"),
+        )
+        .expect("Can't write project config file");
+
+        sys.fs_write(
+            "/root/nested/project-2/.env",
+            include_str!("../../test_fixtures/.env.project-2"),
+        )
+        .expect("Can't write project env file");
+        sys.fs_write(
+            "/root/nested/project-2/.env.local",
+            include_str!("../../test_fixtures/.env.project-2.local"),
+        )
+        .expect("Can't write project local env file");
+        sys.fs_write(
+            "/root/nested/project-2/project.omni.yaml",
+            include_str!("../../test_fixtures/project-1.omni.yaml"),
+        )
+        .expect("Can't write project config file");
+
         sys.fs_write(
             "/root/workspace.omni.yaml",
             include_str!("../../test_fixtures/workspace.omni.yaml"),
         )
-        .expect("Can't write project local env file");
-        sys.env_set_current_dir("/root/nested/project")
+        .expect("Can't write workspace config file");
+
+        sys.env_set_current_dir("/root/nested/project-1")
             .expect("Can't set current dir");
 
         sys
@@ -406,6 +437,34 @@ mod tests {
         Context::from_args_and_sys(cli, sys).expect("Can't create context")
     }
 
+    fn create_dir_walker() -> impl dir_walker::DirWalker {
+        let entries = vec![
+            InMemoryDirEntry::new(
+                PathBuf::from("/root"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-1"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-2"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+        ];
+        let walker = InMemoryDirWalker::new(entries);
+
+        walker
+    }
+
     #[test]
     pub fn test_load_env_vars() {
         let mut ctx = create_ctx("testing");
@@ -417,5 +476,15 @@ mod tests {
             ctx.get_env_var("SHARED_ENV"),
             Some("root-local-nested-local-project-local")
         );
+    }
+
+    #[test]
+    fn test_load_projects() {
+        let mut ctx = create_ctx("testing");
+
+        ctx.load_projects(&create_dir_walker())
+            .expect("Can't load projects");
+
+        assert_eq!(ctx.get_projects().expect("Can't get projects").len(), 2);
     }
 }

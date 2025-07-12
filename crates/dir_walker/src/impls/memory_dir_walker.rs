@@ -37,7 +37,8 @@ pub struct InMemoryDirEntry {
     metadata: InMemoryMetadata,
 }
 
-#[derive(Clone, Debug)]
+/// Doesn't do anything for now
+#[derive(Clone, Debug, Default)]
 pub struct InMemoryMetadata;
 
 #[derive(Error, Debug)]

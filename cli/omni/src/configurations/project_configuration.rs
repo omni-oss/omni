@@ -3,6 +3,7 @@ use std::{collections::HashMap, path::Path};
 use config_utils::ListConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use system_traits::FsRead;
 
 use crate::utils;
 
@@ -26,8 +27,11 @@ pub struct ProjectConfiguration {
 }
 
 impl ProjectConfiguration {
-    pub fn load<'a>(path: impl Into<&'a Path>) -> eyre::Result<Self> {
-        utils::fs::load_config(path)
+    pub fn load<'a>(
+        path: impl Into<&'a Path>,
+        sys: impl FsRead,
+    ) -> eyre::Result<Self> {
+        utils::fs::load_config(path, sys)
     }
 }
 

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use system_traits::FsRead;
 
 use crate::utils;
 
@@ -13,8 +14,11 @@ pub struct WorkspaceConfiguration {
 }
 
 impl WorkspaceConfiguration {
-    pub fn load<'a>(path: impl Into<&'a Path>) -> eyre::Result<Self> {
-        utils::fs::load_config(path)
+    pub fn load<'a>(
+        path: impl Into<&'a Path>,
+        fs: impl FsRead,
+    ) -> eyre::Result<Self> {
+        utils::fs::load_config(path, fs)
     }
 }
 
