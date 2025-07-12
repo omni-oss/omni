@@ -65,7 +65,7 @@ impl DirEntry for IgnoreRealDirEntry {
         self.0.path_is_symlink()
     }
 
-    fn metadata(&self) -> Result<std::fs::Metadata, Self::Error> {
+    fn metadata(&self) -> Result<Self::Metadata, Self::Error> {
         self.0.metadata()
     }
 

@@ -16,7 +16,7 @@ pub struct CompletionArgs {
     #[arg(
         short = 's',
         long,
-        help = "Prints the completion script",
+        help = "Which shell to generate completion for",
         default_value = "bash",
         value_enum
     )]

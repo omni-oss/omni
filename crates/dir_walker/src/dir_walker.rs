@@ -11,6 +11,7 @@ pub trait DirWalkerBase {
 }
 
 pub trait DirWalker: DirWalkerBase {
+    #[inline(always)]
     fn walk_dir(&self, path: impl AsRef<Path>) -> Self::WalkDir {
         self.base_walk_dir(path.as_ref())
     }
