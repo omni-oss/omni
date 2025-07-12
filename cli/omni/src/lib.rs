@@ -3,7 +3,7 @@
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
 use js_runtime::{DelegatingJsRuntime, JsRuntime};
-use system_traits::impls::{RealSysSync, TokioRealSysAsync};
+use system_traits::impls::RealSys as RealSysSync;
 
 mod build;
 mod commands;
@@ -55,8 +55,7 @@ pub async fn main() -> eyre::Result<()> {
             commands::run::run(run, &mut context).await?;
         }
         CliSubcommands::JsTest => {
-            let async_sys = TokioRealSysAsync;
-            let mut rt = DelegatingJsRuntime::new(async_sys);
+            let mut rt = DelegatingJsRuntime::new(sys.clone());
             rt.run(
                 "console.log('Hello, World!');".into(),
                 Some(context.root_dir()),

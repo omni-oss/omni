@@ -1,3 +1,5 @@
+use std::env::{Vars, VarsOs};
+
 pub use sys_traits::{
     BaseEnvSetCurrentDir, BaseEnvSetVar, BaseEnvVar, BaseFsCanonicalize,
     BaseFsChown, BaseFsCloneFile, BaseFsCopy, BaseFsCreateDir,
@@ -17,3 +19,9 @@ pub use sys_traits::{
     FsSetPermissions, FsSetSymlinkFileTimes, FsSymlinkChown, FsSymlinkDir,
     FsSymlinkFile, FsWrite, SystemRandom, SystemTimeNow, ThreadSleep,
 };
+
+pub trait EnvVars {
+    fn env_vars(&self) -> Vars;
+
+    fn env_vars_os(&self) -> VarsOs;
+}

@@ -22,9 +22,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yml = { workspace = true }
 schemars = { workspace = true }
-walkdir = { workspace = true }
 globset = { workspace = true }
-ignore = { workspace = true }
 regex = { workspace = true }
 omni_core = { workspace = true }
 config_utils = { workspace = true }
@@ -34,6 +32,7 @@ system_traits = { workspace = true, features = [
     "real-async-tokio",
     "real-sync",
 ] }
+dir_walker = { workspace = true, features = ["ignore", "memory"] }
 tracing-log = { workspace = true }
 
 

@@ -1,16 +1,15 @@
 use std::{
     collections::HashMap,
-    env,
-    fs::OpenOptions,
     path::{Path, PathBuf},
 };
 
+use dir_walker::{DirEntry as _, DirWalker};
 use env_loader::EnvLoaderError;
 use eyre::Context as _;
 use globset::{Glob, GlobSetBuilder};
 use system_traits::{
-    EnvCurrentDir, FsCanonicalize, FsMetadata, FsRead, auto_impl,
-    impls::RealSysSync,
+    EnvCurrentDir, EnvVar, FsCanonicalize, FsMetadata, FsRead, auto_impl,
+    impls::RealSys as RealSysSync,
 };
 
 use crate::{
@@ -35,7 +34,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 
 #[auto_impl]
 pub trait ContextSys:
-    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone
+    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone + EnvVar
 {
 }
 
@@ -59,13 +58,13 @@ impl<TSys: ContextSys> Context<TSys> {
             })
             .collect::<Vec<_>>();
 
-        let root_dir = get_root_dir()?;
+        let root_dir = get_root_dir(&sys)?;
 
         let ctx = Context {
             projects: None,
             envs_map,
             env_files,
-            workspace: get_workspace_configuration(&root_dir)?,
+            workspace: get_workspace_configuration(&root_dir, &sys)?,
             root_dir,
             env_root_dir_marker: cli
                 .env_root_dir_marker
@@ -107,7 +106,7 @@ impl<TSys: ContextSys> Context<TSys> {
         &mut self,
         start_dir: &str,
     ) -> Result<(), EnvLoaderError> {
-        self.envs_map.clear();
+        self.clear_env_vars();
         let v = std::env::vars();
 
         let mut env_vars = HashMap::new();
@@ -136,31 +135,19 @@ impl<TSys: ContextSys> Context<TSys> {
         &mut self,
     ) -> Result<(), EnvLoaderError> {
         let current_dir =
-            std::env::current_dir().expect("Can't get current dir");
+            self.sys.env_current_dir().expect("Can't get current dir");
 
         self.load_env_vars(&current_dir.to_string_lossy())
-    }
-
-    pub fn reload_env_vars(
-        &mut self,
-        start_dir: &str,
-    ) -> Result<(), EnvLoaderError> {
-        self.clear_env_vars();
-        self.load_env_vars(start_dir)
-    }
-
-    pub fn reload_env_vars_from_current_dir(
-        &mut self,
-    ) -> Result<(), EnvLoaderError> {
-        self.clear_env_vars();
-        self.load_env_vars_from_current_dir()
     }
 
     pub fn get_projects(&self) -> Option<&Vec<Project>> {
         self.projects.as_ref()
     }
 
-    pub fn load_projects(&mut self) -> eyre::Result<&Vec<Project>> {
+    pub fn load_projects<TDirWalker: DirWalker>(
+        &mut self,
+        walker: &TDirWalker,
+    ) -> eyre::Result<&Vec<Project>> {
         let mut paths = vec![];
 
         let mut match_b = GlobSetBuilder::new();
@@ -173,27 +160,24 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let matcher = match_b.build()?;
 
-        for f in ignore::WalkBuilder::new(&self.root_dir)
-            .add_custom_ignore_filename(constants::OMNI_IGNORE)
-            .build()
-        {
-            let f = f?;
+        for f in walker.walk_dir(&self.root_dir) {
+            let f = f.map_err(|_| eyre::eyre!("Failed to walk dir"))?;
 
-            if !f.path().is_dir() {
+            if !self.sys.fs_is_dir(f.path())? {
                 continue;
             }
 
             let dir = f.path().display();
             let dir_str = dir.to_string();
 
-            if matcher.is_match(&dir_str) && f.path().is_dir() {
+            if matcher.is_match(&dir_str) && self.sys.fs_is_dir(f.path())? {
                 let project_files = constants::SUPPORTED_EXTENSIONS
                     .iter()
                     .map(|ext| constants::PROJECT_OMNI.replace("{ext}", ext));
 
                 for project_file in project_files {
                     let p = f.path().join(&project_file);
-                    if p.exists() && p.is_file() {
+                    if self.sys.fs_exists(&p)? && self.sys.fs_is_file(p)? {
                         tracing::debug!("Found project directory: {}", dir);
                         paths.push((dir_str, f.path().join(&project_file)));
                         break;
@@ -279,8 +263,8 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 }
 
-fn get_root_dir() -> eyre::Result<PathBuf> {
-    let current_dir = env::current_dir()?;
+fn get_root_dir(sys: &impl ContextSys) -> eyre::Result<PathBuf> {
+    let current_dir = sys.env_current_dir()?;
 
     for p in current_dir.ancestors() {
         let workspace_files = constants::SUPPORTED_EXTENSIONS
@@ -289,7 +273,7 @@ fn get_root_dir() -> eyre::Result<PathBuf> {
 
         for workspace_file in workspace_files {
             let f = p.join(workspace_file);
-            if f.exists() && f.is_file() {
+            if sys.fs_exists(&f)? && sys.fs_is_file(&f)? {
                 return Ok(p.to_path_buf());
             }
         }
@@ -300,6 +284,7 @@ fn get_root_dir() -> eyre::Result<PathBuf> {
 
 fn get_workspace_configuration(
     root_dir: &Path,
+    sys: &impl ContextSys,
 ) -> eyre::Result<WorkspaceConfiguration> {
     let workspace_files = constants::SUPPORTED_EXTENSIONS
         .iter()
@@ -309,7 +294,7 @@ fn get_workspace_configuration(
 
     for workspace_file in workspace_files {
         let f = root_dir.join(workspace_file);
-        if f.exists() && f.is_file() {
+        if sys.fs_exists(&f)? && sys.fs_is_file(&f)? {
             ws_path = Some(f);
             break;
         }
@@ -319,14 +304,100 @@ fn get_workspace_configuration(
         eyre::eyre!("Could not find workspace configuration file")
     })?;
 
-    let f = OpenOptions::new().read(true).open(&ws_path)?;
-    let w = serde_yml::from_reader::<_, WorkspaceConfiguration>(f)
-        .wrap_err_with(|| {
+    let f = sys.fs_read(&ws_path)?;
+    let w = serde_yml::from_slice::<WorkspaceConfiguration>(&f).wrap_err_with(
+        || {
             format!(
-                "Failed to load workspace configuration '{}'",
+                "Failed to load workspace configuration: '{}'",
                 ws_path.to_string_lossy()
             )
-        })?;
+        },
+    )?;
 
     Ok(w)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use system_traits::impls::InMemorySys;
+    use system_traits::*;
+
+    fn create_sys() -> InMemorySys {
+        let sys = InMemorySys::default();
+
+        sys.fs_create_dir_all("/root/nested/project")
+            .expect("Can't create root dir");
+
+        sys.fs_write(
+            "/root/.env",
+            include_str!("../../test_fixtures/.env.root"),
+        )
+        .expect("Can't write root env file");
+        sys.fs_write(
+            "/root/.env.local",
+            include_str!("../../test_fixtures/.env.root.local"),
+        )
+        .expect("Can't write root local env file");
+
+        sys.fs_write(
+            "/root/nested/.env",
+            include_str!("../../test_fixtures/.env.nested"),
+        )
+        .expect("Can't write nested env file");
+        sys.fs_write(
+            "/root/nested/.env.local",
+            include_str!("../../test_fixtures/.env.nested.local"),
+        )
+        .expect("Can't write nested local env file");
+        sys.fs_write(
+            "/root/nested/project/.env",
+            include_str!("../../test_fixtures/.env.project"),
+        )
+        .expect("Can't write project env file");
+        sys.fs_write(
+            "/root/nested/project/.env.local",
+            include_str!("../../test_fixtures/.env.project.local"),
+        )
+        .expect("Can't write project local env file");
+        sys.fs_write(
+            "/root/workspace.omni.yaml",
+            include_str!("../../test_fixtures/workspace.omni.yaml"),
+        )
+        .expect("Can't write project local env file");
+        sys.env_set_current_dir("/root/nested/project")
+            .expect("Can't set current dir");
+
+        sys
+    }
+
+    fn create_ctx(env: &str) -> Context<InMemorySys> {
+        let sys = create_sys();
+        let cli = &CliArgs {
+            verbose: 0,
+            env_root_dir_marker: None,
+            env_file: vec![
+                ".env".to_string(),
+                ".env.local".to_string(),
+                ".env.{ENV}".to_string(),
+                ".env.{ENV}.local".to_string(),
+            ],
+            env: Some(String::from(env)),
+        };
+
+        Context::from_args_and_sys(cli, sys).expect("Can't create context")
+    }
+
+    #[test]
+    pub fn test_load_env_vars() {
+        let mut ctx = create_ctx("testing");
+
+        ctx.load_env_vars_from_current_dir()
+            .expect("Can't load env vars");
+
+        assert_eq!(
+            ctx.get_env_var("SHARED_ENV"),
+            Some("root-local-nested-local-project-local")
+        );
+    }
 }

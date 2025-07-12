@@ -5,11 +5,8 @@ use async_trait::async_trait;
 use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsCanonicalizeAsync, BaseFsCreateDirAsync,
     BaseFsMetadataAsync, BaseFsReadAsync, BaseFsWriteAsync, EnvCurrentDirAsync,
-    auto_impl, impls::RealFsMetadata,
+    auto_impl, impls::RealFsMetadata, impls::RealSys,
 };
-
-#[derive(Clone, Debug)]
-pub struct TokioRealSysAsync;
 
 async fn spawn_blocking<F, R>(f: F) -> R
 where
@@ -22,7 +19,7 @@ where
 }
 
 #[async_trait]
-impl BaseEnvSetCurrentDirAsync for TokioRealSysAsync {
+impl BaseEnvSetCurrentDirAsync for RealSys {
     async fn base_env_set_current_dir_async(
         &self,
         path: &std::path::Path,
@@ -33,14 +30,14 @@ impl BaseEnvSetCurrentDirAsync for TokioRealSysAsync {
 }
 
 #[async_trait]
-impl EnvCurrentDirAsync for TokioRealSysAsync {
+impl EnvCurrentDirAsync for RealSys {
     async fn env_current_dir_async(&self) -> io::Result<std::path::PathBuf> {
         spawn_blocking(std::env::current_dir).await
     }
 }
 
 #[async_trait]
-impl BaseFsWriteAsync for TokioRealSysAsync {
+impl BaseFsWriteAsync for RealSys {
     async fn base_fs_write_async(
         &self,
         path: &std::path::Path,
@@ -51,7 +48,7 @@ impl BaseFsWriteAsync for TokioRealSysAsync {
 }
 
 #[async_trait]
-impl BaseFsReadAsync for TokioRealSysAsync {
+impl BaseFsReadAsync for RealSys {
     async fn base_fs_read_async(
         &self,
         path: &std::path::Path,
@@ -61,7 +58,7 @@ impl BaseFsReadAsync for TokioRealSysAsync {
 }
 
 #[async_trait]
-impl BaseFsCreateDirAsync for TokioRealSysAsync {
+impl BaseFsCreateDirAsync for RealSys {
     async fn base_fs_create_dir_async(
         &self,
         path: &std::path::Path,
@@ -82,7 +79,7 @@ impl BaseFsCreateDirAsync for TokioRealSysAsync {
 }
 
 #[async_trait]
-impl BaseFsCanonicalizeAsync for TokioRealSysAsync {
+impl BaseFsCanonicalizeAsync for RealSys {
     async fn base_fs_canonicalize_async(
         &self,
         path: &std::path::Path,
@@ -110,7 +107,7 @@ fn to_real_fs_metadata(value: std::fs::Metadata) -> RealFsMetadata {
 }
 
 #[async_trait]
-impl BaseFsMetadataAsync for TokioRealSysAsync {
+impl BaseFsMetadataAsync for RealSys {
     type Metadata = RealFsMetadata;
 
     async fn base_fs_metadata_async(

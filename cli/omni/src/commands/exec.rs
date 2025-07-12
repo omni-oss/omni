@@ -4,7 +4,7 @@ use clap::Args;
 use eyre::Context as _;
 use tokio::process;
 
-use crate::context::Context;
+use crate::{context::Context, utils::dir_walker::create_default_dir_walker};
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
@@ -27,7 +27,7 @@ pub struct ExecCommand {
 }
 
 pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
-    ctx.load_projects()?;
+    ctx.load_projects(&create_default_dir_walker())?;
     let vars = ctx.get_all_env_vars();
     let filter = if let Some(filter) = &command.args.filter {
         filter

@@ -3,7 +3,7 @@ use std::process::Stdio;
 use eyre::{Context as _, OptionExt};
 use tokio::process;
 
-use crate::context::Context;
+use crate::{context::Context, utils::dir_walker::create_default_dir_walker};
 
 #[derive(clap::Args)]
 pub struct RunCommand {
@@ -24,7 +24,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
         eyre::bail!("Task cannot be empty");
     }
 
-    ctx.load_projects()?;
+    ctx.load_projects(&create_default_dir_walker())?;
     let filter = if let Some(filter) = &command.filter {
         filter
     } else {

@@ -128,13 +128,13 @@ where
 #[cfg(test)]
 mod tests {
     use system_traits::{
-        EnvSetCurrentDir, FsCreateDirAll, FsWrite, impls::InMemorySysSync,
+        EnvSetCurrentDir, FsCreateDirAll, FsWrite, impls::InMemorySys,
     };
 
     use super::*;
 
     fn create_sys() -> impl EnvLoaderSys {
-        let sys = InMemorySysSync::default();
+        let sys = InMemorySys::default();
 
         sys.fs_create_dir_all("/root/nested/project")
             .expect("Can't create root dir");

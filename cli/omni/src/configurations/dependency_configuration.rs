@@ -33,10 +33,10 @@ impl<'de> Deserialize<'de> for DependencyConfiguration {
     {
         let s = String::deserialize(deserializer)?;
 
-        if s.contains(":") {
-            let mut split = s.split(":");
-            let project = split.next().unwrap().to_string();
-            let task = split.next().unwrap().to_string();
+        if s.contains("#") {
+            let mut split = s.split("#");
+            let project = split.next().expect("Can't get project").to_string();
+            let task = split.next().expect("Can't get task").to_string();
 
             Ok(DependencyConfiguration { project, task })
         } else {
@@ -56,7 +56,7 @@ impl Serialize for DependencyConfiguration {
         if self.task.is_empty() {
             self.project.serialize(serializer)
         } else {
-            format!("{}:{}", self.project, self.task).serialize(serializer)
+            format!("{}#{}", self.project, self.task).serialize(serializer)
         }
     }
 }
@@ -70,5 +70,34 @@ impl JsonSchema for DependencyConfiguration {
         generator: &mut schemars::SchemaGenerator,
     ) -> schemars::Schema {
         String::json_schema(generator)
+    }
+}
+
+#[cfg(test)]
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_dependency_configuration() {
+        let dc: DependencyConfiguration =
+            serde_json::from_str("\"project#task\"")
+                .expect("Can't parse DependencyConfiguration");
+
+        assert_eq!(dc.project, "project");
+        assert_eq!(dc.task, "task");
+    }
+
+    #[test]
+    fn test_serialize_dependency_configuration() {
+        let dc = DependencyConfiguration {
+            project: "project".to_string(),
+            task: "task".to_string(),
+        };
+
+        let serialized = serde_json::to_string(&dc)
+            .expect("Can't serialize DependencyConfiguration");
+
+        assert_eq!(serialized, "\"project#task\"");
     }
 }
