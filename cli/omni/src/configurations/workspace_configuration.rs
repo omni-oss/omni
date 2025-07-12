@@ -19,9 +19,9 @@ pub struct WorkspaceConfiguration {
 impl WorkspaceConfiguration {
     pub fn load<'a>(
         path: impl Into<&'a Path>,
-        fs: impl FsRead,
+        sys: impl FsRead,
     ) -> eyre::Result<Self> {
-        utils::fs::load_config(path, fs)
+        utils::fs::load_config(path, sys)
     }
 }
 
