@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     path::{Path, PathBuf},
 };
@@ -253,6 +253,28 @@ impl<TSys: ContextSys> Context<TSys> {
             ));
         }
 
+        // check duplicate names
+        let mut names = HashSet::new();
+
+        for project in &projects {
+            if names.contains(&project.name) {
+                let projects = projects
+                    .iter()
+                    .filter(|p| p.name == project.name)
+                    .map(|p| format!("  -> {}", p.dir.display()))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                return Err(eyre::eyre!(
+                    "Duplicate project name: {}\n\nProjects with same name:\n{}",
+                    project.name,
+                    projects
+                ));
+            }
+
+            names.insert(project.name.clone());
+        }
+
         self.projects = Some(projects);
 
         Ok(self
@@ -404,7 +426,7 @@ mod tests {
         .expect("Can't write project local env file");
         sys.fs_write(
             "/root/nested/project-2/project.omni.yaml",
-            include_str!("../../test_fixtures/project-1.omni.yaml"),
+            include_str!("../../test_fixtures/project-2.omni.yaml"),
         )
         .expect("Can't write project config file");
 
@@ -420,8 +442,9 @@ mod tests {
         sys
     }
 
-    fn create_ctx(env: &str) -> Context<InMemorySys> {
-        let sys = create_sys();
+    fn create_ctx(env: &str, sys: Option<InMemorySys>) -> Context<InMemorySys> {
+        let sys = sys.unwrap_or_else(create_sys);
+
         let cli = &CliArgs {
             verbose: 0,
             env_root_dir_marker: None,
@@ -437,8 +460,8 @@ mod tests {
         Context::from_args_and_sys(cli, sys).expect("Can't create context")
     }
 
-    fn create_dir_walker() -> impl dir_walker::DirWalker {
-        let entries = vec![
+    fn create_dir_entries() -> Vec<InMemoryDirEntry> {
+        vec![
             InMemoryDirEntry::new(
                 PathBuf::from("/root"),
                 false,
@@ -459,7 +482,13 @@ mod tests {
                 false,
                 InMemoryMetadata::default(),
             ),
-        ];
+        ]
+    }
+
+    fn create_dir_walker(
+        dir_entries: Option<Vec<InMemoryDirEntry>>,
+    ) -> InMemoryDirWalker {
+        let entries = dir_entries.unwrap_or_else(create_dir_entries);
         let walker = InMemoryDirWalker::new(entries);
 
         walker
@@ -467,7 +496,7 @@ mod tests {
 
     #[test]
     pub fn test_load_env_vars() {
-        let mut ctx = create_ctx("testing");
+        let mut ctx = create_ctx("testing", None);
 
         ctx.load_env_vars_from_current_dir()
             .expect("Can't load env vars");
@@ -480,11 +509,53 @@ mod tests {
 
     #[test]
     fn test_load_projects() {
-        let mut ctx = create_ctx("testing");
+        let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker())
+        ctx.load_projects(&create_dir_walker(None))
             .expect("Can't load projects");
 
-        assert_eq!(ctx.get_projects().expect("Can't get projects").len(), 2);
+        let projects = ctx.get_projects().expect("Can't get projects");
+
+        assert_eq!(projects.len(), 2, "Should be 2 projects");
+
+        let project_1 = projects.iter().find(|p| p.name == "project-1");
+
+        assert!(project_1.is_some() == true, "Can't find project-1");
+
+        let project_2 = projects.iter().find(|p| p.name == "project-2");
+
+        assert!(project_2.is_some() == true, "Can't find project-2");
+    }
+
+    #[test]
+    fn test_load_projects_with_duplicate_names() {
+        let sys = create_sys();
+        sys.fs_create_dir_all("/root/nested/project-3")
+            .expect("Can't create project-3 dir");
+        sys.fs_write(
+            "/root/nested/project-3/project.omni.yaml",
+            include_str!("../../test_fixtures/project-1.omni.yaml"),
+        )
+        .expect("Can't write project config file");
+
+        let mut ctx = create_ctx("testing", Some(sys));
+
+        let mut dir_walker = create_dir_walker(None);
+
+        dir_walker.add(InMemoryDirEntry::new(
+            PathBuf::from("/root/nested/project-3"),
+            false,
+            InMemoryMetadata::default(),
+        ));
+
+        let projects = ctx.load_projects(&dir_walker);
+
+        assert!(
+            projects
+                .expect_err("Should be an error")
+                .to_string()
+                .contains("Duplicate project name: project-1"),
+            "Should report duplicate project name"
+        );
     }
 }
