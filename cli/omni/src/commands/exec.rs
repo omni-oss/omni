@@ -1,10 +1,10 @@
-use std::process::Stdio;
-
 use clap::Args;
-use eyre::Context as _;
-use tokio::process;
+use eyre::OptionExt as _;
 
-use crate::{context::Context, utils::dir_walker::create_default_dir_walker};
+use crate::{
+    context::Context,
+    utils::{self, dir_walker::create_default_dir_walker},
+};
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
@@ -28,48 +28,43 @@ pub struct ExecCommand {
 
 pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     ctx.load_projects(&create_default_dir_walker())?;
-    let vars = ctx.get_all_env_vars();
     let filter = if let Some(filter) = &command.args.filter {
         filter
     } else {
         "*"
     };
-    let projects = ctx.get_filtered_projects(filter)?;
+    let projects = ctx
+        .get_filtered_projects(filter)?
+        .iter()
+        .map(|a| (*a).clone())
+        .collect::<Vec<_>>();
 
     if projects.is_empty() {
         eyre::bail!("No project found for filter: {}", filter);
     }
 
-    let mut cmd = process::Command::new(&command.args.command);
-
-    tracing::debug!(
+    trace::debug!(
         "executing command: {} {:?}",
         command.args.command,
         command.args.args
     );
-    tracing::debug!("Projects: {:?}", projects);
+    trace::debug!("Projects: {:?}", projects);
 
     for p in projects {
-        let exit = cmd
-            .args(&command.args.args)
-            .current_dir(&p.dir)
-            .envs(vars)
-            .stderr(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stdin(Stdio::inherit())
-            .spawn()
-            .wrap_err_with(|| {
-                format!(
-                    "failed to execute command: {} {}",
-                    command.args.command,
-                    command.args.args.join(" ")
-                )
-            })?
-            .wait()
-            .await?;
+        ctx.load_env_vars(
+            p.dir.to_str().ok_or_eyre("Can't convert dir to str")?,
+        )?;
+        let envs = ctx.get_all_env_vars_os();
+        let exit_status = utils::cmd::run(
+            format!("{} {}", command.args.command, command.args.args.join(" "))
+                .as_str(),
+            &p.dir,
+            envs,
+        )
+        .await?;
 
-        if !exit.success() {
-            eyre::bail!("command exited with non-zero status: {}", exit);
+        if exit_status != 0 {
+            eyre::bail!("command exited with non-zero status: {}", exit_status);
         }
     }
 

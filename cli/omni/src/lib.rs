@@ -16,11 +16,11 @@ mod utils;
 fn init_tracing(level: u8) -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(match level {
-            1 => tracing::Level::ERROR,
-            2 => tracing::Level::WARN,
-            3 => tracing::Level::INFO,
-            4 => tracing::Level::DEBUG,
-            5.. => tracing::Level::TRACE,
+            1 => trace::Level::ERROR,
+            2 => trace::Level::WARN,
+            3 => trace::Level::INFO,
+            4 => trace::Level::DEBUG,
+            5.. => trace::Level::TRACE,
             0 => return Ok(()),
         })
         .init();

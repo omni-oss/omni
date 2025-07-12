@@ -15,7 +15,7 @@ derive_more = { workspace = true }
 clap_complete = { workspace = true }
 shadow-rs = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
+trace = { workspace = true, features = ["enabled"] }
 tracing-subscriber = { workspace = true }
 env_loader = { workspace = true }
 serde = { workspace = true }
@@ -34,6 +34,7 @@ system_traits = { workspace = true, features = [
 ] }
 dir_walker = { workspace = true, features = ["ignore", "memory"] }
 tracing-log = { workspace = true }
+deno_task_shell = { workspace = true }
 
 
 [build-dependencies]

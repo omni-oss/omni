@@ -29,10 +29,7 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             if let Some(env) = env {
                 print!("{env}");
             } else {
-                tracing::warn!(
-                    "environmental variable does not exists: {}",
-                    key
-                );
+                trace::warn!("environmental variable does not exists: {}", key);
             }
         }
         EnvSubcommands::All => {

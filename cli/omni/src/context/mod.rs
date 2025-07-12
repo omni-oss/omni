@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -24,6 +25,7 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
     envs_map: HashMap<String, String>,
+    envs_map_os: HashMap<OsString, OsString>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     projects: Option<Vec<Project>>,
@@ -44,6 +46,7 @@ impl<TSys: ContextSys> Context<TSys> {
         sys: TSys,
     ) -> eyre::Result<Context<TSys>> {
         let envs_map = HashMap::new();
+        let envs_map_os = HashMap::new();
 
         let env = cli.env.as_deref().unwrap_or("development");
         let env_files = cli
@@ -63,6 +66,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let ctx = Context {
             projects: None,
             envs_map,
+            envs_map_os,
             env_files,
             workspace: get_workspace_configuration(&root_dir, &sys)?,
             root_dir,
@@ -80,6 +84,10 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn get_env_var(&self, key: &str) -> Option<&str> {
         self.envs_map.get(key).map(|s| s.as_str())
+    }
+
+    pub fn get_current_dir(&self) -> std::io::Result<PathBuf> {
+        self.sys.env_current_dir()
     }
 
     pub fn set_env_var(
@@ -100,6 +108,10 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn get_all_env_vars(&self) -> &HashMap<String, String> {
         &self.envs_map
+    }
+
+    pub fn get_all_env_vars_os(&self) -> &HashMap<OsString, OsString> {
+        &self.envs_map_os
     }
 
     pub fn load_env_vars(
@@ -126,7 +138,13 @@ impl<TSys: ContextSys> Context<TSys> {
         };
 
         let env = env_loader::load(&config, self.sys.clone())?;
+        let env_os = env
+            .iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect::<HashMap<_, _>>();
         self.envs_map.extend(env);
+
+        self.envs_map_os.extend(env_os);
 
         Ok(())
     }
@@ -178,7 +196,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 for project_file in project_files {
                     let p = f.path().join(&project_file);
                     if self.sys.fs_exists(&p)? && self.sys.fs_is_file(p)? {
-                        tracing::debug!("Found project directory: {}", dir);
+                        trace::debug!("Found project directory: {}", dir);
                         paths.push((dir_str, f.path().join(&project_file)));
                         break;
                     }

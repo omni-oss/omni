@@ -1,5 +1,6 @@
 #![feature(decl_macro)]
 
+#[doc(hidden)]
 pub use tracing as _trace_impl;
 pub use tracing::Level;
 

@@ -1,9 +1,9 @@
-use std::process::Stdio;
+use eyre::OptionExt;
 
-use eyre::{Context as _, OptionExt};
-use tokio::process;
-
-use crate::{context::Context, utils::dir_walker::create_default_dir_walker};
+use crate::{
+    context::Context,
+    utils::{self, dir_walker::create_default_dir_walker},
+};
 
 #[derive(clap::Args)]
 pub struct RunCommand {
@@ -39,7 +39,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
 
     let projects = projects.iter().map(|a| (*a).clone()).collect::<Vec<_>>();
 
-    tracing::debug!("Projects: {:?}", projects);
+    trace::debug!("Projects: {:?}", projects);
 
     let mut task_executed = 0;
     for p in projects {
@@ -51,41 +51,24 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
             task_executed += 1;
 
             if task.command.is_empty() {
-                tracing::warn!("Task {} has no command", command.task);
+                trace::warn!("Task {} has no command", command.task);
                 continue;
             } else {
-                tracing::debug!(
+                trace::debug!(
                     "Executing task: {} => {}",
                     command.task,
                     task.command
                 );
             }
 
-            let split = task.command.split_whitespace().collect::<Vec<_>>();
+            let exit_status = utils::cmd::run(
+                &task.command,
+                &p.dir,
+                ctx.get_all_env_vars_os(),
+            )
+            .await?;
 
-            let args = split[1..]
-                .iter()
-                .copied()
-                .chain(command.args.iter().map(|s| s.as_str()))
-                .collect::<Vec<_>>();
-
-            let prog = split[0];
-
-            let exit_status = process::Command::new(prog)
-                .args(&args)
-                .envs(ctx.get_all_env_vars())
-                .current_dir(&p.dir)
-                .stderr(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stdin(Stdio::inherit())
-                .spawn()
-                .wrap_err_with(|| {
-                    format!("failed to execute command: {prog} {args:?}")
-                })?
-                .wait()
-                .await?;
-
-            if !exit_status.success() {
+            if exit_status != 0 {
                 eyre::bail!(
                     "command exited with non-zero status: {}",
                     exit_status
