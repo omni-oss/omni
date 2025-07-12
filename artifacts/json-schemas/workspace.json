@@ -1,20 +1,13 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "WorkspaceConfiguration",
   "type": "object",
-  "required": [
-    "projects"
-  ],
   "properties": {
     "env": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/WorkspaceEnvConfiguration"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/WorkspaceEnvConfiguration",
+      "default": {
+        "files": []
+      }
     },
     "name": {
       "type": [
@@ -27,17 +20,42 @@
       "items": {
         "type": "string"
       }
+    },
+    "scripting": {
+      "$ref": "#/$defs/ScriptingConfiguration",
+      "default": {
+        "js_runtime": "auto"
+      }
     }
   },
-  "definitions": {
+  "required": [
+    "projects"
+  ],
+  "$defs": {
+    "JsRuntime": {
+      "type": "string",
+      "enum": [
+        "deno",
+        "node",
+        "bun",
+        "auto"
+      ]
+    },
+    "ScriptingConfiguration": {
+      "type": "object",
+      "properties": {
+        "js_runtime": {
+          "$ref": "#/$defs/JsRuntime",
+          "default": "auto"
+        }
+      }
+    },
     "WorkspaceEnvConfiguration": {
       "type": "object",
-      "required": [
-        "files"
-      ],
       "properties": {
         "files": {
           "type": "array",
+          "default": [],
           "items": {
             "type": "string"
           }

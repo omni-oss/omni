@@ -302,6 +302,10 @@ impl<TSys: ContextSys> Context<TSys> {
             .filter(|p| matcher.is_match(&p.name))
             .collect())
     }
+
+    pub fn get_workspace_configuration(&self) -> &WorkspaceConfiguration {
+        &self.workspace
+    }
 }
 
 fn get_root_dir(sys: &impl ContextSys) -> eyre::Result<PathBuf> {

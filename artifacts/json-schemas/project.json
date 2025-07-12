@@ -1,22 +1,19 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ProjectConfiguration",
   "type": "object",
-  "required": [
-    "name"
-  ],
   "properties": {
     "dependencies": {
-      "default": [],
       "type": "array",
+      "default": [],
       "items": {
-        "$ref": "#/definitions/String"
+        "$ref": "#/$defs/string"
       }
     },
     "env": {
       "anyOf": [
         {
-          "$ref": "#/definitions/ProjectEnvConfiguration"
+          "$ref": "#/$defs/ProjectEnvConfiguration"
         },
         {
           "type": "null"
@@ -24,12 +21,12 @@
       ]
     },
     "implicit_dependencies": {
-      "default": true,
-      "type": "boolean"
+      "type": "boolean",
+      "default": false
     },
     "implicit_tasks": {
-      "default": true,
-      "type": "boolean"
+      "type": "boolean",
+      "default": false
     },
     "name": {
       "type": "string"
@@ -40,12 +37,15 @@
         "null"
       ],
       "additionalProperties": {
-        "$ref": "#/definitions/TaskConfiguration"
+        "$ref": "#/$defs/TaskConfiguration"
       }
     }
   },
-  "definitions": {
-    "ListConfig_for_String": {
+  "required": [
+    "name"
+  ],
+  "$defs": {
+    "ListConfig": {
       "anyOf": [
         {
           "type": "array",
@@ -55,9 +55,6 @@
         },
         {
           "type": "object",
-          "required": [
-            "append"
-          ],
           "properties": {
             "append": {
               "type": "array",
@@ -65,13 +62,13 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "required": [
+            "append"
+          ]
         },
         {
           "type": "object",
-          "required": [
-            "prepend"
-          ],
           "properties": {
             "prepend": {
               "type": "array",
@@ -79,14 +76,13 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "required": [
+            "prepend"
+          ]
         },
         {
           "type": "object",
-          "required": [
-            "append",
-            "prepend"
-          ],
           "properties": {
             "append": {
               "type": "array",
@@ -100,13 +96,14 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "required": [
+            "append",
+            "prepend"
+          ]
         },
         {
           "type": "object",
-          "required": [
-            "replace"
-          ],
           "properties": {
             "replace": {
               "type": "array",
@@ -114,7 +111,10 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "required": [
+            "replace"
+          ]
         }
       ]
     },
@@ -124,7 +124,7 @@
         "files": {
           "anyOf": [
             {
-              "$ref": "#/definitions/ListConfig_for_String"
+              "$ref": "#/$defs/ListConfig"
             },
             {
               "type": "null"
@@ -133,9 +133,6 @@
         }
       }
     },
-    "String": {
-      "type": "string"
-    },
     "TaskConfiguration": {
       "anyOf": [
         {
@@ -143,27 +140,30 @@
         },
         {
           "type": "object",
-          "required": [
-            "command"
-          ],
           "properties": {
             "command": {
               "type": "string"
             },
             "dependencies": {
-              "default": [],
               "type": "array",
+              "default": [],
               "items": {
-                "$ref": "#/definitions/String"
+                "$ref": "#/$defs/string"
               }
             },
             "merge_project_dependencies": {
-              "default": true,
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             }
-          }
+          },
+          "required": [
+            "command"
+          ]
         }
       ]
+    },
+    "string": {
+      "type": "string"
     }
   }
 }

@@ -67,15 +67,15 @@ pub struct CliArgs {
 #[derive(Subcommand)]
 #[command(rename_all = "kebab-case", about = "")]
 pub enum CliSubcommands {
-    #[command(about = "")]
+    #[command(about = "Output environment variabls values")]
     Env(EnvCommand),
-    #[command(about = "")]
+    #[command(about = "Execute an ad-hoc command in projects")]
     Exec(ExecCommand),
-    #[command(about = "")]
+    #[command(about = "Print configuration schemas in JSON")]
     Config(ConfigCommand),
-    #[command(about = "")]
+    #[command(about = "Print shell completions")]
     Completion(CompletionCommand),
-    #[command(about = "")]
+    #[command(about = "Execute specified task in projects")]
     Run(RunCommand),
     #[command(about = "")]
     JsTest,

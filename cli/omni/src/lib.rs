@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
-use js_runtime::{DelegatingJsRuntime, JsRuntime};
+use js_runtime::{JsRuntime, impls::DelegatingJsRuntime};
 use system_traits::impls::RealSys as RealSysSync;
 
 mod build;
@@ -55,7 +55,11 @@ pub async fn main() -> eyre::Result<()> {
             commands::run::run(run, &mut context).await?;
         }
         CliSubcommands::JsTest => {
-            let mut rt = DelegatingJsRuntime::new(sys.clone());
+            let js_runtime =
+                context.get_workspace_configuration().scripting.js_runtime;
+
+            let mut rt =
+                DelegatingJsRuntime::new(sys.clone(), js_runtime.into());
             rt.run(
                 "console.log('Hello, World!');".into(),
                 Some(context.root_dir()),
