@@ -5,7 +5,7 @@ use petgraph::{
     algo::{is_cyclic_directed, toposort},
     graph::{DiGraph, NodeIndex},
     prelude::EdgeIndex,
-    visit::{DfsPostOrder, EdgeRef},
+    visit::{DfsPostOrder, EdgeRef, Reversed},
 };
 
 use crate::Project;
@@ -117,7 +117,7 @@ impl ProjectGraph {
 
         for project in projects {
             for dependency in project.dependencies {
-                graph.add_dependency_using_names(&project.name, &dependency)?;
+                graph.add_dependency_by_name(&project.name, &dependency)?;
             }
         }
 
@@ -126,6 +126,11 @@ impl ProjectGraph {
 }
 
 impl ProjectGraph {
+    // #[inline(always)]
+    // pub(crate) fn raw_graph(&self) -> &DiGraph<Project, ()> {
+    //     &self.di_graph
+    // }
+
     #[inline(always)]
     pub fn count(&self) -> usize {
         self.di_graph.node_count()
@@ -135,7 +140,7 @@ impl ProjectGraph {
         self.di_graph.node_count() == 0
     }
 
-    pub fn add_project(
+    fn add_project(
         &mut self,
         project: Project,
     ) -> ProjectGraphResult<NodeIndex> {
@@ -154,7 +159,7 @@ impl ProjectGraph {
         self.node_map.contains_key(project_name)
     }
 
-    pub fn add_dependency_using_names(
+    fn add_dependency_by_name(
         &mut self,
         dependent: &str,
         dependee: &str,
@@ -165,7 +170,7 @@ impl ProjectGraph {
         self.add_dependency(dependent, dependee)
     }
 
-    pub fn add_dependency(
+    fn add_dependency(
         &mut self,
         dependent: NodeIndex,
         dependee: NodeIndex,
@@ -198,7 +203,8 @@ impl ProjectGraph {
         Ok(*project_index)
     }
 
-    pub fn get_direct_dependencies_using_name(
+    #[inline(always)]
+    pub fn get_direct_dependencies_by_name(
         &self,
         project_name: &str,
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
@@ -220,14 +226,24 @@ impl ProjectGraph {
         Ok(projects)
     }
 
+    #[inline(always)]
+    pub fn get_all_dependencies_by_name(
+        &self,
+        project_name: &str,
+    ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
+        let project_index = self.get_project_index(project_name)?;
+        self.get_all_dependencies(project_index)
+    }
+
     pub fn get_all_dependencies(
         &self,
         project_index: NodeIndex,
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
         let mut visited_idx = BTreeSet::new();
-        let mut dfs = DfsPostOrder::new(&self.di_graph, project_index);
+        let reversed_graph = Reversed(&self.di_graph);
+        let mut dfs = DfsPostOrder::new(reversed_graph, project_index);
 
-        while let Some(node_index) = dfs.next(&self.di_graph) {
+        while let Some(node_index) = dfs.next(reversed_graph) {
             if visited_idx.contains(&node_index) {
                 continue;
             }
@@ -237,6 +253,7 @@ impl ProjectGraph {
 
         Ok(visited_idx
             .iter()
+            .filter(|ni| **ni != project_index)
             .map(|node_index| (*node_index, self.di_graph[*node_index].clone()))
             .collect())
     }
@@ -351,9 +368,7 @@ mod tests {
         graph.add_project(project2).expect("Can't add project2");
 
         assert!(
-            graph
-                .add_dependency_using_names("project1", "project2")
-                .is_ok(),
+            graph.add_dependency_by_name("project1", "project2").is_ok(),
             "Can't add dependency using names"
         );
     }
@@ -387,7 +402,7 @@ mod tests {
 
         assert!(
             graph
-                .add_dependency_using_names("project1", "project2")
+                .add_dependency_by_name("project1", "project2")
                 .unwrap_err()
                 .kind()
                 == ProjectGraphErrorKind::ProjectNotFound,
@@ -453,7 +468,7 @@ mod tests {
             .expect("Can't add dependency");
 
         let dependencies = graph
-            .get_direct_dependencies_using_name("project1")
+            .get_direct_dependencies_by_name("project1")
             .expect("Can't get dependencies");
 
         assert_eq!(dependencies.len(), 2);
@@ -463,6 +478,39 @@ mod tests {
         assert_eq!(first.1.name, "project3");
         assert_eq!(second.0, project2_index);
         assert_eq!(second.1.name, "project2");
+    }
+
+    #[test]
+    fn test_get_all_dependencies() {
+        let project1 = Project {
+            dependencies: vec!["project2".to_string(), "project3".to_string()],
+            ..create_project("project1")
+        };
+        let project2 = Project {
+            dependencies: vec!["project3".to_string()],
+            ..create_project("project2")
+        };
+        let project3 = Project {
+            ..create_project("project3")
+        };
+
+        let graph =
+            ProjectGraph::from_projects(vec![project1, project2, project3])
+                .expect("Can't create graph");
+
+        let dependencies = graph
+            .get_all_dependencies_by_name("project1")
+            .expect("Can't get dependencies");
+
+        assert_eq!(dependencies.len(), 2);
+
+        let first = &dependencies[0];
+        let second = &dependencies[1];
+        assert_eq!(first.0, graph.get_project_index("project2").unwrap());
+        assert_eq!(first.1.name, "project2");
+
+        assert_eq!(second.0, graph.get_project_index("project3").unwrap());
+        assert_eq!(second.1.name, "project3");
     }
 
     #[test]
@@ -496,7 +544,7 @@ mod tests {
         assert_eq!(graph.count(), 4);
 
         let project1_dependencies = graph
-            .get_direct_dependencies_using_name("project1")
+            .get_direct_dependencies_by_name("project1")
             .expect("Can't get dependencies");
 
         assert_eq!(project1_dependencies.len(), 2);
@@ -510,7 +558,7 @@ mod tests {
         assert_eq!(dep2.1.name, "project3");
 
         let project2_dependencies = graph
-            .get_direct_dependencies_using_name("project2")
+            .get_direct_dependencies_by_name("project2")
             .expect("Can't get dependencies");
 
         assert_eq!(project2_dependencies.len(), 1);
@@ -520,7 +568,7 @@ mod tests {
         assert_eq!(dep1.1.name, "project3");
 
         let project3_dependencies = graph
-            .get_direct_dependencies_using_name("project3")
+            .get_direct_dependencies_by_name("project3")
             .expect("Can't get dependencies");
 
         assert_eq!(project3_dependencies.len(), 1);
