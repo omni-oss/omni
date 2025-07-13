@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use petgraph::{
     Direction,
-    algo::is_cyclic_directed,
+    algo::{is_cyclic_directed, toposort},
     graph::{DiGraph, NodeIndex},
     prelude::EdgeIndex,
-    visit::EdgeRef,
+    visit::{DfsPostOrder, EdgeRef},
 };
 
 use crate::Project;
@@ -44,6 +44,13 @@ impl ProjectGraphError {
         }
     }
 
+    pub fn cycle_detected(project: String) -> Self {
+        Self {
+            kind: ProjectGraphErrorKind::CycleDetected,
+            source: ProjectGraphErrorInner::CycleDetected { project },
+        }
+    }
+
     pub fn unknown(source: eyre::Report) -> Self {
         Self {
             kind: ProjectGraphErrorKind::Unknown,
@@ -69,6 +76,9 @@ enum ProjectGraphErrorInner {
     #[error("Adding dependency from '{from}' to '{to}' will create a cycle")]
     CyclicDependency { from: String, to: String },
 
+    #[error("Cycle detected")]
+    CycleDetected { project: String },
+
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
 }
@@ -78,6 +88,7 @@ pub enum ProjectGraphErrorKind {
     ProjectAlreadyExists,
     ProjectNotFound,
     CyclicDependency,
+    CycleDetected,
     Unknown,
 }
 
@@ -151,10 +162,10 @@ impl ProjectGraph {
         let dependent = self.get_project_index(dependent)?;
         let dependee = self.get_project_index(dependee)?;
 
-        self.add_dependency_using_index(dependent, dependee)
+        self.add_dependency(dependent, dependee)
     }
 
-    pub fn add_dependency_using_index(
+    pub fn add_dependency(
         &mut self,
         dependent: NodeIndex,
         dependee: NodeIndex,
@@ -187,16 +198,16 @@ impl ProjectGraph {
         Ok(*project_index)
     }
 
-    pub fn get_dependencies_using_name(
+    pub fn get_direct_dependencies_using_name(
         &self,
         project_name: &str,
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
         let project_index = self.get_project_index(project_name)?;
 
-        self.get_dependencies_using_index(project_index)
+        self.get_direct_dependencies(project_index)
     }
 
-    pub fn get_dependencies_using_index(
+    pub fn get_direct_dependencies(
         &self,
         project_index: NodeIndex,
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
@@ -204,6 +215,82 @@ impl ProjectGraph {
             .di_graph
             .edges_directed(project_index, Direction::Incoming)
             .map(|edge| (edge.source(), self.di_graph[edge.source()].clone()))
+            .collect::<Vec<_>>();
+
+        Ok(projects)
+    }
+
+    pub fn get_all_dependencies(
+        &self,
+        project_index: NodeIndex,
+    ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
+        let mut visited_idx = BTreeSet::new();
+        let mut dfs = DfsPostOrder::new(&self.di_graph, project_index);
+
+        while let Some(node_index) = dfs.next(&self.di_graph) {
+            if visited_idx.contains(&node_index) {
+                continue;
+            }
+
+            visited_idx.insert(node_index);
+        }
+
+        Ok(visited_idx
+            .iter()
+            .map(|node_index| (*node_index, self.di_graph[*node_index].clone()))
+            .collect())
+    }
+
+    pub fn get_project(
+        &self,
+        project_index: NodeIndex,
+    ) -> ProjectGraphResult<&Project> {
+        Ok(&self.di_graph[project_index])
+    }
+
+    pub fn get_project_mut(
+        &mut self,
+        project_index: NodeIndex,
+    ) -> ProjectGraphResult<&mut Project> {
+        Ok(&mut self.di_graph[project_index])
+    }
+
+    pub fn get_project_by_name(
+        &self,
+        project_name: &str,
+    ) -> ProjectGraphResult<&Project> {
+        let project_index = self.get_project_index(project_name)?;
+        self.get_project(project_index)
+    }
+
+    pub fn get_project_by_name_mut(
+        &mut self,
+        project_name: &str,
+    ) -> ProjectGraphResult<&mut Project> {
+        let project_index = self.get_project_index(project_name)?;
+        self.get_project_mut(project_index)
+    }
+
+    pub fn get_projects(&self) -> ProjectGraphResult<Vec<&Project>> {
+        let projects = self
+            .di_graph
+            .node_indices()
+            .map(|node_index| &self.di_graph[node_index])
+            .collect::<Vec<_>>();
+
+        Ok(projects)
+    }
+
+    pub fn get_projects_toposorted(&self) -> ProjectGraphResult<Vec<&Project>> {
+        let indices = toposort(&self.di_graph, None).map_err(|c| {
+            ProjectGraphError::cycle_detected(
+                self.di_graph[c.node_id()].name.clone(),
+            )
+        })?;
+
+        let projects = indices
+            .iter()
+            .map(|node_index| &self.di_graph[*node_index])
             .collect::<Vec<_>>();
 
         Ok(projects)
@@ -284,9 +371,7 @@ mod tests {
             graph.add_project(project2).expect("Can't add project2");
 
         assert!(
-            graph
-                .add_dependency_using_index(project1_index, project2_index)
-                .is_ok(),
+            graph.add_dependency(project1_index, project2_index).is_ok(),
             "Can't add dependency using index"
         );
     }
@@ -323,12 +408,12 @@ mod tests {
             graph.add_project(project2).expect("Can't add project2");
 
         graph
-            .add_dependency_using_index(project1_index, project2_index)
+            .add_dependency(project1_index, project2_index)
             .expect("Can't add dependency");
 
         assert!(
             graph
-                .add_dependency_using_index(project2_index, project1_index)
+                .add_dependency(project2_index, project1_index)
                 .unwrap_err()
                 .kind()
                 == ProjectGraphErrorKind::CyclicDependency,
@@ -355,20 +440,20 @@ mod tests {
             graph.add_project(project4).expect("Can't add project4");
 
         graph
-            .add_dependency_using_index(project1_index, project2_index)
+            .add_dependency(project1_index, project2_index)
             .expect("Can't add dependency");
 
         graph
-            .add_dependency_using_index(project1_index, project3_index)
+            .add_dependency(project1_index, project3_index)
             .expect("Can't add dependency");
 
         // To check that we don't get project that is not a dependency
         graph
-            .add_dependency_using_index(project2_index, project4_index)
+            .add_dependency(project2_index, project4_index)
             .expect("Can't add dependency");
 
         let dependencies = graph
-            .get_dependencies_using_name("project1")
+            .get_direct_dependencies_using_name("project1")
             .expect("Can't get dependencies");
 
         assert_eq!(dependencies.len(), 2);
@@ -411,7 +496,7 @@ mod tests {
         assert_eq!(graph.count(), 4);
 
         let project1_dependencies = graph
-            .get_dependencies_using_name("project1")
+            .get_direct_dependencies_using_name("project1")
             .expect("Can't get dependencies");
 
         assert_eq!(project1_dependencies.len(), 2);
@@ -425,7 +510,7 @@ mod tests {
         assert_eq!(dep2.1.name, "project3");
 
         let project2_dependencies = graph
-            .get_dependencies_using_name("project2")
+            .get_direct_dependencies_using_name("project2")
             .expect("Can't get dependencies");
 
         assert_eq!(project2_dependencies.len(), 1);
@@ -435,7 +520,7 @@ mod tests {
         assert_eq!(dep1.1.name, "project3");
 
         let project3_dependencies = graph
-            .get_dependencies_using_name("project3")
+            .get_direct_dependencies_using_name("project3")
             .expect("Can't get dependencies");
 
         assert_eq!(project3_dependencies.len(), 1);

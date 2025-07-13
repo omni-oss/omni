@@ -78,7 +78,7 @@ regex = { version = "^1.11.1" }
 lazy-regex = { version = "^3.4.1" }
 env = { path = "./crates/env" }
 env_loader = { path = "./crates/env_loader" }
-petgraph = { version = "^0.8.2" }
+petgraph = { version = "^0.8.2", features = ["serde-1", "rayon"] }
 omni_core = { path = "./crates/omni_core" }
 config_utils = { path = "./crates/config_utils" }
 js_runtime = { path = "./crates/js_runtime" }
