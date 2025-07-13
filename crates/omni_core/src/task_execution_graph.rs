@@ -1,10 +1,14 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use derive_more::Constructor;
 use petgraph::{
     Direction,
     algo::is_cyclic_directed,
     graph::{DiGraph, NodeIndex},
+    visit::{Dfs, Topo, Walker},
 };
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
@@ -117,27 +121,26 @@ fn add_upstream_dependencies(
     }
 
     for (_, p) in dependencies.iter() {
-        let dependent_key = if p.tasks.contains_key(task) {
+        if p.tasks.contains_key(task) {
             let k = TaskKey::new(p.name.as_str(), task);
 
             if !task_graph.contains_dependency_by_key(dependent_key, &k)? {
                 task_graph.add_edge_using_keys(dependent_key, &k)?;
             }
-
-            &TaskKey::new(p.name.as_str(), task)
         } else {
-            dependent_key
+            add_upstream_dependencies(
+                project_graph,
+                task_graph,
+                &p,
+                dependent_key,
+                task,
+            )?;
         };
-        add_upstream_dependencies(
-            project_graph,
-            task_graph,
-            &p,
-            dependent_key,
-            task,
-        )?;
     }
     Ok(())
 }
+
+pub type BatchedExecutionPlan<'a> = Vec<Vec<TaskExecutionNode<'a>>>;
 
 impl<'a> TaskExecutionGraph<'a> {
     fn contains_dependency_by_key(
@@ -269,6 +272,97 @@ impl<'a> TaskExecutionGraph<'a> {
             })
             .collect())
     }
+
+    pub fn get_batched_execution_plan(
+        &self,
+        is_root_node: impl Fn(&TaskExecutionNode<'a>) -> bool,
+    ) -> TaskExecutionGraphResult<BatchedExecutionPlan<'a>> {
+        let mut roots = HashSet::new();
+
+        // Step 1: Get all nodes that match the predicate
+        for node in self.di_graph.node_indices() {
+            if is_root_node(&self.di_graph[node]) {
+                roots.insert(node);
+            }
+        }
+
+        let mut filtered = vec![];
+
+        let reversed_graph = &self.di_graph;
+        // Step 2: Filter out nodes that are direct or indirect dependencies of other nodes
+        for i in roots.iter() {
+            let other_roots = roots
+                .difference(&HashSet::from([*i]))
+                .copied()
+                .collect::<HashSet<_>>();
+            let dfs = Dfs::new(&reversed_graph, *i);
+
+            if dfs.iter(&reversed_graph).any(|n| other_roots.contains(&n)) {
+                continue;
+            }
+
+            filtered.push(*i);
+        }
+
+        // Step 3: Get all reachable nodes based from filtered roots
+        let mut reachable = HashSet::new();
+        let mut stack = filtered.clone();
+        while let Some(i) = stack.pop() {
+            if reachable.insert(i) {
+                for n in
+                    self.di_graph.neighbors_directed(i, Direction::Incoming)
+                {
+                    stack.push(n);
+                }
+            }
+        }
+
+        // Step 4: Assign levels = max(level of predecessors) + 1
+        let mut levels = HashMap::new();
+        let mut topo = Topo::new(&self.di_graph);
+
+        while let Some(node) = topo.next(&self.di_graph) {
+            if !reachable.contains(&node) {
+                continue;
+            }
+
+            let level = self
+                .di_graph
+                .neighbors_directed(node, Direction::Incoming)
+                .filter(|n| reachable.contains(n))
+                .map(|n| levels.get(&n).copied().unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+
+            levels.insert(node, level + 1);
+        }
+
+        // Step 5: Group nodes by level
+        let mut batches: HashMap<usize, Vec<NodeIndex>> = HashMap::new();
+
+        for (node, level) in levels {
+            batches.entry(level).or_default().push(node);
+        }
+
+        // Step 6: Collect sorted batches
+        let mut ordered_batches = Vec::new();
+        let mut levels = batches.keys().copied().collect::<Vec<_>>();
+        levels.sort();
+
+        for level in levels {
+            ordered_batches.push(batches.get(&level).unwrap().clone());
+        }
+
+        Ok(ordered_batches
+            .into_iter()
+            .map(|batch| {
+                batch
+                    .into_iter()
+                    .map(|node| self.di_graph[node].clone())
+                    .collect()
+            })
+            .collect())
+    }
 }
 
 impl<'a> TaskExecutionGraph<'a> {}
@@ -345,7 +439,7 @@ enum TaskExecutionGraphErrorInner {
     TaskNotFound { project: String, task: String },
 
     #[error(
-        "Cyclic dependency detected from '{from_project}:{from_task}' to '{to_project}:{to_task}'"
+        "Cyclic dependency detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
     )]
     CyclicDependency {
         from_project: String,
@@ -397,7 +491,9 @@ mod tests {
         let project2 = Project {
             dependencies: vec![dep("project3")],
             tasks: TasksBuilder::new()
-                .task("shared-task", "echo shared-task", |b| b)
+                .task("shared-task", "echo shared-task", |b| {
+                    b.upstream_dependency("shared-task")
+                })
                 .task("p2t1", "echo p2t1", |b| b)
                 .build(),
             ..create_project("project2")
@@ -525,5 +621,20 @@ mod tests {
         );
         assert_eq!(p1t3_dependency.1.task_name, "shared-task-2");
         assert_eq!(p1t3_dependency.1.project_name, "project3");
+    }
+
+    #[test]
+    fn test_batched_execution_plan() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let execution_plan = task_graph
+            .get_batched_execution_plan(|n| n.task_name == "shared-task")
+            .unwrap();
+
+        println!("{:#?}", execution_plan);
+
+        assert!(false);
     }
 }
