@@ -6,7 +6,7 @@ use std::{
 
 use dir_walker::{DirEntry as _, DirWalker};
 use env_loader::EnvLoaderError;
-use eyre::Context as _;
+use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobSetBuilder};
 use system_traits::{
     EnvCurrentDir, EnvVar, FsCanonicalize, FsMetadata, FsRead, auto_impl,
@@ -15,9 +15,7 @@ use system_traits::{
 
 use crate::{
     commands::CliArgs,
-    configurations::{
-        ProjectConfiguration, TaskConfiguration, WorkspaceConfiguration,
-    },
+    configurations::{ProjectConfiguration, WorkspaceConfiguration},
     constants,
     core::{Project, Task},
 };
@@ -216,38 +214,18 @@ impl<TSys: ContextSys> Context<TSys> {
                         )
                     })?;
 
-            let project_dependencies = project.dependencies.to_vec();
             projects.push(Project::new(
                 project.name,
                 PathBuf::from(dir),
-                project
-                    .dependencies
-                    .iter()
-                    .cloned()
-                    .map(Into::into)
-                    .collect(),
+                project.dependencies.to_vec(),
                 project
                     .tasks
                     .unwrap_or_default()
                     .iter()
-                    .map(|(k, v)| {
-                        let mut mapped: Task = v.clone().into();
+                    .map(|(task_name, v)| {
+                        let mapped: Task = v.clone().into();
 
-                        if let TaskConfiguration::LongForm {
-                            merge_project_dependencies: merge_dependencies,
-                            ..
-                        } = v
-                            && *merge_dependencies
-                        {
-                            mapped.dependencies.extend(
-                                project_dependencies
-                                    .iter()
-                                    .cloned()
-                                    .map(Into::into),
-                            );
-                        }
-
-                        (k.clone(), mapped)
+                        (task_name.clone(), mapped)
                     })
                     .collect(),
             ));
@@ -291,6 +269,15 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
         glob_filter: &str,
     ) -> eyre::Result<Vec<&Project>> {
+        // short circuit if glob_filter is *, micro-optimization
+        if glob_filter == "*" || glob_filter == "**" {
+            return Ok(self
+                .get_projects()
+                .wrap_err("Failed to get projects")?
+                .iter()
+                .collect());
+        }
+
         let glob = Glob::new(glob_filter)?;
         let matcher = glob.compile_matcher();
         let result = self

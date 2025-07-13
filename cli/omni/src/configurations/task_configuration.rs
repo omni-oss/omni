@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::Task;
 
-use super::DependencyConfiguration;
+use super::TaskDependencyConfiguration;
 
 fn default_true() -> bool {
     true
@@ -16,7 +16,7 @@ pub enum TaskConfiguration {
     LongForm {
         command: String,
         #[serde(default)]
-        dependencies: Vec<DependencyConfiguration>,
+        dependencies: Vec<TaskDependencyConfiguration>,
         #[serde(default = "default_true")]
         merge_project_dependencies: bool,
     },

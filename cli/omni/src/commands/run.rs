@@ -17,6 +17,12 @@ pub struct RunCommand {
         help = "Run the command based on the project name matching the filter"
     )]
     filter: Option<String>,
+    #[arg(
+        long,
+        short,
+        help = "Run the command ignoring the dependencies of each project"
+    )]
+    ignore_dependencies: bool,
 }
 
 pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {

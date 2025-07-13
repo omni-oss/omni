@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use petgraph::{
+    Direction,
     algo::is_cyclic_directed,
     graph::{DiGraph, NodeIndex},
     prelude::EdgeIndex,
@@ -8,21 +9,6 @@ use petgraph::{
 };
 
 use crate::Project;
-
-#[derive(Debug, Default)]
-pub struct ProjectGraph {
-    di_graph: DiGraph<Project, ()>,
-    node_map: HashMap<String, NodeIndex>,
-}
-
-impl ProjectGraph {
-    pub fn new() -> Self {
-        Self {
-            di_graph: DiGraph::new(),
-            node_map: HashMap::new(),
-        }
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("ProjectGraphError: {source}")]
@@ -97,7 +83,47 @@ pub enum ProjectGraphErrorKind {
 
 pub type ProjectGraphResult<T> = Result<T, ProjectGraphError>;
 
+#[derive(Debug, Default)]
+pub struct ProjectGraph {
+    di_graph: DiGraph<Project, ()>,
+    node_map: HashMap<String, NodeIndex>,
+}
+
 impl ProjectGraph {
+    pub fn new() -> Self {
+        Self {
+            di_graph: DiGraph::new(),
+            node_map: HashMap::new(),
+        }
+    }
+
+    pub fn from_projects(projects: Vec<Project>) -> ProjectGraphResult<Self> {
+        let mut graph = Self::new();
+
+        for project in projects.clone() {
+            graph.add_project(project)?;
+        }
+
+        for project in projects {
+            for dependency in project.dependencies {
+                graph.add_dependency_using_names(&project.name, &dependency)?;
+            }
+        }
+
+        Ok(graph)
+    }
+}
+
+impl ProjectGraph {
+    #[inline(always)]
+    pub fn count(&self) -> usize {
+        self.di_graph.node_count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.di_graph.node_count() == 0
+    }
+
     pub fn add_project(
         &mut self,
         project: Project,
@@ -119,24 +145,24 @@ impl ProjectGraph {
 
     pub fn add_dependency_using_names(
         &mut self,
-        from: &str,
-        to: &str,
+        dependent: &str,
+        dependee: &str,
     ) -> ProjectGraphResult<EdgeIndex> {
-        let from_index = self.get_project_index(from)?;
-        let to_index = self.get_project_index(to)?;
+        let dependent = self.get_project_index(dependent)?;
+        let dependee = self.get_project_index(dependee)?;
 
-        self.add_dependency_using_index(from_index, to_index)
+        self.add_dependency_using_index(dependent, dependee)
     }
 
     pub fn add_dependency_using_index(
         &mut self,
-        from: NodeIndex,
-        to: NodeIndex,
+        dependent: NodeIndex,
+        dependee: NodeIndex,
     ) -> ProjectGraphResult<EdgeIndex> {
-        let idx = self.di_graph.add_edge(from, to, ());
+        let idx = self.di_graph.add_edge(dependee, dependent, ());
 
-        let from_project = self.di_graph[from].name.clone();
-        let to_project = self.di_graph[to].name.clone();
+        let from_project = self.di_graph[dependent].name.clone();
+        let to_project = self.di_graph[dependee].name.clone();
 
         if is_cyclic_directed(&self.di_graph) {
             self.di_graph.remove_edge(idx);
@@ -176,8 +202,8 @@ impl ProjectGraph {
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
         let projects = self
             .di_graph
-            .edges(project_index)
-            .map(|edge| (edge.target(), self.di_graph[edge.target()].clone()))
+            .edges_directed(project_index, Direction::Incoming)
+            .map(|edge| (edge.source(), self.di_graph[edge.source()].clone()))
             .collect::<Vec<_>>();
 
         Ok(projects)
@@ -205,8 +231,8 @@ mod tests {
 
         let project_index = graph.add_project(project).unwrap();
 
-        assert_eq!(graph.node_map.len(), 1);
-        assert_eq!(graph.node_map.get("project1").unwrap(), &project_index);
+        assert_eq!(graph.count(), 1);
+        assert_eq!(graph.get_project_index("project1").unwrap(), project_index);
     }
 
     #[test]
@@ -317,6 +343,7 @@ mod tests {
         let project1 = create_project("project1");
         let project2 = create_project("project2");
         let project3 = create_project("project3");
+        let project4 = create_project("project4");
 
         let project1_index =
             graph.add_project(project1).expect("Can't add project1");
@@ -324,6 +351,8 @@ mod tests {
             graph.add_project(project2).expect("Can't add project2");
         let project3_index =
             graph.add_project(project3).expect("Can't add project3");
+        let project4_index =
+            graph.add_project(project4).expect("Can't add project4");
 
         graph
             .add_dependency_using_index(project1_index, project2_index)
@@ -331,6 +360,11 @@ mod tests {
 
         graph
             .add_dependency_using_index(project1_index, project3_index)
+            .expect("Can't add dependency");
+
+        // To check that we don't get project that is not a dependency
+        graph
+            .add_dependency_using_index(project2_index, project4_index)
             .expect("Can't add dependency");
 
         let dependencies = graph
@@ -344,6 +378,71 @@ mod tests {
         assert_eq!(first.1.name, "project3");
         assert_eq!(second.0, project2_index);
         assert_eq!(second.1.name, "project2");
+    }
+
+    #[test]
+    fn test_from_projects() {
+        fn dep(name: &str) -> String {
+            name.to_string()
+        }
+
+        let project1 = Project {
+            dependencies: vec![dep("project2"), dep("project3")],
+            ..create_project("project1")
+        };
+
+        let project2 = Project {
+            dependencies: vec![dep("project3")],
+            ..create_project("project2")
+        };
+
+        let project3 = Project {
+            dependencies: vec![dep("project4")],
+            ..create_project("project3")
+        };
+
+        let project4 = create_project("project4");
+
+        let graph = ProjectGraph::from_projects(vec![
+            project1, project2, project3, project4,
+        ])
+        .expect("Can't create graph");
+
+        assert_eq!(graph.count(), 4);
+
+        let project1_dependencies = graph
+            .get_dependencies_using_name("project1")
+            .expect("Can't get dependencies");
+
+        assert_eq!(project1_dependencies.len(), 2);
+
+        let dep1 = &project1_dependencies[1];
+        let dep2 = &project1_dependencies[0];
+
+        assert_eq!(dep1.0, graph.get_project_index("project2").unwrap());
+        assert_eq!(dep1.1.name, "project2");
+        assert_eq!(dep2.0, graph.get_project_index("project3").unwrap());
+        assert_eq!(dep2.1.name, "project3");
+
+        let project2_dependencies = graph
+            .get_dependencies_using_name("project2")
+            .expect("Can't get dependencies");
+
+        assert_eq!(project2_dependencies.len(), 1);
+
+        let dep1 = &project2_dependencies[0];
+        assert_eq!(dep1.0, graph.get_project_index("project3").unwrap());
+        assert_eq!(dep1.1.name, "project3");
+
+        let project3_dependencies = graph
+            .get_dependencies_using_name("project3")
+            .expect("Can't get dependencies");
+
+        assert_eq!(project3_dependencies.len(), 1);
+
+        let dep1 = &project3_dependencies[0];
+        assert_eq!(dep1.0, graph.get_project_index("project4").unwrap());
+        assert_eq!(dep1.1.name, "project4");
     }
 
     #[test]

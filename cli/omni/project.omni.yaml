@@ -4,6 +4,8 @@ name: omni-cli
 tasks:
   list:
     command: ls -la
+    dependencies:
+      - ^build
 
 dependencies:
   - deno_core
