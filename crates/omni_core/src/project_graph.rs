@@ -8,7 +8,7 @@ use petgraph::{
     visit::{DfsPostOrder, EdgeRef, Reversed},
 };
 
-use crate::Project;
+use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
 #[derive(Debug, thiserror::Error)]
 #[error("ProjectGraphError: {source}")]
@@ -312,6 +312,12 @@ impl ProjectGraph {
 
         Ok(projects)
     }
+
+    pub fn get_task_execution_graph<'a>(
+        &'a self,
+    ) -> TaskExecutionGraphResult<TaskExecutionGraph<'a>> {
+        TaskExecutionGraph::from_project_graph(self)
+    }
 }
 
 #[cfg(test)]
@@ -587,5 +593,13 @@ mod tests {
         graph.add_project(project1).expect("Can't add project1");
 
         assert!(graph.is_project_exists("project1"), "Project1 should exist");
+    }
+
+    #[test]
+    fn test_get_task_execution_graph() {
+        let project_graph = ProjectGraph::new();
+        let task_graph = project_graph.get_task_execution_graph();
+
+        assert!(task_graph.is_ok(), "Should be able to get task graph");
     }
 }
