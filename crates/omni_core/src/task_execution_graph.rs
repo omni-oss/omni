@@ -13,7 +13,7 @@ use petgraph::{
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
-#[derive(Debug, Clone, Constructor)]
+#[derive(Debug, Clone, Constructor, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TaskExecutionNode<'a> {
     pub task_name: &'a str,
     pub project_name: &'a str,
@@ -288,16 +288,16 @@ impl<'a> TaskExecutionGraph<'a> {
 
         let mut filtered = vec![];
 
-        let reversed_graph = &self.di_graph;
+        let graph = &self.di_graph;
         // Step 2: Filter out nodes that are direct or indirect dependencies of other nodes
         for i in roots.iter() {
             let other_roots = roots
                 .difference(&HashSet::from([*i]))
                 .copied()
                 .collect::<HashSet<_>>();
-            let dfs = Dfs::new(&reversed_graph, *i);
+            let dfs = Dfs::new(&graph, *i);
 
-            if dfs.iter(&reversed_graph).any(|n| other_roots.contains(&n)) {
+            if dfs.iter(&graph).any(|n| other_roots.contains(&n)) {
                 continue;
             }
 
@@ -483,6 +483,10 @@ mod tests {
                 })
                 .task("p1t4", "echo p1t2", |b| {
                     b.explicit_project_dependency("project3", "p3t1")
+                        .own_dependency("shared-task-3")
+                })
+                .task("shared-task-3", "echo shared-task-3", |b| {
+                    b.upstream_dependency("shared-task-3")
                 })
                 .build(),
             ..create_project("project1")
@@ -495,6 +499,10 @@ mod tests {
                     b.upstream_dependency("shared-task")
                 })
                 .task("p2t1", "echo p2t1", |b| b)
+                .task("shared-task-3", "echo shared-task-3", |b| {
+                    b.explicit_project_dependency("project3", "shared-task-3")
+                        .own_dependency("p2t1")
+                })
                 .build(),
             ..create_project("project2")
         };
@@ -505,11 +513,20 @@ mod tests {
                 .task("p3t1", "echo p3t1", |b| b)
                 .task("shared-task-2", "echo shared-task-2", |b| b)
                 .task("shared-task", "echo shared-task", |b| b)
+                .task("shared-task-3", "echo shared-task-3", |b| {
+                    b.upstream_dependency("shared-task-3")
+                })
                 .build(),
             ..create_project("project3")
         };
 
-        let project4 = create_project("project4");
+        let project4 = Project {
+            tasks: TasksBuilder::new()
+                .task("p4t1", "echo p4t1", |b| b)
+                .task("shared-task-3", "echo shared-task-3", |b| b)
+                .build(),
+            ..create_project("project4")
+        };
 
         ProjectGraph::from_projects(vec![
             project1, project2, project3, project4,
@@ -523,7 +540,7 @@ mod tests {
         let task_graph =
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
-        assert_eq!(task_graph.count(), 9, "Should have 8 nodes");
+        assert_eq!(task_graph.count(), 14, "Should have 14 nodes");
     }
 
     #[test]
@@ -556,15 +573,34 @@ mod tests {
             .get_direct_dependencies_by_name("project1", "p1t4")
             .unwrap();
 
-        assert_eq!(p1t4_dependencies.len(), 1);
+        assert_eq!(p1t4_dependencies.len(), 2);
 
-        let p1t4_dependency = &p1t4_dependencies[0];
+        let p1t4_dependency_1 = &p1t4_dependencies
+            .iter()
+            .find(|d| d.1.task_name == "p3t1")
+            .unwrap();
         assert_eq!(
-            p1t4_dependency.0,
+            p1t4_dependency_1.0,
             task_graph.get_task_index("project3", "p3t1").unwrap()
         );
-        assert_eq!(p1t4_dependency.1.task_name, "p3t1");
-        assert_eq!(p1t4_dependency.1.project_name, "project3");
+        assert_eq!(p1t4_dependency_1.1.task_name, "p3t1");
+        assert_eq!(p1t4_dependency_1.1.project_name, "project3");
+
+        let p1t4_dependency_2 = &p1t4_dependencies
+            .iter()
+            .find(|d| {
+                d.1.project_name == "project1"
+                    && d.1.task_name == "shared-task-3"
+            })
+            .unwrap();
+        assert_eq!(
+            p1t4_dependency_2.0,
+            task_graph
+                .get_task_index("project1", "shared-task-3")
+                .unwrap()
+        );
+        assert_eq!(p1t4_dependency_2.1.task_name, "shared-task-3");
+        assert_eq!(p1t4_dependency_2.1.project_name, "project1");
     }
 
     #[test]
@@ -629,12 +665,60 @@ mod tests {
         let task_graph =
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
-        let execution_plan = task_graph
-            .get_batched_execution_plan(|n| n.task_name == "shared-task")
+        let mut actual_plan = task_graph
+            .get_batched_execution_plan(|n| n.task_name == "p1t4")
             .unwrap();
 
-        println!("{:#?}", execution_plan);
+        actual_plan.iter_mut().for_each(|batch| {
+            batch.sort();
+        });
 
-        assert!(false);
+        let blank_path = Path::new("");
+
+        let mut expected_plan = vec![
+            vec![
+                TaskExecutionNode {
+                    task_name: "p3t1",
+                    project_name: "project3",
+                    project_dir: blank_path,
+                },
+                TaskExecutionNode {
+                    task_name: "p2t1",
+                    project_name: "project2",
+                    project_dir: blank_path,
+                },
+                TaskExecutionNode {
+                    task_name: "shared-task-3",
+                    project_name: "project4",
+                    project_dir: blank_path,
+                },
+            ],
+            vec![TaskExecutionNode {
+                task_name: "shared-task-3",
+                project_name: "project3",
+                project_dir: blank_path,
+            }],
+            vec![TaskExecutionNode {
+                task_name: "shared-task-3",
+                project_name: "project2",
+                project_dir: blank_path,
+            }],
+            vec![TaskExecutionNode {
+                task_name: "shared-task-3",
+                project_name: "project1",
+                project_dir: blank_path,
+            }],
+            vec![TaskExecutionNode {
+                task_name: "p1t4",
+                project_name: "project1",
+                project_dir: blank_path,
+            }],
+        ];
+
+        expected_plan.iter_mut().for_each(|batch| {
+            batch.sort();
+        });
+
+        assert_eq!(actual_plan, expected_plan);
     }
 }
