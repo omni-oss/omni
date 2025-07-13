@@ -431,6 +431,47 @@ mod tests {
     }
 
     #[test]
+    fn test_own_dependency_handling() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let p1t1_dependencies = task_graph
+            .get_direct_dependencies_by_name("project1", "p1t1")
+            .unwrap();
+
+        assert_eq!(p1t1_dependencies.len(), 1);
+
+        let p1t1_dependency = &p1t1_dependencies[0];
+        assert_eq!(
+            p1t1_dependency.0,
+            task_graph.get_task_index("project1", "p1t2").unwrap()
+        );
+        assert_eq!(p1t1_dependency.1.task_name, "p1t2");
+    }
+
+    #[test]
+    fn test_explicit_project_dependency_handling() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let p1t4_dependencies = task_graph
+            .get_direct_dependencies_by_name("project1", "p1t4")
+            .unwrap();
+
+        assert_eq!(p1t4_dependencies.len(), 1);
+
+        let p1t4_dependency = &p1t4_dependencies[0];
+        assert_eq!(
+            p1t4_dependency.0,
+            task_graph.get_task_index("project3", "p3t1").unwrap()
+        );
+        assert_eq!(p1t4_dependency.1.task_name, "p3t1");
+        assert_eq!(p1t4_dependency.1.project_name, "project3");
+    }
+
+    #[test]
     fn test_upstream_dependency_handling() {
         let project_graph = create_project_graph();
 
