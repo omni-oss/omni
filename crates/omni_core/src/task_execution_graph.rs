@@ -376,6 +376,7 @@ pub struct TaskExecutionGraphError {
 }
 
 impl TaskExecutionGraphError {
+    #[doc(hidden)]
     pub fn project_graph(source: ProjectGraphError) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::ProjectGraph,
@@ -383,6 +384,7 @@ impl TaskExecutionGraphError {
         }
     }
 
+    #[doc(hidden)]
     pub fn task_not_found(project: &str, task: &str) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::TaskNotFound,
@@ -393,6 +395,7 @@ impl TaskExecutionGraphError {
         }
     }
 
+    #[doc(hidden)]
     pub fn cyclic_dependency(
         from_project: &str,
         from_task: &str,

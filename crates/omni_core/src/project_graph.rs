@@ -7,6 +7,7 @@ use petgraph::{
     prelude::EdgeIndex,
     visit::{DfsPostOrder, EdgeRef, Reversed},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
@@ -94,7 +95,7 @@ pub enum ProjectGraphErrorKind {
 
 pub type ProjectGraphResult<T> = Result<T, ProjectGraphError>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ProjectGraph {
     di_graph: DiGraph<Project, ()>,
     node_map: HashMap<String, NodeIndex>,

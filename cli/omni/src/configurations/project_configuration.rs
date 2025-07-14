@@ -12,6 +12,8 @@ use super::TaskConfiguration;
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
 pub struct ProjectConfiguration {
     pub name: String,
+    #[serde(default)]
+    pub extends: Vec<String>,
     /// Allow detecting task dependencies from other project configuration files
     /// (e.g. package.json, Cargo.toml, etc.)
     #[serde(default)]

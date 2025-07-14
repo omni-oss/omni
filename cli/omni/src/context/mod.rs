@@ -8,6 +8,7 @@ use dir_walker::{DirEntry as _, DirWalker};
 use env_loader::EnvLoaderError;
 use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobSetBuilder};
+use omni_core::ProjectGraph;
 use system_traits::{
     EnvCurrentDir, EnvVar, FsCanonicalize, FsMetadata, FsRead, auto_impl,
     impls::RealSys as RealSysSync,
@@ -78,6 +79,16 @@ impl<TSys: ContextSys> Context<TSys> {
         };
 
         Ok(ctx)
+    }
+
+    pub fn get_project_graph(&self) -> eyre::Result<ProjectGraph> {
+        let projects = self.get_projects().ok_or_else(|| {
+            eyre::eyre!(
+                "Failed to get projects. Did you run load_projects first?"
+            )
+        })?;
+
+        Ok(ProjectGraph::from_projects(projects.to_vec())?)
     }
 
     pub fn get_env_var(&self, key: &str) -> Option<&str> {
@@ -223,7 +234,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     .unwrap_or_default()
                     .iter()
                     .map(|(task_name, v)| {
-                        let mapped: Task = v.clone().into();
+                        let mapped: Task = v.clone().into_task(task_name);
 
                         (task_name.clone(), mapped)
                     })
@@ -548,5 +559,17 @@ mod tests {
                 .contains("Duplicate project name: project-1"),
             "Should report duplicate project name"
         );
+    }
+
+    #[test]
+    fn test_get_project_graph() {
+        let mut ctx = create_ctx("testing", None);
+
+        ctx.load_projects(&create_dir_walker(None))
+            .expect("Can't load projects");
+
+        let project_graph = ctx.get_project_graph().expect("Can't get graph");
+
+        assert_eq!(project_graph.count(), 2);
     }
 }

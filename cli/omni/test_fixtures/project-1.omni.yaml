@@ -1,9 +1,13 @@
 name: project-1
 
 tasks:
-  list:
+  run:
     command: ls -la
+    dependencies:
+      - project-2#list
+      - build
+
+  build: echo "build"
 
 dependencies:
-  - deno_core
-  - oxc
+  - project-2

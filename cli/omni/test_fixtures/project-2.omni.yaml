@@ -4,6 +4,4 @@ tasks:
   list:
     command: ls -la
 
-dependencies:
-  - deno_core
-  - oxc
+  build: echo "build"
