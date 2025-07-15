@@ -314,9 +314,9 @@ impl ProjectGraph {
         Ok(projects)
     }
 
-    pub fn get_task_execution_graph<'a>(
-        &'a self,
-    ) -> TaskExecutionGraphResult<TaskExecutionGraph<'a>> {
+    pub fn get_task_execution_graph(
+        &self,
+    ) -> TaskExecutionGraphResult<TaskExecutionGraph> {
         TaskExecutionGraph::from_project_graph(self)
     }
 }

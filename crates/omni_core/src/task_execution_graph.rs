@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
-    path::Path,
+    hash::{DefaultHasher, Hash, Hasher as _},
+    path::{Path, PathBuf},
 };
 
 use derive_more::Constructor;
@@ -10,29 +11,62 @@ use petgraph::{
     graph::{DiGraph, NodeIndex},
     visit::{Dfs, Topo, Walker},
 };
+use serde::{Deserialize, Serialize};
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
-#[derive(Debug, Clone, Constructor, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TaskExecutionNode<'a> {
-    pub task_name: &'a str,
-    pub project_name: &'a str,
-    pub project_dir: &'a Path,
+#[derive(
+    Debug,
+    Clone,
+    Constructor,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Deserialize,
+    Serialize,
+)]
+pub struct TaskExecutionNode {
+    task_name: String,
+    project_name: String,
+    project_dir: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Constructor)]
-pub struct TaskKey<'a> {
-    project: &'a str,
-    task: &'a str,
+impl TaskExecutionNode {
+    pub fn task_name(&self) -> &str {
+        self.task_name.as_str()
+    }
+
+    pub fn project_name(&self) -> &str {
+        self.project_name.as_str()
+    }
+
+    pub fn project_dir(&self) -> &Path {
+        self.project_dir.as_path()
+    }
 }
 
-#[derive(Debug, Default)]
-pub struct TaskExecutionGraph<'a> {
-    node_map: HashMap<TaskKey<'a>, NodeIndex>,
-    di_graph: DiGraph<TaskExecutionNode<'a>, ()>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
+pub struct TaskKey(u64);
+
+impl TaskKey {
+    pub fn new(project: &str, task: &str) -> Self {
+        let mut hasher = DefaultHasher::new();
+        project.hash(&mut hasher);
+        task.hash(&mut hasher);
+        let hashed = hasher.finish();
+
+        Self(hashed)
+    }
 }
 
-impl<'a> TaskExecutionGraph<'a> {
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct TaskExecutionGraph {
+    node_map: HashMap<TaskKey, NodeIndex>,
+    di_graph: DiGraph<TaskExecutionNode, ()>,
+}
+
+impl TaskExecutionGraph {
     pub fn new() -> Self {
         Self {
             node_map: HashMap::new(),
@@ -41,7 +75,7 @@ impl<'a> TaskExecutionGraph<'a> {
     }
 
     pub fn from_project_graph(
-        project_graph: &'a ProjectGraph,
+        project_graph: &ProjectGraph,
     ) -> TaskExecutionGraphResult<Self> {
         let mut graph = Self::new();
 
@@ -55,9 +89,9 @@ impl<'a> TaskExecutionGraph<'a> {
             for task in project.tasks.iter() {
                 let task_name = task.0.as_str();
                 let task_execution_node = TaskExecutionNode::new(
-                    task_name,
-                    project_name,
-                    project_dir,
+                    task_name.to_string(),
+                    project_name.to_string(),
+                    project_dir.to_path_buf(),
                 );
 
                 let node_index = graph.di_graph.add_node(task_execution_node);
@@ -77,7 +111,7 @@ impl<'a> TaskExecutionGraph<'a> {
                 for dependency in task.1.dependencies.iter() {
                     match dependency {
                         crate::TaskDependency::Own { task } => {
-                            let k = TaskKey::new(project.name.as_str(), task);
+                            let k = TaskKey::new(&project.name, task);
 
                             graph.add_edge_using_keys(&dependent_key, &k)?;
                         }
@@ -108,9 +142,9 @@ impl<'a> TaskExecutionGraph<'a> {
 
 fn add_upstream_dependencies(
     project_graph: &ProjectGraph,
-    task_graph: &mut TaskExecutionGraph<'_>,
+    task_graph: &mut TaskExecutionGraph,
     project: &&Project,
-    dependent_key: &TaskKey<'_>,
+    dependent_key: &TaskKey,
     task: &str,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
@@ -122,7 +156,7 @@ fn add_upstream_dependencies(
 
     for (_, p) in dependencies.iter() {
         if p.tasks.contains_key(task) {
-            let k = TaskKey::new(p.name.as_str(), task);
+            let k = TaskKey::new(&p.name, task);
 
             if !task_graph.contains_dependency_by_key(dependent_key, &k)? {
                 task_graph.add_edge_using_keys(dependent_key, &k)?;
@@ -140,13 +174,13 @@ fn add_upstream_dependencies(
     Ok(())
 }
 
-pub type BatchedExecutionPlan<'a> = Vec<Vec<TaskExecutionNode<'a>>>;
+pub type BatchedExecutionPlan = Vec<Vec<TaskExecutionNode>>;
 
-impl<'a> TaskExecutionGraph<'a> {
+impl TaskExecutionGraph {
     fn contains_dependency_by_key(
         &self,
-        dependent_key: &TaskKey<'_>,
-        dependee_key: &TaskKey<'_>,
+        dependent_key: &TaskKey,
+        dependee_key: &TaskKey,
     ) -> TaskExecutionGraphResult<bool> {
         let dependent_idx = self.get_task_index_using_key(dependent_key)?;
         let dependee_idx = self.get_task_index_using_key(dependee_key)?;
@@ -164,8 +198,8 @@ impl<'a> TaskExecutionGraph<'a> {
 
     fn add_edge_using_keys(
         &mut self,
-        dependent_key: &TaskKey<'_>,
-        dependee_key: &TaskKey<'_>,
+        dependent_key: &TaskKey,
+        dependee_key: &TaskKey,
     ) -> TaskExecutionGraphResult<()> {
         let a_idx = self.get_task_index_using_key(dependee_key)?;
         let b_idx = self.get_task_index_using_key(dependent_key)?;
@@ -174,11 +208,14 @@ impl<'a> TaskExecutionGraph<'a> {
 
         if is_cyclic_directed(&self.di_graph) {
             self.di_graph.remove_edge(edge_idx);
+            let dependee = self.di_graph[b_idx].clone();
+            let dependent = self.di_graph[a_idx].clone();
+
             return Err(TaskExecutionGraphError::cyclic_dependency(
-                dependent_key.project,
-                dependent_key.task,
-                dependee_key.project,
-                dependee_key.task,
+                dependent.project_name(),
+                dependent.task_name(),
+                dependee.project_name(),
+                dependee.task_name(),
             ));
         }
 
@@ -195,7 +232,7 @@ impl<'a> TaskExecutionGraph<'a> {
         &self,
         project: &str,
         task: &str,
-    ) -> TaskExecutionGraphResult<&TaskExecutionNode<'a>> {
+    ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
         self.get_task_using_key(&TaskKey::new(project, task))
     }
 
@@ -203,15 +240,15 @@ impl<'a> TaskExecutionGraph<'a> {
     pub fn get_task(
         &self,
         node_index: NodeIndex,
-    ) -> TaskExecutionGraphResult<&TaskExecutionNode<'a>> {
+    ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
         Ok(&self.di_graph[node_index])
     }
 
     #[inline(always)]
     pub fn get_task_using_key(
         &self,
-        key: &TaskKey<'_>,
-    ) -> TaskExecutionGraphResult<&TaskExecutionNode<'a>> {
+        key: &TaskKey,
+    ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
         let t = self.get_task_index_using_key(key)?;
 
         Ok(&self.di_graph[t])
@@ -229,11 +266,12 @@ impl<'a> TaskExecutionGraph<'a> {
     #[inline(always)]
     pub fn get_task_index_using_key(
         &self,
-        key: &TaskKey<'_>,
+        key: &TaskKey,
     ) -> TaskExecutionGraphResult<NodeIndex> {
-        self.node_map.get(key).copied().ok_or_else(|| {
-            TaskExecutionGraphError::task_not_found(key.project, key.task)
-        })
+        self.node_map
+            .get(key)
+            .copied()
+            .ok_or_else(|| TaskExecutionGraphError::task_not_found_by_key(key))
     }
 
     #[inline(always)]
@@ -241,7 +279,7 @@ impl<'a> TaskExecutionGraph<'a> {
         &self,
         project_name: &str,
         task_name: &str,
-    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode<'a>)>> {
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
         let task_key = TaskKey::new(project_name, task_name);
 
         self.get_direct_dependencies_by_key(&task_key)
@@ -250,8 +288,8 @@ impl<'a> TaskExecutionGraph<'a> {
     #[inline(always)]
     pub fn get_direct_dependencies_by_key(
         &self,
-        key: &TaskKey<'_>,
-    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode<'a>)>> {
+        key: &TaskKey,
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
         let task_index = self.get_task_index_using_key(key)?;
 
         self.get_direct_dependencies(task_index)
@@ -260,7 +298,7 @@ impl<'a> TaskExecutionGraph<'a> {
     pub fn get_direct_dependencies(
         &self,
         task_index: NodeIndex,
-    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode<'a>)>> {
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
         let neighbors = self
             .di_graph
             .neighbors_directed(task_index, Direction::Incoming);
@@ -275,8 +313,8 @@ impl<'a> TaskExecutionGraph<'a> {
 
     pub fn get_batched_execution_plan(
         &self,
-        is_root_node: impl Fn(&TaskExecutionNode<'a>) -> bool,
-    ) -> TaskExecutionGraphResult<BatchedExecutionPlan<'a>> {
+        is_root_node: impl Fn(&TaskExecutionNode) -> bool,
+    ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
         let mut roots = HashSet::new();
 
         // Step 1: Get all nodes that match the predicate
@@ -365,8 +403,6 @@ impl<'a> TaskExecutionGraph<'a> {
     }
 }
 
-impl<'a> TaskExecutionGraph<'a> {}
-
 #[derive(Debug, thiserror::Error)]
 #[error("TaskGraphError: {source}")]
 pub struct TaskExecutionGraphError {
@@ -391,6 +427,16 @@ impl TaskExecutionGraphError {
             source: TaskExecutionGraphErrorInner::TaskNotFound {
                 project: project.to_string(),
                 task: task.to_string(),
+            },
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn task_not_found_by_key(key: &TaskKey) -> Self {
+        Self {
+            kind: TaskExecutionGraphErrorKind::TaskNotFoundByKey,
+            source: TaskExecutionGraphErrorInner::TaskNotFoundByKey {
+                key: *key,
             },
         }
     }
@@ -429,6 +475,7 @@ impl TaskExecutionGraphError {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TaskExecutionGraphErrorKind {
     TaskNotFound,
+    TaskNotFoundByKey,
     CyclicDependency,
     ProjectGraph,
 }
@@ -440,6 +487,9 @@ enum TaskExecutionGraphErrorInner {
 
     #[error("Task '{task}' in project '{project}' not found")]
     TaskNotFound { project: String, task: String },
+
+    #[error("Task with key '{key:?}' not found")]
+    TaskNotFoundByKey { key: TaskKey },
 
     #[error(
         "Cyclic dependency detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
@@ -456,6 +506,8 @@ pub type TaskExecutionGraphResult<T> = Result<T, TaskExecutionGraphError>;
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::{Project, TasksBuilder};
 
     use super::*;
@@ -676,45 +728,45 @@ mod tests {
             batch.sort();
         });
 
-        let blank_path = Path::new("");
+        let blank_path = PathBuf::from("");
 
         let mut expected_plan = vec![
             vec![
                 TaskExecutionNode {
-                    task_name: "p3t1",
-                    project_name: "project3",
-                    project_dir: blank_path,
+                    task_name: "p3t1".to_string(),
+                    project_name: "project3".to_string(),
+                    project_dir: blank_path.clone(),
                 },
                 TaskExecutionNode {
-                    task_name: "p2t1",
-                    project_name: "project2",
-                    project_dir: blank_path,
+                    task_name: "p2t1".to_string(),
+                    project_name: "project2".to_string(),
+                    project_dir: blank_path.clone(),
                 },
                 TaskExecutionNode {
-                    task_name: "shared-task-3",
-                    project_name: "project4",
-                    project_dir: blank_path,
+                    task_name: "shared-task-3".to_string(),
+                    project_name: "project4".to_string(),
+                    project_dir: blank_path.clone(),
                 },
             ],
             vec![TaskExecutionNode {
-                task_name: "shared-task-3",
-                project_name: "project3",
-                project_dir: blank_path,
+                task_name: "shared-task-3".to_string(),
+                project_name: "project3".to_string(),
+                project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
-                task_name: "shared-task-3",
-                project_name: "project2",
-                project_dir: blank_path,
+                task_name: "shared-task-3".to_string(),
+                project_name: "project2".to_string(),
+                project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
-                task_name: "shared-task-3",
-                project_name: "project1",
-                project_dir: blank_path,
+                task_name: "shared-task-3".to_string(),
+                project_name: "project1".to_string(),
+                project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
-                task_name: "p1t4",
-                project_name: "project1",
-                project_dir: blank_path,
+                task_name: "p1t4".to_string(),
+                project_name: "project1".to_string(),
+                project_dir: blank_path.clone(),
             }],
         ];
 
