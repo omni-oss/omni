@@ -6,6 +6,13 @@ edition = "2024"
 version.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+serde = ["dep:serde"]
+schemars = ["dep:schemars"]
+merge = ["dep:merge"]
+
 [dependencies]
-serde = { workspace = true }
-schemars = { workspace = true }
+serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+merge = { workspace = true, optional = true }

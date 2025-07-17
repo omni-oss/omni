@@ -1,4 +1,7 @@
-use eyre::OptionExt;
+use std::{collections::HashMap, sync::Arc};
+
+use futures::future::join_all;
+use tokio::sync::Mutex;
 
 use crate::{
     context::Context,
@@ -39,52 +42,98 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
 
     let projects = ctx.get_filtered_projects(filter)?;
 
-    if projects.is_empty() {
-        eyre::bail!("No project found for filter: {}", filter);
-    }
-
-    let projects = projects.iter().map(|a| (*a).clone()).collect::<Vec<_>>();
-
     trace::debug!("Projects: {:?}", projects);
 
-    let mut task_executed = 0;
-    for p in projects {
-        ctx.load_env_vars(
-            p.dir.to_str().ok_or_eyre("Can't convert dir to str")?,
-        )?;
+    let matcher = ctx.get_filter_glob_matcher(filter)?;
 
-        if let Some(task) = p.tasks.get(&command.task) {
-            task_executed += 1;
+    let execution_plan = ctx
+        .get_project_graph()?
+        .get_task_execution_graph()?
+        .get_batched_execution_plan(|n| {
+        matcher.is_match(n.project_name())
+    })?;
 
-            if task.command.is_empty() {
-                trace::warn!("Task {} has no command", command.task);
-                continue;
-            } else {
-                trace::debug!(
-                    "Executing task: {} => {}",
-                    command.task,
-                    task.command
+    if execution_plan.is_empty() {
+        eyre::bail!("No tasks were executed: {}", command.task);
+    }
+
+    let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
+    // cache envs for each project dir so that we don't have to load them again
+    let project_dir_envs = Arc::new(Mutex::new(HashMap::new()));
+    let failures = Arc::new(Mutex::new(Vec::new()));
+
+    trace::debug!("Execution plan: {:?}", execution_plan);
+    for batch in execution_plan {
+        let mut tasks = vec![];
+
+        for task in batch {
+            let ctx = shared_ctx.clone();
+            let dir_envs = project_dir_envs.clone();
+            let failures = failures.clone();
+
+            tasks.push(async move {
+                let project_dir_str = task
+                    .project_dir()
+                    .to_str()
+                    .expect("Can't convert project dir to str");
+
+                let envs = {
+                    // Scope the lock to the duration of the task so that we don't hold the lock for the entire duration of the task
+                    let mut hm = dir_envs.lock().await;
+
+                    if !hm.contains_key(project_dir_str) {
+                        let (_, vars_os) =
+                            ctx.lock().await.get_env_vars_at_start_dir(
+                                task.project_dir()
+                                    .to_str()
+                                    .expect("Can't convert project dir to str"),
+                            )?;
+
+                        hm.insert(project_dir_str.to_string(), vars_os);
+                    }
+
+                    hm.get(project_dir_str)
+                        .ok_or_else(|| {
+                            eyre::eyre!("Should be in map at this point")
+                        })?
+                        .clone()
+                };
+
+                trace::info!(
+                    "Running task '{}#{}'",
+                    task.project_name(),
+                    task.task_name()
                 );
-            }
 
-            let exit_status = utils::cmd::run(
-                &task.command,
-                &p.dir,
-                ctx.get_all_env_vars_os(),
-            )
-            .await?;
+                let exit = utils::cmd::run(
+                    task.task_command(),
+                    task.project_dir(),
+                    envs,
+                )
+                .await?;
 
-            if exit_status != 0 {
-                eyre::bail!(
-                    "command exited with non-zero status: {}",
+                if exit != 0 {
+                    failures.lock().await.push((task, exit));
+                }
+
+                Ok::<_, eyre::Report>(())
+            });
+        }
+
+        // run all tasks concurrently
+        join_all(tasks).await;
+
+        let f = failures.lock().await;
+        if !f.is_empty() {
+            for (task, exit_status) in f.iter() {
+                trace::error!(
+                    "Task '{}#{}' failed with exit code: {}",
+                    task.project_name(),
+                    task.task_name(),
                     exit_status
                 );
             }
         }
-    }
-
-    if task_executed == 0 {
-        eyre::bail!("No tasks were executed: {}", command.task);
     }
 
     Ok(())

@@ -4,6 +4,7 @@ use clap::Parser;
 use commands::{Cli, CliSubcommands};
 use js_runtime::{JsRuntime, impls::DelegatingJsRuntime};
 use system_traits::impls::RealSys as RealSysSync;
+use tracing_subscriber::fmt;
 
 mod build;
 mod commands;
@@ -14,7 +15,18 @@ mod core;
 mod utils;
 
 fn init_tracing(level: u8) -> eyre::Result<()> {
+    let format = fmt::format()
+        .with_file(false)
+        .with_level(false)
+        .with_line_number(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .without_time()
+        .with_target(false)
+        .with_source_location(false);
+
     tracing_subscriber::fmt()
+        .event_format(format)
         .with_max_level(match level {
             1 => trace::Level::ERROR,
             2 => trace::Level::WARN,
@@ -32,7 +44,7 @@ fn init_tracing(level: u8) -> eyre::Result<()> {
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
-    init_tracing(cli.args.verbose + 1)?;
+    init_tracing(cli.args.verbose + 3)?;
 
     let sys = RealSysSync;
     let mut context =

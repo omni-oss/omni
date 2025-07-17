@@ -15,6 +15,7 @@ derive_more = { workspace = true }
 clap_complete = { workspace = true }
 shadow-rs = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
 trace = { workspace = true, features = ["enabled"] }
 tracing-subscriber = { workspace = true }
 env_loader = { workspace = true }
@@ -26,7 +27,8 @@ globset = { workspace = true }
 regex = { workspace = true }
 lazy-regex = { workspace = true }
 omni_core = { workspace = true }
-config_utils = { workspace = true }
+config_utils = { workspace = true, features = ["serde", "schemars", "merge"] }
+merge = { workspace = true }
 toml = { workspace = true }
 js_runtime = { workspace = true }
 system_traits = { workspace = true, features = [
@@ -36,6 +38,8 @@ system_traits = { workspace = true, features = [
 dir_walker = { workspace = true, features = ["ignore", "memory"] }
 tracing-log = { workspace = true }
 deno_task_shell = { workspace = true }
+petgraph = { workspace = true }
+thiserror = { workspace = true }
 
 
 [build-dependencies]

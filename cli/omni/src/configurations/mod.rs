@@ -1,3 +1,4 @@
+mod extension_graph;
 mod project_configuration;
 mod scripting_configuration;
 mod task_configuration;

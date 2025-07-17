@@ -71,7 +71,8 @@ impl<'de> Deserialize<'de> for TaskDependencyConfiguration {
         let s = String::deserialize(deserializer)?;
 
         if TASK_REGEX.is_match(&s) {
-            let captures = TASK_REGEX.captures(&s).unwrap();
+            let captures =
+                TASK_REGEX.captures(&s).expect("Can't parse task syntax");
 
             if let Some(upstream_task) = captures.name("upstream_task") {
                 return Ok(Self::Upstream {

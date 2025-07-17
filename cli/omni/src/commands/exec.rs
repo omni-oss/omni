@@ -54,10 +54,13 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
         ctx.load_env_vars(
             p.dir.to_str().ok_or_eyre("Can't convert dir to str")?,
         )?;
-        let envs = ctx.get_all_env_vars_os();
+        let envs = ctx.get_all_env_vars_os().clone();
         let exit_status = utils::cmd::run(
-            format!("{} {}", command.args.command, command.args.args.join(" "))
-                .as_str(),
+            &format!(
+                "{} {}",
+                command.args.command,
+                command.args.args.join(" ")
+            ),
             &p.dir,
             envs,
         )

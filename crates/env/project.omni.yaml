@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: env
+
+tasks:
+  test: cargo test -p env

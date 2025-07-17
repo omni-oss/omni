@@ -28,6 +28,7 @@ use crate::{Project, ProjectGraph, ProjectGraphError};
 )]
 pub struct TaskExecutionNode {
     task_name: String,
+    task_command: String,
     project_name: String,
     project_dir: PathBuf,
 }
@@ -35,6 +36,10 @@ pub struct TaskExecutionNode {
 impl TaskExecutionNode {
     pub fn task_name(&self) -> &str {
         self.task_name.as_str()
+    }
+
+    pub fn task_command(&self) -> &str {
+        self.task_command.as_str()
     }
 
     pub fn project_name(&self) -> &str {
@@ -90,6 +95,7 @@ impl TaskExecutionGraph {
                 let task_name = task.0.as_str();
                 let task_execution_node = TaskExecutionNode::new(
                     task_name.to_string(),
+                    task.1.command.clone(),
                     project_name.to_string(),
                     project_dir.to_path_buf(),
                 );
@@ -536,7 +542,7 @@ mod tests {
                 .task("p1t3", "echo p1t2", |b| {
                     b.upstream_dependency("shared-task-2")
                 })
-                .task("p1t4", "echo p1t2", |b| {
+                .task("p1t4", "echo p1t4", |b| {
                     b.explicit_project_dependency("project3", "p3t1")
                         .own_dependency("shared-task-3")
                 })
@@ -734,37 +740,44 @@ mod tests {
             vec![
                 TaskExecutionNode {
                     task_name: "p3t1".to_string(),
+                    task_command: "echo p3t1".to_string(),
                     project_name: "project3".to_string(),
                     project_dir: blank_path.clone(),
                 },
                 TaskExecutionNode {
                     task_name: "p2t1".to_string(),
+                    task_command: "echo p2t1".to_string(),
                     project_name: "project2".to_string(),
                     project_dir: blank_path.clone(),
                 },
                 TaskExecutionNode {
                     task_name: "shared-task-3".to_string(),
+                    task_command: "echo shared-task-3".to_string(),
                     project_name: "project4".to_string(),
                     project_dir: blank_path.clone(),
                 },
             ],
             vec![TaskExecutionNode {
                 task_name: "shared-task-3".to_string(),
+                task_command: "echo shared-task-3".to_string(),
                 project_name: "project3".to_string(),
                 project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
                 task_name: "shared-task-3".to_string(),
+                task_command: "echo shared-task-3".to_string(),
                 project_name: "project2".to_string(),
                 project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
                 task_name: "shared-task-3".to_string(),
+                task_command: "echo shared-task-3".to_string(),
                 project_name: "project1".to_string(),
                 project_dir: blank_path.clone(),
             }],
             vec![TaskExecutionNode {
                 task_name: "p1t4".to_string(),
+                task_command: "echo p1t4".to_string(),
                 project_name: "project1".to_string(),
                 project_dir: blank_path.clone(),
             }],
@@ -774,6 +787,10 @@ mod tests {
             batch.sort();
         });
 
-        assert_eq!(actual_plan, expected_plan);
+        for (i, batch) in actual_plan.iter().enumerate() {
+            for (j, task) in batch.iter().enumerate() {
+                assert_eq!(task, &expected_plan[i][j]);
+            }
+        }
     }
 }

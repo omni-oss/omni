@@ -7,11 +7,11 @@ use std::{
 use dir_walker::{DirEntry as _, DirWalker};
 use env_loader::EnvLoaderError;
 use eyre::{Context as _, ContextCompat};
-use globset::{Glob, GlobSetBuilder};
+use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::ProjectGraph;
 use system_traits::{
-    EnvCurrentDir, EnvVar, FsCanonicalize, FsMetadata, FsRead, auto_impl,
-    impls::RealSys as RealSysSync,
+    EnvCurrentDir, EnvVar, EnvVars, FsCanonicalize, FsMetadata, FsRead,
+    auto_impl, impls::RealSys as RealSysSync,
 };
 
 use crate::{
@@ -19,6 +19,7 @@ use crate::{
     configurations::{ProjectConfiguration, WorkspaceConfiguration},
     constants,
     core::{Project, Task},
+    utils::env::{EnvVarsMap, EnvVarsMapOs, get_envs_at_start_dir},
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -35,11 +36,23 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 
 #[auto_impl]
 pub trait ContextSys:
-    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone + EnvVar
+    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone + EnvVar + EnvVars
 {
 }
 
 impl<TSys: ContextSys> Context<TSys> {
+    pub fn sys(&self) -> &TSys {
+        &self.sys
+    }
+
+    pub fn env_files(&self) -> &[String] {
+        &self.env_files
+    }
+
+    pub fn env_root_dir_marker(&self) -> &str {
+        &self.env_root_dir_marker
+    }
+
     pub fn from_args_and_sys(
         cli: &CliArgs,
         sys: TSys,
@@ -113,6 +126,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn clear_env_vars(&mut self) {
         self.envs_map.clear();
+        self.envs_map_os.clear();
     }
 
     pub fn get_all_env_vars(&self) -> &HashMap<String, String> {
@@ -123,37 +137,32 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.envs_map_os
     }
 
+    pub fn get_env_vars_at_start_dir(
+        &self,
+        start_dir: &str,
+    ) -> Result<(EnvVarsMap, EnvVarsMapOs), EnvLoaderError> {
+        get_envs_at_start_dir(
+            start_dir,
+            &self.env_root_dir_marker,
+            self.env_files
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            self.sys.clone(),
+        )
+    }
+
     pub fn load_env_vars(
         &mut self,
         start_dir: &str,
     ) -> Result<(), EnvLoaderError> {
         self.clear_env_vars();
-        let v = std::env::vars();
+        let (vars, vars_os) = self.get_env_vars_at_start_dir(start_dir)?;
 
-        let mut env_vars = HashMap::new();
+        self.envs_map.extend(vars);
 
-        env_vars.extend(v);
-
-        let config = env_loader::EnvConfig {
-            root_file: Some(&self.env_root_dir_marker),
-            start_dir: Some(start_dir),
-            env_files: &self
-                .env_files
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>(),
-            extra_envs: Some(&env_vars),
-            matcher: None,
-        };
-
-        let env = env_loader::load(&config, self.sys.clone())?;
-        let env_os = env
-            .iter()
-            .map(|(k, v)| (k.into(), v.into()))
-            .collect::<HashMap<_, _>>();
-        self.envs_map.extend(env);
-
-        self.envs_map_os.extend(env_os);
+        self.envs_map_os.extend(vars_os);
 
         Ok(())
     }
@@ -276,6 +285,13 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.root_dir
     }
 
+    pub fn get_filter_glob_matcher(
+        &self,
+        glob_filter: &str,
+    ) -> eyre::Result<GlobMatcher> {
+        Ok(Glob::new(glob_filter)?.compile_matcher())
+    }
+
     pub fn get_filtered_projects(
         &self,
         glob_filter: &str,
@@ -289,8 +305,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 .collect());
         }
 
-        let glob = Glob::new(glob_filter)?;
-        let matcher = glob.compile_matcher();
+        let matcher = self.get_filter_glob_matcher(glob_filter)?;
         let result = self
             .get_projects()
             .expect("Should be able to get projects after load");

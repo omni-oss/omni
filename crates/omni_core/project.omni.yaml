@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: omni_core
+
+tasks:
+  test: cargo test -p omni_core
