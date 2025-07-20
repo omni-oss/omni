@@ -1,0 +1,16 @@
+[package]
+name = "omni_types"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

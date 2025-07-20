@@ -1156,6 +1156,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_types"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

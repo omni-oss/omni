@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/generator.json
+name: crate
+
+prompts:
+  - type: boolean
+    name: use-tracing
+    message: Use tracing
+    default: true
+  - type: options
+    name: crate-type
+    message: Crate type
+    choices:
+      - bin
+      - lib
+  - type: text
+    name: crate-name
+    message: Crate name
+    pattern: ^[a-zA-Z_]{1}[a-zA-Z0-9_]*$
+    hint: Must start with a letter and contain only letters, numbers and underscores
+
+files:
+  - files/*

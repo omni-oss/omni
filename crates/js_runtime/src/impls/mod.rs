@@ -9,7 +9,7 @@ use futures::{AsyncRead, AsyncWrite};
 use system_traits::auto_impl;
 use tokio::process::Command;
 
-use crate::{JsRuntime, JsRuntimeError, JsRuntimeSys, Script, error};
+use crate::{BaseJsRuntime, JsRuntimeError, JsRuntimeSys, Script, error};
 
 #[auto_impl]
 pub trait DelegatingJsRuntimeTransport:
@@ -38,12 +38,12 @@ impl<TSys: JsRuntimeSys> DelegatingJsRuntime<TSys> {
 }
 
 #[async_trait]
-impl<TSys: JsRuntimeSys> JsRuntime for DelegatingJsRuntime<TSys> {
+impl<TSys: JsRuntimeSys> BaseJsRuntime for DelegatingJsRuntime<TSys> {
     type Error = JsRuntimeError;
 
     type ExitValue = ();
 
-    async fn run<'script>(
+    async fn base_run<'script>(
         &mut self,
         script: Script<'script>,
         root_dir: Option<&Path>,
@@ -69,6 +69,7 @@ async fn create_temp_source_file<TSys>(
     code: &str,
     root_dir: Option<&Path>,
     sys: TSys,
+    is_ts: bool,
 ) -> Result<PathBuf, JsRuntimeError>
 where
     TSys: JsRuntimeSys,
@@ -90,7 +91,8 @@ where
 
     let mut hasher = DefaultHasher::new();
     code.hash(&mut hasher);
-    let file_name = format!("{}.js", hasher.finish());
+    let file_name =
+        format!("{}.{}", hasher.finish(), if is_ts { "ts" } else { "js" });
     let temp_file = temp_dir.join(file_name);
 
     if !sys.fs_exists_async(&temp_file).await? {
@@ -112,7 +114,7 @@ where
     TSys: JsRuntimeSys,
 {
     let temp_file =
-        create_temp_source_file(code, root_dir, sys.clone()).await?;
+        create_temp_source_file(code, root_dir, sys.clone(), true).await?;
 
     run_script(&temp_file, root_dir, rt_option).await
 }

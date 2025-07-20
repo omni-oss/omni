@@ -24,7 +24,18 @@
     "scripting": {
       "$ref": "#/$defs/ScriptingConfiguration",
       "default": {
-        "js_runtime": "auto"
+        "js": {
+          "runtime": "auto"
+        }
+      }
+    },
+    "templates": {
+      "type": "array",
+      "default": [
+        "./omni/templates"
+      ],
+      "items": {
+        "type": "string"
       }
     }
   },
@@ -41,12 +52,23 @@
         "auto"
       ]
     },
+    "JsScriptingConfiguration": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/JsRuntime",
+          "default": "auto"
+        }
+      }
+    },
     "ScriptingConfiguration": {
       "type": "object",
       "properties": {
-        "js_runtime": {
-          "$ref": "#/$defs/JsRuntime",
-          "default": "auto"
+        "js": {
+          "$ref": "#/$defs/JsScriptingConfiguration",
+          "default": {
+            "runtime": "auto"
+          }
         }
       }
     },

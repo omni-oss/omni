@@ -3,17 +3,33 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, Copy,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Copy,
+    Default,
 )]
 pub struct ScriptingConfiguration {
     #[serde(default)]
-    pub js_runtime: JsRuntime,
+    pub js: JsScriptingConfiguration,
 }
 
-impl Default for ScriptingConfiguration {
+#[derive(
+    Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, Copy,
+)]
+pub struct JsScriptingConfiguration {
+    #[serde(default)]
+    pub runtime: JsRuntime,
+}
+
+impl Default for JsScriptingConfiguration {
     fn default() -> Self {
         Self {
-            js_runtime: JsRuntime::Auto,
+            runtime: JsRuntime::Auto,
         }
     }
 }

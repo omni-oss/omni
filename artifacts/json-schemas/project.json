@@ -7,7 +7,7 @@
       "type": "array",
       "default": [],
       "items": {
-        "$ref": "#/$defs/string"
+        "type": "string"
       }
     },
     "env": {
@@ -20,11 +20,20 @@
         }
       ]
     },
+    "extends": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
     "implicit_dependencies": {
+      "description": "Allow detecting implicit dependencies from other project configuration files\n(e.g. package.json, Cargo.toml, etc.)",
       "type": "boolean",
       "default": false
     },
     "implicit_tasks": {
+      "description": "Allow detecting task dependencies from other project configuration files\n(e.g. package.json, Cargo.toml, etc.)",
       "type": "boolean",
       "default": false
     },
@@ -56,7 +65,7 @@
         {
           "type": "object",
           "properties": {
-            "append": {
+            "merge": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -64,42 +73,7 @@
             }
           },
           "required": [
-            "append"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "prepend": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "required": [
-            "prepend"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "append": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "prepend": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "required": [
-            "append",
-            "prepend"
+            "merge"
           ]
         },
         {
@@ -150,10 +124,6 @@
               "items": {
                 "$ref": "#/$defs/string"
               }
-            },
-            "merge_project_dependencies": {
-              "type": "boolean",
-              "default": true
             }
           },
           "required": [

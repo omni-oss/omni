@@ -14,6 +14,8 @@ pub struct WorkspaceConfiguration {
     pub env: WorkspaceEnvConfiguration,
     #[serde(default)]
     pub scripting: ScriptingConfiguration,
+    #[serde(default)]
+    pub generators: Vec<String>,
 }
 
 impl WorkspaceConfiguration {

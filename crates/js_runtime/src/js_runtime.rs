@@ -53,13 +53,26 @@ impl From<PathBuf> for Script<'_> {
 }
 
 #[async_trait]
-pub trait JsRuntime {
+pub trait BaseJsRuntime {
     type Error;
     type ExitValue;
 
-    async fn run<'script>(
+    async fn base_run<'script>(
         &mut self,
         script: Script<'script>,
         root_dir: Option<&Path>,
     ) -> Result<Self::ExitValue, Self::Error>;
 }
+
+#[async_trait]
+pub trait JsRuntime: BaseJsRuntime {
+    async fn run<'script>(
+        &mut self,
+        script: impl Into<Script<'script>> + Send,
+        root_dir: Option<&Path>,
+    ) -> Result<Self::ExitValue, Self::Error> {
+        self.base_run(script.into(), root_dir).await
+    }
+}
+
+impl<T: BaseJsRuntime> JsRuntime for T {}

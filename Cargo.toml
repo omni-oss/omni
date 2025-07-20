@@ -92,6 +92,8 @@ notify = { version = "^8.1.0" }
 dir_walker = { path = "./crates/dir_walker" }
 deno_task_shell = { version = "^0.25.1" }
 which = { version = "^8.0.0" }
+tera = { version = "1.20.0" }
+omni_types = { path = "./crates/omni_types" }
 
 [profile.release]
 incremental = true

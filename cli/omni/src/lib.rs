@@ -2,7 +2,7 @@
 
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
-use js_runtime::{JsRuntime, impls::DelegatingJsRuntime};
+use js_runtime::{JsRuntime as _, impls::DelegatingJsRuntime};
 use system_traits::impls::RealSys as RealSysSync;
 use tracing_subscriber::fmt;
 
@@ -40,6 +40,16 @@ fn init_tracing(level: u8) -> eyre::Result<()> {
     Ok(())
 }
 
+const TEST_SCRIPT: &str = r#"
+async function main(arg) {
+    console.log("Hello, World!");
+}
+
+type Script = typeof main;
+
+await main();
+"#;
+
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
@@ -67,16 +77,11 @@ pub async fn main() -> eyre::Result<()> {
             commands::run::run(run, &mut context).await?;
         }
         CliSubcommands::JsTest => {
-            let js_runtime =
-                context.get_workspace_configuration().scripting.js_runtime;
+            let js = context.get_workspace_configuration().scripting.js;
 
             let mut rt =
-                DelegatingJsRuntime::new(sys.clone(), js_runtime.into());
-            rt.run(
-                "console.log('Hello, World!');".into(),
-                Some(context.root_dir()),
-            )
-            .await?;
+                DelegatingJsRuntime::new(sys.clone(), js.runtime.into());
+            rt.run(TEST_SCRIPT, Some(context.root_dir())).await?;
         }
     }
 
