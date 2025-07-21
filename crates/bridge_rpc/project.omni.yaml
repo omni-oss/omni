@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: bridge_rpc
+
+tasks:
+  test: cargo test -p bridge_rpc
