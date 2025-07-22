@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(
     Debug,
     Clone,
@@ -16,5 +18,11 @@ pub struct RequestId(uuid::Uuid);
 impl RequestId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
+    }
+}
+
+impl Display for RequestId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
