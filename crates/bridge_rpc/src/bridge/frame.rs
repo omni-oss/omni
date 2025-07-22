@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
+use strum::EnumIs;
 
 use crate::bridge::RequestId;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, EnumIs)]
 #[serde(tag = "type", content = "content", rename_all = "snake_case")]
 pub enum BridgeFrame<TData> {
     InternalOp(InternalOp),
@@ -15,15 +16,34 @@ pub const fn f_close() -> BridgeFrame<()> {
 }
 
 pub fn f_req<TRequest>(
-    request: BridgeRequest<TRequest>,
+    id: RequestId,
+    path: impl Into<String>,
+    data: TRequest,
 ) -> BridgeFrame<TRequest> {
-    BridgeFrame::Request(request)
+    BridgeFrame::Request(BridgeRequest {
+        id,
+        path: path.into(),
+        data,
+    })
 }
 
 pub fn f_res<TResponse>(
-    response: BridgeResponse<TResponse>,
+    id: RequestId,
+    data: Option<TResponse>,
+    error: Option<ErrorData>,
 ) -> BridgeFrame<TResponse> {
-    BridgeFrame::Response(response)
+    BridgeFrame::Response(BridgeResponse { id, data, error })
+}
+
+pub fn f_res_success<TResponse>(
+    id: RequestId,
+    data: TResponse,
+) -> BridgeFrame<TResponse> {
+    f_res(id, Some(data), None)
+}
+
+pub fn f_res_error(id: RequestId, error_message: String) -> BridgeFrame<()> {
+    f_res(id, None, Some(ErrorData { error_message }))
 }
 
 pub const FRAME_CLOSE: BridgeFrame<()> = f_close();
@@ -31,7 +51,7 @@ pub const FRAME_CLOSE: BridgeFrame<()> = f_close();
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct BridgeRequest<TRequest> {
-    pub request_id: RequestId,
+    pub id: RequestId,
     pub path: String,
     pub data: TRequest,
 }
@@ -45,7 +65,7 @@ pub struct ErrorData {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct BridgeResponse<TResponse> {
-    pub request_id: RequestId,
+    pub id: RequestId,
     pub data: Option<TResponse>,
     pub error: Option<ErrorData>,
 }
