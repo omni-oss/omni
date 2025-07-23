@@ -1,0 +1,18 @@
+{
+    "name": "@repo/tsconfig",
+    "version": "0.0.0-semantically-released",
+    "description": "",
+    "main": "base.json",
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "typescript": "^5.8.3"
+    },
+    "peerDependencies": {
+        "typescript": "^5.1.6"
+    },
+    "dependencies": {
+        "@rencedm112/tsconfig": "^3.0.6"
+    }
+}

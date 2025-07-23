@@ -120,7 +120,8 @@ where
         env.extend(parsed);
     }
 
-    trace::debug!("Loaded env vars: {:?}", env);
+    // Commented out for now, as it's very slow
+    // trace::debug!("Loaded env vars: {:?}", env);
 
     Ok(env)
 }

@@ -1,0 +1,9 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig.json",
+    "extends": ["@rencedm112/tsconfig/base.json"],
+    "compilerOptions": {
+        "moduleResolution": "Bundler",
+        "module": "ESNext",
+        "skipLibCheck": true
+    }
+}

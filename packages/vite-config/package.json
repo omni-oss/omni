@@ -1,0 +1,17 @@
+{
+    "name": "@repo/vite-config",
+    "version": "0.0.0-semantically-released",
+    "exports": {
+        "./*": {
+            "import": "./src/*.ts",
+            "require": "./src/*.ts"
+        }
+    },
+    "peerDependencies": {
+        "vite": "^6.3.2"
+    },
+    "devDependencies": {
+        "vite-tsconfig-paths": "^5.1.4",
+        "@repo/tsconfig": "workspace:*"
+    }
+}

@@ -1,0 +1,7 @@
+{
+    "name": "@repo/bridge-rpc",
+    "version": "0.0.0-semantically-released",
+    "devDependencies": {
+        "@repo/tsconfig": "workspace:*"
+    }
+}
