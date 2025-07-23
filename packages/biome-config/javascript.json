@@ -1,0 +1,20 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.1.2/schema.json",
+	"extends": ["./formatter.json", "./linter.json", "./import-sorter.json"],
+	"javascript": {
+		"assist": {
+			"enabled": true
+		},
+		"formatter": {
+			"arrowParentheses": "always",
+			"attributePosition": "auto",
+			"jsxQuoteStyle": "double",
+			"quoteStyle": "double",
+			"bracketSameLine": false,
+			"trailingCommas": "all",
+			"semicolons": "always",
+			"enabled": true,
+			"quoteProperties": "asNeeded"
+		}
+	}
+}

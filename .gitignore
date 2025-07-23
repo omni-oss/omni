@@ -1,4 +1,6 @@
 target
 .env
 .env.*
-.omni
+**/.omni
+node_modules
+**/node_modules

@@ -2,15 +2,17 @@
 name: omni_cli
 
 tasks:
-  list:
-    command: exit 1
+  test: cargo test -p omni
+
+  build:
+    command: carbo build --release --path .
     dependencies:
-      - ^test
+      - test
 
   install:
     command: cargo install --path .
     dependencies:
-      - list
+      - build
 
 dependencies:
   - omni_core
