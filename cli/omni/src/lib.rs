@@ -3,7 +3,6 @@
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
 use system_traits::impls::RealSys as RealSysSync;
-use tracing_subscriber::fmt;
 
 mod build;
 mod commands;
@@ -13,7 +12,10 @@ mod context;
 mod core;
 mod utils;
 
+#[cfg(feature = "enable-tracing")]
 fn init_tracing(level: u8) -> eyre::Result<()> {
+    use tracing_subscriber::fmt;
+
     let format = fmt::format()
         .with_file(false)
         .with_level(false)
@@ -43,6 +45,7 @@ fn init_tracing(level: u8) -> eyre::Result<()> {
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
+    #[cfg(feature = "enable-tracing")]
     init_tracing(cli.args.verbose + 3)?;
 
     let sys = RealSysSync;

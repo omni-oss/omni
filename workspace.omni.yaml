@@ -3,6 +3,7 @@
 projects:
   - cli/**
   - crates/**
+  - packages/**
 
 generators:
   - generators/**

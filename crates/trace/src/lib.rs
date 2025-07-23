@@ -3,6 +3,7 @@
 #[doc(hidden)]
 pub use tracing as _trace_impl;
 pub use tracing::Level;
+pub use tracing::instrument;
 
 #[cfg(feature = "enabled")]
 pub macro event($($tt:tt)+) {

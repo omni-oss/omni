@@ -6,6 +6,7 @@
 		"moduleResolution": "bundler"
 	},
 	"exclude": [
+        "coverage",
 		"dist",
 		"node_modules",
 		"output",

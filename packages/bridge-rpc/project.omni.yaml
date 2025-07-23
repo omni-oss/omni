@@ -1,2 +1,4 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: bridge-rpc-ts
+tasks:
+  build: bunx vite build
