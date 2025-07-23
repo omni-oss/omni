@@ -1,9 +1,18 @@
 use crate::{DirEntry, DirWalkerBase};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct IgnoreRealDirWalkerConfig {
     pub standard_filters: bool,
     pub custom_ignore_filenames: Vec<String>,
+}
+
+impl Default for IgnoreRealDirWalkerConfig {
+    fn default() -> Self {
+        Self {
+            standard_filters: true,
+            custom_ignore_filenames: vec![],
+        }
+    }
 }
 
 impl IgnoreRealDirWalkerConfig {
