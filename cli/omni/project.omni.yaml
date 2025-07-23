@@ -3,9 +3,14 @@ name: omni_cli
 
 tasks:
   list:
-    command: ls -la
+    command: exit 1
     dependencies:
       - ^test
+
+  install:
+    command: cargo install --path .
+    dependencies:
+      - list
 
 dependencies:
   - omni_core

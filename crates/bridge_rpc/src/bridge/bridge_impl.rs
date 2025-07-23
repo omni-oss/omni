@@ -198,7 +198,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         }
     }
 
-    pub async fn request_with_id<TRequestData, TResponseData>(
+    pub(crate) async fn request_with_id<TRequestData, TResponseData>(
         &self,
         request_id: RequestId,
         path: impl Into<String>,

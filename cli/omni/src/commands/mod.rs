@@ -13,9 +13,9 @@ pub mod env;
 pub mod exec;
 pub mod run;
 
-const ABOUT: &str = "omni is a build system and a monorepo management tool";
+const ABOUT: &str = "omni is development workflow orchestration tool";
 const LONG_ABOUT: &str = r#"
-omni is a build system and a monorepo management tool
+Flexible task runner and scaffolding CLI for streamlined development workflows.
 "#;
 
 #[derive(Parser)]
@@ -60,7 +60,7 @@ pub struct CliArgs {
     )]
     pub env_file: Vec<String>,
 
-    #[arg(short = 'E', long, help = "The environment to use", env = "ENV")]
+    #[arg(long = "env", help = "The environment to use", env = "ENV")]
     pub env: Option<String>,
 }
 
@@ -77,6 +77,4 @@ pub enum CliSubcommands {
     Completion(CompletionCommand),
     #[command(about = "Execute specified task in projects")]
     Run(RunCommand),
-    #[command(about = "")]
-    JsTest,
 }
