@@ -285,7 +285,7 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.root_dir
     }
 
-    pub fn get_filter_glob_matcher(
+    pub fn get_filter_matcher(
         &self,
         glob_filter: &str,
     ) -> eyre::Result<GlobMatcher> {
@@ -305,7 +305,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 .collect());
         }
 
-        let matcher = self.get_filter_glob_matcher(glob_filter)?;
+        let matcher = self.get_filter_matcher(glob_filter)?;
         let result = self
             .get_projects()
             .expect("Should be able to get projects after load");
