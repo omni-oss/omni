@@ -317,6 +317,10 @@ impl TaskExecutionGraph {
             .collect())
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "trace", skip_all)
+    )]
     pub fn get_batched_execution_plan(
         &self,
         is_root_node: impl Fn(&TaskExecutionNode) -> bool,

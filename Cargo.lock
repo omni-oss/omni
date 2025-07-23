@@ -1222,6 +1222,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "config_utils",
+ "defer",
  "deno_task_shell",
  "derive_more",
  "dir_walker",
@@ -1245,6 +1246,7 @@ dependencies = [
  "tokio",
  "toml",
  "trace",
+ "tracing",
  "tracing-log",
  "tracing-subscriber",
 ]
@@ -1259,6 +1261,8 @@ dependencies = [
  "schemars",
  "serde",
  "thiserror",
+ "trace",
+ "tracing",
 ]
 
 [[package]]

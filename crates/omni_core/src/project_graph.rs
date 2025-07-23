@@ -314,6 +314,10 @@ impl ProjectGraph {
         Ok(projects)
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "trace", skip_all)
+    )]
     pub fn get_task_execution_graph(
         &self,
     ) -> TaskExecutionGraphResult<TaskExecutionGraph> {

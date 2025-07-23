@@ -184,6 +184,9 @@ impl<TSys: ContextSys> Context<TSys> {
         &mut self,
         walker: &TDirWalker,
     ) -> eyre::Result<&Vec<Project>> {
+        #[cfg(feature = "enable-tracing")]
+        let start_time = std::time::SystemTime::now();
+
         let mut paths = vec![];
 
         let mut match_b = GlobSetBuilder::new();
@@ -196,7 +199,18 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let matcher = match_b.build()?;
 
+        #[cfg(feature = "enable-tracing")]
+        let start_walk_time = std::time::SystemTime::now();
+
+        let mut num_iterations = 0;
+
+        let project_files: Vec<_> = constants::SUPPORTED_EXTENSIONS
+            .iter()
+            .map(|ext| constants::PROJECT_OMNI.replace("{ext}", ext))
+            .collect();
+
         for f in walker.walk_dir(&self.root_dir) {
+            num_iterations += 1;
             let f = f.map_err(|_| eyre::eyre!("Failed to walk dir"))?;
 
             if !self.sys.fs_is_dir(f.path())? {
@@ -206,25 +220,32 @@ impl<TSys: ContextSys> Context<TSys> {
             let dir = f.path().display();
             let dir_str = dir.to_string();
 
-            if matcher.is_match(&dir_str) && self.sys.fs_is_dir(f.path())? {
-                let project_files = constants::SUPPORTED_EXTENSIONS
-                    .iter()
-                    .map(|ext| constants::PROJECT_OMNI.replace("{ext}", ext));
-
-                for project_file in project_files {
-                    let p = f.path().join(&project_file);
+            if matcher.is_match(&dir_str) {
+                for project_file in &project_files {
+                    let p = f.path().join(project_file);
                     if self.sys.fs_exists(&p)? && self.sys.fs_is_file(p)? {
                         trace::debug!("Found project directory: {}", dir);
-                        paths.push((dir_str, f.path().join(&project_file)));
+                        paths.push((dir_str, f.path().join(project_file)));
                         break;
                     }
                 }
             }
         }
 
+        #[cfg(feature = "enable-tracing")]
+        trace::debug!(
+            "Found {} project directories in {} ms, walked {} items",
+            paths.len(),
+            start_walk_time.elapsed().unwrap_or_default().as_millis(),
+            num_iterations
+        );
+
         let mut projects = vec![];
 
         for (dir, conf) in paths {
+            #[cfg(feature = "enable-tracing")]
+            let start_time = std::time::SystemTime::now();
+
             let project =
                 ProjectConfiguration::load(&conf as &Path, self.sys.clone())
                     .wrap_err_with(|| {
@@ -249,6 +270,16 @@ impl<TSys: ContextSys> Context<TSys> {
                     })
                     .collect(),
             ));
+
+            #[cfg(feature = "enable-tracing")]
+            {
+                let elapsed = start_time.elapsed().unwrap_or_default();
+                trace::debug!(
+                    "Loaded project configuration file {:?} in {} ms",
+                    conf,
+                    elapsed.as_millis()
+                );
+            }
         }
 
         // check duplicate names
@@ -274,6 +305,16 @@ impl<TSys: ContextSys> Context<TSys> {
         }
 
         self.projects = Some(projects);
+
+        #[cfg(feature = "enable-tracing")]
+        {
+            let elapsed = start_time.elapsed().unwrap_or_default();
+            trace::debug!(
+                "Loaded {} projects in {} ms",
+                self.projects.as_ref().map_or(0, |p| p.len()),
+                elapsed.as_millis()
+            );
+        }
 
         Ok(self
             .projects
