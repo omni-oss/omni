@@ -26,6 +26,9 @@ pub enum JsBridgeErrorInner {
     #[error("Send error: {message}")]
     Send { message: String },
 
+    #[error("Timeout: {0}")]
+    Timeout(String),
+
     #[error("Unknown error: {0}")]
     Unknown(#[from] eyre::Report),
 }
