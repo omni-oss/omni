@@ -110,7 +110,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         self.transport
             .lock()
             .await
-            .send(bytes)
+            .send(bytes.into())
             .await
             .map_err(JsBridgeErrorInner::transport)?;
 
@@ -221,7 +221,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         self.transport
             .lock()
             .await
-            .send(bytes)
+            .send(bytes.into())
             .await
             .map_err(JsBridgeErrorInner::transport)?;
         Ok(())
@@ -394,7 +394,8 @@ mod tests {
             if !sent_start_ack {
                 sent_start_ack = true;
                 return Ok(rmp_serde::to_vec(&FRAME_PROBE_ACK)
-                    .expect("Failed to serialize start ack frame"));
+                    .expect("Failed to serialize start ack frame")
+                    .into());
             }
 
             if !sent_success {
@@ -404,11 +405,13 @@ mod tests {
                     req_id,
                     res_data("test_data"),
                 ))
-                .expect("Failed to serialize response"));
+                .expect("Failed to serialize response")
+                .into());
             }
 
             Ok(rmp_serde::to_vec(&FRAME_CLOSE)
-                .expect("Failed to serialize close frame"))
+                .expect("Failed to serialize close frame")
+                .into())
         });
 
         let rpc = BridgeRpc::new(transport, HashMap::new());
@@ -487,11 +490,13 @@ mod tests {
             if !sent_probe_ack {
                 sent_probe_ack = true;
                 return Ok(rmp_serde::to_vec(&FRAME_PROBE_ACK)
-                    .expect("Failed to serialize probe ack frame"));
+                    .expect("Failed to serialize probe ack frame")
+                    .into());
             }
 
             Ok(rmp_serde::to_vec(&FRAME_CLOSE)
-                .expect("Failed to serialize close frame"))
+                .expect("Failed to serialize close frame")
+                .into())
         });
 
         let rpc = BridgeRpcBuilder::new(transport).build();
@@ -545,7 +550,8 @@ mod tests {
         transport.expect_receive().returning(move || {
             if sent_success {
                 return Ok(rmp_serde::to_vec(&FRAME_CLOSE)
-                    .expect("Failed to serialize close frame"));
+                    .expect("Failed to serialize close frame")
+                    .into());
             }
 
             sent_success = true;
@@ -555,7 +561,8 @@ mod tests {
                 "test_path",
                 req_data("test_data"),
             ))
-            .expect("Failed to serialize response"))
+            .expect("Failed to serialize response")
+            .into())
         });
 
         let rpc = BridgeRpcBuilder::new(transport)
@@ -606,7 +613,8 @@ mod tests {
         transport.expect_receive().returning(move || {
             if sent_success {
                 return Ok(rmp_serde::to_vec(&FRAME_CLOSE)
-                    .expect("Failed to serialize close frame"));
+                    .expect("Failed to serialize close frame")
+                    .into());
             }
 
             sent_success = true;
@@ -616,7 +624,8 @@ mod tests {
                 "test_path_wrong",
                 req_data("test_data"),
             ))
-            .expect("Failed to serialize response"))
+            .expect("Failed to serialize response")
+            .into())
         });
 
         let rpc = BridgeRpc::new(transport, HashMap::new());
