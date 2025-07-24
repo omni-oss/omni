@@ -44,7 +44,7 @@ impl TaskDependencyConfiguration {
 }
 
 static TASK_REGEX: &Lazy<Regex> = regex!(
-    r#"((?<explicit_project>\w+)#(?<explicit_task>\w+))|(\^(?<upstream_task>\w+))|(?<own_task>\w+)"#
+    r#"((?<explicit_project>[\:\w\-]+)#(?<explicit_task>[\:\w\-]+))|(\^(?<upstream_task>[\:\w-]+))|(?<own_task>[\w\-\:]+)"#
 );
 
 impl From<TaskDependencyConfiguration> for crate::core::TaskDependency {

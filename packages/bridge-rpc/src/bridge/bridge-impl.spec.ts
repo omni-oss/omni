@@ -1,8 +1,9 @@
 import { decode, encode } from "@msgpack/msgpack";
 import { describe, expect, it, vi } from "vitest";
+import { withDelay } from "@/promise-utils";
 import type { Transport } from "@/transport";
 import { BridgeRpcBuilder } from "./builder";
-import { FRAME_CLOSE, fReq, fResSuccess } from "./frame";
+import { FRAME_CLOSE, fProbeAck, fReq, fResSuccess } from "./frame";
 
 describe("BridgeRpc", () => {
     function mockTransport() {
@@ -30,6 +31,24 @@ describe("BridgeRpc", () => {
             const frame = decode(data);
             expect(frame).toEqual(FRAME_CLOSE);
         });
+    });
+
+    it("should be able to probe the RPC", async () => {
+        const t = mockTransport();
+        const rpc = new BridgeRpcBuilder(t).build();
+
+        await rpc.start();
+
+        const probe = withDelay(rpc.probe(100), 1000);
+
+        const probeAckBytes = encode(fProbeAck());
+        for (const cb of t.onReceiveHandlers) {
+            cb(probeAckBytes);
+        }
+
+        expect(rpc.hasPendingProbe()).toBe(true);
+        expect(await probe).toBe(true);
+        expect(rpc.hasPendingProbe()).toBe(false);
     });
 
     it("should be able to send a request", async () => {

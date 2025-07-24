@@ -1,5 +1,6 @@
 {
     "name": "@repo/vite-config",
+    "type": "module",
     "version": "0.0.0-semantically-released",
     "exports": {
         "./*": {
@@ -11,6 +12,7 @@
         "vite": "^6.3.2"
     },
     "devDependencies": {
+        "unplugin-dts": "^1.0.0-beta.4",
         "vite-tsconfig-paths": "^5.1.4",
         "@repo/tsconfig": "workspace:*"
     }
