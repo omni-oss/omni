@@ -1,2 +1,2 @@
 export * from "./interface";
-export * from "./stdio-transport";
+export * from "./stream-transport";

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { delay } from "@/promise-utils";
-import { StdioTransport } from "./stdio-transport";
+import { StreamTransport } from "./stream-transport";
 
-describe("StdioTransport", () => {
-    function createStdio(data?: Uint8Array[]) {
+describe("Stream", () => {
+    function createStreams(data?: Uint8Array[]) {
         const input = new ReadableStream<Uint8Array>({
             pull(controller) {
                 for (const chunk of data ?? []) {
@@ -41,20 +41,20 @@ describe("StdioTransport", () => {
     }
 
     it("should be able to send data", async () => {
-        const stdio = createStdio();
-        const transport = new StdioTransport(stdio);
+        const streams = createStreams();
+        const transport = new StreamTransport(streams);
 
         const { lengthPrefix, data } = createData();
         await transport.send(new Uint8Array([1, 2, 3]));
 
-        expect(stdio.writtenChunks).toEqual([lengthPrefix, data]);
+        expect(streams.writtenChunks).toEqual([lengthPrefix, data]);
     });
 
     it("should be able to receive data", async () => {
         const { lengthPrefix, data } = createData();
-        const stdio = createStdio([lengthPrefix, data]);
+        const streams = createStreams([lengthPrefix, data]);
         const fn = vi.fn();
-        const transport = new StdioTransport(stdio);
+        const transport = new StreamTransport(streams);
         transport.onReceive(fn);
 
         // Delay is required to ensure the data is received

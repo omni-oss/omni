@@ -1,14 +1,14 @@
 import { AbstractTransport } from "./abstract-transport";
 import type { Transport } from "./interface";
 
-export type StdioTransportConfig = {
+export type StreamTransportConfig = {
     input: ReadableStream<Uint8Array>;
     output: WritableStream<Uint8Array>;
 };
 
-export class StdioTransport extends AbstractTransport implements Transport {
+export class StreamTransport extends AbstractTransport implements Transport {
     private writer: WritableStreamDefaultWriter<Uint8Array>;
-    constructor(config: StdioTransportConfig) {
+    constructor(config: StreamTransportConfig) {
         super();
         this.writer = config.output.getWriter();
         config.input.pipeTo(
