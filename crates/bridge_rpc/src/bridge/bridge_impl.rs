@@ -402,15 +402,6 @@ mod tests {
 
         let rpc = BridgeRpc::new(transport, HashMap::new());
 
-        // run the RPC to populate response buffer
-        let run = {
-            let rpc = rpc.clone();
-            tokio::spawn(async move {
-                sleep(Duration::from_millis(100)).await;
-                rpc.run().await.expect("Failed to run RPC");
-            })
-        };
-
         let response = {
             let rpc = rpc.clone();
             tokio::spawn(async move {
@@ -427,7 +418,16 @@ mod tests {
             })
         };
 
-        _ = tokio::join!(run, response);
+        // run the RPC to populate response buffer
+        let run = {
+            let rpc = rpc.clone();
+            tokio::spawn(async move {
+                sleep(Duration::from_millis(100)).await;
+                rpc.run().await.expect("Failed to run RPC");
+            })
+        };
+
+        _ = tokio::join!(response, run);
     }
 
     #[tokio::test]
@@ -450,6 +450,48 @@ mod tests {
         let rpc = BridgeRpc::new(transport, HashMap::new());
 
         rpc.close().await.expect("Failed to close RPC");
+    }
+
+    #[tokio::test]
+    #[timeout(1000)]
+    async fn test_probe() {
+        let mut transport = mt();
+
+        let mut received_probe = false;
+        transport.expect_send().returning(move |bytes| {
+            if !received_probe {
+                received_probe = true;
+                let frame = rmp_serde::from_slice::<BridgeFrame<()>>(&bytes)
+                    .expect("Failed to deserialize frame");
+                assert!(
+                    matches!(frame, BridgeFrame::InternalOp(InternalOp::Probe)),
+                    "Expected probe frame"
+                );
+            }
+
+            Ok(())
+        });
+        let mut sent_probe_ack = false;
+        transport.expect_receive().returning(move || {
+            if !sent_probe_ack {
+                sent_probe_ack = true;
+                return Ok(rmp_serde::to_vec(&FRAME_PROBE_ACK)
+                    .expect("Failed to serialize probe ack frame"));
+            }
+
+            Ok(rmp_serde::to_vec(&FRAME_CLOSE)
+                .expect("Failed to serialize close frame"))
+        });
+
+        let rpc = BridgeRpcBuilder::new(transport).build();
+
+        let response = rpc.probe(Duration::from_millis(100));
+        let run = rpc.run();
+
+        let (response, ..) = tokio::join!(response, run);
+
+        assert!(response.is_ok(), "Probe should return a valid result");
+        assert!(response.unwrap(), "Probe failed");
     }
 
     #[tokio::test]
