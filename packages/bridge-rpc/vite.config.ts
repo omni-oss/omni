@@ -1,8 +1,9 @@
-import baseConfig from "@repo/vite-config/base";
+import baseConfig from "@repo/vite-config/library";
 import { mergeConfig, type UserConfig } from "vite";
 
 export default mergeConfig(baseConfig, {
     build: {
+        minify: "esbuild",
         lib: {
             entry: "src/index.ts",
             formats: ["es", "cjs"],

@@ -1,11 +1,15 @@
 import { decode, encode } from "@msgpack/msgpack";
 import { createDeferred, type Deferred } from "@/deferred";
+import { TimeoutError, withTimeout } from "@/promise-utils";
 import type { Transport } from "@/transport";
 import {
     fClose,
+    fProbe,
+    fProbeAck,
     fReq,
     fResError,
     fResSuccess,
+    type InternalOp,
     type UnknownBridgeFrame,
     UnknownBridgeFrameSchema,
     type UnknownBridgeRequest,
@@ -32,12 +36,13 @@ export type BridgeRequestHandler<TRequest, TResponse> = (
 
 export class BridgeRpc {
     private responses = new Map<string, Deferred<unknown>>();
-    private isServing = false;
+    private isStarted = false;
+    private pendingProbe: Deferred<boolean> | null = null;
 
     constructor(private readonly config: BridgeRpcConfig) {}
 
     private async handle(frameBytes: Uint8Array) {
-        if (!this.isServing) {
+        if (!this.isStarted) {
             return;
         }
 
@@ -57,14 +62,7 @@ export class BridgeRpc {
     private async handleFrame(frame: UnknownBridgeFrame) {
         switch (frame.type) {
             case "internal_op":
-                switch (frame.content) {
-                    case "close":
-                        await this.handleClose();
-                        break;
-                    case "close_ack":
-                        await this.handleCloseAck();
-                        break;
-                }
+                await this.handleInternalOp(frame.content);
                 break;
             case "response":
                 this.handleResponse(frame.content);
@@ -75,13 +73,39 @@ export class BridgeRpc {
         }
     }
 
+    private async handleInternalOp(op: InternalOp) {
+        switch (op) {
+            case "close":
+                await this.handleClose();
+                break;
+            case "close_ack":
+                await this.handleCloseAck();
+                break;
+            case "probe":
+                await this.handleProbe();
+                break;
+            case "probe_ack":
+                await this.handleProbeAck();
+                break;
+        }
+    }
+
+    private async handleProbe() {
+        await this.config.transport.send(encode(fProbeAck()));
+    }
+
+    private async handleProbeAck() {
+        this.pendingProbe?.resolve(true);
+        this.pendingProbe = null;
+    }
+
     private async handleClose() {
         await this.config.transport.send(encode(fClose()));
         this.responses.clear();
     }
 
     private async handleCloseAck() {
-        this.isServing = false;
+        this.isStarted = false;
     }
 
     private async respondWithError(id: string, errorMessage: string) {
@@ -152,7 +176,7 @@ export class BridgeRpc {
     }
 
     async close() {
-        this.isServing = false;
+        this.isStarted = false;
         await this.config.transport.send(encode(fClose()));
         this.responses.clear();
         return this;
@@ -162,15 +186,43 @@ export class BridgeRpc {
         return this.config.handlers?.has(path) ?? false;
     }
 
+    async probe(timeout?: number): Promise<boolean> {
+        if (this.hasPendingProbe()) {
+            throw new Error("Probe already in progress");
+        }
+
+        if (!this.isStarted) {
+            throw new Error("RPC is not started");
+        }
+        const deferred = createDeferred<boolean>();
+        this.pendingProbe = deferred;
+        await this.config.transport.send(encode(fProbe()));
+
+        try {
+            return await withTimeout(deferred.promise, timeout ?? 1000);
+        } catch (error) {
+            if (error instanceof TimeoutError) {
+                return false;
+            }
+            throw error;
+        } finally {
+            this.pendingProbe = null;
+        }
+    }
+
     async start() {
-        if (this.isServing) {
+        if (this.isStarted) {
             return this;
         }
 
-        this.isServing = true;
+        this.isStarted = true;
 
         this.config.transport.onReceive(this.handle.bind(this));
 
         return this;
+    }
+
+    hasPendingProbe(): boolean {
+        return this.pendingProbe !== null;
     }
 }
