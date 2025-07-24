@@ -99,6 +99,7 @@ rmpv = { version = "^1.3.0", features = ["with-serde"] }
 defer = { version = "^0.2.1" }
 mockall = { version = "^0.13.1" }
 ntest = { version = "^0.9.3" }
+bytes = { version = "^1.10.1" }
 
 [profile.release]
 incremental = true
