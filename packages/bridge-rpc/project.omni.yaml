@@ -1,15 +1,13 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: bridge-rpc-ts
 tasks:
-  build:js: bun x vite build
-  build:types:
-    command: bun x tsc --project ./tsconfig.types.json
-    dependencies:
-      - build:js
   build:
-    command: echo "Build completed"
-    dependencies:
-      - build:types
-      - build:js
+    command: bun x vite build
 
   test:unit: bun x vitest --config ./vitest.config.unit.ts run
+  test:integration: bun x vitest --config ./vitest.config.integration.ts run
+  test:
+    command: echo "Test completed"
+    dependencies:
+      - test:unit
+      - test:integration

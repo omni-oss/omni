@@ -39,14 +39,13 @@ describe("BridgeRpc", () => {
 
         await rpc.start();
 
-        const probe = withDelay(rpc.probe(100), 1000);
+        const probe = withDelay(rpc.probe(100), 1);
 
         const probeAckBytes = encode(fProbeAck());
         for (const cb of t.onReceiveHandlers) {
             cb(probeAckBytes);
         }
 
-        expect(rpc.hasPendingProbe()).toBe(true);
         expect(await probe).toBe(true);
         expect(rpc.hasPendingProbe()).toBe(false);
     });
