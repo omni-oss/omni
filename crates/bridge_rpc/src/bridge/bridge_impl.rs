@@ -290,21 +290,32 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     pub async fn probe(&self, timeout: Duration) -> JsBridgeResult<bool> {
+        if self.has_pending_probe().await {
+            Err(JsBridgeErrorInner::ProbeInProgress)?;
+        }
+
         let (tx, rx) = oneshot::channel();
         *self.pending_probe.lock().await = Some(tx);
 
         self.send_frame(&FRAME_PROBE).await?;
 
-        tokio::time::timeout(timeout, rx.map(|_| true))
+        let result = tokio::time::timeout(timeout, rx.map(|_| true))
             .await
             .map_err(|_| {
                 JsBridgeErrorInner::Timeout(format!(
-                    "Probe timed out after {}",
-                    timeout.as_secs()
+                    "Probe timed out after {}ms",
+                    timeout.as_millis()
                 ))
-            })?;
+            });
 
-        Ok(true)
+        // clear the pending probe if it exists
+        _ = self.pending_probe.lock().await.take();
+
+        Ok(result?)
+    }
+
+    pub async fn has_pending_probe(&self) -> bool {
+        self.pending_probe.lock().await.is_some()
     }
 }
 
@@ -492,6 +503,7 @@ mod tests {
 
         assert!(response.is_ok(), "Probe should return a valid result");
         assert!(response.unwrap(), "Probe failed");
+        assert!(!rpc.has_pending_probe().await);
     }
 
     #[tokio::test]
