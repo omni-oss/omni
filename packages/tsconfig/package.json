@@ -13,6 +13,6 @@
         "typescript": "^5.1.6"
     },
     "dependencies": {
-        "@rencedm112/tsconfig": "^3.0.6"
+        "@rencedm112/tsconfig": "^3.0.7"
     }
 }
