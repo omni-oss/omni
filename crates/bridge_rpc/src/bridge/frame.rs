@@ -15,6 +15,26 @@ pub(crate) const fn f_close() -> BridgeFrame<()> {
     BridgeFrame::<()>::InternalOp(InternalOp::Close)
 }
 
+pub(crate) const FRAME_CLOSE: BridgeFrame<()> = f_close();
+
+pub(crate) const fn f_close_ack() -> BridgeFrame<()> {
+    BridgeFrame::<()>::InternalOp(InternalOp::CloseAck)
+}
+
+pub(crate) const FRAME_CLOSE_ACK: BridgeFrame<()> = f_close_ack();
+
+pub(crate) const fn f_probe() -> BridgeFrame<()> {
+    BridgeFrame::<()>::InternalOp(InternalOp::Probe)
+}
+
+pub(crate) const FRAME_PROBE: BridgeFrame<()> = f_probe();
+
+pub(crate) const fn f_probe_ack() -> BridgeFrame<()> {
+    BridgeFrame::<()>::InternalOp(InternalOp::ProbeAck)
+}
+
+pub(crate) const FRAME_PROBE_ACK: BridgeFrame<()> = f_probe_ack();
+
 pub(crate) fn f_req<TRequest>(
     id: RequestId,
     path: impl Into<String>,
@@ -49,8 +69,6 @@ pub(crate) fn f_res_error(
     f_res(id, None, Some(ErrorData { error_message }))
 }
 
-pub const FRAME_CLOSE: BridgeFrame<()> = f_close();
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct BridgeRequest<TRequest> {
@@ -77,4 +95,7 @@ pub(crate) struct BridgeResponse<TResponse> {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum InternalOp {
     Close,
+    CloseAck,
+    Probe,
+    ProbeAck,
 }
