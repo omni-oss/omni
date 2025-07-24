@@ -1,9 +1,7 @@
 {
-	"extends": ["@repo/tsconfig/base.json"],
+	"extends": ["@repo/tsconfig/with-paths.json"],
 	"compilerOptions": {
 		"outDir": "./dist",
-		"module": "ESNext",
-		"moduleResolution": "bundler"
 	},
 	"exclude": [
         "coverage",
