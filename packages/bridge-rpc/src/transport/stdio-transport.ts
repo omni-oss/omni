@@ -7,8 +7,10 @@ export type StdioTransportConfig = {
 };
 
 export class StdioTransport extends AbstractTransport implements Transport {
-    constructor(private readonly config: StdioTransportConfig) {
+    private writer: WritableStreamDefaultWriter<Uint8Array>;
+    constructor(config: StdioTransportConfig) {
         super();
+        this.writer = config.output.getWriter();
         config.input.pipeTo(
             new WritableStream({
                 write: this.receiveBytes,
@@ -17,6 +19,6 @@ export class StdioTransport extends AbstractTransport implements Transport {
     }
 
     protected override async sendBytes(data: Uint8Array): Promise<void> {
-        await this.config.output.getWriter().write(data);
+        await this.writer.write(data);
     }
 }
