@@ -29,6 +29,9 @@ pub enum JsBridgeErrorInner {
     #[error("Timeout: {0}")]
     Timeout(String),
 
+    #[error("Probe in progress")]
+    ProbeInProgress,
+
     #[error("Unknown error: {0}")]
     Unknown(#[from] eyre::Report),
 }
