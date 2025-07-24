@@ -11,6 +11,7 @@ export abstract class AbstractTransport implements Transport {
 
     protected receiveBytes = async (data: Uint8Array) => {
         const frames = this.readFramer.frame(data);
+
         if (frames && frames.length > 0) {
             for (const frame of frames) {
                 for (const cb of this.onReceiveCallbacks) {
@@ -22,7 +23,6 @@ export abstract class AbstractTransport implements Transport {
 
     async send(data: Uint8Array): Promise<void> {
         const [lengthPrefix, framedData] = this.writeFramer.frame(data);
-
         await this.sendBytes(lengthPrefix);
         await this.sendBytes(framedData);
     }
