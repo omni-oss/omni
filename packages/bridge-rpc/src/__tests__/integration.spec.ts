@@ -1,10 +1,22 @@
-import { describe, expect, it } from "vitest";
-import { BridgeRpcBuilder } from "@/bridge";
+import { afterAll, describe, expect, it } from "vitest";
+import { type BridgeRpc, BridgeRpcBuilder } from "@/bridge";
 import { StreamTransport } from "@/transport";
 
 describe("Rpc to Rpc Integration", () => {
-    function createRpcs() {
-        // One duplex pipe
+    const rpcs: ReturnType<typeof createRpcs>[] = [];
+
+    type Rpcs = {
+        rpc1: BridgeRpc;
+        rpc2: BridgeRpc;
+        start: () => Promise<void>;
+        stop: () => Promise<void>;
+    };
+
+    afterAll(async () => {
+        await Promise.all(rpcs.map((rpc) => rpc.stop()));
+    });
+
+    function createRpcs(): Rpcs {
         const transport1Side = new TransformStream<Uint8Array, Uint8Array>();
         const transport2Side = new TransformStream<Uint8Array, Uint8Array>();
 
@@ -36,30 +48,40 @@ describe("Rpc to Rpc Integration", () => {
             })
             .build();
 
-        return {
-            transport1,
+        const ret = {
             rpc1,
-            transport2,
             rpc2,
-            start: () => {
-                return Promise.all([rpc1.start(), rpc2.start()]);
+            start: async () => {
+                await Promise.all([rpc1.start(), rpc2.start()]);
             },
-            stop: () => {
-                return Promise.all([rpc1.stop(), rpc2.stop()]);
+            stop: async () => {
+                await Promise.all([rpc1.stop(), rpc2.stop()]);
             },
         };
+
+        rpcs.push(ret);
+
+        return ret;
     }
 
+    it("should be able to probe the RPC", async () => {
+        const { rpc2: rpc, start } = createRpcs();
+
+        await start();
+
+        const probe = rpc.probe(100);
+
+        expect(await probe).toBe(true);
+    });
+
     it("should be able to send and receive data", async () => {
-        const { rpc1, start, stop } = createRpcs();
+        const { rpc1, start } = createRpcs();
 
         await start();
 
         const reqData = { test: "test" };
 
         const data = await rpc1.request("rpc2test", reqData);
-
-        await stop();
 
         expect(data).toEqual({
             data: reqData,
