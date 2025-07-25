@@ -200,4 +200,18 @@ mod tests {
 
         assert_eq!(serialized, "\"^task\"");
     }
+
+    #[test]
+    fn test_deserialize_special_chars() {
+        const PROJECT_NAME: &str = "@repo/project.name-with_@special-chars";
+        const TASK_NAME: &str = "@task:name";
+
+        let dc: TaskDependencyConfiguration =
+            serde_json::from_str(&format!("\"{PROJECT_NAME}#{TASK_NAME}\""))
+                .expect("Can't parse DependencyConfiguration");
+
+        assert!(dc.is_explicit(), "Should be explicit");
+        assert_eq!(dc.project().unwrap(), PROJECT_NAME);
+        assert_eq!(dc.task(), TASK_NAME);
+    }
 }
