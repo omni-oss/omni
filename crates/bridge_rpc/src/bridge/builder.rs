@@ -15,7 +15,7 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         }
     }
 
-    pub fn handle<TFn, TRequest, TResponse, TError, TFuture>(
+    pub fn handler<TFn, TRequest, TResponse, TError, TFuture>(
         mut self,
         path: impl Into<String>,
         handler: TFn,
@@ -45,7 +45,7 @@ mod tests {
     async fn test_builder() {
         let transport = crate::MockTransport::new();
         let rpc = BridgeRpcBuilder::new(transport)
-            .handle(
+            .handler(
                 "test_path",
                 |req: String| async move { Ok::<_, String>(req) },
             )

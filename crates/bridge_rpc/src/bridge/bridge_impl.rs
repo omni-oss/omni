@@ -27,7 +27,7 @@ pub type RequestHandlerFn =
     Box<dyn FnMut(rmpv::Value) -> RequestHandlerFnFuture + Send>;
 
 pub struct BridgeRpc<TTransport: Transport> {
-    transport: Arc<Mutex<TTransport>>,
+    transport: Arc<TTransport>,
     response_pipes: Arc<Mutex<TxPipeMaps>>,
     request_handlers: Arc<Mutex<HashMap<String, RequestHandlerFn>>>,
     pending_probe: Arc<Mutex<Option<oneshot::Sender<()>>>>,
@@ -77,7 +77,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         handlers: HashMap<String, RequestHandlerFn>,
     ) -> Self {
         Self {
-            transport: Arc::new(Mutex::new(transport)),
+            transport: Arc::new(transport),
             response_pipes: Arc::new(Mutex::new(HashMap::new())),
             request_handlers: Arc::new(Mutex::new(handlers)),
             pending_probe: Arc::new(Mutex::new(None)),
@@ -108,8 +108,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             .map_err(JsBridgeErrorInner::Serialization)?;
 
         self.transport
-            .lock()
-            .await
             .send(bytes.into())
             .await
             .map_err(JsBridgeErrorInner::transport)?;
@@ -146,8 +144,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         loop {
             let bytes = self
                 .transport
-                .lock()
-                .await
                 .receive()
                 .await
                 .map_err(JsBridgeErrorInner::transport)?;
@@ -219,8 +215,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     async fn send_bytes_as_frame(&self, bytes: Vec<u8>) -> JsBridgeResult<()> {
         self.transport
-            .lock()
-            .await
             .send(bytes.into())
             .await
             .map_err(JsBridgeErrorInner::transport)?;
@@ -241,7 +235,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         Ok(())
     }
 
-    pub(crate) async fn request_with_id<TRequestData, TResponseData>(
+    pub(crate) async fn request_with_id<TResponseData, TRequestData>(
         &self,
         request_id: RequestId,
         path: impl Into<String>,
@@ -277,7 +271,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     #[inline(always)]
-    pub async fn request<TRequestData, TResponseData>(
+    pub async fn request<TResponseData, TRequestData>(
         &self,
         path: impl Into<String>,
         data: TRequestData,
@@ -286,7 +280,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         TRequestData: Serialize,
         TResponseData: for<'de> serde::Deserialize<'de>,
     {
-        self.request_with_id(RequestId::new(), path, data).await
+        self.request_with_id::<TResponseData, TRequestData>(
+            RequestId::new(),
+            path,
+            data,
+        )
+        .await
     }
 
     pub async fn probe(&self, timeout: Duration) -> JsBridgeResult<bool> {
@@ -348,13 +347,13 @@ mod tests {
         MockResponseData { data: data.into() }
     }
 
-    fn mt() -> MockTransport {
+    fn mock_transport() -> MockTransport {
         MockTransport::new()
     }
 
     #[tokio::test]
     async fn test_create_bridge_rpc() {
-        let transport = mt();
+        let transport = mock_transport();
         let rpc = BridgeRpc::new(transport, HashMap::new());
 
         assert!(
@@ -366,7 +365,7 @@ mod tests {
     #[tokio::test]
     #[timeout(1000)]
     async fn test_request() {
-        let mut transport = mt();
+        let mut transport = mock_transport();
 
         let req_id = RequestId::new();
 
@@ -420,7 +419,7 @@ mod tests {
             let rpc = rpc.clone();
             tokio::spawn(async move {
                 let response = rpc
-                    .request_with_id::<_, MockResponseData>(
+                    .request_with_id::<MockResponseData, _>(
                         req_id,
                         "test_path",
                         req_data("test_data"),
@@ -447,7 +446,7 @@ mod tests {
     #[tokio::test]
     #[timeout(1000)]
     async fn test_close() {
-        let mut transport = mt();
+        let mut transport = mock_transport();
 
         transport.expect_send().returning(move |bytes| {
             let frame: BridgeFrame<()> = rmp_serde::from_slice(&bytes)
@@ -469,7 +468,7 @@ mod tests {
     #[tokio::test]
     #[timeout(1000)]
     async fn test_probe() {
-        let mut transport = mt();
+        let mut transport = mock_transport();
 
         let mut received_probe = false;
         transport.expect_send().returning(move |bytes| {
@@ -514,7 +513,7 @@ mod tests {
     #[tokio::test]
     #[timeout(1000)]
     async fn test_respond_existing_path() {
-        let mut transport = mt();
+        let mut transport = mock_transport();
 
         let req_id = RequestId::new();
 
@@ -566,7 +565,7 @@ mod tests {
         });
 
         let rpc = BridgeRpcBuilder::new(transport)
-            .handle("test_path", async |req: MockRequestData| {
+            .handler("test_path", async |req: MockRequestData| {
                 Ok::<_, String>(MockResponseData { data: req.data })
             })
             .build();
@@ -578,7 +577,7 @@ mod tests {
     #[tokio::test]
     #[timeout(1000)]
     async fn test_respond_non_existing_path() {
-        let mut transport = mt();
+        let mut transport = mock_transport();
 
         let req_id = RequestId::new();
 
