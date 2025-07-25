@@ -1,3 +1,5 @@
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
+
 pub macro error {
     ($msg:expr) => {
         eyre::eyre!($msg)
@@ -8,38 +10,31 @@ pub macro error {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[error("JsRuntimeError: {repr}")]
 pub struct JsRuntimeError {
-    #[from]
     repr: JsRuntimeErrorRepr,
+    kind: JsRuntimeErrorKind,
 }
 
-impl From<std::io::Error> for JsRuntimeError {
-    fn from(err: std::io::Error) -> Self {
-        Self { repr: err.into() }
+impl JsRuntimeError {
+    pub fn kind(&self) -> JsRuntimeErrorKind {
+        self.kind
     }
 }
 
-impl From<eyre::Report> for JsRuntimeError {
-    fn from(err: eyre::Report) -> Self {
-        Self { repr: err.into() }
+impl<T: Into<JsRuntimeErrorRepr>> From<T> for JsRuntimeError {
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { repr, kind }
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum JsRuntimeErrorRepr {
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(JsRuntimeErrorKind), vis(pub))]
+pub(crate) enum JsRuntimeErrorRepr {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Other(#[from] eyre::Report),
-}
-
-impl JsRuntimeErrorRepr {
-    pub fn io(err: std::io::Error) -> Self {
-        Self::Io(err)
-    }
-
-    pub fn other(err: eyre::Report) -> Self {
-        Self::Other(err)
-    }
+    Unknown(#[from] eyre::Report),
 }

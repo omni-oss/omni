@@ -106,7 +106,7 @@ pub fn parse(
                                 }
                             }
                             (None, Some(eq)) => {
-                                let repr: ParseErrorRepr = SyntaxError::new(
+                                let repr: ParseErrorInner = SyntaxError::new(
                                     eq.line,
                                     eq.column,
                                     "Expected identifier".to_string(),
@@ -121,7 +121,7 @@ pub fn parse(
                                 stx_errors.push(repr.into());
                             }
                             (Some(ident), None) => {
-                                let repr: ParseErrorRepr = SyntaxError::new(
+                                let repr: ParseErrorInner = SyntaxError::new(
                                     ident.line,
                                     ident.column,
                                     "Expected '='".to_string(),
@@ -138,7 +138,7 @@ pub fn parse(
                             }
                             (None, None) => {
                                 if let Some(string) = val {
-                                    let repr: ParseErrorRepr =
+                                    let repr: ParseErrorInner =
                                         SyntaxError::new(
                                             string.line,
                                             string.column,
@@ -167,21 +167,21 @@ pub fn parse(
         }
         Err(errors) => {
             for error in errors {
-                let err_string = error.error_type.to_string();
+                let err_string = error.inner().to_string();
                 let long = Some(report_long_message(
                     text,
-                    error.line,
-                    error.column,
+                    error.line(),
+                    error.column(),
                     &err_string,
                 ));
-                let e = ParseError::syntax(
-                    error.line,
-                    error.column,
+                let parse_error = ParseError::syntax(
+                    error.line(),
+                    error.column(),
                     err_string,
                     long,
                 );
 
-                stx_errors.push(e);
+                stx_errors.push(parse_error);
             }
         }
     }

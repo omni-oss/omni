@@ -43,19 +43,15 @@ impl Lexer {
     }
 
     fn err_reached_eof(&self) -> LexerError {
-        LexerError {
-            line: self.line,
-            column: self.column,
-            error_type: LexerErrorType::ReachedEof,
-        }
+        LexerError::new(LexerErrorInner::ReachedEof, self.line, self.column)
     }
 
     fn err_unexpected_character(&self, character: char) -> LexerError {
-        LexerError {
-            line: self.line,
-            column: self.column,
-            error_type: LexerErrorType::UnexpectedCharacter(character),
-        }
+        LexerError::new(
+            LexerErrorInner::UnexpectedCharacter(character),
+            self.line,
+            self.column,
+        )
     }
 
     fn advance(&mut self) -> Result<(), LexerError> {

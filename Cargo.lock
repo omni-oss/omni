@@ -482,6 +482,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "convert_case 0.8.0",
  "derive_more",
+ "strum",
  "thiserror",
 ]
 
@@ -497,6 +498,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "env",
  "eyre",
+ "strum",
  "system_traits",
  "thiserror",
  "trace",
@@ -933,6 +935,7 @@ dependencies = [
  "eyre",
  "futures",
  "serde",
+ "strum",
  "system_traits",
  "thiserror",
  "tokio",
@@ -1262,6 +1265,7 @@ dependencies = [
  "petgraph",
  "schemars",
  "serde",
+ "strum",
  "thiserror",
  "trace",
  "tracing",
