@@ -12,6 +12,7 @@ use petgraph::{
     visit::{Dfs, Topo, Walker},
 };
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, IntoDiscriminant};
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
@@ -277,7 +278,7 @@ impl TaskExecutionGraph {
         self.node_map
             .get(key)
             .copied()
-            .ok_or_else(|| TaskExecutionGraphError::task_not_found_by_key(key))
+            .ok_or_else(|| TaskExecutionGraphError::task_not_found_by_key(*key))
     }
 
     #[inline(always)]
@@ -414,11 +415,11 @@ impl TaskExecutionGraph {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("TaskGraphError: {source}")]
+#[error("TaskGraphError: {inner}")]
 pub struct TaskExecutionGraphError {
     kind: TaskExecutionGraphErrorKind,
     #[source]
-    source: TaskExecutionGraphErrorInner,
+    inner: TaskExecutionGraphErrorInner,
 }
 
 impl TaskExecutionGraphError {
@@ -426,7 +427,7 @@ impl TaskExecutionGraphError {
     pub fn project_graph(source: ProjectGraphError) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::ProjectGraph,
-            source: TaskExecutionGraphErrorInner::ProjectGraph(source),
+            inner: TaskExecutionGraphErrorInner::ProjectGraph(source),
         }
     }
 
@@ -434,7 +435,7 @@ impl TaskExecutionGraphError {
     pub fn task_not_found(project: &str, task: &str) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::TaskNotFound,
-            source: TaskExecutionGraphErrorInner::TaskNotFound {
+            inner: TaskExecutionGraphErrorInner::TaskNotFound {
                 project: project.to_string(),
                 task: task.to_string(),
             },
@@ -442,12 +443,10 @@ impl TaskExecutionGraphError {
     }
 
     #[doc(hidden)]
-    pub fn task_not_found_by_key(key: &TaskKey) -> Self {
+    pub fn task_not_found_by_key(key: TaskKey) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::TaskNotFoundByKey,
-            source: TaskExecutionGraphErrorInner::TaskNotFoundByKey {
-                key: *key,
-            },
+            inner: TaskExecutionGraphErrorInner::TaskNotFoundByKey { key },
         }
     }
 
@@ -460,7 +459,7 @@ impl TaskExecutionGraphError {
     ) -> Self {
         Self {
             kind: TaskExecutionGraphErrorKind::CyclicDependency,
-            source: TaskExecutionGraphErrorInner::CyclicDependency {
+            inner: TaskExecutionGraphErrorInner::CyclicDependency {
                 from_project: from_project.to_string(),
                 from_task: from_task.to_string(),
                 to_project: to_project.to_string(),
@@ -470,9 +469,13 @@ impl TaskExecutionGraphError {
     }
 }
 
-impl From<ProjectGraphError> for TaskExecutionGraphError {
-    fn from(source: ProjectGraphError) -> Self {
-        Self::project_graph(source)
+impl<T: Into<TaskExecutionGraphErrorInner>> From<T>
+    for TaskExecutionGraphError
+{
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { inner: repr, kind }
     }
 }
 
@@ -482,15 +485,8 @@ impl TaskExecutionGraphError {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum TaskExecutionGraphErrorKind {
-    TaskNotFound,
-    TaskNotFoundByKey,
-    CyclicDependency,
-    ProjectGraph,
-}
-
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(TaskExecutionGraphErrorKind), vis(pub))]
 enum TaskExecutionGraphErrorInner {
     #[error(transparent)]
     ProjectGraph(#[from] ProjectGraphError),

@@ -29,7 +29,7 @@ where
 {
     let cwd = sys
         .env_current_dir()
-        .map_err(|_| EnvLoaderErrorRepr::CantLoadCurrentDir)?;
+        .map_err(|_| EnvLoaderErrorInner::CantLoadCurrentDir)?;
 
     let start_dir = config
         .start_dir
@@ -38,7 +38,7 @@ where
     let start_dir = Path::new(start_dir);
 
     if !sys.fs_exists(start_dir)? {
-        return Err(EnvLoaderErrorRepr::PathDoesNotExist(
+        return Err(EnvLoaderErrorInner::PathDoesNotExist(
             start_dir.to_string_lossy().to_string(),
         )
         .into());
@@ -97,7 +97,9 @@ where
 
     for file in files.iter().rev() {
         let contents = sys.fs_read_to_string(file).map_err(|_| {
-            EnvLoaderErrorRepr::CantReadFile(file.to_string_lossy().to_string())
+            EnvLoaderErrorInner::CantReadFile(
+                file.to_string_lossy().to_string(),
+            )
         })?;
 
         let parsed = env::parse(
@@ -107,7 +109,7 @@ where
                 extra_envs: Some(&env),
             },
         )
-        .map_err(EnvLoaderErrorRepr::CantParseEnv)?;
+        .map_err(EnvLoaderErrorInner::CantParseEnv)?;
 
         if let Some(matcher) = &config.matcher
             && matcher

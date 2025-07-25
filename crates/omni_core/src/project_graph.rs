@@ -8,22 +8,23 @@ use petgraph::{
     visit::{DfsPostOrder, EdgeRef, Reversed},
 };
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, IntoDiscriminant};
 
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
 #[derive(Debug, thiserror::Error)]
-#[error("ProjectGraphError: {source}")]
+#[error("ProjectGraphError: {inner}")]
 pub struct ProjectGraphError {
     kind: ProjectGraphErrorKind,
     #[source]
-    source: ProjectGraphErrorInner,
+    inner: ProjectGraphErrorInner,
 }
 
 impl ProjectGraphError {
     pub fn already_exists(project_name: &str) -> Self {
         Self {
             kind: ProjectGraphErrorKind::ProjectAlreadyExists,
-            source: ProjectGraphErrorInner::ProjectAlreadyExists(
+            inner: ProjectGraphErrorInner::ProjectAlreadyExists(
                 project_name.to_string(),
             ),
         }
@@ -32,7 +33,7 @@ impl ProjectGraphError {
     pub fn not_found(project_name: &str) -> Self {
         Self {
             kind: ProjectGraphErrorKind::ProjectNotFound,
-            source: ProjectGraphErrorInner::ProjectNotFound(
+            inner: ProjectGraphErrorInner::ProjectNotFound(
                 project_name.to_string(),
             ),
         }
@@ -41,21 +42,21 @@ impl ProjectGraphError {
     pub fn cyclic_dependency(from: String, to: String) -> Self {
         Self {
             kind: ProjectGraphErrorKind::CyclicDependency,
-            source: ProjectGraphErrorInner::CyclicDependency { from, to },
+            inner: ProjectGraphErrorInner::CyclicDependency { from, to },
         }
     }
 
     pub fn cycle_detected(project: String) -> Self {
         Self {
             kind: ProjectGraphErrorKind::CycleDetected,
-            source: ProjectGraphErrorInner::CycleDetected { project },
+            inner: ProjectGraphErrorInner::CycleDetected { project },
         }
     }
 
     pub fn unknown(source: eyre::Report) -> Self {
         Self {
             kind: ProjectGraphErrorKind::Unknown,
-            source: ProjectGraphErrorInner::Unknown(source),
+            inner: ProjectGraphErrorInner::Unknown(source),
         }
     }
 }
@@ -66,7 +67,16 @@ impl ProjectGraphError {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+impl<T: Into<ProjectGraphErrorInner>> From<T> for ProjectGraphError {
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { inner: repr, kind }
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(ProjectGraphErrorKind), vis(pub))]
 enum ProjectGraphErrorInner {
     #[error("Project with name '{0}' already exists")]
     ProjectAlreadyExists(String),
@@ -82,15 +92,6 @@ enum ProjectGraphErrorInner {
 
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectGraphErrorKind {
-    ProjectAlreadyExists,
-    ProjectNotFound,
-    CyclicDependency,
-    CycleDetected,
-    Unknown,
 }
 
 pub type ProjectGraphResult<T> = Result<T, ProjectGraphError>;

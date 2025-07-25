@@ -1,27 +1,37 @@
 use derive_more::Constructor;
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, Constructor)]
-#[error(transparent)]
+#[error("ParseError: {inner}")]
 pub struct ParseError {
-    #[from]
-    repr: ParseErrorRepr,
+    #[source]
+    inner: ParseErrorInner,
+    kind: ParseErrorKind,
+}
+
+impl<T: Into<ParseErrorInner>> From<T> for ParseError {
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { inner: repr, kind }
+    }
 }
 
 impl ParseError {
     pub fn long_message(&self) -> Option<&str> {
-        self.repr.long_message()
+        self.inner.long_message()
     }
 
     pub fn message(&self) -> &str {
-        self.repr.message()
+        self.inner.message()
     }
 
     pub fn line(&self) -> usize {
-        self.repr.line()
+        self.inner.line()
     }
 
     pub fn column(&self) -> usize {
-        self.repr.column()
+        self.inner.column()
     }
 }
 
@@ -32,48 +42,52 @@ impl ParseError {
         message: String,
         long_message: Option<String>,
     ) -> Self {
-        Self::new(ParseErrorRepr::syntax(line, column, message, long_message))
+        Self {
+            kind: ParseErrorKind::Syntax,
+            inner: ParseErrorInner::syntax(line, column, message, long_message),
+        }
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-
-pub enum ParseErrorRepr {
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(ParseErrorKind), vis(pub))]
+pub enum ParseErrorInner {
     #[error(transparent)]
-    SyntaxError(#[from] SyntaxError),
+    Syntax(#[from] SyntaxError),
 }
-
-impl ParseErrorRepr {
+impl ParseErrorInner {
     pub fn syntax(
         line: usize,
         column: usize,
         message: String,
         long_message: Option<String>,
     ) -> Self {
-        Self::SyntaxError(SyntaxError::new(line, column, message, long_message))
+        Self::Syntax(SyntaxError::new(line, column, message, long_message))
     }
+}
 
+impl ParseErrorInner {
     pub fn long_message(&self) -> Option<&str> {
         match self {
-            Self::SyntaxError(e) => e.long_message.as_deref(),
+            Self::Syntax(e) => e.long_message.as_deref(),
         }
     }
 
     pub fn message(&self) -> &str {
         match self {
-            Self::SyntaxError(e) => e.message.as_str(),
+            Self::Syntax(e) => e.message.as_str(),
         }
     }
 
     pub fn line(&self) -> usize {
         match self {
-            Self::SyntaxError(e) => e.line,
+            Self::Syntax(e) => e.line,
         }
     }
 
     pub fn column(&self) -> usize {
         match self {
-            Self::SyntaxError(e) => e.column,
+            Self::Syntax(e) => e.column,
         }
     }
 }

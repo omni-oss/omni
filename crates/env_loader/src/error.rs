@@ -1,38 +1,23 @@
 use env::ParseError;
+use strum::{EnumDiscriminants, IntoDiscriminant};
 
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
+#[error("{kind:?}Error: {inner}")]
 pub struct EnvLoaderError {
-    #[from]
-    repr: EnvLoaderErrorRepr,
+    #[source]
+    inner: EnvLoaderErrorInner,
+    kind: EnvLoaderErrorKind,
 }
 
 impl EnvLoaderError {
-    pub fn unknown(msg: &str) -> Self {
-        Self {
-            repr: EnvLoaderErrorRepr::Unknown(eyre::eyre!(msg.to_string())),
-        }
+    pub fn kind(&self) -> EnvLoaderErrorKind {
+        self.kind
     }
 }
 
-impl From<eyre::Error> for EnvLoaderError {
-    fn from(value: eyre::Error) -> Self {
-        Self {
-            repr: EnvLoaderErrorRepr::Unknown(value),
-        }
-    }
-}
-
-impl From<std::io::Error> for EnvLoaderError {
-    fn from(value: std::io::Error) -> Self {
-        Self {
-            repr: EnvLoaderErrorRepr::Io(value),
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum EnvLoaderErrorRepr {
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(EnvLoaderErrorKind), vis(pub))]
+pub(crate) enum EnvLoaderErrorInner {
     #[error("Can't load current dir")]
     CantLoadCurrentDir,
 
@@ -42,18 +27,17 @@ pub enum EnvLoaderErrorRepr {
     #[error("Can't read file: {0}")]
     CantReadFile(String),
 
-    #[error("Can't load root file: {0}")]
-    CantLoadRootFile(String),
-
-    #[error("Can't load start dir: {0}")]
-    CantLoadStartDir(String),
-
     #[error("Can't parse env: {0:?}")]
     CantParseEnv(Vec<ParseError>),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
 
-    #[error("Unkown error: {0}")]
-    Unknown(eyre::Error),
+impl<T: Into<EnvLoaderErrorInner>> From<T> for EnvLoaderError {
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { inner: repr, kind }
+    }
 }
