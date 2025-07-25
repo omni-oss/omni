@@ -1,6 +1,5 @@
-use std::fmt::Display;
-
 use bytes::Bytes;
+use std::fmt::Display;
 
 #[cfg_attr(test, mockall::automock(type Error = String;))]
 #[async_trait::async_trait]

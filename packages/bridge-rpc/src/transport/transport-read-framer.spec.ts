@@ -3,6 +3,20 @@ import { LENGTH_PREFIX_LENGTH } from "./constants";
 import { TransportReadFramer } from "./transport-read-framer";
 
 describe("TransportReadFramer", () => {
+    function combine(bytes: Uint8Array[]): Uint8Array {
+        const combined = new Uint8Array(
+            bytes.reduce((sum, b) => sum + b.byteLength, 0),
+        );
+
+        let offset = 0;
+        for (const byte of bytes) {
+            combined.set(byte, offset);
+            offset += byte.byteLength;
+        }
+
+        return combined;
+    }
+
     it("should be able to frame data in normal order", () => {
         const framer = new TransportReadFramer();
         const lengthPrefix = new Uint8Array(LENGTH_PREFIX_LENGTH);
@@ -21,12 +35,7 @@ describe("TransportReadFramer", () => {
         const data = new Uint8Array([1]);
         new DataView(lengthPrefix.buffer).setUint32(0, 4, true);
 
-        const combined = new Uint8Array(
-            lengthPrefix.byteLength + data.byteLength,
-        );
-
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
+        const combined = combine([lengthPrefix, data]);
 
         const framed = framer.frame(combined);
 
@@ -39,12 +48,7 @@ describe("TransportReadFramer", () => {
         const data = new Uint8Array([1, 2, 3, 4]);
         new DataView(lengthPrefix.buffer).setUint32(0, 4, true);
 
-        const combined = new Uint8Array(
-            lengthPrefix.byteLength + data.byteLength,
-        );
-
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
+        const combined = combine([lengthPrefix, data]);
 
         const framed = framer.frame(combined);
 
@@ -57,11 +61,7 @@ describe("TransportReadFramer", () => {
         const data = new Uint8Array([1]);
         new DataView(lengthPrefix.buffer).setUint32(0, 1, true);
 
-        const combined = new Uint8Array(
-            lengthPrefix.byteLength + data.byteLength,
-        );
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
+        const combined = combine([lengthPrefix, data]);
 
         const bytes = [
             combined.slice(0, 3),
@@ -86,12 +86,8 @@ describe("TransportReadFramer", () => {
         const lengthPrefix = new Uint8Array(LENGTH_PREFIX_LENGTH);
         const data = new Uint8Array([1, 2, 3, 4]);
         new DataView(lengthPrefix.buffer).setUint32(0, 4, true);
-        const combined = new Uint8Array(
-            lengthPrefix.byteLength + data.byteLength,
-        );
 
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
+        const combined = combine([lengthPrefix, data]);
 
         // split to 2, 4, 2 bytes
         const bytes = [
@@ -116,14 +112,8 @@ describe("TransportReadFramer", () => {
         const lengthPrefix = new Uint8Array(LENGTH_PREFIX_LENGTH);
         const data = new Uint8Array([1, 2, 3, 4]);
         new DataView(lengthPrefix.buffer).setUint32(0, 4, true);
-        const combined = new Uint8Array(
-            (lengthPrefix.byteLength + data.byteLength) * 2,
-        );
 
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
-        combined.set(lengthPrefix, lengthPrefix.byteLength + data.byteLength);
-        combined.set(data, lengthPrefix.byteLength + data.byteLength * 2);
+        const combined = combine([lengthPrefix, data, lengthPrefix, data]);
 
         const framed = framer.frame(combined);
 
@@ -135,14 +125,7 @@ describe("TransportReadFramer", () => {
         const lengthPrefix = new Uint8Array(LENGTH_PREFIX_LENGTH);
         const data = new Uint8Array([1, 2, 3, 4]);
         new DataView(lengthPrefix.buffer).setUint32(0, 4, true);
-        const combined = new Uint8Array(
-            (lengthPrefix.byteLength + data.byteLength) * 2,
-        );
-
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
-        combined.set(lengthPrefix, lengthPrefix.byteLength + data.byteLength);
-        combined.set(data, lengthPrefix.byteLength + data.byteLength * 2);
+        const combined = combine([lengthPrefix, data, lengthPrefix, data]);
 
         // split to 2, 4, 2, 2, 4, 2 bytes
         const bytes = [
@@ -171,12 +154,7 @@ describe("TransportReadFramer", () => {
         const data = new Uint8Array(0);
         new DataView(lengthPrefix.buffer).setUint32(0, 0, true);
 
-        const combined = new Uint8Array(
-            lengthPrefix.byteLength + data.byteLength,
-        );
-
-        combined.set(lengthPrefix);
-        combined.set(data, lengthPrefix.byteLength);
+        const combined = combine([lengthPrefix, data]);
 
         const framed = framer.frame(combined);
 

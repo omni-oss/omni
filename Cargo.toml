@@ -100,6 +100,7 @@ defer = { version = "^0.2.1" }
 mockall = { version = "^0.13.1" }
 ntest = { version = "^0.9.3" }
 bytes = { version = "^1.10.1" }
+byteorder = { version = "^1.5.0" }
 
 [profile.release]
 incremental = true
