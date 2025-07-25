@@ -33,6 +33,13 @@ impl TransportReadFramer {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.current_frame_bytes.clear();
+        self.current_expected_frame_length = None;
+        self.prefix_buffered_length = 0;
+        self.frame_buffered_length = 0;
+    }
+
     /// Processes incoming bytes and returns a vector of complete frames.
     ///
     /// If no complete frames are found, it returns `None`.
