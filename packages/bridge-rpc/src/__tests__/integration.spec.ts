@@ -69,9 +69,9 @@ describe("Rpc to Rpc Integration", () => {
 
         await start();
 
-        const probe = rpc.probe(100);
+        const probe = await rpc.probe(100);
 
-        expect(await probe).toBe(true);
+        expect(probe).toBe(true);
     });
 
     it("should be able to send and receive data", async () => {
