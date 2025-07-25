@@ -175,7 +175,7 @@ export class BridgeRpc {
         return await this.requestWithId<TResponse>(id, path, data);
     }
 
-    async close() {
+    async stop() {
         this.isStarted = false;
         await this.config.transport.send(encode(fClose()));
         this.responses.clear();
