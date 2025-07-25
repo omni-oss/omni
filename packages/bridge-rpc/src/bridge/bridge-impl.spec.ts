@@ -21,11 +21,11 @@ describe("BridgeRpc", () => {
         return { onReceiveHandlers, ...mt };
     }
 
-    it("should be able to close the RPC", async () => {
+    it("should be able to stop the RPC", async () => {
         const t = mockTransport();
         const rpc = new BridgeRpcBuilder(t).build();
 
-        await rpc.close();
+        await rpc.stop();
 
         t.send.mock.calls.forEach(([data]) => {
             const frame = decode(data);
