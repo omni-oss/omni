@@ -6,6 +6,7 @@ use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::{EdgeRef, IntoNodeReferences as _},
 };
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 pub trait ExtensionGraphNode: Clone + Merge {
     type Id: Eq + Hash + Clone + Debug;
@@ -142,12 +143,31 @@ impl<T: ConnectedNodeIds> ExtensionGraph<T> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct ExtensionGraphError(#[from] ExtensionGraphErrorInner);
+#[error("{kind:?}Error: {inner}")]
+pub struct ExtensionGraphError {
+    kind: ExtensionGraphErrorKind,
+    #[source]
+    inner: ExtensionGraphErrorInner,
+}
+
+impl<T: Into<ExtensionGraphErrorInner>> From<T> for ExtensionGraphError {
+    fn from(value: T) -> Self {
+        let repr = value.into();
+        let kind = repr.discriminant();
+        Self { inner: repr, kind }
+    }
+}
+
+impl ExtensionGraphError {
+    pub fn kind(&self) -> ExtensionGraphErrorKind {
+        self.kind
+    }
+}
 
 pub type ExtensionGraphResult<T> = Result<T, ExtensionGraphError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(ExtensionGraphErrorKind), vis(pub))]
 enum ExtensionGraphErrorInner {
     #[error("Cyclic dependency detected: {message}")]
     CyclicDependency { message: String },

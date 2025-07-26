@@ -17,3 +17,5 @@ tasks:
 dependencies:
   - omni_core
   - env_loader
+  - config_utils
+  - omni_types
