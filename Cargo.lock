@@ -270,9 +270,11 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "config_utils"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "derive_more",
  "merge",
  "schemars",
  "serde",
+ "strum",
 ]
 
 [[package]]
@@ -1246,6 +1248,7 @@ dependencies = [
  "serde_json",
  "serde_yml",
  "shadow-rs",
+ "strum",
  "system_traits",
  "thiserror",
  "tokio",

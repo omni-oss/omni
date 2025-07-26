@@ -1,14 +1,23 @@
 use std::borrow::Cow;
 
 use lazy_regex::{Lazy, Regex, regex};
+use merge::Merge;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use strum::EnumIs;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumIs)]
 pub enum TaskDependencyConfiguration {
     Own { task: String },
     ExplicitProject { project: String, task: String },
     Upstream { task: String },
+}
+
+impl Merge for TaskDependencyConfiguration {
+    #[inline(always)]
+    fn merge(&mut self, other: Self) {
+        *self = other;
+    }
 }
 
 impl TaskDependencyConfiguration {
@@ -28,18 +37,6 @@ impl TaskDependencyConfiguration {
             } => Some(project),
             TaskDependencyConfiguration::Upstream { .. } => None,
         }
-    }
-
-    pub fn is_upstream(&self) -> bool {
-        matches!(self, TaskDependencyConfiguration::Upstream { .. })
-    }
-
-    pub fn is_explicit(&self) -> bool {
-        matches!(self, TaskDependencyConfiguration::ExplicitProject { .. })
-    }
-
-    pub fn is_own(&self) -> bool {
-        matches!(self, TaskDependencyConfiguration::Own { .. })
     }
 }
 
@@ -150,7 +147,7 @@ mod tests {
             serde_json::from_str("\"project#task\"")
                 .expect("Can't parse DependencyConfiguration");
 
-        assert!(dc.is_explicit(), "Should be explicit");
+        assert!(dc.is_explicit_project(), "Should be explicit");
         assert_eq!(dc.project().unwrap(), "project");
         assert_eq!(dc.task(), "task");
     }
@@ -210,7 +207,7 @@ mod tests {
             serde_json::from_str(&format!("\"{PROJECT_NAME}#{TASK_NAME}\""))
                 .expect("Can't parse DependencyConfiguration");
 
-        assert!(dc.is_explicit(), "Should be explicit");
+        assert!(dc.is_explicit_project(), "Should be explicit");
         assert_eq!(dc.project().unwrap(), PROJECT_NAME);
         assert_eq!(dc.task(), TASK_NAME);
     }

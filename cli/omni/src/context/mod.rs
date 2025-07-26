@@ -258,7 +258,7 @@ impl<TSys: ContextSys> Context<TSys> {
             projects.push(Project::new(
                 project.name,
                 PathBuf::from(dir),
-                project.dependencies.to_vec(),
+                project.dependencies.to_vec_inner(),
                 project
                     .tasks
                     .unwrap_or_default()
