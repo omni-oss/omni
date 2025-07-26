@@ -113,28 +113,32 @@ impl TaskExecutionGraph {
             for task in project.tasks.iter() {
                 let tname = task.0.as_str();
                 let pname = project.name.as_str();
-                let dependent_key = TaskKey::new(pname, tname);
 
                 for dependency in task.1.dependencies.iter() {
                     match dependency {
                         crate::TaskDependency::Own { task } => {
-                            let k = TaskKey::new(&project.name, task);
-
-                            graph.add_edge_using_keys(&dependent_key, &k)?;
+                            graph.add_edge_by_names(
+                                pname,
+                                tname,
+                                &project.name,
+                                task,
+                            )?;
                         }
                         crate::TaskDependency::ExplicitProject {
                             project,
                             task,
                         } => {
-                            let k = TaskKey::new(project, task);
-                            graph.add_edge_using_keys(&dependent_key, &k)?;
+                            graph.add_edge_by_names(
+                                pname, tname, project, task,
+                            )?;
                         }
                         crate::TaskDependency::Upstream { task } => {
                             add_upstream_dependencies(
                                 project_graph,
                                 &mut graph,
                                 project,
-                                &dependent_key,
+                                pname,
+                                tname,
                                 task,
                             )?;
                         }
@@ -151,7 +155,8 @@ fn add_upstream_dependencies(
     project_graph: &ProjectGraph,
     task_graph: &mut TaskExecutionGraph,
     project: &&Project,
-    dependent_key: &TaskKey,
+    dependent_project_name: &str,
+    dependent_task_name: &str,
     task: &str,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
@@ -163,17 +168,26 @@ fn add_upstream_dependencies(
 
     for (_, p) in dependencies.iter() {
         if p.tasks.contains_key(task) {
-            let k = TaskKey::new(&p.name, task);
-
-            if !task_graph.contains_dependency_by_key(dependent_key, &k)? {
-                task_graph.add_edge_using_keys(dependent_key, &k)?;
+            if !task_graph.contains_dependency_by_names(
+                dependent_project_name,
+                dependent_task_name,
+                &p.name,
+                task,
+            )? {
+                task_graph.add_edge_by_names(
+                    dependent_project_name,
+                    dependent_task_name,
+                    &p.name,
+                    task,
+                )?;
             }
         } else {
             add_upstream_dependencies(
                 project_graph,
                 task_graph,
                 &p,
-                dependent_key,
+                dependent_project_name,
+                dependent_task_name,
                 task,
             )?;
         };
@@ -184,15 +198,23 @@ fn add_upstream_dependencies(
 pub type BatchedExecutionPlan = Vec<Vec<TaskExecutionNode>>;
 
 impl TaskExecutionGraph {
-    fn contains_dependency_by_key(
+    fn contains_dependency_by_names(
         &self,
-        dependent_key: &TaskKey,
-        dependee_key: &TaskKey,
+        dependent_project_name: &str,
+        dependent_task_name: &str,
+        dependee_project_name: &str,
+        dependee_task_name: &str,
     ) -> TaskExecutionGraphResult<bool> {
-        let dependent_idx = self.get_task_index_using_key(dependent_key)?;
-        let dependee_idx = self.get_task_index_using_key(dependee_key)?;
+        let depedent = self.get_task_index_by_name(
+            dependent_project_name,
+            dependent_task_name,
+        )?;
+        let dependee = self.get_task_index_by_name(
+            dependee_project_name,
+            dependee_task_name,
+        )?;
 
-        self.contains_dependency(dependent_idx, dependee_idx)
+        self.contains_dependency(depedent, dependee)
     }
 
     fn contains_dependency(
@@ -203,13 +225,21 @@ impl TaskExecutionGraph {
         Ok(self.di_graph.contains_edge(dependee_idx, dependent_idx))
     }
 
-    fn add_edge_using_keys(
+    fn add_edge_by_names(
         &mut self,
-        dependent_key: &TaskKey,
-        dependee_key: &TaskKey,
+        dependent_project_name: &str,
+        dependent_task_name: &str,
+        dependee_project_name: &str,
+        dependee_task_name: &str,
     ) -> TaskExecutionGraphResult<()> {
-        let a_idx = self.get_task_index_using_key(dependee_key)?;
-        let b_idx = self.get_task_index_using_key(dependent_key)?;
+        let a_idx = self.get_task_index_by_name(
+            dependee_project_name,
+            dependee_task_name,
+        )?;
+        let b_idx = self.get_task_index_by_name(
+            dependent_project_name,
+            dependent_task_name,
+        )?;
 
         let edge_idx = self.di_graph.add_edge(a_idx, b_idx, ());
 
@@ -235,12 +265,22 @@ impl TaskExecutionGraph {
     }
 
     #[inline(always)]
-    pub fn get_task_using_names(
+    pub fn get_task_by_name(
         &self,
-        project: &str,
-        task: &str,
+        project_name: &str,
+        task_name: &str,
     ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
-        self.get_task_using_key(&TaskKey::new(project, task))
+        self.get_task_by_key(&TaskKey::new(project_name, task_name))
+            .map_err(|e| {
+                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
+                    TaskExecutionGraphError::task_not_found(
+                        project_name,
+                        task_name,
+                    )
+                } else {
+                    e
+                }
+            })
     }
 
     #[inline(always)]
@@ -252,26 +292,36 @@ impl TaskExecutionGraph {
     }
 
     #[inline(always)]
-    pub fn get_task_using_key(
+    fn get_task_by_key(
         &self,
         key: &TaskKey,
     ) -> TaskExecutionGraphResult<&TaskExecutionNode> {
-        let t = self.get_task_index_using_key(key)?;
+        let t = self.get_task_index_by_key(key)?;
 
         Ok(&self.di_graph[t])
     }
 
     #[inline(always)]
-    pub fn get_task_index(
+    pub fn get_task_index_by_name(
         &self,
-        project: &str,
-        task: &str,
+        project_name: &str,
+        task_name: &str,
     ) -> TaskExecutionGraphResult<NodeIndex> {
-        self.get_task_index_using_key(&TaskKey::new(project, task))
+        self.get_task_index_by_key(&TaskKey::new(project_name, task_name))
+            .map_err(|e| {
+                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
+                    TaskExecutionGraphError::task_not_found(
+                        project_name,
+                        task_name,
+                    )
+                } else {
+                    e
+                }
+            })
     }
 
     #[inline(always)]
-    pub fn get_task_index_using_key(
+    fn get_task_index_by_key(
         &self,
         key: &TaskKey,
     ) -> TaskExecutionGraphResult<NodeIndex> {
@@ -289,15 +339,21 @@ impl TaskExecutionGraph {
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
         let task_key = TaskKey::new(project_name, task_name);
 
-        self.get_direct_dependencies_by_key(&task_key)
+        self.get_direct_dependencies_by_key(&task_key).map_err(|e| {
+            if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
+                TaskExecutionGraphError::task_not_found(project_name, task_name)
+            } else {
+                e
+            }
+        })
     }
 
     #[inline(always)]
-    pub fn get_direct_dependencies_by_key(
+    fn get_direct_dependencies_by_key(
         &self,
         key: &TaskKey,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
-        let task_index = self.get_task_index_using_key(key)?;
+        let task_index = self.get_task_index_by_key(key)?;
 
         self.get_direct_dependencies(task_index)
     }
@@ -415,7 +471,7 @@ impl TaskExecutionGraph {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("TaskGraphError: {inner}")]
+#[error("{kind:?}Error: {inner}")]
 pub struct TaskExecutionGraphError {
     kind: TaskExecutionGraphErrorKind,
     #[source]
@@ -619,7 +675,9 @@ mod tests {
         let p1t1_dependency = &p1t1_dependencies[0];
         assert_eq!(
             p1t1_dependency.0,
-            task_graph.get_task_index("project1", "p1t2").unwrap()
+            task_graph
+                .get_task_index_by_name("project1", "p1t2")
+                .unwrap()
         );
         assert_eq!(p1t1_dependency.1.task_name, "p1t2");
     }
@@ -642,7 +700,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             p1t4_dependency_1.0,
-            task_graph.get_task_index("project3", "p3t1").unwrap()
+            task_graph
+                .get_task_index_by_name("project3", "p3t1")
+                .unwrap()
         );
         assert_eq!(p1t4_dependency_1.1.task_name, "p3t1");
         assert_eq!(p1t4_dependency_1.1.project_name, "project3");
@@ -657,7 +717,7 @@ mod tests {
         assert_eq!(
             p1t4_dependency_2.0,
             task_graph
-                .get_task_index("project1", "shared-task-3")
+                .get_task_index_by_name("project1", "shared-task-3")
                 .unwrap()
         );
         assert_eq!(p1t4_dependency_2.1.task_name, "shared-task-3");
@@ -693,7 +753,7 @@ mod tests {
         assert_eq!(
             p1t2_dependency_1.0,
             task_graph
-                .get_task_index("project2", "shared-task")
+                .get_task_index_by_name("project2", "shared-task")
                 .unwrap()
         );
         assert_eq!(p1t2_dependency_1.1.task_name, "shared-task");
@@ -702,7 +762,7 @@ mod tests {
         assert_eq!(
             p1t2_dependency_2.0,
             task_graph
-                .get_task_index("project3", "shared-task")
+                .get_task_index_by_name("project3", "shared-task")
                 .unwrap()
         );
         assert_eq!(p1t2_dependency_2.1.task_name, "shared-task");
@@ -713,7 +773,7 @@ mod tests {
         assert_eq!(
             p1t3_dependency.0,
             task_graph
-                .get_task_index("project3", "shared-task-2")
+                .get_task_index_by_name("project3", "shared-task-2")
                 .unwrap()
         );
         assert_eq!(p1t3_dependency.1.task_name, "shared-task-2");
