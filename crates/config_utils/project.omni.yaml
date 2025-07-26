@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: config_utils
+
+tasks:
+  test: cargo test -p config_utils
