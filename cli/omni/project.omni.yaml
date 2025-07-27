@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
-name: omni_cli
+name: omni
 
 tasks:
   test: cargo test -p omni
 
   build:
-    command: carbo build --release --path .
+    command: cargo build --release --package omni
     dependencies:
       - test
 
