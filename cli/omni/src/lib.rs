@@ -14,20 +14,7 @@ mod utils;
 
 #[cfg(feature = "enable-tracing")]
 fn init_tracing(level: u8) -> eyre::Result<()> {
-    use tracing_subscriber::fmt;
-
-    let format = fmt::format()
-        .with_file(false)
-        .with_level(false)
-        .with_line_number(false)
-        .with_thread_ids(false)
-        .with_thread_names(false)
-        .without_time()
-        .with_target(false)
-        .with_source_location(false);
-
     tracing_subscriber::fmt()
-        .event_format(format)
         .with_max_level(match level {
             1 => trace::Level::ERROR,
             2 => trace::Level::WARN,
@@ -41,12 +28,22 @@ fn init_tracing(level: u8) -> eyre::Result<()> {
     Ok(())
 }
 
+fn init_logging() -> eyre::Result<()> {
+    #[cfg(feature = "enable-tracing")]
+    tracing_log::LogTracer::init()?;
+    env_logger::init_from_env("OMNI_LOG");
+
+    Ok(())
+}
+
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     #[cfg(feature = "enable-tracing")]
-    init_tracing(cli.args.verbose + 3)?;
+    init_tracing(cli.args.trace_level)?;
+
+    init_logging()?;
 
     let sys = RealSysSync;
     let mut context =

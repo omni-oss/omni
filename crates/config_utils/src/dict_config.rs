@@ -247,4 +247,24 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_value() {
+        // same as merge behavior
+        let mut a = DictConfig::value(hm_replace![
+            "foo" => 3,
+            "bar" => 2
+        ]);
+        let b = DictConfig::value(hm_replace!("foo" => 1));
+
+        a.merge(b);
+
+        assert_eq!(
+            a.to_hash_map_inner(),
+            hm![
+                "foo" => 1,
+                "bar" => 2
+            ]
+        );
+    }
 }

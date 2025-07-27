@@ -504,7 +504,7 @@ mod tests {
         let sys = sys.unwrap_or_else(create_sys);
 
         let cli = &CliArgs {
-            verbose: 0,
+            trace_level: 0,
             env_root_dir_marker: None,
             env_file: vec![
                 ".env".to_string(),
