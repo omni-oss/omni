@@ -35,8 +35,8 @@ pub struct Cli {
 #[derive(Args)]
 #[command()]
 pub struct CliArgs {
-    #[arg(short = 'v', long = "verbose", help = "Show trace level", action = clap::ArgAction::Count, default_value_t = 0)]
-    pub verbose: u8,
+    #[arg(short = 't', long = "trace-level", help = "Print traces to stdout", action = clap::ArgAction::Count, default_value_t = 0)]
+    pub trace_level: u8,
 
     #[arg(
         short = 'r',

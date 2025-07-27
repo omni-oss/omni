@@ -9,7 +9,12 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["trace/enabled", "dep:tracing", "dep:tracing-subscriber"]
+enable-tracing = [
+    "trace/enabled",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:tracing-log",
+]
 
 [dependencies]
 #oxc = { workspace = true }
@@ -23,6 +28,7 @@ futures = { workspace = true }
 trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
+tracing-log = { workspace = true, optional = true }
 env_loader = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -41,12 +47,13 @@ system_traits = { workspace = true, features = [
     "real-sync",
 ] }
 dir_walker = { workspace = true, features = ["ignore", "memory"] }
-tracing-log = { workspace = true }
 deno_task_shell = { workspace = true }
 petgraph = { workspace = true }
 thiserror = { workspace = true }
 defer = { workspace = true }
 strum = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

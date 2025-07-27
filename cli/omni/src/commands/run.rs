@@ -56,6 +56,18 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
         let projects = ctx.get_filtered_projects(filter)?;
         let mut tasks = vec![];
         trace::debug!("Projects: {:?}", projects);
+
+        if projects.is_empty() {
+            trace::error!(
+                "No projects found matching filter '{}'. Nothing to run.",
+                filter
+            );
+            eyre::bail!(
+                "No projects found matching filter '{}'. Nothing to run.",
+                filter
+            );
+        }
+
         for project in projects {
             let task = if let Some(task) = project.tasks.get(&command.task) {
                 task
@@ -92,11 +104,14 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
             })?;
 
         if execution_plan.is_empty() {
-            trace::warn!(
+            trace::error!(
                 "No projects found matching filter '{}'. Nothing to run.",
                 filter
             );
-            return Ok(());
+            eyre::bail!(
+                "No projects found matching filter '{}'. Nothing to run.",
+                filter
+            );
         }
 
         trace::debug!("Execution plan: {:?}", execution_plan);
