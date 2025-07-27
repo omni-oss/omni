@@ -1,0 +1,7 @@
+name: base-2
+
+extends:
+  - ${WORKSPACE_DIR}/base/base-1.omni.yaml
+
+tasks:
+  from-base-2: echo "from base-2"

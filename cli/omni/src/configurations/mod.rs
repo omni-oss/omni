@@ -6,6 +6,7 @@ mod task_configuration;
 mod task_dependency_configuration;
 mod workspace_configuration;
 
+pub use extension_graph::*;
 pub use generator_configuration::*;
 pub use project_configuration::*;
 pub use scripting_configuration::*;

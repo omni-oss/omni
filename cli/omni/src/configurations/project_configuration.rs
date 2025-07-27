@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsRead;
 
-use crate::utils;
+use crate::{configurations::ExtensionGraphNode, utils};
 
 use super::TaskConfiguration;
 
@@ -13,6 +13,10 @@ use super::TaskConfiguration;
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Merge,
 )]
 pub struct ProjectConfiguration {
+    #[serde(default, skip)]
+    #[merge(skip)]
+    pub path: String,
+
     #[serde(default)]
     #[merge(skip)]
     pub extends: Vec<String>,
@@ -28,6 +32,26 @@ pub struct ProjectConfiguration {
 
     #[merge(strategy = merge::option::recurse)]
     pub env: Option<ProjectEnvConfiguration>,
+}
+
+impl ExtensionGraphNode for ProjectConfiguration {
+    type Id = String;
+
+    fn id(&self) -> &Self::Id {
+        &self.path
+    }
+
+    fn set_id(&mut self, id: &Self::Id) {
+        self.path = id.clone();
+    }
+
+    fn extendee_ids(&self) -> &[Self::Id] {
+        &self.extends
+    }
+
+    fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]) {
+        self.extends = extendee_ids.to_vec();
+    }
 }
 
 impl ProjectConfiguration {

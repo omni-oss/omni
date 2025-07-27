@@ -1,0 +1,4 @@
+name: project-3
+
+extends:
+  - ${WORKSPACE_DIR}/base/base-2.omni.yaml

@@ -1,0 +1,4 @@
+name: base-1
+
+tasks:
+  from-base-1: echo "from base-1"
