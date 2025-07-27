@@ -654,15 +654,15 @@ mod tests {
 
         let project_1 = projects.iter().find(|p| p.name == "project-1");
 
-        assert!(project_1.is_some() == true, "Can't find project-1");
+        assert!(project_1.is_some(), "Can't find project-1");
 
         let project_2 = projects.iter().find(|p| p.name == "project-2");
 
-        assert!(project_2.is_some() == true, "Can't find project-2");
+        assert!(project_2.is_some(), "Can't find project-2");
 
         let project_3 = projects.iter().find(|p| p.name == "project-3");
 
-        assert!(project_3.is_some() == true, "Can't find project-3");
+        assert!(project_3.is_some(), "Can't find project-3");
     }
 
     #[test]
