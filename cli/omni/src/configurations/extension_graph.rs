@@ -1,11 +1,14 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::{DefaultHasher, Hash, Hasher as _},
+};
 
 use merge::Merge;
 use petgraph::{
-    Direction,
     algo::is_cyclic_directed,
     graph::{DiGraph, EdgeIndex, NodeIndex},
-    visit::{EdgeRef, IntoNodeReferences as _},
+    visit::{Dfs, IntoNodeReferences as _, Reversed},
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -13,13 +16,16 @@ pub trait ExtensionGraphNode: Clone + Merge + Debug {
     type Id: Eq + Hash + Clone + Debug;
 
     fn id(&self) -> &Self::Id;
+    fn set_id(&mut self, id: &Self::Id);
     fn extendee_ids(&self) -> &[Self::Id];
+    fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]);
 }
 
 pub struct ExtensionGraph<T: Merge + ExtensionGraphNode> {
     index_map: HashMap<T::Id, NodeIndex>,
     di_graph: DiGraph<T, ()>,
-    processed_nodes: HashMap<T::Id, T>,
+    path_traversals: HashMap<T::Id, PathTraversalKey>,
+    processed_nodes: HashMap<PathTraversalKey, T>,
 }
 
 impl<T: ExtensionGraphNode> ExtensionGraph<T> {
@@ -27,6 +33,7 @@ impl<T: ExtensionGraphNode> ExtensionGraph<T> {
         Self {
             index_map: HashMap::new(),
             di_graph: DiGraph::new(),
+            path_traversals: HashMap::new(),
             processed_nodes: HashMap::new(),
         }
     }
@@ -62,12 +69,6 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         extender: NodeIndex,
         extendee: NodeIndex,
     ) -> ExtensionGraphResult<EdgeIndex> {
-        if self.di_graph.contains_edge(extendee, extender) {
-            Err(ExtensionGraphErrorInner::EdgeAlreadyExists {
-                message: format!("'{extendee:?}' -> '{extender:?}'"),
-            })?;
-        }
-
         let ei = self.di_graph.add_edge(extendee, extender, ());
 
         if is_cyclic_directed(&self.di_graph) {
@@ -101,14 +102,6 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
     }
 
     pub fn connect_nodes(&mut self) -> ExtensionGraphResult<()> {
-        // save connected nodes in case of error, this is to keep the graph in a consistent state
-        // if an error occurs
-        let saved_edges = self
-            .di_graph
-            .edge_references()
-            .map(|e| (e.source(), e.target()))
-            .collect::<Vec<_>>();
-
         self.di_graph.clear_edges();
 
         let nodes = self
@@ -117,30 +110,30 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             .map(|(ni, node)| (ni, node.clone()))
             .collect::<Vec<_>>();
 
-        for (extender, node) in nodes {
+        for (extender_idx, node) in nodes {
             let extendee_ids = node.extendee_ids();
+            let num_extendees = extendee_ids.len();
 
-            for extendee_id in extendee_ids {
-                let extendee =
-                    self.get_node_index(extendee_id).ok_or_else(|| {
-                        ExtensionGraphErrorInner::NodeNotFound {
-                            message: format!("Node not found: {extendee_id:?}"),
-                        }
+            // Linearize the extension graph, starting from the most extending node
+            let mut current_extender_idx = extender_idx;
+            for i in (0..num_extendees).rev() {
+                let extendee_id = &extendee_ids[i];
+                let extendee_idx = self
+                    .get_node_index(extendee_id)
+                    .ok_or_else(|| ExtensionGraphErrorInner::NodeNotFound {
+                        message: format!("Node not found: {i:?}"),
                     })?;
 
-                self.add_edge(extender, extendee)?;
-            }
-        }
+                self.add_edge(current_extender_idx, extendee_idx)?;
 
-        // put back edges after failure, this is to keep the graph in a consistent state
-        for (a, b) in saved_edges {
-            self.di_graph.add_edge(a, b, ());
+                current_extender_idx = extendee_idx;
+            }
         }
 
         Ok(())
     }
 
-    pub fn process_node<'a>(
+    pub fn process_node_by_id<'a>(
         &'a mut self,
         id: &T::Id,
     ) -> ExtensionGraphResult<&'a T> {
@@ -149,50 +142,105 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
                 message: format!("'{id:?}'"),
             }
         })?;
-        let extendee_indices = self
-            .di_graph
-            .edges_directed(node, Direction::Incoming)
-            .map(|e| e.source())
-            .collect::<Vec<_>>();
 
-        let mut own_processed_nodes = HashMap::new();
+        let graph = Reversed(&self.di_graph);
+        let mut dfs = Dfs::new(graph, node);
 
-        if !extendee_indices.is_empty() {
-            for edge in extendee_indices {
-                let extendee_id = self.di_graph[edge].id().clone();
-                let extendee = if let Some(node) =
-                    self.processed_nodes.get(&extendee_id).cloned()
-                {
-                    node
-                } else {
-                    self.process_node(&extendee_id)?.clone()
-                };
-                own_processed_nodes.insert(extendee_id, extendee);
-            }
+        let mut node_indices = vec![];
+        while let Some(node) = dfs.next(graph) {
+            node_indices.push(node);
         }
 
-        let mut node = self.di_graph[node].clone();
+        node_indices.reverse();
 
-        if !own_processed_nodes.is_empty() {
-            let ids = node.extendee_ids().to_vec();
+        let total_nodes = node_indices.len();
+        let mut prev_processed_node: Option<T> = None;
+        let mut visited = HashSet::<NodeIndex>::new();
 
-            for id in ids {
-                if let Some(extended_node) = own_processed_nodes.remove(&id) {
-                    node.merge(extended_node.clone());
-                }
+        for i in 0..total_nodes {
+            let path = &node_indices[..=i];
+            let node_index = node_indices[i];
+
+            // if we've already visited this node, don't process it entirely
+            if visited.contains(&node_index) {
+                continue;
             }
+
+            let current_node = self.di_graph[node_index].clone();
+
+            let resulting_node = if let Some(node) =
+                self.get_processed_node_by_path(path).cloned()
+            {
+                node
+            } else if i == 0 {
+                current_node
+            } else {
+                let mut merged_node = prev_processed_node
+                    .clone()
+                    .expect("Should have a previous node");
+                merged_node.set_id(current_node.id());
+                merged_node.set_extendee_ids(current_node.extendee_ids());
+                merged_node.merge(current_node);
+
+                merged_node
+            };
+
+            visited.insert(node_index);
+            if !self.cache_exists_by_path(path) {
+                self.cache_by_path(path, resulting_node.clone());
+            }
+            prev_processed_node = Some(resulting_node);
         }
 
-        self.processed_nodes.insert(id.clone(), node);
+        self.cache_path(id, &node_indices[..]);
 
         Ok(self
-            .processed_nodes
-            .get(id)
-            .expect("At this point node should exist"))
+            .get_processed_node(id)
+            .expect("At this point, the resulting node should exist"))
+    }
+
+    fn cache_exists_by_path(&self, path_traversal: &[NodeIndex]) -> bool {
+        let key = PathTraversalKey::new(path_traversal);
+
+        self.processed_nodes.contains_key(&key)
+    }
+
+    fn cache_by_path(&mut self, path_traversal: &[NodeIndex], node: T) {
+        let key = PathTraversalKey::new(path_traversal);
+        self.processed_nodes.insert(key, node);
+    }
+
+    fn cache_path(&mut self, node_id: &T::Id, path_traversal: &[NodeIndex]) {
+        let key = PathTraversalKey::new(path_traversal);
+        self.path_traversals.insert(node_id.clone(), key);
     }
 
     pub fn get_processed_node<'a>(&'a self, id: &T::Id) -> Option<&'a T> {
-        self.processed_nodes.get(id)
+        let key = self.path_traversals.get(id).copied()?;
+
+        self.processed_nodes.get(&key)
+    }
+
+    fn get_processed_node_by_path<'a>(
+        &'a self,
+        path_traversal: &[NodeIndex],
+    ) -> Option<&'a T> {
+        let key = PathTraversalKey::new(path_traversal);
+
+        self.processed_nodes.get(&key)
+    }
+}
+
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+struct PathTraversalKey(u64);
+
+impl PathTraversalKey {
+    pub fn new(path: &[NodeIndex]) -> Self {
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        let hashed = hasher.finish();
+
+        Self(hashed)
     }
 }
 
@@ -231,16 +279,13 @@ enum ExtensionGraphErrorInner {
 
     #[error("Node not found: {message}")]
     NodeNotFound { message: String },
-
-    #[error("Edge already exists: {message}")]
-    EdgeAlreadyExists { message: String },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[derive(Merge, Clone, Debug)]
+    #[derive(Merge, Clone, Debug, PartialEq, Eq)]
     struct TestNode {
         #[merge(skip)]
         id: i32,
@@ -248,7 +293,7 @@ mod tests {
         #[merge(skip)]
         extends: Vec<i32>,
 
-        #[merge(strategy = merge::vec::prepend)]
+        #[merge(strategy = merge::vec::append)]
         items: Vec<i32>,
     }
 
@@ -259,8 +304,16 @@ mod tests {
             &self.id
         }
 
+        fn set_id(&mut self, id: &Self::Id) {
+            self.id = id.clone();
+        }
+
         fn extendee_ids(&self) -> &[Self::Id] {
             &self.extends
+        }
+
+        fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]) {
+            self.extends = extendee_ids.to_vec();
         }
     }
 
@@ -293,10 +346,19 @@ mod tests {
             .expect("Can't add node");
 
         graph.connect_nodes().expect("Can't connect nodes");
-        let processed_node =
-            graph.process_node(&3).expect("Can't get processed node");
+        let processed_node = graph
+            .process_node_by_id(&3)
+            .expect("Can't get processed node")
+            .clone();
 
-        assert_eq!(processed_node.items, vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(
+            processed_node,
+            TestNode {
+                id: 3,
+                extends: vec![2],
+                items: vec![1, 2, 3, 4, 5, 6, 7]
+            }
+        );
     }
 
     #[test]
@@ -322,15 +384,32 @@ mod tests {
         graph
             .add_node(TestNode {
                 id: 3,
-                extends: vec![1, 2],
+                extends: vec![2],
                 items: vec![6, 7],
             })
             .expect("Can't add node");
 
-        graph.connect_nodes().expect("Can't connect nodes");
-        let processed_node =
-            graph.process_node(&3).expect("Can't get processed node");
+        graph
+            .add_node(TestNode {
+                id: 4,
+                extends: vec![1, 2, 3],
+                items: vec![8, 9],
+            })
+            .expect("Can't add node");
 
-        assert_eq!(processed_node.items, vec![1, 2, 3, 4, 5, 6, 7]);
+        graph.connect_nodes().expect("Can't connect nodes");
+        let processed_node = graph
+            .process_node_by_id(&4)
+            .expect("Can't get processed node")
+            .clone();
+
+        assert_eq!(
+            processed_node,
+            TestNode {
+                id: 4,
+                extends: vec![1, 2, 3],
+                items: vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
+            }
+        );
     }
 }
