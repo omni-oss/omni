@@ -6,7 +6,7 @@ use std::{
 
 use dir_walker::{DirEntry as _, DirWalker};
 use env_loader::EnvLoaderError;
-use eyre::{Context as _, ContextCompat};
+use eyre::{Context as _, ContextCompat, OptionExt};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::ProjectGraph;
 use system_traits::{
@@ -16,8 +16,10 @@ use system_traits::{
 
 use crate::{
     commands::CliArgs,
-    configurations::{ProjectConfiguration, WorkspaceConfiguration},
-    constants,
+    configurations::{
+        ExtensionGraph, ProjectConfiguration, WorkspaceConfiguration,
+    },
+    constants::{self, WORKSPACE_DIR_VAR},
     core::{Project, Task},
     utils::env::{EnvVarsMap, EnvVarsMapOs, get_envs_at_start_dir},
 };
@@ -187,7 +189,7 @@ impl<TSys: ContextSys> Context<TSys> {
         #[cfg(feature = "enable-tracing")]
         let start_time = std::time::SystemTime::now();
 
-        let mut paths = vec![];
+        let mut project_paths = vec![];
 
         let mut match_b = GlobSetBuilder::new();
 
@@ -217,15 +219,17 @@ impl<TSys: ContextSys> Context<TSys> {
                 continue;
             }
 
-            let dir = f.path().display();
-            let dir_str = dir.to_string();
+            let dir = self.sys.fs_canonicalize(f.path())?;
+            let dir_str = dir.display().to_string();
 
             if matcher.is_match(&dir_str) {
                 for project_file in &project_files {
                     let p = f.path().join(project_file);
                     if self.sys.fs_exists(&p)? && self.sys.fs_is_file(p)? {
-                        trace::debug!("Found project directory: {}", dir);
-                        paths.push((dir_str, f.path().join(project_file)));
+                        trace::debug!("Found project directory: {:?}", dir);
+                        project_paths.push(
+                            self.sys.fs_canonicalize(dir.join(project_file))?,
+                        );
                         break;
                     }
                 }
@@ -235,31 +239,83 @@ impl<TSys: ContextSys> Context<TSys> {
         #[cfg(feature = "enable-tracing")]
         trace::debug!(
             "Found {} project directories in {} ms, walked {} items",
-            paths.len(),
+            project_paths.len(),
             start_walk_time.elapsed().unwrap_or_default().as_millis(),
             num_iterations
         );
 
+        let mut project_configs = vec![];
+        {
+            let mut loaded = HashSet::new();
+            let mut to_process = project_paths.clone();
+            while let Some(conf) = to_process.pop() {
+                #[cfg(feature = "enable-tracing")]
+                let start_time = std::time::SystemTime::now();
+
+                let mut project = ProjectConfiguration::load(
+                    &conf as &Path,
+                    self.sys.clone(),
+                )
+                .wrap_err_with(|| {
+                    format!(
+                        "Failed to load project configuration file at {}",
+                        conf.display()
+                    )
+                })?;
+
+                #[cfg(feature = "enable-tracing")]
+                {
+                    let elapsed = start_time.elapsed().unwrap_or_default();
+                    trace::debug!(
+                        "Loaded project configuration file {:?} in {} ms",
+                        conf,
+                        elapsed.as_millis()
+                    );
+                }
+
+                project.path = conf.to_string_lossy().to_string();
+                loaded.insert(project.path.clone());
+
+                for dep in &mut project.extends {
+                    if dep.contains(WORKSPACE_DIR_VAR) {
+                        *dep = dep.replace(
+                            WORKSPACE_DIR_VAR,
+                            self.root_dir.to_str().ok_or_else(|| {
+                                eyre::eyre!("Can't convert root dir to str")
+                            })?,
+                        )
+                    }
+
+                    if !loaded.contains(dep) {
+                        to_process.push(PathBuf::from(dep.clone()));
+                    }
+                }
+
+                project_configs.push(project);
+            }
+        }
+        let project_configs = ExtensionGraph::from_nodes(project_configs)?
+            .get_or_process_all_nodes()?;
+
         let mut projects = vec![];
 
-        for (dir, conf) in paths {
-            #[cfg(feature = "enable-tracing")]
-            let start_time = std::time::SystemTime::now();
+        let project_paths = project_paths
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<HashSet<_>>();
 
-            let project =
-                ProjectConfiguration::load(&conf as &Path, self.sys.clone())
-                    .wrap_err_with(|| {
-                        format!(
-                            "Failed to load project configuration file at {}",
-                            conf.display()
-                        )
-                    })?;
-
+        for config in project_configs
+            .into_iter()
+            .filter(|config| project_paths.contains(&config.path))
+        {
             projects.push(Project::new(
-                project.name,
-                PathBuf::from(dir),
-                project.dependencies.to_vec_inner(),
-                project
+                config.name,
+                PathBuf::from(&config.path)
+                    .parent()
+                    .ok_or_eyre("Can't get parent")?
+                    .to_path_buf(),
+                config.dependencies.to_vec_inner(),
+                config
                     .tasks
                     .unwrap_or_default()
                     .iter()
@@ -270,21 +326,10 @@ impl<TSys: ContextSys> Context<TSys> {
                     })
                     .collect(),
             ));
-
-            #[cfg(feature = "enable-tracing")]
-            {
-                let elapsed = start_time.elapsed().unwrap_or_default();
-                trace::debug!(
-                    "Loaded project configuration file {:?} in {} ms",
-                    conf,
-                    elapsed.as_millis()
-                );
-            }
         }
 
         // check duplicate names
         let mut names = HashSet::new();
-
         for project in &projects {
             if names.contains(&project.name) {
                 let projects = projects
@@ -433,6 +478,11 @@ mod tests {
 
         sys.fs_create_dir_all("/root/nested/project-2")
             .expect("Can't create project-2 dir");
+        sys.fs_create_dir_all("/root/nested/project-3")
+            .expect("Can't create project-3 dir");
+
+        sys.fs_create_dir_all("/root/base")
+            .expect("Can't create project-2 dir");
 
         sys.fs_write(
             "/root/.env",
@@ -487,12 +537,28 @@ mod tests {
             include_str!("../../test_fixtures/project-2.omni.yaml"),
         )
         .expect("Can't write project config file");
+        sys.fs_write(
+            "/root/nested/project-3/project.omni.yaml",
+            include_str!("../../test_fixtures/project-3.omni.yaml"),
+        )
+        .expect("Can't write project config file");
 
         sys.fs_write(
             "/root/workspace.omni.yaml",
             include_str!("../../test_fixtures/workspace.omni.yaml"),
         )
         .expect("Can't write workspace config file");
+
+        sys.fs_write(
+            "/root/base/base-1.omni.yaml",
+            include_str!("../../test_fixtures/base-1.omni.yaml"),
+        )
+        .expect("Can't write project config file");
+        sys.fs_write(
+            "/root/base/base-2.omni.yaml",
+            include_str!("../../test_fixtures/base-2.omni.yaml"),
+        )
+        .expect("Can't write project config file");
 
         sys.env_set_current_dir("/root/nested/project-1")
             .expect("Can't set current dir");
@@ -526,6 +592,11 @@ mod tests {
                 InMemoryMetadata::default(),
             ),
             InMemoryDirEntry::new(
+                PathBuf::from("/root/base"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+            InMemoryDirEntry::new(
                 PathBuf::from("/root/nested"),
                 false,
                 InMemoryMetadata::default(),
@@ -537,6 +608,11 @@ mod tests {
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/nested/project-2"),
+                false,
+                InMemoryMetadata::default(),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-3"),
                 false,
                 InMemoryMetadata::default(),
             ),
@@ -574,7 +650,7 @@ mod tests {
 
         let projects = ctx.get_projects().expect("Can't get projects");
 
-        assert_eq!(projects.len(), 2, "Should be 2 projects");
+        assert_eq!(projects.len(), 3, "Should be 3 projects");
 
         let project_1 = projects.iter().find(|p| p.name == "project-1");
 
@@ -583,15 +659,19 @@ mod tests {
         let project_2 = projects.iter().find(|p| p.name == "project-2");
 
         assert!(project_2.is_some() == true, "Can't find project-2");
+
+        let project_3 = projects.iter().find(|p| p.name == "project-3");
+
+        assert!(project_3.is_some() == true, "Can't find project-3");
     }
 
     #[test]
     fn test_load_projects_with_duplicate_names() {
         let sys = create_sys();
-        sys.fs_create_dir_all("/root/nested/project-3")
-            .expect("Can't create project-3 dir");
+        sys.fs_create_dir_all("/root/nested/project-4")
+            .expect("Can't create project-4 dir");
         sys.fs_write(
-            "/root/nested/project-3/project.omni.yaml",
+            "/root/nested/project-4/project.omni.yaml",
             include_str!("../../test_fixtures/project-1.omni.yaml"),
         )
         .expect("Can't write project config file");
@@ -601,7 +681,7 @@ mod tests {
         let mut dir_walker = create_dir_walker(None);
 
         dir_walker.add(InMemoryDirEntry::new(
-            PathBuf::from("/root/nested/project-3"),
+            PathBuf::from("/root/nested/project-4"),
             false,
             InMemoryMetadata::default(),
         ));
@@ -626,6 +706,29 @@ mod tests {
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
 
-        assert_eq!(project_graph.count(), 2);
+        assert_eq!(project_graph.count(), 3);
+    }
+
+    #[test]
+    fn test_project_extensions() {
+        let mut ctx = create_ctx("testing", None);
+
+        ctx.load_projects(&create_dir_walker(None))
+            .expect("Can't load projects");
+
+        let project_graph = ctx.get_project_graph().expect("Can't get graph");
+        let project3 = project_graph
+            .get_project_by_name("project-3")
+            .expect("Can't get project-3");
+
+        assert_eq!(project3.tasks.len(), 2, "Should be 2 tasks");
+        assert_eq!(
+            project3.tasks["from-base-1"].command,
+            "echo \"from base-1\""
+        );
+        assert_eq!(
+            project3.tasks["from-base-2"].command,
+            "echo \"from base-2\""
+        );
     }
 }

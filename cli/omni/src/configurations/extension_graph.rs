@@ -37,10 +37,49 @@ impl<T: ExtensionGraphNode> ExtensionGraph<T> {
             processed_nodes: HashMap::new(),
         }
     }
+
+    pub fn from_nodes(nodes: Vec<T>) -> ExtensionGraphResult<Self> {
+        let mut graph = Self::new();
+
+        for node in nodes {
+            graph.add_node(node)?;
+        }
+
+        graph.connect_nodes()?;
+
+        Ok(graph)
+    }
 }
 
 impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
-    pub fn add_node(&mut self, node: T) -> ExtensionGraphResult<NodeIndex> {
+    pub fn get_or_process_all_nodes(&mut self) -> ExtensionGraphResult<Vec<T>> {
+        let ids = self.get_all_node_ids();
+        let mut nodes = vec![];
+
+        for id in ids {
+            let node = if let Some(node) = self.get_processed_node(&id) {
+                node
+            } else {
+                self.process_node_by_id(&id)?
+            };
+            nodes.push(node.clone());
+        }
+
+        Ok(nodes)
+    }
+
+    fn get_all_node_ids(&self) -> Vec<T::Id> {
+        let mut ids = vec![];
+
+        for ni in self.di_graph.node_indices() {
+            let id = self.di_graph[ni].id().clone();
+            ids.push(id);
+        }
+
+        ids
+    }
+
+    fn add_node(&mut self, node: T) -> ExtensionGraphResult<NodeIndex> {
         let id = node.id().clone();
 
         if self.index_map.contains_key(&id) {
@@ -55,16 +94,16 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         Ok(ni)
     }
 
-    pub fn get_node_index(&self, id: &T::Id) -> Option<NodeIndex> {
+    fn get_node_index(&self, id: &T::Id) -> Option<NodeIndex> {
         self.index_map.get(id).copied()
     }
 
-    pub fn get_node(&self, id: &T::Id) -> Option<&T> {
+    fn get_node(&self, id: &T::Id) -> Option<&T> {
         self.get_node_index(id)
             .and_then(|ni| self.di_graph.node_weight(ni))
     }
 
-    pub fn add_edge(
+    fn add_edge(
         &mut self,
         extender: NodeIndex,
         extendee: NodeIndex,
@@ -82,7 +121,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         Ok(ei)
     }
 
-    pub fn add_edge_by_id(
+    fn add_edge_by_id(
         &mut self,
         extender: T::Id,
         extendee: T::Id,
@@ -101,7 +140,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         self.add_edge(extender, extendee)
     }
 
-    pub fn connect_nodes(&mut self) -> ExtensionGraphResult<()> {
+    fn connect_nodes(&mut self) -> ExtensionGraphResult<()> {
         self.di_graph.clear_edges();
 
         let nodes = self
@@ -279,6 +318,9 @@ enum ExtensionGraphErrorInner {
 
     #[error("Node not found: {message}")]
     NodeNotFound { message: String },
+
+    #[error(transparent)]
+    Unknown(#[from] eyre::Error),
 }
 
 #[cfg(test)]
