@@ -29,8 +29,6 @@ fn init_tracing(level: u8) -> eyre::Result<()> {
 }
 
 fn init_logging() -> eyre::Result<()> {
-    #[cfg(feature = "enable-tracing")]
-    tracing_log::LogTracer::init()?;
     env_logger::init_from_env("OMNI_LOG");
 
     Ok(())
