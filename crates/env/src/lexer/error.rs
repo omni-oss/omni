@@ -51,10 +51,10 @@ impl<T: Into<LexerErrorInner>> From<(T, usize, usize)> for LexerError {
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(LexerErrorKind), vis(pub))]
 pub(crate) enum LexerErrorInner {
-    #[error("Unexpected character '{0}'")]
+    #[error("unexpected character '{0}'")]
     UnexpectedCharacter(char),
     // #[error("Unterminated string")]
     // UnterminatedString { token: Token },
-    #[error("Reached end of file")]
+    #[error("reached end of file")]
     ReachedEof,
 }

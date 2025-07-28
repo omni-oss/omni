@@ -21,6 +21,25 @@ impl<T: Merge> Default for DictConfig<T> {
     }
 }
 
+#[cfg(feature = "validator-garde")]
+impl<T: Merge + garde::Validate> garde::Validate for DictConfig<T> {
+    type Context = T::Context;
+
+    fn validate_into(
+        &self,
+        ctx: &Self::Context,
+        mut parent: &mut dyn FnMut() -> garde::Path,
+        report: &mut garde::Report,
+    ) {
+        let hm = self.as_hash_map();
+
+        for (key, value) in hm {
+            let mut path = garde::util::nested_path!(parent, key);
+            value.validate_into(ctx, &mut path, report);
+        }
+    }
+}
+
 impl<T: Merge> DictConfig<T> {
     #[inline(always)]
     pub fn value(value: HashMap<String, T>) -> Self {

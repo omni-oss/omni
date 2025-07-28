@@ -78,16 +78,16 @@ impl<T: Into<ProjectGraphErrorInner>> From<T> for ProjectGraphError {
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ProjectGraphErrorKind), vis(pub))]
 enum ProjectGraphErrorInner {
-    #[error("Project with name '{0}' already exists")]
+    #[error("project with name '{0}' already exists")]
     ProjectAlreadyExists(String),
 
-    #[error("Project '{0}' is not found")]
+    #[error("project '{0}' is not found")]
     ProjectNotFound(String),
 
-    #[error("Adding dependency from '{from}' to '{to}' will create a cycle")]
+    #[error("adding dependency from '{from}' to '{to}' will create a cycle")]
     CyclicDependency { from: String, to: String },
 
-    #[error("Cycle detected")]
+    #[error("cycle detected")]
     CycleDetected { project: String },
 
     #[error(transparent)]

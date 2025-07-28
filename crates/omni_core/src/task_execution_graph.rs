@@ -471,7 +471,7 @@ impl TaskExecutionGraph {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{kind:?}Error: {inner}")]
+#[error("{inner}")]
 pub struct TaskExecutionGraphError {
     kind: TaskExecutionGraphErrorKind,
     #[source]
@@ -547,14 +547,14 @@ enum TaskExecutionGraphErrorInner {
     #[error(transparent)]
     ProjectGraph(#[from] ProjectGraphError),
 
-    #[error("Task '{task}' in project '{project}' not found")]
+    #[error("task '{task}' in project '{project}' not found")]
     TaskNotFound { project: String, task: String },
 
-    #[error("Task with key '{key:?}' not found")]
+    #[error("task with key '{key:?}' not found")]
     TaskNotFoundByKey { key: TaskKey },
 
     #[error(
-        "Cyclic dependency detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
+        "cyclic dependency detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
     )]
     CyclicDependency {
         from_project: String,
