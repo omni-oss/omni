@@ -1,18 +1,8 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: omni
 
-tasks:
-  test: cargo test -p omni
-
-  build:
-    command: cargo build --release --package omni
-    dependencies:
-      - test
-
-  install:
-    command: cargo install --path .
-    dependencies:
-      - build
+extends:
+  - ${WORKSPACE_DIR}/omni/presets/rust-cli.omni.yaml
 
 dependencies:
   - omni_core

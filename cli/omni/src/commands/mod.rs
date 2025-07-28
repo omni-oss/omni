@@ -4,6 +4,7 @@ use config::ConfigCommand;
 use env::EnvCommand;
 use exec::ExecCommand;
 use run::RunCommand;
+mod utils;
 
 use crate::build;
 
@@ -35,7 +36,12 @@ pub struct Cli {
 #[derive(Args)]
 #[command()]
 pub struct CliArgs {
-    #[arg(short = 't', long = "trace-level", help = "Print traces to stdout", action = clap::ArgAction::Count, default_value_t = 0)]
+    #[arg(
+        short = 't',
+        long = "trace-level",
+        help = "Print traces to stdout",
+        default_value_t = 0
+    )]
     pub trace_level: u8,
 
     #[arg(

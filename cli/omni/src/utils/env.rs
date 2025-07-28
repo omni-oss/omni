@@ -11,13 +11,16 @@ pub fn get_envs_at_start_dir(
     env_root_dir_marker: &str,
     env_files: &[&str],
     sys: impl EnvLoaderSys + EnvVars + Clone,
+    extra_envs: Option<&HashMap<String, String>>,
 ) -> Result<(EnvVarsMap, EnvVarsMapOs), EnvLoaderError> {
     let v = sys.env_vars();
 
     let mut env_vars = HashMap::new();
-    let mut env_vars_os = HashMap::new();
 
     env_vars.extend(v);
+    if let Some(extra_envs) = extra_envs {
+        env_vars.extend(extra_envs.clone());
+    }
 
     let config = env_loader::EnvConfig {
         root_file: Some(env_root_dir_marker),
@@ -34,7 +37,5 @@ pub fn get_envs_at_start_dir(
         .collect::<HashMap<_, _>>();
     env_vars.extend(env);
 
-    env_vars_os.extend(env_os);
-
-    Ok((env_vars, env_vars_os))
+    Ok((env_vars, env_os))
 }

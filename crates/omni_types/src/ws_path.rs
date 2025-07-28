@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Root {
     Workspace,
+    Project,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -30,12 +31,20 @@ impl WsPath {
         Self::new_rooted(path, Root::Workspace)
     }
 
+    pub fn new_project_rooted(path: impl Into<PathBuf>) -> Self {
+        Self::new_rooted(path, Root::Project)
+    }
+
     pub fn root(&self) -> Option<Root> {
         self.root
     }
 
     pub fn is_ws_rooted(&self) -> bool {
         self.root.map(|r| r == Root::Workspace).unwrap_or(false)
+    }
+
+    pub fn is_project_rooted(&self) -> bool {
+        self.root.map(|r| r == Root::Project).unwrap_or(false)
     }
 
     pub fn path(&self) -> &Path {
@@ -51,6 +60,9 @@ impl serde::Serialize for WsPath {
     {
         if self.is_ws_rooted() {
             format!("workspace://{}", self.path.to_string_lossy())
+                .serialize(serializer)
+        } else if self.is_project_rooted() {
+            format!("project://{}", self.path.to_string_lossy())
                 .serialize(serializer)
         } else {
             self.path.serialize(serializer)
@@ -68,6 +80,10 @@ impl<'de> serde::Deserialize<'de> for WsPath {
         if s.starts_with("workspace://") {
             Ok(Self::new_ws_rooted(PathBuf::from(
                 s.strip_prefix("workspace://").unwrap(),
+            )))
+        } else if s.starts_with("project://") {
+            Ok(Self::new_project_rooted(PathBuf::from(
+                s.strip_prefix("project://").unwrap(),
             )))
         } else {
             Ok(Self::new(s))
@@ -87,6 +103,12 @@ mod tests {
             r#""workspace:///foo""#
         );
 
+        let path = WsPath::new_project_rooted("/foo");
+        assert_eq!(
+            serde_json::to_string(&path).unwrap(),
+            r#""project:///foo""#
+        );
+
         let path = WsPath::new("/foo");
         assert_eq!(serde_json::to_string(&path).unwrap(), r#""/foo""#);
     }
@@ -96,6 +118,12 @@ mod tests {
         let path = WsPath::new_ws_rooted("foo");
         assert_eq!(
             serde_json::from_str::<WsPath>(r#""workspace://foo""#).unwrap(),
+            path
+        );
+
+        let path = WsPath::new_project_rooted("foo");
+        assert_eq!(
+            serde_json::from_str::<WsPath>(r#""project://foo""#).unwrap(),
             path
         );
 

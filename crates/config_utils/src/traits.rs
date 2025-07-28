@@ -1,6 +1,6 @@
 pub trait MergeExt: merge::Merge {
     #[inline(always)]
-    fn cloned_merge(&mut self, other: &mut Self) -> Self
+    fn cloned_merge(&mut self, other: &Self) -> Self
     where
         Self: Clone,
     {

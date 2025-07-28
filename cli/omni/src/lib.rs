@@ -14,16 +14,15 @@ mod utils;
 
 #[cfg(feature = "enable-tracing")]
 fn init_tracing(level: u8) -> eyre::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(match level {
-            1 => trace::Level::ERROR,
-            2 => trace::Level::WARN,
-            3 => trace::Level::INFO,
-            4 => trace::Level::DEBUG,
-            5.. => trace::Level::TRACE,
-            0 => return Ok(()),
-        })
-        .init();
+    let level = match level {
+        1 => trace::Level::ERROR,
+        2 => trace::Level::WARN,
+        3 => trace::Level::INFO,
+        4 => trace::Level::DEBUG,
+        5.. => trace::Level::TRACE,
+        0 => return Ok(()),
+    };
+    tracing_subscriber::fmt().with_max_level(level).init();
 
     Ok(())
 }
@@ -40,8 +39,6 @@ pub async fn main() -> eyre::Result<()> {
 
     #[cfg(feature = "enable-tracing")]
     init_tracing(cli.args.trace_level)?;
-
-    init_logging()?;
 
     let sys = RealSysSync;
     let mut context =

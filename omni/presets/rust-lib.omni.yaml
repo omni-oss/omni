@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: rust-lib
+
+tasks:
+  test: cargo test -p ${PROJECT_NAME}
+
+  build:
+    command: cargo build --release --package ${PROJECT_NAME}
+    dependencies:
+      - test
