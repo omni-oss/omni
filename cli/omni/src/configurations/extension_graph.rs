@@ -176,6 +176,14 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         &'a mut self,
         id: &T::Id,
     ) -> ExtensionGraphResult<&'a T> {
+        // if we've already processed this node, return it
+        if let Some(path) = self.path_traversals.get(id) {
+            return Ok(self
+                .processed_nodes
+                .get(path)
+                .expect("should be able to get processed node"));
+        }
+
         let node = self.get_node_index(id).ok_or_else(|| {
             ExtensionGraphErrorInner::NodeNotFound {
                 message: format!("'{id:?}'"),
@@ -191,6 +199,16 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         }
 
         node_indices.reverse();
+
+        if self.cache_exists_by_path(&node_indices) {
+            if !self.cached_path_exists(id) {
+                self.cache_path(id, &node_indices);
+            }
+
+            return Ok(self
+                .get_processed_node_by_path(&node_indices)
+                .expect("Should be able to get processed node"));
+        }
 
         let total_nodes = node_indices.len();
         let mut prev_processed_node: Option<T> = None;
@@ -231,7 +249,8 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
             prev_processed_node = Some(resulting_node);
         }
 
-        self.cache_path(id, &node_indices[..]);
+        // save the path to the cache for future lookups
+        self.cache_path(id, &node_indices);
 
         Ok(self
             .get_processed_node(id)
@@ -249,12 +268,16 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         self.processed_nodes.insert(key, node);
     }
 
+    fn cached_path_exists(&self, node_id: &T::Id) -> bool {
+        self.path_traversals.contains_key(node_id)
+    }
+
     fn cache_path(&mut self, node_id: &T::Id, path_traversal: &[NodeIndex]) {
         let key = PathTraversalKey::new(path_traversal);
         self.path_traversals.insert(node_id.clone(), key);
     }
 
-    pub fn get_processed_node<'a>(&'a self, id: &T::Id) -> Option<&'a T> {
+    fn get_processed_node<'a>(&'a self, id: &T::Id) -> Option<&'a T> {
         let key = self.path_traversals.get(id).copied()?;
 
         self.processed_nodes.get(&key)
