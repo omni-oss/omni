@@ -310,13 +310,13 @@ pub type ExtensionGraphResult<T> = Result<T, ExtensionGraphError>;
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ExtensionGraphErrorKind), vis(pub))]
 enum ExtensionGraphErrorInner {
-    #[error("Cyclic dependency detected: {message}")]
+    #[error("cyclic dependency detected: {message}")]
     CyclicDependency { message: String },
 
-    #[error("Node already exists: {message}")]
+    #[error("node already exists: {message}")]
     NodeAlreadyExists { message: String },
 
-    #[error("Node not found: {message}")]
+    #[error("node not found: {message}")]
     NodeNotFound { message: String },
 
     #[error(transparent)]

@@ -186,6 +186,25 @@ impl<T: Merge> ListConfig<T> {
     }
 }
 
+#[cfg(feature = "validator-garde")]
+impl<T: Merge + garde::Validate> garde::Validate for ListConfig<T> {
+    type Context = T::Context;
+
+    fn validate_into(
+        &self,
+        ctx: &Self::Context,
+        mut parent: &mut dyn FnMut() -> garde::Path,
+        report: &mut garde::Report,
+    ) {
+        let vec = self.as_vec();
+
+        for (idx, value) in vec.iter().enumerate() {
+            let mut path = garde::util::nested_path!(parent, idx);
+            value.validate_into(ctx, &mut path, report);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::Replace;

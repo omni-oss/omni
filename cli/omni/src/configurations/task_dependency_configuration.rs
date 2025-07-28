@@ -3,8 +3,11 @@ use std::borrow::Cow;
 use lazy_regex::{Lazy, Regex, regex};
 use merge::Merge;
 use schemars::JsonSchema;
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use strum::EnumIs;
+
+use crate::constants::TASK_DEPENDENCY_REGEX;
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIs)]
 pub enum TaskDependencyConfiguration {
@@ -94,7 +97,9 @@ impl<'de> Deserialize<'de> for TaskDependencyConfiguration {
             }
         }
 
-        panic!("Can't parse TaskDependencyConfiguration: {s}");
+        Err(D::Error::custom(format!(
+            "can't parse TaskDependencyConfiguration: {s}, expected syntax: {TASK_DEPENDENCY_REGEX}"
+        )))
     }
 }
 

@@ -18,16 +18,16 @@ impl EnvLoaderError {
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(EnvLoaderErrorKind), vis(pub))]
 pub(crate) enum EnvLoaderErrorInner {
-    #[error("Can't load current dir")]
+    #[error("can't load current dir")]
     CantLoadCurrentDir,
 
-    #[error("Path does not exist: {0}")]
+    #[error("path does not exist: {0}")]
     PathDoesNotExist(String),
 
-    #[error("Can't read file: {0}")]
+    #[error("can't read file: {0}")]
     CantReadFile(String),
 
-    #[error("Can't parse env: {0:?}")]
+    #[error("can't parse env: {0:?}")]
     CantParseEnv(Vec<ParseError>),
 
     #[error(transparent)]

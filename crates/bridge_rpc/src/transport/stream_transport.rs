@@ -39,7 +39,7 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("StreamTransportError: {inner}")]
+#[error("{inner}")]
 pub struct StreamTransportError {
     #[source]
     inner: StreamTransportErrorInner,
@@ -69,7 +69,7 @@ enum StreamTransportErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    #[error("End of stream")]
+    #[error("end of stream")]
     EndOfStream,
 
     #[error(transparent)]

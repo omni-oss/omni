@@ -8,31 +8,31 @@ pub struct JsBridgeError(#[from] JsBridgeErrorInner);
 
 #[derive(Debug, thiserror::Error)]
 pub enum JsBridgeErrorInner {
-    #[error("Transport error: {message}")]
+    #[error("transport error: {message}")]
     Transport { message: String },
 
-    #[error("Serialization error: {0}")]
+    #[error("serialization error: {0}")]
     Serialization(#[from] rmp_serde::encode::Error),
 
-    #[error("Deserialization error: {0}")]
+    #[error("deserialization error: {0}")]
     Deserialization(#[from] rmp_serde::decode::Error),
 
-    #[error("Value conversion error: {0}")]
+    #[error("value conversion error: {0}")]
     ValueConversion(#[from] rmpv::ext::Error),
 
-    #[error("Receive error: {0}")]
+    #[error("receive error: {0}")]
     Receive(#[from] RecvError),
 
-    #[error("Send error: {message}")]
+    #[error("send error: {message}")]
     Send { message: String },
 
-    #[error("Timeout: {0}")]
+    #[error("timeout: {0}")]
     Timeout(String),
 
-    #[error("Probe in progress")]
+    #[error("probe in progress")]
     ProbeInProgress,
 
-    #[error("Unknown error: {0}")]
+    #[error("unknown error: {0}")]
     Unknown(#[from] eyre::Report),
 }
 
