@@ -5,7 +5,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsRead;
 
-use crate::{configurations::ExtensionGraphNode, utils};
+use crate::{
+    configurations::{ExtensionGraphNode, utils::list_config_default},
+    utils,
+};
 
 use super::TaskConfiguration;
 
@@ -24,14 +27,14 @@ pub struct ProjectConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub name: String,
 
-    #[merge(strategy = merge::option::recurse)]
-    pub tasks: Option<DictConfig<TaskConfiguration>>,
-
     #[serde(default)]
+    pub tasks: DictConfig<TaskConfiguration>,
+
+    #[serde(default = "list_config_default::<Replace<String>>")]
     pub dependencies: ListConfig<Replace<String>>,
 
-    #[merge(strategy = merge::option::recurse)]
-    pub env: Option<ProjectEnvConfiguration>,
+    #[serde(default)]
+    pub env: ProjectEnvConfiguration,
 }
 
 impl ExtensionGraphNode for ProjectConfiguration {
@@ -64,9 +67,19 @@ impl ProjectConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Merge,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Merge,
+    Default,
 )]
 pub struct ProjectEnvConfiguration {
-    #[merge(strategy = merge::option::recurse)]
-    pub files: Option<ListConfig<Replace<String>>>,
+    #[serde(default = "list_config_default::<Replace<String>>")]
+    pub files: ListConfig<Replace<String>>,
+    #[serde(default)]
+    pub overrides: DictConfig<Replace<String>>,
 }

@@ -339,7 +339,6 @@ impl<TSys: ContextSys> Context<TSys> {
                 config.dependencies.to_vec_inner(),
                 config
                     .tasks
-                    .unwrap_or_default()
                     .iter()
                     .map(|(task_name, v)| {
                         let mapped: Task = v.clone().into_task(task_name);

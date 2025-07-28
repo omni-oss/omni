@@ -9,11 +9,12 @@ use crate::{configurations::ScriptingConfiguration, utils};
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
 pub struct WorkspaceConfiguration {
     pub name: Option<String>,
+
     pub projects: Vec<String>,
-    #[serde(default)]
-    pub env: WorkspaceEnvConfiguration,
+
     #[serde(default)]
     pub scripting: ScriptingConfiguration,
+
     #[serde(default)]
     pub generators: Vec<String>,
 }
@@ -25,12 +26,4 @@ impl WorkspaceConfiguration {
     ) -> eyre::Result<Self> {
         utils::fs::load_config(path, sys)
     }
-}
-
-#[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Default,
-)]
-pub struct WorkspaceEnvConfiguration {
-    #[serde(default)]
-    pub files: Vec<String>,
 }
