@@ -19,7 +19,7 @@ use crate::{
     configurations::{
         ExtensionGraph, ProjectConfiguration, WorkspaceConfiguration,
     },
-    constants::{self, WORKSPACE_DIR_VAR},
+    constants::{self, PROJECT_DIR_VAR, WORKSPACE_DIR_VAR},
     core::{Project, Task},
     utils::env::{EnvVarsMap, EnvVarsMapOs, get_envs_at_start_dir},
 };
@@ -142,6 +142,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn get_env_vars_at_start_dir(
         &self,
         start_dir: &str,
+        extra_envs: Option<&HashMap<String, String>>,
     ) -> Result<(EnvVarsMap, EnvVarsMapOs), EnvLoaderError> {
         get_envs_at_start_dir(
             start_dir,
@@ -152,15 +153,18 @@ impl<TSys: ContextSys> Context<TSys> {
                 .collect::<Vec<_>>()
                 .as_slice(),
             self.sys.clone(),
+            extra_envs,
         )
     }
 
     pub fn load_env_vars(
         &mut self,
         start_dir: &str,
+        extra_envs: Option<&HashMap<String, String>>,
     ) -> Result<(), EnvLoaderError> {
         self.clear_env_vars();
-        let (vars, vars_os) = self.get_env_vars_at_start_dir(start_dir)?;
+        let (vars, vars_os) =
+            self.get_env_vars_at_start_dir(start_dir, extra_envs)?;
 
         self.envs_map.extend(vars);
 
@@ -171,11 +175,12 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn load_env_vars_from_current_dir(
         &mut self,
+        extra_envs: Option<&HashMap<String, String>>,
     ) -> Result<(), EnvLoaderError> {
         let current_dir =
             self.sys.env_current_dir().expect("Can't get current dir");
 
-        self.load_env_vars(&current_dir.to_string_lossy())
+        self.load_env_vars(&current_dir.to_string_lossy(), extra_envs)
     }
 
     pub fn get_projects(&self) -> Option<&Vec<Project>> {
@@ -277,14 +282,31 @@ impl<TSys: ContextSys> Context<TSys> {
                 loaded.insert(project.path.clone());
 
                 for dep in &mut project.extends {
-                    if dep.contains(WORKSPACE_DIR_VAR) {
-                        *dep = dep.replace(
-                            WORKSPACE_DIR_VAR,
-                            self.root_dir.to_str().ok_or_else(|| {
-                                eyre::eyre!("Can't convert root dir to str")
-                            })?,
-                        )
+                    if dep.contains(WORKSPACE_DIR_VAR)
+                        || dep.contains(PROJECT_DIR_VAR)
+                    {
+                        let mut env = HashMap::new();
+                        env.insert(
+                            WORKSPACE_DIR_VAR.to_string(),
+                            self.root_dir.to_string_lossy().to_string(),
+                        );
+                        env.insert(
+                            PROJECT_DIR_VAR.to_string(),
+                            project.path.clone(),
+                        );
+                        *dep = env::expand(dep, &env);
                     }
+
+                    *dep = self
+                        .sys
+                        .fs_canonicalize(
+                            Path::new(&project.path)
+                                .parent()
+                                .ok_or_eyre("Can't get parent")?
+                                .join(&dep),
+                        )?
+                        .to_string_lossy()
+                        .to_string();
 
                     if !loaded.contains(dep) {
                         to_process.push(PathBuf::from(dep.clone()));
@@ -310,7 +332,7 @@ impl<TSys: ContextSys> Context<TSys> {
         {
             projects.push(Project::new(
                 config.name,
-                PathBuf::from(&config.path)
+                Path::new(&config.path)
                     .parent()
                     .ok_or_eyre("Can't get parent")?
                     .to_path_buf(),
@@ -632,7 +654,7 @@ mod tests {
     pub fn test_load_env_vars() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_env_vars_from_current_dir()
+        ctx.load_env_vars_from_current_dir(None)
             .expect("Can't load env vars");
 
         assert_eq!(

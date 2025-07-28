@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: rust-cli
+
+extends:
+  - ./rust-lib.omni.yaml
+
+tasks:
+  install:
+    command: cargo install --path .
+    dependencies:
+      - build

@@ -1,5 +1,4 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: omni_types
-
-tasks:
-  test: cargo test -p omni_types
+extends:
+  - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml

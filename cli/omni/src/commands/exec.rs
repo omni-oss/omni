@@ -1,12 +1,13 @@
-use std::time::SystemTime;
+use std::{collections::HashMap, sync::Arc};
 
 use clap::Args;
-use eyre::OptionExt as _;
 use futures::future::join_all;
+use omni_core::TaskExecutionNode;
+use tokio::sync::Mutex;
 
 use crate::{
-    context::Context,
-    utils::{self, dir_walker::create_default_dir_walker},
+    commands::utils::execute_task, context::Context,
+    utils::dir_walker::create_default_dir_walker,
 };
 
 #[derive(Args, Debug)]
@@ -57,58 +58,32 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     let full_cmd =
         format!("{} {}", command.args.command, command.args.args.join(" "));
 
+    let dir_envs = Arc::new(Mutex::new(HashMap::new()));
+    let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
     for p in projects {
-        ctx.load_env_vars(
-            p.dir.to_str().ok_or_eyre("Can't convert dir to str")?,
-        )?;
         let full_cmd = full_cmd.clone();
-        let envs = ctx.get_all_env_vars_os().clone();
-        futures.push(async move {
-            trace::info!(
-                "Running command '{}' in project '{}'",
-                &full_cmd,
-                p.name
-            );
-
-            let start = SystemTime::now();
-
-            let res = utils::cmd::run(&full_cmd, &p.dir, envs).await;
-
-            let duration = start.elapsed().unwrap();
-
-            trace::info!(
-                "Command '{}' in project '{}' finished in {:?}",
-                &full_cmd,
-                &p.name,
-                duration
-            );
-
-            (res, p)
-        });
+        futures.push(execute_task(
+            TaskExecutionNode::new(
+                "exec".to_string(),
+                full_cmd.clone(),
+                p.name.clone(),
+                p.dir.clone(),
+            ),
+            shared_ctx.clone(),
+            dir_envs.clone(),
+        ));
     }
 
     let results = join_all(futures).await;
 
-    for (r, p) in results {
-        match r {
-            Ok(s) if s != 0 => {
-                trace::error!(
-                    "Running command '{}' in project '{}' failed with exit code: {}",
-                    &full_cmd,
-                    p.name,
-                    s
-                );
-            }
-            Err(err) => {
-                trace::error!(
-                    "Running command '{}' in project '{}' failed with error: {}",
-                    &full_cmd,
-                    p.name,
-                    err
-                );
-            }
-            _ => {}
-        }
+    let failed_count = results.iter().filter(|r| r.is_err()).count();
+
+    if failed_count > 0 {
+        trace::error!(
+            "Failed to execute command '{}' in {} projects",
+            &full_cmd,
+            failed_count
+        );
     }
 
     Ok(())
