@@ -10,6 +10,20 @@ impl<T> Merge for Replace<T> {
     }
 }
 
+#[cfg(feature = "validator-garde")]
+impl<T: garde::Validate> garde::Validate for Replace<T> {
+    type Context = T::Context;
+
+    fn validate_into(
+        &self,
+        ctx: &Self::Context,
+        parent: &mut dyn FnMut() -> garde::Path,
+        report: &mut garde::Report,
+    ) {
+        self.0.validate_into(ctx, parent, report)
+    }
+}
+
 pub fn replace<T>(this: &mut T, other: T) {
     *this = other;
 }

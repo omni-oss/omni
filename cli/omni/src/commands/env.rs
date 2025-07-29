@@ -21,19 +21,19 @@ pub struct EnvCommand {
     subcommand: EnvSubcommands,
 }
 
-pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(env: &EnvCommand, ctx: &mut Context) -> eyre::Result<()> {
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {
-            let env = ctx.get_env_var(key);
+            let env = ctx.get_env_vars(None)?;
 
-            if let Some(env) = env {
+            if let Some(env) = env.get(key) {
                 print!("{env}");
             } else {
                 trace::warn!("environmental variable does not exists: {}", key);
             }
         }
         EnvSubcommands::All => {
-            for (key, value) in ctx.get_all_env_vars() {
+            for (key, value) in ctx.get_env_vars(None)? {
                 println!("{key}={value}");
             }
         }

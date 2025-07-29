@@ -123,6 +123,15 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
     }
 }
 
+impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> ListConfig<TWrapper> {
+    pub fn to_vec_to_inner(&self) -> Vec<TInner> {
+        self.as_vec()
+            .iter()
+            .map(|wrapper| wrapper.to_inner())
+            .collect()
+    }
+}
+
 impl<T: Merge> Merge for ListConfig<T> {
     fn merge(&mut self, other: Self) {
         match other {

@@ -1,6 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use config_utils::{DictConfig, ListConfig, Replace, merge::Merge};
+use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsRead;
@@ -13,8 +14,17 @@ use crate::{
 use super::TaskConfiguration;
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Merge,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Merge,
+    Validate,
 )]
+#[garde(allow_unvalidated)]
 pub struct ProjectConfiguration {
     #[serde(default, skip)]
     #[merge(skip)]
@@ -76,10 +86,12 @@ impl ProjectConfiguration {
     Eq,
     Merge,
     Default,
+    Validate,
 )]
+#[garde(allow_unvalidated)]
 pub struct ProjectEnvConfiguration {
-    #[serde(default = "list_config_default::<Replace<String>>")]
-    pub files: ListConfig<Replace<String>>,
+    #[merge(strategy = merge::option::recurse)]
+    pub files: Option<ListConfig<Replace<PathBuf>>>,
     #[serde(default)]
     pub overrides: DictConfig<Replace<String>>,
 }

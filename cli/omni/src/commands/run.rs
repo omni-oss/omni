@@ -43,13 +43,15 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
         eyre::bail!("Task cannot be empty");
     }
 
-    ctx.load_projects(&create_default_dir_walker())?;
+    ctx.load_projects(&create_default_dir_walker(), true)?;
     let filter = command.filter.as_deref().unwrap_or("*");
 
     let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
 
     // cache envs for each project dir so that we don't have to load them again
     let project_dir_envs = Arc::new(Mutex::new(HashMap::new()));
+
+    let mut failures = vec![];
 
     if command.no_dependencies {
         let projects = ctx.get_filtered_projects(filter)?;
@@ -89,7 +91,13 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
             ));
         }
 
-        join_all(tasks).await;
+        let results = join_all(tasks).await;
+        let f = results
+            .into_iter()
+            .filter_map(|r| r.err())
+            .collect::<Vec<_>>();
+
+        failures.extend(f);
     } else {
         let project_name_matcher = ctx.get_filter_matcher(filter)?;
 
@@ -131,10 +139,19 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
                 .collect::<Vec<_>>();
 
             if !f.is_empty() && !command.ignore_failures {
-                // stop execution if any task failed in the batch
                 break;
             }
+
+            failures.extend(f);
         }
+    }
+
+    if !failures.is_empty() {
+        trace::error!("Failed to execute tasks: {:#?}", failures);
+
+        let reports = failures.into_iter().map(|f| f.1).collect::<Vec<_>>();
+
+        eyre::bail!("Failed to execute tasks: {:#?}", reports);
     }
 
     Ok(())

@@ -1,4 +1,5 @@
 use config_utils::ListConfig;
+use garde::Validate;
 use merge::Merge;
 use omni_core::TaskDependency;
 use schemars::JsonSchema;
@@ -12,8 +13,11 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate,
+)]
 #[serde(untagged)]
+#[garde(allow_unvalidated)]
 pub enum TaskConfiguration {
     ShortForm(String),
     LongForm {

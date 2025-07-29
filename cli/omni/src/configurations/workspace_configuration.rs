@@ -1,13 +1,21 @@
 use std::path::Path;
 
+use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsRead;
 
-use crate::{configurations::ScriptingConfiguration, utils};
+use crate::{
+    configurations::ScriptingConfiguration, constants::WORKSPACE_NAME_REGEX,
+    utils,
+};
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq)]
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
+)]
+#[garde(allow_unvalidated)]
 pub struct WorkspaceConfiguration {
+    #[garde(pattern(*WORKSPACE_NAME_REGEX))]
     pub name: Option<String>,
 
     pub projects: Vec<String>,

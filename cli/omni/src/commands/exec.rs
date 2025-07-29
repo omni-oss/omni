@@ -31,7 +31,7 @@ pub struct ExecCommand {
 }
 
 pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
-    ctx.load_projects(&create_default_dir_walker())?;
+    ctx.load_projects(&create_default_dir_walker(), true)?;
     let filter = if let Some(filter) = &command.args.filter {
         filter
     } else {

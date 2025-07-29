@@ -1,3 +1,4 @@
+use garde::Validate;
 use js_runtime::impls::DelegatingJsRuntimeOption;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,9 @@ use serde::{Deserialize, Serialize};
     JsonSchema,
     Copy,
     Default,
+    Validate,
 )]
+#[garde(allow_unvalidated)]
 pub struct ScriptingConfiguration {
     #[serde(default)]
     pub js: JsScriptingConfiguration,

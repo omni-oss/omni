@@ -1,7 +1,11 @@
+use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+)]
+#[garde(allow_unvalidated)]
 pub struct GeneratorConfiguration {
     pub name: String,
     #[serde(default)]
@@ -10,7 +14,10 @@ pub struct GeneratorConfiguration {
     pub files: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+)]
+#[garde(allow_unvalidated)]
 pub struct BasePrompt<TDefault> {
     pub name: String,
     pub message: String,
@@ -18,7 +25,10 @@ pub struct BasePrompt<TDefault> {
     pub hint: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+)]
+#[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
 pub enum Prompt {
