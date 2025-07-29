@@ -1,1 +1,225 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ProjectConfiguration","type":"object","properties":{"dependencies":{"$ref":"#/$defs/ListConfig","default":[]},"env":{"anyOf":[{"$ref":"#/$defs/ProjectEnvConfiguration"},{"type":"null"}]},"extends":{"type":"array","default":[],"items":{"type":"string"}},"name":{"type":"string"},"tasks":{"anyOf":[{"$ref":"#/$defs/DictConfig"},{"type":"null"}]}},"required":["name"],"$defs":{"DictConfig":{"anyOf":[{"type":"object","additionalProperties":{"$ref":"#/$defs/TaskConfiguration"}},{"type":"object","properties":{"merge":{"type":"object","additionalProperties":{"$ref":"#/$defs/TaskConfiguration"}}},"required":["merge"]},{"type":"object","properties":{"replace":{"type":"object","additionalProperties":{"$ref":"#/$defs/TaskConfiguration"}}},"required":["replace"]}]},"ListConfig":{"anyOf":[{"type":"array","items":{"$ref":"#/$defs/string"}},{"type":"object","properties":{"merge":{"type":"array","items":{"$ref":"#/$defs/string"}}},"required":["merge"]},{"type":"object","properties":{"append":{"type":"array","items":{"$ref":"#/$defs/string"}}},"required":["append"]},{"type":"object","properties":{"prepend":{"type":"array","items":{"$ref":"#/$defs/string"}}},"required":["prepend"]},{"type":"object","properties":{"replace":{"type":"array","items":{"$ref":"#/$defs/string"}}},"required":["replace"]}]},"ProjectEnvConfiguration":{"type":"object","properties":{"files":{"anyOf":[{"$ref":"#/$defs/ListConfig"},{"type":"null"}]}}},"TaskConfiguration":{"anyOf":[{"type":"string"},{"type":"object","properties":{"command":{"type":"string"},"dependencies":{"$ref":"#/$defs/ListConfig","default":[]}},"required":["command"]}]},"string":{"type":"string"}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectConfiguration",
+  "type": "object",
+  "properties": {
+    "dependencies": {
+      "$ref": "#/$defs/ListConfig",
+      "default": {
+        "append": []
+      }
+    },
+    "env": {
+      "$ref": "#/$defs/ProjectEnvConfiguration",
+      "default": {
+        "files": null,
+        "overrides": {}
+      }
+    },
+    "extends": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "tasks": {
+      "$ref": "#/$defs/DictConfig",
+      "default": {}
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "$defs": {
+    "DictConfig": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/TaskConfiguration"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/TaskConfiguration"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/TaskConfiguration"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "DictConfig2": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "ListConfig": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/string"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/string"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "append": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/string"
+              }
+            }
+          },
+          "required": [
+            "append"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prepend": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/string"
+              }
+            }
+          },
+          "required": [
+            "prepend"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/string"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "ProjectEnvConfiguration": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ListConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overrides": {
+          "$ref": "#/$defs/DictConfig2",
+          "default": {}
+        }
+      }
+    },
+    "TaskConfiguration": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "dependencies": {
+              "$ref": "#/$defs/ListConfig",
+              "default": []
+            }
+          },
+          "required": [
+            "command"
+          ]
+        }
+      ]
+    },
+    "string": {
+      "type": "string"
+    }
+  }
+}

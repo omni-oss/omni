@@ -49,7 +49,7 @@ pub async fn main() -> eyre::Result<()> {
             commands::exec::run(exec, &mut context).await?;
         }
         CliSubcommands::Env(ref env) => {
-            commands::env::run(env, &context).await?;
+            commands::env::run(env, &mut context).await?;
         }
         CliSubcommands::Config(ref config) => {
             commands::config::run(config, &context).await?;

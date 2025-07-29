@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use lazy_regex::{Lazy, Regex, regex};
+use garde::Validate;
 use merge::Merge;
 use schemars::JsonSchema;
 use serde::de::Error;
@@ -9,7 +9,8 @@ use strum::EnumIs;
 
 use crate::constants::TASK_DEPENDENCY_REGEX;
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIs)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumIs, Validate)]
+#[garde(allow_unvalidated)]
 pub enum TaskDependencyConfiguration {
     Own { task: String },
     ExplicitProject { project: String, task: String },
@@ -26,26 +27,22 @@ impl Merge for TaskDependencyConfiguration {
 impl TaskDependencyConfiguration {
     pub fn task(&self) -> &str {
         match self {
-            TaskDependencyConfiguration::Own { task } => task,
-            TaskDependencyConfiguration::ExplicitProject { task, .. } => task,
-            TaskDependencyConfiguration::Upstream { task } => task,
+            TaskDependencyConfiguration::Own { task }
+            | TaskDependencyConfiguration::ExplicitProject { task, .. }
+            | TaskDependencyConfiguration::Upstream { task } => task,
         }
     }
 
     pub fn project(&self) -> Option<&str> {
         match self {
-            TaskDependencyConfiguration::Own { .. } => None,
+            TaskDependencyConfiguration::Own { .. }
+            | TaskDependencyConfiguration::Upstream { .. } => None,
             TaskDependencyConfiguration::ExplicitProject {
                 project, ..
             } => Some(project),
-            TaskDependencyConfiguration::Upstream { .. } => None,
         }
     }
 }
-
-static TASK_REGEX: &Lazy<Regex> = regex!(
-    r#"((?<explicit_project>[/\.\@\:\w\-]+)#(?<explicit_task>[/\.\@\:\w\-]+))|(\^(?<upstream_task>[/\.\@\:\w-]+))|(?<own_task>[/\.\@\w\-\:]+)"#
-);
 
 impl From<TaskDependencyConfiguration> for crate::core::TaskDependency {
     fn from(val: TaskDependencyConfiguration) -> Self {
@@ -70,9 +67,10 @@ impl<'de> Deserialize<'de> for TaskDependencyConfiguration {
     {
         let s = String::deserialize(deserializer)?;
 
-        if TASK_REGEX.is_match(&s) {
-            let captures =
-                TASK_REGEX.captures(&s).expect("Can't parse task syntax");
+        if TASK_DEPENDENCY_REGEX.is_match(&s) {
+            let captures = TASK_DEPENDENCY_REGEX
+                .captures(&s)
+                .expect("Can't parse task syntax");
 
             if let Some(upstream_task) = captures.name("upstream_task") {
                 return Ok(Self::Upstream {
@@ -98,7 +96,8 @@ impl<'de> Deserialize<'de> for TaskDependencyConfiguration {
         }
 
         Err(D::Error::custom(format!(
-            "can't parse TaskDependencyConfiguration: {s}, expected syntax: {TASK_DEPENDENCY_REGEX}"
+            "can't parse TaskDependencyConfiguration: {s}, expected syntax: {}",
+            TASK_DEPENDENCY_REGEX.as_str()
         )))
     }
 }

@@ -136,6 +136,16 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
     }
 }
 
+impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
+    #[inline(always)]
+    pub fn to_hash_map_to_inner(&self) -> HashMap<String, TInner> {
+        self.as_hash_map()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.to_inner()))
+            .collect()
+    }
+}
+
 impl<T: Merge> Merge for DictConfig<T> {
     fn merge(&mut self, other: Self) {
         match other {

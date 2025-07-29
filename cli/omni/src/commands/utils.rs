@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, sync::Arc};
+use std::{collections::HashMap, ffi::OsString, path::Path, sync::Arc};
 
 use omni_core::TaskExecutionNode;
 use tokio::sync::Mutex;
@@ -6,17 +6,6 @@ use tokio::sync::Mutex;
 use crate::{context::Context, utils};
 
 type Envs = (HashMap<String, String>, HashMap<OsString, OsString>);
-
-macro_rules! record {
-    [$($key:expr => $value:expr),*$(,)?] => {{
-        let mut hm = HashMap::<String, String>::new();
-        $(
-            hm.insert($key.to_string(), $value.to_string());
-        )*
-
-        hm
-    }};
-}
 
 async fn execute_task_impl(
     task: TaskExecutionNode,
@@ -31,25 +20,15 @@ async fn execute_task_impl(
         // Scope the lock to the duration of the task so that we don't hold the lock for the entire duration of the task
         let mut hm = dir_envs.lock().await;
 
-        let extras = record![
-            "PROJECT_NAME" => task.project_name(),
-            "TASK_NAME" => task.task_name(),
-            "PROJECT_DIR" => task.project_dir().to_string_lossy()
-        ];
-
         if !hm.contains_key(project_dir_str) {
-            let (vars, vars_os) = ctx
-                .lock()
-                .await
-                .get_env_vars_at_start_dir(
-                    task.project_dir()
-                        .to_str()
-                        .expect("Can't convert project dir to str"),
-                    Some(&extras),
-                )
-                .map_err(|e| (task.clone(), e.into()))?;
+            let mg = ctx.lock().await;
+            let vars = mg
+                .get_cached_env_vars(Path::new(task.project_dir()))
+                .map_err(|e| (task.clone(), e))?;
 
-            hm.insert(project_dir_str.to_string(), (vars, vars_os));
+            let vars_os = vars_os(vars);
+
+            hm.insert(project_dir_str.to_string(), (vars.clone(), vars_os));
         }
 
         let envs = hm
@@ -59,6 +38,13 @@ async fn execute_task_impl(
 
         (::env::expand(task.task_command(), &envs.0), envs.1.clone())
     };
+
+    trace::debug!(
+        "Running command: '{:?}' with env: {:#?}, in dir: {:?}",
+        command,
+        vars_os,
+        task.project_dir()
+    );
 
     let exit = utils::cmd::run(&command, task.project_dir(), vars_os)
         .await
@@ -88,4 +74,10 @@ pub async fn execute_task(
             Err((task, error))
         }
     }
+}
+
+fn vars_os(vars: &HashMap<String, String>) -> HashMap<OsString, OsString> {
+    vars.iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect::<HashMap<_, _>>()
 }

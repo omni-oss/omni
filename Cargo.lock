@@ -398,9 +398,9 @@ checksum = "930c7171c8df9fb1782bdf9b918ed9ed2d33d1d22300abb754f9085bc48bf8e8"
 
 [[package]]
 name = "deno_error"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "612ec3fc481fea759141b0c57810889b0a4fb6fee8f10748677bfe492fd30486"
+checksum = "dde60bd153886964234c5012d3d9caf788287f28d81fb24a884436904101ef10"
 dependencies = [
  "deno_error_macro",
  "libc",
@@ -409,9 +409,9 @@ dependencies = [
 
 [[package]]
 name = "deno_error_macro"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8380a4224d5d2c3f84da4d764c4326cac62e9a1e3d4960442d29136fc07be863"
+checksum = "409f265785bd946d3006756955aaf40b0e4deb25752eae6a990afe54a31cfd83"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -420,9 +420,9 @@ dependencies = [
 
 [[package]]
 name = "deno_path_util"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "516f813389095889776b81cc9108ff6f336fd9409b4b12fc0138aea23d2708e1"
+checksum = "07f0a6c02723e125a14caacfe4a44a4972364a243a6dfed42b4b16128c76bc34"
 dependencies = [
  "deno_error",
  "percent-encoding",
@@ -433,9 +433,9 @@ dependencies = [
 
 [[package]]
 name = "deno_task_shell"
-version = "0.25.1"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38caeb310ffd21fdd263c8e9cccd590c0a6fb19d385ebc234bc95bd33cddcda2"
+checksum = "8ec9c589f733da0f5dfdf475d44cd01e2087425839a55162538d9898e94556e8"
 dependencies = [
  "anyhow",
  "deno_path_util",
@@ -554,6 +554,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "env",
  "eyre",
+ "mockall",
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.12",
@@ -2135,9 +2136,9 @@ dependencies = [
 
 [[package]]
 name = "sys_traits"
-version = "0.1.16"
+version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc4707edf3196e8037ee45018d1bb1bfb233b0e4fc440fa3d3f25bc69bfdaf26"
+checksum = "4f74a2c95f72e36fa6bd04a40d15623a9904bab1cc2fa6c6135b09d774a65088"
 dependencies = [
  "junction",
  "libc",

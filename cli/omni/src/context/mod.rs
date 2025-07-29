@@ -1,11 +1,14 @@
+mod env_loader;
+
+pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
+    ops::Deref,
     path::{Path, PathBuf},
 };
 
+use ::env_loader::EnvLoaderError;
 use dir_walker::{DirEntry as _, DirWalker};
-use env_loader::EnvLoaderError;
 use eyre::{Context as _, ContextCompat, OptionExt};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::ProjectGraph;
@@ -21,13 +24,23 @@ use crate::{
     },
     constants::{self, PROJECT_DIR_VAR, WORKSPACE_DIR_VAR},
     core::{Project, Task},
-    utils::env::{EnvVarsMap, EnvVarsMapOs, get_envs_at_start_dir},
+    utils::env::EnvVarsMap,
 };
+
+macro_rules! record {
+    [$($key:expr => $value:expr),*$(,)?] => {{
+        let mut hm = HashMap::<String, String>::new();
+        $(
+            hm.insert($key.to_string(), $value.to_string());
+        )*
+
+        hm
+    }};
+}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
-    envs_map: HashMap<String, String>,
-    envs_map_os: HashMap<OsString, OsString>,
+    env_loader: EnvLoader<TSys>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     projects: Option<Vec<Project>>,
@@ -59,9 +72,6 @@ impl<TSys: ContextSys> Context<TSys> {
         cli: &CliArgs,
         sys: TSys,
     ) -> eyre::Result<Context<TSys>> {
-        let envs_map = HashMap::new();
-        let envs_map_os = HashMap::new();
-
         let env = cli.env.as_deref().unwrap_or("development");
         let env_files = cli
             .env_file
@@ -76,20 +86,24 @@ impl<TSys: ContextSys> Context<TSys> {
             .collect::<Vec<_>>();
 
         let root_dir = get_root_dir(&sys)?;
-
+        let root_marker =
+            cli.env_root_dir_marker.clone().unwrap_or_else(|| {
+                constants::WORKSPACE_OMNI.replace("{ext}", "yaml")
+            });
         let ctx = Context {
             projects: None,
-            envs_map,
-            envs_map_os,
+            env_loader: EnvLoader::new(
+                sys.clone(),
+                PathBuf::from(&root_marker),
+                env_files
+                    .iter()
+                    .map(|s| Path::new(&s).to_path_buf())
+                    .collect(),
+            ),
             env_files,
             workspace: get_workspace_configuration(&root_dir, &sys)?,
             root_dir,
-            env_root_dir_marker: cli
-                .env_root_dir_marker
-                .clone()
-                .unwrap_or_else(|| {
-                    constants::WORKSPACE_OMNI.replace("{ext}", "yaml")
-                }),
+            env_root_dir_marker: root_marker,
             sys,
         };
 
@@ -106,81 +120,33 @@ impl<TSys: ContextSys> Context<TSys> {
         Ok(ProjectGraph::from_projects(projects.to_vec())?)
     }
 
-    pub fn get_env_var(&self, key: &str) -> Option<&str> {
-        self.envs_map.get(key).map(|s| s.as_str())
-    }
-
     pub fn get_current_dir(&self) -> std::io::Result<PathBuf> {
         self.sys.env_current_dir()
     }
 
-    pub fn set_env_var(
+    pub fn get_env_vars(
         &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) {
-        self.envs_map.insert(key.into(), value.into());
+        args: Option<&GetVarsArgs>,
+    ) -> Result<EnvVarsMap, EnvLoaderError> {
+        let envs = self.env_loader.get(args.unwrap_or(&GetVarsArgs {
+            ..Default::default()
+        }))?;
+
+        Ok(envs)
     }
 
-    pub fn remove_env_var(&mut self, key: &str) {
-        self.envs_map.remove(key);
-    }
-
-    pub fn clear_env_vars(&mut self) {
-        self.envs_map.clear();
-        self.envs_map_os.clear();
-    }
-
-    pub fn get_all_env_vars(&self) -> &HashMap<String, String> {
-        &self.envs_map
-    }
-
-    pub fn get_all_env_vars_os(&self) -> &HashMap<OsString, OsString> {
-        &self.envs_map_os
-    }
-
-    pub fn get_env_vars_at_start_dir(
+    pub fn get_cached_env_vars(
         &self,
-        start_dir: &str,
-        extra_envs: Option<&HashMap<String, String>>,
-    ) -> Result<(EnvVarsMap, EnvVarsMapOs), EnvLoaderError> {
-        get_envs_at_start_dir(
-            start_dir,
-            &self.env_root_dir_marker,
-            self.env_files
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            self.sys.clone(),
-            extra_envs,
-        )
-    }
+        path: &Path,
+    ) -> eyre::Result<&EnvVarsMap> {
+        let envs = self.env_loader.get_cached(path).ok_or_else(|| {
+            eyre::eyre!(
+                "env vars not found for path {} not found in cache",
+                path.display()
+            )
+        })?;
 
-    pub fn load_env_vars(
-        &mut self,
-        start_dir: &str,
-        extra_envs: Option<&HashMap<String, String>>,
-    ) -> Result<(), EnvLoaderError> {
-        self.clear_env_vars();
-        let (vars, vars_os) =
-            self.get_env_vars_at_start_dir(start_dir, extra_envs)?;
-
-        self.envs_map.extend(vars);
-
-        self.envs_map_os.extend(vars_os);
-
-        Ok(())
-    }
-
-    pub fn load_env_vars_from_current_dir(
-        &mut self,
-        extra_envs: Option<&HashMap<String, String>>,
-    ) -> Result<(), EnvLoaderError> {
-        let current_dir =
-            self.sys.env_current_dir().expect("Can't get current dir");
-
-        self.load_env_vars(&current_dir.to_string_lossy(), extra_envs)
+        Ok(envs)
     }
 
     pub fn get_projects(&self) -> Option<&Vec<Project>> {
@@ -190,6 +156,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn load_projects<TDirWalker: DirWalker>(
         &mut self,
         walker: &TDirWalker,
+        load_env: bool,
     ) -> eyre::Result<&Vec<Project>> {
         #[cfg(feature = "enable-tracing")]
         let start_time = std::time::SystemTime::now();
@@ -330,12 +297,40 @@ impl<TSys: ContextSys> Context<TSys> {
             .into_iter()
             .filter(|config| project_paths.contains(&config.path))
         {
+            let dir = Path::new(&config.path)
+                .parent()
+                .ok_or_eyre("Can't get parent")?
+                .to_path_buf();
+            if load_env {
+                let overrides = config.env.overrides.to_hash_map_to_inner();
+                let env_files = config
+                    .env
+                    .files
+                    .map(|files| files.to_vec_to_inner())
+                    .unwrap_or_else(|| {
+                        self.env_files.iter().map(PathBuf::from).collect()
+                    });
+
+                let env_files =
+                    env_files.iter().map(Deref::deref).collect::<Vec<_>>();
+
+                let mut extras = record![
+                    "PROJECT_NAME" => config.name,
+                    "PROJECT_DIR" => config.path
+                ];
+
+                extras.extend(overrides);
+
+                // load the env vars for the project
+                _ = self.get_env_vars(Some(&GetVarsArgs {
+                    start_dir: Some(&dir),
+                    override_vars: Some(&extras),
+                    env_files: Some(&env_files[..]),
+                }))?;
+            }
             projects.push(Project::new(
                 config.name,
-                Path::new(&config.path)
-                    .parent()
-                    .ok_or_eyre("Can't get parent")?
-                    .to_path_buf(),
+                dir,
                 config.dependencies.to_vec_inner(),
                 config
                     .tasks
@@ -653,11 +648,10 @@ mod tests {
     pub fn test_load_env_vars() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_env_vars_from_current_dir(None)
-            .expect("Can't load env vars");
+        let env = ctx.get_env_vars(None).expect("Can't load env vars");
 
         assert_eq!(
-            ctx.get_env_var("SHARED_ENV"),
+            env.get("SHARED_ENV").map(String::as_str),
             Some("root-local-nested-local-project-local")
         );
     }
@@ -666,7 +660,7 @@ mod tests {
     fn test_load_projects() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects(&create_dir_walker(None), true)
             .expect("Can't load projects");
 
         let projects = ctx.get_projects().expect("Can't get projects");
@@ -707,7 +701,7 @@ mod tests {
             InMemoryMetadata::default(),
         ));
 
-        let projects = ctx.load_projects(&dir_walker);
+        let projects = ctx.load_projects(&dir_walker, true);
 
         assert!(
             projects
@@ -722,7 +716,7 @@ mod tests {
     fn test_get_project_graph() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects(&create_dir_walker(None), true)
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -734,7 +728,7 @@ mod tests {
     fn test_project_extensions() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects(&create_dir_walker(None), true)
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
