@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use env::expand_into;
 use env_loader::{
     EnvCache as _, EnvCacheExt as _, EnvLoaderError, EnvLoaderSys,
 };
@@ -89,7 +90,11 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         )?;
 
         if let Some(override_vars) = args.override_vars {
-            env.extend(override_vars.clone());
+            let mut override_vars = override_vars.clone();
+            expand_into(&mut override_vars, &env);
+
+            env.extend(override_vars);
+
             // replace the cache with the new env vars if there are overrides
             self.env_cache
                 .insert_value(start_dir.to_path_buf(), env.clone());

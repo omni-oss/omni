@@ -345,8 +345,14 @@ fn get_expansions(text: &str) -> Vec<Expansion> {
 }
 
 pub fn expand(str: &str, envs: &HashMap<String, String>) -> String {
-    let mut expanded = str.to_string();
     let mut parsed = get_expansions(str);
+
+    // short circuit if there are no expansions
+    if parsed.is_empty() {
+        return str.to_string();
+    }
+
+    let mut expanded = str.to_string();
 
     parsed.sort_by(|a, b| b.to_replace.len().cmp(&a.to_replace.len()));
 
@@ -355,6 +361,15 @@ pub fn expand(str: &str, envs: &HashMap<String, String>) -> String {
     }
 
     expanded
+}
+
+pub fn expand_into(
+    into: &mut HashMap<String, String>,
+    using: &HashMap<String, String>,
+) {
+    for value in into.values_mut() {
+        *value = expand(value, using);
+    }
 }
 
 #[cfg(test)]
