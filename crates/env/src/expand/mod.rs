@@ -447,4 +447,16 @@ mod tests {
 
         assert_eq!(expanded, "DEFAULT_VALUE");
     }
+
+    #[test]
+    fn test_expand_into() {
+        let mut envs = HashMap::new();
+        envs.insert("TEST_1".to_string(), "TEST_VALUE".to_string());
+        let mut into = HashMap::new();
+        into.insert("TEST".to_string(), "${TEST_1}".to_string());
+
+        expand_into(&mut into, &envs);
+
+        assert_eq!(into.get("TEST"), Some(&"TEST_VALUE".to_string()));
+    }
 }
