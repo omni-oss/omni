@@ -34,20 +34,22 @@ fn init_tracing(config: &TracerConfig) -> eyre::Result<()> {
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
-    let tracing_config = TracerConfig {
-        stderr_trace_enabled: cli.args.stderr_trace,
-        file_path: cli
-            .args
-            .file_trace_output
-            .clone()
-            .or_else(|| Some(PathBuf::from("./omni/trace/logs"))),
-        file_trace_level: cli.args.file_trace_level,
-        stdout_trace_level: cli.args.stdout_trace_level,
-    };
-    #[cfg(feature = "enable-tracing")]
-    init_tracing(&tracing_config)?;
 
-    trace::debug!("Tracing config: {:?}", tracing_config);
+    #[cfg(feature = "enable-tracing")]
+    {
+        let tracing_config = TracerConfig {
+            stderr_trace_enabled: cli.args.stderr_trace,
+            file_path: cli
+                .args
+                .file_trace_output
+                .clone()
+                .or_else(|| Some(PathBuf::from("./omni/trace/logs"))),
+            file_trace_level: cli.args.file_trace_level,
+            stdout_trace_level: cli.args.stdout_trace_level,
+        };
+        init_tracing(&tracing_config)?;
+        trace::debug!("Tracing config: {:?}", tracing_config);
+    }
 
     let sys = RealSysSync;
     let mut context =
