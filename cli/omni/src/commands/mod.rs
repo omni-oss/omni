@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
 use completion::CompletionCommand;
 use config::ConfigCommand;
@@ -6,7 +8,7 @@ use exec::ExecCommand;
 use run::RunCommand;
 mod utils;
 
-use crate::build;
+use crate::{build, tracer::TraceLevel};
 
 pub mod completion;
 pub mod config;
@@ -38,11 +40,39 @@ pub struct Cli {
 pub struct CliArgs {
     #[arg(
         short = 't',
-        long = "trace-level",
+        long = "stdout-trace-level",
         help = "Print traces to stdout",
-        default_value_t = 0
+        value_enum,
+        default_value = "info",
+        env = "OMNI_STDOUT_TRACE_LEVEL"
     )]
-    pub trace_level: u8,
+    pub stdout_trace_level: TraceLevel,
+
+    #[arg(
+        long,
+        help = "Output Error traces to stderr",
+        env = "OMNI_STDERR_TRACE_ENABLED",
+        default_value = "true",
+        action = clap::ArgAction::SetTrue
+    )]
+    pub stderr_trace: bool,
+
+    #[arg(
+        long = "file-trace-output",
+        help = "The file to write traces to",
+        default_value = "./.omni/trace/logs"
+    )]
+    pub file_trace_output: Option<PathBuf>,
+
+    #[arg(
+        short = 'f',
+        long,
+        help = "The trace level to use for file traces",
+        value_enum,
+        default_value = "none",
+        env = "OMNI_FILE_TRACE_LEVEL"
+    )]
+    pub file_trace_level: TraceLevel,
 
     #[arg(
         short = 'r',
@@ -66,7 +96,7 @@ pub struct CliArgs {
     )]
     pub env_file: Vec<String>,
 
-    #[arg(long = "env", help = "The environment to use", env = "ENV")]
+    #[arg(long = "env", help = "The environment to use", env = "OMNI_ENV")]
     pub env: Option<String>,
 }
 

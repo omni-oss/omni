@@ -479,6 +479,8 @@ fn get_workspace_configuration(
 
 #[cfg(test)]
 mod tests {
+    use crate::tracer::TraceLevel;
+
     use super::*;
     use dir_walker::impls::{
         InMemoryDirEntry, InMemoryDirWalker, InMemoryMetadata,
@@ -586,7 +588,6 @@ mod tests {
         let sys = sys.unwrap_or_else(create_sys);
 
         let cli = &CliArgs {
-            trace_level: 0,
             env_root_dir_marker: None,
             env_file: vec![
                 ".env".to_string(),
@@ -595,6 +596,10 @@ mod tests {
                 ".env.{ENV}.local".to_string(),
             ],
             env: Some(String::from(env)),
+            stdout_trace_level: TraceLevel::None,
+            file_trace_level: TraceLevel::None,
+            stderr_trace: false,
+            file_trace_output: None,
         };
 
         Context::from_args_and_sys(cli, sys).expect("Can't create context")

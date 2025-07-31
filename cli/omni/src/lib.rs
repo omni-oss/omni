@@ -1,8 +1,15 @@
 #![allow(dead_code)]
 
+#[cfg(feature = "enable-tracing")]
+use std::path::PathBuf;
+
 use clap::Parser;
 use commands::{Cli, CliSubcommands};
+#[cfg(feature = "enable-tracing")]
 use system_traits::impls::RealSys as RealSysSync;
+
+#[cfg(feature = "enable-tracing")]
+use crate::tracer::TracerConfig;
 
 mod build;
 mod commands;
@@ -10,25 +17,16 @@ mod configurations;
 mod constants;
 mod context;
 mod core;
+mod tracer;
 mod utils;
 
 #[cfg(feature = "enable-tracing")]
-fn init_tracing(level: u8) -> eyre::Result<()> {
-    let level = match level {
-        1 => trace::Level::ERROR,
-        2 => trace::Level::WARN,
-        3 => trace::Level::INFO,
-        4 => trace::Level::DEBUG,
-        5.. => trace::Level::TRACE,
-        0 => return Ok(()),
-    };
-    tracing_subscriber::fmt().with_max_level(level).init();
+fn init_tracing(config: &TracerConfig) -> eyre::Result<()> {
+    use tracing_subscriber::util::SubscriberInitExt;
 
-    Ok(())
-}
+    use crate::tracer::TracerSubscriber;
 
-fn init_logging() -> eyre::Result<()> {
-    env_logger::init_from_env("OMNI_LOG");
+    TracerSubscriber::new(config)?.try_init()?;
 
     Ok(())
 }
@@ -36,9 +34,20 @@ fn init_logging() -> eyre::Result<()> {
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
-
+    let tracing_config = TracerConfig {
+        stderr_trace_enabled: cli.args.stderr_trace,
+        file_path: cli
+            .args
+            .file_trace_output
+            .clone()
+            .or_else(|| Some(PathBuf::from("./omni/trace/logs"))),
+        file_trace_level: cli.args.file_trace_level,
+        stdout_trace_level: cli.args.stdout_trace_level,
+    };
     #[cfg(feature = "enable-tracing")]
-    init_tracing(cli.args.trace_level)?;
+    init_tracing(&tracing_config)?;
+
+    trace::debug!("Tracing config: {:?}", tracing_config);
 
     let sys = RealSysSync;
     let mut context =
