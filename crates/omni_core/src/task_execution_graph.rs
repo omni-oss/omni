@@ -594,6 +594,7 @@ mod tests {
                 .task("p1t1", "echo p1t1", |b| b.own_dependency("p1t2"))
                 .task("p1t2", "echo p1t2", |b| {
                     b.upstream_dependency("shared-task")
+                        .description("p1t2 description")
                 })
                 .task("p1t3", "echo p1t2", |b| {
                     b.upstream_dependency("shared-task-2")

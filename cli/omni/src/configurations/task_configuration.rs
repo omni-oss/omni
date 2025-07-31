@@ -24,6 +24,8 @@ pub enum TaskConfiguration {
         command: String,
         #[serde(default)]
         dependencies: ListConfig<TaskDependencyConfiguration>,
+        #[serde(default)]
+        description: Option<String>,
     },
 }
 
@@ -35,13 +37,16 @@ impl TaskConfiguration {
                 vec![TaskDependency::Upstream {
                     task: name.to_string(),
                 }],
+                None,
             ),
             TaskConfiguration::LongForm {
                 command,
                 dependencies,
+                description,
             } => Task::new(
                 command,
                 dependencies.into_iter().map(Into::into).collect(),
+                description,
             ),
         }
     }
@@ -55,14 +60,17 @@ impl Merge for TaskConfiguration {
                 Lf {
                     dependencies: a_dep,
                     command: a_cmd,
+                    description: a_desc,
                 },
                 Lf {
                     dependencies: b_dep,
                     command: b_cmd,
+                    description: b_desc,
                 },
             ) => {
                 a_dep.merge(b_dep);
                 *a_cmd = b_cmd;
+                merge::option::overwrite_none(a_desc, b_desc);
             }
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
@@ -94,6 +102,7 @@ mod tests {
         let mut a = TaskConfiguration::LongForm {
             command: "a".to_string(),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
+            description: Some(String::from("a description")),
         };
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -104,6 +113,7 @@ mod tests {
         let b = TaskConfiguration::LongForm {
             command: "b".to_string(),
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
+            description: None,
         };
 
         a.merge(b);
@@ -113,6 +123,7 @@ mod tests {
             TaskConfiguration::LongForm {
                 command: "b".to_string(),
                 dependencies: ListConfig::value(vec![a_tdc, b_tdc]),
+                description: Some(String::from("a description")),
             }
         );
     }
