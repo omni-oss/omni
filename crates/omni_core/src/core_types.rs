@@ -18,12 +18,14 @@ pub struct Project {
 pub struct Task {
     pub command: String,
     pub dependencies: Vec<TaskDependency>,
+    pub description: Option<String>,
 }
 
 #[cfg(test)]
 pub(crate) struct TaskBuilder {
     command: String,
     dependencies: Vec<TaskDependency>,
+    description: Option<String>,
 }
 
 #[cfg(test)]
@@ -32,6 +34,7 @@ impl TaskBuilder {
         Self {
             command,
             dependencies: Default::default(),
+            description: Default::default(),
         }
     }
 
@@ -59,10 +62,16 @@ impl TaskBuilder {
         self
     }
 
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
     pub fn build(self) -> Task {
         Task {
             command: self.command,
             dependencies: self.dependencies,
+            description: self.description,
         }
     }
 }
