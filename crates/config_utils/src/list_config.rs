@@ -1,7 +1,17 @@
 use crate::{AsInner, AsInnerMut, IntoInner, ToInner, merge::Merge};
-use strum::EnumIs;
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, EnumIs)]
+#[derive(
+    Debug,
+    Clone,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    EnumIs,
+    EnumDiscriminants,
+)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
@@ -132,27 +142,37 @@ impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> ListConfig<TWrapper> {
     }
 }
 
-impl<T: Merge> Merge for ListConfig<T> {
-    fn merge(&mut self, other: Self) {
-        match other {
-            ListConfig::Value(items)
-            | ListConfig::Replace { replace: items } => {
-                *self.as_vec_mut() = items;
+impl<T: Merge + Clone> Merge for ListConfig<T> {
+    fn merge(&mut self, mut other: Self) {
+        // copy the discriminant of the other value
+        let other_discriminant = other.discriminant();
+
+        // swap the two values to get the discriminant of the other value
+        std::mem::swap(self, &mut other);
+        // swap the internal values back to the original values
+        std::mem::swap(self.as_vec_mut(), other.as_vec_mut());
+
+        let mut other_items = other.into_vec();
+
+        match other_discriminant {
+            ListConfigDiscriminants::Value
+            | ListConfigDiscriminants::Replace => {
+                *self.as_vec_mut() = other_items;
             }
-            ListConfig::Merge { merge } => {
+            ListConfigDiscriminants::Merge => {
                 let self_items = self.as_vec_mut().iter_mut();
 
-                for (a, b) in self_items.zip(merge) {
+                for (a, b) in self_items.zip(other_items) {
                     a.merge(b);
                 }
             }
-            ListConfig::Append { mut append } => {
-                self.as_vec_mut().append(&mut append);
+            ListConfigDiscriminants::Append => {
+                self.as_vec_mut().append(&mut other_items);
             }
-            ListConfig::Prepend { mut prepend } => {
+            ListConfigDiscriminants::Prepend => {
                 let current = self.as_vec_mut();
-                std::mem::swap(current, &mut prepend);
-                self.as_vec_mut().append(&mut prepend);
+                std::mem::swap(current, &mut other_items);
+                self.as_vec_mut().append(&mut other_items);
             }
         }
     }
@@ -279,5 +299,26 @@ mod tests {
         a.merge(b);
 
         assert_eq!(a.to_vec_inner(), vec![4, 5, 3]);
+    }
+
+    #[test]
+    fn test_copy_other_discriminant() {
+        let mut a = ListConfig::value(vec_replace![1, 2, 3]);
+        let b = ListConfig::merge(vec_replace![]);
+        let c = ListConfig::value(vec_replace![]);
+        let d = ListConfig::replace(vec_replace![1, 2, 3]);
+        let e = ListConfig::append(vec_replace![]);
+        let f = ListConfig::prepend(vec_replace![]);
+
+        a.merge(b);
+        assert_eq!(a.discriminant(), ListConfigDiscriminants::Merge);
+        a.merge(c);
+        assert_eq!(a.discriminant(), ListConfigDiscriminants::Value);
+        a.merge(d);
+        assert_eq!(a.discriminant(), ListConfigDiscriminants::Replace);
+        a.merge(e);
+        assert_eq!(a.discriminant(), ListConfigDiscriminants::Append);
+        a.merge(f);
+        assert_eq!(a.discriminant(), ListConfigDiscriminants::Prepend);
     }
 }
