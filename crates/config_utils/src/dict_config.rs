@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet, hash_map};
 
-use strum::EnumIs;
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{AsInner, AsInnerMut, IntoInner, ToInner, merge::Merge};
 
-#[derive(Debug, Clone, PartialEq, Eq, EnumIs)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumIs, EnumDiscriminants)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
@@ -147,20 +147,30 @@ impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
 }
 
 impl<T: Merge> Merge for DictConfig<T> {
-    fn merge(&mut self, other: Self) {
-        match other {
-            DictConfig::Replace { replace: hash_map } => {
-                *self.as_hash_map_mut() = hash_map;
+    fn merge(&mut self, mut other: Self) {
+        // copy the discriminant of the other value
+        let other_discriminant = other.discriminant();
+
+        // swap the two values to get the discriminant of the other value
+        std::mem::swap(self, &mut other);
+        // swap the internal values back to the original values
+        std::mem::swap(self.as_hash_map_mut(), other.as_hash_map_mut());
+
+        let mut other_hash_map = other.into_hash_map();
+
+        match other_discriminant {
+            DictConfigDiscriminants::Replace => {
+                *self.as_hash_map_mut() = other_hash_map;
             }
 
-            DictConfig::Value(mut merge) | DictConfig::Merge { mut merge } => {
+            DictConfigDiscriminants::Value | DictConfigDiscriminants::Merge => {
                 let mut keys = HashSet::new();
                 keys.extend(self.as_hash_map().keys().cloned());
-                keys.extend(merge.keys().cloned());
+                keys.extend(other_hash_map.keys().cloned());
 
                 for key in keys {
                     let a = self.as_hash_map_mut().get_mut(&key);
-                    let b = merge.remove(&key);
+                    let b = other_hash_map.remove(&key);
 
                     match (a, b) {
                         (None, None) | (Some(_), None) => {
@@ -295,5 +305,20 @@ mod tests {
                 "bar" => 2
             ]
         );
+    }
+
+    #[test]
+    fn test_copy_other_discriminant() {
+        let mut a = DictConfig::value(hm_replace!["a" => 1]);
+        let b = DictConfig::merge(hm_replace![]);
+        let c = DictConfig::value(hm_replace![]);
+        let d = DictConfig::replace(hm_replace!["a" => 1]);
+
+        a.merge(b);
+        assert_eq!(a.discriminant(), DictConfigDiscriminants::Merge);
+        a.merge(c);
+        assert_eq!(a.discriminant(), DictConfigDiscriminants::Value);
+        a.merge(d);
+        assert_eq!(a.discriminant(), DictConfigDiscriminants::Replace);
     }
 }
