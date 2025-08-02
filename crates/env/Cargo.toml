@@ -7,8 +7,6 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-[features]
-dhat-heap = ["dep:dhat"]
 
 [[bench]]
 path = "./benches/env_benchmarks.rs"
@@ -22,7 +20,6 @@ convert_case = { workspace = true }
 strum = { workspace = true }
 maps = { workspace = true }
 derive-new = { workspace = true }
-dhat = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
