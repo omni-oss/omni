@@ -1,3 +1,4 @@
+#![feature(box_patterns)]
 #![allow(dead_code)]
 
 #[cfg(feature = "enable-tracing")]
@@ -17,8 +18,13 @@ mod configurations;
 mod constants;
 mod context;
 mod core;
+mod executor;
 mod tracer;
 mod utils;
+
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
 
 #[cfg(feature = "enable-tracing")]
 fn init_tracing(config: &TracerConfig) -> eyre::Result<()> {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use clap::Args;
 use futures::future::join_all;
@@ -58,7 +58,6 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     let full_cmd =
         format!("{} {}", command.args.command, command.args.args.join(" "));
 
-    let dir_envs = Arc::new(Mutex::new(HashMap::new()));
     let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
     for p in projects {
         let full_cmd = full_cmd.clone();
@@ -70,7 +69,6 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
                 p.dir.clone(),
             ),
             shared_ctx.clone(),
-            dir_envs.clone(),
         ));
     }
 

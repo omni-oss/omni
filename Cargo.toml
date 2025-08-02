@@ -23,10 +23,10 @@ authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 
 [workspace.dependencies]
 serde = { version = "^1.0.219", features = ["derive", "rc", "alloc"] }
-sys_traits = { version = "^0.1.16", features = ["real"] }
+sys_traits = { version = "^0.1.17", features = ["real"] }
 system_traits = { path = "./crates/system_traits" }
 async-trait = { version = "^0.1.88" }
-serde_json = { version = "^1.0.140" }
+serde_json = { version = "^1.0.142" }
 trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.41" }
 tracing-core = { version = "^0.1.34" }

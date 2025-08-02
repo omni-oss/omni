@@ -5,3 +5,6 @@ dist
 **/.omni
 node_modules
 **/node_modules
+perf.data*
+flamegraph.svg
+dhat-heap.json

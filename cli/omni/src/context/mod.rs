@@ -2,7 +2,7 @@ mod env_loader;
 
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     ops::Deref,
     path::{Path, PathBuf},
 };
@@ -26,17 +26,6 @@ use crate::{
     core::{Project, Task},
     utils::env::EnvVarsMap,
 };
-
-macro_rules! record {
-    [$($key:expr => $value:expr),*$(,)?] => {{
-        let mut hm = HashMap::<String, String>::new();
-        $(
-            hm.insert($key.to_string(), $value.to_string());
-        )*
-
-        hm
-    }};
-}
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
@@ -252,15 +241,10 @@ impl<TSys: ContextSys> Context<TSys> {
                     if dep.contains(WORKSPACE_DIR_VAR)
                         || dep.contains(PROJECT_DIR_VAR)
                     {
-                        let mut env = HashMap::new();
-                        env.insert(
-                            WORKSPACE_DIR_VAR.to_string(),
-                            self.root_dir.to_string_lossy().to_string(),
-                        );
-                        env.insert(
-                            PROJECT_DIR_VAR.to_string(),
-                            project.path.clone(),
-                        );
+                        let env = maps::map![
+                            WORKSPACE_DIR_VAR.to_string() => self.root_dir.to_string_lossy().to_string(),
+                            PROJECT_DIR_VAR.to_string() => project.path.clone(),
+                        ];
                         *dep = env::expand(dep, &env);
                     }
 
@@ -302,7 +286,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 .ok_or_eyre("Can't get parent")?
                 .to_path_buf();
             if load_env {
-                let overrides = config.env.overrides.to_hash_map_to_inner();
+                let overrides = config.env.overrides.to_map_to_inner();
                 let env_files = config
                     .env
                     .files
@@ -314,9 +298,9 @@ impl<TSys: ContextSys> Context<TSys> {
                 let env_files =
                     env_files.iter().map(Deref::deref).collect::<Vec<_>>();
 
-                let mut extras = record![
-                    "PROJECT_NAME" => config.name,
-                    "PROJECT_DIR" => config.path
+                let mut extras = maps::map![
+                    "PROJECT_NAME".to_string() => config.name.to_string(),
+                    "PROJECT_DIR".to_string() => config.path.to_string()
                 ];
 
                 extras.extend(overrides);
@@ -336,7 +320,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     .tasks
                     .iter()
                     .map(|(task_name, v)| {
-                        let mapped: Task = v.clone().into_task(task_name);
+                        let mapped: Task = v.clone().get_task(task_name);
 
                         (task_name.clone(), mapped)
                     })

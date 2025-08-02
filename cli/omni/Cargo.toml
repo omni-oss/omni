@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
+dhat-heap = ["dep:dhat"]
 enable-tracing = [
     "trace/enabled",
     "dep:tracing",
@@ -20,9 +21,11 @@ enable-tracing = [
 eyre = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
+derive-new = { workspace = true }
 clap_complete = { workspace = true }
 shadow-rs = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 futures = { workspace = true }
 trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
@@ -58,6 +61,11 @@ strum = { workspace = true }
 garde = { workspace = true }
 env_loader = { workspace = true }
 env = { workspace = true }
+os_pipe = { workspace = true }
+globwalk = { workspace = true }
+maps = { workspace = true }
+sets = { workspace = true }
+dhat = { workspace = true, optional = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
