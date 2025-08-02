@@ -48,10 +48,8 @@ pub fn create_sys() -> impl EnvLoaderSys {
 #[macro_export]
 macro_rules! env {
     [$($key:expr => $value:expr),*$(,)?] => {{
-        let mut hm = std::collections::HashMap::<String, String>::new();
-        $(
-            hm.insert($key.to_string(), $value.to_string());
-        )*
-        hm
+        maps::map![
+            $($key.to_string() => $value.to_string()),*
+        ]
     }}
 }

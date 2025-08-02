@@ -50,6 +50,16 @@ impl TaskExecutionNode {
     pub fn project_dir(&self) -> &Path {
         self.project_dir.as_path()
     }
+
+    /// (task_name, task_command, project_name, project_dir)
+    pub fn deconstruct(self) -> (String, String, String, PathBuf) {
+        (
+            self.task_name,
+            self.task_command,
+            self.project_name,
+            self.project_dir,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]

@@ -1,8 +1,6 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
+use maps::Map;
 use mockall::automock;
 use system_traits::{FsCanonicalize, auto_impl};
 
@@ -12,10 +10,10 @@ pub trait EnvCacheSys: FsCanonicalize {}
 #[automock]
 pub trait EnvCache {
     fn is_cached(&self, path: &Path) -> bool;
-    fn get<'a>(&'a self, path: &Path) -> Option<&'a HashMap<String, String>>;
+    fn get<'a>(&'a self, path: &Path) -> Option<&'a Map<String, String>>;
     fn clear(&mut self, path: &Path);
     fn clear_all(&mut self);
-    fn insert(&mut self, path: PathBuf, vars: Option<HashMap<String, String>>);
+    fn insert(&mut self, path: PathBuf, vars: Option<Map<String, String>>);
 }
 
 pub trait EnvCacheExt: EnvCache {
@@ -23,7 +21,7 @@ pub trait EnvCacheExt: EnvCache {
         self.insert(path, None);
     }
 
-    fn insert_value(&mut self, path: PathBuf, value: HashMap<String, String>) {
+    fn insert_value(&mut self, path: PathBuf, value: Map<String, String>) {
         self.insert(path, Some(value));
     }
 }
@@ -33,21 +31,21 @@ impl<TCache: EnvCache> EnvCacheExt for TCache {}
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 
 pub struct DefaultEnvCache<TSys: EnvCacheSys> {
-    inner: HashMap<PathBuf, Option<HashMap<String, String>>>,
+    inner: Map<PathBuf, Option<Map<String, String>>>,
     sys: TSys,
 }
 
 impl<TSys: EnvCacheSys> DefaultEnvCache<TSys> {
     pub fn new(sys: TSys) -> Self {
         Self {
-            inner: HashMap::new(),
+            inner: maps::map!(),
             sys,
         }
     }
 }
 
 impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
-    fn insert(&mut self, path: PathBuf, vars: Option<HashMap<String, String>>) {
+    fn insert(&mut self, path: PathBuf, vars: Option<Map<String, String>>) {
         let key = key(path, &self.sys);
 
         self.inner.insert(key, vars);
@@ -80,7 +78,7 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
         false
     }
 
-    fn get(&self, path: &Path) -> Option<&HashMap<String, String>> {
+    fn get(&self, path: &Path) -> Option<&Map<String, String>> {
         let k = key(path.to_path_buf(), &self.sys);
         let value = self.inner.get(&k)?;
 
@@ -105,7 +103,7 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
 
     fn clear(&mut self, path: &Path) {
         let k = key(path.to_path_buf(), &self.sys);
-        self.inner.remove(&k);
+        self.inner.swap_remove(&k);
     }
 
     fn clear_all(&mut self) {

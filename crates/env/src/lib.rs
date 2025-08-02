@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 mod config;
 mod error;
 mod escape;
@@ -12,8 +10,9 @@ pub use error::*;
 use escape::unescape;
 pub use expand::*;
 use lexer::{Lexer, Token};
+use maps::Map;
 
-pub fn parse_default(text: &str) -> EnvParserResult<HashMap<String, String>> {
+pub fn parse_default(text: &str) -> EnvParserResult<Map<String, String>> {
     parse(text, &ParseConfig::default())
 }
 
@@ -38,9 +37,9 @@ fn report_long_message(
 pub fn parse(
     text: &str,
     config: &ParseConfig,
-) -> EnvParserResult<HashMap<String, String>> {
-    let mut env = HashMap::new();
-    let mut combined = HashMap::new();
+) -> EnvParserResult<Map<String, String>> {
+    let mut env = maps::map!();
+    let mut combined = maps::map!();
 
     if let Some(extra_envs) = config.extra_envs {
         combined.extend(extra_envs.clone());
@@ -78,11 +77,8 @@ pub fn parse(
                                 if let Some(string) = val {
                                     let unescaped = unescape(&string.lexeme);
                                     let expanded = if config.expand
-                                        && matches!(
-                                string.token_type,
-                                lexer::TokenType::UnqoutedString
-                                    | lexer::TokenType::DoubleQuotedString
-                            ) {
+                                        && matches!(string.token_type,lexer::TokenType::UnqoutedString | lexer::TokenType::DoubleQuotedString
+                                ) {
                                         expand(&unescaped, &combined)
                                     } else {
                                         unescaped
@@ -244,14 +240,10 @@ mod tests {
         let env = parse(
             text,
             &ParseConfig {
-                extra_envs: Some(&{
-                    let mut map = HashMap::new();
-                    map.insert(
-                        "EXTERNAL_TEST".to_string(),
-                        "EXTERNAL_VALUE".to_string(),
-                    );
-                    map
-                }),
+                extra_envs: Some(&maps::map![
+                    "EXTERNAL_TEST".to_string() => "EXTERNAL_VALUE".to_string(),
+                    "EXTERNAL_TEST2".to_string() => "EXTERNAL_VALUE2".to_string(),
+                ]),
                 ..Default::default()
             },
         )

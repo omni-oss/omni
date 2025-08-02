@@ -569,7 +569,9 @@ name = "env"
 version = "0.0.0-semantically-released"
 dependencies = [
  "convert_case 0.8.0",
+ "derive-new",
  "derive_more",
+ "maps",
  "strum 0.27.2",
  "thiserror 2.0.12",
 ]
@@ -586,6 +588,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "env",
  "eyre",
+ "maps",
  "mockall",
  "strum 0.27.2",
  "system_traits",
@@ -820,6 +823,17 @@ dependencies = [
  "log",
  "regex-automata",
  "regex-syntax 0.8.5",
+]
+
+[[package]]
+name = "globwalk"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf760ebf69878d9fd8f110c89703d90ce35095324d1f1edcb595c63945ee757"
+dependencies = [
+ "bitflags",
+ "ignore",
+ "walkdir",
 ]
 
 [[package]]
@@ -1411,8 +1425,10 @@ dependencies = [
  "futures",
  "garde",
  "globset",
+ "globwalk",
  "js_runtime",
  "lazy-regex",
+ "maps",
  "merge",
  "omni_core",
  "omni_types",
@@ -1423,6 +1439,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yml",
+ "sets",
  "shadow-rs",
  "strum 0.27.2",
  "system_traits",
