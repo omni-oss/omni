@@ -1,12 +1,10 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use env::expand_into;
 use env_loader::{
     EnvCache as _, EnvCacheExt as _, EnvLoaderError, EnvLoaderSys,
 };
+use maps::Map;
 use system_traits::{EnvCurrentDir, EnvVars, auto_impl};
 
 use crate::utils::env::EnvVarsMap;
@@ -26,7 +24,7 @@ pub struct EnvLoader<T: EnvCacheSys> {
 pub struct GetVarsArgs<'a> {
     pub start_dir: Option<&'a Path>,
     pub env_files: Option<&'a [&'a Path]>,
-    pub override_vars: Option<&'a HashMap<String, String>>,
+    pub override_vars: Option<&'a Map<String, String>>,
 }
 
 impl<T: EnvCacheSys> EnvLoader<T> {
@@ -64,7 +62,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
 
         let v = self.sys.env_vars();
 
-        let mut env_vars = HashMap::new();
+        let mut env_vars = maps::map!();
 
         env_vars.extend(v);
 

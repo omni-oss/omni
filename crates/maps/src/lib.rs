@@ -14,6 +14,12 @@ macro_rules! map {
             map
         }
     };
+    (cap: $cap:expr $(,)?) => {
+        {
+            let mut map = $crate::Map::with_capacity_and_hasher($cap, $crate::hash::RandomState::default());
+            map
+        }
+    };
     ($($key:expr => $value:expr,)+) => { $crate::map!($($key => $value),+) };
     ($($key:expr => $value:expr),*) => {
         {

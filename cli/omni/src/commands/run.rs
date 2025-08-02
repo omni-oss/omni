@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use futures::future::join_all;
 use omni_core::TaskExecutionNode;
@@ -48,9 +48,6 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
 
     let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
 
-    // cache envs for each project dir so that we don't have to load them again
-    let project_dir_envs = Arc::new(Mutex::new(HashMap::new()));
-
     let mut failures = vec![];
 
     if command.no_dependencies {
@@ -84,11 +81,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
                 project.dir.clone(),
             );
 
-            tasks.push(execute_task(
-                task,
-                shared_ctx.clone(),
-                project_dir_envs.clone(),
-            ));
+            tasks.push(execute_task(task, shared_ctx.clone()));
         }
 
         let results = join_all(tasks).await;
@@ -125,11 +118,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
             let mut tasks = vec![];
 
             for task in batch {
-                tasks.push(execute_task(
-                    task,
-                    shared_ctx.clone(),
-                    project_dir_envs.clone(),
-                ));
+                tasks.push(execute_task(task, shared_ctx.clone()));
             }
             // run all tasks in a batch concurrently
             let results = join_all(tasks).await;

@@ -1,4 +1,6 @@
-use std::{collections::HashMap, ffi::OsString};
+use std::ffi::OsString;
 
-pub type EnvVarsMap = HashMap<String, String>;
-pub type EnvVarsMapOs = HashMap<OsString, OsString>;
+use maps::Map;
+
+pub type EnvVarsMap = Map<String, String>;
+pub type EnvVarsMapOs = Map<OsString, OsString>;
