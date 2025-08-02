@@ -90,8 +90,9 @@ impl ProjectConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct ProjectEnvConfiguration {
-    #[merge(strategy = merge::option::recurse)]
-    pub files: Option<ListConfig<Replace<PathBuf>>>,
+    #[serde(default = "super::utils::list_config_default::<Replace<PathBuf>>")]
+    pub files: ListConfig<Replace<PathBuf>>,
+
     #[serde(default)]
-    pub overrides: DictConfig<Replace<String>>,
+    pub vars: DictConfig<Replace<String>>,
 }

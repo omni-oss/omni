@@ -1,9 +1,9 @@
 mod env_loader;
 
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
+use maps::Map;
 use std::{
     collections::HashSet,
-    ops::Deref,
     path::{Path, PathBuf},
 };
 
@@ -11,7 +11,7 @@ use ::env_loader::EnvLoaderError;
 use dir_walker::{DirEntry as _, DirWalker};
 use eyre::{Context as _, ContextCompat, OptionExt};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
-use omni_core::ProjectGraph;
+use omni_core::{ProjectGraph, TaskExecutionNode};
 use system_traits::{
     EnvCurrentDir, EnvVar, EnvVars, FsCanonicalize, FsMetadata, FsRead,
     auto_impl, impls::RealSys as RealSysSync,
@@ -30,6 +30,7 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
     env_loader: EnvLoader<TSys>,
+    task_env_vars: Map<String, EnvVarsMap>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     projects: Option<Vec<Project>>,
@@ -81,6 +82,7 @@ impl<TSys: ContextSys> Context<TSys> {
             });
         let ctx = Context {
             projects: None,
+            task_env_vars: maps::map!(),
             env_loader: EnvLoader::new(
                 sys.clone(),
                 PathBuf::from(&root_marker),
@@ -122,6 +124,13 @@ impl<TSys: ContextSys> Context<TSys> {
         }))?;
 
         Ok(envs)
+    }
+
+    pub fn get_task_env_vars(
+        &self,
+        task: &TaskExecutionNode,
+    ) -> Option<&EnvVarsMap> {
+        self.task_env_vars.get(task.full_task_name())
     }
 
     pub fn get_cached_env_vars(
@@ -286,31 +295,44 @@ impl<TSys: ContextSys> Context<TSys> {
                 .ok_or_eyre("Can't get parent")?
                 .to_path_buf();
             if load_env {
-                let overrides = config.env.overrides.to_map_to_inner();
-                let env_files = config
-                    .env
-                    .files
-                    .map(|files| files.to_vec_to_inner())
-                    .unwrap_or_else(|| {
-                        self.env_files.iter().map(PathBuf::from).collect()
-                    });
-
-                let env_files =
-                    env_files.iter().map(Deref::deref).collect::<Vec<_>>();
-
                 let mut extras = maps::map![
                     "PROJECT_NAME".to_string() => config.name.to_string(),
                     "PROJECT_DIR".to_string() => config.path.to_string()
                 ];
 
-                extras.extend(overrides);
+                let overrides = &config.env.vars;
+                if !overrides.as_map().is_empty() {
+                    extras.extend(overrides.to_map_to_inner());
+                }
+
+                let env_files = config
+                    .env
+                    .files
+                    .as_vec()
+                    .iter()
+                    .map::<&Path, _>(|s| s)
+                    .collect::<Vec<_>>();
 
                 // load the env vars for the project
                 _ = self.get_env_vars(Some(&GetVarsArgs {
                     start_dir: Some(&dir),
                     override_vars: Some(&extras),
-                    env_files: Some(&env_files[..]),
+                    env_files: if env_files.is_empty() {
+                        Some(&env_files[..])
+                    } else {
+                        None
+                    },
                 }))?;
+
+                for (name, task) in config.tasks.iter() {
+                    if let Some(env) = task.env()
+                        && let Some(vars) = env.vars.as_ref()
+                    {
+                        let key = format!("{}#{}", config.name, name);
+
+                        self.task_env_vars.insert(key, vars.to_map_to_inner());
+                    }
+                }
             }
             projects.push(Project::new(
                 config.name,
