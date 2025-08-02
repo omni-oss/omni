@@ -11,6 +11,7 @@ pub(crate) struct LexerOptions {
 
 pub(crate) struct Lexer {
     source: String,
+    chars: Vec<char>,
     current: usize,
     start: usize,
     line: usize,
@@ -25,6 +26,7 @@ impl Lexer {
     ) -> Self {
         let source = source.into();
         Self {
+            chars: source.chars().collect(),
             source,
             current: 0,
             start: 0,
@@ -32,6 +34,14 @@ impl Lexer {
             column: 1,
             options: options.unwrap_or_default(),
         }
+    }
+
+    fn char_at(&self, index: usize) -> Option<char> {
+        self.chars.get(index).copied()
+    }
+
+    fn char_at_pos(&self) -> Option<char> {
+        self.char_at(self.current)
     }
 
     fn at_end(&self) -> bool {
@@ -139,6 +149,7 @@ impl Lexer {
         Ok(chars.into_iter().collect())
     }
 
+    #[inline(always)]
     fn iterate(&mut self) -> Result<char, LexerError> {
         if self.at_end() {
             return Err(self.err_reached_eof());
@@ -148,19 +159,22 @@ impl Lexer {
         Ok(c)
     }
 
+    #[inline(always)]
     fn current(&self) -> Option<char> {
         if self.at_end() {
             return None;
         }
-        self.source.chars().nth(self.current)
+
+        self.char_at_pos()
     }
 
+    #[inline(always)]
     fn previous(&self) -> Option<char> {
         if self.at_start() {
             return None;
         }
 
-        self.source.chars().nth(self.current - 1)
+        self.char_at(self.current - 1)
     }
 
     // fn match_char(&mut self, c: char) -> Result<bool, LexerError> {
@@ -172,6 +186,7 @@ impl Lexer {
     //     })
     // }
 
+    #[inline(always)]
     fn reset(&mut self) {
         self.current = 0;
         self.start = 0;
@@ -179,6 +194,7 @@ impl Lexer {
         self.column = 1;
     }
 
+    #[inline(always)]
     fn new_token(&self, token_type: TokenType, lexeme: String) -> Token {
         Token::new(token_type, lexeme, self.line, self.column)
     }

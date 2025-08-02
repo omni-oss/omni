@@ -128,7 +128,6 @@ impl<'a> Expansions<'a> {
         let mut expanded = self.text.to_string();
 
         for expansion in expansions.iter() {
-            println!("expansion: {expansion:?}");
             expanded = expansion.expand(&expanded, envs);
         }
 
@@ -138,12 +137,17 @@ impl<'a> Expansions<'a> {
 
 struct ExpansionParser<'a> {
     text: &'a str,
+    chars: Vec<char>,
     pos: usize,
 }
 
 impl<'a> ExpansionParser<'a> {
     pub fn new(text: &'a str) -> Self {
-        Self { text, pos: 0 }
+        Self {
+            text,
+            chars: text.chars().collect(),
+            pos: 0,
+        }
     }
 
     fn at_end(&self) -> bool {
@@ -162,12 +166,20 @@ impl<'a> ExpansionParser<'a> {
         Some(())
     }
 
+    fn char_at(&self, index: usize) -> Option<char> {
+        self.chars.get(index).copied()
+    }
+
+    fn char_at_pos(&self) -> Option<char> {
+        self.char_at(self.pos)
+    }
+
     fn advance(&mut self) -> Option<char> {
         if self.at_end() {
             return None;
         }
         self.pos += 1;
-        self.text.chars().nth(self.pos)
+        self.char_at_pos()
     }
 
     fn back(&mut self) -> Option<char> {
@@ -175,11 +187,11 @@ impl<'a> ExpansionParser<'a> {
             return None;
         }
         self.pos -= 1;
-        self.text.chars().nth(self.pos)
+        self.char_at_pos()
     }
 
     fn peek(&self) -> Option<char> {
-        self.text.chars().nth(self.pos + 1)
+        self.char_at(self.pos + 1)
     }
 
     fn match_char(&mut self, c: char) -> bool {
@@ -203,7 +215,7 @@ impl<'a> ExpansionParser<'a> {
         if self.at_end() {
             return None;
         }
-        self.text.chars().nth(self.pos)
+        self.char_at_pos()
     }
 
     fn get_while(
@@ -240,7 +252,7 @@ impl<'a> ExpansionParser<'a> {
         if self.at_start() {
             return None;
         }
-        self.text.chars().nth(self.pos - 1)
+        self.char_at(self.pos - 1)
     }
 
     fn try_parse_variable_expansion(&mut self) -> Option<Expansion> {
