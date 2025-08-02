@@ -33,7 +33,9 @@ async fn execute_task_impl(
             let mut vars = maps::map!(cap: total);
 
             vars.extend(cached.clone());
-            vars.extend(task_vars.clone());
+            let mut task_vars = task_vars.clone();
+            env::expand_into(&mut task_vars, &vars);
+            vars.extend(task_vars);
 
             (::env::expand(task.task_command(), &vars), vars_os(&vars))
         } else {
