@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
-name: config_utils
+name: maps
 
 extends:
   - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml

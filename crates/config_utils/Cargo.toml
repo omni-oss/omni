@@ -19,3 +19,5 @@ merge = { workspace = true }
 strum = { workspace = true }
 derive_more = { workspace = true }
 garde = { workspace = true, optional = true }
+maps = { workspace = true }
+sets = { workspace = true }
