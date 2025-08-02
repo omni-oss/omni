@@ -32,7 +32,7 @@ impl<T: Merge + garde::Validate> garde::Validate for DictConfig<T> {
         mut parent: &mut dyn FnMut() -> garde::Path,
         report: &mut garde::Report,
     ) {
-        let hm = self.as_hash_map();
+        let hm = self.as_map();
 
         for (key, value) in hm {
             let mut path = garde::util::nested_path!(parent, key);
@@ -60,7 +60,7 @@ impl<T: Merge> DictConfig<T> {
 
 impl<T: Merge> DictConfig<T> {
     #[inline(always)]
-    pub fn as_hash_map(&self) -> &Map<String, T> {
+    pub fn as_map(&self) -> &Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -69,7 +69,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn as_hash_map_mut(&mut self) -> &mut Map<String, T> {
+    pub fn as_map_mut(&mut self) -> &mut Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -78,7 +78,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn into_hash_map(self) -> Map<String, T> {
+    pub fn into_map(self) -> Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -91,14 +91,14 @@ impl<T: Merge> DictConfig<T> {
     where
         T: Clone,
     {
-        self.as_hash_map().clone()
+        self.as_map().clone()
     }
 }
 
 impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
     pub fn to_map_inner(&self) -> Map<String, TInner> {
-        self.as_hash_map()
+        self.as_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.to_inner()))
             .collect()
@@ -108,7 +108,7 @@ impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
 impl<TInner, TWrapper: IntoInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
     pub fn into_map_inner(self) -> Map<String, TInner> {
-        self.into_hash_map()
+        self.into_map()
             .into_iter()
             .map(|(k, v)| (k, v.into_inner()))
             .collect()
@@ -118,7 +118,7 @@ impl<TInner, TWrapper: IntoInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
 impl<TInner, TWrapper: AsInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
     pub fn to_map_as_inner(&self) -> Map<String, &TInner> {
-        self.as_hash_map()
+        self.as_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.as_inner()))
             .collect()
@@ -130,7 +130,7 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
 {
     #[inline(always)]
     pub fn to_map_as_inner_mut(&mut self) -> Map<String, &mut TInner> {
-        self.as_hash_map_mut()
+        self.as_map_mut()
             .iter_mut()
             .map(|(k, v)| (k.clone(), v.as_inner_mut()))
             .collect()
@@ -140,7 +140,7 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
 impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
     pub fn to_map_to_inner(&self) -> Map<String, TInner> {
-        self.as_hash_map()
+        self.as_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.to_inner()))
             .collect()
@@ -155,22 +155,22 @@ impl<T: Merge> Merge for DictConfig<T> {
         // swap the two values to get the discriminant of the other value
         std::mem::swap(self, &mut other);
         // swap the internal values back to the original values
-        std::mem::swap(self.as_hash_map_mut(), other.as_hash_map_mut());
+        std::mem::swap(self.as_map_mut(), other.as_map_mut());
 
-        let mut other_hash_map = other.into_hash_map();
+        let mut other_hash_map = other.into_map();
 
         match other_discriminant {
             DictConfigDiscriminants::Replace => {
-                *self.as_hash_map_mut() = other_hash_map;
+                *self.as_map_mut() = other_hash_map;
             }
 
             DictConfigDiscriminants::Value | DictConfigDiscriminants::Merge => {
                 let mut keys = HashSet::new();
-                keys.extend(self.as_hash_map().keys().cloned());
+                keys.extend(self.as_map().keys().cloned());
                 keys.extend(other_hash_map.keys().cloned());
 
                 for key in keys {
-                    let a = self.as_hash_map_mut().get_mut(&key);
+                    let a = self.as_map_mut().get_mut(&key);
                     let b = other_hash_map.shift_remove(&key);
 
                     match (a, b) {
@@ -178,7 +178,7 @@ impl<T: Merge> Merge for DictConfig<T> {
                             // do nothing
                         }
                         (None, Some(new)) => {
-                            self.as_hash_map_mut().insert(key, new);
+                            self.as_map_mut().insert(key, new);
                         }
                         (Some(a), Some(b)) => {
                             a.merge(b);

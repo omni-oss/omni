@@ -8,6 +8,12 @@ pub mod map {
 
 #[macro_export]
 macro_rules! map {
+    () => {
+        {
+            let mut map = $crate::Map::with_hasher($crate::hash::RandomState::default());
+            map
+        }
+    };
     ($($key:expr => $value:expr,)+) => { $crate::map!($($key => $value),+) };
     ($($key:expr => $value:expr),*) => {
         {

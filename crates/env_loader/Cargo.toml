@@ -20,3 +20,4 @@ eyre = { workspace = true }
 system_traits = { workspace = true, features = ["memory-sync"] }
 strum = { workspace = true }
 mockall = { workspace = true }
+maps = { workspace = true }

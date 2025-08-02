@@ -455,6 +455,23 @@ mod tests {
     }
 
     #[test]
+    fn test_spaces_around_equals() {
+        let mut lexer = Lexer::new("TEST =  \"SOME VALUE\"", None);
+        let tokens = lexer.analyze().unwrap();
+
+        assert_eq!(tokens.len(), 4);
+
+        assert_eq!(tokens[0].token_type, TokenType::Identifier);
+        assert_eq!(tokens[0].lexeme, "TEST");
+
+        assert_eq!(tokens[1].token_type, TokenType::Equal);
+        assert_eq!(tokens[1].lexeme, "=");
+
+        assert_eq!(tokens[2].token_type, TokenType::DoubleQuotedString);
+        assert_eq!(tokens[2].lexeme, "SOME VALUE");
+    }
+
+    #[test]
     fn test_lex_inline_comment() {
         let mut lexer = Lexer::new("TEST=SOME VALUE #InlineComment", None);
         let tokens = lexer.analyze().unwrap();

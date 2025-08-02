@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-
-use derive_more::Constructor;
+use derive_new::new;
+use maps::Map;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FallbackMode {
@@ -8,75 +7,68 @@ enum FallbackMode {
     UnsetOrEmpty,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, new)]
 enum ExpansionConfig {
     Variable {
+        #[new(into)]
         key: String,
     },
     VariableWithFallback {
+        #[new(into)]
         key: String,
+
+        #[new(into)]
         fallback: String,
+
+        #[new(into)]
         mode: FallbackMode,
     },
     #[allow(dead_code)]
     Command {
+        #[new(into)]
         command: String,
+
+        #[new(into)]
         args: Vec<String>,
     },
 }
 
-impl ExpansionConfig {
-    pub fn new_variable(key: impl Into<String>) -> Self {
-        Self::Variable { key: key.into() }
-    }
-
-    pub fn new_variable_with_fallback(
-        key: impl Into<String>,
-        fallback: impl Into<String>,
-        mode: impl Into<FallbackMode>,
-    ) -> Self {
-        Self::VariableWithFallback {
-            key: key.into(),
-            fallback: fallback.into(),
-            mode: mode.into(),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn new_command(
-        command: impl Into<String>,
-        args: impl Into<Vec<String>>,
-    ) -> Self {
-        Self::Command {
-            command: command.into(),
-            args: args.into(),
-        }
-    }
+#[derive(Debug, Clone, PartialEq, new)]
+struct Expansion {
+    #[new(into)]
+    pub(self) start_index: usize,
+    #[new(into)]
+    pub(self) end_index: usize,
+    #[new(into)]
+    pub(self) config: ExpansionConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Constructor)]
-pub struct Expansion {
-    to_replace: String,
-    config: ExpansionConfig,
+fn replace_at(
+    text: &str,
+    start_idx: usize,
+    end_idx: usize,
+    value: &str,
+) -> String {
+    let mut result = text.to_string();
+    result.replace_range(start_idx..=end_idx, value);
+    result
 }
 
 impl Expansion {
-    pub fn key(&self) -> Option<&str> {
-        match &self.config {
-            ExpansionConfig::Variable { key } => Some(key),
-            ExpansionConfig::VariableWithFallback { key, .. } => Some(key),
-            ExpansionConfig::Command { .. } => None,
-        }
-    }
-
-    pub fn expand(&self, text: &str, envs: &HashMap<String, String>) -> String {
-        let mut expanded = text.to_string();
-        let to_replace: &str = &self.to_replace;
+    pub fn expand(&self, text: &str, envs: &Map<String, String>) -> String {
+        let expanded: String;
 
         match self.config {
             ExpansionConfig::Variable { ref key } => {
                 if let Some(value) = envs.get(key) {
-                    expanded = expanded.replacen(to_replace, value, 1);
+                    expanded = replace_at(
+                        text,
+                        self.start_index,
+                        self.end_index,
+                        value,
+                    );
+                } else {
+                    expanded = text.to_string();
                 }
             }
             ExpansionConfig::VariableWithFallback {
@@ -85,38 +77,59 @@ impl Expansion {
                 mode,
             } => {
                 let value = envs.get(key);
+                let expand_result: String;
 
-                match mode {
-                    FallbackMode::Unset => {
-                        expanded = if let Some(value) = value {
-                            expanded.replacen(to_replace, value, 1)
-                        } else {
-                            let fb = expand(fallback, envs);
-                            expanded.replacen(to_replace, &fb, 1)
-                        }
-                    }
-                    FallbackMode::UnsetOrEmpty => {
-                        expanded = if let Some(value) = value {
-                            if !value.is_empty() {
-                                expanded.replacen(to_replace, value, 1)
-                            } else {
-                                let fb = expand(fallback, envs);
-                                expanded.replacen(to_replace, &fb, 1)
-                            }
-                        } else {
-                            let fb = expand(fallback, envs);
-                            expanded.replacen(to_replace, &fb, 1)
-                        };
-                    }
-                }
+                let allow_empty = mode == FallbackMode::UnsetOrEmpty;
+
+                expanded = replace_at(
+                    text,
+                    self.start_index,
+                    self.end_index,
+                    if let Some(value) = value
+                        && (if allow_empty { true } else { !value.is_empty() })
+                    {
+                        value
+                    } else {
+                        expand_result = expand(fallback, envs);
+                        &expand_result
+                    },
+                );
             }
             ExpansionConfig::Command { .. } => {
-                unimplemented!("Command expansion")
+                unimplemented!(
+                    "command expansion is not implemented yet. use variable expansion instead"
+                )
             }
         };
 
-        if expanded.contains(to_replace) {
-            expanded = expanded.replacen(to_replace, "", 1);
+        expanded
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, new)]
+struct Expansions<'a> {
+    #[new(into)]
+    expansions: Vec<Expansion>,
+
+    #[new(into)]
+    text: &'a str,
+}
+
+impl<'a> Expansions<'a> {
+    pub fn is_empty(&self) -> bool {
+        self.expansions.is_empty()
+    }
+
+    pub fn expand(&self, envs: &Map<String, String>) -> String {
+        let mut expansions = self.expansions.clone();
+        // from shortest to longest
+        expansions.sort_by_key(|b| std::cmp::Reverse(b.start_index));
+
+        let mut expanded = self.text.to_string();
+
+        for expansion in expansions.iter() {
+            println!("expansion: {expansion:?}");
+            expanded = expansion.expand(&expanded, envs);
         }
 
         expanded
@@ -139,10 +152,6 @@ impl<'a> ExpansionParser<'a> {
 
     fn at_start(&self) -> bool {
         self.pos == 0
-    }
-
-    fn pos_clamped(&self) -> usize {
-        self.pos.clamp(0, self.text.len())
     }
 
     fn advance_by(&mut self, n: usize) -> Option<()> {
@@ -235,7 +244,7 @@ impl<'a> ExpansionParser<'a> {
     }
 
     fn try_parse_variable_expansion(&mut self) -> Option<Expansion> {
-        let current_pos = self.pos;
+        let start_pos = self.pos;
 
         if self.current()? != '$' {
             return None;
@@ -244,11 +253,11 @@ impl<'a> ExpansionParser<'a> {
         if !self.match_char('{') {
             self.advance()?;
             let ident = self.try_parse_identifier()?;
-            let replace = &self.text[current_pos..self.pos_clamped()];
             self.back()?;
+            let end_pos = self.pos;
 
             let config = ExpansionConfig::new_variable(&ident);
-            return Some(Expansion::new(replace.to_string(), config));
+            return Some(Expansion::new(start_pos, end_pos, config));
         }
 
         self.advance()?;
@@ -260,9 +269,9 @@ impl<'a> ExpansionParser<'a> {
         if !(curr == ':' || curr == '-') {
             if self.current() == Some('}') {
                 let config = ExpansionConfig::new_variable(&key);
-                let to_replace = &self.text[current_pos..self.pos + 1];
+                let end_pos = self.pos;
 
-                return Some(Expansion::new(to_replace.to_string(), config));
+                return Some(Expansion::new(start_pos, end_pos, config));
             } else {
                 return None;
             }
@@ -299,9 +308,9 @@ impl<'a> ExpansionParser<'a> {
                 },
             );
 
-            let to_replace = self.text[current_pos..self.pos + 1].to_string();
+            let end_pos = self.pos;
 
-            return Some(Expansion::new(to_replace, config));
+            return Some(Expansion::new(start_pos, end_pos, config));
         }
 
         None
@@ -311,7 +320,7 @@ impl<'a> ExpansionParser<'a> {
         self.pos = pos;
     }
 
-    pub fn parse(&mut self) -> Vec<Expansion> {
+    pub fn parse(&mut self) -> Expansions<'a> {
         let mut expansions = Vec::new();
 
         while let Some(c) = self.current() {
@@ -321,6 +330,7 @@ impl<'a> ExpansionParser<'a> {
                         .peek()
                         .map(|x| x.is_alphabetic() || x == '_')
                         .unwrap_or(false))
+                && self.peek_back() != Some('\\')
             {
                 let current_pos = self.pos;
                 let ex = self.try_parse_variable_expansion();
@@ -334,55 +344,50 @@ impl<'a> ExpansionParser<'a> {
             self.advance();
         }
 
-        expansions
+        Expansions::new(expansions, self.text)
     }
 }
 
-fn get_expansions(text: &str) -> Vec<Expansion> {
-    let mut parser = ExpansionParser::new(text);
-
-    parser.parse()
+fn replace_escaped(text: &str) -> String {
+    text.replace(r"\$", "$")
 }
 
-pub fn expand(str: &str, envs: &HashMap<String, String>) -> String {
-    let mut parsed = get_expansions(str);
+pub fn expand(str: &str, envs: &Map<String, String>) -> String {
+    let parsed = ExpansionParser::new(str).parse();
 
     // short circuit if there are no expansions
     if parsed.is_empty() {
-        return str.to_string();
+        return replace_escaped(str);
     }
 
-    let mut expanded = str.to_string();
+    let expanded = parsed.expand(envs);
 
-    parsed.sort_by(|a, b| b.to_replace.len().cmp(&a.to_replace.len()));
-
-    for expansion in parsed {
-        expanded = expansion.expand(&expanded, envs);
-    }
-
-    expanded
+    replace_escaped(&expanded)
 }
 
 pub fn expand_into(
-    into: &mut HashMap<String, String>,
-    using: &HashMap<String, String>,
+    into: &mut Map<String, String>,
+    using: &Map<String, String>,
 ) {
-    for value in into.values_mut() {
-        *value = expand(value, using);
+    let mut using = using.clone();
+    for (key, value) in into.iter_mut() {
+        *value = expand(value, &using);
+
+        using.insert(key.clone(), value.clone());
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_expand() {
         let text = r#"${TEST}"#;
 
-        let mut envs = HashMap::new();
-        envs.insert("TEST".to_string(), "TEST_VALUE".to_string());
+        let envs = maps::map![
+            "TEST".to_string() => "TEST_VALUE".to_string()
+        ];
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "TEST_VALUE");
@@ -392,8 +397,9 @@ mod tests {
     fn test_expand_simple_variable() {
         let text = r#"   $TEST   "#;
 
-        let mut envs = HashMap::new();
-        envs.insert("TEST".to_string(), "TEST_VALUE".to_string());
+        let envs = maps::map![
+            "TEST".to_string() => "TEST_VALUE".to_string()
+        ];
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "   TEST_VALUE   ");
@@ -401,18 +407,19 @@ mod tests {
 
     #[test]
     fn test_expand_multiple_variable() {
-        let text = r#"$TES$TEST1$TEST2${TEST3}${TEST4:-DEFAULT_VALUE{}}"#;
+        let text = r#"$TES_-$TEST1-$TEST2-${TEST3}-${TEST4:-DEFAULT_VALUE{}}"#;
 
-        let mut envs = HashMap::new();
-        envs.insert("TES".to_string(), "TES_VALUE".to_string());
-        envs.insert("TEST1".to_string(), "TEST_VALUE1".to_string());
-        envs.insert("TEST2".to_string(), "TEST_VALUE2".to_string());
-        envs.insert("TEST3".to_string(), "TEST_VALUE3".to_string());
+        let envs = maps::map![
+            "TES_".to_string() => "TES_VALUE".to_string(),
+            "TEST1".to_string() => "TEST_VALUE1".to_string(),
+            "TEST2".to_string() => "TEST_VALUE2".to_string(),
+            "TEST3".to_string() => "TEST_VALUE3".to_string(),
+        ];
         let expanded = expand(text, &envs);
 
         assert_eq!(
             expanded,
-            "TES_VALUETEST_VALUE1TEST_VALUE2TEST_VALUE3DEFAULT_VALUE{}"
+            "TES_VALUE-TEST_VALUE1-TEST_VALUE2-TEST_VALUE3-DEFAULT_VALUE{}"
         );
     }
 
@@ -420,29 +427,35 @@ mod tests {
     fn test_expand_with_unset_fallback() {
         let text = r#"${TEST-DEFAULT_VALUE    }"#;
 
-        let envs = HashMap::new();
+        let envs = maps::map![];
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "DEFAULT_VALUE    ");
     }
 
     #[test]
-    fn test_expand_with_notempty_fallback() {
+    fn test_expand_with_unset_nested_fallback() {
+        let text = r#"${TEST-${TEST2-${TEST3-DEFAULT_VALUE}}}"#;
+        let envs = maps::map![];
+        let expanded = expand(text, &envs);
+        assert_eq!(expanded, "DEFAULT_VALUE");
+    }
+
+    #[test]
+    fn test_expand_with_unset_or_empty_fallback() {
         let text = r#"${TEST:-DEFAULT_VALUE}"#;
 
-        let mut envs = HashMap::new();
-        envs.insert("TEST".to_string(), "".to_string());
+        let envs = maps::map![];
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "DEFAULT_VALUE");
     }
 
     #[test]
-    fn test_expand_with_notempty_nested_fallback() {
+    fn test_expand_with_unset_or_empty_nested_fallback() {
         let text = r#"${TEST:-${TEST2:-${TEST3:-DEFAULT_VALUE}}}"#;
 
-        let mut envs = HashMap::new();
-        envs.insert("TEST".to_string(), "".to_string());
+        let envs = maps::map![];
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "DEFAULT_VALUE");
@@ -450,13 +463,39 @@ mod tests {
 
     #[test]
     fn test_expand_into() {
-        let mut envs = HashMap::new();
-        envs.insert("TEST_1".to_string(), "TEST_VALUE".to_string());
-        let mut into = HashMap::new();
-        into.insert("TEST".to_string(), "${TEST_1}".to_string());
+        let envs = maps::map![
+            "TEST_1".to_string() => "TEST_VALUE".to_string()
+        ];
+        let mut into = maps::map![
+            "TEST".to_string() => "${TEST_1}".to_string()
+        ];
 
         expand_into(&mut into, &envs);
 
         assert_eq!(into.get("TEST"), Some(&"TEST_VALUE".to_string()));
+    }
+
+    #[test]
+    fn test_multiple_expansions_of_same_key() {
+        let text = r#"${TEST}__${TEST}"#;
+
+        let envs = maps::map![
+            "TEST".to_string() => "TEST_VALUE".to_string()
+        ];
+        let expanded = expand(text, &envs);
+
+        assert_eq!(expanded, "TEST_VALUE__TEST_VALUE");
+    }
+
+    #[test]
+    fn test_escaped_expansion() {
+        let text = r#"\${TEST}${TEST}"#;
+
+        let envs = maps::map![
+            "TEST".to_string() => "TEST_VALUE".to_string()
+        ];
+        let expanded = expand(text, &envs);
+
+        assert_eq!(expanded, "${TEST}TEST_VALUE");
     }
 }

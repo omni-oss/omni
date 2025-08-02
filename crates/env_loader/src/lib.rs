@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 mod cache;
 mod error;
@@ -12,6 +9,7 @@ pub mod test_utils;
 
 pub use cache::*;
 pub use error::*;
+use maps::Map;
 pub use sys::*;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -24,15 +22,15 @@ pub struct EnvConfig<'a> {
     /// The env files to load. Values from later files will override earlier ones.
     pub env_files: Option<&'a [&'a Path]>,
     /// Filter out env files that don't have the specified env vars.
-    pub matcher: Option<&'a HashMap<String, String>>,
+    pub matcher: Option<&'a Map<String, String>>,
     /// Extra env vars to use when parsing env files.
-    pub extra_envs: Option<&'a HashMap<String, String>>,
+    pub extra_envs: Option<&'a Map<String, String>>,
 }
 
 pub fn load<'a, TSys: EnvLoaderSys>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
-) -> Result<HashMap<String, String>, EnvLoaderError> {
+) -> Result<Map<String, String>, EnvLoaderError> {
     load_with_caching::<TSys, DefaultEnvCache<TSys>>(config, sys, None)
 }
 
@@ -40,7 +38,7 @@ pub fn load_with_caching<'a, TSys, TCache>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
     mut cache: Option<&mut TCache>,
-) -> Result<HashMap<String, String>, EnvLoaderError>
+) -> Result<Map<String, String>, EnvLoaderError>
 where
     TSys: EnvLoaderSys,
     TCache: EnvCache,
@@ -54,7 +52,8 @@ where
         && let Some(vars) = cached_ref.get(start_dir)
     {
         trace::debug!("Cache hit for start dir: {:?}", start_dir);
-        return Ok(vars.clone());
+        let vars = vars.clone();
+        return Ok(vars);
     }
 
     if !sys.fs_exists(start_dir)? {
@@ -91,9 +90,9 @@ where
     let default_envs = [Path::new(".env")];
     let env_files = config.env_files.unwrap_or(&default_envs);
 
-    let mut env = HashMap::new();
+    let mut env = maps::map!();
 
-    env.extend(config.extra_envs.unwrap_or(&HashMap::new()).clone());
+    env.extend(config.extra_envs.unwrap_or(&maps::map!()).clone());
 
     for dir in start_dir.ancestors().collect::<Vec<_>>() {
         trace::debug!("Looking for env files in dir: {:?}", dir);
