@@ -3,3 +3,6 @@ name: env
 
 extends:
   - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml
+
+tasks:
+  profile: cargo flamegraph --features=${features:-dhat-heap} --profile=${profile:-bench-with-debug} --bench ${bench:-env_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
