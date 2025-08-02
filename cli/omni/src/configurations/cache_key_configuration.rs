@@ -4,7 +4,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Merge,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Merge,
+    Default,
 )]
 pub struct CacheKeyConfiguration {
     #[serde(default = "super::utils::list_config_default::<Replace<String>>")]

@@ -21,6 +21,7 @@ fn default_true() -> bool {
 )]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
+    #[serde(default)]
     command: String,
     #[serde(
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
@@ -29,9 +30,9 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     description: Option<String>,
     #[serde(default)]
-    env: Option<TaskConfigurationEnvConfiguration>,
+    env: TaskConfigurationEnvConfiguration,
     #[serde(default)]
-    cache_key: Option<CacheKeyConfiguration>,
+    cache_key: CacheKeyConfiguration,
     #[serde(default)]
     output: TaskOutputConfiguration,
 }
@@ -58,7 +59,8 @@ pub enum TaskConfiguration {
     Default,
 )]
 pub struct TaskConfigurationEnvConfiguration {
-    pub overrides: DictConfig<Replace<String>>,
+    #[merge(strategy = merge::option::recurse)]
+    pub vars: Option<DictConfig<Replace<String>>>,
 }
 
 impl TaskConfiguration {
@@ -93,6 +95,16 @@ impl TaskConfiguration {
             ),
         }
     }
+
+    pub fn env(&self) -> Option<&TaskConfigurationEnvConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                env,
+                ..
+            }) => Some(env),
+        }
+    }
 }
 
 impl Merge for TaskConfiguration {
@@ -118,10 +130,12 @@ impl Merge for TaskConfiguration {
                 }),
             ) => {
                 a_dep.merge(b_dep);
-                *a_cmd = b_cmd;
+                if !b_cmd.trim().is_empty() {
+                    *a_cmd = b_cmd;
+                }
                 merge::option::overwrite_none(a_desc, b_desc);
-                merge::option::recurse(a_env, b_env);
-                merge::option::recurse(a_cache_key, b_cache_key);
+                a_env.merge(b_env);
+                a_cache_key.merge(b_cache_key);
                 a_output.merge(b_output);
             }
             (this @ Lf { .. }, other @ Sf(..))

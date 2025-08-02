@@ -28,7 +28,17 @@ async fn execute_task_impl(
             .get_cached_env_vars(task.project_dir())
             .map_err(|e| (task.clone(), e))?;
 
-        (::env::expand(task.task_command(), cached), vars_os(cached))
+        if let Some(task_vars) = mg.get_task_env_vars(&task) {
+            let total = cached.len() + task_vars.len();
+            let mut vars = maps::map!(cap: total);
+
+            vars.extend(cached.clone());
+            vars.extend(task_vars.clone());
+
+            (::env::expand(task.task_command(), &vars), vars_os(&vars))
+        } else {
+            (::env::expand(task.task_command(), cached), vars_os(cached))
+        }
     };
 
     trace::debug!(

@@ -211,11 +211,35 @@ impl<T: Merge> DictConfig<T> {
         }
     }
 
+    pub fn values(&'_ self) -> maps::map::Values<'_, String, T> {
+        match self {
+            DictConfig::Value(v) => v.values(),
+            DictConfig::Merge { merge } => merge.values(),
+            DictConfig::Replace { replace } => replace.values(),
+        }
+    }
+
+    pub fn keys(&'_ self) -> maps::map::Keys<'_, String, T> {
+        match self {
+            DictConfig::Value(v) => v.keys(),
+            DictConfig::Merge { merge } => merge.keys(),
+            DictConfig::Replace { replace } => replace.keys(),
+        }
+    }
+
     pub fn iter_mut(&'_ mut self) -> maps::map::IterMut<'_, String, T> {
         match self {
             DictConfig::Value(v) => v.iter_mut(),
             DictConfig::Merge { merge } => merge.iter_mut(),
             DictConfig::Replace { replace } => replace.iter_mut(),
+        }
+    }
+
+    pub fn values_mut(&'_ mut self) -> maps::map::ValuesMut<'_, String, T> {
+        match self {
+            DictConfig::Value(v) => v.values_mut(),
+            DictConfig::Merge { merge } => merge.values_mut(),
+            DictConfig::Replace { replace } => replace.values_mut(),
         }
     }
 }

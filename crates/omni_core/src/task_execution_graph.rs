@@ -4,7 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use derive_more::Constructor;
 use petgraph::{
     Direction,
     algo::is_cyclic_directed,
@@ -17,21 +16,33 @@ use strum::{EnumDiscriminants, IntoDiscriminant};
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
 #[derive(
-    Debug,
-    Clone,
-    Constructor,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Deserialize,
-    Serialize,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize,
 )]
 pub struct TaskExecutionNode {
     task_name: String,
     task_command: String,
     project_name: String,
     project_dir: PathBuf,
+    full_task_name: String,
+}
+
+impl TaskExecutionNode {
+    pub fn new(
+        task_name: impl Into<String>,
+        task_command: impl Into<String>,
+        project_name: impl Into<String>,
+        project_dir: impl Into<PathBuf>,
+    ) -> Self {
+        let project_name = project_name.into();
+        let task_name = task_name.into();
+        Self {
+            full_task_name: format!("{}#{}", &project_name, &task_name),
+            task_name,
+            task_command: task_command.into(),
+            project_name,
+            project_dir: project_dir.into(),
+        }
+    }
 }
 
 impl TaskExecutionNode {
@@ -51,13 +62,18 @@ impl TaskExecutionNode {
         self.project_dir.as_path()
     }
 
-    /// (task_name, task_command, project_name, project_dir)
-    pub fn deconstruct(self) -> (String, String, String, PathBuf) {
+    pub fn full_task_name(&self) -> &str {
+        self.full_task_name.as_str()
+    }
+
+    /// (task_name, task_command, project_name, project_dir, full_task_name)
+    pub fn deconstruct(self) -> (String, String, String, PathBuf, String) {
         (
             self.task_name,
             self.task_command,
             self.project_name,
             self.project_dir,
+            self.full_task_name,
         )
     }
 }
@@ -809,49 +825,49 @@ mod tests {
 
         let mut expected_plan = vec![
             vec![
-                TaskExecutionNode {
-                    task_name: "p3t1".to_string(),
-                    task_command: "echo p3t1".to_string(),
-                    project_name: "project3".to_string(),
-                    project_dir: blank_path.clone(),
-                },
-                TaskExecutionNode {
-                    task_name: "p2t1".to_string(),
-                    task_command: "echo p2t1".to_string(),
-                    project_name: "project2".to_string(),
-                    project_dir: blank_path.clone(),
-                },
-                TaskExecutionNode {
-                    task_name: "shared-task-3".to_string(),
-                    task_command: "echo shared-task-3".to_string(),
-                    project_name: "project4".to_string(),
-                    project_dir: blank_path.clone(),
-                },
+                TaskExecutionNode::new(
+                    "p3t1".to_string(),
+                    "echo p3t1".to_string(),
+                    "project3".to_string(),
+                    blank_path.clone(),
+                ),
+                TaskExecutionNode::new(
+                    "p2t1".to_string(),
+                    "echo p2t1".to_string(),
+                    "project2".to_string(),
+                    blank_path.clone(),
+                ),
+                TaskExecutionNode::new(
+                    "shared-task-3".to_string(),
+                    "echo shared-task-3".to_string(),
+                    "project4".to_string(),
+                    blank_path.clone(),
+                ),
             ],
-            vec![TaskExecutionNode {
-                task_name: "shared-task-3".to_string(),
-                task_command: "echo shared-task-3".to_string(),
-                project_name: "project3".to_string(),
-                project_dir: blank_path.clone(),
-            }],
-            vec![TaskExecutionNode {
-                task_name: "shared-task-3".to_string(),
-                task_command: "echo shared-task-3".to_string(),
-                project_name: "project2".to_string(),
-                project_dir: blank_path.clone(),
-            }],
-            vec![TaskExecutionNode {
-                task_name: "shared-task-3".to_string(),
-                task_command: "echo shared-task-3".to_string(),
-                project_name: "project1".to_string(),
-                project_dir: blank_path.clone(),
-            }],
-            vec![TaskExecutionNode {
-                task_name: "p1t4".to_string(),
-                task_command: "echo p1t4".to_string(),
-                project_name: "project1".to_string(),
-                project_dir: blank_path.clone(),
-            }],
+            vec![TaskExecutionNode::new(
+                "shared-task-3".to_string(),
+                "echo shared-task-3".to_string(),
+                "project3".to_string(),
+                blank_path.clone(),
+            )],
+            vec![TaskExecutionNode::new(
+                "shared-task-3".to_string(),
+                "echo shared-task-3".to_string(),
+                "project2".to_string(),
+                blank_path.clone(),
+            )],
+            vec![TaskExecutionNode::new(
+                "shared-task-3".to_string(),
+                "echo shared-task-3".to_string(),
+                "project1".to_string(),
+                blank_path.clone(),
+            )],
+            vec![TaskExecutionNode::new(
+                "p1t4".to_string(),
+                "echo p1t4".to_string(),
+                "project1".to_string(),
+                blank_path.clone(),
+            )],
         ];
 
         expected_plan.iter_mut().for_each(|batch| {

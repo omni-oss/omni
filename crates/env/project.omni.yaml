@@ -5,8 +5,7 @@ extends:
   - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml
 
 tasks:
-  profile: cargo flamegraph --profile=${profile:-bench-with-debug} --bench ${bench:-${PROJECT_NAME}_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
-
-env:
-  overrides:
-    DHAT: yes
+  profile:
+    env:
+      vars:
+        bench: env_benchmarks

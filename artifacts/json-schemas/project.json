@@ -13,7 +13,7 @@
       "$ref": "#/$defs/ProjectEnvConfiguration",
       "default": {
         "files": null,
-        "overrides": {}
+        "vars": null
       }
     },
     "extends": {
@@ -35,6 +35,23 @@
     "name"
   ],
   "$defs": {
+    "CacheKeyConfiguration": {
+      "type": "object",
+      "properties": {
+        "env": {
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
+        },
+        "files": {
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
+        }
+      }
+    },
     "DictConfig": {
       "anyOf": [
         {
@@ -190,9 +207,15 @@
             }
           ]
         },
-        "overrides": {
-          "$ref": "#/$defs/DictConfig2",
-          "default": {}
+        "vars": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DictConfig2"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -202,21 +225,97 @@
           "type": "string"
         },
         {
-          "type": "object",
-          "properties": {
-            "command": {
-              "type": "string"
-            },
-            "dependencies": {
-              "$ref": "#/$defs/ListConfig",
-              "default": []
-            }
-          },
-          "required": [
-            "command"
-          ]
+          "$ref": "#/$defs/TaskConfigurationLongForm"
         }
       ]
+    },
+    "TaskConfigurationEnvConfiguration": {
+      "type": "object",
+      "properties": {
+        "vars": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DictConfig2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "TaskConfigurationLongForm": {
+      "type": "object",
+      "properties": {
+        "cache_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheKeyConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "command": {
+          "type": "string",
+          "default": ""
+        },
+        "dependencies": {
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "env": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskConfigurationEnvConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "output": {
+          "$ref": "#/$defs/TaskOutputConfiguration",
+          "default": {
+            "files": {
+              "append": []
+            },
+            "stderr": true,
+            "stdout": true
+          }
+        }
+      }
+    },
+    "TaskOutputConfiguration": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
+        },
+        "stderr": {
+          "type": "boolean",
+          "default": true
+        },
+        "stdout": {
+          "type": "boolean",
+          "default": true
+        }
+      }
     },
     "string": {
       "type": "string"

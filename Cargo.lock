@@ -1578,6 +1578,7 @@ dependencies = [
 name = "omni_core"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "derive-new",
  "derive_more",
  "eyre",
  "petgraph",
