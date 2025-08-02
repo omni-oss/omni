@@ -332,8 +332,14 @@ impl<'a> ExpansionParser<'a> {
         self.pos = pos;
     }
 
+    fn count_dollar_signs(&mut self) -> usize {
+        self.chars.iter().filter(|c| **c == '$').count()
+    }
+
     pub fn parse(&mut self) -> Expansions<'a> {
-        let mut expansions = Vec::new();
+        // optimization: preallocate the vector with the number of dollar signs
+        let dollar_signs_count = self.count_dollar_signs();
+        let mut expansions = Vec::with_capacity(dollar_signs_count);
 
         while let Some(c) = self.current() {
             if c == '$'

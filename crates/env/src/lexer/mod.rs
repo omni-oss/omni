@@ -115,17 +115,18 @@ impl Lexer {
             return Err(self.err_reached_eof());
         }
 
-        let mut chars = Vec::new();
+        let current_pos = self.current;
+        let mut last_pos = self.current;
         while let Some(c) = self.current() {
             if c == quote && self.previous() != Some('\\') {
                 break;
             }
 
-            chars.push(c);
+            last_pos += 1;
             self.advance()?;
         }
 
-        Ok(chars.into_iter().collect())
+        Ok(self.source[current_pos..last_pos].chars().collect())
     }
 
     fn get_while(
@@ -136,17 +137,20 @@ impl Lexer {
             return Err(self.err_reached_eof());
         }
 
-        let mut chars = Vec::new();
+        // Performance optimization: avoid creating the vector until the very end
+        // only remember the current position and the last position of the matching chars
+        let current_pos = self.current;
+        let mut last_pos = self.current;
         while let Some(c) = self.current() {
             if !f(c) {
                 break;
             }
 
-            chars.push(c);
+            last_pos += 1;
             self.advance()?;
         }
 
-        Ok(chars.into_iter().collect())
+        Ok(self.source[current_pos..last_pos].chars().collect())
     }
 
     #[inline(always)]
