@@ -112,6 +112,8 @@ ahash = { version = "^0.8.12" }
 maps = { path = "./crates/maps" }
 sets = { path = "./crates/sets" }
 globwalk = { version = "^0.9.1" }
+criterion = { version = "^0.7.0", features = ["html_reports"] }
+dhat = { version = "^0.3.3" }
 
 [profile.release]
 incremental = true
@@ -128,6 +130,10 @@ split-debuginfo = "packed"
 # Build release with debug symbols: cargo build --profile=release-with-debug
 [profile.release-with-debug]
 inherits = "release"
+debug = true
+
+[profile.bench-with-debug]
+inherits = "bench"
 debug = true
 
 # Faster to compile than `release` but with similar performance.

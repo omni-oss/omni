@@ -5,6 +5,7 @@ mod expand;
 mod lexer;
 mod tokens;
 mod utils;
+
 pub use config::*;
 pub use error::*;
 use escape::unescape;
@@ -38,12 +39,25 @@ pub fn parse(
     text: &str,
     config: &ParseConfig,
 ) -> EnvParserResult<Map<String, String>> {
-    let mut env = maps::map!();
-    let mut combined = maps::map!();
+    let n_lines = text
+        .lines()
+        .filter(|s| {
+            let trimmed = s.trim();
+            !trimmed.is_empty() && !trimmed.starts_with('#')
+        })
+        .count();
 
-    if let Some(extra_envs) = config.extra_envs {
-        combined.extend(extra_envs.clone());
-    }
+    let mut env = maps::map!(cap: n_lines);
+
+    let mut combined = if let Some(extra_envs) = config.extra_envs {
+        let mut map = maps::map!(cap: extra_envs.len() + n_lines);
+
+        map.extend(extra_envs.clone());
+
+        map
+    } else {
+        maps::map!(cap: n_lines)
+    };
 
     let mut lexer = Lexer::new(text, None);
 
