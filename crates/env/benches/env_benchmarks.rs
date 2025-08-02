@@ -3,10 +3,6 @@ use env::{EnvParserResult, ParseConfig};
 use maps::Map;
 use std::hint::black_box;
 
-#[cfg(feature = "dhat-heap")]
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
-
 const LARGE_TEST_CONTENT: &str = include_str!("./fixtures/5000.env");
 const MEDIUM_TEST_CONTENT: &str = include_str!("./fixtures/500.env");
 const TRIVIAL_TEST_CONTENT: &str = include_str!("./fixtures/trivial.env");
@@ -41,4 +37,5 @@ criterion_group!(
     config = criterion_config();
     targets = criterion_benchmark
 );
+
 criterion_main!(benches);
