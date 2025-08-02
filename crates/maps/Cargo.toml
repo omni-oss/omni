@@ -1,0 +1,18 @@
+[package]
+name = "maps"
+rust-version.workspace = true
+#edition.workspace = true
+edition = "2024"
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+serde = ["indexmap/serde", "dashmap/serde"]
+rayon = ["indexmap/rayon", "dashmap/rayon"]
+concurrent = ["dep:dashmap"]
+
+[dependencies]
+ahash = { workspace = true }
+indexmap = { workspace = true }
+dashmap = { workspace = true, optional = true }

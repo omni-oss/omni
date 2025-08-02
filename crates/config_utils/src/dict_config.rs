@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet, hash_map};
+use std::collections::HashSet;
 
+use maps::Map;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{AsInner, AsInnerMut, IntoInner, ToInner, merge::Merge};
@@ -9,15 +10,15 @@ use crate::{AsInner, AsInnerMut, IntoInner, ToInner, merge::Merge};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
 pub enum DictConfig<T: Merge> {
-    Value(HashMap<String, T>),
-    Merge { merge: HashMap<String, T> },
-    Replace { replace: HashMap<String, T> },
+    Value(Map<String, T>),
+    Merge { merge: Map<String, T> },
+    Replace { replace: Map<String, T> },
 }
 
 impl<T: Merge> Default for DictConfig<T> {
     #[inline(always)]
     fn default() -> Self {
-        Self::Value(HashMap::new())
+        Self::Value(maps::map![])
     }
 }
 
@@ -42,24 +43,24 @@ impl<T: Merge + garde::Validate> garde::Validate for DictConfig<T> {
 
 impl<T: Merge> DictConfig<T> {
     #[inline(always)]
-    pub fn value(value: HashMap<String, T>) -> Self {
+    pub fn value(value: Map<String, T>) -> Self {
         Self::Value(value)
     }
 
     #[inline(always)]
-    pub fn merge(merge: HashMap<String, T>) -> Self {
+    pub fn merge(merge: Map<String, T>) -> Self {
         Self::Merge { merge }
     }
 
     #[inline(always)]
-    pub fn replace(replace: HashMap<String, T>) -> Self {
+    pub fn replace(replace: Map<String, T>) -> Self {
         Self::Replace { replace }
     }
 }
 
 impl<T: Merge> DictConfig<T> {
     #[inline(always)]
-    pub fn as_hash_map(&self) -> &HashMap<String, T> {
+    pub fn as_hash_map(&self) -> &Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -68,7 +69,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn as_hash_map_mut(&mut self) -> &mut HashMap<String, T> {
+    pub fn as_hash_map_mut(&mut self) -> &mut Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -77,7 +78,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn into_hash_map(self) -> HashMap<String, T> {
+    pub fn into_hash_map(self) -> Map<String, T> {
         match self {
             DictConfig::Value(items) => items,
             DictConfig::Merge { merge } => merge,
@@ -86,7 +87,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn to_hash_map(&self) -> HashMap<String, T>
+    pub fn to_hash_map(&self) -> Map<String, T>
     where
         T: Clone,
     {
@@ -96,7 +97,7 @@ impl<T: Merge> DictConfig<T> {
 
 impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
-    pub fn to_hash_map_inner(&self) -> HashMap<String, TInner> {
+    pub fn to_map_inner(&self) -> Map<String, TInner> {
         self.as_hash_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.to_inner()))
@@ -106,7 +107,7 @@ impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
 
 impl<TInner, TWrapper: IntoInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
-    pub fn into_hash_map_inner(self) -> HashMap<String, TInner> {
+    pub fn into_map_inner(self) -> Map<String, TInner> {
         self.into_hash_map()
             .into_iter()
             .map(|(k, v)| (k, v.into_inner()))
@@ -116,7 +117,7 @@ impl<TInner, TWrapper: IntoInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
 
 impl<TInner, TWrapper: AsInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
-    pub fn to_hash_map_as_inner(&self) -> HashMap<String, &TInner> {
+    pub fn to_map_as_inner(&self) -> Map<String, &TInner> {
         self.as_hash_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.as_inner()))
@@ -128,7 +129,7 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
     DictConfig<TWrapper>
 {
     #[inline(always)]
-    pub fn to_hash_map_as_inner_mut(&mut self) -> HashMap<String, &mut TInner> {
+    pub fn to_map_as_inner_mut(&mut self) -> Map<String, &mut TInner> {
         self.as_hash_map_mut()
             .iter_mut()
             .map(|(k, v)| (k.clone(), v.as_inner_mut()))
@@ -138,7 +139,7 @@ impl<TInner, TWrapper: AsInnerMut<Inner = TInner> + Merge>
 
 impl<TInner, TWrapper: ToInner<Inner = TInner> + Merge> DictConfig<TWrapper> {
     #[inline(always)]
-    pub fn to_hash_map_to_inner(&self) -> HashMap<String, TInner> {
+    pub fn to_map_to_inner(&self) -> Map<String, TInner> {
         self.as_hash_map()
             .iter()
             .map(|(k, v)| (k.clone(), v.to_inner()))
@@ -170,7 +171,7 @@ impl<T: Merge> Merge for DictConfig<T> {
 
                 for key in keys {
                     let a = self.as_hash_map_mut().get_mut(&key);
-                    let b = other_hash_map.remove(&key);
+                    let b = other_hash_map.shift_remove(&key);
 
                     match (a, b) {
                         (None, None) | (Some(_), None) => {
@@ -191,7 +192,7 @@ impl<T: Merge> Merge for DictConfig<T> {
 
 impl<T: Merge> IntoIterator for DictConfig<T> {
     type Item = (String, T);
-    type IntoIter = hash_map::IntoIter<String, T>;
+    type IntoIter = maps::map::IntoIter<String, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
@@ -202,7 +203,7 @@ impl<T: Merge> IntoIterator for DictConfig<T> {
     }
 }
 impl<T: Merge> DictConfig<T> {
-    pub fn iter(&'_ self) -> std::collections::hash_map::Iter<'_, String, T> {
+    pub fn iter(&'_ self) -> maps::map::Iter<'_, String, T> {
         match self {
             DictConfig::Value(v) => v.iter(),
             DictConfig::Merge { merge } => merge.iter(),
@@ -210,9 +211,7 @@ impl<T: Merge> DictConfig<T> {
         }
     }
 
-    pub fn iter_mut(
-        &'_ mut self,
-    ) -> std::collections::hash_map::IterMut<'_, String, T> {
+    pub fn iter_mut(&'_ mut self) -> maps::map::IterMut<'_, String, T> {
         match self {
             DictConfig::Value(v) => v.iter_mut(),
             DictConfig::Merge { merge } => merge.iter_mut(),
@@ -232,37 +231,37 @@ mod tests {
         Replace::new(t)
     }
 
-    macro_rules! hm {
+    macro_rules! map {
         [
             $($key:expr => $value:expr),*$(,)?
         ] => {
-            HashMap::from([
-                $(($key.to_string(), $value)),*
-            ])
+            maps::map!(
+                $($key.to_string() => $value),*
+            )
         };
     }
 
-    macro_rules! hm_replace {
+    macro_rules! map_replace {
         [
             $($key:expr => $value:expr),*$(,)?
         ] => {
-            hm![$($key => replace($value)),*]
+            map![$($key => replace($value)),*]
         };
     }
 
     #[test]
     fn test_replace() {
-        let mut a = DictConfig::value(hm_replace![
+        let mut a = DictConfig::value(map_replace![
             "foo" => 3,
             "bar" => 2
         ]);
-        let b = DictConfig::replace(hm_replace!("foo" => 1));
+        let b = DictConfig::replace(map_replace!("foo" => 1));
 
         a.merge(b);
 
         assert_eq!(
-            a.to_hash_map_inner(),
-            hm![
+            a.to_map_inner(),
+            map![
                 "foo" => 1
             ]
         );
@@ -270,17 +269,17 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        let mut a = DictConfig::value(hm_replace![
+        let mut a = DictConfig::value(map_replace![
             "foo" => 3,
             "bar" => 2
         ]);
-        let b = DictConfig::merge(hm_replace!("foo" => 1));
+        let b = DictConfig::merge(map_replace!("foo" => 1));
 
         a.merge(b);
 
         assert_eq!(
-            a.to_hash_map_inner(),
-            hm![
+            a.to_map_inner(),
+            map![
                 "foo" => 1,
                 "bar" => 2
             ]
@@ -290,17 +289,17 @@ mod tests {
     #[test]
     fn test_value() {
         // same as merge behavior
-        let mut a = DictConfig::value(hm_replace![
+        let mut a = DictConfig::value(map_replace![
             "foo" => 3,
             "bar" => 2
         ]);
-        let b = DictConfig::value(hm_replace!("foo" => 1));
+        let b = DictConfig::value(map_replace!("foo" => 1));
 
         a.merge(b);
 
         assert_eq!(
-            a.to_hash_map_inner(),
-            hm![
+            a.to_map_inner(),
+            map![
                 "foo" => 1,
                 "bar" => 2
             ]
@@ -309,10 +308,10 @@ mod tests {
 
     #[test]
     fn test_copy_other_discriminant() {
-        let mut a = DictConfig::value(hm_replace!["a" => 1]);
-        let b = DictConfig::merge(hm_replace![]);
-        let c = DictConfig::value(hm_replace![]);
-        let d = DictConfig::replace(hm_replace!["a" => 1]);
+        let mut a = DictConfig::value(map_replace!["a" => 1]);
+        let b = DictConfig::merge(map_replace![]);
+        let c = DictConfig::value(map_replace![]);
+        let d = DictConfig::replace(map_replace!["a" => 1]);
 
         a.merge(b);
         assert_eq!(a.discriminant(), DictConfigDiscriminants::Merge);
