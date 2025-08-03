@@ -1,25 +1,27 @@
 use std::{
-    cell::Cell,
-    collections::HashMap,
-    ffi::OsString,
-    os::{fd::FromRawFd as _, unix::process::ExitStatusExt},
-    path::PathBuf,
+    cell::Cell, collections::HashMap, ffi::OsString,
+    os::unix::process::ExitStatusExt, path::PathBuf, pin::Pin,
     process::ExitStatus,
 };
 
-use deno_task_shell::{ShellPipeReader, ShellPipeWriter};
 use derive_new::new;
 use futures::{AsyncRead, AsyncWrite};
-use os_pipe::{PipeReader, PipeWriter};
-use std::os::fd::IntoRawFd;
+use portable_pty::{CommandBuilder, PtySize, SlavePty, native_pty_system};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
-use tokio::fs::File;
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt,
-};
+use terminal_size::{Height, Width};
+use tokio::task::yield_now;
 
-use crate::utils;
+fn get_pty_size() -> PtySize {
+    let terminal_size =
+        terminal_size::terminal_size().unwrap_or((Width(80), Height(24)));
+    PtySize {
+        cols: terminal_size.0.0,
+        rows: terminal_size.1.0,
+        pixel_height: 0,
+        pixel_width: 0,
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 #[derive(new)]
@@ -32,86 +34,89 @@ pub struct CommandExecutor {
     env: HashMap<OsString, OsString>,
 
     #[new(into)]
-    stdin_reader: PipeReader,
+    writer: Cell<Option<Pin<Box<dyn CommandExecutorWriter>>>>,
     #[new(into)]
-    stdout_writer: PipeWriter,
-    #[new(into)]
-    stderr_writer: PipeWriter,
+    reader: Cell<Option<Pin<Box<dyn CommandExecutorReader>>>>,
 
     #[new(into)]
-    stdin_writer_file: Cell<Option<File>>,
-    #[new(into)]
-    stdout_reader_file: Cell<Option<File>>,
-    #[new(into)]
-    stderr_reader_file: Cell<Option<File>>,
+    slave: Box<dyn SlavePty + Send>,
 }
 
 impl CommandExecutor {
-    pub fn from_comand_and_env(
+    pub fn from_command_and_env(
         command: impl Into<String>,
         cwd: impl Into<PathBuf>,
         env: impl Into<HashMap<OsString, OsString>>,
     ) -> Result<Self, CommandExecutorError> {
-        let (stdin_reader, stdin_writer) = os_pipe::pipe()
-            .map_err(CommandExecutorErrorInner::CantCreatePipe)?;
-        let (stdout_reader, stdout_writer) = os_pipe::pipe()
-            .map_err(CommandExecutorErrorInner::CantCreatePipe)?;
-        let (stderr_reader, stderr_writer) = os_pipe::pipe()
-            .map_err(CommandExecutorErrorInner::CantCreatePipe)?;
+        let pty_sys = native_pty_system();
+        let pty = pty_sys
+            .openpty(get_pty_size())
+            .map_err(|_e| CommandExecutorErrorInner::CantOpenPty)?;
 
-        let stdin_writer_fd = stdin_writer.into_raw_fd();
-        let stdin_writer_file = unsafe { File::from_raw_fd(stdin_writer_fd) };
-        let stdout_reader_fd = stdout_reader.into_raw_fd();
-        let stdout_reader_file = unsafe { File::from_raw_fd(stdout_reader_fd) };
-        let stderr_reader_fd = stderr_reader.into_raw_fd();
-        let stderr_reader_file = unsafe { File::from_raw_fd(stderr_reader_fd) };
+        let reader = pty
+            .master
+            .try_clone_reader()
+            .map_err(|e| CommandExecutorErrorInner::Unknown(eyre::eyre!(e)))?;
+
+        let reader: Pin<Box<dyn CommandExecutorReader>> =
+            Box::pin(futures::io::AllowStdIo::new(reader));
+
+        let writer = pty
+            .master
+            .take_writer()
+            .map_err(|e| CommandExecutorErrorInner::Unknown(eyre::eyre!(e)))?;
+
+        let writer: Pin<Box<dyn CommandExecutorWriter>> =
+            Box::pin(futures::io::AllowStdIo::new(writer));
 
         Ok(Self::new(
             command.into(),
             cwd,
             env,
-            stdin_reader,
-            stdout_writer,
-            stderr_writer,
-            Some(stdin_writer_file),
-            Some(stdout_reader_file),
-            Some(stderr_reader_file),
+            Some(writer),
+            Some(reader),
+            pty.slave,
         ))
     }
 }
 
 #[auto_impl]
-pub trait CommandExecutorWriter: AsyncWrite + Sync + Send {}
+pub trait CommandExecutorWriter: AsyncWrite + Send {}
 
 #[auto_impl]
-pub trait CommandExecutorReader: AsyncRead + Sync + Send {}
+pub trait CommandExecutorReader: AsyncRead + Send {}
 
 impl CommandExecutor {
-    pub fn take_stdin(&self) -> Option<impl CommandExecutorWriter + use<>> {
-        self.stdin_writer_file.take().map(|f| f.compat_write())
+    pub fn take_writer(&self) -> Option<impl CommandExecutorWriter + use<>> {
+        self.writer.take()
     }
 
-    pub fn take_stdout(&self) -> Option<impl CommandExecutorReader + use<>> {
-        self.stdout_reader_file.take().map(|f| f.compat())
-    }
-
-    pub fn take_stderr(&self) -> Option<impl CommandExecutorReader + use<>> {
-        self.stderr_reader_file.take().map(|f| f.compat())
+    pub fn take_reader(&self) -> Option<impl CommandExecutorReader + use<>> {
+        self.reader.take()
     }
 
     pub async fn run(self) -> Result<ExitStatus, CommandExecutorError> {
-        let exit = utils::cmd::run_with_pipes(
-            &self.command,
-            &self.cwd,
-            self.env,
-            ShellPipeReader::from_raw(self.stdin_reader),
-            ShellPipeWriter::OsPipe(self.stdout_writer),
-            ShellPipeWriter::OsPipe(self.stderr_writer),
-        )
-        .await
-        .map_err(CommandExecutorErrorInner::CantRunCommand)?;
+        let split = self.command.split_whitespace().collect::<Vec<_>>();
+        let mut cmd = CommandBuilder::new(split[0]);
 
-        Ok(ExitStatus::from_raw(exit))
+        cmd.args(split.iter().skip(1));
+
+        cmd.cwd(&self.cwd);
+
+        for (k, v) in self.env.iter() {
+            cmd.env(k, v);
+        }
+
+        let mut child = self.slave.spawn_command(cmd).map_err(|e| {
+            CommandExecutorErrorInner::CantSpawnCommand(eyre::eyre!(e))
+        })?;
+
+        yield_now().await;
+        let status = child
+            .wait()
+            .expect("child process should not be terminated");
+
+        Ok(ExitStatus::from_raw(status.exit_code() as i32))
     }
 }
 
@@ -139,10 +144,17 @@ impl<T: Into<CommandExecutorErrorInner>> From<T> for CommandExecutorError {
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(CommandExecutorErrorKind), vis(pub), repr(u8))]
+#[allow(clippy::enum_variant_names)]
 enum CommandExecutorErrorInner {
     #[error("can't create pipe: {0}")]
     CantCreatePipe(std::io::Error),
 
-    #[error("can't run command: {0}")]
-    CantRunCommand(eyre::Report),
+    #[error("can't spawn command: {0}")]
+    CantSpawnCommand(eyre::Report),
+
+    #[error("can't open pty")]
+    CantOpenPty,
+
+    #[error(transparent)]
+    Unknown(#[from] eyre::Report),
 }

@@ -67,6 +67,8 @@ maps = { workspace = true }
 sets = { workspace = true }
 dhat = { workspace = true, optional = true }
 enum-map = { workspace = true }
+portable-pty = { workspace = true }
+terminal_size = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

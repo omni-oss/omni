@@ -1,13 +1,14 @@
 use std::{
-    collections::HashMap, ffi::OsString, process::ExitStatus, sync::Arc,
+    collections::HashMap, ffi::OsString, pin::Pin, process::ExitStatus,
+    sync::Arc,
 };
 
 use derive_new::new;
-use futures::AsyncReadExt as _;
+use futures::{AsyncRead, AsyncReadExt as _, AsyncWrite};
 use maps::Map;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use system_traits::impls::RealSys;
+use system_traits::{auto_impl, impls::RealSys};
 use tokio::sync::Mutex;
 
 use crate::{
@@ -15,15 +16,42 @@ use crate::{
     executor::{CommandExecutor, CommandExecutorError},
 };
 
-#[derive(Debug, new)]
+#[derive(new)]
 pub struct TaskExecutor<TContextSys: ContextSys = RealSys> {
+    #[new(into)]
     node: TaskExecutionNode,
 
     #[new(into)]
     context: Arc<Mutex<Context<TContextSys>>>,
+
+    #[new(default)]
+    output_writer: Option<Pin<Box<dyn TaskExecutorWriter>>>,
+
+    #[new(default)]
+    input_reader: Option<Pin<Box<dyn TaskExecutorReader>>>,
 }
 
+#[auto_impl]
+pub trait TaskExecutorWriter: AsyncWrite + Send {}
+
+#[auto_impl]
+pub trait TaskExecutorReader: AsyncRead + Send {}
+
 impl TaskExecutor {
+    pub fn set_output_writer(
+        &mut self,
+        writer: impl TaskExecutorWriter + 'static,
+    ) {
+        self.output_writer = Some(Box::pin(writer));
+    }
+
+    pub fn set_input_reader(
+        &mut self,
+        reader: impl TaskExecutorReader + 'static,
+    ) {
+        self.input_reader = Some(Box::pin(reader));
+    }
+
     pub async fn run(self) -> Result<ExitStatus, TaskExecutorError> {
         let task = self.node;
         let (command, vars_os) = {
@@ -56,53 +84,60 @@ impl TaskExecutor {
             task.project_dir()
         );
 
-        let cmd_exec = CommandExecutor::from_comand_and_env(
+        let cmd_exec = CommandExecutor::from_command_and_env(
             command,
             task.project_dir(),
             vars_os,
         )?;
 
-        let stderr = cmd_exec
-            .take_stderr()
-            .ok_or(TaskExecutorErrorInner::CantTakeStderr)?;
-
         let stdout = cmd_exec
-            .take_stdout()
+            .take_reader()
             .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
 
-        let input = cmd_exec
-            .take_stdin()
+        let mut input = cmd_exec
+            .take_writer()
             .ok_or(TaskExecutorErrorInner::CantTakeStdin)?;
 
-        std::mem::drop(input);
+        let mut tasks = vec![];
 
-        let stdout_task = tokio::task::spawn(async {
-            futures::io::copy(
-                &mut stdout.take(u64::MAX),
-                &mut futures::io::AllowStdIo::new(std::io::stdout()),
-            )
-            .await?;
+        if let Some(mut output_writer) = self.output_writer {
+            let stdout_task = {
+                tokio::spawn(async move {
+                    futures::io::copy(
+                        &mut stdout.take(u64::MAX),
+                        &mut output_writer,
+                    )
+                    .await
+                })
+            };
 
-            Ok::<(), std::io::Error>(())
-        });
+            tasks.push(stdout_task);
+        }
+        if let Some(input_reader) = self.input_reader {
+            let stdin_task = {
+                tokio::spawn(async move {
+                    futures::io::copy(
+                        &mut input_reader.take(u64::MAX),
+                        &mut input,
+                    )
+                    .await
+                })
+            };
 
-        let stderr_task = tokio::task::spawn(async {
-            futures::io::copy(
-                &mut stderr.take(u64::MAX),
-                &mut futures::io::AllowStdIo::new(std::io::stderr()),
-            )
-            .await?;
+            tasks.push(stdin_task);
+        } else {
+            std::mem::drop(input);
+        }
 
-            Ok::<(), std::io::Error>(())
-        });
+        let all_tasks = futures::future::join_all(tasks);
 
-        let exit_status = cmd_exec.run().await?;
+        let (vec_result, exit_status) = tokio::join!(all_tasks, cmd_exec.run());
 
-        let (stdout_res, stderr_res) =
-            tokio::try_join!(stdout_task, stderr_task)?;
+        for result in vec_result {
+            result??;
+        }
 
-        stdout_res?;
-        stderr_res?;
+        let exit_status = exit_status?;
 
         Ok(exit_status)
     }

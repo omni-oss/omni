@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ffi::OsString, sync::Arc};
 
+use futures::io::AllowStdIo;
 use maps::Map;
 use omni_core::TaskExecutionNode;
 use tokio::sync::Mutex;
@@ -12,7 +13,10 @@ async fn execute_task_impl(
 ) -> Result<TaskExecutionNode, (TaskExecutionNode, eyre::Report)> {
     let result = {
         let task = task.clone();
-        TaskExecutor::new(task, ctx).run().await
+
+        let mut exec = TaskExecutor::new(task, ctx);
+        exec.set_output_writer(AllowStdIo::new(std::io::stdout()));
+        exec.run().await
     };
 
     match result {
