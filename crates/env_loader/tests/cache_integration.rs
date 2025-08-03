@@ -69,7 +69,7 @@ fn test_cache_integration() {
             ..Default::default()
         },
         sys.clone(),
-        Some(&mut cache),
+        &mut cache,
     )
     .expect("Can't load env");
 
@@ -79,7 +79,7 @@ fn test_cache_integration() {
             ..Default::default()
         },
         sys.clone(),
-        Some(&mut cache),
+        &mut cache,
     )
     .expect("Can't load env");
 
@@ -103,7 +103,7 @@ fn test_integration_using_relative_paths() {
             ..Default::default()
         },
         sys.clone(),
-        Some(&mut cache),
+        &mut cache,
     )
     .expect("Can't load env");
 

@@ -2,7 +2,7 @@
 name: omni
 
 extends:
-  - ${WORKSPACE_DIR}/omni/presets/rust-cli.omni.yaml
+  - "@workspace/omni/presets/rust-cli.omni.yaml"
 
 dependencies:
   - omni_core

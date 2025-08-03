@@ -2,7 +2,7 @@
 name: env
 
 extends:
-  - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 tasks:
   profile:

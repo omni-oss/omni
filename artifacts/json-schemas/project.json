@@ -3,6 +3,13 @@
   "title": "ProjectConfiguration",
   "type": "object",
   "properties": {
+    "cache_key": {
+      "$ref": "#/$defs/CacheKeyConfiguration",
+      "default": {
+        "env": [],
+        "files": []
+      }
+    },
     "dependencies": {
       "$ref": "#/$defs/ListConfig",
       "default": {
@@ -12,8 +19,8 @@
     "env": {
       "$ref": "#/$defs/ProjectEnvConfiguration",
       "default": {
-        "files": null,
-        "vars": null
+        "files": [],
+        "vars": {}
       }
     },
     "extends": {
@@ -198,24 +205,14 @@
       "type": "object",
       "properties": {
         "files": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ListConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
         },
         "vars": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DictConfig2"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/DictConfig2",
+          "default": {}
         }
       }
     },
@@ -248,15 +245,11 @@
       "type": "object",
       "properties": {
         "cache_key": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CacheKeyConfiguration"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/CacheKeyConfiguration",
+          "default": {
+            "env": [],
+            "files": []
+          }
         },
         "command": {
           "type": "string",
@@ -276,15 +269,10 @@
           "default": null
         },
         "env": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TaskConfigurationEnvConfiguration"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "$ref": "#/$defs/TaskConfigurationEnvConfiguration",
+          "default": {
+            "vars": null
+          }
         },
         "output": {
           "$ref": "#/$defs/TaskOutputConfiguration",
