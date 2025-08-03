@@ -1,3 +1,3 @@
-mod ws_path;
+mod omni_path;
 
-pub use ws_path::*;
+pub use omni_path::*;

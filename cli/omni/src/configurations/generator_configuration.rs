@@ -42,13 +42,15 @@ pub enum Prompt {
         choices: Vec<String>,
         #[serde(default)]
         multiple: bool,
-        #[serde(default)]
+        #[serde(default, alias = "allow-custom")]
         allow_custom: bool,
     },
     Text {
         #[serde(flatten)]
         base: BasePrompt<String>,
+        #[serde(alias = "min-length")]
         min_length: Option<usize>,
+        #[serde(alias = "max-length")]
         max_length: Option<usize>,
         pattern: Option<String>,
     },

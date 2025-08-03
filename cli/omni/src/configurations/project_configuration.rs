@@ -2,12 +2,15 @@ use std::path::{Path, PathBuf};
 
 use config_utils::{DictConfig, ListConfig, Replace, merge::Merge};
 use garde::Validate;
+use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsRead;
 
 use crate::{
-    configurations::{ExtensionGraphNode, utils::list_config_default},
+    configurations::{
+        CacheKeyConfiguration, ExtensionGraphNode, utils::list_config_default,
+    },
     utils,
 };
 
@@ -27,12 +30,14 @@ use super::TaskConfiguration;
 #[garde(allow_unvalidated)]
 pub struct ProjectConfiguration {
     #[serde(default, skip)]
-    #[merge(skip)]
-    pub path: String,
+    pub file: OmniPath,
+
+    #[serde(default, skip)]
+    pub dir: OmniPath,
 
     #[serde(default)]
-    #[merge(skip)]
-    pub extends: Vec<String>,
+    #[merge(strategy = config_utils::replace)]
+    pub extends: Vec<OmniPath>,
 
     #[merge(strategy = config_utils::replace)]
     pub name: String,
@@ -45,25 +50,20 @@ pub struct ProjectConfiguration {
 
     #[serde(default)]
     pub env: ProjectEnvConfiguration,
+
+    #[serde(default, alias = "cache-key")]
+    pub cache_key: CacheKeyConfiguration,
 }
 
 impl ExtensionGraphNode for ProjectConfiguration {
-    type Id = String;
+    type Id = OmniPath;
 
     fn id(&self) -> &Self::Id {
-        &self.path
-    }
-
-    fn set_id(&mut self, id: &Self::Id) {
-        self.path = id.clone();
+        &self.file
     }
 
     fn extendee_ids(&self) -> &[Self::Id] {
         &self.extends
-    }
-
-    fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]) {
-        self.extends = extendee_ids.to_vec();
     }
 }
 

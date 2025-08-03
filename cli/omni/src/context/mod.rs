@@ -1,5 +1,6 @@
 mod env_loader;
 
+use enum_map::enum_map;
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use maps::Map;
 use std::{
@@ -9,7 +10,7 @@ use std::{
 
 use ::env_loader::EnvLoaderError;
 use dir_walker::{DirEntry as _, DirWalker};
-use eyre::{Context as _, ContextCompat, OptionExt};
+use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::{ProjectGraph, TaskExecutionNode};
 use system_traits::{
@@ -22,7 +23,7 @@ use crate::{
     configurations::{
         ExtensionGraph, ProjectConfiguration, WorkspaceConfiguration,
     },
-    constants::{self, PROJECT_DIR_VAR, WORKSPACE_DIR_VAR},
+    constants::{self},
     core::{Project, Task},
     utils::env::EnvVarsMap,
 };
@@ -33,6 +34,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     task_env_vars: Map<String, EnvVarsMap>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
+    inherit_env_vars: bool,
     projects: Option<Vec<Project>>,
     workspace: WorkspaceConfiguration,
     root_dir: PathBuf,
@@ -82,6 +84,7 @@ impl<TSys: ContextSys> Context<TSys> {
             });
         let ctx = Context {
             projects: None,
+            inherit_env_vars: cli.inherit_env_vars,
             task_env_vars: maps::map!(),
             env_loader: EnvLoader::new(
                 sys.clone(),
@@ -154,7 +157,6 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn load_projects<TDirWalker: DirWalker>(
         &mut self,
         walker: &TDirWalker,
-        load_env: bool,
     ) -> eyre::Result<&Vec<Project>> {
         #[cfg(feature = "enable-tracing")]
         let start_time = std::time::SystemTime::now();
@@ -243,33 +245,35 @@ impl<TSys: ContextSys> Context<TSys> {
                     );
                 }
 
-                project.path = conf.to_string_lossy().to_string();
-                loaded.insert(project.path.clone());
+                project.file = conf.clone().into();
+                let project_dir = conf.parent().expect("should have parent");
+                project.dir = project_dir.into();
+                loaded.insert(project.file.clone());
 
                 for dep in &mut project.extends {
-                    if dep.contains(WORKSPACE_DIR_VAR)
-                        || dep.contains(PROJECT_DIR_VAR)
-                    {
-                        let env = maps::map![
-                            WORKSPACE_DIR_VAR.to_string() => self.root_dir.to_string_lossy().to_string(),
-                            PROJECT_DIR_VAR.to_string() => project.path.clone(),
-                        ];
-                        *dep = env::expand(dep, &env);
+                    if dep.is_rooted() {
+                        // WORKSPACE_DIR_VAR.to_string() => self.root_dir.to_string_lossy().to_string(),
+                        // PROJECT_DIR_VAR.to_string() => project.path.clone(),
+                        let roots = enum_map! {
+                            omni_types::Root::Workspace => self.root_dir.as_ref(),
+                            omni_types::Root::Project => project_dir,
+                        };
+                        dep.resolve_in_place(roots);
                     }
 
                     *dep = self
                         .sys
-                        .fs_canonicalize(
-                            Path::new(&project.path)
-                                .parent()
-                                .ok_or_eyre("Can't get parent")?
-                                .join(&dep),
-                        )?
-                        .to_string_lossy()
-                        .to_string();
+                        .fs_canonicalize(project_dir.join(
+                            dep.path().expect("path should be resolved"),
+                        ))?
+                        .into();
 
                     if !loaded.contains(dep) {
-                        to_process.push(PathBuf::from(dep.clone()));
+                        to_process.push(
+                            dep.path()
+                                .expect("path should be resolved")
+                                .to_path_buf(),
+                        );
                     }
                 }
 
@@ -283,60 +287,57 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let project_paths = project_paths
             .iter()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(|p| p as &Path)
             .collect::<HashSet<_>>();
 
-        for config in project_configs
-            .into_iter()
-            .filter(|config| project_paths.contains(&config.path))
-        {
-            let dir = Path::new(&config.path)
-                .parent()
-                .ok_or_eyre("Can't get parent")?
-                .to_path_buf();
-            if load_env {
-                let mut extras = maps::map![
-                    "PROJECT_NAME".to_string() => config.name.to_string(),
-                    "PROJECT_DIR".to_string() => config.path.to_string()
-                ];
+        for config in project_configs.into_iter().filter(|config| {
+            project_paths
+                .contains(config.file.path().expect("path should be resolved"))
+        }) {
+            let dir = config.dir.path().expect("path should be resolved");
+            let mut extras = maps::map![
+                "PROJECT_NAME".to_string() => config.name.to_string(),
+                "PROJECT_DIR".to_string() => dir.to_string_lossy().to_string(),
+            ];
 
-                let overrides = &config.env.vars;
-                if !overrides.as_map().is_empty() {
-                    extras.extend(overrides.to_map_to_inner());
-                }
+            let overrides = &config.env.vars;
+            if !overrides.as_map().is_empty() {
+                extras.extend(overrides.to_map_to_inner());
+            }
 
-                let env_files = config
-                    .env
-                    .files
-                    .as_vec()
-                    .iter()
-                    .map::<&Path, _>(|s| s)
-                    .collect::<Vec<_>>();
+            let env_files = config
+                .env
+                .files
+                .as_vec()
+                .iter()
+                .map::<&Path, _>(|s| s)
+                .collect::<Vec<_>>();
 
-                // load the env vars for the project
-                _ = self.get_env_vars(Some(&GetVarsArgs {
-                    start_dir: Some(&dir),
-                    override_vars: Some(&extras),
-                    env_files: if env_files.is_empty() {
-                        Some(&env_files[..])
-                    } else {
-                        None
-                    },
-                }))?;
+            // load the env vars for the project
+            let _loaded = self.get_env_vars(Some(&GetVarsArgs {
+                start_dir: Some(dir),
+                override_vars: Some(&extras),
+                env_files: if env_files.is_empty() {
+                    Some(&env_files[..])
+                } else {
+                    None
+                },
+                inherit_env_vars: self.inherit_env_vars,
+            }))?;
 
-                for (name, task) in config.tasks.iter() {
-                    if let Some(env) = task.env()
-                        && let Some(vars) = env.vars.as_ref()
-                    {
-                        let key = format!("{}#{}", config.name, name);
+            for (name, task) in config.tasks.iter() {
+                if let Some(env) = task.env()
+                    && let Some(vars) = env.vars.as_ref()
+                {
+                    let key = format!("{}#{}", config.name, name);
 
-                        self.task_env_vars.insert(key, vars.to_map_to_inner());
-                    }
+                    self.task_env_vars.insert(key, vars.to_map_to_inner());
                 }
             }
+
             projects.push(Project::new(
                 config.name,
-                dir,
+                dir.to_path_buf(),
                 config.dependencies.to_vec_inner(),
                 config
                     .tasks
@@ -594,6 +595,7 @@ mod tests {
         let sys = sys.unwrap_or_else(create_sys);
 
         let cli = &CliArgs {
+            inherit_env_vars: false,
             env_root_dir_marker: None,
             env_file: vec![
                 ".env".to_string(),
@@ -671,7 +673,7 @@ mod tests {
     fn test_load_projects() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None), true)
+        ctx.load_projects(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let projects = ctx.get_projects().expect("Can't get projects");
@@ -712,7 +714,7 @@ mod tests {
             InMemoryMetadata::default(),
         ));
 
-        let projects = ctx.load_projects(&dir_walker, true);
+        let projects = ctx.load_projects(&dir_walker);
 
         assert!(
             projects
@@ -727,7 +729,7 @@ mod tests {
     fn test_get_project_graph() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None), true)
+        ctx.load_projects(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -739,7 +741,7 @@ mod tests {
     fn test_project_extensions() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None), true)
+        ctx.load_projects(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -756,5 +758,22 @@ mod tests {
             project3.tasks["from-base-2"].command,
             "echo \"from base-2\""
         );
+    }
+
+    #[test]
+    fn test_loaded_environmental_variables() {
+        let mut ctx = create_ctx("testing", None);
+
+        ctx.load_projects(&create_dir_walker(None))
+            .expect("Can't load projects");
+
+        let envs = ctx
+            .get_cached_env_vars(&Path::new("/root/nested/project-3"))
+            .expect("can't get env vars");
+
+        println!("{envs:#?}");
+
+        assert_eq!(envs["PROJECT_NAME"], "project-3");
+        assert_eq!(envs["PROJECT_DIR"], "/root/nested/project-3");
     }
 }

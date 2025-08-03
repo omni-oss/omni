@@ -31,7 +31,7 @@ pub struct TaskConfigurationLongForm {
     description: Option<String>,
     #[serde(default)]
     env: TaskConfigurationEnvConfiguration,
-    #[serde(default)]
+    #[serde(default, alias = "cache-key")]
     cache_key: CacheKeyConfiguration,
     #[serde(default)]
     output: TaskOutputConfiguration,
@@ -169,8 +169,8 @@ mod tests {
             command: "a".to_string(),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
             description: Some(String::from("a description")),
-            env: None,
-            cache_key: None,
+            env: Default::default(),
+            cache_key: Default::default(),
             output: TaskOutputConfiguration::default(),
         });
 
@@ -183,8 +183,8 @@ mod tests {
             command: "b".to_string(),
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
             description: None,
-            env: None,
-            cache_key: None,
+            env: Default::default(),
+            cache_key: Default::default(),
             output: TaskOutputConfiguration::default(),
         });
 
@@ -196,8 +196,8 @@ mod tests {
                 command: "b".to_string(),
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(String::from("a description")),
-                env: None,
-                cache_key: None,
+                env: Default::default(),
+                cache_key: Default::default(),
                 output: TaskOutputConfiguration::default(),
             })
         );

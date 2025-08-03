@@ -44,9 +44,8 @@ async fn execute_task_impl(
     };
 
     trace::debug!(
-        "Running command: '{:?}' with env: {:#?}, in dir: {:?}",
+        "Running command: '{:?}' in dir: {:?}",
         command,
-        vars_os,
         task.project_dir()
     );
 

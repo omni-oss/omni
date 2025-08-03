@@ -25,6 +25,7 @@ pub struct GetVarsArgs<'a> {
     pub start_dir: Option<&'a Path>,
     pub env_files: Option<&'a [&'a Path]>,
     pub override_vars: Option<&'a Map<String, String>>,
+    pub inherit_env_vars: bool,
 }
 
 impl<T: EnvCacheSys> EnvLoader<T> {
@@ -60,11 +61,12 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             return Ok(env);
         }
 
-        let v = self.sys.env_vars();
-
         let mut env_vars = maps::map!();
 
-        env_vars.extend(v);
+        if args.inherit_env_vars {
+            let existing_env_vars = self.sys.env_vars();
+            env_vars.extend(existing_env_vars);
+        }
 
         let env_files = args
             .env_files
@@ -84,7 +86,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         let mut env = env_loader::load_with_caching(
             &config,
             self.sys.clone(),
-            Some(&mut self.env_cache),
+            &mut self.env_cache,
         )?;
 
         if let Some(override_vars) = args.override_vars {

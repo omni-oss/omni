@@ -2,4 +2,4 @@
 name: bridge_rpc
 
 extends:
-  - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml
+  - "@workspace/omni/presets/rust-lib.omni.yaml"

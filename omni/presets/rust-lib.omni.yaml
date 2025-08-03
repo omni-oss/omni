@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: rust-lib
 
+cache_key:
+  env: ["PROJECT_NAME", "PROJECT_DIR"]
+  files: ["Cargo.toml", "{WORKSPACE_DIR}/Cargo.toml"]
+
 tasks:
   test: cargo test -p ${PROJECT_NAME}
 

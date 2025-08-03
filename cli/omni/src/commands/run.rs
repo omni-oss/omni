@@ -43,7 +43,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
         eyre::bail!("Task cannot be empty");
     }
 
-    ctx.load_projects(&create_default_dir_walker(), true)?;
+    ctx.load_projects(&create_default_dir_walker())?;
     let filter = command.filter.as_deref().unwrap_or("*");
 
     let shared_ctx = Arc::new(Mutex::new(ctx.clone()));

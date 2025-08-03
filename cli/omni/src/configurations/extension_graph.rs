@@ -16,9 +16,18 @@ pub trait ExtensionGraphNode: Clone + Merge + Debug {
     type Id: Eq + Hash + Clone + Debug;
 
     fn id(&self) -> &Self::Id;
-    fn set_id(&mut self, id: &Self::Id);
+
+    #[inline(always)]
+    /// Implement this method if merge for this is skipped
+    fn set_id(&mut self, id: &Self::Id) {
+        _ = id;
+    }
     fn extendee_ids(&self) -> &[Self::Id];
-    fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]);
+    #[inline(always)]
+    /// Implement this method if merge for this is skipped
+    fn set_extendee_ids(&mut self, extendee_ids: &[Self::Id]) {
+        _ = extendee_ids;
+    }
 }
 
 pub struct ExtensionGraph<T: Merge + ExtensionGraphNode> {

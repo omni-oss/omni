@@ -31,10 +31,22 @@ pub fn load<'a, TSys: EnvLoaderSys>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
 ) -> Result<Map<String, String>, EnvLoaderError> {
-    load_with_caching::<TSys, DefaultEnvCache<TSys>>(config, sys, None)
+    load_internal::<TSys, DefaultEnvCache<TSys>>(config, sys, None)
 }
 
 pub fn load_with_caching<'a, TSys, TCache>(
+    config: &'a EnvConfig<'a>,
+    sys: TSys,
+    mut cache: &mut TCache,
+) -> Result<Map<String, String>, EnvLoaderError>
+where
+    TSys: EnvLoaderSys,
+    TCache: EnvCache,
+{
+    load_internal::<TSys, TCache>(config, sys, Some(&mut cache))
+}
+
+fn load_internal<'a, TSys, TCache>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
     mut cache: Option<&mut TCache>,

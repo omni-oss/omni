@@ -1,4 +1,4 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: omni_core
 extends:
-  - ${WORKSPACE_DIR}/omni/presets/rust-lib.omni.yaml
+  - "@workspace/omni/presets/rust-lib.omni.yaml"

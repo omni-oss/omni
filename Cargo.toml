@@ -114,6 +114,7 @@ sets = { path = "./crates/sets" }
 globwalk = { version = "^0.9.1" }
 criterion = { version = "^0.7.0", features = ["html_reports"] }
 dhat = { version = "^0.3.3" }
+enum-map = { version = "^2.7.3" }
 
 [profile.release]
 incremental = true

@@ -6,11 +6,18 @@ version.workspace = true
 repository.workspace = true
 
 [features]
-default = ["serde"]
+default = ["serde", "merge", "schemars"]
+schemars = ["dep:schemars"]
 serde = ["dep:serde"]
+merge = ["dep:merge"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+merge = { workspace = true, optional = true }
+enum-map = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
