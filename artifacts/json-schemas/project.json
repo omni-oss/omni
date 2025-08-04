@@ -27,7 +27,7 @@
       "type": "array",
       "default": [],
       "items": {
-        "type": "string"
+        "$ref": "#/$defs/OmniPath"
       }
     },
     "name": {
@@ -52,7 +52,7 @@
           }
         },
         "files": {
-          "$ref": "#/$defs/ListConfig",
+          "$ref": "#/$defs/ListConfig2",
           "default": {
             "append": []
           }
@@ -201,6 +201,75 @@
         }
       ]
     },
+    "ListConfig2": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OmniPath"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OmniPath"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "append": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OmniPath"
+              }
+            }
+          },
+          "required": [
+            "append"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prepend": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OmniPath"
+              }
+            }
+          },
+          "required": [
+            "prepend"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/OmniPath"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "OmniPath": {
+      "type": "string"
+    },
     "ProjectEnvConfiguration": {
       "type": "object",
       "properties": {
@@ -280,8 +349,7 @@
             "files": {
               "append": []
             },
-            "stderr": true,
-            "stdout": true
+            "logs": true
           }
         }
       }
@@ -290,16 +358,12 @@
       "type": "object",
       "properties": {
         "files": {
-          "$ref": "#/$defs/ListConfig",
+          "$ref": "#/$defs/ListConfig2",
           "default": {
             "append": []
           }
         },
-        "stderr": {
-          "type": "boolean",
-          "default": true
-        },
-        "stdout": {
+        "logs": {
           "type": "boolean",
           "default": true
         }
