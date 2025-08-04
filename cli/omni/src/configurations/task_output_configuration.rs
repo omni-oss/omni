@@ -1,5 +1,6 @@
-use config_utils::{ListConfig, Replace};
+use config_utils::ListConfig;
 use merge::Merge;
+use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -7,24 +8,19 @@ use serde::{Deserialize, Serialize};
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Merge,
 )]
 pub struct TaskOutputConfiguration {
-    #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
-    pub files: ListConfig<Replace<String>>,
+    #[serde(default = "super::utils::list_config_default::<OmniPath>")]
+    pub files: ListConfig<OmniPath>,
 
     #[serde(default = "super::utils::default_true")]
     #[merge(strategy = config_utils::replace)]
-    pub stdout: bool,
-
-    #[serde(default = "super::utils::default_true")]
-    #[merge(strategy = config_utils::replace)]
-    pub stderr: bool,
+    pub logs: bool,
 }
 
 impl Default for TaskOutputConfiguration {
     fn default() -> Self {
         Self {
             files: ListConfig::append(vec![]),
-            stdout: true,
-            stderr: true,
+            logs: true,
         }
     }
 }
