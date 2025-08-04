@@ -1,5 +1,6 @@
 use config_utils::{ListConfig, Replace};
 use merge::Merge;
+use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +18,6 @@ use serde::{Deserialize, Serialize};
 pub struct CacheKeyConfiguration {
     #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
     pub env: ListConfig<Replace<String>>,
-    #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
-    pub files: ListConfig<Replace<String>>,
+    #[serde(default = "super::utils::list_config_default::<OmniPath>")]
+    pub files: ListConfig<OmniPath>,
 }
