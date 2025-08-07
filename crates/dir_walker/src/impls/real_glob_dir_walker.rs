@@ -17,10 +17,11 @@ use crate::{
 pub struct RealGlobDirWalker {
     #[builder(default = "true")]
     standard_filters: bool,
+    #[builder(default)]
     custom_ignore_filenames: Vec<String>,
-    #[builder(setter(custom))]
+    #[builder(setter(custom), default)]
     include: globset::GlobSet,
-    #[builder(setter(custom))]
+    #[builder(setter(custom), default)]
     exclude: globset::GlobSet,
 }
 
@@ -99,8 +100,8 @@ impl Iterator for RealGlobDirWalkDir {
                 Ok(r) => {
                     let path = r.path().to_string_lossy();
 
-                    if !self.include_globset.is_match(&*path)
-                        || self.exclude_globset.is_match(&*path)
+                    if self.exclude_globset.is_match(&*path)
+                        || !self.include_globset.is_match(&*path)
                     {
                         continue;
                     }
