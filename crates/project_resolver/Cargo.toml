@@ -1,9 +1,0 @@
-[package]
-name = "project_resolver"
-rust-version.workspace = true
-edition.workspace = true
-# edition = "2024"
-version.workspace = true
-repository.workspace = true
-
-[dependencies]

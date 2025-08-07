@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: omni_hasher
+
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"

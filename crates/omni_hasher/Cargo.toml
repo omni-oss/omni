@@ -1,0 +1,18 @@
+[package]
+name = "omni_hasher"
+rust-version.workspace = true
+#edition.workspace = true
+edition = "2024"
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["blake3"]
+blake3 = ["dep:blake3"]
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+system_traits = { workspace = true }
+blake3 = { workspace = true, optional = true }

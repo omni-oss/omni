@@ -4,6 +4,8 @@ mod ignore_real_dir_walker;
 mod memory_dir_walker;
 #[cfg(feature = "recursive")]
 mod real_dir_walker;
+#[cfg(feature = "glob")]
+mod real_glob_dir_walker;
 
 #[cfg(feature = "ignore")]
 pub use ignore_real_dir_walker::*;
@@ -11,3 +13,5 @@ pub use ignore_real_dir_walker::*;
 pub use memory_dir_walker::*;
 #[cfg(feature = "recursive")]
 pub use real_dir_walker::*;
+#[cfg(feature = "glob")]
+pub use real_glob_dir_walker::*;

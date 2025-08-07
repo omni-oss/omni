@@ -1,0 +1,26 @@
+[package]
+name = "omni_cache"
+rust-version.workspace = true
+#edition.workspace = true
+edition = "2024"
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+mockall = { workspace = true }
+async-trait = { workspace = true }
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
+dir_walker = { workspace = true }
+system_traits = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }
+omni_hasher = { workspace = true }
+futures = { workspace = true }
+rs_merkle = { workspace = true }
