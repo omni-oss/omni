@@ -69,6 +69,8 @@ dhat = { workspace = true, optional = true }
 enum-map = { workspace = true }
 portable-pty = { workspace = true }
 terminal_size = { workspace = true }
+rmcp = { workspace = true }
+omni_cache = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
