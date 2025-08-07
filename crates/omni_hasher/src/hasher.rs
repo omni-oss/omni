@@ -1,5 +1,21 @@
+use std::{fmt::Debug, hash::Hash};
+
+use serde::{Deserialize, Serialize};
+
 pub trait Hasher: Clone {
-    type Hash: Copy + PartialEq + Into<Vec<u8>> + TryFrom<Vec<u8>> + Send;
+    type Hash: Copy
+        + PartialEq
+        + Into<Vec<u8>>
+        + TryFrom<Vec<u8>>
+        + AsRef<[u8]>
+        + Send
+        + Sync
+        + PartialEq
+        + Eq
+        + Serialize
+        + for<'a> Deserialize<'a>
+        + Debug
+        + Hash;
     fn hash(data: &[u8]) -> Self::Hash;
 }
 

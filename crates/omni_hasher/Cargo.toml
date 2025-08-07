@@ -16,3 +16,4 @@ thiserror = { workspace = true }
 strum = { workspace = true }
 system_traits = { workspace = true }
 blake3 = { workspace = true, optional = true }
+serde = { workspace = true }
