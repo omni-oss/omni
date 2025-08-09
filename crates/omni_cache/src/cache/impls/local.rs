@@ -364,9 +364,9 @@ mod tests {
         env_cache_keys: Vec<String>,
     }
 
-    fn project_from_static<'project>(
-        project: &'project ProjectInfoStatic,
-    ) -> ProjectInfo<'project> {
+    fn project_from_static<'a>(
+        project: &'a ProjectInfoStatic,
+    ) -> ProjectInfo<'a> {
         ProjectInfo::new(
             &project.name,
             &project.dir,
@@ -650,7 +650,7 @@ mod tests {
         for file in cached_output.files.iter() {
             assert_eq!(
                 read_bytes(&file.cached_path).await,
-                TXT_CONTENT.as_bytes(),
+                JS_CONTENT.as_bytes(),
                 "file content should match {} and {}",
                 file.cached_path.display(),
                 file.original_path.display()
