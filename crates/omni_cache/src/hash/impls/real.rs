@@ -11,7 +11,7 @@ use system_traits::{FsCanonicalizeAsync, FsMetadataAsync, impls::RealSys};
 
 use crate::{
     hash::{Compat, Hasher, ProjectDirHasher},
-    utils::relpath,
+    utils::{relpath, topmost_dir},
 };
 
 #[derive(Clone, Debug, new, Builder)]
@@ -53,19 +53,38 @@ impl ProjectDirHasher for RealDirHasher {
             Root::Project => proj_dir.as_path(),
         };
 
+        let mut includes = vec![];
+
+        for p in files {
+            let p = p.resolve(&bases);
+
+            let path = if p.is_relative() {
+                std::path::absolute(project_dir.join(p))
+                    .expect("it should be absolute")
+            } else {
+                p.to_path_buf()
+            };
+
+            includes.push(path);
+        }
+
+        let topmost = topmost_dir(
+            self.sys.clone(),
+            &includes,
+            &self.workspace_root_dir,
+            &proj_dir,
+        )
+        .to_path_buf();
+
         let dir_walker = RealGlobDirWalker::builder()
             .standard_filters(self.standard_ignore_files)
             .custom_ignore_filenames(self.custom_ignore_files.clone())
-            .include(
-                files
-                    .iter()
-                    .map(|p| p.resolve(&bases).to_path_buf())
-                    .collect::<Vec<_>>(),
-            )
+            .include(includes)
             .build()?;
 
         let mut paths = vec![];
-        for p in dir_walker.walk_dir(&proj_dir) {
+
+        for p in dir_walker.walk_dir(&[&topmost])? {
             let p = self.sys.fs_canonicalize_async(p?.path()).await?;
 
             if self.sys.fs_is_file_async(&p).await? {
@@ -130,6 +149,9 @@ enum RealDirHasherErrorInner {
 
     #[error(transparent)]
     Ignore(#[from] dir_walker::impls::IgnoreError),
+
+    #[error(transparent)]
+    IgnoreRealDirWalker(#[from] dir_walker::impls::IgnoreRealDirWalkerError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

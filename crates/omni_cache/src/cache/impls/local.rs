@@ -19,7 +19,7 @@ use crate::{
         ProjectDirHasher,
         impls::{RealDirHasher, RealDirHasherError},
     },
-    utils::{project_dirname, relpath},
+    utils::{project_dirname, relpath, topmost_dir},
 };
 
 #[derive(Clone, Debug)]
@@ -139,20 +139,36 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
             Root::Project => project.dir,
         };
 
+        let mut includes = vec![];
+        for p in project.output_files {
+            let p = p.resolve(&bases);
+
+            let path = if p.is_relative() {
+                std::path::absolute(project.dir.join(p))
+                    .expect("it should be absolute")
+            } else {
+                p.to_path_buf()
+            };
+
+            includes.push(path);
+        }
+
+        let topmost = topmost_dir(
+            self.sys.clone(),
+            &includes,
+            &self.ws_root_dir,
+            project.dir,
+        )
+        .to_path_buf();
+
         let dirwalker = RealGlobDirWalker::builder()
             .custom_ignore_filenames(vec![".omniignore".to_string()])
-            .include(
-                project
-                    .output_files
-                    .iter()
-                    .map(|p| p.resolve(&bases).to_path_buf())
-                    .collect::<Vec<_>>(),
-            )
+            .include(includes)
             .build()?;
 
         let mut cached_files = vec![];
 
-        for res in dirwalker.walk_dir(project.dir) {
+        for res in dirwalker.walk_dir(&[&topmost])? {
             let res = res?;
             let original_file_abs_path = res.path();
             let original_omni_path = if original_file_abs_path
@@ -171,7 +187,6 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
                 OmniPath::new(original_file_abs_path)
             };
 
-            relpath(original_file_abs_path, project.dir);
             let encoded =
                 bs58::encode(original_omni_path.to_string().as_bytes())
                     .into_string();
@@ -295,6 +310,9 @@ enum LocalTaskOutputCacheStoreErrorInner {
     Ignore(#[from] dir_walker::impls::IgnoreError),
 
     #[error(transparent)]
+    IgnoreBuild(#[from] dir_walker::impls::IgnoreRealDirWalkerError),
+
+    #[error(transparent)]
     Encode(#[from] bincode::error::EncodeError),
 
     #[error(transparent)]
@@ -308,7 +326,7 @@ mod tests {
     use super::*;
     use crate::cache::impls::LocalTaskOutputCacheStore;
     use derive_new::new;
-    use system_traits::impls::RealSys;
+    use system_traits::{FsRename, impls::RealSys};
     use tokio::io::AsyncReadExt as _;
     use yoke::Yoke;
 
@@ -716,12 +734,12 @@ mod tests {
             .expect("failed to cache");
 
         // rename the project to simulate a move operation
-        tokio::fs::rename(
-            project.get().dir.join("src/a-test.txt"),
-            project.get().dir.join("src/a-test-renamed.txt"),
-        )
-        .await
-        .expect("failed to rename");
+        sys()
+            .fs_rename(
+                project.get().dir.join("src/a-test.txt"),
+                project.get().dir.join("src/a-test-renamed.txt"),
+            )
+            .expect("failed to rename");
 
         let cached_output = cache
             .get(project.get())
@@ -729,5 +747,46 @@ mod tests {
             .expect("failed to get cached output");
 
         assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_use_rooted_omni_path() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let project = project_with_mut("project1", dir, |p| {
+            p.output_files.push(OmniPath::new_ws_rooted("rootfile.txt"));
+        });
+
+        // Add a file in the workspace root
+        sys()
+            .fs_write_async(dir.join("rootfile.txt"), "root file content")
+            .await
+            .expect("failed to write file");
+
+        cache
+            .cache(project.get(), Some(LOGS_CONTENT))
+            .await
+            .expect("failed to cache");
+
+        let cached_output = cache
+            .get(project.get())
+            .await
+            .expect("failed to get cached output")
+            .expect("cached output should exist");
+
+        assert_eq!(cached_output.files.len(), 3, "should be 3 files");
+        assert_eq!(
+            cached_output.files[0].original_path.to_string(),
+            "@workspace/rootfile.txt",
+        );
+        assert_eq!(
+            cached_output.files[1].original_path.to_string(),
+            "@project/dist/b-test.js",
+        );
+        assert_eq!(
+            cached_output.files[2].original_path.to_string(),
+            "@project/dist/a-test.js",
+        );
     }
 }

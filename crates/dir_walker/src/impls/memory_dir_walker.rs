@@ -20,13 +20,15 @@ impl InMemoryDirWalker {
 
 impl DirWalkerBase for InMemoryDirWalker {
     type DirEntry = InMemoryDirEntry;
-
+    type IterError = InMemoryDirWalkerError;
     type Error = InMemoryDirWalkerError;
-
     type WalkDir = InMemoryWalkDir;
 
-    fn base_walk_dir(&self, path: &std::path::Path) -> Self::WalkDir {
-        InMemoryWalkDir::new(path, &self.0)
+    fn base_walk_dir(
+        &self,
+        path: &[&std::path::Path],
+    ) -> Result<Self::WalkDir, Self::Error> {
+        Ok(InMemoryWalkDir::new(path, &self.0))
     }
 }
 
@@ -84,10 +86,10 @@ pub struct InMemoryWalkDir {
 }
 
 impl InMemoryWalkDir {
-    pub fn new(path: &Path, entries: &[InMemoryDirEntry]) -> Self {
+    pub fn new(paths: &[&Path], entries: &[InMemoryDirEntry]) -> Self {
         let entries = entries
             .iter()
-            .filter(|e| e.path.starts_with(path))
+            .filter(|e| paths.iter().any(|p| e.path.starts_with(p)))
             .cloned()
             .collect::<Vec<_>>();
 

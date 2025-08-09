@@ -21,6 +21,7 @@ dir_walker = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-async-tokio",
     "real-sync",
+    "memory-sync",
 ] }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }

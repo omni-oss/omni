@@ -183,9 +183,12 @@ impl<TSys: ContextSys> Context<TSys> {
             .map(|ext| constants::PROJECT_OMNI.replace("{ext}", ext))
             .collect();
 
-        for f in walker.walk_dir(&self.root_dir) {
+        for f in walker
+            .walk_dir(&[&self.root_dir])
+            .map_err(|e| eyre::eyre!("failed to create walk dir: {e}"))?
+        {
             num_iterations += 1;
-            let f = f.map_err(|_| eyre::eyre!("Failed to walk dir"))?;
+            let f = f.map_err(|e| eyre::eyre!("failed to walk dir: {e}"))?;
 
             if !self.sys.fs_is_dir(f.path())? {
                 continue;
@@ -260,7 +263,7 @@ impl<TSys: ContextSys> Context<TSys> {
                             Root::Workspace => self.root_dir.as_ref(),
                             Root::Project => project_dir,
                         };
-                        dep.resolve_in_place(roots);
+                        dep.resolve_in_place(&roots);
                     }
 
                     *dep = self

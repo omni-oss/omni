@@ -8,7 +8,7 @@ use crate::{
     DirEntry, DirWalkerBase,
     impls::{
         IgnoreRealDirEntry, IgnoreRealDirWalker, IgnoreRealDirWalkerConfig,
-        IgnoreRealWalkDirIntoIter,
+        IgnoreRealWalkDirIntoIter, ignore_real_dir_walker,
     },
 };
 
@@ -34,22 +34,30 @@ impl RealGlobDirWalker {
 
 impl RealGlobDirWalkerBuilder {}
 
-fn pathbuf_to_glob(base_dir: &Path, path: &PathBuf) -> globset::Glob {
-    let p = std::path::absolute(base_dir.join(path))
-        .expect("failed to resolve path");
-    let str = p.to_string_lossy();
+fn pathbuf_to_glob(path: &Path) -> globset::Glob {
+    let str = path.to_string_lossy();
 
     globset::Glob::new(&str).expect("failed to create glob")
 }
 
+fn join_abs(base: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    }
+}
+
 impl DirWalkerBase for RealGlobDirWalker {
     type DirEntry = IgnoreRealDirEntry;
-
-    type Error = ignore::Error;
-
+    type Error = ignore_real_dir_walker::IgnoreRealDirWalkerError;
+    type IterError = ignore::Error;
     type WalkDir = RealGlobDirWalkDir;
 
-    fn base_walk_dir(&self, path: &std::path::Path) -> Self::WalkDir {
+    fn base_walk_dir(
+        &self,
+        paths: &[&std::path::Path],
+    ) -> Result<Self::WalkDir, Self::Error> {
         let dir_walker =
             IgnoreRealDirWalker::new_with_config(IgnoreRealDirWalkerConfig {
                 standard_filters: self.standard_filters,
@@ -59,24 +67,38 @@ impl DirWalkerBase for RealGlobDirWalker {
         let mut include_globset = globset::GlobSetBuilder::new();
 
         for p in &self.include {
-            include_globset.add(pathbuf_to_glob(path, p));
+            if p.is_absolute() {
+                include_globset.add(pathbuf_to_glob(p));
+            } else {
+                for base in paths {
+                    let p = join_abs(base, p);
+                    include_globset.add(pathbuf_to_glob(&p));
+                }
+            }
         }
 
         let mut exclude_globset = globset::GlobSetBuilder::new();
 
         for p in &self.exclude {
-            exclude_globset.add(pathbuf_to_glob(path, p));
+            if p.is_absolute() {
+                exclude_globset.add(pathbuf_to_glob(p));
+            } else {
+                for base in paths {
+                    let p = join_abs(base, p);
+                    exclude_globset.add(pathbuf_to_glob(&p));
+                }
+            }
         }
 
-        RealGlobDirWalkDir {
-            base: dir_walker.base_walk_dir(path).into_iter(),
+        Ok(RealGlobDirWalkDir {
+            base: dir_walker.base_walk_dir(paths)?.into_iter(),
             include_globset: include_globset
                 .build()
                 .expect("failed to build globset"),
             exclude_globset: exclude_globset
                 .build()
                 .expect("failed to build globset"),
-        }
+        })
     }
 }
 
