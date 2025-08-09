@@ -328,3 +328,48 @@ pub trait FsCanonicalizeAsync: BaseFsCanonicalizeAsync {
 }
 
 impl<T: BaseFsCanonicalizeAsync> FsCanonicalizeAsync for T {}
+
+#[async_trait]
+pub trait BaseFsRemoveDirAllAsync {
+    #[doc(hidden)]
+    async fn base_fs_remove_dir_all_async(&self, path: &Path)
+    -> io::Result<()>;
+}
+
+#[async_trait]
+
+pub trait FsRemoveDirAllAsync: BaseFsRemoveDirAllAsync {
+    async fn fs_remove_dir_all_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_remove_dir_all_async(path.as_ref()).await
+    }
+}
+
+#[async_trait]
+impl<T: BaseFsRemoveDirAllAsync> FsRemoveDirAllAsync for T {}
+
+#[async_trait]
+pub trait BaseFsHardLinkAsync {
+    #[doc(hidden)]
+    async fn base_fs_hard_link_async(
+        &self,
+        src: &Path,
+        dst: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsHardLinkAsync: BaseFsHardLinkAsync {
+    async fn fs_hard_link_async(
+        &self,
+        src: impl AsRef<Path> + Send,
+        dst: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_hard_link_async(src.as_ref(), dst.as_ref())
+            .await
+    }
+}
+
+impl<T: BaseFsHardLinkAsync> FsHardLinkAsync for T {}

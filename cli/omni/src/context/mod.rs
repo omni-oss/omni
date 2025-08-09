@@ -251,12 +251,14 @@ impl<TSys: ContextSys> Context<TSys> {
                 loaded.insert(project.file.clone());
 
                 for dep in &mut project.extends {
+                    use omni_types::Root;
+
                     if dep.is_rooted() {
                         // WORKSPACE_DIR_VAR.to_string() => self.root_dir.to_string_lossy().to_string(),
                         // PROJECT_DIR_VAR.to_string() => project.path.clone(),
                         let roots = enum_map! {
-                            omni_types::Root::Workspace => self.root_dir.as_ref(),
-                            omni_types::Root::Project => project_dir,
+                            Root::Workspace => self.root_dir.as_ref(),
+                            Root::Project => project_dir,
                         };
                         dep.resolve_in_place(roots);
                     }
@@ -290,12 +292,14 @@ impl<TSys: ContextSys> Context<TSys> {
             .map(|p| p as &Path)
             .collect::<HashSet<_>>();
 
+        let workspace_dir = self.root_dir.to_string_lossy().to_string();
         for config in project_configs.into_iter().filter(|config| {
             project_paths
                 .contains(config.file.path().expect("path should be resolved"))
         }) {
             let dir = config.dir.path().expect("path should be resolved");
             let mut extras = maps::map![
+                "WORKSPACE_DIR".to_string() => workspace_dir.clone(),
                 "PROJECT_NAME".to_string() => config.name.to_string(),
                 "PROJECT_DIR".to_string() => dir.to_string_lossy().to_string(),
             ];

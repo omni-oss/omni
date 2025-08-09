@@ -1,0 +1,2 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: base

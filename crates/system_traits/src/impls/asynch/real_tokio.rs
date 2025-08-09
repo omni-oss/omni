@@ -4,8 +4,9 @@ use async_trait::async_trait;
 
 use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsCanonicalizeAsync, BaseFsCreateDirAsync,
-    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsWriteAsync, EnvCurrentDirAsync,
-    auto_impl, impls::RealFsMetadata, impls::RealSys,
+    BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
+    BaseFsRemoveDirAllAsync, BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
+    impls::{RealFsMetadata, RealSys},
 };
 
 async fn spawn_blocking<F, R>(f: F) -> R
@@ -124,5 +125,26 @@ impl BaseFsMetadataAsync for RealSys {
         tokio::fs::symlink_metadata(path)
             .await
             .map(to_real_fs_metadata)
+    }
+}
+
+#[async_trait]
+impl BaseFsRemoveDirAllAsync for RealSys {
+    async fn base_fs_remove_dir_all_async(
+        &self,
+        path: &std::path::Path,
+    ) -> io::Result<()> {
+        tokio::fs::remove_dir_all(path).await
+    }
+}
+
+#[async_trait]
+impl BaseFsHardLinkAsync for RealSys {
+    async fn base_fs_hard_link_async(
+        &self,
+        src: &std::path::Path,
+        dst: &std::path::Path,
+    ) -> io::Result<()> {
+        tokio::fs::hard_link(src, dst).await
     }
 }
