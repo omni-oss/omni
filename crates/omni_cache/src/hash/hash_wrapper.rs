@@ -63,6 +63,10 @@ impl<THasher: Hasher> Hash<THasher> {
     pub fn as_inner(&self) -> &THasher::Hash {
         &self.bytes
     }
+    #[inline(always)]
+    pub fn to_inner(self) -> THasher::Hash {
+        self.bytes
+    }
 
     #[inline(always)]
     pub fn combine_in_place<T: AsRef<[u8]>>(&mut self, to_hash: T) {

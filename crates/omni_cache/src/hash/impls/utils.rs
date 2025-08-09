@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::Path, time::UNIX_EPOCH};
+use std::{
+    collections::HashMap, os::unix::ffi::OsStrExt as _, path::Path,
+    time::UNIX_EPOCH,
+};
 
 use futures::future::try_join_all;
 use rs_merkle::MerkleTree;
@@ -9,7 +12,10 @@ use system_traits::{
     FsWriteAsync, auto_impl,
 };
 
-use crate::hash::{Compat, Hasher};
+use crate::{
+    hash::{Compat, Hash, Hasher},
+    utils::{project_dirname, relpath},
+};
 
 #[auto_impl]
 pub trait UtilSys:
@@ -21,11 +27,6 @@ pub trait UtilSys:
     + Clone
     + FsMetadataAsync
 {
-}
-
-fn relpath<'a>(path: &'a Path, base: &Path) -> &'a Path {
-    path.strip_prefix(base)
-        .expect("path is not a child of base")
 }
 
 async fn mtime(
@@ -60,9 +61,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
     index_dir: &Path,
     sys: impl UtilSys,
 ) -> Result<MerkleTree<Compat<THasher>>, BuildMerkleTreeError> {
-    let project_name_hash = THasher::hash(project_name.as_bytes());
-    let project_dir_name =
-        bs58::encode(project_name_hash.as_ref()).into_string();
+    let project_dir_name = project_dirname(project_name);
     let project_dir_path = index_dir.join(project_dir_name);
 
     let mut file_entries_by_path = HashMap::<&Path, FileEntry<THasher>>::new();
@@ -104,14 +103,16 @@ pub async fn build_merkle_tree<THasher: Hasher>(
             {
                 entry.clone()
             } else {
-                let hash = omni_hasher::hash_file_in_path_async::<THasher>(
-                    path,
-                    sys.clone(),
-                )
+                let path_cache = THasher::hash(path.as_os_str().as_bytes());
+                let content_hash = omni_hasher::hash_file_in_path_async::<
+                    THasher,
+                >(path, sys.clone())
                 .await?;
+                let mut hash = Hash::<THasher>::new(path_cache);
+                hash.combine_in_place(content_hash);
 
                 FileEntry {
-                    hash,
+                    hash: hash.to_inner(),
                     mtime,
                     path: rel,
                 }
@@ -132,9 +133,9 @@ pub async fn build_merkle_tree<THasher: Hasher>(
         sys.fs_write_async(&partial_hashes_file, &bytes).await?;
     }
 
-    let tree = MerkleTree::from_leaves(
-        &new_hashes.iter().map(|h| h.hash).collect::<Vec<_>>(),
-    );
+    let mut tree = MerkleTree::new();
+
+    tree.append(&mut new_hashes.iter().map(|h| h.hash).collect::<Vec<_>>());
 
     Ok(tree)
 }

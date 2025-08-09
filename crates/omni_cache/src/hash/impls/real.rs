@@ -1,22 +1,23 @@
-use std::path::{self, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use super::{super::Hash, utils};
+use super::utils;
 use derive_builder::Builder;
 use derive_new::new;
 use dir_walker::{DirEntry, DirWalker, impls::RealGlobDirWalker};
+use rs_merkle::MerkleTree;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{FsCanonicalize, FsMetadataAsync, impls::RealSys};
 
-use crate::hash::{Hasher, ProjectDirHasher};
+use crate::hash::{Compat, Hasher, ProjectDirHasher};
 
-#[derive(Clone, Debug, Default, new, Builder)]
+#[derive(Clone, Debug, new, Builder)]
 pub struct RealDirHasher {
     #[new(default)]
     #[builder(setter(skip), default)]
     sys: RealSys,
     standard_ignore_files: bool,
     custom_ignore_files: Vec<String>,
-    index_dir: PathBuf,
+    dir: PathBuf,
 }
 
 impl RealDirHasher {
@@ -29,26 +30,16 @@ impl RealDirHasher {
 impl ProjectDirHasher for RealDirHasher {
     type Error = RealDirHasherError;
 
-    async fn hash<THasher: Hasher>(
+    async fn hash_tree<THasher: Hasher>(
         &self,
         project_name: &str,
         project_dir: &Path,
-        paths: &[&Path],
-    ) -> Result<Hash<THasher>, Self::Error> {
-        let mut path_globs = vec![];
-
-        for p in paths.iter() {
-            let p = path::absolute(project_dir.join(p))?
-                .to_string_lossy()
-                .to_string();
-
-            path_globs.push(p);
-        }
-
+        files: &[&Path],
+    ) -> Result<MerkleTree<Compat<THasher>>, Self::Error> {
         let dir_walker = RealGlobDirWalker::builder()
             .standard_filters(self.standard_ignore_files)
             .custom_ignore_filenames(self.custom_ignore_files.clone())
-            .include(path_globs.iter().map(|p| p as &str).collect::<Vec<_>>())?
+            .include(files.iter().map(|p| p.to_path_buf()).collect::<Vec<_>>())
             .build()?;
 
         let mut paths = vec![];
@@ -69,14 +60,12 @@ impl ProjectDirHasher for RealDirHasher {
             project_name,
             project_dir,
             &paths,
-            &self.index_dir,
+            &self.dir,
             self.sys.clone(),
         )
         .await?;
 
-        let hash = tree.root().ok_or_else(|| eyre::eyre!("no root"))?;
-
-        Ok(Hash::<THasher>::new(hash))
+        Ok(tree)
     }
 }
 
@@ -136,7 +125,7 @@ mod tests {
         RealSys
     }
 
-    async fn create_test_fixture() -> tempfile::TempDir {
+    async fn test_fixture() -> tempfile::TempDir {
         let sys = sys();
         let dir = tempdir().expect("failed to create temp dir");
 
@@ -167,21 +156,21 @@ mod tests {
         dir
     }
 
-    fn create_dir_hasher(root: &Path) -> RealDirHasher {
+    fn dir_hasher(root: &Path) -> RealDirHasher {
         RealDirHasher::builder()
             .custom_ignore_files(vec![".omniignore".to_string()])
             .standard_ignore_files(true)
-            .index_dir(root.join(".omni/index"))
+            .dir(root.join(".omni/index"))
             .build()
             .expect("failed to build hasher")
     }
 
     #[tokio::test]
     async fn test_hash_unchanged() {
-        let dir = create_test_fixture().await;
+        let dir = test_fixture().await;
         let tempdir = dir.path();
 
-        let hasher = create_dir_hasher(tempdir);
+        let hasher = dir_hasher(tempdir);
 
         let hash1 = hasher
             .hash::<Blake3Hasher>(
@@ -206,10 +195,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_hash_changed() {
-        let dir = create_test_fixture().await;
+        let dir = test_fixture().await;
         let tempdir = dir.path();
 
-        let hasher = create_dir_hasher(tempdir);
+        let hasher = dir_hasher(tempdir);
         let sys = sys();
 
         let hash1 = hasher
@@ -222,9 +211,57 @@ mod tests {
             .expect("failed to hash");
         let a_path = tempdir.join("./project/src/a-test.txt");
 
+        // modify the file
         sys.fs_write_async(&a_path, "changed file content")
             .await
             .expect("failed to write test file");
+
+        // the hash should be different
+        let hash2 = hasher
+            .hash::<Blake3Hasher>(
+                "project",
+                &tempdir.join("./project"),
+                &[Path::new("./src/**/*.txt")],
+            )
+            .await
+            .expect("failed to hash");
+
+        // revert the file content
+        sys.fs_write_async(
+            &a_path,
+            include_str!("../../../test_fixtures/test.txt"),
+        )
+        .await
+        .expect("failed to write test file");
+
+        // the hash should be the same as hash1
+        let hash3 = hasher
+            .hash::<Blake3Hasher>(
+                "project",
+                &tempdir.join("./project"),
+                &[Path::new("./src/**/*.txt")],
+            )
+            .await
+            .expect("failed to hash");
+
+        assert_ne!(hash1, hash2, "hashes should be different");
+        assert_eq!(hash1, hash3, "hashes should be equal");
+    }
+
+    #[tokio::test]
+    async fn test_renaming_a_file_should_invalidate_cache() {
+        let dir = test_fixture().await;
+        let tempdir = dir.path();
+        let hasher = dir_hasher(tempdir);
+
+        let hash1 = hasher
+            .hash::<Blake3Hasher>(
+                "project",
+                &tempdir.join("./project"),
+                &[Path::new("./src/**/*.txt")],
+            )
+            .await
+            .expect("failed to hash");
 
         let hash2 = hasher
             .hash::<Blake3Hasher>(
@@ -235,6 +272,25 @@ mod tests {
             .await
             .expect("failed to hash");
 
-        assert_ne!(hash1, hash2, "hashes should be different");
+        let a_path = tempdir.join("./project/src/a-test.txt");
+        let a_path_renamed = tempdir.join("./project/src/a-test-renamed.txt");
+
+        // rename the project to simulate a move operation
+        tokio::fs::rename(&a_path, &a_path_renamed)
+            .await
+            .expect("failed to rename");
+
+        // the hash should be the same as hash1
+        let hash3 = hasher
+            .hash::<Blake3Hasher>(
+                "project",
+                &tempdir.join("./project"),
+                &[Path::new("./src/**/*.txt")],
+            )
+            .await
+            .expect("failed to hash");
+
+        assert_eq!(hash1, hash2, "hashes should be equal");
+        assert_ne!(hash1, hash3, "hashes should be different");
     }
 }

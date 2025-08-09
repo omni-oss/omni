@@ -16,8 +16,13 @@ use serde::{Deserialize, Serialize};
     Default,
 )]
 pub struct CacheKeyConfiguration {
+    #[serde(default = "super::utils::default_true")]
+    #[merge(strategy = config_utils::replace)]
+    pub defaults: bool,
+
     #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
     pub env: ListConfig<Replace<String>>,
+
     #[serde(default = "super::utils::list_config_default::<OmniPath>")]
     pub files: ListConfig<OmniPath>,
 }

@@ -28,6 +28,9 @@ omni_hasher = { workspace = true }
 futures = { workspace = true }
 rs_merkle = { workspace = true }
 bs58 = { workspace = true }
+url = { workspace = true }
+maps = { workspace = true }
+yoke = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

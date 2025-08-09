@@ -1,6 +1,7 @@
+use std::path::{Path, PathBuf};
+
 use derive_builder::Builder;
 pub use globset::Error as GlobsetError;
-use globset::Glob;
 pub use ignore::Error as IgnoreError;
 
 use crate::{
@@ -19,10 +20,10 @@ pub struct RealGlobDirWalker {
     standard_filters: bool,
     #[builder(default)]
     custom_ignore_filenames: Vec<String>,
-    #[builder(setter(custom), default)]
-    include: globset::GlobSet,
-    #[builder(setter(custom), default)]
-    exclude: globset::GlobSet,
+    #[builder(setter(into), default)]
+    include: Vec<PathBuf>,
+    #[builder(setter(into), default)]
+    exclude: Vec<PathBuf>,
 }
 
 impl RealGlobDirWalker {
@@ -31,36 +32,14 @@ impl RealGlobDirWalker {
     }
 }
 
-impl RealGlobDirWalkerBuilder {
-    pub fn include<'s, 'a>(
-        &'s mut self,
-        globs: impl AsRef<[&'a str]>,
-    ) -> Result<&'s mut Self, globset::Error> {
-        let mut set = globset::GlobSetBuilder::new();
+impl RealGlobDirWalkerBuilder {}
 
-        for glob in globs.as_ref() {
-            set.add(Glob::new(glob)?);
-        }
+fn pathbuf_to_glob(base_dir: &Path, path: &PathBuf) -> globset::Glob {
+    let p = std::path::absolute(base_dir.join(path))
+        .expect("failed to resolve path");
+    let str = p.to_string_lossy();
 
-        self.include = Some(set.build()?);
-
-        Ok(self)
-    }
-
-    pub fn exclude<'s, 'a>(
-        &'s mut self,
-        globs: impl AsRef<[&'a str]>,
-    ) -> Result<&'s mut Self, globset::Error> {
-        let mut set = globset::GlobSetBuilder::new();
-
-        for glob in globs.as_ref() {
-            set.add(Glob::new(glob)?);
-        }
-
-        self.exclude = Some(set.build()?);
-
-        Ok(self)
-    }
+    globset::Glob::new(&str).expect("failed to create glob")
 }
 
 impl DirWalkerBase for RealGlobDirWalker {
@@ -77,10 +56,26 @@ impl DirWalkerBase for RealGlobDirWalker {
                 custom_ignore_filenames: self.custom_ignore_filenames.clone(),
             });
 
+        let mut include_globset = globset::GlobSetBuilder::new();
+
+        for p in &self.include {
+            include_globset.add(pathbuf_to_glob(path, p));
+        }
+
+        let mut exclude_globset = globset::GlobSetBuilder::new();
+
+        for p in &self.exclude {
+            exclude_globset.add(pathbuf_to_glob(path, p));
+        }
+
         RealGlobDirWalkDir {
             base: dir_walker.base_walk_dir(path).into_iter(),
-            include_globset: self.include.clone(),
-            exclude_globset: self.exclude.clone(),
+            include_globset: include_globset
+                .build()
+                .expect("failed to build globset"),
+            exclude_globset: exclude_globset
+                .build()
+                .expect("failed to build globset"),
         }
     }
 }
