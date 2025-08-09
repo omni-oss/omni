@@ -755,7 +755,10 @@ mod tests {
         let dir = temp.path();
         let cache = cache_store(dir);
         let project = project_with_mut("project1", dir, |p| {
-            p.output_files.push(OmniPath::new_ws_rooted("rootfile.txt"));
+            p.output_files = vec![
+                OmniPath::new_ws_rooted("rootfile.txt"),
+                OmniPath::new_project_rooted("dist/**/*.js"),
+            ];
         });
 
         // Add a file in the workspace root
