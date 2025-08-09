@@ -19,6 +19,7 @@ use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
     enum_map::Enum,
     Display,
 )]
+#[strum(serialize_all = "kebab-case")]
 pub enum Root {
     Workspace,
     Project,
@@ -112,7 +113,10 @@ impl OmniPath {
         base: &EnumMap<Root, &StdPath>,
     ) -> Cow<'a, StdPath> {
         if let Some(root) = self.root {
-            Cow::Owned(base[root].join(&self.path))
+            Cow::Owned(
+                std::path::absolute(base[root].join(&self.path))
+                    .expect("it should be absolute"),
+            )
         } else {
             Cow::Borrowed(&self.path)
         }

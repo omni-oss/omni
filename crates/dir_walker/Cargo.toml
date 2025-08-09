@@ -13,16 +13,15 @@ path = "src/lib.rs"
 
 [features]
 default = ["full"]
-full = ["ignore", "recursive", "memory", "glob"]
+full = ["ignore", "memory", "glob"]
 ignore = ["dep:ignore"]
-recursive = ["dep:walkdir"]
 memory = []
 glob = ["ignore", "dep:globset"]
 
 [dependencies]
 ignore = { workspace = true, optional = true }
-walkdir = { workspace = true, optional = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
 derive_builder = { workspace = true }
 globset = { workspace = true, optional = true }
+strum = { workspace = true }

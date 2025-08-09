@@ -5,15 +5,24 @@ use crate::DirEntry;
 pub trait DirWalkerBase {
     type DirEntry: DirEntry;
     type Error: Error;
-    type WalkDir: IntoIterator<Item = Result<Self::DirEntry, Self::Error>>;
+    type IterError: Error;
+    type WalkDir: IntoIterator<Item = Result<Self::DirEntry, Self::IterError>>;
 
-    fn base_walk_dir(&self, path: &Path) -> Self::WalkDir;
+    fn base_walk_dir(
+        &self,
+        paths: &[&Path],
+    ) -> Result<Self::WalkDir, Self::Error>;
 }
 
 pub trait DirWalker: DirWalkerBase {
     #[inline(always)]
-    fn walk_dir(&self, path: impl AsRef<Path>) -> Self::WalkDir {
-        self.base_walk_dir(path.as_ref())
+    fn walk_dir(
+        &self,
+        paths: &[impl AsRef<Path>],
+    ) -> Result<Self::WalkDir, Self::Error> {
+        self.base_walk_dir(
+            &paths.iter().map(|p| p.as_ref()).collect::<Vec<_>>(),
+        )
     }
 }
 

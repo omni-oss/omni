@@ -1,3 +1,7 @@
+use std::result::Result;
+
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
+
 use crate::{DirEntry, DirWalkerBase};
 
 #[derive(Clone, Debug)]
@@ -42,17 +46,30 @@ impl IgnoreRealDirWalker {
 }
 
 impl DirWalkerBase for IgnoreRealDirWalker {
-    type Error = ignore::Error;
+    type Error = IgnoreRealDirWalkerError;
+    type IterError = ignore::Error;
     type DirEntry = IgnoreRealDirEntry;
     type WalkDir = IgnoreRealWalkDir;
 
-    fn base_walk_dir(&self, path: &std::path::Path) -> Self::WalkDir {
-        let mut builder = ignore::WalkBuilder::new(path);
+    fn base_walk_dir(
+        &self,
+        paths: &[&std::path::Path],
+    ) -> Result<IgnoreRealWalkDir, Self::Error> {
+        if paths.is_empty() {
+            return Err(IgnoreRealDirWalkerErrorInner::PathCantBeEmpty)?;
+        }
+
+        let mut builder = ignore::WalkBuilder::new(paths[0]);
+
+        for p in &paths[1..] {
+            builder.add(p);
+        }
+
         let builder = self.config.apply(&mut builder);
 
         let walk = builder.build();
 
-        IgnoreRealWalkDir { walk }
+        Ok(IgnoreRealWalkDir { walk })
     }
 }
 
@@ -116,4 +133,29 @@ impl Iterator for IgnoreRealWalkDirIntoIter {
     fn next(&mut self) -> Option<Self::Item> {
         self.walk.next().map(|e| e.map(IgnoreRealDirEntry))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{inner}")]
+pub struct IgnoreRealDirWalkerError {
+    kind: IgnoreRealDirWalkerErrorKind,
+    #[source]
+    inner: IgnoreRealDirWalkerErrorInner,
+}
+
+impl<T: Into<IgnoreRealDirWalkerErrorInner>> From<T>
+    for IgnoreRealDirWalkerError
+{
+    fn from(inner: T) -> Self {
+        let inner = inner.into();
+        let kind = inner.discriminant();
+        Self { inner, kind }
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(IgnoreRealDirWalkerErrorKind), vis(pub))]
+enum IgnoreRealDirWalkerErrorInner {
+    #[error("path can't be empty")]
+    PathCantBeEmpty,
 }
