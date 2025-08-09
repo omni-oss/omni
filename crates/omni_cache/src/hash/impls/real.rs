@@ -4,11 +4,15 @@ use super::utils;
 use derive_builder::Builder;
 use derive_new::new;
 use dir_walker::{DirEntry, DirWalker, impls::RealGlobDirWalker};
+use omni_types::{OmniPath, Root, enum_map};
 use rs_merkle::MerkleTree;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use system_traits::{FsCanonicalize, FsMetadataAsync, impls::RealSys};
+use system_traits::{FsCanonicalizeAsync, FsMetadataAsync, impls::RealSys};
 
-use crate::hash::{Compat, Hasher, ProjectDirHasher};
+use crate::{
+    hash::{Compat, Hasher, ProjectDirHasher},
+    utils::relpath,
+};
 
 #[derive(Clone, Debug, new, Builder)]
 pub struct RealDirHasher {
@@ -17,7 +21,10 @@ pub struct RealDirHasher {
     sys: RealSys,
     standard_ignore_files: bool,
     custom_ignore_files: Vec<String>,
+    #[builder(setter(into))]
     dir: PathBuf,
+    #[builder(setter(into))]
+    workspace_root_dir: PathBuf,
 }
 
 impl RealDirHasher {
@@ -34,20 +41,42 @@ impl ProjectDirHasher for RealDirHasher {
         &self,
         project_name: &str,
         project_dir: &Path,
-        files: &[&Path],
+        files: &[OmniPath],
     ) -> Result<MerkleTree<Compat<THasher>>, Self::Error> {
+        let proj_dir = self.sys.fs_canonicalize_async(project_dir).await?;
+        let ws_dir = self
+            .sys
+            .fs_canonicalize_async(&self.workspace_root_dir)
+            .await?;
+        let bases = enum_map! {
+            Root::Workspace => ws_dir.as_path(),
+            Root::Project => proj_dir.as_path(),
+        };
+
         let dir_walker = RealGlobDirWalker::builder()
             .standard_filters(self.standard_ignore_files)
             .custom_ignore_filenames(self.custom_ignore_files.clone())
-            .include(files.iter().map(|p| p.to_path_buf()).collect::<Vec<_>>())
+            .include(
+                files
+                    .iter()
+                    .map(|p| p.resolve(&bases).to_path_buf())
+                    .collect::<Vec<_>>(),
+            )
             .build()?;
 
         let mut paths = vec![];
-        let base_dir = self.sys.fs_canonicalize(project_dir)?;
-        for p in dir_walker.walk_dir(&base_dir) {
-            let p = self.sys.fs_canonicalize(base_dir.join(p?.path()))?;
+        for p in dir_walker.walk_dir(&proj_dir) {
+            let p = self.sys.fs_canonicalize_async(p?.path()).await?;
 
             if self.sys.fs_is_file_async(&p).await? {
+                let p = if p.starts_with(&proj_dir) {
+                    OmniPath::new_project_rooted(relpath(&p, &proj_dir))
+                } else if p.starts_with(&ws_dir) {
+                    OmniPath::new_ws_rooted(relpath(&p, &ws_dir))
+                } else {
+                    OmniPath::new(p)
+                };
+
                 paths.push(p);
             }
         }
@@ -58,7 +87,7 @@ impl ProjectDirHasher for RealDirHasher {
         // Build a merkle tree of the paths
         let tree = utils::build_merkle_tree::<THasher>(
             project_name,
-            project_dir,
+            &bases,
             &paths,
             &self.dir,
             self.sys.clone(),
@@ -161,6 +190,7 @@ mod tests {
             .custom_ignore_files(vec![".omniignore".to_string()])
             .standard_ignore_files(true)
             .dir(root.join(".omni/index"))
+            .workspace_root_dir(root)
             .build()
             .expect("failed to build hasher")
     }
@@ -176,7 +206,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -185,7 +215,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -205,7 +235,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -221,7 +251,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -239,7 +269,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -258,7 +288,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -267,7 +297,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");
@@ -285,7 +315,7 @@ mod tests {
             .hash::<Blake3Hasher>(
                 "project",
                 &tempdir.join("./project"),
-                &[Path::new("./src/**/*.txt")],
+                &[OmniPath::new("./src/**/*.txt")],
             )
             .await
             .expect("failed to hash");

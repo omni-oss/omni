@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use derive_new::new;
+use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -43,5 +44,5 @@ pub struct CachedFileOutput {
 
     /// Canonical path to the original file
     #[new(into)]
-    pub original_path: PathBuf,
+    pub original_path: OmniPath,
 }

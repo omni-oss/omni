@@ -1,18 +1,30 @@
 use std::{
     borrow::Cow,
+    fmt::{Debug as _, Display},
     path::{Path as StdPath, PathBuf},
 };
 
 use enum_map::EnumMap;
-use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, enum_map::Enum,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    enum_map::Enum,
+    Display,
 )]
 pub enum Root {
     Workspace,
     Project,
 }
+
+pub type RootMap<'a> = EnumMap<Root, &'a StdPath>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub struct OmniPath {
@@ -30,6 +42,16 @@ impl schemars::JsonSchema for OmniPath {
         generator: &mut schemars::SchemaGenerator,
     ) -> schemars::Schema {
         String::json_schema(generator)
+    }
+}
+
+impl Display for OmniPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(root) = self.root {
+            write!(f, "@{}/{}", root, self.path.display())
+        } else {
+            self.path.fmt(f)
+        }
     }
 }
 
@@ -80,10 +102,14 @@ impl OmniPath {
         }
     }
 
+    pub fn unresolved_path(&self) -> &StdPath {
+        &self.path
+    }
+
     /// Resolves the path relative to the given base
     pub fn resolve<'a>(
         &'a self,
-        base: EnumMap<Root, &StdPath>,
+        base: &EnumMap<Root, &StdPath>,
     ) -> Cow<'a, StdPath> {
         if let Some(root) = self.root {
             Cow::Owned(base[root].join(&self.path))
@@ -92,7 +118,7 @@ impl OmniPath {
         }
     }
 
-    pub fn resolve_in_place(&mut self, base: EnumMap<Root, &StdPath>) {
+    pub fn resolve_in_place(&mut self, base: &EnumMap<Root, &StdPath>) {
         if let Some(root) = self.root {
             *self = Self {
                 path: base[root].join(&self.path),

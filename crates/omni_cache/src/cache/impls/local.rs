@@ -1,13 +1,11 @@
-use std::{
-    os::unix::ffi::OsStrExt,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use dir_walker::{
     DirEntry, DirWalker,
     impls::{RealGlobDirWalker, RealGlobDirWalkerBuilderError},
 };
 use omni_hasher::{Hasher, impls::Blake3Hasher};
+use omni_types::{OmniPath, Root, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
     FsCanonicalizeAsync as _, FsCreateDirAllAsync as _, FsHardLinkAsync as _,
@@ -29,20 +27,27 @@ pub struct LocalTaskOutputCacheStore {
     sys: RealSys,
     hasher: RealDirHasher,
     cache_dir: PathBuf,
+    ws_root_dir: PathBuf,
 }
 
 impl LocalTaskOutputCacheStore {
-    pub fn new(cache_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        cache_dir: impl Into<PathBuf>,
+        ws_root_dir: impl Into<PathBuf>,
+    ) -> Self {
         let dir = cache_dir.into();
+        let ws_root_dir = ws_root_dir.into();
         Self {
             sys: RealSys,
             hasher: RealDirHasher::builder()
                 .standard_ignore_files(true)
                 .custom_ignore_files(vec![".omniignore".to_string()])
+                .workspace_root_dir(ws_root_dir.clone())
                 .dir(dir.clone())
                 .build()
                 .expect("failed to build hasher"),
             cache_dir: dir,
+            ws_root_dir,
         }
     }
 }
@@ -129,13 +134,18 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
             logs_path_abs = Some(log_path);
         }
 
+        let bases = enum_map! {
+            Root::Workspace => &self.ws_root_dir,
+            Root::Project => project.dir,
+        };
+
         let dirwalker = RealGlobDirWalker::builder()
             .custom_ignore_filenames(vec![".omniignore".to_string()])
             .include(
                 project
                     .output_files
                     .iter()
-                    .map(|p| p.to_path_buf())
+                    .map(|p| p.resolve(&bases).to_path_buf())
                     .collect::<Vec<_>>(),
             )
             .build()?;
@@ -145,10 +155,25 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
         for res in dirwalker.walk_dir(project.dir) {
             let res = res?;
             let original_file_abs_path = res.path();
-            let original_rel_path =
-                relpath(original_file_abs_path, project.dir);
+            let original_omni_path = if original_file_abs_path
+                .starts_with(project.dir)
+            {
+                OmniPath::new_project_rooted(relpath(
+                    original_file_abs_path,
+                    project.dir,
+                ))
+            } else if original_file_abs_path.starts_with(&self.ws_root_dir) {
+                OmniPath::new_ws_rooted(relpath(
+                    original_file_abs_path,
+                    &self.ws_root_dir,
+                ))
+            } else {
+                OmniPath::new(original_file_abs_path)
+            };
+
+            relpath(original_file_abs_path, project.dir);
             let encoded =
-                bs58::encode(original_rel_path.as_os_str().as_bytes())
+                bs58::encode(original_omni_path.to_string().as_bytes())
                     .into_string();
             let cache_abs_path =
                 cache_output_dir.join(format!("{encoded}.cache"));
@@ -161,7 +186,7 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
 
             cached_files.push(CachedFileOutput {
                 cached_path: cached_rel_path.to_path_buf(),
-                original_path: original_rel_path.to_path_buf(),
+                original_path: original_omni_path,
             });
         }
         let metadata_path = cache_output_dir.join(CACHE_OUTPUT_METADATA_FILE);
@@ -187,7 +212,6 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
         let output_dir = self.get_output_dir(project).await?;
         let file = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
-        let proj_abs = |p: &Path| std::path::absolute(project.dir.join(p));
         let cache_abs = |p: &Path| std::path::absolute(output_dir.join(p));
 
         if self.sys.fs_exists_async(&file).await? {
@@ -217,14 +241,6 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
                 }
 
                 file.cached_path = self.sys.fs_canonicalize_async(c).await?;
-
-                let o = proj_abs(&file.original_path)?;
-
-                file.original_path = if !self.sys.fs_exists_async(&o).await? {
-                    o
-                } else {
-                    self.sys.fs_canonicalize_async(o).await?
-                };
             }
 
             Ok(Some(cached_output))
@@ -358,8 +374,8 @@ mod tests {
     struct ProjectInfoStatic {
         name: String,
         dir: PathBuf,
-        files: Vec<&'static Path>,
-        output_files: Vec<&'static Path>,
+        files: Vec<OmniPath>,
+        output_files: Vec<OmniPath>,
         env_vars: maps::Map<String, String>,
         env_cache_keys: Vec<String>,
     }
@@ -385,8 +401,8 @@ mod tests {
         let project_dir = root_dir.join(name);
         let mut owned = ProjectInfoStatic {
             name: name.to_string(),
-            files: vec![Path::new("src/**/*.txt")],
-            output_files: vec![Path::new("dist/**/*.js")],
+            files: vec![OmniPath::new("src/**/*.txt")],
+            output_files: vec![OmniPath::new("dist/**/*.js")],
             dir: project_dir,
             env_vars: env_vars(),
             env_cache_keys: env_cache_keys(),
@@ -407,7 +423,7 @@ mod tests {
     }
 
     fn cache_store(root: &Path) -> LocalTaskOutputCacheStore {
-        LocalTaskOutputCacheStore::new(root.join(".omni/cache"))
+        LocalTaskOutputCacheStore::new(root.join(".omni/cache"), root)
     }
 
     async fn read_string(path: &Path) -> String {
@@ -653,7 +669,7 @@ mod tests {
                 JS_CONTENT.as_bytes(),
                 "file content should match {} and {}",
                 file.cached_path.display(),
-                file.original_path.display()
+                file.original_path
             );
         }
     }
