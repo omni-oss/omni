@@ -6,3 +6,4 @@ extends:
 
 dependencies:
   - omni_hasher
+  - omni_types

@@ -31,6 +31,7 @@ bs58 = { workspace = true }
 url = { workspace = true }
 maps = { workspace = true }
 yoke = { workspace = true }
+omni_types = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1905,6 +1905,7 @@ dependencies = [
  "maps",
  "mockall",
  "omni_hasher",
+ "omni_types",
  "rs_merkle",
  "serde",
  "strum 0.27.2",

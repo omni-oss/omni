@@ -4,6 +4,7 @@ use crate::hash::Compat;
 
 use super::Hash;
 pub use omni_hasher::Hasher;
+use omni_types::OmniPath;
 pub use rs_merkle::MerkleTree as HashTree;
 
 #[async_trait::async_trait]
@@ -14,7 +15,7 @@ pub trait ProjectDirHasher {
         &self,
         project_name: &str,
         project_dir: &Path,
-        files: &[&Path],
+        files: &[OmniPath],
     ) -> Result<Hash<THasher>, Self::Error> {
         let mut tree = self
             .hash_tree::<THasher>(project_name, project_dir, files)
@@ -29,6 +30,6 @@ pub trait ProjectDirHasher {
         &self,
         project_name: &str,
         project_dir: &Path,
-        files: &[&Path],
+        files: &[OmniPath],
     ) -> Result<HashTree<Compat<THasher>>, Self::Error>;
 }
