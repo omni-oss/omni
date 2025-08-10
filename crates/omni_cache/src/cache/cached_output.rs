@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
     new,
     Default,
 )]
+#[allow(clippy::too_many_arguments)]
 pub struct CachedTaskExecution {
     #[new(into)]
     pub project_name: String,
@@ -37,6 +38,12 @@ pub struct CachedTaskExecution {
 
     #[new(into)]
     pub files: Vec<CachedFileOutput>,
+
+    #[new(into)]
+    pub exit_code: i32,
+
+    #[new(into)]
+    pub execution_time: std::time::Duration,
 }
 
 #[derive(
