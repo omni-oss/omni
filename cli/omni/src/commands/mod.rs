@@ -99,8 +99,27 @@ pub struct CliArgs {
     #[arg(long = "env", help = "The environment to use", env = "OMNI_ENV")]
     pub env: Option<String>,
 
-    #[arg(long="inherit-env-vars", help = "Inherit environment variables from the parent process", action = clap::ArgAction::SetTrue, default_value_t = true)]
+    #[arg(
+        long,
+        help = "Inherit environment variables from the parent process", 
+        action = clap::ArgAction::SetTrue, 
+        default_value_t = false,
+        group = "inherit-env-vars",
+        conflicts_with = "no_inherit_env_vars",
+        overrides_with = "no_inherit_env_vars",
+    )]
     pub inherit_env_vars: bool,
+
+    #[arg(
+        long,
+        help = "Do not inherit environment variables from the parent process",
+        action = clap::ArgAction::SetTrue, 
+        default_value_t = true,
+        group = "inherit-env-vars",
+        overrides_with = "inherit_env_vars",
+        conflicts_with = "inherit_env_vars",
+    )]
+    pub no_inherit_env_vars: bool,
 }
 
 #[derive(Subcommand)]

@@ -1,22 +1,28 @@
 pub use ahash as hash;
 
 pub type Map<K, V> = indexmap::IndexMap<K, V, ahash::RandomState>;
+pub type UnorderedMap<K, V> =
+    std::collections::HashMap<K, V, ahash::RandomState>;
 
 pub mod map {
     pub use indexmap::map::*;
+}
+
+pub mod unordered_map {
+    pub use std::collections::hash_map::*;
 }
 
 #[macro_export]
 macro_rules! map {
     () => {
         {
-            let mut map = $crate::Map::with_hasher($crate::hash::RandomState::default());
+            let map = $crate::Map::with_hasher($crate::hash::RandomState::default());
             map
         }
     };
     (cap: $cap:expr $(,)?) => {
         {
-            let mut map = $crate::Map::with_capacity_and_hasher($cap, $crate::hash::RandomState::default());
+            let map = $crate::Map::with_capacity_and_hasher($cap, $crate::hash::RandomState::default());
             map
         }
     };
@@ -27,6 +33,35 @@ macro_rules! map {
             // but we throw away that string literal during constant evaluation.
             const CAP: usize = <[()]>::len(&[$({ stringify!($key); }),*]);
             let mut map = $crate::Map::with_capacity_and_hasher(CAP, $crate::hash::RandomState::default());
+            $(
+                map.insert($key, $value);
+            )*
+            map
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! unordered_map {
+    () => {
+        {
+            let map = $crate::UnorderedMap::with_hasher($crate::hash::RandomState::default());
+            map
+        }
+    };
+    (cap: $cap:expr $(,)?) => {
+        {
+            let map = $crate::UnorderedMap::with_capacity_and_hasher($cap, $crate::hash::RandomState::default());
+            map
+        }
+    };
+    ($($key:expr => $value:expr,)+) => { $crate::unordered_map!($($key => $value),+) };
+    ($($key:expr => $value:expr),*) => {
+        {
+            // Note: `stringify!($key)` is just here to consume the repetition,
+            // but we throw away that string literal during constant evaluation.
+            const CAP: usize = <[()]>::len(&[$({ stringify!($key); }),*]);
+            let mut map = $crate::UnorderedMap::with_capacity_and_hasher(CAP, $crate::hash::RandomState::default());
             $(
                 map.insert($key, $value);
             )*

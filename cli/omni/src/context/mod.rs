@@ -1,12 +1,16 @@
 mod env_loader;
 
+use config_utils::ListConfig;
 use enum_map::enum_map;
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
-use maps::Map;
+use maps::UnorderedMap;
+use merge::Merge;
+use omni_types::OmniPath;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
 };
+use trace::Level;
 
 use ::env_loader::EnvLoaderError;
 use dir_walker::{DirEntry as _, DirWalker};
@@ -21,17 +25,28 @@ use system_traits::{
 use crate::{
     commands::CliArgs,
     configurations::{
-        ExtensionGraph, ProjectConfiguration, WorkspaceConfiguration,
+        ExtensionGraph, ExtensionGraphNode, ProjectConfiguration,
+        TaskOutputConfiguration, WorkspaceConfiguration,
     },
     constants::{self},
     core::{Project, Task},
     utils::env::EnvVarsMap,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CacheInfo {
+    pub key_defaults: bool,
+    pub key_env_keys: Vec<String>,
+    pub key_files: Vec<OmniPath>,
+    pub output_files: Vec<OmniPath>,
+    pub output_logs: bool,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
     env_loader: EnvLoader<TSys>,
-    task_env_vars: Map<String, EnvVarsMap>,
+    task_env_vars: UnorderedMap<String, EnvVarsMap>,
+    cache_infos: UnorderedMap<String, CacheInfo>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     inherit_env_vars: bool,
@@ -85,7 +100,8 @@ impl<TSys: ContextSys> Context<TSys> {
         let ctx = Context {
             projects: None,
             inherit_env_vars: cli.inherit_env_vars,
-            task_env_vars: maps::map!(),
+            task_env_vars: maps::unordered_map!(),
+            cache_infos: maps::unordered_map!(),
             env_loader: EnvLoader::new(
                 sys.clone(),
                 PathBuf::from(&root_marker),
@@ -154,11 +170,19 @@ impl<TSys: ContextSys> Context<TSys> {
         self.projects.as_ref()
     }
 
+    pub fn get_cache_info(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&CacheInfo> {
+        self.cache_infos.get(&format!("{project_name}#{task_name}"))
+    }
+
+    #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub fn load_projects<TDirWalker: DirWalker>(
         &mut self,
         walker: &TDirWalker,
     ) -> eyre::Result<&Vec<Project>> {
-        #[cfg(feature = "enable-tracing")]
         let start_time = std::time::SystemTime::now();
 
         let mut project_paths = vec![];
@@ -173,7 +197,6 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let matcher = match_b.build()?;
 
-        #[cfg(feature = "enable-tracing")]
         let start_walk_time = std::time::SystemTime::now();
 
         let mut num_iterations = 0;
@@ -211,7 +234,6 @@ impl<TSys: ContextSys> Context<TSys> {
             }
         }
 
-        #[cfg(feature = "enable-tracing")]
         trace::debug!(
             "Found {} project directories in {} ms, walked {} items",
             project_paths.len(),
@@ -285,8 +307,8 @@ impl<TSys: ContextSys> Context<TSys> {
                 project_configs.push(project);
             }
         }
-        let project_configs = ExtensionGraph::from_nodes(project_configs)?
-            .get_or_process_all_nodes()?;
+        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
+        let project_configs = xt_graph.get_or_process_all_nodes()?;
 
         let mut projects = vec![];
 
@@ -296,23 +318,24 @@ impl<TSys: ContextSys> Context<TSys> {
             .collect::<HashSet<_>>();
 
         let workspace_dir = self.root_dir.to_string_lossy().to_string();
-        for config in project_configs.into_iter().filter(|config| {
+        for project_config in project_configs.into_iter().filter(|config| {
             project_paths
                 .contains(config.file.path().expect("path should be resolved"))
         }) {
-            let dir = config.dir.path().expect("path should be resolved");
+            let dir =
+                project_config.dir.path().expect("path should be resolved");
             let mut extras = maps::map![
                 "WORKSPACE_DIR".to_string() => workspace_dir.clone(),
-                "PROJECT_NAME".to_string() => config.name.to_string(),
+                "PROJECT_NAME".to_string() => project_config.name.to_string(),
                 "PROJECT_DIR".to_string() => dir.to_string_lossy().to_string(),
             ];
 
-            let overrides = &config.env.vars;
+            let overrides = &project_config.env.vars;
             if !overrides.as_map().is_empty() {
                 extras.extend(overrides.to_map_to_inner());
             }
 
-            let env_files = config
+            let env_files = project_config
                 .env
                 .files
                 .as_vec()
@@ -332,21 +355,62 @@ impl<TSys: ContextSys> Context<TSys> {
                 inherit_env_vars: self.inherit_env_vars,
             }))?;
 
-            for (name, task) in config.tasks.iter() {
+            let project_cache = &project_config.cache_key;
+            for (name, task) in project_config.tasks.iter() {
                 if let Some(env) = task.env()
                     && let Some(vars) = env.vars.as_ref()
                 {
-                    let key = format!("{}#{}", config.name, name);
+                    let key = format!("{}#{}", project_config.name, name);
 
                     self.task_env_vars.insert(key, vars.to_map_to_inner());
                 }
+
+                let task_cache = task.cache_key();
+                let task_output = task.output().cloned().unwrap_or_else(|| {
+                    TaskOutputConfiguration {
+                        files: Default::default(),
+                        logs: true,
+                    }
+                });
+
+                let cache_key = if let Some(cache_key) = task_cache {
+                    let mut pc = project_cache.clone();
+                    pc.merge(cache_key.clone());
+                    pc
+                } else {
+                    project_cache.clone()
+                };
+
+                let key_files = if cache_key.defaults {
+                    let mut files = cache_key.files.clone();
+                    let mut additional_files = xt_graph
+                        .get_transitive_extendee_ids(project_config.id())?;
+
+                    additional_files.push(project_config.id().clone());
+
+                    files.merge(ListConfig::prepend(additional_files));
+                    files.to_vec()
+                } else {
+                    cache_key.files.to_vec()
+                };
+
+                self.cache_infos.insert(
+                    format!("{}#{}", project_config.name, name),
+                    CacheInfo {
+                        key_defaults: cache_key.defaults,
+                        key_env_keys: cache_key.env.to_vec_to_inner(),
+                        key_files,
+                        output_files: task_output.files.to_vec(),
+                        output_logs: task_output.logs,
+                    },
+                );
             }
 
             projects.push(Project::new(
-                config.name,
+                project_config.name,
                 dir.to_path_buf(),
-                config.dependencies.to_vec_inner(),
-                config
+                project_config.dependencies.to_vec_inner(),
+                project_config
                     .tasks
                     .iter()
                     .map(|(task_name, v)| {
@@ -381,15 +445,12 @@ impl<TSys: ContextSys> Context<TSys> {
 
         self.projects = Some(projects);
 
-        #[cfg(feature = "enable-tracing")]
-        {
-            let elapsed = start_time.elapsed().unwrap_or_default();
-            trace::debug!(
-                "Loaded {} projects in {} ms",
-                self.projects.as_ref().map_or(0, |p| p.len()),
-                elapsed.as_millis()
-            );
-        }
+        let elapsed = start_time.elapsed().unwrap_or_default();
+        trace::info!(
+            "Loaded {} projects in {} ms",
+            self.projects.as_ref().map_or(0, |p| p.len()),
+            elapsed.as_millis()
+        );
 
         Ok(self
             .projects
@@ -416,7 +477,7 @@ impl<TSys: ContextSys> Context<TSys> {
         if glob_filter == "*" || glob_filter == "**" {
             return Ok(self
                 .get_projects()
-                .wrap_err("Failed to get projects")?
+                .wrap_err("failed to get projects")?
                 .iter()
                 .collect());
         }
@@ -424,7 +485,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let matcher = self.get_filter_matcher(glob_filter)?;
         let result = self
             .get_projects()
-            .expect("Should be able to get projects after load");
+            .wrap_err("should be able to get projects after load")?;
 
         Ok(result
             .iter()
@@ -602,7 +663,6 @@ mod tests {
         let sys = sys.unwrap_or_else(create_sys);
 
         let cli = &CliArgs {
-            inherit_env_vars: false,
             env_root_dir_marker: None,
             env_file: vec![
                 ".env".to_string(),
@@ -615,6 +675,8 @@ mod tests {
             file_trace_level: TraceLevel::None,
             stderr_trace: false,
             file_trace_output: None,
+            inherit_env_vars: false,
+            no_inherit_env_vars: true,
         };
 
         Context::from_args_and_sys(cli, sys).expect("Can't create context")

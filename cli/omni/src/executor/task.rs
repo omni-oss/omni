@@ -9,7 +9,6 @@ use maps::Map;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{auto_impl, impls::RealSys};
-use tokio::sync::Mutex;
 
 use crate::{
     context::{Context, ContextSys},
@@ -22,7 +21,7 @@ pub struct TaskExecutor<TContextSys: ContextSys = RealSys> {
     node: TaskExecutionNode,
 
     #[new(into)]
-    context: Arc<Mutex<Context<TContextSys>>>,
+    context: Arc<Context<TContextSys>>,
 
     #[new(default)]
     output_writer: Option<Pin<Box<dyn TaskExecutorWriter>>>,
@@ -57,7 +56,7 @@ impl TaskExecutor {
         let (command, vars_os) = {
             // Scope the lock to the duration of the task so that we don't hold the lock for the entire duration of the task
             //
-            let mg = self.context.lock().await;
+            let mg = self.context;
 
             let cached = mg
                 .get_cached_env_vars(task.project_dir())

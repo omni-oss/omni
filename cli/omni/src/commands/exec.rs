@@ -3,7 +3,6 @@ use std::sync::Arc;
 use clap::Args;
 use futures::future::join_all;
 use omni_core::TaskExecutionNode;
-use tokio::sync::Mutex;
 
 use crate::{
     commands::utils::execute_task, context::Context,
@@ -30,7 +29,8 @@ pub struct ExecCommand {
     args: ExecArgs,
 }
 
-pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
+pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
+    let mut ctx = ctx.clone();
     ctx.load_projects(&create_default_dir_walker())?;
     let filter = if let Some(filter) = &command.args.filter {
         filter
@@ -58,7 +58,7 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
     let full_cmd =
         format!("{} {}", command.args.command, command.args.args.join(" "));
 
-    let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
+    let ctx = Arc::new(ctx);
     for p in projects {
         let full_cmd = full_cmd.clone();
         futures.push(execute_task(
@@ -68,7 +68,7 @@ pub async fn run(command: &ExecCommand, ctx: &mut Context) -> eyre::Result<()> {
                 p.name.clone(),
                 p.dir.clone(),
             ),
-            shared_ctx.clone(),
+            ctx.clone(),
         ));
     }
 

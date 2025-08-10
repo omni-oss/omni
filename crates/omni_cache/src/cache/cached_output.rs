@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use derive_new::new;
+use omni_hasher::impls::DefaultHash;
 use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +18,19 @@ use serde::{Deserialize, Serialize};
     new,
     Default,
 )]
-pub struct CachedOutput {
+pub struct CachedTaskExecution {
+    #[new(into)]
+    pub project_name: String,
+
+    #[new(into)]
+    pub task_name: String,
+
+    #[new(into)]
+    pub task_command: String,
+
+    #[new(into)]
+    pub execution_hash: DefaultHash,
+
     #[new(into)]
     /// Location of the cached output
     pub logs_path: Option<PathBuf>,
