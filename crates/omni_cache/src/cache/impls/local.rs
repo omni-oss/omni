@@ -58,7 +58,7 @@ impl LocalTaskExecutionCacheStore {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CollectResult<'a> {
-    project: TaskExecutionInfo<'a>,
+    task: TaskExecutionInfo<'a>,
     input_files: Option<Vec<OmniPath>>,
     output_files: Option<Vec<OmniPath>>,
     hash: Option<DefaultHash>,
@@ -345,7 +345,7 @@ impl LocalTaskExecutionCacheStore {
         Ok(to_process
             .into_iter()
             .map(|p| CollectResult {
-                project: *p.task,
+                task: *p.task,
                 input_files: p.resolved_input_files,
                 output_files: p.resolved_output_files,
                 hash: p.hash,
@@ -398,7 +398,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
             self.sys.fs_create_dir_all_async(output_dir).await?;
 
-            let log_content = logs_map[&result.project.project_name];
+            let log_content = logs_map[&result.task.project_name];
             let logs_path = if log_content.is_some() {
                 Some(output_dir.join(LOGS_CACHE_FILE))
             } else {
@@ -434,13 +434,15 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
             // Internally all cached files are relative to the cached output dir
             let metadata = CachedTaskExecution {
-                project_name: result.project.project_name.to_string(),
+                project_name: result.task.project_name.to_string(),
                 logs_path: logs_path
                     .map(|p| relpath(&p, output_dir).to_path_buf()),
                 files: cache_output_files,
-                task_name: result.project.task_name.to_string(),
+                task_name: result.task.task_name.to_string(),
                 execution_hash: result.hash.expect("should be some"),
-                task_command: result.project.task_command.to_string(),
+                task_command: result.task.task_command.to_string(),
+                execution_time: result.task.execution_time,
+                exit_code: result.task.exit_code,
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -689,6 +691,8 @@ mod tests {
             &task.input_env_cache_keys,
             &task.env_vars,
             &[],
+            0,
+            std::time::Duration::from_millis(100),
         )
     }
 
