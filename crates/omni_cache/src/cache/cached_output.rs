@@ -15,10 +15,11 @@ use serde::{Deserialize, Serialize};
     PartialOrd,
     Ord,
     new,
+    Default,
 )]
 pub struct CachedOutput {
     #[new(into)]
-    /// Location of the cached output, can be a local file or a remote url
+    /// Location of the cached output
     pub logs_path: Option<PathBuf>,
 
     #[new(into)]
