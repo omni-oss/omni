@@ -6,7 +6,10 @@ use dir_walker::{
 };
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use maps::Map;
-use omni_hasher::{Hasher, impls::Blake3Hasher};
+use omni_hasher::{
+    Hasher,
+    impls::{DefaultHash, DefaultHasher},
+};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
@@ -16,7 +19,8 @@ use system_traits::{
 };
 
 use crate::{
-    CachedFileOutput, CachedOutput, ProjectInfo, TaskOutputCacheStore,
+    CachedFileOutput, CachedTaskExecution, TaskExecutionCacheStore,
+    TaskExecutionInfo,
     hash::{
         ProjectDirHasher,
         impls::{RealDirHasher, RealDirHasherError},
@@ -25,14 +29,14 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub struct LocalTaskOutputCacheStore {
+pub struct LocalTaskExecutionCacheStore {
     sys: RealSys,
     hasher: RealDirHasher,
     cache_dir: PathBuf,
     ws_root_dir: PathBuf,
 }
 
-impl LocalTaskOutputCacheStore {
+impl LocalTaskExecutionCacheStore {
     pub fn new(
         cache_dir: impl Into<PathBuf>,
         ws_root_dir: impl Into<PathBuf>,
@@ -54,10 +58,10 @@ impl LocalTaskOutputCacheStore {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CollectResult<'a> {
-    project: ProjectInfo<'a>,
+    project: TaskExecutionInfo<'a>,
     input_files: Option<Vec<OmniPath>>,
     output_files: Option<Vec<OmniPath>>,
-    hash: Option<String>,
+    hash: Option<DefaultHash>,
     cache_output_dir: Option<PathBuf>,
     roots: RootMap<'a>,
 }
@@ -71,19 +75,22 @@ struct CollectConfig {
 }
 
 struct HashInput<'a> {
+    pub task_name: &'a str,
+    pub task_command: &'a str,
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub input_files: &'a [OmniPath],
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
+    pub dependency_hashes: &'a [DefaultHash],
 }
 
 fn hashtext(text: &str) -> String {
-    let x = Blake3Hasher::hash(text.as_bytes());
+    let x = DefaultHasher::hash(text.as_bytes());
     bs58::encode(x).into_string()
 }
 
-impl LocalTaskOutputCacheStore {
+impl LocalTaskExecutionCacheStore {
     fn get_project_dir(&self, project_name: &str) -> PathBuf {
         let name = project_dirname(project_name);
 
@@ -104,19 +111,35 @@ impl LocalTaskOutputCacheStore {
     async fn get_hash(
         &self,
         hash_input: &HashInput<'_>,
-    ) -> Result<String, LocalTaskOutputCacheStoreError> {
+    ) -> Result<DefaultHash, LocalTaskOutputCacheStoreError> {
         let mut tree = self
             .hasher
-            .hash_tree::<Blake3Hasher>(
+            .hash_tree::<DefaultHasher>(
                 hash_input.project_name,
                 hash_input.project_dir,
                 hash_input.input_files,
             )
             .await?;
 
+        let mut dep_hashes = hash_input.dependency_hashes.to_vec();
+
+        dep_hashes.sort();
+
+        for dep_hash in dep_hashes {
+            tree.insert(dep_hash);
+        }
+
         if !hash_input.env_vars.is_empty() {
             let mut buff = vec![];
-            for env_key in hash_input.input_env_cache_keys {
+            let mut env_keys = hash_input
+                .input_env_cache_keys
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+
+            env_keys.sort();
+
+            for env_key in env_keys {
                 let value = hash_input
                     .env_vars
                     .get(env_key)
@@ -128,20 +151,24 @@ impl LocalTaskOutputCacheStore {
 
             let env_vars = buff.join("\n");
 
-            tree.insert(Blake3Hasher::hash(env_vars.as_bytes()));
+            tree.insert(DefaultHasher::hash(env_vars.as_bytes()));
         }
+        let full_task_name = format!(
+            "{}#{}: {}",
+            hash_input.project_name,
+            hash_input.task_name,
+            hash_input.task_command
+        );
+        tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
 
         tree.commit();
 
-        Ok(
-            bs58::encode(tree.root().expect("unable to get root"))
-                .into_string(),
-        )
+        Ok(tree.root().expect("unable to get root"))
     }
 
     async fn collect<'a>(
         &'a self,
-        projects: &'a [ProjectInfo<'a>],
+        projects: &'a [TaskExecutionInfo<'a>],
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, LocalTaskOutputCacheStoreError> {
         struct Holder<'a> {
@@ -149,9 +176,9 @@ impl LocalTaskOutputCacheStore {
             resolved_output_files: Option<Vec<OmniPath>>,
             input_files_globset: Option<GlobSet>,
             resolved_input_files: Option<Vec<OmniPath>>,
-            project: &'a ProjectInfo<'a>,
+            task: &'a TaskExecutionInfo<'a>,
             roots: RootMap<'a>,
-            hash: Option<String>,
+            hash: Option<DefaultHash>,
             cache_output_dir: Option<PathBuf>,
         }
 
@@ -168,7 +195,7 @@ impl LocalTaskOutputCacheStore {
         for project in projects {
             let roots = enum_map! {
                 Root::Workspace => &self.ws_root_dir,
-                Root::Project => project.dir,
+                Root::Project => project.project_dir,
             };
 
             let mut output_files_globset = None;
@@ -177,7 +204,7 @@ impl LocalTaskOutputCacheStore {
 
                 populate_includes_and_globset(
                     project.output_files,
-                    project.dir,
+                    project.project_dir,
                     &mut includes,
                     &roots,
                     &mut o,
@@ -194,7 +221,7 @@ impl LocalTaskOutputCacheStore {
                 let mut i = GlobSetBuilder::new();
                 populate_includes_and_globset(
                     project.input_files,
-                    project.dir,
+                    project.project_dir,
                     &mut includes,
                     &roots,
                     &mut i,
@@ -220,7 +247,7 @@ impl LocalTaskOutputCacheStore {
                 } else {
                     None
                 },
-                project,
+                task: project,
                 roots,
                 hash: None,
                 cache_output_dir: None,
@@ -284,16 +311,17 @@ impl LocalTaskOutputCacheStore {
             for holder in &mut to_process {
                 let hash = self
                     .get_hash(&HashInput {
-                        project_name: holder.project.name,
-                        project_dir: holder.project.dir,
+                        task_name: holder.task.task_name,
+                        task_command: holder.task.task_command,
+                        project_name: holder.task.project_name,
+                        project_dir: holder.task.project_dir,
                         input_files: holder
                             .resolved_input_files
                             .as_ref()
                             .expect("should be some"),
-                        input_env_cache_keys: holder
-                            .project
-                            .input_env_cache_keys,
-                        env_vars: holder.project.env_vars,
+                        input_env_cache_keys: holder.task.input_env_keys,
+                        env_vars: holder.task.env_vars,
+                        dependency_hashes: holder.task.dependency_hashes,
                     })
                     .await?;
 
@@ -303,11 +331,11 @@ impl LocalTaskOutputCacheStore {
 
         if config.cache_output_dirs {
             for holder in &mut to_process {
+                let hashstring =
+                    bs58::encode(holder.hash.as_ref().expect("should be some"))
+                        .into_string();
                 let output_dir = self
-                    .get_output_dir(
-                        holder.project.name,
-                        holder.hash.as_ref().expect("should be some"),
-                    )
+                    .get_output_dir(holder.task.project_name, &hashstring)
                     .await?;
 
                 holder.cache_output_dir = Some(output_dir);
@@ -317,7 +345,7 @@ impl LocalTaskOutputCacheStore {
         Ok(to_process
             .into_iter()
             .map(|p| CollectResult {
-                project: *p.project,
+                project: *p.task,
                 input_files: p.resolved_input_files,
                 output_files: p.resolved_output_files,
                 hash: p.hash,
@@ -332,15 +360,15 @@ const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 
 #[async_trait::async_trait]
-impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
+impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
     type Error = LocalTaskOutputCacheStoreError;
 
     async fn cache_many(
         &self,
-        cache_infos: &[crate::CacheInfo],
+        cache_infos: &[crate::NewCacheInfo],
     ) -> Result<(), Self::Error> {
         let project_infos =
-            cache_infos.iter().map(|i| i.project).collect::<Vec<_>>();
+            cache_infos.iter().map(|i| i.task).collect::<Vec<_>>();
         let results = self
             .collect(
                 &project_infos,
@@ -355,7 +383,7 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
 
         let logs_map = cache_infos
             .iter()
-            .map(|r| (r.project.name, r.logs))
+            .map(|r| (r.task.project_name, r.logs))
             .collect::<Map<_, _>>();
 
         for result in results {
@@ -370,7 +398,7 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
 
             self.sys.fs_create_dir_all_async(output_dir).await?;
 
-            let log_content = logs_map[&result.project.name];
+            let log_content = logs_map[&result.project.project_name];
             let logs_path = if log_content.is_some() {
                 Some(output_dir.join(LOGS_CACHE_FILE))
             } else {
@@ -383,7 +411,7 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
                 self.sys.fs_write_async(logs_path, logs_content).await?;
             }
 
-            let mut cache_output_files = vec![];
+            let mut cache_output_files = Vec::with_capacity(output_files.len());
 
             for path in output_files {
                 let original_abs_path = path.resolve(&result.roots);
@@ -405,10 +433,14 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
             }
 
             // Internally all cached files are relative to the cached output dir
-            let metadata = CachedOutput {
+            let metadata = CachedTaskExecution {
+                project_name: result.project.project_name.to_string(),
                 logs_path: logs_path
                     .map(|p| relpath(&p, output_dir).to_path_buf()),
                 files: cache_output_files,
+                task_name: result.project.task_name.to_string(),
+                execution_hash: result.hash.expect("should be some"),
+                task_command: result.project.task_command.to_string(),
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -425,8 +457,8 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
 
     async fn get_many(
         &self,
-        projects: &[ProjectInfo],
-    ) -> Result<Vec<Option<CachedOutput>>, Self::Error> {
+        projects: &[TaskExecutionInfo],
+    ) -> Result<Vec<Option<CachedTaskExecution>>, Self::Error> {
         let mut outputs = vec![];
 
         let config = CollectConfig {
@@ -441,7 +473,7 @@ impl TaskOutputCacheStore for LocalTaskOutputCacheStore {
 
             let output = if self.sys.fs_exists_async(&file).await? {
                 let bytes = self.sys.fs_read_async(&file).await?;
-                let (mut cached_output, _): (CachedOutput, _) =
+                let (mut cached_output, _): (CachedTaskExecution, _) =
                     bincode::serde::decode_from_slice(
                         &bytes,
                         bincode::config::standard(),
@@ -500,7 +532,8 @@ fn populate_includes_and_globset(
     includes: &mut Vec<PathBuf>,
     roots: &RootMap,
     output_files_globset: &mut GlobSetBuilder,
-) -> Result<(), <LocalTaskOutputCacheStore as TaskOutputCacheStore>::Error> {
+) -> Result<(), <LocalTaskExecutionCacheStore as TaskExecutionCacheStore>::Error>
+{
     for p in files {
         let p = p.resolve(roots);
 
@@ -566,7 +599,7 @@ enum LocalTaskOutputCacheStoreErrorInner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CacheInfo, cache::impls::LocalTaskOutputCacheStore};
+    use crate::{NewCacheInfo, cache::impls::LocalTaskExecutionCacheStore};
     use derive_new::new;
     use std::path::Path;
     use system_traits::{FsRename, impls::RealSys};
@@ -632,59 +665,66 @@ mod tests {
     }
 
     #[derive(new)]
-    struct ProjectInfoStatic {
-        name: String,
-        dir: PathBuf,
+    struct TaskExecutionInfoStatic {
+        task_name: String,
+        task_command: String,
+        project_name: String,
+        project_dir: PathBuf,
         input_files: Vec<OmniPath>,
         output_files: Vec<OmniPath>,
         env_vars: maps::Map<String, String>,
         input_env_cache_keys: Vec<String>,
     }
 
-    fn project_from_static<'a>(
-        project: &'a ProjectInfoStatic,
-    ) -> ProjectInfo<'a> {
-        ProjectInfo::new(
-            &project.name,
-            &project.dir,
-            &project.output_files,
-            &project.input_files,
-            &project.input_env_cache_keys,
-            &project.env_vars,
+    fn task_from_static<'a>(
+        task: &'a TaskExecutionInfoStatic,
+    ) -> TaskExecutionInfo<'a> {
+        TaskExecutionInfo::new(
+            task.task_name.as_str(),
+            task.task_command.as_str(),
+            &task.project_name,
+            &task.project_dir,
+            &task.output_files,
+            &task.input_files,
+            &task.input_env_cache_keys,
+            &task.env_vars,
+            &[],
         )
     }
 
-    fn project_with_mut(
-        name: &str,
+    fn task_with_mut(
+        task_name: &str,
+        project_name: &str,
         root_dir: &Path,
-        mut f: impl FnMut(&mut ProjectInfoStatic),
-    ) -> Yoke<ProjectInfo<'static>, Box<ProjectInfoStatic>> {
-        let project_dir = root_dir.join(name);
-        let mut owned = ProjectInfoStatic {
-            name: name.to_string(),
+        mut f: impl FnMut(&mut TaskExecutionInfoStatic),
+    ) -> Yoke<TaskExecutionInfo<'static>, Box<TaskExecutionInfoStatic>> {
+        let project_dir = root_dir.join(project_name);
+        let mut owned = TaskExecutionInfoStatic {
+            task_name: task_name.to_string(),
+            task_command: format!("ls {}", task_name),
+            project_name: project_name.to_string(),
             input_files: vec![OmniPath::new("src/**/*.txt")],
             output_files: vec![OmniPath::new("dist/**/*.js")],
-            dir: project_dir,
+            project_dir,
             env_vars: env_vars(),
             input_env_cache_keys: env_cache_keys(),
         };
         f(&mut owned);
 
-        Yoke::attach_to_cart(Box::new(owned), |owned| {
-            project_from_static(owned)
-        })
+        Yoke::attach_to_cart(Box::new(owned), |owned| task_from_static(owned))
     }
 
     #[inline(always)]
-    fn project(
-        name: &str,
+    fn task(
+        task_name: &str,
+        project_name: &str,
         root_dir: &Path,
-    ) -> Yoke<ProjectInfo<'static>, Box<ProjectInfoStatic>> {
-        project_with_mut(name, root_dir, |_| {})
+    ) -> Yoke<TaskExecutionInfo<'static>, Box<TaskExecutionInfoStatic>> {
+        task_with_mut(task_name, project_name, root_dir, |_| {})
     }
 
-    fn cache_store(root: &Path) -> LocalTaskOutputCacheStore {
-        LocalTaskOutputCacheStore::new(root.join(".omni/cache"), root)
+    fn cache_store(root: &Path) -> LocalTaskExecutionCacheStore {
+        LocalTaskExecutionCacheStore::new(root.join(".omni/cache"), root)
     }
 
     async fn read_string(path: &Path) -> String {
@@ -717,17 +757,17 @@ mod tests {
         let dir = temp.path();
         let cache = cache_store(dir);
 
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -739,40 +779,40 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
         let sys = sys();
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         sys.fs_write_async(
-            project.get().dir.join("src/a-test.txt"),
+            task.get().project_dir.join("src/a-test.txt"),
             "new content",
         )
         .await
         .expect("failed to write file");
 
         let cached_output1 = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
         // recache then check
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output2 = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -785,18 +825,18 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: None,
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -815,18 +855,18 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output")
             .expect("cached output should exist");
@@ -839,7 +879,7 @@ mod tests {
             .expect("failed to delete file");
 
         let cached_output2 = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -854,38 +894,38 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let mut project = project("project1", dir);
+        let mut task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
-        project = project_with_mut("project1", dir, |project| {
+        task = task_with_mut("task", "project1", dir, |project| {
             project
                 .env_vars
                 .insert("KEY".to_string(), "value-changed".to_string());
         });
 
         let cached_output1 = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
         // recache then check
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output2 = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -904,12 +944,12 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let project = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: project.get().clone(),
             })
             .await
             .expect("failed to cache");
@@ -935,18 +975,18 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output")
             .expect("cached output should exist");
@@ -967,27 +1007,28 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         // rename the project to simulate a move operation
-        tokio::fs::rename(project.get().dir, dir.join("project1-renamed"))
+        tokio::fs::rename(task.get().project_dir, dir.join("project1-renamed"))
             .await
             .expect("failed to rename");
 
-        let renamed_project_folder = project_with_mut("project1", dir, |p| {
-            p.dir = dir.join("project1-renamed");
-        });
+        let task_renamed_project_folder =
+            task_with_mut("task", "project1", dir, |p| {
+                p.project_dir = dir.join("project1-renamed");
+            });
 
         let cached_output = cache
-            .get(renamed_project_folder.get())
+            .get(task_renamed_project_folder.get())
             .await
             .expect("failed to get cached output");
 
@@ -999,12 +1040,12 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
@@ -1012,13 +1053,13 @@ mod tests {
         // rename the project to simulate a move operation
         sys()
             .fs_rename(
-                project.get().dir.join("src/a-test.txt"),
-                project.get().dir.join("src/a-test-renamed.txt"),
+                task.get().project_dir.join("src/a-test.txt"),
+                task.get().project_dir.join("src/a-test-renamed.txt"),
             )
             .expect("failed to rename");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
@@ -1030,7 +1071,7 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project_with_mut("project1", dir, |p| {
+        let task = task_with_mut("task", "project1", dir, |p| {
             p.output_files = vec![
                 OmniPath::new_ws_rooted("rootfile.txt"),
                 OmniPath::new_project_rooted("dist/**/*.js"),
@@ -1044,15 +1085,15 @@ mod tests {
             .expect("failed to write file");
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output")
             .expect("cached output should exist");
@@ -1077,32 +1118,32 @@ mod tests {
         let temp = fixture(&["project1", "project2"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project1 = project("project1", dir);
-        let project2 = project("project2", dir);
+        let task1 = task("task", "project1", dir);
+        let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project1.get().clone(),
+                task: task1.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project2.get().clone(),
+                task: task2.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         let cached_output1 = cache
-            .get(project1.get())
+            .get(task1.get())
             .await
             .expect("failed to get cached output");
 
         let cached_output2 = cache
-            .get(project2.get())
+            .get(task2.get())
             .await
             .expect("failed to get cached output");
 
@@ -1115,41 +1156,42 @@ mod tests {
         let temp = fixture(&["project1", "project2"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project1 = project("project1", dir);
-        let project2 = project("project2", dir);
+        let task1 = task("task", "project1", dir);
+        let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project1.get().clone(),
+                task: task1.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project2.get().clone(),
+                task: task2.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         // rename the project to simulate a move operation
         sys()
-            .fs_rename(project2.get().dir, dir.join("project2-renamed"))
+            .fs_rename(task2.get().project_dir, dir.join("project2-renamed"))
             .expect("failed to rename");
 
         let cached_output1 = cache
-            .get(project1.get())
+            .get(task1.get())
             .await
             .expect("failed to get cached output");
 
-        let project2_renamed = project_with_mut("project2", dir, |p| {
-            p.dir = dir.join("project2-renamed");
-        });
+        let task_project2_renamed =
+            task_with_mut("task", "project2", dir, |p| {
+                p.project_dir = dir.join("project2-renamed");
+            });
 
         let cached_output2 = cache
-            .get(project2_renamed.get())
+            .get(task_project2_renamed.get())
             .await
             .expect("failed to get cached output");
 
@@ -1162,21 +1204,21 @@ mod tests {
         let temp = fixture(&["project1", "project2"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project1 = project("project1", dir);
-        let project2 = project("project2", dir);
+        let task1 = task("task", "project1", dir);
+        let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project1.get().clone(),
+                task: task1.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project2.get().clone(),
+                task: task2.get().clone(),
             })
             .await
             .expect("failed to cache");
@@ -1184,18 +1226,18 @@ mod tests {
         // rename the project to simulate a move operation
         sys()
             .fs_rename(
-                project2.get().dir.join("src/a-test.txt"),
-                project2.get().dir.join("src/a-test-renamed.txt"),
+                task2.get().project_dir.join("src/a-test.txt"),
+                task2.get().project_dir.join("src/a-test-renamed.txt"),
             )
             .expect("failed to rename");
 
         let cached_output1 = cache
-            .get(project1.get())
+            .get(task1.get())
             .await
             .expect("failed to get cached output");
 
         let cached_output2 = cache
-            .get(project2.get())
+            .get(task2.get())
             .await
             .expect("failed to get cached output");
 
@@ -1208,21 +1250,21 @@ mod tests {
         let temp = fixture(&["project1", "project2"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project1 = project("project1", dir);
-        let project2 = project("project2", dir);
+        let task1 = task("task", "project1", dir);
+        let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project1.get().clone(),
+                task: task1.get().clone(),
             })
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project2.get().clone(),
+                task: task2.get().clone(),
             })
             .await
             .expect("failed to cache");
@@ -1230,19 +1272,19 @@ mod tests {
         // modify the file content
         sys()
             .fs_write_async(
-                project2.get().dir.join("src/a-test.txt"),
+                task2.get().project_dir.join("src/a-test.txt"),
                 "new content",
             )
             .await
             .expect("failed to write file");
 
         let cached_output1 = cache
-            .get(project1.get())
+            .get(task1.get())
             .await
             .expect("failed to get cached output");
 
         let cached_output2 = cache
-            .get(project2.get())
+            .get(task2.get())
             .await
             .expect("failed to get cached output");
 
@@ -1255,12 +1297,12 @@ mod tests {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
-        let project = project("project1", dir);
+        let task = task("task", "project1", dir);
 
         cache
-            .cache(&CacheInfo {
+            .cache(&NewCacheInfo {
                 logs: Some(LOGS_CONTENT),
-                project: project.get().clone(),
+                task: task.get().clone(),
             })
             .await
             .expect("failed to cache");
@@ -1271,10 +1313,54 @@ mod tests {
             .expect("failed to invalidate caches");
 
         let cached_output = cache
-            .get(project.get())
+            .get(task.get())
             .await
             .expect("failed to get cached output");
 
         assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_same_project_different_tasks_should_have_different_hashes() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task1 = task("task1", "project1", dir);
+        let task2 = task("task2", "project1", dir);
+
+        cache
+            .cache(&NewCacheInfo {
+                logs: Some(LOGS_CONTENT),
+                task: task1.get().clone(),
+            })
+            .await
+            .expect("failed to cache");
+
+        cache
+            .cache(&NewCacheInfo {
+                logs: Some(LOGS_CONTENT),
+                task: task2.get().clone(),
+            })
+            .await
+            .expect("failed to cache");
+
+        let cached_output1 = cache
+            .get(task1.get())
+            .await
+            .expect("failed to get cached output");
+
+        let cached_output2 = cache
+            .get(task2.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output1.is_some(), "cached output should exist");
+        assert!(cached_output2.is_some(), "cached output should exist");
+
+        assert_ne!(
+            cached_output1.unwrap().execution_hash,
+            cached_output2.unwrap().execution_hash,
+            "cached output should have different hashes"
+        );
     }
 }

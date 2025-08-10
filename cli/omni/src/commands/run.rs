@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use futures::future::join_all;
 use omni_core::TaskExecutionNode;
-use tokio::sync::Mutex;
 
 use crate::{
     commands::utils::execute_task, context::Context,
@@ -38,15 +37,16 @@ pub struct RunCommand {
     ignore_failures: bool,
 }
 
-pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
+pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
     if command.task.is_empty() {
         eyre::bail!("Task cannot be empty");
     }
-
+    let mut ctx = ctx.clone();
     ctx.load_projects(&create_default_dir_walker())?;
+
     let filter = command.filter.as_deref().unwrap_or("*");
 
-    let shared_ctx = Arc::new(Mutex::new(ctx.clone()));
+    let ctx = Arc::new(ctx);
 
     let mut failures = vec![];
 
@@ -81,7 +81,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
                 project.dir.clone(),
             );
 
-            tasks.push(execute_task(task, shared_ctx.clone()));
+            tasks.push(execute_task(task, ctx.clone()));
         }
 
         let results = join_all(tasks).await;
@@ -118,7 +118,7 @@ pub async fn run(command: &RunCommand, ctx: &mut Context) -> eyre::Result<()> {
             let mut tasks = vec![];
 
             for task in batch {
-                tasks.push(execute_task(task, shared_ctx.clone()));
+                tasks.push(execute_task(task, ctx.clone()));
             }
             // run all tasks in a batch concurrently
             let results = join_all(tasks).await;

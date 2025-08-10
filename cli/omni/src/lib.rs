@@ -63,7 +63,7 @@ pub async fn main() -> eyre::Result<()> {
 
     match cli.subcommand {
         CliSubcommands::Exec(ref exec) => {
-            commands::exec::run(exec, &mut context).await?;
+            commands::exec::run(exec, &context).await?;
         }
         CliSubcommands::Env(ref env) => {
             commands::env::run(env, &mut context).await?;
@@ -75,7 +75,7 @@ pub async fn main() -> eyre::Result<()> {
             commands::completion::run(completion, &context).await?;
         }
         CliSubcommands::Run(ref run) => {
-            commands::run::run(run, &mut context).await?;
+            commands::run::run(run, &context).await?;
         }
     }
 

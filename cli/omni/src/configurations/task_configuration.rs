@@ -96,6 +96,26 @@ impl TaskConfiguration {
         }
     }
 
+    pub fn cache_key(&self) -> Option<&CacheKeyConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                cache_key,
+                ..
+            }) => Some(cache_key),
+        }
+    }
+
+    pub fn output(&self) -> Option<&TaskOutputConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                output,
+                ..
+            }) => Some(output),
+        }
+    }
+
     pub fn env(&self) -> Option<&TaskConfigurationEnvConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,

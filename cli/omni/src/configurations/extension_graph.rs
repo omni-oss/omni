@@ -10,6 +10,7 @@ use petgraph::{
     graph::{DiGraph, EdgeIndex, NodeIndex},
     visit::{Dfs, IntoNodeReferences as _, Reversed},
 };
+use sets::unordered_set;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 pub trait ExtensionGraphNode: Clone + Merge + Debug {
@@ -299,6 +300,30 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         let key = PathTraversalKey::new(path_traversal);
 
         self.processed_nodes.get(&key)
+    }
+
+    pub fn get_transitive_extendee_ids(
+        &self,
+        id: &T::Id,
+    ) -> Result<Vec<T::Id>, ExtensionGraphError> {
+        let mut ids = unordered_set![];
+
+        let graph = Reversed(&self.di_graph);
+        let mut dfs = Dfs::new(
+            graph,
+            self.get_node_index(id).ok_or_else(|| {
+                ExtensionGraphErrorInner::NodeNotFound {
+                    message: format!("node not found: {id:?}"),
+                }
+            })?,
+        );
+
+        while let Some(ni) = dfs.next(graph) {
+            let id = self.di_graph[ni].id().clone();
+            ids.insert(id);
+        }
+
+        Ok(ids.into_iter().collect::<Vec<_>>())
     }
 }
 

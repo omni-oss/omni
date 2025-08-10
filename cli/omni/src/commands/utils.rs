@@ -3,13 +3,12 @@ use std::{collections::HashMap, ffi::OsString, sync::Arc};
 use futures::io::AllowStdIo;
 use maps::Map;
 use omni_core::TaskExecutionNode;
-use tokio::sync::Mutex;
 
 use crate::{context::Context, executor::TaskExecutor};
 
 async fn execute_task_impl(
     task: TaskExecutionNode,
-    ctx: Arc<Mutex<Context>>,
+    ctx: Arc<Context>,
 ) -> Result<TaskExecutionNode, (TaskExecutionNode, eyre::Report)> {
     let result = {
         let task = task.clone();
@@ -37,7 +36,7 @@ async fn execute_task_impl(
 
 pub async fn execute_task(
     task: TaskExecutionNode,
-    ctx: Arc<Mutex<Context>>,
+    ctx: Arc<Context>,
 ) -> Result<TaskExecutionNode, (TaskExecutionNode, eyre::Report)> {
     let full_task_name =
         format!("{}#{}", task.project_name(), task.task_name());

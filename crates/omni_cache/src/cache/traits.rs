@@ -1,26 +1,29 @@
 use std::fmt::Display;
 
-use crate::{CacheInfo, CachedOutput, ProjectInfo};
+use crate::{CachedTaskExecution, NewCacheInfo, TaskExecutionInfo};
 
 #[async_trait::async_trait]
-pub trait TaskOutputCacheStore: Send + Sync {
+pub trait TaskExecutionCacheStore: Send + Sync {
     type Error: Display;
 
-    async fn cache(&self, cache_info: &CacheInfo) -> Result<(), Self::Error> {
+    async fn cache(
+        &self,
+        cache_info: &NewCacheInfo,
+    ) -> Result<(), Self::Error> {
         self.cache_many(&[*cache_info]).await
     }
 
     async fn cache_many(
         &self,
-        cache_infos: &[CacheInfo],
+        cache_infos: &[NewCacheInfo],
     ) -> Result<(), Self::Error>;
 
     async fn get(
         &self,
-        project: &ProjectInfo,
-    ) -> Result<Option<CachedOutput>, Self::Error> {
+        task_infos: &TaskExecutionInfo,
+    ) -> Result<Option<CachedTaskExecution>, Self::Error> {
         Ok(self
-            .get_many(&[*project])
+            .get_many(&[*task_infos])
             .await?
             .pop()
             .expect("should be some"))
@@ -28,8 +31,8 @@ pub trait TaskOutputCacheStore: Send + Sync {
 
     async fn get_many(
         &self,
-        projects: &[ProjectInfo],
-    ) -> Result<Vec<Option<CachedOutput>>, Self::Error>;
+        task_infos: &[TaskExecutionInfo],
+    ) -> Result<Vec<Option<CachedTaskExecution>>, Self::Error>;
 
     async fn invalidate_caches(
         &self,

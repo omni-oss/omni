@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
     JsonSchema,
     Merge,
     Default,
+    PartialOrd,
+    Ord,
 )]
 pub struct CacheKeyConfiguration {
     #[serde(default = "super::utils::default_true")]

@@ -26,12 +26,17 @@ pub mod impls {
     #[repr(transparent)]
     pub struct Blake3Hasher;
 
+    pub type Blake3Hash = [u8; 32];
+
     impl Hasher for Blake3Hasher {
-        type Hash = [u8; 32];
+        type Hash = Blake3Hash;
 
         #[inline(always)]
         fn hash(data: &[u8]) -> Self::Hash {
             *blake3::hash(data).as_bytes()
         }
     }
+
+    pub type DefaultHasher = Blake3Hasher;
+    pub type DefaultHash = <DefaultHasher as Hasher>::Hash;
 }
