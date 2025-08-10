@@ -1249,4 +1249,32 @@ mod tests {
         assert!(cached_output1.is_some(), "cached output should exist");
         assert!(cached_output2.is_none(), "cached output should exist");
     }
+
+    #[tokio::test]
+    async fn test_invalidate_caches() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let project = project("project1", dir);
+
+        cache
+            .cache(&CacheInfo {
+                logs: Some(LOGS_CONTENT),
+                project: project.get().clone(),
+            })
+            .await
+            .expect("failed to cache");
+
+        cache
+            .invalidate_caches("project1")
+            .await
+            .expect("failed to invalidate caches");
+
+        let cached_output = cache
+            .get(project.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_none(), "cached output should not exist");
+    }
 }
