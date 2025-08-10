@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::Path, time::UNIX_EPOCH};
 
+use byteorder::{ByteOrder, LittleEndian};
 use futures::future::try_join_all;
 use omni_types::{OmniPath, Root, RootMap};
 use rs_merkle::MerkleTree;
@@ -27,20 +28,27 @@ pub trait UtilSys:
 {
 }
 
+type Timestamp = [u8; 16];
+
 async fn mtime(
     path: &Path,
     sys: impl UtilSys,
-) -> Result<u128, BuildMerkleTreeError> {
+) -> Result<Timestamp, BuildMerkleTreeError> {
     let mtime = sys.fs_metadata_async(path).await?.modified()?;
+    let mtime = mtime.duration_since(UNIX_EPOCH)?.as_millis();
 
-    Ok(mtime.duration_since(UNIX_EPOCH)?.as_millis())
+    let mut timestamp = [0; 16];
+
+    LittleEndian::write_u128(&mut timestamp, mtime);
+
+    Ok(timestamp)
 }
 
 #[derive(Serialize, Deserialize, Clone, Eq)]
 struct FileEntry<THasher: Hasher> {
     path: OmniPath,
     hash: THasher::Hash,
-    mtime: u128,
+    mtime: Timestamp,
 }
 
 impl<THasher: Hasher> PartialEq for FileEntry<THasher> {
@@ -104,6 +112,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
 
             let hash = if let Some(entry) = file_entries_by_path.get(&path)
                 && entry.mtime == mtime
+                && false
             {
                 entry.clone()
             } else {

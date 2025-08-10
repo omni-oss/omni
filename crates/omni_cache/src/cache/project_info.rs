@@ -13,9 +13,15 @@ pub struct ProjectInfo<'a> {
 
     pub output_files: &'a [OmniPath],
 
-    pub files: &'a [OmniPath],
+    pub input_files: &'a [OmniPath],
+
+    pub input_env_cache_keys: &'a [String],
 
     pub env_vars: &'a Map<String, String>,
+}
 
-    pub env_cache_keys: &'a [String],
+#[derive(Clone, Copy, PartialEq, Eq, Debug, new, Yokeable)]
+pub struct CacheInfo<'a> {
+    pub project: ProjectInfo<'a>,
+    pub logs: Option<&'a str>,
 }
