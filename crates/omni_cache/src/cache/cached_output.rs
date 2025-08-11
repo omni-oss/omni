@@ -48,6 +48,30 @@ pub struct CachedTaskExecution {
 
 #[derive(
     Debug,
+    Copy,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    new,
+)]
+pub struct CachedTaskExecutionHash<'a> {
+    #[new(into)]
+    pub project_name: &'a str,
+
+    #[new(into)]
+    pub task_name: &'a str,
+
+    #[new(into)]
+    pub execution_hash: DefaultHash,
+}
+
+#[derive(
+    Debug,
     Serialize,
     Deserialize,
     Clone,

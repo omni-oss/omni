@@ -37,6 +37,10 @@ pub struct ProjectConfiguration {
 
     #[serde(default)]
     #[merge(strategy = config_utils::replace)]
+    pub base: bool,
+
+    #[serde(default)]
+    #[merge(strategy = config_utils::replace)]
     pub extends: Vec<OmniPath>,
 
     #[merge(strategy = config_utils::replace)]

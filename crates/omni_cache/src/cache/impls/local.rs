@@ -5,7 +5,7 @@ use dir_walker::{
     impls::{RealGlobDirWalker, RealGlobDirWalkerBuilderError},
 };
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use maps::Map;
+use maps::{Map, UnorderedMap};
 use omni_hasher::{
     Hasher,
     impls::{DefaultHash, DefaultHasher},
@@ -19,8 +19,8 @@ use system_traits::{
 };
 
 use crate::{
-    CachedFileOutput, CachedTaskExecution, TaskExecutionCacheStore,
-    TaskExecutionInfo,
+    CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
+    TaskExecutionCacheStore, TaskExecutionInfo,
     hash::{
         ProjectDirHasher,
         impls::{RealDirHasher, RealDirHasherError},
@@ -101,7 +101,7 @@ impl LocalTaskExecutionCacheStore {
         &self,
         project_name: &str,
         hash: &str,
-    ) -> Result<PathBuf, LocalTaskOutputCacheStoreError> {
+    ) -> Result<PathBuf, LocalTaskExecutionCacheStoreError> {
         let proj_dir = self.get_project_dir(project_name);
         let output_dir = proj_dir.join(hash);
 
@@ -111,7 +111,7 @@ impl LocalTaskExecutionCacheStore {
     async fn get_hash(
         &self,
         hash_input: &HashInput<'_>,
-    ) -> Result<DefaultHash, LocalTaskOutputCacheStoreError> {
+    ) -> Result<DefaultHash, LocalTaskExecutionCacheStoreError> {
         let mut tree = self
             .hasher
             .hash_tree::<DefaultHasher>(
@@ -166,11 +166,14 @@ impl LocalTaskExecutionCacheStore {
         Ok(tree.root().expect("unable to get root"))
     }
 
-    async fn collect<'a>(
+    async fn collect<'a, 'b>(
         &'a self,
-        projects: &'a [TaskExecutionInfo<'a>],
+        projects: &'b [&'a TaskExecutionInfo<'a>],
         config: &CollectConfig,
-    ) -> Result<Vec<CollectResult<'a>>, LocalTaskOutputCacheStoreError> {
+    ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError>
+    where
+        'a: 'b,
+    {
         struct Holder<'a> {
             output_files_globset: Option<GlobSet>,
             resolved_output_files: Option<Vec<OmniPath>>,
@@ -361,17 +364,24 @@ const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 
 #[async_trait::async_trait]
 impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
-    type Error = LocalTaskOutputCacheStoreError;
+    type Error = LocalTaskExecutionCacheStoreError;
 
-    async fn cache_many(
-        &self,
-        cache_infos: &[crate::NewCacheInfo],
-    ) -> Result<(), Self::Error> {
-        let project_infos =
-            cache_infos.iter().map(|i| i.task).collect::<Vec<_>>();
+    async fn cache_many<'a>(
+        &'a self,
+        cache_infos: &[&'a crate::NewCacheInfo<'a>],
+    ) -> Result<Vec<CachedTaskExecutionHash<'a>>, Self::Error> {
+        let task_infos =
+            cache_infos.iter().map(|i| &i.task).collect::<Vec<_>>();
+        let cache_info_map = cache_infos
+            .iter()
+            .map(|i| {
+                (format!("{}#{}", i.task.project_name, i.task.task_name), *i)
+            })
+            .collect::<UnorderedMap<_, _>>();
+
         let results = self
             .collect(
-                &project_infos,
+                &task_infos[..],
                 &CollectConfig {
                     hashes: true,
                     cache_output_dirs: true,
@@ -385,6 +395,8 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             .iter()
             .map(|r| (r.task.project_name, r.logs))
             .collect::<Map<_, _>>();
+
+        let mut cache_exec_hashes = Vec::with_capacity(results.len());
 
         for result in results {
             let output_dir =
@@ -432,6 +444,14 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 });
             }
 
+            let tfqn = format!(
+                "{}#{}",
+                result.task.project_name, result.task.task_name
+            );
+
+            let new_cache_info =
+                cache_info_map.get(&tfqn).expect("should be some");
+
             // Internally all cached files are relative to the cached output dir
             let metadata = CachedTaskExecution {
                 project_name: result.task.project_name.to_string(),
@@ -441,8 +461,8 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 task_name: result.task.task_name.to_string(),
                 execution_hash: result.hash.expect("should be some"),
                 task_command: result.task.task_command.to_string(),
-                execution_time: result.task.execution_time,
-                exit_code: result.task.exit_code,
+                execution_time: new_cache_info.execution_time,
+                exit_code: new_cache_info.exit_code,
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -452,9 +472,15 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             let metadata_path = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
             self.sys.fs_write_async(&metadata_path, &bytes).await?;
+
+            cache_exec_hashes.push(CachedTaskExecutionHash {
+                project_name: result.task.project_name,
+                task_name: result.task.task_name,
+                execution_hash: result.hash.expect("should be some"),
+            });
         }
 
-        Ok(())
+        Ok(cache_exec_hashes)
     }
 
     async fn get_many(
@@ -467,7 +493,9 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             cache_output_dirs: true,
             ..Default::default()
         };
-        'outer_loop: for project in self.collect(projects, &config).await? {
+        let projects = projects.iter().collect::<Vec<_>>();
+        'outer_loop: for project in self.collect(&projects[..], &config).await?
+        {
             let output_dir = project.cache_output_dir.expect("should be some");
             let file = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
@@ -554,14 +582,14 @@ fn populate_includes_and_globset(
 
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
-pub struct LocalTaskOutputCacheStoreError {
-    kind: LocalTaskOutputCacheStoreErrorKind,
+pub struct LocalTaskExecutionCacheStoreError {
+    kind: LocalTaskExecutionCacheStoreErrorKind,
     #[source]
-    inner: LocalTaskOutputCacheStoreErrorInner,
+    inner: LocalTaskExecutionCacheStoreErrorInner,
 }
 
-impl<T: Into<LocalTaskOutputCacheStoreErrorInner>> From<T>
-    for LocalTaskOutputCacheStoreError
+impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
+    for LocalTaskExecutionCacheStoreError
 {
     fn from(value: T) -> Self {
         let inner = value.into();
@@ -571,8 +599,8 @@ impl<T: Into<LocalTaskOutputCacheStoreErrorInner>> From<T>
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(LocalTaskOutputCacheStoreErrorKind), vis(pub))]
-enum LocalTaskOutputCacheStoreErrorInner {
+#[strum_discriminants(name(LocalTaskExecutionCacheStoreErrorKind), vis(pub))]
+enum LocalTaskExecutionCacheStoreErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -691,8 +719,6 @@ mod tests {
             &task.input_env_cache_keys,
             &task.env_vars,
             &[],
-            0,
-            std::time::Duration::from_millis(100),
         )
     }
 
@@ -755,6 +781,18 @@ mod tests {
         contents
     }
 
+    fn new_cache_info<'a>(
+        logs: Option<&'a str>,
+        task: TaskExecutionInfo<'a>,
+    ) -> NewCacheInfo<'a> {
+        NewCacheInfo {
+            logs,
+            task,
+            execution_time: std::time::Duration::from_millis(100),
+            exit_code: 0,
+        }
+    }
+
     #[tokio::test]
     async fn test_cache_unchanged() {
         let temp = fixture(&["project1"]).await;
@@ -763,10 +801,7 @@ mod tests {
 
         let task = task("task", "project1", dir);
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -787,10 +822,7 @@ mod tests {
         let sys = sys();
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -808,10 +840,7 @@ mod tests {
 
         // recache then check
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -832,10 +861,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: None,
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(None, task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -862,10 +888,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -901,10 +924,7 @@ mod tests {
         let mut task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -921,10 +941,7 @@ mod tests {
 
         // recache then check
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -951,10 +968,7 @@ mod tests {
         let project = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: project.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), project.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -982,10 +996,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1014,10 +1025,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1047,10 +1055,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1089,10 +1094,7 @@ mod tests {
             .expect("failed to write file");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1126,18 +1128,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task1.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task2.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1164,18 +1160,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task1.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task2.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1212,18 +1202,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task1.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task2.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1258,18 +1242,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task1.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task2.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1304,10 +1282,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1333,18 +1308,12 @@ mod tests {
         let task2 = task("task2", "project1", dir);
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task1.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&NewCacheInfo {
-                logs: Some(LOGS_CONTENT),
-                task: task2.get().clone(),
-            })
+            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 

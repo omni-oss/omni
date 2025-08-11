@@ -1842,12 +1842,15 @@ dependencies = [
 name = "omni"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "ahash",
+ "bs58",
  "clap",
  "clap_complete",
  "config_utils",
  "defer",
  "deno_task_shell",
  "derive-new",
+ "derive_builder",
  "derive_more",
  "dhat",
  "dir_walker",
@@ -1865,6 +1868,7 @@ dependencies = [
  "merge",
  "omni_cache",
  "omni_core",
+ "omni_hasher",
  "omni_types",
  "os_pipe",
  "petgraph",

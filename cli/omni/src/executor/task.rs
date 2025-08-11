@@ -1,33 +1,31 @@
-use std::{
-    collections::HashMap, ffi::OsString, pin::Pin, process::ExitStatus,
-    sync::Arc,
-};
+use std::{collections::HashMap, ffi::OsString, pin::Pin, process::ExitStatus};
 
 use derive_new::new;
 use futures::{AsyncRead, AsyncReadExt as _, AsyncWrite};
 use maps::Map;
+use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use system_traits::{auto_impl, impls::RealSys};
+use system_traits::auto_impl;
 
-use crate::{
-    context::{Context, ContextSys},
-    executor::{CommandExecutor, CommandExecutorError},
-};
+use crate::executor::{CommandExecutor, CommandExecutorError};
 
 #[derive(new)]
-pub struct TaskExecutor<TContextSys: ContextSys = RealSys> {
+pub struct TaskExecutor {
     #[new(into)]
-    node: TaskExecutionNode,
+    task: TaskExecutionNode,
 
-    #[new(into)]
-    context: Arc<Context<TContextSys>>,
+    #[new(default)]
+    expanded_command: Option<String>,
 
     #[new(default)]
     output_writer: Option<Pin<Box<dyn TaskExecutorWriter>>>,
 
     #[new(default)]
     input_reader: Option<Pin<Box<dyn TaskExecutorReader>>>,
+
+    #[new(default)]
+    env_vars: Option<HashMap<OsString, OsString>>,
 }
 
 #[auto_impl]
@@ -36,57 +34,67 @@ pub trait TaskExecutorWriter: AsyncWrite + Send {}
 #[auto_impl]
 pub trait TaskExecutorReader: AsyncRead + Send {}
 
+#[derive(Debug, Clone, PartialEq, Eq, new)]
+pub struct ExecutionResult {
+    #[new(into)]
+    pub node: TaskExecutionNode,
+    #[new(into)]
+    pub exit_status: ExitStatus,
+    #[new(into)]
+    pub elapsed: std::time::Duration,
+}
+
+impl ExecutionResult {
+    pub fn success(&self) -> bool {
+        self.exit_status.success()
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_status.code().unwrap_or(0)
+    }
+}
+
 impl TaskExecutor {
     pub fn set_output_writer(
         &mut self,
         writer: impl TaskExecutorWriter + 'static,
-    ) {
+    ) -> &mut Self {
         self.output_writer = Some(Box::pin(writer));
+        self
+    }
+
+    pub fn set_env_vars(&mut self, vars: &Map<String, String>) -> &mut Self {
+        self.expanded_command =
+            Some(::env::expand(self.task.task_command(), vars));
+        self.env_vars = Some(vars_os(vars));
+
+        self
     }
 
     pub fn set_input_reader(
         &mut self,
         reader: impl TaskExecutorReader + 'static,
-    ) {
+    ) -> &mut Self {
         self.input_reader = Some(Box::pin(reader));
+
+        self
     }
 
-    pub async fn run(self) -> Result<ExitStatus, TaskExecutorError> {
-        let task = self.node;
-        let (command, vars_os) = {
-            // Scope the lock to the duration of the task so that we don't hold the lock for the entire duration of the task
-            //
-            let mg = self.context;
+    pub async fn exec(self) -> Result<ExecutionResult, TaskExecutorError> {
+        let start_time = std::time::Instant::now();
 
-            let cached = mg
-                .get_cached_env_vars(task.project_dir())
-                .map_err(TaskExecutorErrorInner::CantGetEnvVars)?;
+        let task = self.task;
 
-            if let Some(task_vars) = mg.get_task_env_vars(&task) {
-                let total = cached.len() + task_vars.len();
-                let mut vars = maps::map!(cap: total);
-
-                vars.extend(cached.clone());
-                let mut task_vars = task_vars.clone();
-                env::expand_into(&mut task_vars, &vars);
-                vars.extend(task_vars);
-
-                (::env::expand(task.task_command(), &vars), vars_os(&vars))
-            } else {
-                (::env::expand(task.task_command(), cached), vars_os(cached))
-            }
+        let command = if let Some(command) = self.expanded_command.as_ref() {
+            command
+        } else {
+            task.task_command()
         };
-
-        trace::debug!(
-            "Running command: '{:?}' in dir: {:?}",
-            command,
-            task.project_dir()
-        );
 
         let cmd_exec = CommandExecutor::from_command_and_env(
             command,
             task.project_dir(),
-            vars_os,
+            self.env_vars.unwrap_or_default(),
         )?;
 
         let stdout = cmd_exec
@@ -100,18 +108,19 @@ impl TaskExecutor {
         let mut tasks = vec![];
 
         if let Some(mut output_writer) = self.output_writer {
-            let stdout_task = {
-                tokio::spawn(async move {
-                    futures::io::copy(
-                        &mut stdout.take(u64::MAX),
-                        &mut output_writer,
-                    )
-                    .await
-                })
-            };
+            let stdout_task = tokio::spawn(async move {
+                futures::io::copy(
+                    &mut stdout.take(u64::MAX),
+                    &mut output_writer,
+                )
+                .await?;
+
+                Ok::<_, TaskExecutorError>(())
+            });
 
             tasks.push(stdout_task);
         }
+
         if let Some(input_reader) = self.input_reader {
             let stdin_task = {
                 tokio::spawn(async move {
@@ -119,7 +128,9 @@ impl TaskExecutor {
                         &mut input_reader.take(u64::MAX),
                         &mut input,
                     )
-                    .await
+                    .await?;
+
+                    Ok::<_, TaskExecutorError>(())
                 })
             };
 
@@ -128,17 +139,21 @@ impl TaskExecutor {
             std::mem::drop(input);
         }
 
-        let all_tasks = futures::future::join_all(tasks);
+        let all_tasks = futures::future::try_join_all(tasks);
 
         let (vec_result, exit_status) = tokio::join!(all_tasks, cmd_exec.run());
 
-        for result in vec_result {
-            result??;
-        }
+        vec_result?;
 
         let exit_status = exit_status?;
 
-        Ok(exit_status)
+        let elapsed = start_time.elapsed();
+
+        Ok(ExecutionResult {
+            node: task,
+            exit_status,
+            elapsed,
+        })
     }
 }
 
@@ -180,8 +195,8 @@ enum TaskExecutorErrorInner {
     #[error("can't run command: {0}")]
     CantRunCommand(#[from] CommandExecutorError),
 
-    #[error("can't get env vars: {0}")]
-    CantGetEnvVars(eyre::Report),
+    #[error("can't get env vars")]
+    CantGetEnvVars,
 
     #[error("cant't take stdin")]
     CantTakeStdin,
@@ -197,4 +212,7 @@ enum TaskExecutorErrorInner {
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
+
+    #[error(transparent)]
+    LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 }

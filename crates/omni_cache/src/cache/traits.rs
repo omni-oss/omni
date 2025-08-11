@@ -1,22 +1,27 @@
 use std::fmt::Display;
 
-use crate::{CachedTaskExecution, NewCacheInfo, TaskExecutionInfo};
+use crate::{
+    CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
+    TaskExecutionInfo,
+};
 
 #[async_trait::async_trait]
 pub trait TaskExecutionCacheStore: Send + Sync {
     type Error: Display;
 
-    async fn cache(
-        &self,
-        cache_info: &NewCacheInfo,
-    ) -> Result<(), Self::Error> {
-        self.cache_many(&[*cache_info]).await
+    async fn cache<'a>(
+        &'a self,
+        cache_info: &'a NewCacheInfo<'a>,
+    ) -> Result<CachedTaskExecutionHash<'a>, Self::Error> {
+        let results = self.cache_many(&[cache_info]).await?;
+        let first = results[0];
+        Ok(first)
     }
 
-    async fn cache_many(
-        &self,
-        cache_infos: &[NewCacheInfo],
-    ) -> Result<(), Self::Error>;
+    async fn cache_many<'a>(
+        &'a self,
+        cache_infos: &[&'a NewCacheInfo<'a>],
+    ) -> Result<Vec<CachedTaskExecutionHash<'a>>, Self::Error>;
 
     async fn get(
         &self,
