@@ -16,7 +16,7 @@ categories = [
     "development-tools",
     "development-tools::build-utils",
 ]
-rust-version = "1.91.0"
+rust-version = "1.89.0"
 edition = "2024"
 version = "0.0.0-semantically-released"
 authors = ["Clarence Manuel <rencedm112@gmail.com>"]

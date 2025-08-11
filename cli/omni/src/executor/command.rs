@@ -53,18 +53,16 @@ impl CommandExecutor {
             .openpty(get_pty_size())
             .map_err(|_e| CommandExecutorErrorInner::CantOpenPty)?;
 
-        let reader = pty
-            .master
-            .try_clone_reader()
-            .map_err(|e| CommandExecutorErrorInner::Unknown(eyre::eyre!(e)))?;
+        let reader = pty.master.try_clone_reader().map_err(|e| {
+            CommandExecutorErrorInner::CantCloneReader(e.to_string())
+        })?;
 
         let reader: Pin<Box<dyn CommandExecutorReader>> =
             Box::pin(futures::io::AllowStdIo::new(reader));
 
-        let writer = pty
-            .master
-            .take_writer()
-            .map_err(|e| CommandExecutorErrorInner::Unknown(eyre::eyre!(e)))?;
+        let writer = pty.master.take_writer().map_err(|e| {
+            CommandExecutorErrorInner::CantTakeWriter(e.to_string())
+        })?;
 
         let writer: Pin<Box<dyn CommandExecutorWriter>> =
             Box::pin(futures::io::AllowStdIo::new(writer));
@@ -108,7 +106,7 @@ impl CommandExecutor {
         }
 
         let mut child = self.slave.spawn_command(cmd).map_err(|e| {
-            CommandExecutorErrorInner::CantSpawnCommand(eyre::eyre!(e))
+            CommandExecutorErrorInner::CantSpawnCommand(e.to_string())
         })?;
 
         yield_now().await;
@@ -150,11 +148,14 @@ enum CommandExecutorErrorInner {
     CantCreatePipe(std::io::Error),
 
     #[error("can't spawn command: {0}")]
-    CantSpawnCommand(eyre::Report),
+    CantSpawnCommand(String),
 
     #[error("can't open pty")]
     CantOpenPty,
 
-    #[error(transparent)]
-    Unknown(#[from] eyre::Report),
+    #[error("can't clone reader: {0}")]
+    CantCloneReader(String),
+
+    #[error("can't take writer: {0}")]
+    CantTakeWriter(String),
 }

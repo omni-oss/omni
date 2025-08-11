@@ -5,6 +5,7 @@ use enum_map::enum_map;
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use maps::UnorderedMap;
 use merge::Merge;
+use omni_cache::impls::LocalTaskExecutionCacheStore;
 use omni_types::OmniPath;
 use std::{
     collections::HashSet,
@@ -319,8 +320,10 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let workspace_dir = self.root_dir.to_string_lossy().to_string();
         for project_config in project_configs.into_iter().filter(|config| {
-            project_paths
-                .contains(config.file.path().expect("path should be resolved"))
+            !config.base
+                && project_paths.contains(
+                    config.file.path().expect("path should be resolved"),
+                )
         }) {
             let dir =
                 project_config.dir.path().expect("path should be resolved");
@@ -447,9 +450,9 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let elapsed = start_time.elapsed().unwrap_or_default();
         trace::info!(
-            "Loaded {} projects in {} ms",
+            "Loaded {} projects in {:?}",
             self.projects.as_ref().map_or(0, |p| p.len()),
-            elapsed.as_millis()
+            elapsed
         );
 
         Ok(self
@@ -495,6 +498,13 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn get_workspace_configuration(&self) -> &WorkspaceConfiguration {
         &self.workspace
+    }
+
+    pub fn create_local_cache_store(&self) -> LocalTaskExecutionCacheStore {
+        LocalTaskExecutionCacheStore::new(
+            self.root_dir.join(".omni/cache"),
+            self.root_dir.clone(),
+        )
     }
 }
 

@@ -193,6 +193,16 @@ impl ProjectGraph {
         Ok(idx)
     }
 
+    pub fn mutate_nodes<F>(&mut self, f: F)
+    where
+        F: Fn(&mut Project),
+    {
+        for node in self.di_graph.node_indices() {
+            let node = &mut self.di_graph[node];
+            f(node);
+        }
+    }
+
     pub fn get_project_index(
         &self,
         project_name: &str,

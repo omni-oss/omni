@@ -375,6 +375,27 @@ impl TaskExecutionGraph {
     }
 
     #[inline(always)]
+    pub fn get_direct_dependencies_ref_by_name(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
+        let task_key = TaskKey::new(project_name, task_name);
+
+        self.get_direct_dependencies_ref_by_key(&task_key)
+            .map_err(|e| {
+                if e.kind() == TaskExecutionGraphErrorKind::TaskNotFoundByKey {
+                    TaskExecutionGraphError::task_not_found(
+                        project_name,
+                        task_name,
+                    )
+                } else {
+                    e
+                }
+            })
+    }
+
+    #[inline(always)]
     fn get_direct_dependencies_by_key(
         &self,
         key: &TaskKey,
@@ -384,10 +405,33 @@ impl TaskExecutionGraph {
         self.get_direct_dependencies(task_index)
     }
 
+    #[inline(always)]
+    fn get_direct_dependencies_ref_by_key(
+        &self,
+        key: &TaskKey,
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
+        let task_index = self.get_task_index_by_key(key)?;
+
+        self.get_direct_dependencies_ref(task_index)
+    }
+
     pub fn get_direct_dependencies(
         &self,
         task_index: NodeIndex,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
+        self.get_direct_dependencies_impl(task_index, |ni, node| {
+            (ni, node.clone())
+        })
+    }
+
+    fn get_direct_dependencies_impl<'a, R>(
+        &'a self,
+        task_index: NodeIndex,
+        map: impl Fn(NodeIndex, &'a TaskExecutionNode) -> R,
+    ) -> TaskExecutionGraphResult<Vec<R>>
+    where
+        R: 'a,
+    {
         let neighbors = self
             .di_graph
             .neighbors_directed(task_index, Direction::Incoming);
@@ -395,9 +439,16 @@ impl TaskExecutionGraph {
         Ok(neighbors
             .map(|ni| {
                 let node = &self.di_graph[ni];
-                (ni, node.clone())
+                map(ni, node)
             })
             .collect())
+    }
+
+    pub fn get_direct_dependencies_ref(
+        &self,
+        task_index: NodeIndex,
+    ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
+        self.get_direct_dependencies_impl(task_index, |ni, node| (ni, node))
     }
 
     #[cfg_attr(
