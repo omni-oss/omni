@@ -6,7 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    configurations::{CacheKeyConfiguration, TaskOutputConfiguration},
+    configurations::{CacheConfiguration, TaskOutputConfiguration},
     core::Task,
 };
 
@@ -31,8 +31,8 @@ pub struct TaskConfigurationLongForm {
     description: Option<String>,
     #[serde(default)]
     env: TaskConfigurationEnvConfiguration,
-    #[serde(default, alias = "cache-key")]
-    cache_key: CacheKeyConfiguration,
+    #[serde(default)]
+    cache: CacheConfiguration,
     #[serde(default)]
     output: TaskOutputConfiguration,
 }
@@ -96,13 +96,13 @@ impl TaskConfiguration {
         }
     }
 
-    pub fn cache_key(&self) -> Option<&CacheKeyConfiguration> {
+    pub fn cache(&self) -> Option<&CacheConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                cache_key,
+                cache,
                 ..
-            }) => Some(cache_key),
+            }) => Some(cache),
         }
     }
 
@@ -137,7 +137,7 @@ impl Merge for TaskConfiguration {
                     command: a_cmd,
                     description: a_desc,
                     env: a_env,
-                    cache_key: a_cache_key,
+                    cache: a_cache_key,
                     output: a_output,
                 }),
                 Lf(box TaskConfigurationLongForm {
@@ -145,7 +145,7 @@ impl Merge for TaskConfiguration {
                     command: b_cmd,
                     description: b_desc,
                     env: b_env,
-                    cache_key: b_cache_key,
+                    cache: b_cache_key,
                     output: b_output,
                 }),
             ) => {
@@ -190,7 +190,7 @@ mod tests {
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
             description: Some(String::from("a description")),
             env: Default::default(),
-            cache_key: Default::default(),
+            cache: Default::default(),
             output: TaskOutputConfiguration::default(),
         });
 
@@ -204,7 +204,7 @@ mod tests {
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
             description: None,
             env: Default::default(),
-            cache_key: Default::default(),
+            cache: Default::default(),
             output: TaskOutputConfiguration::default(),
         });
 
@@ -217,7 +217,7 @@ mod tests {
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(String::from("a description")),
                 env: Default::default(),
-                cache_key: Default::default(),
+                cache: Default::default(),
                 output: TaskOutputConfiguration::default(),
             })
         );

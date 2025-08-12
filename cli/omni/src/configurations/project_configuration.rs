@@ -9,7 +9,7 @@ use system_traits::FsRead;
 
 use crate::{
     configurations::{
-        CacheKeyConfiguration, ExtensionGraphNode, utils::list_config_default,
+        CacheConfiguration, ExtensionGraphNode, utils::list_config_default,
     },
     utils,
 };
@@ -55,8 +55,8 @@ pub struct ProjectConfiguration {
     #[serde(default)]
     pub env: ProjectEnvConfiguration,
 
-    #[serde(default, alias = "cache-key")]
-    pub cache_key: CacheKeyConfiguration,
+    #[serde(default)]
+    pub cache: CacheConfiguration,
 }
 
 impl ExtensionGraphNode for ProjectConfiguration {

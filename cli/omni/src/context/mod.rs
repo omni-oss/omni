@@ -8,6 +8,7 @@ use merge::Merge;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
 use omni_types::OmniPath;
 use std::{
+    borrow::Cow,
     collections::HashSet,
     path::{Path, PathBuf},
 };
@@ -36,6 +37,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CacheInfo {
+    pub cache_execution: bool,
     pub key_defaults: bool,
     pub key_env_keys: Vec<String>,
     pub key_files: Vec<OmniPath>,
@@ -124,7 +126,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn get_project_graph(&self) -> eyre::Result<ProjectGraph> {
         let projects = self.get_projects().ok_or_else(|| {
             eyre::eyre!(
-                "Failed to get projects. Did you run load_projects first?"
+                "failed to get projects. Did you call load_projects first?"
             )
         })?;
 
@@ -149,8 +151,16 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn get_task_env_vars(
         &self,
         task: &TaskExecutionNode,
-    ) -> Option<&EnvVarsMap> {
-        self.task_env_vars.get(task.full_task_name())
+    ) -> eyre::Result<Cow<'_, EnvVarsMap>> {
+        let cached = self.get_cached_env_vars(task.project_dir())?;
+
+        if let Some(overrides) = self.task_env_vars.get(task.full_task_name()) {
+            let mut cached = cached.clone();
+            cached.extend(overrides.clone());
+            Ok(Cow::Owned(cached))
+        } else {
+            Ok(Cow::Borrowed(cached))
+        }
     }
 
     pub fn get_cached_env_vars(
@@ -358,7 +368,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 inherit_env_vars: self.inherit_env_vars,
             }))?;
 
-            let project_cache = &project_config.cache_key;
+            let project_cache = &project_config.cache;
             for (name, task) in project_config.tasks.iter() {
                 if let Some(env) = task.env()
                     && let Some(vars) = env.vars.as_ref()
@@ -368,7 +378,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     self.task_env_vars.insert(key, vars.to_map_to_inner());
                 }
 
-                let task_cache = task.cache_key();
+                let task_cache = task.cache();
                 let task_output = task.output().cloned().unwrap_or_else(|| {
                     TaskOutputConfiguration {
                         files: Default::default(),
@@ -376,7 +386,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     }
                 });
 
-                let cache_key = if let Some(cache_key) = task_cache {
+                let cache = if let Some(cache_key) = task_cache {
                     let mut pc = project_cache.clone();
                     pc.merge(cache_key.clone());
                     pc
@@ -384,8 +394,8 @@ impl<TSys: ContextSys> Context<TSys> {
                     project_cache.clone()
                 };
 
-                let key_files = if cache_key.defaults {
-                    let mut files = cache_key.files.clone();
+                let key_files = if cache.key.defaults {
+                    let mut files = cache.key.files.clone();
                     let mut additional_files = xt_graph
                         .get_transitive_extendee_ids(project_config.id())?;
 
@@ -394,14 +404,15 @@ impl<TSys: ContextSys> Context<TSys> {
                     files.merge(ListConfig::prepend(additional_files));
                     files.to_vec()
                 } else {
-                    cache_key.files.to_vec()
+                    cache.key.files.to_vec()
                 };
 
                 self.cache_infos.insert(
                     format!("{}#{}", project_config.name, name),
                     CacheInfo {
-                        key_defaults: cache_key.defaults,
-                        key_env_keys: cache_key.env.to_vec_to_inner(),
+                        cache_execution: cache.enabled,
+                        key_defaults: cache.key.defaults,
+                        key_env_keys: cache.key.env.to_vec_to_inner(),
                         key_files,
                         output_files: task_output.files.to_vec(),
                         output_logs: task_output.logs,

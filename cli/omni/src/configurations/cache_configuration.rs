@@ -28,3 +28,23 @@ pub struct CacheKeyConfiguration {
     #[serde(default = "super::utils::list_config_default::<OmniPath>")]
     pub files: ListConfig<OmniPath>,
 }
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Merge,
+    Default,
+    PartialOrd,
+    Ord,
+)]
+pub struct CacheConfiguration {
+    pub key: CacheKeyConfiguration,
+    #[serde(default = "super::utils::default_true")]
+    #[merge(strategy = config_utils::replace)]
+    pub enabled: bool,
+}
