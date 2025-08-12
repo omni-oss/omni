@@ -635,6 +635,7 @@ enum LocalTaskExecutionCacheStoreErrorInner {
 mod tests {
     use super::*;
     use crate::{NewCacheInfo, cache::impls::LocalTaskExecutionCacheStore};
+    use bytes::Bytes;
     use derive_new::new;
     use std::path::Path;
     use system_traits::{FsRename, impls::RealSys};
@@ -643,7 +644,8 @@ mod tests {
 
     const JS_CONTENT: &str = include_str!("../../../test_fixtures/test.js");
     const TXT_CONTENT: &str = include_str!("../../../test_fixtures/test.txt");
-    const LOGS_CONTENT: &str = include_str!("../../../test_fixtures/logs.txt");
+    const LOGS_CONTENT: Bytes =
+        Bytes::from_static(include_bytes!("../../../test_fixtures/logs.txt"));
 
     fn sys() -> RealSys {
         RealSys
@@ -787,7 +789,7 @@ mod tests {
     }
 
     fn new_cache_info<'a>(
-        logs: Option<&'a str>,
+        logs: Option<&'a Bytes>,
         task: TaskExecutionInfo<'a>,
     ) -> NewCacheInfo<'a> {
         NewCacheInfo {
@@ -806,7 +808,7 @@ mod tests {
 
         let task = task("task", "project1", dir);
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -827,7 +829,7 @@ mod tests {
         let sys = sys();
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -845,7 +847,7 @@ mod tests {
 
         // recache then check
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -893,7 +895,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -929,7 +931,7 @@ mod tests {
         let mut task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -946,7 +948,7 @@ mod tests {
 
         // recache then check
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -973,7 +975,7 @@ mod tests {
         let project = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), project.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), project.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1001,7 +1003,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1030,7 +1032,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1060,7 +1062,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1099,7 +1101,7 @@ mod tests {
             .expect("failed to write file");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1133,12 +1135,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1165,12 +1167,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1207,12 +1209,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1247,12 +1249,12 @@ mod tests {
         let task2 = task("task", "project2", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1287,7 +1289,7 @@ mod tests {
         let task = task("task", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
             .await
             .expect("failed to cache");
 
@@ -1313,12 +1315,12 @@ mod tests {
         let task2 = task("task2", "project1", dir);
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task1.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task1.get().clone()))
             .await
             .expect("failed to cache");
 
         cache
-            .cache(&new_cache_info(Some(LOGS_CONTENT), task2.get().clone()))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task2.get().clone()))
             .await
             .expect("failed to cache");
 

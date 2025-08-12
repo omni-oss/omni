@@ -35,6 +35,7 @@ yoke = { workspace = true }
 omni_types = { workspace = true, features = ["serde"] }
 byteorder = { workspace = true }
 globset = { workspace = true }
+bytes = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

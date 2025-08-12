@@ -75,6 +75,7 @@ omni_hasher = { workspace = true }
 derive_builder = { workspace = true }
 bs58 = { workspace = true }
 ahash = { workspace = true }
+bytes = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

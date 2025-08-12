@@ -1,7 +1,11 @@
 use std::{collections::HashMap, ffi::OsString, pin::Pin, process::ExitStatus};
 
+use bytes::{BufMut, Bytes, BytesMut};
 use derive_new::new;
-use futures::{AsyncRead, AsyncReadExt as _, AsyncWrite};
+use futures::{
+    AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _,
+    future::try_join_all,
+};
 use maps::Map;
 use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_core::TaskExecutionNode;
@@ -26,6 +30,9 @@ pub struct TaskExecutor {
 
     #[new(default)]
     env_vars: Option<HashMap<OsString, OsString>>,
+
+    #[new(default)]
+    record_logs: bool,
 }
 
 #[auto_impl]
@@ -42,6 +49,8 @@ pub struct ExecutionResult {
     pub exit_status: ExitStatus,
     #[new(into)]
     pub elapsed: std::time::Duration,
+    #[new(into)]
+    pub logs: Option<Bytes>,
 }
 
 impl ExecutionResult {
@@ -80,6 +89,11 @@ impl TaskExecutor {
         self
     }
 
+    pub fn record_logs(&mut self, record_logs: bool) -> &mut Self {
+        self.record_logs = record_logs;
+        self
+    }
+
     pub async fn exec(self) -> Result<ExecutionResult, TaskExecutorError> {
         let start_time = std::time::Instant::now();
 
@@ -97,7 +111,7 @@ impl TaskExecutor {
             self.env_vars.unwrap_or_default(),
         )?;
 
-        let stdout = cmd_exec
+        let mut stdout = cmd_exec
             .take_reader()
             .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
 
@@ -107,19 +121,34 @@ impl TaskExecutor {
 
         let mut tasks = vec![];
 
-        if let Some(mut output_writer) = self.output_writer {
-            let stdout_task = tokio::spawn(async move {
-                futures::io::copy(
-                    &mut stdout.take(u64::MAX),
-                    &mut output_writer,
-                )
-                .await?;
+        let stdout_task = tokio::spawn(async move {
+            if !self.record_logs && self.output_writer.is_none() {
+                return Ok::<_, TaskExecutorError>(None);
+            }
 
-                Ok::<_, TaskExecutorError>(())
-            });
+            let mut bytes = if self.record_logs {
+                Some(BytesMut::new())
+            } else {
+                None
+            };
 
-            tasks.push(stdout_task);
-        }
+            let mut buff = [0; 4096];
+            let mut writer = self.output_writer;
+
+            while let Ok(n) = stdout.read(&mut buff).await
+                && n > 0
+            {
+                if let Some(bytes) = &mut bytes {
+                    bytes.put_slice(&buff[..n]);
+                }
+
+                if let Some(writer) = writer.as_mut() {
+                    writer.write_all(&buff[..n]).await?;
+                }
+            }
+
+            Ok::<_, TaskExecutorError>(bytes.map(|b| b.freeze()))
+        });
 
         if let Some(input_reader) = self.input_reader {
             let stdin_task = {
@@ -139,11 +168,13 @@ impl TaskExecutor {
             std::mem::drop(input);
         }
 
-        let all_tasks = futures::future::try_join_all(tasks);
+        let all_tasks = try_join_all(tasks);
 
-        let (vec_result, exit_status) = tokio::join!(all_tasks, cmd_exec.run());
+        let (vec_result, stdout, exit_status) =
+            tokio::join!(all_tasks, stdout_task, cmd_exec.run());
 
-        vec_result?;
+        let _ = vec_result?;
+        let logs = stdout??;
 
         let exit_status = exit_status?;
 
@@ -153,6 +184,7 @@ impl TaskExecutor {
             node: task,
             exit_status,
             elapsed,
+            logs,
         })
     }
 }

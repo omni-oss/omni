@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use bytes::Bytes;
 use derive_new::new;
 use maps::Map;
 use omni_hasher::impls::DefaultHash;
@@ -23,7 +24,7 @@ pub struct TaskExecutionInfo<'a> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, new, Yokeable)]
 pub struct NewCacheInfo<'a> {
     pub task: TaskExecutionInfo<'a>,
-    pub logs: Option<&'a str>,
+    pub logs: Option<&'a Bytes>,
     pub execution_time: std::time::Duration,
     pub exit_code: i32,
 }
