@@ -8,16 +8,14 @@ use crate::{
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
-    #[arg(required = true)]
-    command: Vec<String>,
-    #[arg(num_args(0..))]
-    args: Vec<String>,
     #[arg(
         long,
         short,
         help = "Run the command based on the project name matching the filter"
     )]
-    filter: Option<String>,
+    project: Option<String>,
+    #[arg(required = true, num_args(1..), trailing_var_arg = true, allow_hyphen_values = true)]
+    command: Vec<String>,
 }
 
 #[derive(Args)]
@@ -33,7 +31,7 @@ pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
         .context(ctx.clone())
         .call(Call::new_command(command.args.command.join(" ")));
 
-    if let Some(filter) = &command.args.filter {
+    if let Some(filter) = &command.args.project {
         builder.project_filter(filter);
     }
 

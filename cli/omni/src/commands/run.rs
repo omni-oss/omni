@@ -17,7 +17,7 @@ pub struct RunCommand {
         short,
         help = "Run the command based on the project name matching the filter"
     )]
-    filter: Option<String>,
+    project: Option<String>,
 
     #[arg(
         long,
@@ -64,7 +64,7 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
         .force(command.force)
         .call(Call::new_task(&command.task));
 
-    if let Some(filter) = &command.filter {
+    if let Some(filter) = &command.project {
         builder.project_filter(filter);
     }
 
