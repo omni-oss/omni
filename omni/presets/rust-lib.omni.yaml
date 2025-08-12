@@ -1,8 +1,11 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: rust-lib
 
-cache_key:
-  files: ["Cargo.toml", "@workspace/Cargo.toml"]
+cache:
+  enabled: true
+  key:
+    defaults: true
+    files: ["Cargo.toml", "@workspace/Cargo.toml", "./src/**/*.rs"]
 
 extends:
   - "@workspace/omni/presets/base.omni.yaml"

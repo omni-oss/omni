@@ -2,12 +2,19 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     hash::{Hash, Hasher as _},
+    os::unix::process::ExitStatusExt,
+    process::ExitStatus,
 };
 
 use clap::ValueEnum;
 use derive_builder::Builder;
 use derive_new::new;
 use futures::{future::join_all, io::AllowStdIo};
+use maps::{UnorderedMap, unordered_map};
+use omni_cache::{
+    NewCacheInfo, TaskExecutionCacheStore as _, TaskExecutionInfo,
+    impls::LocalTaskExecutionCacheStoreError,
+};
 use omni_core::{
     BatchedExecutionPlan, ProjectGraphError, Task, TaskDependency,
     TaskExecutionGraphError, TaskExecutionNode,
@@ -18,7 +25,7 @@ use system_traits::impls::RealSys;
 
 use crate::{
     context::{CacheInfo, Context, ContextSys},
-    executor::{ExecutionResult, TaskExecutor, TaskExecutorError},
+    executor::{ExecutionResult, TaskExecutor},
     utils::{dir_walker::create_default_dir_walker, env::EnvVarsMap},
 };
 
@@ -134,7 +141,7 @@ pub enum TaskExecutionResult {
     },
     ErrorBeforeComplete {
         task: TaskExecutionNode,
-        error: TaskExecutorError,
+        error: eyre::Report,
     },
     Skipped {
         task: TaskExecutionNode,
@@ -145,6 +152,14 @@ pub enum TaskExecutionResult {
 impl TaskExecutionResult {
     pub fn success(&self) -> bool {
         matches!(self, TaskExecutionResult::Completed { execution, .. } if execution.success())
+    }
+
+    pub fn hash(&self) -> Option<DefaultHash> {
+        match self {
+            TaskExecutionResult::Completed { hash, .. } => *hash,
+            TaskExecutionResult::ErrorBeforeComplete { .. } => None,
+            TaskExecutionResult::Skipped { .. } => None,
+        }
     }
 
     pub fn skipped_or_error(&self) -> bool {
@@ -164,11 +179,32 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskOrchestratorError> {
+        #[derive(Debug)]
         struct TaskContext<'a> {
             node: &'a TaskExecutionNode,
             dependencies: Vec<&'a str>,
+            dependency_hashes: Vec<DefaultHash>,
             env_vars: Cow<'a, EnvVarsMap>,
             cache_info: Option<&'a CacheInfo>,
+        }
+
+        impl<'a> TaskContext<'a> {
+            pub(self) fn execution_info(
+                &'a self,
+            ) -> Option<TaskExecutionInfo<'a>> {
+                let ci = self.cache_info?;
+                Some(TaskExecutionInfo {
+                    dependency_hashes: &self.dependency_hashes,
+                    env_vars: &self.env_vars,
+                    input_env_keys: &ci.key_env_keys,
+                    input_files: &ci.key_files,
+                    output_files: &ci.output_files,
+                    project_dir: self.node.project_dir(),
+                    project_name: self.node.project_name(),
+                    task_command: self.node.task_command(),
+                    task_name: self.node.task_name(),
+                })
+            }
         }
 
         let mut ctx = self.context.clone();
@@ -277,7 +313,11 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
         let mut overall_results =
             HashMap::<String, TaskExecutionResult>::with_capacity(task_count);
 
-        let _cache_store = ctx.create_local_cache_store();
+        let cache_store = if !self.force || !self.no_cache {
+            Some(ctx.create_local_cache_store())
+        } else {
+            None
+        };
 
         'main_loop: for batch in &execution_plan {
             // Short circuit if any task failed and the user wants to skip the next batches if any
@@ -318,13 +358,56 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                 let cache_info =
                     ctx.get_cache_info(node.project_name(), node.task_name());
 
-                task_ctxs.push(TaskContext {
+                let dep_hashes = dependencies
+                    .iter()
+                    .filter_map(|d| {
+                        overall_results.get(*d).and_then(|r| r.hash())
+                    })
+                    .collect::<Vec<_>>();
+                let ctx = TaskContext {
                     node,
                     dependencies,
                     env_vars: envs,
                     cache_info,
-                });
+                    dependency_hashes: dep_hashes,
+                };
+
+                trace::debug!(
+                    task_context = ?ctx,
+                    "added task context to queue: '{}#{}'",
+                    node.project_name(),
+                    node.task_name()
+                );
+
+                task_ctxs.push(ctx);
             }
+
+            let cache_inputs = task_ctxs
+                .iter()
+                .filter_map(|c| {
+                    if c.cache_info.is_some_and(|ci| ci.cache_execution) {
+                        c.execution_info()
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            let cached_results = if let Some(cache_store) = cache_store.as_ref()
+            {
+                cache_store
+                    .get_many(&cache_inputs[..])
+                    .await?
+                    .into_iter()
+                    .filter_map(|r| {
+                        r.map(|r| {
+                            (format!("{}#{}", r.project_name, r.task_name), r)
+                        })
+                    })
+                    .collect::<UnorderedMap<_, _>>()
+            } else {
+                unordered_map!()
+            };
 
             let mut futs = Vec::with_capacity(task_ctxs.len());
             'inner_loop: for task_ctx in task_ctxs {
@@ -334,7 +417,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     && task_ctx.dependencies.iter().any(|d| {
                         overall_results
                             .get(*d)
-                            .is_some_and(|r| r.is_error_before_complete())
+                            .is_some_and(|r| r.skipped_or_error())
                     })
                 {
                     overall_results.insert(
@@ -348,6 +431,25 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     continue 'inner_loop;
                 }
 
+                if !self.force
+                    && let Some(res) =
+                        cached_results.get(task_ctx.node.full_task_name())
+                {
+                    overall_results.insert(
+                        task_ctx.node.full_task_name().to_string(),
+                        TaskExecutionResult::new_completed(
+                            ExecutionResult::new(
+                                task_ctx.node.clone(),
+                                ExitStatus::from_raw(res.exit_code),
+                                res.execution_time,
+                            ),
+                            true,
+                            Some(res.execution_hash),
+                        ),
+                    );
+                    continue;
+                }
+
                 futs.push(async move {
                     let mut executor = TaskExecutor::new(task_ctx.node.clone());
 
@@ -355,27 +457,90 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         .set_output_writer(AllowStdIo::new(std::io::stdout()))
                         .set_env_vars(&task_ctx.env_vars);
 
-                    executor.exec().await.map_err(|e| (task_ctx, e))
+                    let this = executor.exec().await;
+                    match this {
+                        Ok(t) => Ok((task_ctx, t)),
+                        Err(e) => Err((task_ctx, e)),
+                    }
                 });
             }
             // run all tasks in a batch concurrently
             let task_results = join_all(futs).await;
 
-            overall_results.extend(task_results.into_iter().map(|result| {
-                match result {
-                    Ok(result) => (
-                        result.node.full_task_name().to_string(),
-                        TaskExecutionResult::new_completed(result, false, None),
-                    ),
+            // hoist execution info to the cache to not drop it
+            let exec_infos;
+            let saved_caches = if !self.no_cache
+                && let Some(cache_store) = cache_store.as_ref()
+            {
+                exec_infos = task_results
+                    .iter()
+                    .filter_map(|r| {
+                        if let Ok((task_ctx, result)) = r
+                            && let Some(exec_info) = task_ctx.execution_info()
+                        {
+                            Some(NewCacheInfo {
+                                execution_time: result.elapsed,
+                                exit_code: result.exit_code(),
+                                task: exec_info,
+                                logs: None,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let exec_infos = exec_infos.iter().collect::<Vec<_>>();
+
+                let results = cache_store.cache_many(&exec_infos[..]).await?;
+
+                results
+                    .into_iter()
+                    .map(|cte| {
+                        (format!("{}#{}", cte.project_name, cte.task_name), cte)
+                    })
+                    .collect()
+            } else {
+                unordered_map!()
+            };
+
+            for task_result in &task_results {
+                let (key, result) = match task_result {
+                    Ok((ctx, result)) => {
+                        let fname = result.node.full_task_name().to_string();
+
+                        let exec_result = if !self.no_cache
+                            && ctx
+                                .cache_info
+                                .is_some_and(|ci| ci.cache_execution)
+                            && let Some(cte) = saved_caches.get(&fname)
+                        {
+                            TaskExecutionResult::new_completed(
+                                result.clone(),
+                                false,
+                                Some(cte.execution_hash),
+                            )
+                        } else {
+                            TaskExecutionResult::new_completed(
+                                result.clone(),
+                                false,
+                                None,
+                            )
+                        };
+
+                        (fname, exec_result)
+                    }
                     Err((task, error)) => (
                         task.node.full_task_name().to_string(),
                         TaskExecutionResult::new_error_before_complete(
                             task.node.clone(),
-                            error,
+                            eyre::eyre!("{error}"),
                         ),
                     ),
-                }
-            }));
+                };
+
+                overall_results.insert(key, result);
+            }
         }
 
         Ok(overall_results.into_values().collect())
@@ -443,4 +608,7 @@ enum TaskOrchestratorErrorInner {
 
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
+
+    #[error(transparent)]
+    LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 }

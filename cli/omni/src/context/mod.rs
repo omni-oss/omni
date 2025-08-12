@@ -271,15 +271,13 @@ impl<TSys: ContextSys> Context<TSys> {
                     )
                 })?;
 
-                #[cfg(feature = "enable-tracing")]
-                {
-                    let elapsed = start_time.elapsed().unwrap_or_default();
-                    trace::debug!(
-                        "Loaded project configuration file {:?} in {} ms",
-                        conf,
-                        elapsed.as_millis()
-                    );
-                }
+                let elapsed = start_time.elapsed().unwrap_or_default();
+                trace::debug!(
+                    project_configuration = ?project,
+                    "loaded project configuration file {:?} in {} ms",
+                    conf,
+                    elapsed.as_millis()
+                );
 
                 project.file = conf.clone().into();
                 let project_dir = conf.parent().expect("should have parent");
@@ -335,6 +333,12 @@ impl<TSys: ContextSys> Context<TSys> {
                     config.file.path().expect("path should be resolved"),
                 )
         }) {
+            trace::debug!(
+                project_configuration = ?project_config,
+                "processing project config: {}",
+                project_config.name
+            );
+
             let dir =
                 project_config.dir.path().expect("path should be resolved");
             let mut extras = maps::map![
@@ -381,7 +385,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 let task_cache = task.cache();
                 let task_output = task.output().cloned().unwrap_or_else(|| {
                     TaskOutputConfiguration {
-                        files: Default::default(),
+                        files: ListConfig::append(vec![]),
                         logs: true,
                     }
                 });

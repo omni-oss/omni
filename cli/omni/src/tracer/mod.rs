@@ -103,6 +103,7 @@ impl TracerSubscriber {
             let filter: LevelFilter = config.file_trace_level.into();
 
             let file_layer = tracing_subscriber::fmt::layer()
+                .json()
                 .with_writer(Arc::new(File::create(file_path)?))
                 .with_filter(filter)
                 .boxed();

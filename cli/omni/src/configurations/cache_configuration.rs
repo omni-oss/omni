@@ -4,6 +4,8 @@ use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::configurations::utils::list_config_default;
+
 #[derive(
     Debug,
     Clone,
@@ -13,7 +15,35 @@ use serde::{Deserialize, Serialize};
     Deserialize,
     JsonSchema,
     Merge,
-    Default,
+    PartialOrd,
+    Ord,
+)]
+pub struct CacheConfiguration {
+    #[serde(default)]
+    pub key: CacheKeyConfiguration,
+    #[serde(default = "super::utils::default_true")]
+    #[merge(strategy = config_utils::replace)]
+    pub enabled: bool,
+}
+
+impl Default for CacheConfiguration {
+    fn default() -> Self {
+        Self {
+            key: Default::default(),
+            enabled: true,
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Merge,
     PartialOrd,
     Ord,
 )]
@@ -29,22 +59,12 @@ pub struct CacheKeyConfiguration {
     pub files: ListConfig<OmniPath>,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    Merge,
-    Default,
-    PartialOrd,
-    Ord,
-)]
-pub struct CacheConfiguration {
-    pub key: CacheKeyConfiguration,
-    #[serde(default = "super::utils::default_true")]
-    #[merge(strategy = config_utils::replace)]
-    pub enabled: bool,
+impl Default for CacheKeyConfiguration {
+    fn default() -> Self {
+        Self {
+            defaults: true,
+            env: list_config_default(),
+            files: list_config_default(),
+        }
+    }
 }
