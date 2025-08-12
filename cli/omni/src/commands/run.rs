@@ -1,6 +1,7 @@
 use crate::{
+    commands::utils::report_execution_results,
     context::Context,
-    executor::{Call, TaskOrchestrator},
+    executor::{Call, OnFailure, TaskOrchestrator},
 };
 
 #[derive(clap::Args)]
@@ -30,10 +31,10 @@ pub struct RunCommand {
     #[arg(
         long,
         short,
-        help = "Do not stop execution if dependencies fail",
-        default_value_t = false
+        help = "How to handle failures",
+        default_value_t = OnFailure::SkipDependents
     )]
-    ignore_failures: bool,
+    on_failure: OnFailure,
 
     #[arg(
         long,
@@ -58,7 +59,7 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
     builder
         .context(ctx.clone())
         .ignore_dependencies(command.ignore_dependencies)
-        .ignore_failures(command.ignore_failures)
+        .on_failure(command.on_failure)
         .no_cache(command.no_cache)
         .force(command.force)
         .call(Call::new_task(&command.task));
@@ -71,7 +72,7 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
 
     let results = orchestrator.execute().await?;
 
-    trace::info!("Results: {:#?}", results);
+    report_execution_results(&results);
 
     Ok(())
 }

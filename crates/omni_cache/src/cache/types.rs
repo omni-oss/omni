@@ -18,12 +18,12 @@ pub struct TaskExecutionInfo<'a> {
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_hashes: &'a [DefaultHash],
+    pub exit_code: i32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, new, Yokeable)]
 pub struct NewCacheInfo<'a> {
     pub task: TaskExecutionInfo<'a>,
     pub logs: Option<&'a str>,
-    pub exit_code: i32,
     pub execution_time: std::time::Duration,
 }

@@ -261,7 +261,7 @@ mod tests {
             Root::Project => Path::new("/project"),
         };
 
-        assert_eq!(path.resolve(base), Path::new("/workspace/foo"));
+        assert_eq!(path.resolve(&base), Path::new("/workspace/foo"));
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod tests {
             Root::Project => Path::new("/project"),
         };
 
-        path.resolve_in_place(base);
+        path.resolve_in_place(&base);
 
         assert_eq!(
             path.path().expect("path should be resolved"),

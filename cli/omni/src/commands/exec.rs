@@ -1,6 +1,7 @@
 use clap::Args;
 
 use crate::{
+    commands::utils::report_execution_results,
     context::Context,
     executor::{Call, TaskOrchestrator},
 };
@@ -8,7 +9,7 @@ use crate::{
 #[derive(Args, Debug)]
 pub struct ExecArgs {
     #[arg(required = true)]
-    command: String,
+    command: Vec<String>,
     #[arg(num_args(0..))]
     args: Vec<String>,
     #[arg(
@@ -30,7 +31,7 @@ pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
 
     builder
         .context(ctx.clone())
-        .call(Call::new_command(command.args.command.clone()));
+        .call(Call::new_command(command.args.command.join(" ")));
 
     if let Some(filter) = &command.args.filter {
         builder.project_filter(filter);
@@ -40,7 +41,7 @@ pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
 
     let results = orchestrator.execute().await?;
 
-    trace::info!("Results: {:#?}", results);
+    report_execution_results(&results);
 
     Ok(())
 }
