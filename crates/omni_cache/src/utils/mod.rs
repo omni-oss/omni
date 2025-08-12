@@ -46,13 +46,19 @@ fn get_dir<'a>(sys: &impl FsMetadata, path: &'a Path) -> &'a Path {
     }
 }
 
-pub fn topmost_dir<'a>(
+pub fn topmost_dirs<'a>(
     sys: impl FsMetadata,
     paths: &'a [PathBuf],
     ws_root_dir: &'a Path,
-) -> &'a Path {
+) -> Vec<&'a Path> {
     if paths.is_empty() {
-        return ws_root_dir;
+        return vec![ws_root_dir];
+    }
+
+    for path in paths {
+        if !path.starts_with(ws_root_dir) {
+            return vec![ws_root_dir];
+        }
     }
 
     // Normalize all paths by removing globs and adjusting to directories
@@ -61,17 +67,21 @@ pub fn topmost_dir<'a>(
         .map(|p| get_dir(&sys, remove_globs(p.as_path())))
         .collect();
 
-    // Start with the first path as candidate for common ancestor
-    let mut common = dirs[0];
+    let mut topmost_dirs: Vec<&Path> = Vec::new();
 
-    for dir in &dirs[1..] {
-        // Walk up from 'common' until 'dir' starts with it
-        while !dir.starts_with(common) {
-            common = common.parent().unwrap_or(ws_root_dir);
+    'outer: for dir in dirs {
+        // If dir is already contained in an existing topmost dir, skip it
+        if topmost_dirs.iter().any(|&t| dir.starts_with(t)) {
+            continue 'outer;
         }
+
+        // Remove any existing topmost dir that is inside this dir
+        topmost_dirs.retain(|&t| !t.starts_with(dir));
+
+        topmost_dirs.push(dir);
     }
 
-    common
+    topmost_dirs
 }
 
 #[cfg(test)]
@@ -107,9 +117,9 @@ mod tests {
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dir(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
-        assert_eq!(result, Path::new("/root/nested"));
+        assert_eq!(result, &[Path::new("/root/nested")]);
     }
 
     #[test]
@@ -129,9 +139,44 @@ mod tests {
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dir(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
-        assert_eq!(result, Path::new("/root/nested"));
+        assert_eq!(
+            result,
+            &[
+                Path::new("/root/nested/project-1"),
+                Path::new("/root/nested/project-2"),
+                Path::new("/root/nested/project-3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_topmost_dir_with_projects_at_different_levels() {
+        let sys = InMemorySys::default();
+
+        sys.fs_create_dir_all("/root/nested/project-1")
+            .expect("Can't create project-1 dir");
+        sys.fs_create_dir_all("/root/nested/nested2/project-2")
+            .expect("Can't create project-2 dir");
+
+        let paths = vec![
+            PathBuf::from("/root/nested/project-1/src/a.txt"),
+            PathBuf::from("/root/nested/project-1/project.omni.yaml"),
+            PathBuf::from("/root/nested/nested2/project-2/test.txt"),
+        ];
+
+        let ws_root_dir = Path::new("/root");
+
+        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+
+        assert_eq!(
+            result,
+            &[
+                Path::new("/root/nested/project-1"),
+                Path::new("/root/nested/nested2/project-2"),
+            ]
+        );
     }
 
     #[test]
@@ -151,9 +196,9 @@ mod tests {
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dir(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
-        assert_eq!(result, Path::new("/root/nested/project-1"));
+        assert_eq!(result, &[Path::new("/root/nested/project-1")]);
     }
 
     #[test]
@@ -175,8 +220,8 @@ mod tests {
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dir(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
-        assert_eq!(result, Path::new("/root"));
+        assert_eq!(result, &[Path::new("/root")]);
     }
 }

@@ -25,7 +25,7 @@ use crate::{
         ProjectDirHasher,
         impls::{RealDirHasher, RealDirHasherError},
     },
-    utils::{project_dirname, relpath, topmost_dir},
+    utils::{project_dirname, relpath, topmost_dirs},
 };
 
 #[derive(Clone, Debug)]
@@ -259,15 +259,20 @@ impl LocalTaskExecutionCacheStore {
 
         if !includes.is_empty() {
             let topmost =
-                topmost_dir(self.sys.clone(), &includes, &self.ws_root_dir)
-                    .to_path_buf();
+                topmost_dirs(self.sys.clone(), &includes, &self.ws_root_dir)
+                    .into_iter()
+                    .map(|p| p.to_path_buf())
+                    .collect::<Vec<_>>();
+
+            let topmost =
+                topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
             let dirwalker = RealGlobDirWalker::builder()
                 .custom_ignore_filenames(vec![".omniignore".to_string()])
                 .include(includes)
                 .build()?;
 
-            for res in dirwalker.walk_dir(&[&topmost])? {
+            for res in dirwalker.walk_dir(&topmost)? {
                 let res = res?;
                 let original_file_abs_path = res.path();
                 for project in &mut to_process {
