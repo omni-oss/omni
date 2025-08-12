@@ -83,7 +83,6 @@ struct HashInput<'a> {
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_hashes: &'a [DefaultHash],
-    pub exit_code: i32,
 }
 
 fn hashtext(text: &str) -> String {
@@ -121,8 +120,6 @@ impl LocalTaskExecutionCacheStore {
                 hash_input.input_files,
             )
             .await?;
-
-        tree.insert(DefaultHasher::hash(&hash_input.exit_code.to_le_bytes()));
 
         let mut dep_hashes = hash_input.dependency_hashes.to_vec();
 
@@ -328,7 +325,6 @@ impl LocalTaskExecutionCacheStore {
                         input_env_cache_keys: holder.task.input_env_keys,
                         env_vars: holder.task.env_vars,
                         dependency_hashes: holder.task.dependency_hashes,
-                        exit_code: holder.task.exit_code,
                     })
                     .await?;
 
@@ -466,7 +462,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 execution_hash: result.hash.expect("should be some"),
                 task_command: result.task.task_command.to_string(),
                 execution_time: new_cache_info.execution_time,
-                exit_code: result.task.exit_code,
+                exit_code: new_cache_info.exit_code,
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -723,7 +719,6 @@ mod tests {
             &task.input_env_cache_keys,
             &task.env_vars,
             &[],
-            0,
         )
     }
 
@@ -793,6 +788,7 @@ mod tests {
         NewCacheInfo {
             logs,
             task,
+            exit_code: 0,
             execution_time: std::time::Duration::from_millis(100),
         }
     }

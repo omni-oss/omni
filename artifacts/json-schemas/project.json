@@ -3,11 +3,19 @@
   "title": "ProjectConfiguration",
   "type": "object",
   "properties": {
-    "cache_key": {
-      "$ref": "#/$defs/CacheKeyConfiguration",
+    "base": {
+      "type": "boolean",
+      "default": false
+    },
+    "cache": {
+      "$ref": "#/$defs/CacheConfiguration",
       "default": {
-        "env": [],
-        "files": []
+        "enabled": false,
+        "key": {
+          "defaults": false,
+          "env": [],
+          "files": []
+        }
       }
     },
     "dependencies": {
@@ -42,9 +50,28 @@
     "name"
   ],
   "$defs": {
+    "CacheConfiguration": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "key": {
+          "$ref": "#/$defs/CacheKeyConfiguration"
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
     "CacheKeyConfiguration": {
       "type": "object",
       "properties": {
+        "defaults": {
+          "type": "boolean",
+          "default": true
+        },
         "env": {
           "$ref": "#/$defs/ListConfig",
           "default": {
@@ -313,11 +340,15 @@
     "TaskConfigurationLongForm": {
       "type": "object",
       "properties": {
-        "cache_key": {
-          "$ref": "#/$defs/CacheKeyConfiguration",
+        "cache": {
+          "$ref": "#/$defs/CacheConfiguration",
           "default": {
-            "env": [],
-            "files": []
+            "enabled": false,
+            "key": {
+              "defaults": false,
+              "env": [],
+              "files": []
+            }
           }
         },
         "command": {

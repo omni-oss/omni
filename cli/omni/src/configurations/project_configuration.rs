@@ -46,9 +46,6 @@ pub struct ProjectConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub name: String,
 
-    #[serde(default)]
-    pub tasks: DictConfig<TaskConfiguration>,
-
     #[serde(default = "list_config_default::<Replace<String>>")]
     pub dependencies: ListConfig<Replace<String>>,
 
@@ -57,6 +54,9 @@ pub struct ProjectConfiguration {
 
     #[serde(default)]
     pub cache: CacheConfiguration,
+
+    #[serde(default)]
+    pub tasks: DictConfig<TaskConfiguration>,
 }
 
 impl ExtensionGraphNode for ProjectConfiguration {
