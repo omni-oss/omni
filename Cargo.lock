@@ -1844,6 +1844,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "ahash",
  "bs58",
+ "bytes",
  "clap",
  "clap_complete",
  "config_utils",
@@ -1902,6 +1903,7 @@ dependencies = [
  "bincode 2.0.1",
  "bs58",
  "byteorder",
+ "bytes",
  "derive-new",
  "derive_builder",
  "dir_walker",

@@ -9,7 +9,7 @@ use std::{
 use clap::ValueEnum;
 use derive_builder::Builder;
 use derive_new::new;
-use futures::{future::join_all, io::AllowStdIo};
+use futures::{AsyncReadExt, future::join_all, io::AllowStdIo};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{
     NewCacheInfo, TaskExecutionCacheStore as _, TaskExecutionInfo,
@@ -136,7 +136,10 @@ pub enum SkipReason {
 pub enum TaskExecutionResult {
     Completed {
         execution: ExecutionResult,
-        is_cache_used: bool,
+        hash: Option<DefaultHash>,
+    },
+    CacheHit {
+        execution: ExecutionResult,
         hash: Option<DefaultHash>,
     },
     ErrorBeforeComplete {
@@ -151,12 +154,17 @@ pub enum TaskExecutionResult {
 
 impl TaskExecutionResult {
     pub fn success(&self) -> bool {
-        matches!(self, TaskExecutionResult::Completed { execution, .. } if execution.success())
+        matches!(self,
+            TaskExecutionResult::Completed { execution, .. }
+            | TaskExecutionResult::CacheHit { execution, .. }
+            if execution.success()
+        )
     }
 
     pub fn hash(&self) -> Option<DefaultHash> {
         match self {
             TaskExecutionResult::Completed { hash, .. } => *hash,
+            TaskExecutionResult::CacheHit { hash, .. } => *hash,
             TaskExecutionResult::ErrorBeforeComplete { .. } => None,
             TaskExecutionResult::Skipped { .. } => None,
         }
@@ -171,6 +179,7 @@ impl TaskExecutionResult {
             TaskExecutionResult::Completed { execution, .. } => &execution.node,
             TaskExecutionResult::ErrorBeforeComplete { task, .. } => task,
             TaskExecutionResult::Skipped { task, .. } => task,
+            TaskExecutionResult::CacheHit { execution, .. } => &execution.node,
         }
     }
 }
@@ -197,8 +206,8 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     dependency_hashes: &self.dependency_hashes,
                     env_vars: &self.env_vars,
                     input_env_keys: &ci.key_env_keys,
-                    input_files: &ci.key_files,
-                    output_files: &ci.output_files,
+                    input_files: &ci.key_input_files,
+                    output_files: &ci.cache_output_files,
                     project_dir: self.node.project_dir(),
                     project_name: self.node.project_name(),
                     task_command: self.node.task_command(),
@@ -437,24 +446,44 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                 {
                     overall_results.insert(
                         task_ctx.node.full_task_name().to_string(),
-                        TaskExecutionResult::new_completed(
+                        TaskExecutionResult::new_cache_hit(
                             ExecutionResult::new(
                                 task_ctx.node.clone(),
                                 ExitStatus::from_raw(res.exit_code),
                                 res.execution_time,
+                                None,
                             ),
-                            true,
                             Some(res.execution_hash),
                         ),
                     );
+
+                    if let Some(logs_path) = &res.logs_path {
+                        let file = AllowStdIo::new(
+                            std::fs::OpenOptions::new()
+                                .read(true)
+                                .open(logs_path)?,
+                        );
+                        let mut stdout = AllowStdIo::new(std::io::stdout());
+
+                        futures::io::copy(
+                            &mut file.take(u64::MAX),
+                            &mut stdout,
+                        )
+                        .await?;
+                    }
+
                     continue;
                 }
+
+                let record_logs =
+                    task_ctx.cache_info.is_some_and(|ci| ci.cache_logs);
 
                 futs.push(async move {
                     let mut executor = TaskExecutor::new(task_ctx.node.clone());
 
                     executor
                         .set_output_writer(AllowStdIo::new(std::io::stdout()))
+                        .record_logs(record_logs)
                         .set_env_vars(&task_ctx.env_vars);
 
                     let this = executor.exec().await;
@@ -482,7 +511,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                                 execution_time: result.elapsed,
                                 exit_code: result.exit_code(),
                                 task: exec_info,
-                                logs: None,
+                                logs: result.logs.as_ref(),
                             })
                         } else {
                             None
@@ -517,13 +546,11 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         {
                             TaskExecutionResult::new_completed(
                                 result.clone(),
-                                false,
                                 Some(cte.execution_hash),
                             )
                         } else {
                             TaskExecutionResult::new_completed(
                                 result.clone(),
-                                false,
                                 None,
                             )
                         };
@@ -582,6 +609,9 @@ impl<T: Into<TaskOrchestratorErrorInner>> From<T> for TaskOrchestratorError {
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(TaskOrchestratorErrorKind), vis(pub))]
 enum TaskOrchestratorErrorInner {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
     #[error(transparent)]
     CantGetEnvVars(eyre::Report),
 

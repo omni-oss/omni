@@ -40,9 +40,9 @@ pub struct CacheInfo {
     pub cache_execution: bool,
     pub key_defaults: bool,
     pub key_env_keys: Vec<String>,
-    pub key_files: Vec<OmniPath>,
-    pub output_files: Vec<OmniPath>,
-    pub output_logs: bool,
+    pub key_input_files: Vec<OmniPath>,
+    pub cache_output_files: Vec<OmniPath>,
+    pub cache_logs: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -417,9 +417,9 @@ impl<TSys: ContextSys> Context<TSys> {
                         cache_execution: cache.enabled,
                         key_defaults: cache.key.defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
-                        key_files,
-                        output_files: task_output.files.to_vec(),
-                        output_logs: task_output.logs,
+                        key_input_files: key_files,
+                        cache_output_files: task_output.files.to_vec(),
+                        cache_logs: task_output.logs,
                     },
                 );
             }
