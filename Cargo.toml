@@ -127,6 +127,8 @@ faster-hex = { version = "^0.10.0" }
 tempfile = { version = "^3.20.0" }
 bs58 = { version = "^0.5.1" }
 yoke = { version = "^0.8.0" }
+owo-colors = { version = "^4.2.2" }
+tiny-gradient = { version = "^0.1.0" }
 
 [profile.release]
 incremental = true

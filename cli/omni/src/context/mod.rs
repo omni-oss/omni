@@ -6,7 +6,7 @@ pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use maps::UnorderedMap;
 use merge::Merge;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
-use omni_types::OmniPath;
+use omni_types::{OmniPath, Root};
 use std::{
     borrow::Cow,
     collections::HashSet,
@@ -28,7 +28,7 @@ use crate::{
     commands::CliArgs,
     configurations::{
         ExtensionGraph, ExtensionGraphNode, ProjectConfiguration,
-        TaskOutputConfiguration, WorkspaceConfiguration,
+        TaskConfiguration, TaskOutputConfiguration, WorkspaceConfiguration,
     },
     constants::{self},
     core::{Project, Task},
@@ -284,12 +284,38 @@ impl<TSys: ContextSys> Context<TSys> {
                 project.dir = project_dir.into();
                 loaded.insert(project.file.clone());
 
+                let bases = enum_map! {
+                    Root::Workspace => self.root_dir.as_ref(),
+                    Root::Project => project_dir,
+                };
+
+                // resolve @project paths to the current project dir
+                project.cache.key.files.iter_mut().for_each(|a| {
+                    if a.is_project_rooted() {
+                        a.resolve_in_place(&bases);
+                    }
+                });
+
+                project.tasks.values_mut().for_each(|a| {
+                    if let TaskConfiguration::LongForm(a) = a {
+                        a.cache.key.files.iter_mut().for_each(|a| {
+                            if a.is_project_rooted() {
+                                a.resolve_in_place(&bases);
+                            }
+                        });
+
+                        a.output.files.iter_mut().for_each(|a| {
+                            if a.is_project_rooted() {
+                                a.resolve_in_place(&bases);
+                            }
+                        });
+                    }
+                });
+
                 for dep in &mut project.extends {
                     use omni_types::Root;
 
                     if dep.is_rooted() {
-                        // WORKSPACE_DIR_VAR.to_string() => self.root_dir.to_string_lossy().to_string(),
-                        // PROJECT_DIR_VAR.to_string() => project.path.clone(),
                         let roots = enum_map! {
                             Root::Workspace => self.root_dir.as_ref(),
                             Root::Project => project_dir,

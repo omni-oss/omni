@@ -22,19 +22,19 @@ fn default_true() -> bool {
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
     #[serde(default)]
-    command: String,
+    pub command: String,
     #[serde(
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
     )]
-    dependencies: ListConfig<TaskDependencyConfiguration>,
+    pub dependencies: ListConfig<TaskDependencyConfiguration>,
     #[serde(default)]
-    description: Option<String>,
+    pub description: Option<String>,
     #[serde(default)]
-    env: TaskConfigurationEnvConfiguration,
+    pub env: TaskConfigurationEnvConfiguration,
     #[serde(default)]
-    cache: CacheConfiguration,
+    pub cache: CacheConfiguration,
     #[serde(default)]
-    output: TaskOutputConfiguration,
+    pub output: TaskOutputConfiguration,
 }
 
 #[derive(

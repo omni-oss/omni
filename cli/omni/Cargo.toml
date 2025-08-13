@@ -76,6 +76,8 @@ derive_builder = { workspace = true }
 bs58 = { workspace = true }
 ahash = { workspace = true }
 bytes = { workspace = true }
+owo-colors = { workspace = true }
+tiny-gradient = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
