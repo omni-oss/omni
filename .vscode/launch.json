@@ -9,12 +9,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'omni'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=omni"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=omni"],
                 "filter": {
                     "name": "omni",
                     "kind": "lib"
@@ -28,17 +23,20 @@
             "request": "launch",
             "name": "Debug executable 'omni'",
             "cargo": {
-                "args": [
-                    "build",
-                    "--bin=omni",
-                    "--package=omni"
-                ],
+                "args": ["build", "--bin=omni", "--package=omni"],
                 "filter": {
                     "name": "omni",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [
+                "-f=debug",
+                "run",
+                "--force",
+                "--ignore-deps",
+                "--project=omni",
+                "build"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {
@@ -46,12 +44,7 @@
             "request": "launch",
             "name": "Debug unit tests in executable 'omni'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=omni",
-                    "--package=omni"
-                ],
+                "args": ["test", "--no-run", "--bin=omni", "--package=omni"],
                 "filter": {
                     "name": "omni",
                     "kind": "bin"
@@ -65,12 +58,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'config_utils'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=config_utils"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=config_utils"],
                 "filter": {
                     "name": "config_utils",
                     "kind": "lib"
@@ -84,12 +72,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'dir_walker'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=dir_walker"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=dir_walker"],
                 "filter": {
                     "name": "dir_walker",
                     "kind": "lib"
@@ -103,12 +86,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'env_loader'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=env_loader"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=env_loader"],
                 "filter": {
                     "name": "env_loader",
                     "kind": "lib"
@@ -122,12 +100,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'env'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=env"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=env"],
                 "filter": {
                     "name": "env",
                     "kind": "lib"
@@ -160,12 +133,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'trace'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=trace"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=trace"],
                 "filter": {
                     "name": "trace",
                     "kind": "lib"
@@ -179,12 +147,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'js_runtime'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=js_runtime"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=js_runtime"],
                 "filter": {
                     "name": "js_runtime",
                     "kind": "lib"
@@ -198,12 +161,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'omni_core'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=omni_core"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=omni_core"],
                 "filter": {
                     "name": "omni_core",
                     "kind": "lib"
@@ -217,12 +175,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'bridge_rpc'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=bridge_rpc"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=bridge_rpc"],
                 "filter": {
                     "name": "bridge_rpc",
                     "kind": "lib"
@@ -255,12 +208,7 @@
             "request": "launch",
             "name": "Debug unit tests in library 'omni_types'",
             "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--lib",
-                    "--package=omni_types"
-                ],
+                "args": ["test", "--no-run", "--lib", "--package=omni_types"],
                 "filter": {
                     "name": "omni_types",
                     "kind": "lib"

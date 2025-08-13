@@ -20,8 +20,9 @@ use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::{ProjectGraph, TaskExecutionNode};
 use system_traits::{
-    EnvCurrentDir, EnvVar, EnvVars, FsCanonicalize, FsMetadata, FsRead,
-    auto_impl, impls::RealSys as RealSysSync,
+    EnvCurrentDir, EnvVar, EnvVars, FsCanonicalize, FsHardLinkAsync,
+    FsMetadata, FsMetadataAsync, FsRead, auto_impl,
+    impls::RealSys as RealSysSync,
 };
 
 use crate::{
@@ -61,7 +62,17 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 
 #[auto_impl]
 pub trait ContextSys:
-    EnvCurrentDir + FsRead + FsMetadata + FsCanonicalize + Clone + EnvVar + EnvVars
+    EnvCurrentDir
+    + FsRead
+    + FsMetadata
+    + FsMetadataAsync
+    + FsCanonicalize
+    + Clone
+    + EnvVar
+    + EnvVars
+    + FsHardLinkAsync
+    + Send
+    + Sync
 {
 }
 

@@ -4,8 +4,15 @@ name: omni
 extends:
   - "@workspace/omni/presets/rust-cli.omni.yaml"
 
+tasks:
+  build:
+    output:
+      files:
+        - "@workspace/target/release/omni"
+
 dependencies:
   - omni_core
   - env_loader
   - config_utils
   - omni_types
+  - system_traits

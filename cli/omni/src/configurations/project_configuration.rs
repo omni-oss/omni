@@ -9,7 +9,8 @@ use system_traits::FsRead;
 
 use crate::{
     configurations::{
-        CacheConfiguration, ExtensionGraphNode, utils::list_config_default,
+        CacheConfiguration, ExtensionGraphNode, MetaConfiguration,
+        utils::list_config_default,
     },
     utils,
 };
@@ -46,6 +47,9 @@ pub struct ProjectConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub name: String,
 
+    #[merge(strategy = merge::option::recurse)]
+    pub description: Option<Replace<String>>,
+
     #[serde(default = "list_config_default::<Replace<String>>")]
     pub dependencies: ListConfig<Replace<String>>,
 
@@ -54,6 +58,9 @@ pub struct ProjectConfiguration {
 
     #[serde(default)]
     pub cache: CacheConfiguration,
+
+    #[serde(default)]
+    pub meta: MetaConfiguration,
 
     #[serde(default)]
     pub tasks: DictConfig<TaskConfiguration>,

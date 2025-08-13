@@ -158,4 +158,7 @@ enum CommandExecutorErrorInner {
 
     #[error("can't take writer: {0}")]
     CantTakeWriter(String),
+
+    #[error("can't parse command: {0}")]
+    CantParseCommand(eyre::Report),
 }

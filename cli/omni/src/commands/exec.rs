@@ -14,8 +14,10 @@ pub struct ExecArgs {
         help = "Run the command based on the project name matching the filter"
     )]
     project: Option<String>,
-    #[arg(required = true, num_args(1..), trailing_var_arg = true, allow_hyphen_values = true)]
-    command: Vec<String>,
+    #[arg(required = true)]
+    command: String,
+    #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
 }
 
 #[derive(Args)]
@@ -27,9 +29,10 @@ pub struct ExecCommand {
 pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
     let mut builder = TaskOrchestrator::builder();
 
-    builder
-        .context(ctx.clone())
-        .call(Call::new_command(command.args.command.join(" ")));
+    builder.context(ctx.clone()).call(Call::new_command(
+        command.args.command.clone(),
+        command.args.args.clone(),
+    ));
 
     if let Some(filter) = &command.args.project {
         builder.project_filter(filter);

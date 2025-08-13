@@ -18,7 +18,7 @@ pub fn has_globs(path: &str) -> bool {
         || path.contains("{")
 }
 
-fn remove_globs(path: &Path) -> &Path {
+pub fn remove_globs(path: &Path) -> &Path {
     if !has_globs(path.to_string_lossy().as_ref()) {
         return path;
     }
