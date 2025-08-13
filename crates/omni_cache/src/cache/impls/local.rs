@@ -1193,17 +1193,27 @@ mod tests {
             .expect("cached output should exist");
 
         assert_eq!(cached_output.files.len(), 3, "should be 3 files");
+        // the output should be resolved already
         assert_eq!(
-            cached_output.files[0].original_path.to_string(),
-            "@workspace/rootfile.txt",
+            cached_output.files[0]
+                .original_path
+                .path()
+                .expect("path should be resolved"),
+            dir.join("rootfile.txt"),
         );
         assert_eq!(
-            cached_output.files[1].original_path.to_string(),
-            "@project/dist/b-test.js",
+            cached_output.files[1]
+                .original_path
+                .path()
+                .expect("path should be resolved"),
+            dir.join("project1/dist/b-test.js"),
         );
         assert_eq!(
-            cached_output.files[2].original_path.to_string(),
-            "@project/dist/a-test.js",
+            cached_output.files[2]
+                .original_path
+                .path()
+                .expect("path should be resolved"),
+            dir.join("project1/dist/a-test.js"),
         );
     }
 
