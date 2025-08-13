@@ -7,7 +7,8 @@ version.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["enable-tracing"]
+enable-tracing = ["dep:tracing", "dep:trace", "trace/enabled"]
 
 [dependencies]
 mockall = { workspace = true }
@@ -36,6 +37,8 @@ omni_types = { workspace = true, features = ["serde"] }
 byteorder = { workspace = true }
 globset = { workspace = true }
 bytes = { workspace = true }
+trace = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

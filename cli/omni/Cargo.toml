@@ -51,9 +51,9 @@ js_runtime = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-async-tokio",
     "real-sync",
+    "memory-async",
 ] }
 dir_walker = { workspace = true, features = ["ignore", "memory"] }
-deno_task_shell = { workspace = true }
 petgraph = { workspace = true }
 thiserror = { workspace = true }
 defer = { workspace = true }

@@ -1,4 +1,4 @@
-// BaseEnvSetCurrentDir, BaseEnvSetVar, BaseEnvVar, BaseFsCanonicalize,
+// BaseEnvSetVar, BaseEnvVar
 // BaseFsChown, BaseFsCloneFile, BaseFsCopy, BaseFsCreateDir,
 // BaseFsCreateJunction, BaseFsHardLink, BaseFsMetadata, BaseFsOpen,
 // BaseFsRead, BaseFsReadDir, BaseFsReadLink, BaseFsRemoveDir,
@@ -7,7 +7,7 @@
 // BaseFsSymlinkDir, BaseFsSymlinkFile, BaseFsWrite, BoxableFsFile,
 // CreateDirOptions, EnvCacheDir, EnvCurrentDir, EnvHomeDir, EnvProgramsDir,
 // EnvSetCurrentDir, EnvSetUmask, EnvSetVar, EnvTempDir, EnvUmask, EnvVar,
-// FileType, FsCanonicalize, FsChown, FsCloneFile, FsCopy, FsCreateDir,
+// FileType, FsChown, FsCloneFile, FsCopy, FsCreateDir,
 // FsCreateDirAll, FsCreateJunction, FsDirEntry, FsFile, FsFileAsRaw,
 // FsFileIsTerminal, FsFileLock, FsFileLockMode, FsFileMetadata, FsFileSetLen,
 // FsFileSetPermissions, FsFileSetTimes, FsFileSyncAll, FsFileSyncData,
@@ -349,6 +349,65 @@ pub trait FsRemoveDirAllAsync: BaseFsRemoveDirAllAsync {
 
 #[async_trait]
 impl<T: BaseFsRemoveDirAllAsync> FsRemoveDirAllAsync for T {}
+
+#[async_trait]
+pub trait BaseFsRemoveFileAsync {
+    #[doc(hidden)]
+    async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsRemoveFileAsync: BaseFsRemoveFileAsync {
+    async fn fs_remove_file_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_remove_file_async(path.as_ref()).await
+    }
+}
+
+impl<T: BaseFsRemoveFileAsync> FsRemoveFileAsync for T {}
+
+#[async_trait]
+pub trait BaseFsRemoveDirAsync {
+    #[doc(hidden)]
+    async fn base_fs_remove_dir_async(&self, path: &Path) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsRemoveDirAsync: BaseFsRemoveDirAsync {
+    async fn fs_remove_dir_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_remove_dir_async(path.as_ref()).await
+    }
+}
+
+impl<T: BaseFsRemoveDirAsync> FsRemoveDirAsync for T {}
+
+#[async_trait]
+pub trait BaseFsRenameAsync {
+    #[doc(hidden)]
+    async fn base_fs_rename_async(
+        &self,
+        from: &Path,
+        to: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsRenameAsync: BaseFsRenameAsync {
+    async fn fs_rename_async(
+        &self,
+        from: impl AsRef<Path> + Send,
+        to: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_rename_async(from.as_ref(), to.as_ref()).await
+    }
+}
+
+impl<T: BaseFsRenameAsync> FsRenameAsync for T {}
 
 #[async_trait]
 pub trait BaseFsHardLinkAsync {

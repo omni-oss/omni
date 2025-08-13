@@ -6,7 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    configurations::{CacheConfiguration, TaskOutputConfiguration},
+    configurations::{
+        CacheConfiguration, MetaConfiguration, TaskOutputConfiguration,
+    },
     core::Task,
 };
 
@@ -27,14 +29,21 @@ pub struct TaskConfigurationLongForm {
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
     )]
     pub dependencies: ListConfig<TaskDependencyConfiguration>,
+
     #[serde(default)]
     pub description: Option<String>,
+
     #[serde(default)]
     pub env: TaskConfigurationEnvConfiguration,
+
     #[serde(default)]
     pub cache: CacheConfiguration,
+
     #[serde(default)]
     pub output: TaskOutputConfiguration,
+
+    #[serde(default)]
+    pub meta: MetaConfiguration,
 }
 
 #[derive(
@@ -139,6 +148,7 @@ impl Merge for TaskConfiguration {
                     env: a_env,
                     cache: a_cache_key,
                     output: a_output,
+                    meta: a_meta,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -147,6 +157,7 @@ impl Merge for TaskConfiguration {
                     env: b_env,
                     cache: b_cache_key,
                     output: b_output,
+                    meta: b_meta,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -157,6 +168,7 @@ impl Merge for TaskConfiguration {
                 a_env.merge(b_env);
                 a_cache_key.merge(b_cache_key);
                 a_output.merge(b_output);
+                a_meta.merge(b_meta);
             }
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
@@ -192,6 +204,7 @@ mod tests {
             env: Default::default(),
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
+            meta: Default::default(),
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -206,6 +219,7 @@ mod tests {
             env: Default::default(),
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
+            meta: Default::default(),
         });
 
         a.merge(b);
@@ -218,7 +232,8 @@ mod tests {
                 description: Some(String::from("a description")),
                 env: Default::default(),
                 cache: Default::default(),
-                output: TaskOutputConfiguration::default(),
+                output: Default::default(),
+                meta: Default::default(),
             })
         );
     }

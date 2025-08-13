@@ -1,13 +1,23 @@
 use std::result::Result;
 
+use derive_builder::Builder;
+use ignore::overrides::OverrideBuilder;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{DirEntry, DirWalkerBase};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Builder)]
 pub struct IgnoreRealDirWalkerConfig {
     pub standard_filters: bool,
     pub custom_ignore_filenames: Vec<String>,
+    pub overrides: Option<IgnoreOverridesConfig>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IgnoreOverridesConfig {
+    pub root: String,
+    pub includes: Vec<String>,
+    pub excludes: Vec<String>,
 }
 
 impl Default for IgnoreRealDirWalkerConfig {
@@ -15,6 +25,7 @@ impl Default for IgnoreRealDirWalkerConfig {
         Self {
             standard_filters: true,
             custom_ignore_filenames: vec![],
+            overrides: None,
         }
     }
 }
@@ -23,14 +34,37 @@ impl IgnoreRealDirWalkerConfig {
     pub(crate) fn apply<'builder>(
         &self,
         builder: &'builder mut ignore::WalkBuilder,
-    ) -> &'builder mut ignore::WalkBuilder {
-        let mut builder = builder.standard_filters(self.standard_filters);
+    ) -> Result<&'builder mut ignore::WalkBuilder, ignore::Error> {
+        if let Some(conf) = &self.overrides
+            && (!conf.includes.is_empty() || !conf.excludes.is_empty())
+        {
+            let overrides = &mut OverrideBuilder::new(&conf.root);
 
+            if !conf.includes.is_empty() {
+                for include in conf.includes.iter() {
+                    overrides.add(include)?;
+                }
+            }
+
+            if !conf.excludes.is_empty() {
+                for exclude in conf.excludes.iter() {
+                    overrides.add(&format!("!{}", exclude))?;
+                }
+            }
+
+            let overrides = overrides.build()?;
+            trace::debug!(
+                config = ?conf,
+                "added overrides to ignore builder",
+            );
+            builder.overrides(overrides);
+        }
+        builder.standard_filters(self.standard_filters);
         for ignore_filename in self.custom_ignore_filenames.iter() {
-            builder = builder.add_custom_ignore_filename(ignore_filename);
+            builder.add_custom_ignore_filename(ignore_filename);
         }
 
-        builder
+        Ok(builder)
     }
 }
 
@@ -65,7 +99,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
             builder.add(p);
         }
 
-        let builder = self.config.apply(&mut builder);
+        let builder = self.config.apply(&mut builder)?;
 
         let walk = builder.build();
 
@@ -158,4 +192,7 @@ impl<T: Into<IgnoreRealDirWalkerErrorInner>> From<T>
 enum IgnoreRealDirWalkerErrorInner {
     #[error("path can't be empty")]
     PathCantBeEmpty,
+
+    #[error(transparent)]
+    Ignore(#[from] ignore::Error),
 }

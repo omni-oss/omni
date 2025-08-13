@@ -46,7 +46,7 @@ pub struct ExecutionResult {
     #[new(into)]
     pub node: TaskExecutionNode,
     #[new(into)]
-    pub exit_status: ExitStatus,
+    pub exit_code: ExitStatus,
     #[new(into)]
     pub elapsed: std::time::Duration,
     #[new(into)]
@@ -55,16 +55,16 @@ pub struct ExecutionResult {
 
 impl ExecutionResult {
     pub fn success(&self) -> bool {
-        self.exit_status.success()
+        self.exit_code.success()
     }
 
     pub fn exit_code(&self) -> i32 {
-        self.exit_status.code().unwrap_or(0)
+        self.exit_code.code().unwrap_or(0)
     }
 }
 
 impl TaskExecutor {
-    pub fn set_output_writer(
+    pub fn output_writer(
         &mut self,
         writer: impl TaskExecutorWriter + 'static,
     ) -> &mut Self {
@@ -72,7 +72,7 @@ impl TaskExecutor {
         self
     }
 
-    pub fn set_env_vars(&mut self, vars: &Map<String, String>) -> &mut Self {
+    pub fn env_vars(&mut self, vars: &Map<String, String>) -> &mut Self {
         self.expanded_command =
             Some(::env::expand(self.task.task_command(), vars));
         self.env_vars = Some(vars_os(vars));
@@ -80,7 +80,7 @@ impl TaskExecutor {
         self
     }
 
-    pub fn set_input_reader(
+    pub fn input_reader(
         &mut self,
         reader: impl TaskExecutorReader + 'static,
     ) -> &mut Self {
@@ -182,7 +182,7 @@ impl TaskExecutor {
 
         Ok(ExecutionResult {
             node: task,
-            exit_status,
+            exit_code: exit_status,
             elapsed,
             logs,
         })

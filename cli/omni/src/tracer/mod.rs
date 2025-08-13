@@ -12,6 +12,7 @@ use tracing::level_filters::LevelFilter;
 use tracing::span;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(
@@ -66,6 +67,10 @@ impl TracerSubscriber {
     pub fn new(config: &TracerConfig) -> eyre::Result<Self> {
         let mut layers = Vec::new();
 
+        let main_filters = Targets::new()
+            .with_target("globset", LevelFilter::OFF)
+            .with_target("ignore", LevelFilter::OFF);
+
         if !config.stdout_trace_level.is_none() {
             let filter: LevelFilter = config.stdout_trace_level.into();
             let stdout_layer = tracing_subscriber::fmt::layer()
@@ -75,7 +80,7 @@ impl TracerSubscriber {
                 .without_time()
                 .with_target(false)
                 .with_line_number(false)
-                .with_filter(filter)
+                .with_filter(main_filters.clone().with_default(filter))
                 .boxed();
 
             layers.push(stdout_layer);
@@ -84,7 +89,9 @@ impl TracerSubscriber {
         if !config.stderr_trace_enabled {
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
-                .with_filter(LevelFilter::ERROR)
+                .with_filter(
+                    main_filters.clone().with_default(LevelFilter::ERROR),
+                )
                 .boxed();
 
             layers.push(stderr_layer);
@@ -105,7 +112,7 @@ impl TracerSubscriber {
             let file_layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_writer(Arc::new(File::create(file_path)?))
-                .with_filter(filter)
+                .with_filter(main_filters.clone().with_default(filter))
                 .boxed();
 
             layers.push(file_layer);

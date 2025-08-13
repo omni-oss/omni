@@ -346,12 +346,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
-name = "cfg_aliases"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
-
-[[package]]
 name = "chrono"
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -703,62 +697,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "930c7171c8df9fb1782bdf9b918ed9ed2d33d1d22300abb754f9085bc48bf8e8"
 
 [[package]]
-name = "deno_error"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dde60bd153886964234c5012d3d9caf788287f28d81fb24a884436904101ef10"
-dependencies = [
- "deno_error_macro",
- "libc",
- "url",
-]
-
-[[package]]
-name = "deno_error_macro"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "409f265785bd946d3006756955aaf40b0e4deb25752eae6a990afe54a31cfd83"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "deno_path_util"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07f0a6c02723e125a14caacfe4a44a4972364a243a6dfed42b4b16128c76bc34"
-dependencies = [
- "deno_error",
- "percent-encoding",
- "sys_traits",
- "thiserror 2.0.12",
- "url",
-]
-
-[[package]]
-name = "deno_task_shell"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ec9c589f733da0f5dfdf475d44cd01e2087425839a55162538d9898e94556e8"
-dependencies = [
- "anyhow",
- "deno_path_util",
- "futures",
- "glob",
- "monch",
- "nix 0.29.0",
- "os_pipe",
- "path-dedot",
- "sys_traits",
- "thiserror 2.0.12",
- "tokio",
- "which",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "deranged"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -867,6 +805,8 @@ dependencies = [
  "ignore",
  "strum 0.27.2",
  "thiserror 2.0.12",
+ "trace",
+ "tracing",
 ]
 
 [[package]]
@@ -1195,12 +1135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glob"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
-
-[[package]]
 name = "globset"
 version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1506,16 +1440,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "junction"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72bbdfd737a243da3dfc1f99ee8d6e166480f17ab4ac84d7c34aacd73fc7bd16"
-dependencies = [
- "scopeguard",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "lazy-regex"
 version = "3.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1729,12 +1653,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monch"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b52c1b33ff98142aecea13138bd399b68aa7ab5d9546c300988c345004001eea"
-
-[[package]]
 name = "nix"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1742,19 +1660,7 @@ checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
 dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
- "cfg_aliases 0.1.1",
- "libc",
-]
-
-[[package]]
-name = "nix"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
-dependencies = [
- "bitflags 2.9.1",
- "cfg-if",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "libc",
 ]
 
@@ -1855,7 +1761,6 @@ dependencies = [
  "clap_complete",
  "config_utils",
  "defer",
- "deno_task_shell",
  "derive-new",
  "derive_builder",
  "derive_more",
@@ -1929,6 +1834,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "tokio",
+ "trace",
+ "tracing",
  "url",
  "yoke",
 ]
@@ -2050,15 +1957,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
-name = "path-dedot"
-version = "3.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ba0ad7e047712414213ff67533e6dd477af0a4e1d14fb52343e53d30ea9397"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2157,7 +2055,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
- "nix 0.28.0",
+ "nix",
  "serial2",
  "shared_library",
  "shell-words",
@@ -2807,11 +2705,8 @@ version = "0.1.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f74a2c95f72e36fa6bd04a40d15623a9904bab1cc2fa6c6135b09d774a65088"
 dependencies = [
- "junction",
- "libc",
  "parking_lot",
  "sys_traits_macros",
- "windows-sys 0.59.0",
 ]
 
 [[package]]

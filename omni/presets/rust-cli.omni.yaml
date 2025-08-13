@@ -5,7 +5,14 @@ extends:
   - ./rust-lib.omni.yaml
 
 tasks:
+  build:
+    command: cargo build --release --package ${PROJECT_NAME}
+    dependencies:
+      - test
+
   install:
+    cache:
+      enabled: false
     command: cargo install --path .
     dependencies:
       - test

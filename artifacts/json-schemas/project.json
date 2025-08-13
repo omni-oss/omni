@@ -10,11 +10,15 @@
     "cache": {
       "$ref": "#/$defs/CacheConfiguration",
       "default": {
-        "enabled": false,
+        "enabled": true,
         "key": {
-          "defaults": false,
-          "env": [],
-          "files": []
+          "defaults": true,
+          "env": {
+            "append": []
+          },
+          "files": {
+            "append": []
+          }
         }
       }
     },
@@ -42,7 +46,7 @@
       "type": "string"
     },
     "tasks": {
-      "$ref": "#/$defs/DictConfig",
+      "$ref": "#/$defs/DictConfig2",
       "default": {}
     }
   },
@@ -58,12 +62,18 @@
           "default": true
         },
         "key": {
-          "$ref": "#/$defs/CacheKeyConfiguration"
+          "$ref": "#/$defs/CacheKeyConfiguration",
+          "default": {
+            "defaults": true,
+            "env": {
+              "append": []
+            },
+            "files": {
+              "append": []
+            }
+          }
         }
-      },
-      "required": [
-        "key"
-      ]
+      }
     },
     "CacheKeyConfiguration": {
       "type": "object",
@@ -87,44 +97,6 @@
       }
     },
     "DictConfig": {
-      "anyOf": [
-        {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/TaskConfiguration"
-          }
-        },
-        {
-          "type": "object",
-          "properties": {
-            "merge": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/TaskConfiguration"
-              }
-            }
-          },
-          "required": [
-            "merge"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "replace": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/$defs/TaskConfiguration"
-              }
-            }
-          },
-          "required": [
-            "replace"
-          ]
-        }
-      ]
-    },
-    "DictConfig2": {
       "anyOf": [
         {
           "type": "object",
@@ -162,12 +134,50 @@
         }
       ]
     },
+    "DictConfig2": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/TaskConfiguration"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/TaskConfiguration"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/TaskConfiguration"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
     "ListConfig": {
       "anyOf": [
         {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/string"
+            "type": "string"
           }
         },
         {
@@ -176,7 +186,7 @@
             "merge": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/string"
+                "type": "string"
               }
             }
           },
@@ -190,7 +200,7 @@
             "append": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/string"
+                "type": "string"
               }
             }
           },
@@ -204,7 +214,7 @@
             "prepend": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/string"
+                "type": "string"
               }
             }
           },
@@ -218,7 +228,7 @@
             "replace": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/string"
+                "type": "string"
               }
             }
           },
@@ -307,7 +317,7 @@
           }
         },
         "vars": {
-          "$ref": "#/$defs/DictConfig2",
+          "$ref": "#/$defs/DictConfig",
           "default": {}
         }
       }
@@ -328,7 +338,7 @@
         "vars": {
           "anyOf": [
             {
-              "$ref": "#/$defs/DictConfig2"
+              "$ref": "#/$defs/DictConfig"
             },
             {
               "type": "null"
@@ -343,11 +353,15 @@
         "cache": {
           "$ref": "#/$defs/CacheConfiguration",
           "default": {
-            "enabled": false,
+            "enabled": true,
             "key": {
-              "defaults": false,
-              "env": [],
-              "files": []
+              "defaults": true,
+              "env": {
+                "append": []
+              },
+              "files": {
+                "append": []
+              }
             }
           }
         },
@@ -399,9 +413,6 @@
           "default": true
         }
       }
-    },
-    "string": {
-      "type": "string"
     }
   }
 }

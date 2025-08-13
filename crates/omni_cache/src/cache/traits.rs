@@ -13,22 +13,22 @@ pub trait TaskExecutionCacheStore: Send + Sync {
         &'a self,
         cache_info: &'a NewCacheInfo<'a>,
     ) -> Result<CachedTaskExecutionHash<'a>, Self::Error> {
-        let results = self.cache_many(&[cache_info]).await?;
+        let results = self.cache_many(&[*cache_info]).await?;
         let first = results[0];
         Ok(first)
     }
 
     async fn cache_many<'a>(
         &'a self,
-        cache_infos: &[&'a NewCacheInfo<'a>],
+        cache_infos: &[NewCacheInfo<'a>],
     ) -> Result<Vec<CachedTaskExecutionHash<'a>>, Self::Error>;
 
     async fn get(
         &self,
-        task_infos: &TaskExecutionInfo,
+        task_info: &TaskExecutionInfo,
     ) -> Result<Option<CachedTaskExecution>, Self::Error> {
         Ok(self
-            .get_many(&[*task_infos])
+            .get_many(&[*task_info])
             .await?
             .pop()
             .expect("should be some"))

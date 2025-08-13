@@ -31,8 +31,12 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, new, Display)]
 pub enum Call {
-    #[strum(to_string = "command '{0}'")]
-    Command(#[new(into)] String),
+    #[strum(to_string = "command '{command} {args:?}'")]
+    Command {
+        #[new(into)]
+        command: String,
+        args: Vec<String>,
+    },
 
     #[strum(to_string = "task '{0}'")]
     Task(#[new(into)] String),
@@ -43,7 +47,7 @@ impl<TSys: ContextSys> TaskOrchestratorBuilder<TSys> {
         let call: Call = call.into();
 
         // default handling for commands is to run them with no dependencies and never consider the cache
-        if matches!(call, Call::Command(_)) {
+        if matches!(call, Call::Command { .. }) {
             if self.ignore_dependencies.is_none() {
                 self.ignore_dependencies = Some(true);
             }
@@ -184,47 +188,43 @@ impl TaskExecutionResult {
     }
 }
 
+#[derive(Debug)]
+struct TaskContext<'a> {
+    node: &'a TaskExecutionNode,
+    dependencies: Vec<&'a str>,
+    dependency_hashes: Vec<DefaultHash>,
+    env_vars: Cow<'a, EnvVarsMap>,
+    cache_info: Option<&'a CacheInfo>,
+}
+
+impl<'a> TaskContext<'a> {
+    pub(self) fn execution_info(&'a self) -> Option<TaskExecutionInfo<'a>> {
+        let ci = self.cache_info?;
+        Some(TaskExecutionInfo {
+            dependency_hashes: &self.dependency_hashes,
+            env_vars: &self.env_vars,
+            input_env_keys: &ci.key_env_keys,
+            input_files: &ci.key_input_files,
+            output_files: &ci.cache_output_files,
+            project_dir: self.node.project_dir(),
+            project_name: self.node.project_name(),
+            task_command: self.node.task_command(),
+            task_name: self.node.task_name(),
+        })
+    }
+}
+
 impl<TSys: ContextSys> TaskOrchestrator<TSys> {
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskOrchestratorError> {
-        #[derive(Debug)]
-        struct TaskContext<'a> {
-            node: &'a TaskExecutionNode,
-            dependencies: Vec<&'a str>,
-            dependency_hashes: Vec<DefaultHash>,
-            env_vars: Cow<'a, EnvVarsMap>,
-            cache_info: Option<&'a CacheInfo>,
-        }
-
-        impl<'a> TaskContext<'a> {
-            pub(self) fn execution_info(
-                &'a self,
-            ) -> Option<TaskExecutionInfo<'a>> {
-                let ci = self.cache_info?;
-                Some(TaskExecutionInfo {
-                    dependency_hashes: &self.dependency_hashes,
-                    env_vars: &self.env_vars,
-                    input_env_keys: &ci.key_env_keys,
-                    input_files: &ci.key_input_files,
-                    output_files: &ci.cache_output_files,
-                    project_dir: self.node.project_dir(),
-                    project_name: self.node.project_name(),
-                    task_command: self.node.task_command(),
-                    task_name: self.node.task_name(),
-                })
-            }
-        }
-
         let mut ctx = self.context.clone();
         if let Call::Task(task) = &self.call
             && task.is_empty()
         {
             return Err(TaskOrchestratorErrorInner::TaskIsEmpty.into());
         }
-        // if command.task.is_empty() {
-        //     eyre::bail!("Task cannot be empty");
-        // }
+
         ctx.load_projects(&create_default_dir_walker())?;
 
         let filter = self.project_filter.as_deref().unwrap_or("*");
@@ -237,21 +237,22 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             let projects = ctx.get_filtered_projects(filter)?;
 
             if projects.is_empty() {
-                Err(TaskOrchestratorErrorInner::NoProjectFoundCriteria {
+                Err(TaskOrchestratorErrorInner::NoProjectFound {
                     filter: filter.to_string(),
                 })?;
             }
 
             let all_tasks = match &self.call {
-                Call::Command(c) => {
-                    let command_temp_name = format!("exec-{}", hash_command(c));
+                Call::Command { command, args } => {
+                    let task_name = temp_taskname("exec", command, args);
+                    let full_cmd = format!("{command} {}", args.join(" "));
 
                     projects
                         .iter()
                         .map(|p| {
                             TaskExecutionNode::new(
-                                command_temp_name.clone(),
-                                c.clone(),
+                                task_name.clone(),
+                                full_cmd.clone(),
                                 p.name.clone(),
                                 p.dir.clone(),
                             )
@@ -278,23 +279,24 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             let mut project_graph = ctx.get_project_graph()?;
 
             let task_name = match &self.call {
-                Call::Command(command) => {
-                    let cmd = hash_command(command);
+                Call::Command { command, args } => {
+                    let task_name = temp_taskname("exec", command, args);
+                    let full_cmd = format!("{command} {}", args.join(" "));
 
                     project_graph.mutate_nodes(|p| {
                         p.tasks.insert(
-                            cmd.clone(),
+                            task_name.clone(),
                             Task::new(
-                                command.clone(),
+                                full_cmd.clone(),
                                 vec![TaskDependency::Upstream {
-                                    task: cmd.clone(),
+                                    task: task_name.clone(),
                                 }],
                                 None,
                             ),
                         );
                     });
 
-                    cmd
+                    task_name
                 }
                 Call::Task(task_name) => task_name.clone(),
             };
@@ -402,7 +404,8 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                 })
                 .collect::<Vec<_>>();
 
-            let cached_results = if let Some(cache_store) = cache_store.as_ref()
+            let cached_results = if !cache_inputs.is_empty()
+                && let Some(cache_store) = cache_store.as_ref()
             {
                 cache_store
                     .get_many(&cache_inputs[..])
@@ -440,6 +443,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     continue 'inner_loop;
                 }
 
+                // Replay the cache hits
                 if !self.force
                     && let Some(res) =
                         cached_results.get(task_ctx.node.full_task_name())
@@ -472,6 +476,25 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         .await?;
                     }
 
+                    // hard link the cached files to the original file paths if they don't exist
+                    let sys = self.context.sys();
+                    for file in res.files.iter() {
+                        let original_path = file
+                            .original_path
+                            .path()
+                            .expect("should be resolved");
+
+                        if sys.fs_exists_async(original_path).await? {
+                            continue;
+                        }
+
+                        sys.fs_hard_link_async(
+                            file.cached_path.as_path(),
+                            original_path,
+                        )
+                        .await?;
+                    }
+
                     continue;
                 }
 
@@ -482,9 +505,9 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     let mut executor = TaskExecutor::new(task_ctx.node.clone());
 
                     executor
-                        .set_output_writer(AllowStdIo::new(std::io::stdout()))
+                        .output_writer(AllowStdIo::new(std::io::stdout()))
                         .record_logs(record_logs)
-                        .set_env_vars(&task_ctx.env_vars);
+                        .env_vars(&task_ctx.env_vars);
 
                     let this = executor.exec().await;
                     match this {
@@ -499,12 +522,16 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             // hoist execution info to the cache to not drop it
             let exec_infos;
             let saved_caches = if !self.no_cache
+                && !task_results.is_empty()
                 && let Some(cache_store) = cache_store.as_ref()
             {
                 exec_infos = task_results
                     .iter()
                     .filter_map(|r| {
                         if let Ok((task_ctx, result)) = r
+                            && task_ctx
+                                .cache_info
+                                .is_some_and(|ci| ci.cache_execution)
                             && let Some(exec_info) = task_ctx.execution_info()
                         {
                             Some(NewCacheInfo {
@@ -519,16 +546,34 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     })
                     .collect::<Vec<_>>();
 
-                let exec_infos = exec_infos.iter().collect::<Vec<_>>();
+                if !exec_infos.is_empty() {
+                    trace::debug!(
+                        task_execution_infos = ?exec_infos,
+                        "caching task executions"
+                    );
 
-                let results = cache_store.cache_many(&exec_infos[..]).await?;
+                    let results = cache_store.cache_many(&exec_infos).await?;
 
-                results
-                    .into_iter()
-                    .map(|cte| {
-                        (format!("{}#{}", cte.project_name, cte.task_name), cte)
-                    })
-                    .collect()
+                    trace::debug!(
+                        results = ?results,
+                        "cached task execution info successfully"
+                    );
+
+                    results
+                        .into_iter()
+                        .map(|cte| {
+                            (
+                                format!(
+                                    "{}#{}",
+                                    cte.project_name, cte.task_name
+                                ),
+                                cte,
+                            )
+                        })
+                        .collect()
+                } else {
+                    unordered_map!()
+                }
             } else {
                 unordered_map!()
             };
@@ -574,14 +619,17 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
     }
 }
 
-fn hash_command(command: &str) -> String {
+fn temp_taskname(prefix: &str, command: &str, args: &[String]) -> String {
     // utilize default hasher so that the hash is consistent across platforms and versions
     let mut hasher = ahash::AHasher::default();
-    command.hash(&mut hasher);
+    let full_cmd = format!("{command} {args:?}");
+    full_cmd.hash(&mut hasher);
 
     let hash = hasher.finish();
 
-    bs58::encode(hash.to_le_bytes()).into_string()
+    let enc = bs58::encode(hash.to_le_bytes()).into_string();
+
+    format!("{prefix}-{enc}")
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -625,7 +673,7 @@ enum TaskOrchestratorErrorInner {
     TaskNotFound { task: String },
 
     #[error("no project found for criteria: filter = '{filter}'")]
-    NoProjectFoundCriteria { filter: String },
+    NoProjectFound { filter: String },
 
     #[error("no task to execute: {0} not found")]
     NothingToExecute(Call),

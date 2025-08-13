@@ -5,17 +5,18 @@ pub use globset::Error as GlobsetError;
 pub use ignore::Error as IgnoreError;
 
 use crate::{
-    DirEntry, DirWalkerBase,
+    DirWalkerBase,
     impls::{
-        IgnoreRealDirEntry, IgnoreRealDirWalker, IgnoreRealDirWalkerConfig,
+        IgnoreOverridesConfig, IgnoreRealDirEntry, IgnoreRealDirWalker,
+        IgnoreRealDirWalkerConfig, IgnoreRealDirWalkerError,
         IgnoreRealWalkDirIntoIter, ignore_real_dir_walker,
     },
 };
 
 #[derive(Builder)]
-#[builder(setter(into, strip_option), name = "RealGlobDirWalkerBuilder")]
+#[builder(setter(into, strip_option), name = "RealGlobDirWalkerConfigBuilder")]
 #[derive(Default)]
-pub struct RealGlobDirWalker {
+pub struct RealGlobDirWalkerConfig {
     #[builder(default = "true")]
     standard_filters: bool,
     #[builder(default)]
@@ -24,27 +25,79 @@ pub struct RealGlobDirWalker {
     include: Vec<PathBuf>,
     #[builder(setter(into), default)]
     exclude: Vec<PathBuf>,
+    #[builder(setter(into))]
+    root_dir: PathBuf,
 }
 
-impl RealGlobDirWalker {
-    pub fn builder() -> RealGlobDirWalkerBuilder {
-        RealGlobDirWalkerBuilder::default()
+impl RealGlobDirWalkerConfig {
+    pub fn builder() -> RealGlobDirWalkerConfigBuilder {
+        RealGlobDirWalkerConfigBuilder::default()
+    }
+
+    fn build_base(
+        &self,
+    ) -> Result<IgnoreRealDirWalker, IgnoreRealDirWalkerError> {
+        let dir_walker =
+            IgnoreRealDirWalker::new_with_config(IgnoreRealDirWalkerConfig {
+                standard_filters: self.standard_filters,
+                custom_ignore_filenames: self.custom_ignore_filenames.clone(),
+                overrides: Some(IgnoreOverridesConfig {
+                    root: self.root_dir.to_string_lossy().to_string(),
+                    excludes: self
+                        .exclude
+                        .iter()
+                        .map(|p| {
+                            try_relpath(&self.root_dir, p)
+                                .to_string_lossy()
+                                .to_string()
+                        })
+                        .collect(),
+                    includes: self
+                        .include
+                        .iter()
+                        .map(|p| {
+                            try_relpath(&self.root_dir, p)
+                                .to_string_lossy()
+                                .to_string()
+                        })
+                        .collect(),
+                }),
+            });
+
+        Ok(dir_walker)
+    }
+
+    pub fn build_walker(
+        self,
+    ) -> Result<RealGlobDirWalker, IgnoreRealDirWalkerError> {
+        RealGlobDirWalker::new(self)
     }
 }
 
-impl RealGlobDirWalkerBuilder {}
-
-fn pathbuf_to_glob(path: &Path) -> globset::Glob {
-    let str = path.to_string_lossy();
-
-    globset::Glob::new(&str).expect("failed to create glob")
+#[derive(Default)]
+pub struct RealGlobDirWalker {
+    base: IgnoreRealDirWalker,
 }
 
-fn join_abs(base: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_path_buf()
+impl RealGlobDirWalker {
+    pub fn config() -> RealGlobDirWalkerConfigBuilder {
+        RealGlobDirWalkerConfigBuilder::default()
+    }
+
+    pub fn new(
+        config: RealGlobDirWalkerConfig,
+    ) -> Result<Self, IgnoreRealDirWalkerError> {
+        let dir_walker = config.build_base()?;
+
+        Ok(Self { base: dir_walker })
+    }
+}
+
+fn try_relpath<'a>(base: &Path, path: &'a Path) -> &'a Path {
+    if path.starts_with(base) {
+        path.strip_prefix(base).unwrap()
     } else {
-        base.join(path)
+        path
     }
 }
 
@@ -58,77 +111,20 @@ impl DirWalkerBase for RealGlobDirWalker {
         &self,
         paths: &[&std::path::Path],
     ) -> Result<Self::WalkDir, Self::Error> {
-        let dir_walker =
-            IgnoreRealDirWalker::new_with_config(IgnoreRealDirWalkerConfig {
-                standard_filters: self.standard_filters,
-                custom_ignore_filenames: self.custom_ignore_filenames.clone(),
-            });
-
-        let mut include_globset = globset::GlobSetBuilder::new();
-
-        for p in &self.include {
-            if p.is_absolute() {
-                include_globset.add(pathbuf_to_glob(p));
-            } else {
-                for base in paths {
-                    let p = join_abs(base, p);
-                    include_globset.add(pathbuf_to_glob(&p));
-                }
-            }
-        }
-
-        let mut exclude_globset = globset::GlobSetBuilder::new();
-
-        for p in &self.exclude {
-            if p.is_absolute() {
-                exclude_globset.add(pathbuf_to_glob(p));
-            } else {
-                for base in paths {
-                    let p = join_abs(base, p);
-                    exclude_globset.add(pathbuf_to_glob(&p));
-                }
-            }
-        }
-
         Ok(RealGlobDirWalkDir {
-            base: dir_walker.base_walk_dir(paths)?.into_iter(),
-            include_globset: include_globset
-                .build()
-                .expect("failed to build globset"),
-            exclude_globset: exclude_globset
-                .build()
-                .expect("failed to build globset"),
+            base: self.base.base_walk_dir(paths)?.into_iter(),
         })
     }
 }
 
 pub struct RealGlobDirWalkDir {
     base: IgnoreRealWalkDirIntoIter,
-    include_globset: globset::GlobSet,
-    exclude_globset: globset::GlobSet,
 }
 
 impl Iterator for RealGlobDirWalkDir {
     type Item = Result<IgnoreRealDirEntry, ignore::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for result in self.base.by_ref() {
-            match result {
-                Ok(r) => {
-                    let path = r.path().to_string_lossy();
-
-                    if self.exclude_globset.is_match(&*path)
-                        || !self.include_globset.is_match(&*path)
-                    {
-                        continue;
-                    }
-
-                    return Some(Ok(r));
-                }
-                r => return Some(r),
-            }
-        }
-
-        None
+        self.base.next()
     }
 }

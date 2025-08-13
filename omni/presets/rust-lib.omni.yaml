@@ -12,7 +12,7 @@ cache:
       - "./src/**/*.rs"
 
 extends:
-  - "@workspace/omni/presets/base.omni.yaml"
+  - "./base.omni.yaml"
 
 tasks:
   test: cargo test -p ${PROJECT_NAME}
@@ -21,8 +21,3 @@ tasks:
 
   profile:
     command: cargo flamegraph --profile=${profile:-bench-with-debug} --bench ${bench:-${PROJECT_NAME}_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
-
-  build:
-    command: cargo build --release --package ${PROJECT_NAME}
-    dependencies:
-      - test

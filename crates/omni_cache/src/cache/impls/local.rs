@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use dir_walker::{
     DirEntry, DirWalker,
-    impls::{RealGlobDirWalker, RealGlobDirWalkerBuilderError},
+    impls::{RealGlobDirWalker, RealGlobDirWalkerConfigBuilderError},
 };
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use maps::{Map, UnorderedMap};
@@ -25,7 +25,7 @@ use crate::{
         ProjectDirHasher,
         impls::{RealDirHasher, RealDirHasherError},
     },
-    utils::{project_dirname, relpath, topmost_dirs},
+    utils::{has_globs, project_dirname, relpath, remove_globs, topmost_dirs},
 };
 
 #[derive(Clone, Debug)]
@@ -166,20 +166,21 @@ impl LocalTaskExecutionCacheStore {
         Ok(tree.root().expect("unable to get root"))
     }
 
-    async fn collect<'a, 'b>(
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "debug", skip(self))
+    )]
+    async fn collect<'a>(
         &'a self,
-        projects: &'b [&'a TaskExecutionInfo<'a>],
+        projects: &[TaskExecutionInfo<'a>],
         config: &CollectConfig,
-    ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError>
-    where
-        'a: 'b,
-    {
+    ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError> {
         struct Holder<'a> {
             output_files_globset: Option<GlobSet>,
             resolved_output_files: Option<Vec<OmniPath>>,
             input_files_globset: Option<GlobSet>,
             resolved_input_files: Option<Vec<OmniPath>>,
-            task: &'a TaskExecutionInfo<'a>,
+            task: TaskExecutionInfo<'a>,
             roots: RootMap<'a>,
             hash: Option<DefaultHash>,
             cache_output_dir: Option<PathBuf>,
@@ -187,50 +188,99 @@ impl LocalTaskExecutionCacheStore {
 
         let mut to_process = Vec::with_capacity(projects.len());
 
+        let should_collect_input_files =
+            config.input_files || config.hashes || config.cache_output_dirs;
+
+        let should_collect_output_files = config.output_files;
+
         // holds paths in input files and output files
         let mut includes = Vec::with_capacity(
             projects
                 .iter()
-                .map(|i| i.output_files.len() + i.input_files.len())
+                .map(|i| {
+                    let mut count = 0;
+
+                    if should_collect_input_files {
+                        count += i.input_files.len();
+                    }
+
+                    if should_collect_output_files {
+                        count += i.output_files.len();
+                    }
+
+                    count
+                })
                 .sum(),
         );
 
         for project in projects {
+            trace::debug!(
+                project_name = ?project.project_name,
+                project = ?project,
+                "processing project"
+            );
             let roots = enum_map! {
                 Root::Workspace => &self.ws_root_dir,
                 Root::Project => project.project_dir,
             };
 
             let mut output_files_globset = None;
-            if config.output_files {
-                let mut o = GlobSetBuilder::new();
+            if should_collect_output_files {
+                let mut output_glob = GlobSetBuilder::new();
+                let mut out_includes = vec![];
 
                 populate_includes_and_globset(
                     project.output_files,
                     project.project_dir,
-                    &mut includes,
+                    &mut out_includes,
                     &roots,
-                    &mut o,
+                    &mut output_glob,
                 )?;
 
-                output_files_globset = Some(o.build()?);
+                // for some reason, ignore doesn't like it when a folder is ignored
+                // and a file inside the ignored folder is included
+                // so include all the parent folders of the included file
+                // so that ignore walks to it and doesn't ignore it
+                let mut forced_includes =
+                    Vec::with_capacity(out_includes.len());
+
+                for include in out_includes.iter() {
+                    forced_includes.push(include.to_path_buf());
+
+                    let clean = if has_globs(include.to_string_lossy().as_ref())
+                    {
+                        let clean = remove_globs(include);
+
+                        forced_includes.push(clean.to_path_buf());
+
+                        clean
+                    } else {
+                        include
+                    };
+
+                    for parent in clean.ancestors() {
+                        forced_includes.push(parent.to_path_buf());
+                    }
+                }
+
+                output_files_globset = Some(output_glob.build()?);
+                includes.extend(forced_includes);
             }
 
             let mut input_files_globset = None;
 
-            let should_collect_input_files =
-                config.input_files || config.hashes || config.cache_output_dirs;
+            // the output dirs are based on the hashes so need to be collected here
             if should_collect_input_files {
-                let mut i = GlobSetBuilder::new();
+                let mut input_glob = GlobSetBuilder::new();
                 populate_includes_and_globset(
                     project.input_files,
                     project.project_dir,
                     &mut includes,
                     &roots,
-                    &mut i,
+                    &mut input_glob,
                 )?;
 
-                input_files_globset = Some(i.build()?);
+                input_files_globset = Some(input_glob.build()?);
             }
 
             to_process.push(Holder {
@@ -250,7 +300,7 @@ impl LocalTaskExecutionCacheStore {
                 } else {
                     None
                 },
-                task: project,
+                task: *project,
                 roots,
                 hash: None,
                 cache_output_dir: None,
@@ -267,14 +317,22 @@ impl LocalTaskExecutionCacheStore {
             let topmost =
                 topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
-            let dirwalker = RealGlobDirWalker::builder()
-                .custom_ignore_filenames(vec![".omniignore".to_string()])
+            let dirwalker = RealGlobDirWalker::config()
+                .standard_filters(true)
                 .include(includes)
-                .build()?;
+                .root_dir(&self.ws_root_dir)
+                .custom_ignore_filenames(vec![".omniignore".to_string()])
+                .build()?
+                .build_walker()?;
 
             for res in dirwalker.walk_dir(&topmost)? {
                 let res = res?;
                 let original_file_abs_path = res.path();
+
+                if !self.sys.fs_is_file_async(original_file_abs_path).await? {
+                    continue;
+                }
+
                 for project in &mut to_process {
                     let project_dir = project.roots[Root::Project];
                     let rooted_path =
@@ -353,7 +411,7 @@ impl LocalTaskExecutionCacheStore {
         Ok(to_process
             .into_iter()
             .map(|p| CollectResult {
-                task: *p.task,
+                task: p.task,
                 input_files: p.resolved_input_files,
                 output_files: p.resolved_output_files,
                 hash: p.hash,
@@ -371,12 +429,15 @@ const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
     type Error = LocalTaskExecutionCacheStoreError;
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "debug", skip(self))
+    )]
     async fn cache_many<'a>(
         &'a self,
-        cache_infos: &[&'a crate::NewCacheInfo<'a>],
+        cache_infos: &[crate::NewCacheInfo<'a>],
     ) -> Result<Vec<CachedTaskExecutionHash<'a>>, Self::Error> {
-        let task_infos =
-            cache_infos.iter().map(|i| &i.task).collect::<Vec<_>>();
+        let task_infos = cache_infos.iter().map(|i| i.task).collect::<Vec<_>>();
         let cache_info_map = cache_infos
             .iter()
             .map(|i| {
@@ -386,7 +447,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
         let results = self
             .collect(
-                &task_infos[..],
+                &task_infos,
                 &CollectConfig {
                     hashes: true,
                     cache_output_dirs: true,
@@ -395,6 +456,12 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 },
             )
             .await?;
+
+        trace::debug!(
+            results = ?results,
+            "collected results: {}",
+            results.len()
+        );
 
         let logs_map = cache_infos
             .iter()
@@ -442,6 +509,12 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     )
                     .await?;
 
+                trace::debug!(
+                    original_path = ?original_abs_path,
+                    cache_path = ?cache_abs_file_path,
+                    "hard linked file"
+                );
+
                 cache_output_files.push(CachedFileOutput {
                     cached_path: relpath(&cache_abs_file_path, output_dir)
                         .to_path_buf(),
@@ -488,6 +561,10 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
         Ok(cache_exec_hashes)
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "debug", skip(self))
+    )]
     async fn get_many(
         &self,
         projects: &[TaskExecutionInfo],
@@ -498,9 +575,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             cache_output_dirs: true,
             ..Default::default()
         };
-        let projects = projects.iter().collect::<Vec<_>>();
-        'outer_loop: for project in self.collect(&projects[..], &config).await?
-        {
+        'outer_loop: for project in self.collect(projects, &config).await? {
             let output_dir = project.cache_output_dir.expect("should be some");
             let file = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
@@ -536,6 +611,8 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
                     file.cached_path =
                         self.sys.fs_canonicalize_async(c).await?;
+
+                    file.original_path.resolve_in_place(&project.roots);
                 }
 
                 Some(cached_output)
@@ -566,7 +643,7 @@ fn populate_includes_and_globset(
     project_dir: &Path,
     includes: &mut Vec<PathBuf>,
     roots: &RootMap,
-    output_files_globset: &mut GlobSetBuilder,
+    output_globset: &mut GlobSetBuilder,
 ) -> Result<(), <LocalTaskExecutionCacheStore as TaskExecutionCacheStore>::Error>
 {
     for p in files {
@@ -579,7 +656,7 @@ fn populate_includes_and_globset(
         };
 
         let glob = Glob::new(path.to_string_lossy().as_ref())?;
-        output_files_globset.add(glob);
+        output_globset.add(glob);
         includes.push(path);
     }
     Ok(())
@@ -616,7 +693,7 @@ enum LocalTaskExecutionCacheStoreErrorInner {
     Globset(#[from] globset::Error),
 
     #[error(transparent)]
-    RealGlobDirWalkerBuilder(#[from] RealGlobDirWalkerBuilderError),
+    RealGlobDirWalkerBuilder(#[from] RealGlobDirWalkerConfigBuilderError),
 
     #[error(transparent)]
     Ignore(#[from] dir_walker::impls::IgnoreError),
@@ -638,7 +715,7 @@ mod tests {
     use bytes::Bytes;
     use derive_new::new;
     use std::path::Path;
-    use system_traits::{FsRename, impls::RealSys};
+    use system_traits::{FsRename, FsRenameAsync, impls::RealSys};
     use tokio::io::AsyncReadExt as _;
     use yoke::Yoke;
 
@@ -1037,7 +1114,11 @@ mod tests {
             .expect("failed to cache");
 
         // rename the project to simulate a move operation
-        tokio::fs::rename(task.get().project_dir, dir.join("project1-renamed"))
+        sys()
+            .fs_rename_async(
+                task.get().project_dir,
+                dir.join("project1-renamed"),
+            )
             .await
             .expect("failed to rename");
 
@@ -1342,5 +1423,57 @@ mod tests {
             cached_output2.unwrap().execution_hash,
             "cached output should have different hashes"
         );
+    }
+
+    #[tokio::test]
+    async fn test_output_files_matching_ignore_files_should_still_be_cached() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task_with_mut("task", "project1", dir, |t| {
+            t.output_files
+                .push(OmniPath::new(dir.join("target/**/*.js")));
+        });
+
+        let sys = sys();
+
+        sys.fs_create_dir_all_async(dir.join("target"))
+            .await
+            .expect("failed to create dir");
+
+        // add file outside of the project that matches the gitignore
+        sys.fs_write_async(
+            dir.join("target/a-test.js"),
+            "console.log('hello')",
+        )
+        .await
+        .expect("failed to write file");
+
+        // add gitignore
+        sys.fs_write_async(dir.join(".omniignore"), "project1\ntarget\n")
+            .await
+            .expect("failed to write file");
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("cached output should exist");
+
+        assert!(cached_output.is_some(), "cached output should exist");
+        let output_files = cached_output
+            .unwrap()
+            .files
+            .into_iter()
+            .filter(|f| {
+                f.original_path.unresolved_path().ends_with("a-test.js")
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(output_files.len(), 2, "should contain the ignored files");
     }
 }
