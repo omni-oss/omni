@@ -4,6 +4,7 @@ use derive_new::new;
 use omni_hasher::impls::DefaultHash;
 use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 #[derive(
     Debug,
@@ -16,7 +17,6 @@ use serde::{Deserialize, Serialize};
     PartialOrd,
     Ord,
     new,
-    Default,
 )]
 #[allow(clippy::too_many_arguments)]
 pub struct CachedTaskExecution {
@@ -43,7 +43,10 @@ pub struct CachedTaskExecution {
     pub exit_code: i32,
 
     #[new(into)]
-    pub execution_time: std::time::Duration,
+    pub execution_duration: std::time::Duration,
+
+    #[new(into)]
+    pub execution_time: OffsetDateTime,
 }
 
 #[derive(

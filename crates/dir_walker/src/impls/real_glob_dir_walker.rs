@@ -19,12 +19,16 @@ use crate::{
 pub struct RealGlobDirWalkerConfig {
     #[builder(default = "true")]
     standard_filters: bool,
+
     #[builder(default)]
     custom_ignore_filenames: Vec<String>,
+
     #[builder(setter(into), default)]
     include: Vec<PathBuf>,
+
     #[builder(setter(into), default)]
     exclude: Vec<PathBuf>,
+
     #[builder(setter(into))]
     root_dir: PathBuf,
 }

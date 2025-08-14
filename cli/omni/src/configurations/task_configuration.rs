@@ -19,7 +19,7 @@ fn default_true() -> bool {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate,
+    Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
 )]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
@@ -47,7 +47,7 @@ pub struct TaskConfigurationLongForm {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Validate,
+    Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
 )]
 #[serde(untagged)]
 #[garde(allow_unvalidated)]

@@ -454,7 +454,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                             ExecutionResult::new(
                                 task_ctx.node.clone(),
                                 ExitStatus::from_raw(res.exit_code),
-                                res.execution_time,
+                                res.execution_duration,
                                 None,
                             ),
                             Some(res.execution_hash),
@@ -535,7 +535,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                             && let Some(exec_info) = task_ctx.execution_info()
                         {
                             Some(NewCacheInfo {
-                                execution_time: result.elapsed,
+                                execution_duration: result.elapsed,
                                 exit_code: result.exit_code(),
                                 task: exec_info,
                                 logs: result.logs.as_ref(),

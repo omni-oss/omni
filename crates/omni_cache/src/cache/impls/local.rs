@@ -17,6 +17,7 @@ use system_traits::{
     FsMetadataAsync, FsReadAsync as _, FsRemoveDirAllAsync as _,
     FsWriteAsync as _, impls::RealSys,
 };
+use time::OffsetDateTime;
 
 use crate::{
     CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
@@ -542,8 +543,9 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 task_name: result.task.task_name.to_string(),
                 execution_hash: result.hash.expect("should be some"),
                 task_command: result.task.task_command.to_string(),
-                execution_time: new_cache_info.execution_time,
+                execution_duration: new_cache_info.execution_duration,
                 exit_code: new_cache_info.exit_code,
+                execution_time: OffsetDateTime::now_utc(),
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -911,7 +913,7 @@ mod tests {
             logs,
             task,
             exit_code: 0,
-            execution_time: std::time::Duration::from_millis(100),
+            execution_duration: std::time::Duration::from_millis(100),
         }
     }
 
