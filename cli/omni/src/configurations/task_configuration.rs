@@ -34,7 +34,7 @@ pub struct TaskConfigurationLongForm {
     pub description: Option<String>,
 
     #[serde(default)]
-    pub env: TaskConfigurationEnvConfiguration,
+    pub env: TaskEnvConfiguration,
 
     #[serde(default)]
     pub cache: CacheConfiguration,
@@ -67,7 +67,7 @@ pub enum TaskConfiguration {
     Merge,
     Default,
 )]
-pub struct TaskConfigurationEnvConfiguration {
+pub struct TaskEnvConfiguration {
     #[merge(strategy = merge::option::recurse)]
     pub vars: Option<DictConfig<Replace<String>>>,
 }
@@ -125,7 +125,7 @@ impl TaskConfiguration {
         }
     }
 
-    pub fn env(&self) -> Option<&TaskConfigurationEnvConfiguration> {
+    pub fn env(&self) -> Option<&TaskEnvConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
