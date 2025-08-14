@@ -778,6 +778,7 @@ mod tests {
             file_trace_output: None,
             inherit_env_vars: false,
             no_inherit_env_vars: true,
+            no_stderr_trace: false,
         };
 
         Context::from_args_and_sys(cli, sys).expect("Can't create context")

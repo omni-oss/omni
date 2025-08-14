@@ -50,12 +50,25 @@ pub struct CliArgs {
 
     #[arg(
         long,
+        group = "stderr-trace",
         help = "Output Error traces to stderr",
         env = "OMNI_STDERR_TRACE_ENABLED",
-        default_value = "true",
-        action = clap::ArgAction::SetTrue
+        default_value = "false",
+        action = clap::ArgAction::SetTrue,
+        overrides_with = "no_stderr_trace"
     )]
     pub stderr_trace: bool,
+
+    #[arg(
+        long,
+        group = "stderr-trace",
+        help = "Output Error traces to stderr",
+        env = "OMNI_STDERR_TRACE_ENABLED",
+        default_value = "false",
+        action = clap::ArgAction::SetTrue,
+        overrides_with = "stderr_trace"
+    )]
+    pub no_stderr_trace: bool,
 
     #[arg(
         long = "file-trace-output",
