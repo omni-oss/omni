@@ -28,8 +28,9 @@ use system_traits::{
 use crate::{
     commands::CliArgs,
     configurations::{
-        ExtensionGraph, ExtensionGraphNode, ProjectConfiguration,
-        TaskConfiguration, TaskOutputConfiguration, WorkspaceConfiguration,
+        ExtensionGraph, ExtensionGraphNode, MetaConfiguration,
+        ProjectConfiguration, TaskConfiguration, TaskOutputConfiguration,
+        WorkspaceConfiguration,
     },
     constants::{self},
     core::{Project, Task},
@@ -46,11 +47,13 @@ pub struct CacheInfo {
     pub cache_logs: bool,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
     env_loader: EnvLoader<TSys>,
     task_env_vars: UnorderedMap<String, EnvVarsMap>,
     cache_infos: UnorderedMap<String, CacheInfo>,
+    task_meta_configs: UnorderedMap<String, MetaConfiguration>,
+    project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     env_root_dir_marker: String,
     env_files: Vec<String>,
     inherit_env_vars: bool,
@@ -116,6 +119,8 @@ impl<TSys: ContextSys> Context<TSys> {
             inherit_env_vars: cli.inherit_env_vars,
             task_env_vars: maps::unordered_map!(),
             cache_infos: maps::unordered_map!(),
+            task_meta_configs: maps::unordered_map!(),
+            project_meta_configs: maps::unordered_map!(),
             env_loader: EnvLoader::new(
                 sys.clone(),
                 PathBuf::from(&root_marker),
@@ -198,6 +203,22 @@ impl<TSys: ContextSys> Context<TSys> {
         task_name: &str,
     ) -> Option<&CacheInfo> {
         self.cache_infos.get(&format!("{project_name}#{task_name}"))
+    }
+
+    pub fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&MetaConfiguration> {
+        self.task_meta_configs
+            .get(&format!("{project_name}#{task_name}"))
+    }
+
+    pub fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&MetaConfiguration> {
+        self.project_meta_configs.get(project_name)
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
@@ -410,6 +431,11 @@ impl<TSys: ContextSys> Context<TSys> {
             }))?;
 
             let project_cache = &project_config.cache;
+            let meta_config = &project_config.meta;
+
+            self.project_meta_configs
+                .insert(project_config.name.clone(), meta_config.clone());
+
             for (name, task) in project_config.tasks.iter() {
                 if let Some(env) = task.env()
                     && let Some(vars) = env.vars.as_ref()
@@ -459,6 +485,19 @@ impl<TSys: ContextSys> Context<TSys> {
                         cache_logs: task_output.logs,
                     },
                 );
+
+                let meta = task.meta();
+
+                let meta = if let Some(meta) = meta {
+                    let mut meta = meta.clone();
+                    meta.merge(meta_config.clone());
+                    meta
+                } else {
+                    meta_config.clone()
+                };
+
+                self.task_meta_configs
+                    .insert(format!("{}#{}", project_config.name, name), meta);
             }
 
             projects.push(Project::new(

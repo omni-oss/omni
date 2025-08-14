@@ -70,6 +70,9 @@ pub enum ErrorInner {
 
     #[error(transparent)]
     ExecutionError(#[from] cel::ExecutionError),
+
+    #[error(transparent)]
+    Unknown(#[from] eyre::Report),
 }
 
 #[cfg(test)]

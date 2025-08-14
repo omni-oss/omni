@@ -31,3 +31,7 @@ tasks:
 
   profile:
     command: cargo flamegraph --profile=${profile:-bench-with-debug} --bench ${bench:-${PROJECT_NAME}_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
+
+meta:
+  language: rust
+  type: lib

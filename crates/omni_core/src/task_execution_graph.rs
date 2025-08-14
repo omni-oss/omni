@@ -457,13 +457,13 @@ impl TaskExecutionGraph {
     )]
     pub fn get_batched_execution_plan(
         &self,
-        is_root_node: impl Fn(&TaskExecutionNode) -> bool,
+        is_root_node: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
         let mut roots = HashSet::new();
 
         // Step 1: Get all nodes that match the predicate
         for node in self.di_graph.node_indices() {
-            if is_root_node(&self.di_graph[node]) {
+            if is_root_node(&self.di_graph[node])? {
                 roots.insert(node);
             }
         }
@@ -639,6 +639,9 @@ enum TaskExecutionGraphErrorInner {
         to_project: String,
         to_task: String,
     },
+
+    #[error(transparent)]
+    Unknown(#[from] eyre::Report),
 }
 
 pub type TaskExecutionGraphResult<T> = Result<T, TaskExecutionGraphError>;
@@ -865,7 +868,7 @@ mod tests {
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
         let mut actual_plan = task_graph
-            .get_batched_execution_plan(|n| n.task_name == "p1t4")
+            .get_batched_execution_plan(|n| Ok(n.task_name == "p1t4"))
             .unwrap();
 
         actual_plan.iter_mut().for_each(|batch| {

@@ -134,6 +134,16 @@ impl TaskConfiguration {
             }) => Some(env),
         }
     }
+
+    pub fn meta(&self) -> Option<&MetaConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                meta,
+                ..
+            }) => Some(meta),
+        }
+    }
 }
 
 impl Merge for TaskConfiguration {

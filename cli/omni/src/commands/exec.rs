@@ -18,6 +18,12 @@ pub struct ExecArgs {
     command: String,
     #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
+    #[arg(
+        short,
+        long,
+        help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
+    )]
+    meta: Option<String>,
 }
 
 #[derive(Args)]
@@ -36,6 +42,10 @@ pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
 
     if let Some(filter) = &command.args.project {
         builder.project_filter(filter);
+    }
+
+    if let Some(filter) = &command.args.meta {
+        builder.meta_filter(filter);
     }
 
     let orchestrator = builder.build()?;

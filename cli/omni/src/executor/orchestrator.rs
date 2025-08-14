@@ -29,7 +29,9 @@ use crate::{
     utils::{dir_walker::create_default_dir_walker, env::EnvVarsMap},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, new, Display)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, new, Display, EnumIs,
+)]
 pub enum Call {
     #[strum(to_string = "command '{command} {args:?}'")]
     Command {
@@ -111,6 +113,10 @@ pub struct TaskOrchestrator<TSys: ContextSys = RealSys> {
     /// Glob pattern to filter the projects
     #[builder(default)]
     project_filter: Option<String>,
+
+    // Filter the projects/tasks based on the meta configuration
+    #[builder(default)]
+    meta_filter: Option<String>,
 
     /// if true, it will not consider the cache and will always execute the task
     force: bool,
@@ -233,6 +239,34 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
         // to execute the task
         let mut task_execution_graph = None;
 
+        let use_project_meta = self.call.is_command();
+
+        let get_meta = |node: &TaskExecutionNode| {
+            if use_project_meta {
+                ctx.get_project_meta_config(node.project_name())
+            } else {
+                ctx.get_task_meta_config(node.project_name(), node.task_name())
+            }
+        };
+
+        let is_meta_matched = if let Some(meta_filter) = &self.meta_filter {
+            let meta_filter = omni_expressions::parse(meta_filter)?;
+
+            Some(move |node: &TaskExecutionNode| {
+                if let Some(meta) = get_meta(node) {
+                    let ctx = meta.clone().into_expression_context()?;
+                    meta_filter
+                        .coerce_to_bool(&ctx)
+                        .map_err(TaskOrchestratorErrorInner::MetaFilter)
+                } else {
+                    Ok(true)
+                }
+            })
+        } else {
+            None
+        };
+
+        // collect the execution plan
         let execution_plan: BatchedExecutionPlan = if self.ignore_dependencies {
             let projects = ctx.get_filtered_projects(filter)?;
 
@@ -274,7 +308,26 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     .collect(),
             };
 
-            vec![all_tasks]
+            let filtered = if self.meta_filter.is_some() {
+                let mut filtered = Vec::with_capacity(all_tasks.len());
+
+                for node in all_tasks {
+                    // if there is a filter, it must be matched, if error, consider it as not matched
+                    if let Some(filter) = &is_meta_matched
+                        && !filter(&node).unwrap_or(true)
+                    {
+                        continue;
+                    }
+
+                    filtered.push(node);
+                }
+
+                filtered
+            } else {
+                all_tasks
+            };
+
+            vec![filtered]
         } else {
             let mut project_graph = ctx.get_project_graph()?;
 
@@ -305,7 +358,13 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             let x_graph = project_graph.get_task_execution_graph()?;
 
             let plan = x_graph.get_batched_execution_plan(|n| {
-                n.task_name() == task_name && matcher.is_match(n.project_name())
+                Ok(n.task_name() == task_name
+                    && matcher.is_match(n.project_name())
+                    && if let Some(filter) = &is_meta_matched {
+                        filter(n).unwrap_or(false)
+                    } else {
+                        true
+                    })
             })?;
 
             // signal to the executor that it needs to consider dependencies
@@ -689,4 +748,7 @@ enum TaskOrchestratorErrorInner {
 
     #[error(transparent)]
     LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
+
+    #[error(transparent)]
+    MetaFilter(#[from] omni_expressions::Error),
 }
