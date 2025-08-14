@@ -227,44 +227,16 @@ impl LocalTaskExecutionCacheStore {
             let mut output_files_globset = None;
             if should_collect_output_files {
                 let mut output_glob = GlobSetBuilder::new();
-                let mut out_includes = vec![];
 
                 populate_includes_and_globset(
                     project.output_files,
                     project.project_dir,
-                    &mut out_includes,
+                    &mut includes,
                     &roots,
                     &mut output_glob,
                 )?;
 
-                // for some reason, ignore doesn't like it when a folder is ignored
-                // and a file inside the ignored folder is included
-                // so include all the parent folders of the included file
-                // so that ignore walks to it and doesn't ignore it
-                let mut forced_includes =
-                    Vec::with_capacity(out_includes.len());
-
-                for include in out_includes.iter() {
-                    forced_includes.push(include.to_path_buf());
-
-                    let clean = if has_globs(include.to_string_lossy().as_ref())
-                    {
-                        let clean = remove_globs(include);
-
-                        forced_includes.push(clean.to_path_buf());
-
-                        clean
-                    } else {
-                        include
-                    };
-
-                    for parent in clean.ancestors() {
-                        forced_includes.push(parent.to_path_buf());
-                    }
-                }
-
                 output_files_globset = Some(output_glob.build()?);
-                includes.extend(forced_includes);
             }
 
             let mut input_files_globset = None;
@@ -317,9 +289,40 @@ impl LocalTaskExecutionCacheStore {
             let topmost =
                 topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
+            // for some reason, ignore doesn't like it when a folder is ignored
+            // and a file inside the ignored folder is included
+            // so include all the parent folders of the included file
+            // so that ignore walks to it and doesn't ignore it
+            let mut forced_includes = Vec::with_capacity(includes.len());
+
+            for include in &includes {
+                forced_includes.push(include.to_path_buf());
+
+                let clean = if has_globs(include.to_string_lossy().as_ref()) {
+                    let clean = remove_globs(include);
+
+                    forced_includes.push(clean.to_path_buf());
+
+                    clean
+                } else {
+                    include
+                };
+
+                for parent in clean.ancestors() {
+                    // if we are in the workspace root, stop here
+                    if self.ws_root_dir.starts_with(parent) {
+                        break;
+                    }
+
+                    forced_includes.push(parent.to_path_buf());
+                }
+            }
+
+            forced_includes.dedup();
+
             let dirwalker = RealGlobDirWalker::config()
                 .standard_filters(true)
-                .include(includes)
+                .include(forced_includes)
                 .root_dir(&self.ws_root_dir)
                 .custom_ignore_filenames(vec![".omniignore".to_string()])
                 .build()?
@@ -670,6 +673,12 @@ pub struct LocalTaskExecutionCacheStoreError {
     inner: LocalTaskExecutionCacheStoreErrorInner,
 }
 
+impl LocalTaskExecutionCacheStoreError {
+    pub fn kind(&self) -> LocalTaskExecutionCacheStoreErrorKind {
+        self.kind
+    }
+}
+
 impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
     for LocalTaskExecutionCacheStoreError
 {
@@ -681,7 +690,11 @@ impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(LocalTaskExecutionCacheStoreErrorKind), vis(pub))]
+#[strum_discriminants(
+    name(LocalTaskExecutionCacheStoreErrorKind),
+    vis(pub),
+    repr(u8)
+)]
 enum LocalTaskExecutionCacheStoreErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -751,6 +764,11 @@ mod tests {
     }
 
     async fn fixture(projects: &[&str]) -> tempfile::TempDir {
+        // ignore all projects to ensure that input and output files are working
+        fixture_with_ignore(projects, "*").await
+    }
+
+    async fn __fixture_inner__(projects: &[&str]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("failed to create tempdir");
         let root = dir.path();
         let sys = sys();
@@ -764,6 +782,26 @@ mod tests {
             let project_dir = root.join(project);
             write_project(&project_dir, sys.clone()).await;
         }
+
+        dir
+    }
+
+    async fn fixture_with_ignore(
+        projects: &[&str],
+        ignore: &str,
+    ) -> tempfile::TempDir {
+        let dir = __fixture_inner__(projects).await;
+        let root = dir.path();
+
+        let sys = sys();
+
+        sys.fs_create_dir_all_async(root.join(".git"))
+            .await
+            .expect("failed to create .git dir");
+
+        sys.fs_write_async(root.join(".gitignore"), ignore)
+            .await
+            .expect("failed to write file");
 
         dir
     }
@@ -1328,7 +1366,7 @@ mod tests {
             .expect("failed to get cached output");
 
         assert!(cached_output1.is_some(), "cached output should exist");
-        assert!(cached_output2.is_none(), "cached output should exist");
+        assert!(cached_output2.is_none(), "cached output should not exist");
     }
 
     #[tokio::test]
@@ -1369,7 +1407,7 @@ mod tests {
             .expect("failed to get cached output");
 
         assert!(cached_output1.is_some(), "cached output should exist");
-        assert!(cached_output2.is_none(), "cached output should exist");
+        assert!(cached_output2.is_none(), "cached output should not exist");
     }
 
     #[tokio::test]
@@ -1437,12 +1475,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_output_files_matching_ignore_files_should_still_be_cached() {
-        let temp = fixture(&["project1"]).await;
+        let temp = fixture_with_ignore(&["project1"], "*").await;
         let dir = temp.path();
         let cache = cache_store(dir);
         let task = task_with_mut("task", "project1", dir, |t| {
             t.output_files
-                .push(OmniPath::new(dir.join("target/**/*.js")));
+                .push(OmniPath::new_ws_rooted("target/**/*.js"));
         });
 
         let sys = sys();
@@ -1458,11 +1496,6 @@ mod tests {
         )
         .await
         .expect("failed to write file");
-
-        // add gitignore
-        sys.fs_write_async(dir.join(".omniignore"), "project1\ntarget\n")
-            .await
-            .expect("failed to write file");
 
         cache
             .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
