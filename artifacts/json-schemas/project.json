@@ -28,6 +28,12 @@
         "append": []
       }
     },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "env": {
       "$ref": "#/$defs/ProjectEnvConfiguration",
       "default": {
@@ -42,11 +48,15 @@
         "$ref": "#/$defs/OmniPath"
       }
     },
+    "meta": {
+      "$ref": "#/$defs/MetaConfiguration",
+      "default": {}
+    },
     "name": {
       "type": "string"
     },
     "tasks": {
-      "$ref": "#/$defs/DictConfig2",
+      "$ref": "#/$defs/DictConfig3",
       "default": {}
     }
   },
@@ -135,6 +145,44 @@
       ]
     },
     "DictConfig2": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MetaValue"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "DictConfig3": {
       "anyOf": [
         {
           "type": "object",
@@ -304,6 +352,99 @@
         }
       ]
     },
+    "ListConfig3": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MetaValue"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "merge": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "merge"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "append": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "append"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "prepend": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "prepend"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "replace": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MetaValue"
+              }
+            }
+          },
+          "required": [
+            "replace"
+          ]
+        }
+      ]
+    },
+    "MetaConfiguration": {
+      "$ref": "#/$defs/DictConfig2"
+    },
+    "MetaValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/ListConfig3"
+        },
+        {
+          "$ref": "#/$defs/DictConfig2"
+        }
+      ]
+    },
     "OmniPath": {
       "type": "string"
     },
@@ -387,6 +528,10 @@
           "default": {
             "vars": null
           }
+        },
+        "meta": {
+          "$ref": "#/$defs/MetaConfiguration",
+          "default": {}
         },
         "output": {
           "$ref": "#/$defs/TaskOutputConfiguration",

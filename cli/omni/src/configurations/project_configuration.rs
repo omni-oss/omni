@@ -18,15 +18,7 @@ use crate::{
 use super::TaskConfiguration;
 
 #[derive(
-    Deserialize,
-    Serialize,
-    JsonSchema,
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Merge,
-    Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Merge, Validate,
 )]
 #[garde(allow_unvalidated)]
 pub struct ProjectConfiguration {
