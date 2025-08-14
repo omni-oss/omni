@@ -257,6 +257,12 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                     let ctx = meta.clone().into_expression_context()?;
                     meta_filter
                         .coerce_to_bool(&ctx)
+                        .inspect_err(|e| {
+                            tracing::debug!(
+                                "meta filter {} errored, disregarding the error and flagging the task as not matched",
+                                e
+                            );
+                        })
                         .map_err(TaskOrchestratorErrorInner::MetaFilter)
                 } else {
                     Ok(true)
