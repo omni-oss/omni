@@ -1846,6 +1846,7 @@ dependencies = [
  "merge",
  "omni_cache",
  "omni_core",
+ "omni_expressions",
  "omni_hasher",
  "omni_types",
  "os_pipe",

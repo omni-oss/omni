@@ -16,3 +16,6 @@ tasks:
     command: cargo install --path .
     dependencies:
       - test
+
+meta:
+  type: cli

@@ -20,6 +20,13 @@ pub struct RunCommand {
     project: Option<String>,
 
     #[arg(
+        short,
+        long,
+        help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
+    )]
+    meta: Option<String>,
+
+    #[arg(
         long,
         alias = "ignore-deps",
         short,
@@ -66,6 +73,10 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
 
     if let Some(filter) = &command.project {
         builder.project_filter(filter);
+    }
+
+    if let Some(filter) = &command.meta {
+        builder.meta_filter(filter);
     }
 
     let orchestrator = builder.build()?;
