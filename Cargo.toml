@@ -128,6 +128,8 @@ bs58 = { version = "^0.5.1" }
 yoke = { version = "^0.8.0" }
 owo-colors = { version = "^4.2.2" }
 tiny-gradient = { version = "^0.1.0" }
+omni_expressions = { path = "./crates/omni_expressions" }
+cel = { version = "^0.11.0", features = ["json", "regex"] }
 
 [profile.release]
 incremental = true
