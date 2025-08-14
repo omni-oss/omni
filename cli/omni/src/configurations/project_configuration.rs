@@ -12,7 +12,7 @@ use crate::{
         CacheConfiguration, ExtensionGraphNode, MetaConfiguration,
         utils::list_config_default,
     },
-    utils,
+    utils::{self},
 };
 
 use super::TaskConfiguration;

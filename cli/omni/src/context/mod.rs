@@ -289,7 +289,6 @@ impl<TSys: ContextSys> Context<TSys> {
             let mut loaded = HashSet::new();
             let mut to_process = project_paths.clone();
             while let Some(conf) = to_process.pop() {
-                #[cfg(feature = "enable-tracing")]
                 let start_time = std::time::SystemTime::now();
 
                 let mut project = ProjectConfiguration::load(
@@ -298,7 +297,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 )
                 .wrap_err_with(|| {
                     format!(
-                        "Failed to load project configuration file at {}",
+                        "failed to load project configuration file at {}",
                         conf.display()
                     )
                 })?;
