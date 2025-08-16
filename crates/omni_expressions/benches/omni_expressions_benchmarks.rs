@@ -2,11 +2,19 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use omni_expressions::Context;
 use std::{collections::HashMap, hint::black_box};
 
-fn parse(expr: &str, ctx: &Context<'_>) {
+#[inline(always)]
+fn parse(
+    expr: &str,
+) -> Result<omni_expressions::Evaluator, omni_expressions::Error> {
     omni_expressions::parse(expr)
-        .unwrap()
-        .coerce_to_bool(ctx)
-        .expect("should have value");
+}
+
+#[inline(always)]
+fn evaluate(
+    evaluator: &omni_expressions::Evaluator,
+    ctx: &Context<'_>,
+) -> bool {
+    evaluator.coerce_to_bool(ctx).expect("should have value")
 }
 
 fn simple_expression(n: usize) -> String {
@@ -70,28 +78,75 @@ fn functions_expression(n: usize) -> String {
     exprs.join("&&")
 }
 
-const DATA_SIZES: [usize; 5] = [1, 10, 100, 1000, 10000];
+const DATA_SIZES: [usize; 6] = [1, 10, 100, 1000, 5000, 10000];
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn parse_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("parse");
 
     for n in DATA_SIZES {
         group.bench_with_input(
             BenchmarkId::new("simple", n),
-            &(simple_expression(n), simple_context()),
-            |b, (expr, ctx)| b.iter(|| parse(black_box(expr), black_box(ctx))),
+            &(&simple_expression(n),),
+            |b, (n,)| {
+                b.iter(|| parse(black_box(n)).expect("should have evaluator"))
+            },
         );
 
         group.bench_with_input(
             BenchmarkId::new("variables", n),
-            &(variables_expression(n), variables_context(n)),
-            |b, (expr, ctx)| b.iter(|| parse(black_box(expr), black_box(ctx))),
+            &(&variables_expression(n),),
+            |b, (n,)| {
+                b.iter(|| parse(black_box(n)).expect("should have evaluator"))
+            },
         );
 
         group.bench_with_input(
             BenchmarkId::new("functions", n),
-            &(functions_expression(n), functions_context(n)),
-            |b, (expr, ctx)| b.iter(|| parse(black_box(expr), black_box(ctx))),
+            &(&functions_expression(n),),
+            |b, (n,)| {
+                b.iter(|| parse(black_box(n)).expect("should have evaluator"))
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn evaluate_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("evaluate");
+
+    for n in DATA_SIZES {
+        let simple =
+            parse(&simple_expression(n)).expect("should have evaluator");
+
+        group.bench_with_input(
+            BenchmarkId::new("simple", n),
+            &(simple, simple_context()),
+            |b, (evaluator, ctx)| {
+                b.iter(|| evaluate(black_box(evaluator), black_box(ctx)))
+            },
+        );
+
+        let variables =
+            parse(&variables_expression(n)).expect("should have evaluator");
+
+        group.bench_with_input(
+            BenchmarkId::new("variables", n),
+            &(variables, variables_context(n)),
+            |b, (evaluator, ctx)| {
+                b.iter(|| evaluate(black_box(evaluator), black_box(ctx)))
+            },
+        );
+
+        let functions =
+            parse(&functions_expression(n)).expect("should have evaluator");
+
+        group.bench_with_input(
+            BenchmarkId::new("functions", n),
+            &(functions, functions_context(n)),
+            |b, (evaluator, ctx)| {
+                b.iter(|| evaluate(black_box(evaluator), black_box(ctx)))
+            },
         );
     }
 
@@ -103,9 +158,15 @@ fn criterion_config() -> Criterion {
 }
 
 criterion_group!(
-    name = benches;
+    name = evaluate_bench;
     config = criterion_config();
-    targets = criterion_benchmark
+    targets = evaluate_benchmark
 );
 
-criterion_main!(benches);
+criterion_group!(
+    name = parse_bench;
+    config = criterion_config();
+    targets = parse_benchmark
+);
+
+criterion_main!(parse_bench, evaluate_bench);
