@@ -7,11 +7,9 @@ use omni_types::OmniPath;
 
 use crate::{
     CacheConfigurationGenerator, CacheConfigurationGeneratorBuilder,
-    CacheConfigurationGeneratorBuilderError, MetaConfigurationGenerator,
-    MetaConfigurationGeneratorBuilder, MetaConfigurationGeneratorBuilderError,
+    MetaConfigurationGenerator, MetaConfigurationGeneratorBuilder,
     ProjectEnvConfigurationGenerator, ProjectEnvConfigurationGeneratorBuilder,
-    ProjectEnvConfigurationGeneratorBuilderError, TaskGenerator,
-    TaskGeneratorBuilder, TaskGeneratorBuilderError,
+    TaskGenerator, TaskGeneratorBuilder,
 };
 
 #[derive(Debug, Builder, Clone)]
@@ -34,6 +32,16 @@ pub struct ProjectGenerator {
     meta: MetaConfigurationGenerator,
     #[builder(default, setter(custom))]
     env: ProjectEnvConfigurationGenerator,
+    #[builder(default = 2)]
+    folder_nesting: usize,
+    #[builder(default = 5)]
+    leaf_folder_count: usize,
+    #[builder(default = 10)]
+    file_count_per_leaf_folder: usize,
+    #[builder(default = String::from("txt"))]
+    file_extension: String,
+    #[builder(default = String::from("File context %i%"))]
+    file_content: String,
 }
 
 impl ProjectGeneratorBuilder {
@@ -50,10 +58,10 @@ impl ProjectGeneratorBuilder {
     pub fn task(
         &mut self,
         name: impl Into<String>,
-        f: impl FnOnce(&mut TaskGeneratorBuilder) -> &mut TaskGeneratorBuilder,
-    ) -> Result<&mut Self, TaskGeneratorBuilderError> {
+        f: impl FnOnce(&mut TaskGeneratorBuilder) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         let mut task = TaskGeneratorBuilder::default();
-        f(&mut task);
+        f(&mut task)?;
 
         if let Some(tasks) = &mut self.tasks {
             tasks.insert(name.into(), task.build()?);
@@ -70,12 +78,10 @@ impl ProjectGeneratorBuilder {
 
     pub fn cache(
         &mut self,
-        f: impl FnOnce(
-            &mut CacheConfigurationGeneratorBuilder,
-        ) -> &mut CacheConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, CacheConfigurationGeneratorBuilderError> {
+        f: impl FnOnce(&mut CacheConfigurationGeneratorBuilder) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         let mut cache = CacheConfigurationGeneratorBuilder::default();
-        f(&mut cache);
+        f(&mut cache)?;
         self.cache = Some(cache.build()?);
 
         Ok(self)
@@ -83,12 +89,10 @@ impl ProjectGeneratorBuilder {
 
     pub fn meta(
         &mut self,
-        f: impl FnOnce(
-            &mut MetaConfigurationGeneratorBuilder,
-        ) -> &mut MetaConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, MetaConfigurationGeneratorBuilderError> {
+        f: impl FnOnce(&mut MetaConfigurationGeneratorBuilder) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         let mut meta = MetaConfigurationGeneratorBuilder::default();
-        f(&mut meta);
+        f(&mut meta)?;
         self.meta = Some(meta.build()?);
 
         Ok(self)
@@ -98,10 +102,10 @@ impl ProjectGeneratorBuilder {
         &mut self,
         f: impl FnOnce(
             &mut ProjectEnvConfigurationGeneratorBuilder,
-        ) -> &mut ProjectEnvConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, ProjectEnvConfigurationGeneratorBuilderError> {
+        ) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         let mut env = ProjectEnvConfigurationGeneratorBuilder::default();
-        f(&mut env);
+        f(&mut env)?;
         self.env = Some(env.build()?);
 
         Ok(self)
@@ -117,6 +121,10 @@ impl ProjectGenerator {
 impl ProjectGenerator {
     pub fn generate(&self, project_dir: impl AsRef<Path>) -> eyre::Result<()> {
         let project_dir = project_dir.as_ref();
+
+        if !fs::exists(project_dir)? {
+            fs::create_dir_all(project_dir)?;
+        }
 
         let project = ProjectConfiguration {
             dir: OmniPath::new(project_dir),
@@ -149,10 +157,6 @@ impl ProjectGenerator {
             ),
         };
 
-        if !fs::exists(project_dir)? {
-            fs::create_dir_all(project_dir)?;
-        }
-
         let file = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -162,6 +166,71 @@ impl ProjectGenerator {
         let file = std::io::BufWriter::new(file);
         serde_yml::to_writer(file, &project)?;
 
+        generate_files(
+            project_dir.join("src"),
+            self.folder_nesting,
+            self.leaf_folder_count,
+            self.file_count_per_leaf_folder,
+            &self.file_extension,
+            &self.file_content,
+        )?;
+
         Ok(())
     }
+}
+
+fn generate_files(
+    dir: impl AsRef<Path>,
+    folder_nesting: usize,
+    leaf_folder_count: usize,
+    file_count_per_leaf_folder: usize,
+    file_extension: impl AsRef<str>,
+    file_content: impl AsRef<str>,
+) -> eyre::Result<()> {
+    let dir = dir.as_ref();
+    let file_extension = file_extension.as_ref();
+    let file_content = file_content.as_ref();
+
+    let mut leaf_dirs = vec![];
+
+    for i in 0..leaf_folder_count {
+        if folder_nesting == 0 {
+            leaf_dirs.push(dir.join(format!("leaf_{}", i)));
+        } else {
+            let nested_paths = (0..folder_nesting)
+                .map(|j| {
+                    if j == 0 {
+                        format!("root_{}", i)
+                    } else {
+                        format!("nested_level_{}", j)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("/");
+
+            leaf_dirs.push(dir.join(nested_paths).join(format!("leaf_{}", i)));
+        }
+    }
+
+    for l in &leaf_dirs {
+        fs::create_dir_all(l)?;
+
+        for i in 0..file_count_per_leaf_folder {
+            let file = if file_extension.is_empty() {
+                l.join(format!("file_{}.txt", i))
+            } else {
+                l.join(format!("file_{}.{}", i, file_extension))
+            };
+
+            if file_content.contains("%i%") {
+                let content = file_content.replace("%i%", &i.to_string());
+
+                fs::write(file, content)?;
+            } else {
+                fs::write(file, file_content)?;
+            }
+        }
+    }
+
+    Ok(())
 }

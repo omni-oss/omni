@@ -27,6 +27,7 @@ clap = { workspace = true }
 system_traits = { workspace = true }
 
 [dev-dependencies]
+tempfile = { workspace = true }
 criterion = { workspace = true }
 omni_test_utils = { workspace = true }
 

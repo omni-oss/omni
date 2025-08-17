@@ -17,6 +17,8 @@ extends:
 tasks:
   test:
     command: cargo test -p ${PROJECT_NAME}
+    dependencies:
+      - ^test
     cache:
       key:
         files:
@@ -24,6 +26,9 @@ tasks:
 
   bench:
     command: cargo bench -p ${PROJECT_NAME}
+    dependencies:
+      - test
+      - ^bench
     cache:
       key:
         files:

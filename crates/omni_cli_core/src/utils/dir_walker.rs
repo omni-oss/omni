@@ -5,7 +5,7 @@ use dir_walker::{
 
 use crate::constants;
 
-pub(crate) fn create_default_dir_walker() -> impl DirWalker {
+pub fn create_default_dir_walker() -> impl DirWalker {
     let cfg = IgnoreRealDirWalkerConfig {
         custom_ignore_filenames: vec![constants::OMNI_IGNORE.to_string()],
         standard_filters: true,

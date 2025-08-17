@@ -1817,6 +1817,7 @@ dependencies = [
  "omni_test_utils",
  "shadow-rs",
  "system_traits",
+ "tempfile",
  "tokio",
  "trace",
  "tracing-subscriber",
