@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: omni_cli_core
+
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - omni_core
+  - env_loader
+  - omni_expressions
+  - config_utils
+  - omni_types
+  - system_traits

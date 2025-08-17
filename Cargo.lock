@@ -1205,17 +1205,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "globwalk"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bf760ebf69878d9fd8f110c89703d90ce35095324d1f1edcb595c63945ee757"
-dependencies = [
- "bitflags 2.9.1",
- "ignore",
- "walkdir",
-]
-
-[[package]]
 name = "half"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1820,58 +1809,16 @@ dependencies = [
 name = "omni"
 version = "0.0.0-semantically-released"
 dependencies = [
- "ahash",
- "bs58",
- "bytes",
  "clap",
- "clap_complete",
- "config_utils",
- "defer",
- "derive-new",
- "derive_builder",
- "derive_more",
+ "criterion",
  "dhat",
- "dir_walker",
- "enum-map",
- "env",
- "env_loader",
  "eyre",
- "futures",
- "garde",
- "globset",
- "globwalk",
- "js_runtime",
- "lazy-regex",
- "maps",
- "merge",
- "omni_cache",
- "omni_core",
- "omni_expressions",
- "omni_hasher",
- "omni_types",
- "os_pipe",
- "owo-colors",
- "petgraph",
- "portable-pty",
- "regex",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "serde_yml",
- "sets",
+ "omni_cli_core",
+ "omni_test_utils",
  "shadow-rs",
- "strum 0.27.2",
  "system_traits",
- "terminal_size",
- "thiserror 2.0.12",
- "tiny-gradient",
  "tokio",
- "tokio-util",
- "toml",
  "trace",
- "tracing",
- "tracing-core",
  "tracing-subscriber",
 ]
 
@@ -1906,6 +1853,63 @@ dependencies = [
  "tracing",
  "url",
  "yoke",
+]
+
+[[package]]
+name = "omni_cli_core"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "ahash",
+ "bs58",
+ "bytes",
+ "clap",
+ "clap_complete",
+ "config_utils",
+ "defer",
+ "derive-new",
+ "derive_builder",
+ "derive_more",
+ "dir_walker",
+ "enum-map",
+ "env",
+ "env_loader",
+ "eyre",
+ "futures",
+ "garde",
+ "globset",
+ "js_runtime",
+ "lazy-regex",
+ "maps",
+ "merge",
+ "omni_cache",
+ "omni_core",
+ "omni_expressions",
+ "omni_hasher",
+ "omni_types",
+ "os_pipe",
+ "owo-colors",
+ "petgraph",
+ "portable-pty",
+ "regex",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "sets",
+ "shadow-rs",
+ "strum 0.27.2",
+ "system_traits",
+ "terminal_size",
+ "thiserror 2.0.12",
+ "tiny-gradient",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "trace",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1949,6 +1953,24 @@ dependencies = [
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "omni_test_utils"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "bs58",
+ "config_utils",
+ "derive_builder",
+ "eyre",
+ "omni_cli_core",
+ "omni_types",
+ "serde",
+ "serde_yml",
+ "strum 0.27.2",
+ "thiserror 2.0.12",
+ "trace",
+ "tracing",
 ]
 
 [[package]]

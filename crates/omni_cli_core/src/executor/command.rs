@@ -144,9 +144,8 @@ impl<T: Into<CommandExecutorErrorInner>> From<T> for CommandExecutorError {
 #[strum_discriminants(name(CommandExecutorErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
 enum CommandExecutorErrorInner {
-    #[error("can't create pipe: {0}")]
-    CantCreatePipe(std::io::Error),
-
+    // #[error("can't create pipe: {0}")]
+    // CantCreatePipe(std::io::Error),
     #[error("can't spawn command: {0}")]
     CantSpawnCommand(String),
 
@@ -158,7 +157,6 @@ enum CommandExecutorErrorInner {
 
     #[error("can't take writer: {0}")]
     CantTakeWriter(String),
-
-    #[error("can't parse command: {0}")]
-    CantParseCommand(eyre::Report),
+    // #[error("can't parse command: {0}")]
+    // CantParseCommand(eyre::Report),
 }
