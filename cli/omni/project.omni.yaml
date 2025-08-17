@@ -11,9 +11,4 @@ tasks:
         - "@workspace/target/release/omni"
 
 dependencies:
-  - omni_core
-  - env_loader
-  - omni_expressions
-  - config_utils
-  - omni_types
-  - system_traits
+  - omni_cli_core

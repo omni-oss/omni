@@ -31,6 +31,7 @@ pub trait ExtensionGraphNode: Clone + Merge + Debug {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct ExtensionGraph<T: Merge + ExtensionGraphNode> {
     index_map: HashMap<T::Id, NodeIndex>,
     di_graph: DiGraph<T, ()>,
@@ -108,7 +109,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         self.index_map.get(id).copied()
     }
 
-    fn get_node(&self, id: &T::Id) -> Option<&T> {
+    fn _get_node(&self, id: &T::Id) -> Option<&T> {
         self.get_node_index(id)
             .and_then(|ni| self.di_graph.node_weight(ni))
     }
@@ -131,7 +132,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         Ok(ei)
     }
 
-    fn add_edge_by_id(
+    fn _add_edge_by_id(
         &mut self,
         extender: T::Id,
         extendee: T::Id,

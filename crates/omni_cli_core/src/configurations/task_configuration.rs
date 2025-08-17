@@ -14,10 +14,6 @@ use crate::{
 
 use super::TaskDependencyConfiguration;
 
-fn default_true() -> bool {
-    true
-}
-
 #[derive(
     Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
 )]

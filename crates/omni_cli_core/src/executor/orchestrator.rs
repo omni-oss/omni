@@ -725,18 +725,16 @@ enum TaskOrchestratorErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
-    #[error(transparent)]
-    CantGetEnvVars(eyre::Report),
-
+    // #[error(transparent)]
+    // CantGetEnvVars(eyre::Report),
     #[error("task is empty")]
     TaskIsEmpty,
 
-    #[error("command is empty")]
-    CommandIsEmpty,
+    // #[error("command is empty")]
+    // CommandIsEmpty,
 
-    #[error("task '{task}' not found")]
-    TaskNotFound { task: String },
-
+    // #[error("task '{task}' not found")]
+    // TaskNotFound { task: String },
     #[error("no project found for criteria: filter = '{filter}'")]
     NoProjectFound { filter: String },
 

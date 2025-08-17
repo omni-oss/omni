@@ -17,7 +17,7 @@ use serde_json::Value as JsonValue;
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct MetaConfiguration(DictConfig<MetaValue>);
+pub struct MetaConfiguration(pub DictConfig<MetaValue>);
 
 impl MetaConfiguration {
     pub fn into_expression_context(

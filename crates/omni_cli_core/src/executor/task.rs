@@ -227,18 +227,16 @@ enum TaskExecutorErrorInner {
     #[error("can't run command: {0}")]
     CantRunCommand(#[from] CommandExecutorError),
 
-    #[error("can't get env vars")]
-    CantGetEnvVars,
-
+    // #[error("can't get env vars")]
+    // CantGetEnvVars,
     #[error("cant't take stdin")]
     CantTakeStdin,
 
     #[error("cant't take stdout")]
     CantTakeStdout,
 
-    #[error("cant't take stderr")]
-    CantTakeStderr,
-
+    // #[error("cant't take stderr")]
+    // CantTakeStderr,
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
 

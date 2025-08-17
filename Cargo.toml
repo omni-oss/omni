@@ -110,7 +110,6 @@ dashmap = { version = "^6.1.0", features = ["serde", "rayon"] }
 ahash = { version = "^0.8.12" }
 maps = { path = "./crates/maps" }
 sets = { path = "./crates/sets" }
-globwalk = { version = "^0.9.1" }
 criterion = { version = "^0.7.0", features = ["html_reports"] }
 dhat = { version = "^0.3.3" }
 enum-map = { version = "^2.7.3" }
@@ -129,7 +128,9 @@ yoke = { version = "^0.8.0" }
 owo-colors = { version = "^4.2.2" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
+omni_cli_core = { path = "./crates/omni_cli_core" }
 cel = { version = "^0.11.0", features = ["json", "regex"] }
+omni_test_utils = { path = "./crates/omni_test_utils" }
 
 [profile.release]
 incremental = true

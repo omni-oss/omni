@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::fmt::Display;
+use std::str::FromStr;
 
 use garde::Validate;
 use merge::Merge;
@@ -15,6 +17,59 @@ pub enum TaskDependencyConfiguration {
     Own { task: String },
     ExplicitProject { project: String, task: String },
     Upstream { task: String },
+}
+
+impl FromStr for TaskDependencyConfiguration {
+    type Err = eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if TASK_DEPENDENCY_REGEX.is_match(s) {
+            let captures = TASK_DEPENDENCY_REGEX
+                .captures(s)
+                .expect("Can't parse task syntax");
+
+            if let Some(upstream_task) = captures.name("upstream_task") {
+                return Ok(Self::Upstream {
+                    task: upstream_task.as_str().to_string(),
+                });
+            }
+
+            if let Some(own_task) = captures.name("own_task") {
+                return Ok(Self::Own {
+                    task: own_task.as_str().to_string(),
+                });
+            }
+
+            if let (Some(explicit_project), Some(explicit_task)) = (
+                captures.name("explicit_project"),
+                captures.name("explicit_task"),
+            ) {
+                return Ok(Self::ExplicitProject {
+                    project: explicit_project.as_str().to_string(),
+                    task: explicit_task.as_str().to_string(),
+                });
+            }
+        }
+
+        Err(eyre::eyre!(
+            "can't parse TaskDependencyConfiguration: {s}, expected syntax: {}",
+            TASK_DEPENDENCY_REGEX.as_str()
+        ))
+    }
+}
+
+impl Display for TaskDependencyConfiguration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskDependencyConfiguration::Own { task } => task.fmt(f),
+            TaskDependencyConfiguration::ExplicitProject { project, task } => {
+                format!("{project}#{task}").fmt(f)
+            }
+            TaskDependencyConfiguration::Upstream { task } => {
+                format!("^{task}").fmt(f)
+            }
+        }
+    }
 }
 
 impl Merge for TaskDependencyConfiguration {
@@ -67,38 +122,7 @@ impl<'de> Deserialize<'de> for TaskDependencyConfiguration {
     {
         let s = String::deserialize(deserializer)?;
 
-        if TASK_DEPENDENCY_REGEX.is_match(&s) {
-            let captures = TASK_DEPENDENCY_REGEX
-                .captures(&s)
-                .expect("Can't parse task syntax");
-
-            if let Some(upstream_task) = captures.name("upstream_task") {
-                return Ok(Self::Upstream {
-                    task: upstream_task.as_str().to_string(),
-                });
-            }
-
-            if let Some(own_task) = captures.name("own_task") {
-                return Ok(Self::Own {
-                    task: own_task.as_str().to_string(),
-                });
-            }
-
-            if let (Some(explicit_project), Some(explicit_task)) = (
-                captures.name("explicit_project"),
-                captures.name("explicit_task"),
-            ) {
-                return Ok(Self::ExplicitProject {
-                    project: explicit_project.as_str().to_string(),
-                    task: explicit_task.as_str().to_string(),
-                });
-            }
-        }
-
-        Err(D::Error::custom(format!(
-            "can't parse TaskDependencyConfiguration: {s}, expected syntax: {}",
-            TASK_DEPENDENCY_REGEX.as_str()
-        )))
+        TaskDependencyConfiguration::from_str(&s).map_err(D::Error::custom)
     }
 }
 
@@ -107,15 +131,7 @@ impl Serialize for TaskDependencyConfiguration {
     where
         S: serde::Serializer,
     {
-        match self {
-            TaskDependencyConfiguration::Own { task } => task.serialize(s),
-            TaskDependencyConfiguration::ExplicitProject { project, task } => {
-                format!("{project}#{task}").serialize(s)
-            }
-            TaskDependencyConfiguration::Upstream { task } => {
-                format!("^{task}").serialize(s)
-            }
-        }
+        format!("{self}").serialize(s)
     }
 }
 
