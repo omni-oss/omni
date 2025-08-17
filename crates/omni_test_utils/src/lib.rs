@@ -1,6 +1,7 @@
 mod cache_configuration_generator;
 mod cache_key_configuration_generator;
 mod meta_configuration_generator;
+pub mod presets;
 mod project_env_configuration_generator;
 mod project_generator;
 mod task_env_configuration_generator;

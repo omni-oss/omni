@@ -1,15 +1,55 @@
-use criterion::{criterion_group, criterion_main};
+use std::hint::black_box;
+use std::path::Path;
 
-fn run_benchmarks(_c: &mut criterion::Criterion) {}
+use criterion::{BenchmarkId, criterion_group, criterion_main};
+use omni_cli_core::context::Context;
+use omni_cli_core::utils::dir_walker::create_default_dir_walker;
+use omni_test_utils::presets;
+use system_traits::impls::RealSys;
+
+fn load_projects(ws_dir: &Path) {
+    let mut ctx = Context::new(
+        ws_dir,
+        false,
+        "workspace.omni.yaml",
+        vec![".env".to_string()],
+        RealSys,
+    )
+    .expect("can't create context");
+
+    ctx.load_projects(&create_default_dir_walker())
+        .expect("can't load projects");
+}
+
+fn load_projects_benchmarks(c: &mut criterion::Criterion) {
+    let mut group = c.benchmark_group("load_projects");
+
+    for preset in [&presets::JS_SMALL, &presets::JS_MEDIUM, &presets::JS_LARGE]
+    {
+        let dir = tempfile::tempdir().expect("Can't create temp dir");
+
+        presets::generate(dir.path(), preset).expect("Can't generate projects");
+
+        group.bench_with_input(
+            BenchmarkId::new("load_projects", preset.workspace_name.as_str()),
+            dir.path(),
+            |b, ws_dir| {
+                b.iter(|| {
+                    load_projects(black_box(ws_dir));
+                })
+            },
+        );
+    }
+}
 
 fn criterion_config() -> criterion::Criterion {
     criterion::Criterion::default()
 }
 
 criterion_group!(
-    name = run_benches;
+    name = load_projects_benches;
     config = criterion_config();
-    targets = run_benchmarks
+    targets = load_projects_benchmarks
 );
 
-criterion_main!(run_benches);
+criterion_main!(load_projects_benches);

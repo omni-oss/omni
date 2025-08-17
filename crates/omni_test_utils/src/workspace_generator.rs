@@ -21,11 +21,11 @@ pub struct WorkspaceGenerator {
 impl WorkspaceGeneratorBuilder {
     fn add_project(
         projects: &mut Option<Vec<ProjectGenerator>>,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> &mut ProjectGeneratorBuilder,
+        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
         base: Option<bool>,
-    ) -> Result<(), crate::ProjectGeneratorBuilderError> {
+    ) -> eyre::Result<()> {
         let mut project = ProjectGeneratorBuilder::default();
-        f(&mut project);
+        f(&mut project)?;
 
         if let Some(base) = base {
             project.base(base);
@@ -42,8 +42,8 @@ impl WorkspaceGeneratorBuilder {
 
     pub fn project(
         &mut self,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> &mut ProjectGeneratorBuilder,
-    ) -> Result<&mut Self, crate::ProjectGeneratorBuilderError> {
+        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         Self::add_project(&mut self.projects, f, None)?;
 
         Ok(self)
@@ -51,8 +51,8 @@ impl WorkspaceGeneratorBuilder {
 
     pub fn base(
         &mut self,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> &mut ProjectGeneratorBuilder,
-    ) -> Result<&mut Self, crate::ProjectGeneratorBuilderError> {
+        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
+    ) -> eyre::Result<&mut Self> {
         Self::add_project(&mut self.bases, f, Some(true))?;
 
         Ok(self)
@@ -88,7 +88,7 @@ impl WorkspaceGenerator {
         fs::create_dir_all(workspace_dir.join("generators"))?;
 
         // ignore all base configurations
-        fs::write(workspace_dir, r#"bases/**/*.omni.yml"#)?;
+        fs::write(workspace_dir.join(".omniignore"), r#"bases/**/*.omni.yml"#)?;
 
         for base in &self.bases {
             let dir_name = bs58::encode(base.name.as_bytes()).into_string();

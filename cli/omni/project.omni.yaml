@@ -12,3 +12,4 @@ tasks:
 
 dependencies:
   - omni_cli_core
+  - omni_test_utils

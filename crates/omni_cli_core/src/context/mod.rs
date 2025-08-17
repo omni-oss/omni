@@ -80,20 +80,39 @@ pub trait ContextSys:
 }
 
 impl<TSys: ContextSys> Context<TSys> {
-    pub fn sys(&self) -> &TSys {
-        &self.sys
+    pub fn new(
+        root_dir: &Path,
+        inherit_env_vars: bool,
+        root_marker: &str,
+        env_files: Vec<String>,
+        sys: TSys,
+    ) -> eyre::Result<Self> {
+        Ok(Self {
+            projects: None,
+            inherit_env_vars,
+            task_env_vars: maps::unordered_map!(),
+            cache_infos: maps::unordered_map!(),
+            task_meta_configs: maps::unordered_map!(),
+            project_meta_configs: maps::unordered_map!(),
+            env_loader: EnvLoader::new(
+                sys.clone(),
+                PathBuf::from(&root_marker),
+                env_files
+                    .iter()
+                    .map(|s| Path::new(&s).to_path_buf())
+                    .collect(),
+            ),
+            env_files,
+            workspace: get_workspace_configuration(root_dir, &sys)?,
+            root_dir: root_dir.to_path_buf(),
+            env_root_dir_marker: root_marker.to_string(),
+            sys,
+        })
     }
 
-    pub fn env_files(&self) -> &[String] {
-        &self.env_files
-    }
-
-    pub fn env_root_dir_marker(&self) -> &str {
-        &self.env_root_dir_marker
-    }
-
-    pub fn from_args_and_sys(
+    pub fn from_args_root_dir_and_sys(
         cli: &CliArgs,
+        root_dir: impl AsRef<Path>,
         sys: TSys,
     ) -> eyre::Result<Context<TSys>> {
         let env = cli.env.as_deref().unwrap_or("development");
@@ -109,34 +128,44 @@ impl<TSys: ContextSys> Context<TSys> {
             })
             .collect::<Vec<_>>();
 
-        let root_dir = get_root_dir(&sys)?;
         let root_marker =
             cli.env_root_dir_marker.clone().unwrap_or_else(|| {
                 constants::WORKSPACE_OMNI.replace("{ext}", "yaml")
             });
-        let ctx = Context {
-            projects: None,
-            inherit_env_vars: cli.inherit_env_vars,
-            task_env_vars: maps::unordered_map!(),
-            cache_infos: maps::unordered_map!(),
-            task_meta_configs: maps::unordered_map!(),
-            project_meta_configs: maps::unordered_map!(),
-            env_loader: EnvLoader::new(
-                sys.clone(),
-                PathBuf::from(&root_marker),
-                env_files
-                    .iter()
-                    .map(|s| Path::new(&s).to_path_buf())
-                    .collect(),
-            ),
+        let ctx = Context::new(
+            root_dir.as_ref(),
+            cli.inherit_env_vars,
+            &root_marker,
             env_files,
-            workspace: get_workspace_configuration(&root_dir, &sys)?,
-            root_dir,
-            env_root_dir_marker: root_marker,
             sys,
-        };
+        )?;
 
         Ok(ctx)
+    }
+
+    pub fn from_args_and_sys(
+        cli: &CliArgs,
+        sys: TSys,
+    ) -> eyre::Result<Context<TSys>> {
+        let root_dir = get_root_dir(&sys)?;
+
+        let ctx = Self::from_args_root_dir_and_sys(cli, root_dir, sys)?;
+
+        Ok(ctx)
+    }
+}
+
+impl<TSys: ContextSys> Context<TSys> {
+    pub fn sys(&self) -> &TSys {
+        &self.sys
+    }
+
+    pub fn env_files(&self) -> &[String] {
+        &self.env_files
+    }
+
+    pub fn env_root_dir_marker(&self) -> &str {
+        &self.env_root_dir_marker
     }
 
     pub fn get_project_graph(&self) -> eyre::Result<ProjectGraph> {

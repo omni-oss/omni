@@ -8,12 +8,9 @@ use omni_cli_core::configurations::{
 
 use crate::{
     CacheConfigurationGenerator, CacheConfigurationGeneratorBuilder,
-    CacheConfigurationGeneratorBuilderError, MetaConfigurationGenerator,
-    MetaConfigurationGeneratorBuilder, MetaConfigurationGeneratorBuilderError,
+    MetaConfigurationGenerator, MetaConfigurationGeneratorBuilder,
     TaskEnvConfigurationGenerator, TaskEnvConfigurationGeneratorBuilder,
-    TaskEnvConfigurationGeneratorBuilderError,
     TaskOutputConfigurationGenerator, TaskOutputConfigurationGeneratorBuilder,
-    TaskOutputConfigurationGeneratorBuilderError,
 };
 
 #[derive(Debug, Builder, Clone)]
@@ -22,6 +19,7 @@ pub struct TaskGenerator {
     command: String,
     #[builder(default, setter(custom))]
     cache: CacheConfigurationGenerator,
+    #[builder(default)]
     description: Option<String>,
     #[builder(default, setter(custom))]
     env: TaskEnvConfigurationGenerator,
@@ -36,10 +34,8 @@ pub struct TaskGenerator {
 impl TaskGeneratorBuilder {
     pub fn cache(
         &mut self,
-        f: impl FnOnce(
-            &mut CacheConfigurationGeneratorBuilder,
-        ) -> &mut CacheConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, CacheConfigurationGeneratorBuilderError> {
+        f: impl FnOnce(&mut CacheConfigurationGeneratorBuilder),
+    ) -> eyre::Result<&mut Self> {
         let mut cache = CacheConfigurationGeneratorBuilder::default();
         f(&mut cache);
         self.cache = Some(cache.build()?);
@@ -52,7 +48,7 @@ impl TaskGeneratorBuilder {
         f: impl FnOnce(
             &mut TaskEnvConfigurationGeneratorBuilder,
         ) -> &mut TaskEnvConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, TaskEnvConfigurationGeneratorBuilderError> {
+    ) -> eyre::Result<&mut Self> {
         let mut env = TaskEnvConfigurationGeneratorBuilder::default();
         f(&mut env);
         self.env = Some(env.build()?);
@@ -62,10 +58,8 @@ impl TaskGeneratorBuilder {
 
     pub fn meta(
         &mut self,
-        f: impl FnOnce(
-            &mut MetaConfigurationGeneratorBuilder,
-        ) -> &mut MetaConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, MetaConfigurationGeneratorBuilderError> {
+        f: impl FnOnce(&mut MetaConfigurationGeneratorBuilder),
+    ) -> eyre::Result<&mut Self> {
         let mut meta = MetaConfigurationGeneratorBuilder::default();
         f(&mut meta);
         self.meta = Some(meta.build()?);
@@ -75,15 +69,23 @@ impl TaskGeneratorBuilder {
 
     pub fn output(
         &mut self,
-        f: impl FnOnce(
-            &mut TaskOutputConfigurationGeneratorBuilder,
-        ) -> &mut TaskOutputConfigurationGeneratorBuilder,
-    ) -> Result<&mut Self, TaskOutputConfigurationGeneratorBuilderError> {
+        f: impl FnOnce(&mut TaskOutputConfigurationGeneratorBuilder),
+    ) -> eyre::Result<&mut Self> {
         let mut output = TaskOutputConfigurationGeneratorBuilder::default();
         f(&mut output);
         self.output = Some(output.build()?);
 
         Ok(self)
+    }
+
+    pub fn dependency(&mut self, dependency: impl Into<String>) -> &mut Self {
+        if let Some(dependencies) = &mut self.dependencies {
+            dependencies.push(dependency.into());
+        } else {
+            self.dependencies = Some(vec![dependency.into()]);
+        }
+
+        self
     }
 }
 

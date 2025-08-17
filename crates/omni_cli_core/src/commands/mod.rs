@@ -135,6 +135,28 @@ pub struct CliArgs {
     pub no_inherit_env_vars: bool,
 }
 
+impl Default for CliArgs {
+    fn default() -> Self {
+        Self {
+            stdout_trace_level: TraceLevel::None,
+            stderr_trace: false,
+            no_stderr_trace: false,
+            file_trace_output: None,
+            file_trace_level: TraceLevel::None,
+            env_root_dir_marker: None,
+            env_file: vec![
+                ".env".to_string(),
+                ".env.local".to_string(),
+                ".env.{ENV}".to_string(),
+                ".env.{ENV}.local".to_string(),
+            ],
+            env: None,
+            inherit_env_vars: false,
+            no_inherit_env_vars: true,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 #[command(rename_all = "kebab-case", about = "")]
 pub enum CliSubcommands {
