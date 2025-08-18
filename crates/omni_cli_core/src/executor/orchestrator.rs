@@ -24,7 +24,7 @@ use system_traits::impls::RealSys;
 use crate::{
     context::{CacheInfo, Context, ContextSys},
     executor::{ExecutionResult, TaskExecutor},
-    utils::{dir_walker::create_default_dir_walker, env::EnvVarsMap},
+    utils::env::EnvVarsMap,
 };
 
 #[derive(
@@ -229,7 +229,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             return Err(TaskOrchestratorErrorInner::TaskIsEmpty.into());
         }
 
-        ctx.load_projects(&create_default_dir_walker())?;
+        ctx.load_projects()?;
 
         let filter = self.project_filter.as_deref().unwrap_or("*");
 

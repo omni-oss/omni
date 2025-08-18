@@ -10,12 +10,18 @@ use omni_types::{OmniPath, Root};
 use std::{
     borrow::Cow,
     collections::HashSet,
+    os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
 use trace::Level;
 
 use ::env_loader::EnvLoaderError;
-use dir_walker::{DirEntry as _, DirWalker};
+use dir_walker::{
+    DirEntry as _, DirWalker, Metadata,
+    impls::{
+        IgnoreOverridesConfig, IgnoreRealDirWalker, IgnoreRealDirWalkerConfig,
+    },
+};
 use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::{ProjectGraph, TaskExecutionNode};
@@ -250,8 +256,27 @@ impl<TSys: ContextSys> Context<TSys> {
         self.project_meta_configs.get(project_name)
     }
 
+    fn create_default_dir_walker(&self) -> impl DirWalker + 'static {
+        let cfg = IgnoreRealDirWalkerConfig {
+            custom_ignore_filenames: vec![constants::OMNI_IGNORE.to_string()],
+            standard_filters: true,
+            overrides: Some(IgnoreOverridesConfig {
+                root: self.root_dir.to_string_lossy().to_string(),
+                excludes: vec![],
+                includes: self.workspace.projects.clone(),
+            }),
+        };
+
+        IgnoreRealDirWalker::new_with_config(cfg)
+    }
+
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
-    pub fn load_projects<TDirWalker: DirWalker>(
+    pub fn load_projects(&mut self) -> eyre::Result<&Vec<Project>> {
+        let dir_walker = self.create_default_dir_walker();
+        self.load_projects_with_walker(&dir_walker)
+    }
+
+    pub fn load_projects_with_walker<TDirWalker: DirWalker>(
         &mut self,
         walker: &TDirWalker,
     ) -> eyre::Result<&Vec<Project>> {
@@ -285,21 +310,21 @@ impl<TSys: ContextSys> Context<TSys> {
             num_iterations += 1;
             let f = f.map_err(|e| eyre::eyre!("failed to walk dir: {e}"))?;
 
-            if !self.sys.fs_is_dir(f.path())? {
+            let meta = f.metadata()?;
+
+            if meta.is_dir() {
                 continue;
             }
 
-            let dir = self.sys.fs_canonicalize(f.path())?;
-            let dir_str = dir.display().to_string();
+            let path = self.sys.fs_canonicalize(f.path())?;
 
-            if matcher.is_match(&dir_str) {
+            if matcher.is_match(path.as_os_str()) {
                 for project_file in &project_files {
-                    let p = f.path().join(project_file);
-                    if self.sys.fs_exists(&p)? && self.sys.fs_is_file(p)? {
-                        trace::debug!("Found project directory: {:?}", dir);
-                        project_paths.push(
-                            self.sys.fs_canonicalize(dir.join(project_file))?,
-                        );
+                    if meta.is_file()
+                        && f.file_name().as_bytes() == project_file.as_bytes()
+                    {
+                        trace::debug!("Found project directory: {:?}", path);
+                        project_paths.push(self.sys.fs_canonicalize(path)?);
                         break;
                     }
                 }
@@ -817,32 +842,47 @@ mod tests {
             InMemoryDirEntry::new(
                 PathBuf::from("/root"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/base"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/nested"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/nested/project-1"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-1/project.omni.yaml"),
+                false,
+                InMemoryMetadata::new(false, true),
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/nested/project-2"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-2/project.omni.yaml"),
+                false,
+                InMemoryMetadata::new(false, true),
             ),
             InMemoryDirEntry::new(
                 PathBuf::from("/root/nested/project-3"),
                 false,
-                InMemoryMetadata::default(),
+                InMemoryMetadata::new(true, false),
+            ),
+            InMemoryDirEntry::new(
+                PathBuf::from("/root/nested/project-3/project.omni.yaml"),
+                false,
+                InMemoryMetadata::new(false, true),
             ),
         ]
     }
@@ -872,7 +912,7 @@ mod tests {
     fn test_load_projects() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects_with_walker(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let projects = ctx.get_projects().expect("Can't get projects");
@@ -913,7 +953,13 @@ mod tests {
             InMemoryMetadata::default(),
         ));
 
-        let projects = ctx.load_projects(&dir_walker);
+        dir_walker.add(InMemoryDirEntry::new(
+            PathBuf::from("/root/nested/project-4/project.omni.yaml"),
+            false,
+            InMemoryMetadata::new(false, true),
+        ));
+
+        let projects = ctx.load_projects_with_walker(&dir_walker);
 
         assert!(
             projects
@@ -928,7 +974,7 @@ mod tests {
     fn test_get_project_graph() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects_with_walker(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -940,7 +986,7 @@ mod tests {
     fn test_project_extensions() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects_with_walker(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -963,14 +1009,12 @@ mod tests {
     fn test_loaded_environmental_variables() {
         let mut ctx = create_ctx("testing", None);
 
-        ctx.load_projects(&create_dir_walker(None))
+        ctx.load_projects_with_walker(&create_dir_walker(None))
             .expect("Can't load projects");
 
         let envs = ctx
             .get_cached_env_vars(&Path::new("/root/nested/project-3"))
             .expect("can't get env vars");
-
-        println!("{envs:#?}");
 
         assert_eq!(envs["PROJECT_NAME"], "project-3");
         assert_eq!(envs["PROJECT_DIR"], "/root/nested/project-3");

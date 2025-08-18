@@ -1,11 +1,14 @@
 use std::{
+    error::Error,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 
+use crate::Metadata;
+
 pub trait DirEntry {
-    type Error;
-    type Metadata;
+    type Error: Error + Send + Sync + 'static;
+    type Metadata: Metadata;
 
     /// The full path that this entry represents.
     fn path(&self) -> &Path;
@@ -19,6 +22,14 @@ pub trait DirEntry {
 
     /// Return the metadata for the file that this entry points to.
     fn metadata(&self) -> Result<Self::Metadata, Self::Error>;
+
+    fn is_dir(&self) -> bool {
+        self.metadata().map(|m| m.is_dir()).unwrap_or(false)
+    }
+
+    fn is_file(&self) -> bool {
+        self.metadata().map(|m| m.is_file()).unwrap_or(false)
+    }
 
     /// Return the file name of this entry.
     ///

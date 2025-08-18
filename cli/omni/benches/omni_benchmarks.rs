@@ -3,7 +3,6 @@ use std::path::Path;
 
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 use omni_cli_core::context::Context;
-use omni_cli_core::utils::dir_walker::create_default_dir_walker;
 use omni_test_utils::presets;
 use system_traits::impls::RealSys;
 
@@ -17,8 +16,7 @@ fn load_projects(ws_dir: &Path) {
     )
     .expect("can't create context");
 
-    ctx.load_projects(&create_default_dir_walker())
-        .expect("can't load projects");
+    ctx.load_projects().expect("can't load projects");
 }
 
 fn load_projects_benchmarks(c: &mut criterion::Criterion) {

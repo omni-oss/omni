@@ -28,3 +28,4 @@ globset = { workspace = true, optional = true }
 strum = { workspace = true }
 trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
+derive-new = { workspace = true }
