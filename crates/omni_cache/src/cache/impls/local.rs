@@ -1234,26 +1234,31 @@ mod tests {
 
         assert_eq!(cached_output.files.len(), 3, "should be 3 files");
         // the output should be resolved already
-        assert_eq!(
-            cached_output.files[0]
+        // updated the test to consider that the paths maybe returned in no fixed order
+        // due to the parallel nature of the walk
+        assert!(
+            cached_output.files.iter().any(|f| f
                 .original_path
                 .path()
-                .expect("path should be resolved"),
-            dir.join("rootfile.txt"),
+                .expect("path should be resolved")
+                .ends_with("rootfile.txt")),
+            "rootfile.txt must exist in the cached output"
         );
-        assert_eq!(
-            cached_output.files[1]
+        assert!(
+            cached_output.files.iter().any(|f| f
                 .original_path
                 .path()
-                .expect("path should be resolved"),
-            dir.join("project1/dist/b-test.js"),
+                .expect("path should be resolved")
+                .ends_with("project1/dist/b-test.js")),
+            "project1/dist/b-test.js must exist in the cached output"
         );
-        assert_eq!(
-            cached_output.files[2]
+        assert!(
+            cached_output.files.iter().any(|f| f
                 .original_path
                 .path()
-                .expect("path should be resolved"),
-            dir.join("project1/dist/a-test.js"),
+                .expect("path should be resolved")
+                .ends_with("project1/dist/a-test.js")),
+            "project1/dist/a-test.js must exist in the cached output"
         );
     }
 

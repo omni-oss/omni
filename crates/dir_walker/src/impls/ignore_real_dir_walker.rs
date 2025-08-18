@@ -1,7 +1,7 @@
 use std::result::Result;
 
 use derive_builder::Builder;
-use ignore::overrides::OverrideBuilder;
+use ignore::{WalkState, overrides::OverrideBuilder};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{DirEntry, DirWalkerBase, Metadata};
@@ -101,9 +101,20 @@ impl DirWalkerBase for IgnoreRealDirWalker {
 
         let builder = self.config.apply(&mut builder)?;
 
-        let walk = builder.build();
+        let walk = builder.build_parallel();
+        let (tx, rx) = crossbeam_channel::bounded(100);
+        std::thread::spawn(move || {
+            walk.run(|| {
+                let tx = tx.clone();
+                Box::new(move |e| {
+                    tx.send(e.map(IgnoreRealDirEntry)).unwrap();
+                    WalkState::Continue
+                })
+            });
+            drop(tx);
+        });
 
-        Ok(IgnoreRealWalkDir { walk })
+        Ok(IgnoreRealWalkDir { rx })
     }
 }
 
@@ -153,7 +164,7 @@ impl DirEntry for IgnoreRealDirEntry {
 }
 
 pub struct IgnoreRealWalkDir {
-    walk: ignore::Walk,
+    rx: crossbeam_channel::Receiver<Result<IgnoreRealDirEntry, ignore::Error>>,
 }
 
 impl IntoIterator for IgnoreRealWalkDir {
@@ -162,19 +173,22 @@ impl IntoIterator for IgnoreRealWalkDir {
     type IntoIter = IgnoreRealWalkDirIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        IgnoreRealWalkDirIntoIter { walk: self.walk }
+        IgnoreRealWalkDirIntoIter {
+            base: self.rx.into_iter(),
+        }
     }
 }
 
 pub struct IgnoreRealWalkDirIntoIter {
-    walk: ignore::Walk,
+    base:
+        crossbeam_channel::IntoIter<Result<IgnoreRealDirEntry, ignore::Error>>,
 }
 
 impl Iterator for IgnoreRealWalkDirIntoIter {
     type Item = Result<IgnoreRealDirEntry, ignore::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.walk.next().map(|e| e.map(IgnoreRealDirEntry))
+        self.base.next()
     }
 }
 

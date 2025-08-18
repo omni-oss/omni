@@ -131,6 +131,7 @@ omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
 cel = { version = "^0.11.0", features = ["json", "regex"] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
+crossbeam-channel = { version = "^0.5.15" }
 
 [profile.release]
 incremental = true
