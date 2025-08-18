@@ -324,7 +324,7 @@ impl<TSys: ContextSys> Context<TSys> {
                         && f.file_name().as_bytes() == project_file.as_bytes()
                     {
                         trace::debug!("Found project directory: {:?}", path);
-                        project_paths.push(self.sys.fs_canonicalize(path)?);
+                        project_paths.push(path.clone());
                         break;
                     }
                 }
@@ -408,11 +408,10 @@ impl<TSys: ContextSys> Context<TSys> {
                         dep.resolve_in_place(&roots);
                     }
 
-                    *dep = self
-                        .sys
-                        .fs_canonicalize(project_dir.join(
-                            dep.path().expect("path should be resolved"),
-                        ))?
+                    // removed path canonicalization to improve performance
+                    // it might not be needed anyway
+                    *dep = project_dir
+                        .join(dep.path().expect("path should be resolved"))
                         .into();
 
                     if !loaded.contains(dep) {
