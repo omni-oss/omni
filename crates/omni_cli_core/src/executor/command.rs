@@ -1,7 +1,5 @@
 use std::{
-    cell::Cell, collections::HashMap, ffi::OsString,
-    os::unix::process::ExitStatusExt, path::PathBuf, pin::Pin,
-    process::ExitStatus,
+    cell::Cell, collections::HashMap, ffi::OsString, path::PathBuf, pin::Pin,
 };
 
 use derive_new::new;
@@ -93,7 +91,7 @@ impl CommandExecutor {
         self.reader.take()
     }
 
-    pub async fn run(self) -> Result<ExitStatus, CommandExecutorError> {
+    pub async fn run(self) -> Result<u32, CommandExecutorError> {
         let split = self.command.split_whitespace().collect::<Vec<_>>();
         let mut cmd = CommandBuilder::new(split[0]);
 
@@ -114,7 +112,7 @@ impl CommandExecutor {
             .wait()
             .expect("child process should not be terminated");
 
-        Ok(ExitStatus::from_raw(status.exit_code() as i32))
+        Ok(status.exit_code())
     }
 }
 

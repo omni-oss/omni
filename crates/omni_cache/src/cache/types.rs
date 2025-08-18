@@ -26,5 +26,5 @@ pub struct NewCacheInfo<'a> {
     pub task: TaskExecutionInfo<'a>,
     pub logs: Option<&'a Bytes>,
     pub execution_duration: std::time::Duration,
-    pub exit_code: i32,
+    pub exit_code: u32,
 }

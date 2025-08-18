@@ -46,7 +46,7 @@ pub struct ExecutionResult {
     #[new(into)]
     pub node: TaskExecutionNode,
     #[new(into)]
-    pub exit_code: i32,
+    pub exit_code: u32,
     #[new(into)]
     pub elapsed: std::time::Duration,
     #[new(into)]
@@ -58,7 +58,7 @@ impl ExecutionResult {
         self.exit_code == 0
     }
 
-    pub fn exit_code(&self) -> i32 {
+    pub fn exit_code(&self) -> u32 {
         self.exit_code
     }
 }
@@ -176,17 +176,7 @@ impl TaskExecutor {
         let _ = vec_result?;
         let logs = stdout??;
 
-        let exit_status = exit_status?;
-
-        let exit_code = if let Some(code) = exit_status.code() {
-            code
-        } else if cfg!(unix) {
-            use std::os::unix::process::ExitStatusExt;
-            // Unix, convert signal to exit code
-            128 + exit_status.signal().map_or(0, |s| s)
-        } else {
-            1
-        };
+        let exit_code = exit_status?;
 
         let elapsed = start_time.elapsed();
 

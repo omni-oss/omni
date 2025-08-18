@@ -40,7 +40,7 @@ pub struct CachedTaskExecution {
     pub files: Vec<CachedFileOutput>,
 
     #[new(into)]
-    pub exit_code: i32,
+    pub exit_code: u32,
 
     #[new(into)]
     pub execution_duration: std::time::Duration,
