@@ -1910,6 +1910,7 @@ dependencies = [
  "serde_yml",
  "sets",
  "shadow-rs",
+ "shlex",
  "strum 0.27.2",
  "system_traits",
  "terminal_size",

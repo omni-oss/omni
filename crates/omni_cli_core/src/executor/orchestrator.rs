@@ -282,7 +282,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
 
             let all_tasks = match &self.call {
                 Call::Command { command, args } => {
-                    let task_name = temp_taskname("exec", command, args);
+                    let task_name = temp_task_name("exec", command, args);
                     let full_cmd = format!("{command} {}", args.join(" "));
 
                     projects
@@ -337,7 +337,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
 
             let task_name = match &self.call {
                 Call::Command { command, args } => {
-                    let task_name = temp_taskname("exec", command, args);
+                    let task_name = temp_task_name("exec", command, args);
                     let full_cmd = format!("{command} {}", args.join(" "));
 
                     project_graph.mutate_nodes(|p| {
@@ -682,7 +682,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
     }
 }
 
-fn temp_taskname(prefix: &str, command: &str, args: &[String]) -> String {
+fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
     // utilize default hasher so that the hash is consistent across platforms and versions
     let mut hasher = ahash::AHasher::default();
     let full_cmd = format!("{command} {args:?}");

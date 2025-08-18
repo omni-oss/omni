@@ -75,6 +75,7 @@ bytes = { workspace = true }
 owo-colors = { workspace = true }
 tiny-gradient = { workspace = true }
 omni_expressions = { workspace = true }
+shlex = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
