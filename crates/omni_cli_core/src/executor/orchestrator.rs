@@ -2,8 +2,6 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     hash::{Hash, Hasher as _},
-    os::unix::process::ExitStatusExt,
-    process::ExitStatus,
 };
 
 use clap::ValueEnum;
@@ -181,7 +179,7 @@ impl TaskExecutionResult {
     }
 
     pub fn skipped_or_error(&self) -> bool {
-        self.is_skipped() || self.is_error_before_complete()
+        self.is_skipped() || self.is_error_before_complete() || !self.success()
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
@@ -518,7 +516,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         TaskExecutionResult::new_cache_hit(
                             ExecutionResult::new(
                                 task_ctx.node.clone(),
-                                ExitStatus::from_raw(res.exit_code),
+                                res.exit_code,
                                 res.execution_duration,
                                 None,
                             ),
