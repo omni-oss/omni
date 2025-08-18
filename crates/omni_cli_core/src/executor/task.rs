@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, pin::Pin, process::ExitStatus};
+use std::{collections::HashMap, ffi::OsString, pin::Pin};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use derive_new::new;
@@ -46,7 +46,7 @@ pub struct ExecutionResult {
     #[new(into)]
     pub node: TaskExecutionNode,
     #[new(into)]
-    pub exit_code: ExitStatus,
+    pub exit_code: i32,
     #[new(into)]
     pub elapsed: std::time::Duration,
     #[new(into)]
@@ -55,11 +55,11 @@ pub struct ExecutionResult {
 
 impl ExecutionResult {
     pub fn success(&self) -> bool {
-        self.exit_code.success()
+        self.exit_code == 0
     }
 
     pub fn exit_code(&self) -> i32 {
-        self.exit_code.code().unwrap_or(0)
+        self.exit_code
     }
 }
 
@@ -178,11 +178,21 @@ impl TaskExecutor {
 
         let exit_status = exit_status?;
 
+        let exit_code = if let Some(code) = exit_status.code() {
+            code
+        } else if cfg!(unix) {
+            use std::os::unix::process::ExitStatusExt;
+            // Unix, convert signal to exit code
+            128 + exit_status.signal().map_or(0, |s| s)
+        } else {
+            1
+        };
+
         let elapsed = start_time.elapsed();
 
         Ok(ExecutionResult {
             node: task,
-            exit_code: exit_status,
+            exit_code,
             elapsed,
             logs,
         })
