@@ -95,6 +95,15 @@ impl TaskExecutor {
     }
 
     pub async fn exec(self) -> Result<ExecutionResult, TaskExecutorError> {
+        if self.task.task_command().is_empty() {
+            return Ok(ExecutionResult {
+                node: self.task,
+                exit_code: 0,
+                elapsed: std::time::Duration::ZERO,
+                logs: None,
+            });
+        }
+
         let start_time = std::time::Instant::now();
 
         let task = self.task;
@@ -105,8 +114,13 @@ impl TaskExecutor {
             task.task_command()
         };
 
+        let parsed = shlex::split(command).ok_or_else(|| {
+            TaskExecutorErrorInner::CantParseCommand(command.to_string())
+        })?;
+
         let cmd_exec = CommandExecutor::from_command_and_env(
-            command,
+            parsed[0].clone(),
+            parsed.iter().skip(1).cloned().collect::<Vec<_>>(),
             task.project_dir(),
             self.env_vars.unwrap_or_default(),
         )?;
@@ -226,6 +240,9 @@ enum TaskExecutorErrorInner {
 
     #[error("can't run command: {0}")]
     CantRunCommand(#[from] CommandExecutorError),
+
+    #[error("can't parse command: {0}")]
+    CantParseCommand(String),
 
     // #[error("can't get env vars")]
     // CantGetEnvVars,

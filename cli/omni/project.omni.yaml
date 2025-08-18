@@ -10,6 +10,10 @@ tasks:
       files:
         - "@workspace/target/release/omni"
 
+  profile:
+    dependencies:
+      - ^passthrough
+
 dependencies:
   - omni_cli_core
   - omni_test_utils

@@ -26,6 +26,10 @@ fn get_pty_size() -> PtySize {
 pub struct CommandExecutor {
     #[new(into)]
     command: String,
+
+    #[new(into)]
+    args: Vec<String>,
+
     #[new(into)]
     cwd: PathBuf,
     #[new(into)]
@@ -43,6 +47,7 @@ pub struct CommandExecutor {
 impl CommandExecutor {
     pub fn from_command_and_env(
         command: impl Into<String>,
+        args: impl Into<Vec<String>>,
         cwd: impl Into<PathBuf>,
         env: impl Into<HashMap<OsString, OsString>>,
     ) -> Result<Self, CommandExecutorError> {
@@ -67,6 +72,7 @@ impl CommandExecutor {
 
         Ok(Self::new(
             command.into(),
+            args,
             cwd,
             env,
             Some(writer),
@@ -92,10 +98,9 @@ impl CommandExecutor {
     }
 
     pub async fn run(self) -> Result<u32, CommandExecutorError> {
-        let split = self.command.split_whitespace().collect::<Vec<_>>();
-        let mut cmd = CommandBuilder::new(split[0]);
+        let mut cmd = CommandBuilder::new(self.command);
 
-        cmd.args(split.iter().skip(1));
+        cmd.args(self.args);
 
         cmd.cwd(&self.cwd);
 
