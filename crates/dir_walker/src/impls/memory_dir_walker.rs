@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use derive_more::Constructor;
+use derive_new::new;
 use thiserror::Error;
 
-use crate::{DirEntry, DirWalkerBase};
+use crate::{DirEntry, DirWalkerBase, Metadata};
 
 pub struct InMemoryDirWalker(Vec<InMemoryDirEntry>);
 
@@ -40,8 +41,21 @@ pub struct InMemoryDirEntry {
 }
 
 /// Doesn't do anything for now
-#[derive(Clone, Debug, Default)]
-pub struct InMemoryMetadata;
+#[derive(Clone, Debug, Default, new)]
+pub struct InMemoryMetadata {
+    dir: bool,
+    file: bool,
+}
+
+impl Metadata for InMemoryMetadata {
+    fn is_dir(&self) -> bool {
+        self.dir
+    }
+
+    fn is_file(&self) -> bool {
+        self.file
+    }
+}
 
 #[derive(Error, Debug)]
 #[error("InMemoryDirWalkerError")]

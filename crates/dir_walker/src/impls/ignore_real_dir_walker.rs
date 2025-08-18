@@ -4,7 +4,7 @@ use derive_builder::Builder;
 use ignore::overrides::OverrideBuilder;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-use crate::{DirEntry, DirWalkerBase};
+use crate::{DirEntry, DirWalkerBase, Metadata};
 
 #[derive(Clone, Debug, Builder)]
 pub struct IgnoreRealDirWalkerConfig {
@@ -108,6 +108,15 @@ impl DirWalkerBase for IgnoreRealDirWalker {
 }
 
 pub struct IgnoreRealDirEntry(ignore::DirEntry);
+
+impl Metadata for std::fs::Metadata {
+    fn is_dir(&self) -> bool {
+        self.is_dir()
+    }
+    fn is_file(&self) -> bool {
+        self.is_file()
+    }
+}
 
 impl DirEntry for IgnoreRealDirEntry {
     type Metadata = std::fs::Metadata;
