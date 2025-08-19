@@ -101,7 +101,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
 
         let builder = self.config.apply(&mut builder)?;
 
-        let walk = builder.build_parallel();
+        let walk = builder.threads(num_cpus::get()).build_parallel();
         let (tx, rx) = crossbeam_channel::bounded(100);
         std::thread::spawn(move || {
             walk.run(|| {
