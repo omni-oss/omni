@@ -7,8 +7,6 @@ cache:
     defaults: true
     files:
       - "Cargo.toml"
-      - "@workspace/Cargo.toml"
-      - "@workspace/Cargo.lock"
       - "./src/**/*.rs"
 
 extends:
