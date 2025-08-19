@@ -5,7 +5,7 @@ use garde::Validate;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use system_traits::FsRead;
+use system_traits::FsReadAsync;
 
 use crate::{
     configurations::{
@@ -71,11 +71,11 @@ impl ExtensionGraphNode for ProjectConfiguration {
 }
 
 impl ProjectConfiguration {
-    pub fn load<'a>(
+    pub async fn load<'a>(
         path: impl Into<&'a Path>,
-        sys: impl FsRead,
+        sys: impl FsReadAsync + Send + Sync,
     ) -> eyre::Result<Self> {
-        utils::fs::load_config(path, sys)
+        utils::fs::load_config(path, sys).await
     }
 }
 

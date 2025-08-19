@@ -100,7 +100,7 @@ pub enum OnFailure {
 
 #[derive(Builder)]
 #[builder(setter(into, strip_option))]
-pub struct TaskOrchestrator<TSys: ContextSys = RealSys> {
+pub struct TaskOrchestrator<TSys: ContextSys + 'static = RealSys> {
     context: Context<TSys>,
     #[builder(setter(custom))]
     call: Call,
@@ -132,7 +132,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
     }
 }
 
-#[derive(Debug, new, EnumIs)]
+#[derive(Debug, new, EnumIs, Display)]
 pub enum SkipReason {
     #[strum(to_string = "task in a previous batch failed")]
     PreviousBatchFailure,
@@ -229,7 +229,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             return Err(TaskOrchestratorErrorInner::TaskIsEmpty.into());
         }
 
-        ctx.load_projects()?;
+        ctx.load_projects().await?;
 
         let filter = self.project_filter.as_deref().unwrap_or("*");
 

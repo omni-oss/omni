@@ -1,10 +1,11 @@
 use sys_traits::{
-    FsHardLink as _, FsMetadata as _, boxed::BoxedFsMetadataValue,
+    FsHardLink as _, FsMetadata as _, FsRead as _, boxed::BoxedFsMetadataValue,
     impls::InMemorySys,
 };
 
 use crate::{
     BaseFsCanonicalizeAsync, BaseFsHardLinkAsync, BaseFsMetadataAsync,
+    BaseFsReadAsync,
 };
 
 #[async_trait::async_trait]
@@ -44,5 +45,15 @@ impl BaseFsMetadataAsync for InMemorySys {
         path: &std::path::Path,
     ) -> std::io::Result<Self::Metadata> {
         Ok(BoxedFsMetadataValue::new(self.fs_symlink_metadata(path)?))
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsReadAsync for InMemorySys {
+    async fn base_fs_read_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<std::borrow::Cow<'static, [u8]>> {
+        Ok(self.fs_read(path)?)
     }
 }

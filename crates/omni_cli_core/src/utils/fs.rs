@@ -1,9 +1,15 @@
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
-use system_traits::FsRead;
+use system_traits::FsReadAsync;
 
-pub fn load_config<'a, 'b, TConfig, TPath, TSys: FsRead>(
+pub async fn load_config<
+    'a,
+    'b,
+    TConfig,
+    TPath,
+    TSys: FsReadAsync + Send + Sync,
+>(
     path: TPath,
     sys: TSys,
 ) -> eyre::Result<TConfig>
@@ -13,7 +19,7 @@ where
 {
     let path: &'a Path = path.into();
     let ext = path.extension().unwrap_or_default();
-    let content = sys.fs_read_to_string(path)?;
+    let content = sys.fs_read_to_string_async(path).await?;
 
     match ext.to_string_lossy().as_ref() {
         "yaml" | "yml" => Ok(serde_yml::from_str(&content)?),

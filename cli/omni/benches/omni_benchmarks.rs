@@ -6,7 +6,7 @@ use omni_cli_core::context::Context;
 use omni_test_utils::presets;
 use system_traits::impls::RealSys;
 
-fn load_projects(ws_dir: &Path) {
+async fn load_projects(ws_dir: &Path) {
     let mut ctx = Context::new(
         ws_dir,
         false,
@@ -16,10 +16,11 @@ fn load_projects(ws_dir: &Path) {
     )
     .expect("can't create context");
 
-    ctx.load_projects().expect("can't load projects");
+    ctx.load_projects().await.expect("can't load projects");
 }
 
 fn load_projects_benchmarks(c: &mut criterion::Criterion) {
+    let rt = tokio::runtime::Runtime::new().expect("Can't create runtime");
     let mut group = c.benchmark_group("load_projects");
 
     for preset in [&presets::JS_SMALL, &presets::JS_MEDIUM, &presets::JS_LARGE]
@@ -32,9 +33,7 @@ fn load_projects_benchmarks(c: &mut criterion::Criterion) {
             BenchmarkId::new("load_projects", preset.workspace_name.as_str()),
             dir.path(),
             |b, ws_dir| {
-                b.iter(|| {
-                    load_projects(black_box(ws_dir));
-                })
+                b.to_async(&rt).iter(|| load_projects(black_box(ws_dir)))
             },
         );
     }
