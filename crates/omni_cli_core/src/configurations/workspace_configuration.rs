@@ -3,7 +3,7 @@ use std::path::Path;
 use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use system_traits::FsRead;
+use system_traits::FsReadAsync;
 
 use crate::{
     configurations::ScriptingConfiguration, constants::WORKSPACE_NAME_REGEX,
@@ -28,10 +28,10 @@ pub struct WorkspaceConfiguration {
 }
 
 impl WorkspaceConfiguration {
-    pub fn load<'a>(
+    pub async fn load<'a>(
         path: impl Into<&'a Path>,
-        sys: impl FsRead,
+        sys: impl FsReadAsync + Send + Sync,
     ) -> eyre::Result<Self> {
-        utils::fs::load_config(path, sys)
+        utils::fs::load_config(path, sys).await
     }
 }

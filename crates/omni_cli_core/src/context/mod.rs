@@ -3,6 +3,7 @@ mod env_loader;
 use config_utils::ListConfig;
 use enum_map::enum_map;
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
+use futures::future::try_join_all;
 use maps::UnorderedMap;
 use merge::Merge;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
@@ -12,7 +13,9 @@ use std::{
     collections::HashSet,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    sync::Arc,
 };
+use tokio::sync::Mutex;
 use trace::Level;
 
 use ::env_loader::EnvLoaderError;
@@ -27,7 +30,7 @@ use globset::{Glob, GlobMatcher, GlobSetBuilder};
 use omni_core::{ProjectGraph, TaskExecutionNode};
 use system_traits::{
     EnvCurrentDir, EnvVar, EnvVars, FsCanonicalize, FsHardLinkAsync,
-    FsMetadata, FsMetadataAsync, FsRead, auto_impl,
+    FsMetadata, FsMetadataAsync, FsRead, FsReadAsync, auto_impl,
     impls::RealSys as RealSysSync,
 };
 
@@ -54,7 +57,7 @@ pub struct CacheInfo {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Context<TSys: ContextSys = RealSysSync> {
+pub struct Context<TSys: ContextSys + 'static = RealSysSync> {
     env_loader: EnvLoader<TSys>,
     task_env_vars: UnorderedMap<String, EnvVarsMap>,
     cache_infos: UnorderedMap<String, CacheInfo>,
@@ -73,6 +76,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 pub trait ContextSys:
     EnvCurrentDir
     + FsRead
+    + FsReadAsync
     + FsMetadata
     + FsMetadataAsync
     + FsCanonicalize
@@ -85,7 +89,7 @@ pub trait ContextSys:
 {
 }
 
-impl<TSys: ContextSys> Context<TSys> {
+impl<TSys: ContextSys + 'static> Context<TSys> {
     pub fn new(
         root_dir: &Path,
         inherit_env_vars: bool,
@@ -271,12 +275,12 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
-    pub fn load_projects(&mut self) -> eyre::Result<&Vec<Project>> {
+    pub async fn load_projects(&mut self) -> eyre::Result<&Vec<Project>> {
         let dir_walker = self.create_default_dir_walker();
-        self.load_projects_with_walker(&dir_walker)
+        self.load_projects_with_walker(&dir_walker).await
     }
 
-    pub fn load_projects_with_walker<TDirWalker: DirWalker>(
+    pub async fn load_projects_with_walker<TDirWalker: DirWalker>(
         &mut self,
         walker: &TDirWalker,
     ) -> eyre::Result<&Vec<Project>> {
@@ -338,95 +342,124 @@ impl<TSys: ContextSys> Context<TSys> {
             num_iterations
         );
 
-        let mut project_configs = vec![];
+        let project_configs = Arc::new(Mutex::new(vec![]));
         {
-            let mut loaded = HashSet::new();
-            let mut to_process = project_paths.clone();
-            while let Some(conf) = to_process.pop() {
-                let start_time = std::time::SystemTime::now();
+            let loaded = Arc::new(Mutex::new(HashSet::new()));
+            let to_process = Arc::new(Mutex::new(project_paths.clone()));
 
-                let mut project = ProjectConfiguration::load(
-                    &conf as &Path,
-                    self.sys.clone(),
-                )
-                .wrap_err_with(|| {
-                    format!(
-                        "failed to load project configuration file at {}",
-                        conf.display()
-                    )
-                })?;
+            loop {
+                let mut futs = vec![];
+                while let Some(conf) = to_process.lock().await.pop() {
+                    let project_configs = project_configs.clone();
+                    let to_process = to_process.clone();
+                    let loaded = loaded.clone();
+                    let root_dir = self.root_dir.clone();
+                    let sys = self.sys.clone();
+                    futs.push(tokio::spawn(async move {
+                        let start_time = std::time::SystemTime::now();
 
-                let elapsed = start_time.elapsed().unwrap_or_default();
-                trace::debug!(
-                    project_configuration = ?project,
-                    "loaded project configuration file {:?} in {} ms",
-                    conf,
-                    elapsed.as_millis()
-                );
+                        let mut project = ProjectConfiguration::load(
+                            &conf as &Path,
+                            sys.clone(),
+                        )
+                        .await
+                        .wrap_err_with(|| {
+                            format!(
+                                "failed to load project configuration file at {}",
+                                conf.display()
+                            )
+                        })?;
 
-                project.file = conf.clone().into();
-                let project_dir = conf.parent().expect("should have parent");
-                project.dir = project_dir.into();
-                loaded.insert(project.file.clone());
+                        let elapsed = start_time.elapsed().unwrap_or_default();
+                        trace::debug!(
+                            project_configuration = ?project,
+                            "loaded project configuration file {:?} in {} ms",
+                            conf,
+                            elapsed.as_millis()
+                        );
 
-                let bases = enum_map! {
-                    Root::Workspace => self.root_dir.as_ref(),
-                    Root::Project => project_dir,
-                };
+                        project.file = conf.clone().into();
+                        let project_dir =
+                            conf.parent().expect("should have parent");
+                        project.dir = project_dir.into();
+                        loaded.lock().await.insert(project.file.clone());
 
-                // resolve @project paths to the current project dir
-                project.cache.key.files.iter_mut().for_each(|a| {
-                    if a.is_project_rooted() {
-                        a.resolve_in_place(&bases);
-                    }
-                });
-
-                project.tasks.values_mut().for_each(|a| {
-                    if let TaskConfiguration::LongForm(a) = a {
-                        a.cache.key.files.iter_mut().for_each(|a| {
-                            if a.is_project_rooted() {
-                                a.resolve_in_place(&bases);
-                            }
-                        });
-
-                        a.output.files.iter_mut().for_each(|a| {
-                            if a.is_project_rooted() {
-                                a.resolve_in_place(&bases);
-                            }
-                        });
-                    }
-                });
-
-                for dep in &mut project.extends {
-                    use omni_types::Root;
-
-                    if dep.is_rooted() {
-                        let roots = enum_map! {
-                            Root::Workspace => self.root_dir.as_ref(),
+                        let bases = enum_map! {
+                            Root::Workspace => root_dir.as_ref(),
                             Root::Project => project_dir,
                         };
-                        dep.resolve_in_place(&roots);
-                    }
 
-                    // removed path canonicalization to improve performance
-                    // it might not be needed anyway
-                    *dep = project_dir
-                        .join(dep.path().expect("path should be resolved"))
-                        .into();
+                        // resolve @project paths to the current project dir
+                        project.cache.key.files.iter_mut().for_each(|a| {
+                            if a.is_project_rooted() {
+                                a.resolve_in_place(&bases);
+                            }
+                        });
 
-                    if !loaded.contains(dep) {
-                        to_process.push(
-                            dep.path()
-                                .expect("path should be resolved")
-                                .to_path_buf(),
-                        );
-                    }
+                        project.tasks.values_mut().for_each(|a| {
+                            if let TaskConfiguration::LongForm(a) = a {
+                                a.cache.key.files.iter_mut().for_each(|a| {
+                                    if a.is_project_rooted() {
+                                        a.resolve_in_place(&bases);
+                                    }
+                                });
+
+                                a.output.files.iter_mut().for_each(|a| {
+                                    if a.is_project_rooted() {
+                                        a.resolve_in_place(&bases);
+                                    }
+                                });
+                            }
+                        });
+
+                        for dep in &mut project.extends {
+                            use omni_types::Root;
+
+                            if dep.is_rooted() {
+                                let roots = enum_map! {
+                                    Root::Workspace => root_dir.as_ref(),
+                                    Root::Project => project_dir,
+                                };
+                                dep.resolve_in_place(&roots);
+                            }
+
+                            // removed path canonicalization to improve performance
+                            // it might not be needed anyway
+                            *dep = project_dir
+                                .join(
+                                    dep.path()
+                                        .expect("path should be resolved"),
+                                )
+                                .into();
+
+                            if !loaded.lock().await.contains(dep) {
+                                to_process.lock().await.push(
+                                    dep.path()
+                                        .expect("path should be resolved")
+                                        .to_path_buf(),
+                                );
+                            }
+                        }
+
+                        project_configs.lock().await.push(project);
+
+                        Ok::<_, eyre::Report>(())
+                    }));
                 }
 
-                project_configs.push(project);
+                let results = try_join_all(futs).await?;
+
+                for result in results {
+                    result?;
+                }
+
+                if to_process.lock().await.is_empty() {
+                    break;
+                }
             }
         }
-        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
+        let mut xt_graph =
+            ExtensionGraph::from_nodes(project_configs.lock().await.clone())?;
         let project_configs = xt_graph.get_or_process_all_nodes()?;
 
         let mut projects = vec![];
@@ -907,11 +940,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_load_projects() {
+    #[tokio::test]
+    async fn test_load_projects() {
         let mut ctx = create_ctx("testing", None);
 
         ctx.load_projects_with_walker(&create_dir_walker(None))
+            .await
             .expect("Can't load projects");
 
         let projects = ctx.get_projects().expect("Can't get projects");
@@ -931,8 +965,8 @@ mod tests {
         assert!(project_3.is_some(), "Can't find project-3");
     }
 
-    #[test]
-    fn test_load_projects_with_duplicate_names() {
+    #[tokio::test]
+    async fn test_load_projects_with_duplicate_names() {
         let sys = create_sys();
         sys.fs_create_dir_all("/root/nested/project-4")
             .expect("Can't create project-4 dir");
@@ -958,7 +992,7 @@ mod tests {
             InMemoryMetadata::new(false, true),
         ));
 
-        let projects = ctx.load_projects_with_walker(&dir_walker);
+        let projects = ctx.load_projects_with_walker(&dir_walker).await;
 
         assert!(
             projects
@@ -969,11 +1003,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_get_project_graph() {
+    #[tokio::test]
+    async fn test_get_project_graph() {
         let mut ctx = create_ctx("testing", None);
 
         ctx.load_projects_with_walker(&create_dir_walker(None))
+            .await
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -981,11 +1016,12 @@ mod tests {
         assert_eq!(project_graph.count(), 3);
     }
 
-    #[test]
-    fn test_project_extensions() {
+    #[tokio::test]
+    async fn test_project_extensions() {
         let mut ctx = create_ctx("testing", None);
 
         ctx.load_projects_with_walker(&create_dir_walker(None))
+            .await
             .expect("Can't load projects");
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
@@ -1004,11 +1040,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_loaded_environmental_variables() {
+    #[tokio::test]
+    async fn test_loaded_environmental_variables() {
         let mut ctx = create_ctx("testing", None);
 
         ctx.load_projects_with_walker(&create_dir_walker(None))
+            .await
             .expect("Can't load projects");
 
         let envs = ctx
