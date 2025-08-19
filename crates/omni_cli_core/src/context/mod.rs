@@ -3,7 +3,6 @@ mod env_loader;
 use config_utils::ListConfig;
 use enum_map::enum_map;
 pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
-use futures::future::try_join_all;
 use maps::UnorderedMap;
 use merge::Merge;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
@@ -13,9 +12,7 @@ use std::{
     collections::HashSet,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    sync::Arc,
 };
-use tokio::sync::Mutex;
 use trace::Level;
 
 use ::env_loader::EnvLoaderError;
@@ -342,124 +339,99 @@ impl<TSys: ContextSys> Context<TSys> {
             num_iterations
         );
 
-        let project_configs = Arc::new(Mutex::new(vec![]));
+        let mut project_configs = vec![];
         {
-            let loaded = Arc::new(Mutex::new(HashSet::new()));
-            let to_process = Arc::new(Mutex::new(project_paths.clone()));
+            let mut loaded = HashSet::new();
+            let mut to_process = project_paths.clone();
+            let root_dir = &self.root_dir;
+            let sys = self.sys.clone();
 
-            loop {
-                let mut futs = vec![];
-                while let Some(conf) = to_process.lock().await.pop() {
-                    let project_configs = project_configs.clone();
-                    let to_process = to_process.clone();
-                    let loaded = loaded.clone();
-                    let root_dir = self.root_dir.clone();
-                    let sys = self.sys.clone();
-                    futs.push(tokio::spawn(async move {
-                        let start_time = std::time::SystemTime::now();
+            while let Some(conf) = to_process.pop() {
+                let start_time = std::time::SystemTime::now();
 
-                        let mut project = ProjectConfiguration::load(
-                            &conf as &Path,
-                            sys.clone(),
-                        )
-                        .await
-                        .wrap_err_with(|| {
-                            format!(
-                                "failed to load project configuration file at {}",
-                                conf.display()
-                            )
-                        })?;
+                let mut project = ProjectConfiguration::load(
+                    &conf as &Path,
+                    sys.clone(),
+                )
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to load project configuration file at {}",
+                        conf.display()
+                    )
+                })?;
 
-                        let elapsed = start_time.elapsed().unwrap_or_default();
-                        trace::debug!(
-                            project_configuration = ?project,
-                            "loaded project configuration file {:?} in {} ms",
-                            conf,
-                            elapsed.as_millis()
-                        );
+                let elapsed = start_time.elapsed().unwrap_or_default();
+                trace::debug!(
+                    project_configuration = ?project,
+                    "loaded project configuration file {:?} in {} ms",
+                    conf,
+                    elapsed.as_millis()
+                );
 
-                        project.file = conf.clone().into();
-                        let project_dir =
-                            conf.parent().expect("should have parent");
-                        project.dir = project_dir.into();
-                        loaded.lock().await.insert(project.file.clone());
+                project.file = conf.clone().into();
+                let project_dir = conf.parent().expect("should have parent");
+                project.dir = project_dir.into();
+                loaded.insert(project.file.clone());
 
-                        let bases = enum_map! {
-                            Root::Workspace => root_dir.as_ref(),
-                            Root::Project => project_dir,
-                        };
+                let bases = enum_map! {
+                    Root::Workspace => root_dir.as_ref(),
+                    Root::Project => project_dir,
+                };
 
-                        // resolve @project paths to the current project dir
-                        project.cache.key.files.iter_mut().for_each(|a| {
+                // resolve @project paths to the current project dir
+                project.cache.key.files.iter_mut().for_each(|a| {
+                    if a.is_project_rooted() {
+                        a.resolve_in_place(&bases);
+                    }
+                });
+
+                project.tasks.values_mut().for_each(|a| {
+                    if let TaskConfiguration::LongForm(a) = a {
+                        a.cache.key.files.iter_mut().for_each(|a| {
                             if a.is_project_rooted() {
                                 a.resolve_in_place(&bases);
                             }
                         });
 
-                        project.tasks.values_mut().for_each(|a| {
-                            if let TaskConfiguration::LongForm(a) = a {
-                                a.cache.key.files.iter_mut().for_each(|a| {
-                                    if a.is_project_rooted() {
-                                        a.resolve_in_place(&bases);
-                                    }
-                                });
-
-                                a.output.files.iter_mut().for_each(|a| {
-                                    if a.is_project_rooted() {
-                                        a.resolve_in_place(&bases);
-                                    }
-                                });
+                        a.output.files.iter_mut().for_each(|a| {
+                            if a.is_project_rooted() {
+                                a.resolve_in_place(&bases);
                             }
                         });
+                    }
+                });
 
-                        for dep in &mut project.extends {
-                            use omni_types::Root;
+                for dep in &mut project.extends {
+                    use omni_types::Root;
 
-                            if dep.is_rooted() {
-                                let roots = enum_map! {
-                                    Root::Workspace => root_dir.as_ref(),
-                                    Root::Project => project_dir,
-                                };
-                                dep.resolve_in_place(&roots);
-                            }
+                    if dep.is_rooted() {
+                        let roots = enum_map! {
+                            Root::Workspace => root_dir.as_ref(),
+                            Root::Project => project_dir,
+                        };
+                        dep.resolve_in_place(&roots);
+                    }
 
-                            // removed path canonicalization to improve performance
-                            // it might not be needed anyway
-                            *dep = project_dir
-                                .join(
-                                    dep.path()
-                                        .expect("path should be resolved"),
-                                )
-                                .into();
+                    // removed path canonicalization to improve performance
+                    // it might not be needed anyway
+                    *dep = project_dir
+                        .join(dep.path().expect("path should be resolved"))
+                        .into();
 
-                            if !loaded.lock().await.contains(dep) {
-                                to_process.lock().await.push(
-                                    dep.path()
-                                        .expect("path should be resolved")
-                                        .to_path_buf(),
-                                );
-                            }
-                        }
-
-                        project_configs.lock().await.push(project);
-
-                        Ok::<_, eyre::Report>(())
-                    }));
+                    if !loaded.contains(dep) {
+                        to_process.push(
+                            dep.path()
+                                .expect("path should be resolved")
+                                .to_path_buf(),
+                        );
+                    }
                 }
 
-                let results = try_join_all(futs).await?;
-
-                for result in results {
-                    result?;
-                }
-
-                if to_process.lock().await.is_empty() {
-                    break;
-                }
+                project_configs.push(project);
             }
         }
-        let mut xt_graph =
-            ExtensionGraph::from_nodes(project_configs.lock().await.clone())?;
+        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
         let project_configs = xt_graph.get_or_process_all_nodes()?;
 
         let mut projects = vec![];
