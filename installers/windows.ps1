@@ -5,7 +5,7 @@ $OWNER = "omni-oss"
 $REPO = "omni"
 $TARGET = "windows-latest"  # Adjust if you need linux/macos builds
 
-$BinDir = "$HOME\.omni\bin"
+$BinDir = "$HOME\AppData\Local\omni\bin"
 $OmniPath = Join-Path $BinDir "omni.exe"
 
 # Get the latest release tag from GitHub
