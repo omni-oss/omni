@@ -21,6 +21,8 @@ jobs:
 
       - name: Setup
         uses: ./.github/actions/setup
+        with:
+          shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
 
       - name: Build
         run: cargo build --release --verbose

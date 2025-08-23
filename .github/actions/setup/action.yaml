@@ -17,6 +17,8 @@ inputs:
     description: "Bun version to install"
     required: false
     default: "latest"
+  install-node-modules:
+    description: "Install Node.js modules"
   node-version:
     description: "Node version to install"
     required: false
@@ -25,6 +27,9 @@ inputs:
     description: "Additional text to prepend to cache keys"
     required: false
     default: "global"
+  shell:
+    description: "Shell to use"
+    required: true
 
 runs:
   using: "composite"
@@ -32,7 +37,6 @@ runs:
     - name: Install Rust
       if: inputs.install-rust == 'true'
       uses: dtolnay/rust-toolchain@stable
-      shell: bash
 
     - name: Install Bun
       if: inputs.install-bun == 'true'
@@ -69,7 +73,7 @@ runs:
           ${{ runner.os }}-${{ inputs.cache-key-prefix }}-target-
 
     - name: Cache Bun install
-      if: inputs.install-bun == 'true'
+      if: inputs.install-bun == 'true' || inputs.install-node-modules == 'true'
       uses: actions/cache@v4
       with:
         path: |
@@ -79,6 +83,6 @@ runs:
           ${{ runner.os }}-${{ inputs.cache-key-prefix }}-bun-
 
     - name: Install Node dependencies
-      if: inputs.install-bun == 'true'
+      if: inputs.install-bun == 'true' && inputs.install-node-modules == 'true'
       run: bun install
-      shell: bash
+      shell: ${{ inputs.shell }}
