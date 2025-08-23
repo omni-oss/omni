@@ -31,25 +31,25 @@ jobs:
         run: cargo build --release --verbose
 
       - name: Compress binary on Linux/macOS
-        if: ${{ runner.os != 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        run: zip -j omni-${{ matrix.os }}.zip target/release/omni
+        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
+        run: zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
 
       - name: Compress binary on Windows
-        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
-        run: 7z a omni-${{ matrix.os }}.zip target\release\omni.exe
+        if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
+        run: 7z a omni-${{ github.ref_name }}-${{ matrix.os }}.zip target\release\omni.exe
         shell: pwsh
 
       - name: Upload compressed binary
         uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.ref_type == 'tag'
         with:
-          name: omni-${{ matrix.os }}
-          path: omni-${{ matrix.os }}.zip
+          name: omni-${{ github.ref_name }}-${{ matrix.os }}
+          path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref_type == 'tag'
 
     steps:
       - name: Download all binaries
@@ -60,6 +60,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: ./artifacts/**
+          make_latest: ${{ github.ref_type == 'tag' }}
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
