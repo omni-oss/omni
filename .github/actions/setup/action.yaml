@@ -1,0 +1,84 @@
+name: "Setup"
+description: "Setup all the dependencies for the project"
+inputs:
+  install-rust:
+    description: "Install Rust toolchain"
+    required: false
+    default: "true"
+  install-bun:
+    description: "Install Bun runtime"
+    required: false
+    default: "true"
+  install-node:
+    description: "Install Node.js"
+    required: false
+    default: "true"
+  bun-version:
+    description: "Bun version to install"
+    required: false
+    default: "latest"
+  node-version:
+    description: "Node version to install"
+    required: false
+    default: "latest"
+  cache-key-prefix:
+    description: "Additional text to prepend to cache keys"
+    required: false
+    default: "global"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Rust
+      if: inputs.install-rust == 'true'
+      uses: dtolnay/rust-toolchain@stable
+      shell: bash
+
+    - name: Install Bun
+      if: inputs.install-bun == 'true'
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Install Node
+      if: inputs.install-node == 'true'
+      uses: actions/setup-node@v4
+      with:
+        check-latest: true
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache cargo registry
+      if: inputs.install-rust == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-cargo-
+
+    - name: Cache target folder
+      if: inputs.install-rust == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          target
+        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-target-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-target-
+
+    - name: Cache Bun install
+      if: inputs.install-bun == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.bun/install
+        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-bun-${{ hashFiles('**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-bun-
+
+    - name: Install Node dependencies
+      if: inputs.install-bun == 'true'
+      run: bun install
+      shell: bash
