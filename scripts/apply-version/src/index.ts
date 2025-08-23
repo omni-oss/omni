@@ -21,7 +21,7 @@ const VERSION_REGEX =
 
 // determine the version from the git tag
 if (await Bun.file(`${currentDir}/.version`).exists()) {
-    versionText = await Bun.file(`${currentDir}/.version`).text();
+    versionText = (await Bun.file(`${currentDir}/.version`).text()).trim();
     console.log(`Found version file containing: ${versionText}`);
 } else {
     const gitTag = await git().tag(["--points-at", "HEAD"]);
@@ -33,7 +33,7 @@ if (await Bun.file(`${currentDir}/.version`).exists()) {
 
     console.log(`Found git tag: ${gitTag}`);
 
-    versionText = gitTag.startsWith("v") ? gitTag.slice(1) : gitTag;
+    versionText = (gitTag.startsWith("v") ? gitTag.slice(1) : gitTag).trim();
 }
 
 if (!VERSION_REGEX.test(versionText)) {
