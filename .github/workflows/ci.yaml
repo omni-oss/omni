@@ -27,6 +27,10 @@ jobs:
         with:
           shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
 
+      - name: Apply version
+        if: ${{ github.ref_type == 'tag' }}
+        run: bun run ./scripts/apply-version/src/index.ts
+
       - name: Build
         run: cargo build --release --verbose
 
