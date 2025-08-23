@@ -321,9 +321,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
             if matcher.is_match(path.as_os_str()) {
                 for project_file in &project_files {
-                    if meta.is_file()
-                        && f.file_name().as_bytes() == project_file.as_bytes()
-                    {
+                    if f.file_name().as_bytes() == project_file.as_bytes() {
                         trace::debug!("Found project directory: {:?}", path);
                         project_paths.push(path.clone());
                         break;
@@ -403,18 +401,10 @@ impl<TSys: ContextSys> Context<TSys> {
                 });
 
                 for dep in &mut project.extends {
-                    use omni_types::Root;
-
                     if dep.is_rooted() {
-                        let roots = enum_map! {
-                            Root::Workspace => root_dir.as_ref(),
-                            Root::Project => project_dir,
-                        };
-                        dep.resolve_in_place(&roots);
+                        dep.resolve_in_place(&bases);
                     }
 
-                    // removed path canonicalization to improve performance
-                    // it might not be needed anyway
                     *dep = project_dir
                         .join(dep.path().expect("path should be resolved"))
                         .into();
