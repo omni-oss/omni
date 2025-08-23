@@ -39,6 +39,21 @@ runs:
     - name: Install Omni
       uses: omni-oss/setup-omni@main # use main temporarily to check if it works
 
+    # Placeholder for future use
+    - name: Get Workspace Hash
+      id: get_workspace_hash
+      run: echo "workspace_hash=1" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Cache Omni directory
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.omni
+        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-omni-${{ steps.get_workspace_hash.outputs.workspace_hash }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-omni-
+
     - name: Install Rust
       if: inputs.install-rust == 'true'
       uses: dtolnay/rust-toolchain@stable
