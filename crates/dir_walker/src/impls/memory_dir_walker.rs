@@ -90,6 +90,7 @@ impl DirEntry for InMemoryDirEntry {
         0
     }
 
+    #[cfg(unix)]
     fn ino(&self) -> Option<u64> {
         None
     }

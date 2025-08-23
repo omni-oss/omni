@@ -35,6 +35,15 @@ jobs:
       - name: Build
         run: cargo build --release --verbose
 
+      - name: Cache build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+          key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-
+
       - name: Compress binary
         run: |
           BIN_NAME="omni${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
