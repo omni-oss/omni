@@ -36,6 +36,9 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Install Omni
+      uses: omni-oss/setup-omni@main # use main temporarily to check if it works
+
     - name: Install Rust
       if: inputs.install-rust == 'true'
       uses: dtolnay/rust-toolchain@stable
