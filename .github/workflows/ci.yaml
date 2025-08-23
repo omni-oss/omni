@@ -40,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: omni-${{ matrix.os }}
+          name: omni-${{ matrix.os }}.zip
           path: omni-${{ matrix.os }}.zip
 
   release:

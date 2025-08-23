@@ -19,6 +19,8 @@ inputs:
     default: "latest"
   install-node-modules:
     description: "Install Node.js modules"
+    required: false
+    default: "true"
   node-version:
     description: "Node version to install"
     required: false
