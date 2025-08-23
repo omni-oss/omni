@@ -10,27 +10,13 @@ Development workflow orchestration tool
 
 ## Installation
 
-### Cargo
+### Linux or macOS
+```
+curl -fsSL https://raw.githubusercontent.com/omni-oss/omni/main/installers/unix.sh | sh
+```
+
+
+### Windows
 ```bash
-cargo install omni
-```
-
-### npm
-```npm
-npm install -g omni
-```
-
-### Yarn
-```yarn
-yarn global add omni
-```
-
-### Bun
-```bash
-bun add -g omni
-```
-
-### Homebrew
-```bash
-brew install omni
+curl -fsSL https://raw.githubusercontent.com/omni-oss/omni/main/installers/windows.ps1 | powershell
 ```
