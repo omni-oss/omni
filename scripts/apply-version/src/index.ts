@@ -1,4 +1,5 @@
 import walk from "ignore-walk";
+import git from "simple-git";
 
 const start = Date.now();
 const files = await walk({
@@ -11,21 +12,31 @@ const files = await walk({
 const FILES_TO_UPDATE = ["package.json", "Cargo.toml"];
 const REPLACEMENT_PATTERN = /0.0.0-semantically-released/g;
 
-let currentDir = process.cwd();
+const currentDir = process.cwd();
 
-while (!(await Bun.file(`${currentDir}/.version`).exists())) {
-    if (currentDir === "/") {
-        console.error("Could not find .version file");
-        process.exit(1);
-    }
-
-    currentDir = currentDir.replace(/\/[^/]+$/, "");
-}
-
-const versionText = await Bun.file(`${currentDir}/.version`).text();
+let versionText = "";
 
 const VERSION_REGEX =
     /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9][0-9]*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+// determine the version from the git tag
+if (await Bun.file(`${currentDir}/.version`).exists()) {
+    versionText = await Bun.file(`${currentDir}/.version`).text();
+    console.log(`Found version file containing: ${versionText}`);
+} else {
+    const gitTag = await git().tag(["--points-at", "HEAD"]);
+
+    if (gitTag.trim() === "") {
+        console.error("No git tag found");
+        process.exit(1);
+    }
+
+    console.log(`Found git tag: ${gitTag}`);
+
+    versionText = gitTag.startsWith("v") ? gitTag.slice(1) : gitTag;
+
+    process.exit(0);
+}
 
 if (!VERSION_REGEX.test(versionText)) {
     console.error(`Invalid version format: ${versionText}`);
