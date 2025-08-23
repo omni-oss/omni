@@ -72,6 +72,7 @@ impl BaseFsCreateDirAsync for RealSys {
             builder = builder.recursive(true);
         }
 
+        #[cfg(unix)]
         if let Some(mode) = options.mode {
             builder = builder.mode(mode);
         }
