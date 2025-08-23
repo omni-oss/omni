@@ -44,11 +44,14 @@ jobs:
       - name: Build
         run: cargo build --release --verbose
 
-      - name: Compress binary
-        run: |
-          BIN_NAME="omni${{ matrix.os == 'windows-latest' && '.exe' || '' }}"
-          ZIP_NAME="omni-${{ matrix.os }}.zip"
-          zip -j $ZIP_NAME target/release/$BIN_NAME
+      - name: Compress binary on Linux/macOS
+        if: runner.os != 'Windows'
+        run: zip -j my-crate-linux.zip target/release/my-crate
+
+      - name: Compress binary on Windows
+        if: runner.os == 'Windows'
+        run: 7z a my-crate-windows.zip target\release\my-crate.exe
+        shell: pwsh
 
       - name: Upload compressed binary
         uses: actions/upload-artifact@v4
