@@ -1,5 +1,6 @@
 import walk from "ignore-walk";
 
+const start = Date.now();
 const files = await walk({
     ignoreFiles: [".omniignore", ".gitignore", ".npmignore", ".dockerignore"],
     includeEmpty: false,
@@ -47,3 +48,7 @@ for (const file of files) {
         }
     }
 }
+
+const end = Date.now();
+const elapsed = end - start;
+console.log(`Applied version in ${elapsed}ms`);
