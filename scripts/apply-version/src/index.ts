@@ -34,14 +34,14 @@ if (await Bun.file(`${currentDir}/.version`).exists()) {
     console.log(`Found git tag: ${gitTag}`);
 
     versionText = gitTag.startsWith("v") ? gitTag.slice(1) : gitTag;
-
-    process.exit(0);
 }
 
 if (!VERSION_REGEX.test(versionText)) {
     console.error(`Invalid version format: ${versionText}`);
     process.exit(1);
 }
+
+console.log(`Applying version: ${versionText}`);
 
 for (const file of files) {
     for (const fileToUpdate of FILES_TO_UPDATE) {
