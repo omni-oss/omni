@@ -32,10 +32,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build
-        run: cargo build --release --verbose
-
-      - name: Cache build output
+      - name: Cache target folder
         uses: actions/cache@v4
         with:
           path: |
@@ -43,6 +40,9 @@ jobs:
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-target-
+
+      - name: Build
+        run: cargo build --release --verbose
 
       - name: Compress binary
         run: |

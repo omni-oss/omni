@@ -10,7 +10,6 @@ use omni_types::{OmniPath, Root};
 use std::{
     borrow::Cow,
     collections::HashSet,
-    os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
 use trace::Level;
@@ -321,7 +320,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
             if matcher.is_match(path.as_os_str()) {
                 for project_file in &project_files {
-                    if f.file_name().as_bytes() == project_file.as_bytes() {
+                    if *f.file_name().to_string_lossy() == *project_file {
                         trace::debug!("Found project directory: {:?}", path);
                         project_paths.push(path.clone());
                         break;
