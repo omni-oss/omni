@@ -34,13 +34,16 @@ if (!VERSION_REGEX.test(versionText)) {
 for (const file of files) {
     for (const fileToUpdate of FILES_TO_UPDATE) {
         if (file.endsWith(fileToUpdate)) {
-            console.log(`Apply version in ${file}`);
             const content = await Bun.file(file).text();
-            const updatedContent = content.replace(
-                REPLACEMENT_PATTERN,
-                versionText,
-            );
-            await Bun.file(file).write(updatedContent);
+
+            if (REPLACEMENT_PATTERN.test(content)) {
+                const updatedContent = content.replace(
+                    REPLACEMENT_PATTERN,
+                    versionText,
+                );
+                await Bun.file(file).write(updatedContent);
+                console.log(`Applied version in ${file}`);
+            }
         }
     }
 }
