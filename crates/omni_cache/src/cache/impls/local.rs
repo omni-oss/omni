@@ -1,16 +1,17 @@
-use std::path::{Path, PathBuf};
-
-use dir_walker::{
-    DirEntry, DirWalker,
-    impls::{RealGlobDirWalker, RealGlobDirWalkerConfigBuilderError},
+use std::{
+    collections::HashMap,
+    hash::{Hash as _, Hasher as _},
+    path::{Path, PathBuf},
 };
-use globset::{Glob, GlobSet, GlobSetBuilder};
+
+use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
 use maps::{Map, UnorderedMap};
+use omni_collector::Collector;
 use omni_hasher::{
     Hasher,
     impls::{DefaultHash, DefaultHasher},
 };
-use omni_types::{OmniPath, Root, RootMap, enum_map};
+use omni_types::{OmniPath, RootMap};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
     FsCanonicalizeAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
@@ -22,11 +23,15 @@ use time::OffsetDateTime;
 use crate::{
     CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
     TaskExecutionCacheStore, TaskExecutionInfo,
-    hash::{
-        ProjectDirHasher,
-        impls::{RealDirHasher, RealDirHasherError},
-    },
-    utils::{has_globs, project_dirname, relpath, remove_globs, topmost_dirs},
+};
+
+pub use omni_utils::path::{
+    has_globs, path_safe, relpath, remove_globs, topmost_dirs,
+};
+
+use omni_hasher::project_dir_hasher::{
+    ProjectDirHasher,
+    impls::{RealDirHasher, RealDirHasherError},
 };
 
 #[derive(Clone, Debug)]
@@ -93,7 +98,7 @@ fn hashtext(text: &str) -> String {
 
 impl LocalTaskExecutionCacheStore {
     fn get_project_dir(&self, project_name: &str) -> PathBuf {
-        let name = project_dirname(project_name);
+        let name = path_safe(project_name);
 
         self.cache_dir.join(name).join("output")
     }
@@ -177,9 +182,7 @@ impl LocalTaskExecutionCacheStore {
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError> {
         struct Holder<'a> {
-            output_files_globset: Option<GlobSet>,
             resolved_output_files: Option<Vec<OmniPath>>,
-            input_files_globset: Option<GlobSet>,
             resolved_input_files: Option<Vec<OmniPath>>,
             task: TaskExecutionInfo<'a>,
             roots: RootMap<'a>,
@@ -187,195 +190,48 @@ impl LocalTaskExecutionCacheStore {
             cache_output_dir: Option<PathBuf>,
         }
 
-        let mut to_process = Vec::with_capacity(projects.len());
-
         let should_collect_input_files =
             config.input_files || config.hashes || config.cache_output_dirs;
 
         let should_collect_output_files = config.output_files;
 
-        // holds paths in input files and output files
-        let mut includes = Vec::with_capacity(
-            projects
-                .iter()
-                .map(|i| {
-                    let mut count = 0;
+        let collect_task_infos = projects
+            .iter()
+            .map(|project| omni_collector::ProjectTaskInfo {
+                input_files: project.input_files,
+                output_files: project.output_files,
+                project_dir: project.project_dir,
+                project_name: project.project_name,
+                task_command: project.task_command,
+                task_name: project.task_name,
+            })
+            .collect::<Vec<_>>();
 
-                    if should_collect_input_files {
-                        count += i.input_files.len();
-                    }
+        let task_map = project_task_map(projects);
 
-                    if should_collect_output_files {
-                        count += i.output_files.len();
-                    }
-
-                    count
+        let mut to_process =
+            Collector::new(self.ws_root_dir.as_path(), self.sys.clone())
+                .collect(
+                    &collect_task_infos,
+                    &omni_collector::CollectConfig {
+                        output_files: should_collect_output_files,
+                        input_files: should_collect_input_files,
+                    },
+                )
+                .await?
+                .into_iter()
+                .map(|r| Holder {
+                    cache_output_dir: None,
+                    resolved_input_files: r.input_files,
+                    hash: None,
+                    resolved_output_files: r.output_files,
+                    roots: r.roots,
+                    task: task_map[&project_task_hash(
+                        r.task.project_name,
+                        r.task.task_name,
+                    )],
                 })
-                .sum(),
-        );
-
-        for project in projects {
-            trace::debug!(
-                project_name = ?project.project_name,
-                project = ?project,
-                "processing project"
-            );
-            let roots = enum_map! {
-                Root::Workspace => &self.ws_root_dir,
-                Root::Project => project.project_dir,
-            };
-
-            let mut output_files_globset = None;
-            if should_collect_output_files {
-                let mut output_glob = GlobSetBuilder::new();
-
-                populate_includes_and_globset(
-                    project.output_files,
-                    project.project_dir,
-                    &mut includes,
-                    &roots,
-                    &mut output_glob,
-                )?;
-
-                output_files_globset = Some(output_glob.build()?);
-            }
-
-            let mut input_files_globset = None;
-
-            // the output dirs are based on the hashes so need to be collected here
-            if should_collect_input_files {
-                let mut input_glob = GlobSetBuilder::new();
-                populate_includes_and_globset(
-                    project.input_files,
-                    project.project_dir,
-                    &mut includes,
-                    &roots,
-                    &mut input_glob,
-                )?;
-
-                input_files_globset = Some(input_glob.build()?);
-            }
-
-            to_process.push(Holder {
-                input_files_globset,
-                output_files_globset,
-                resolved_input_files: if should_collect_input_files {
-                    // just in the collected input files will be the same as the
-                    // original input files
-                    Some(Vec::with_capacity(project.input_files.len()))
-                } else {
-                    None
-                },
-                resolved_output_files: if config.output_files {
-                    // just in the collected output files will be the same as the
-                    // original output files
-                    Some(Vec::with_capacity(project.output_files.len()))
-                } else {
-                    None
-                },
-                task: *project,
-                roots,
-                hash: None,
-                cache_output_dir: None,
-            });
-        }
-
-        if !includes.is_empty() {
-            let topmost =
-                topmost_dirs(self.sys.clone(), &includes, &self.ws_root_dir)
-                    .into_iter()
-                    .map(|p| p.to_path_buf())
-                    .collect::<Vec<_>>();
-
-            let topmost =
-                topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
-
-            // for some reason, ignore doesn't like it when a folder is ignored
-            // and a file inside the ignored folder is included
-            // so include all the parent folders of the included file
-            // so that ignore walks to it and doesn't ignore it
-            let mut forced_includes = Vec::with_capacity(includes.len());
-
-            for include in &includes {
-                forced_includes.push(include.to_path_buf());
-
-                let clean = if has_globs(include.to_string_lossy().as_ref()) {
-                    let clean = remove_globs(include);
-
-                    forced_includes.push(clean.to_path_buf());
-
-                    clean
-                } else {
-                    include
-                };
-
-                for parent in clean.ancestors() {
-                    // if we are in the workspace root, stop here
-                    if self.ws_root_dir.starts_with(parent) {
-                        break;
-                    }
-
-                    forced_includes.push(parent.to_path_buf());
-                }
-            }
-
-            forced_includes.dedup();
-
-            let dirwalker = RealGlobDirWalker::config()
-                .standard_filters(true)
-                .include(forced_includes)
-                .root_dir(&self.ws_root_dir)
-                .custom_ignore_filenames(vec![".omniignore".to_string()])
-                .build()?
-                .build_walker()?;
-
-            for res in dirwalker.walk_dir(&topmost)? {
-                let res = res?;
-                let original_file_abs_path = res.path();
-
-                if !self.sys.fs_is_file_async(original_file_abs_path).await? {
-                    continue;
-                }
-
-                for project in &mut to_process {
-                    let project_dir = project.roots[Root::Project];
-                    let rooted_path =
-                        if original_file_abs_path.starts_with(project_dir) {
-                            OmniPath::new_project_rooted(relpath(
-                                original_file_abs_path,
-                                project_dir,
-                            ))
-                        } else if original_file_abs_path
-                            .starts_with(&self.ws_root_dir)
-                        {
-                            OmniPath::new_ws_rooted(relpath(
-                                original_file_abs_path,
-                                &self.ws_root_dir,
-                            ))
-                        } else {
-                            OmniPath::new(original_file_abs_path)
-                        };
-
-                    if let Some(input_files_globset) =
-                        project.input_files_globset.as_ref()
-                        && input_files_globset.is_match(original_file_abs_path)
-                        && let Some(resolved_input_files) =
-                            project.resolved_input_files.as_mut()
-                    {
-                        resolved_input_files.push(rooted_path.clone());
-                    }
-
-                    if let Some(output_files_globset) =
-                        project.output_files_globset.as_ref()
-                        && output_files_globset.is_match(original_file_abs_path)
-                        && let Some(resolved_output_files) =
-                            project.resolved_output_files.as_mut()
-                    {
-                        resolved_output_files.push(rooted_path);
-                    }
-                }
-            }
-        }
+                .collect::<Vec<_>>();
 
         if config.hashes || config.cache_output_dirs {
             for holder in &mut to_process {
@@ -424,6 +280,26 @@ impl LocalTaskExecutionCacheStore {
             })
             .collect::<Vec<_>>())
     }
+}
+
+fn project_task_hash(project_name: &str, task_name: &str) -> u64 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    project_name.hash(&mut hasher);
+    task_name.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn project_task_map<'a>(
+    tasks: &[TaskExecutionInfo<'a>],
+) -> HashMap<u64, TaskExecutionInfo<'a>> {
+    let mut map = HashMap::with_capacity(tasks.len());
+
+    for task in tasks {
+        let hash = project_task_hash(task.project_name, task.task_name);
+        map.insert(hash, *task);
+    }
+
+    map
 }
 
 const LOGS_CACHE_FILE: &str = "logs.cache";
@@ -643,30 +519,6 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
     }
 }
 
-fn populate_includes_and_globset(
-    files: &[OmniPath],
-    project_dir: &Path,
-    includes: &mut Vec<PathBuf>,
-    roots: &RootMap,
-    output_globset: &mut GlobSetBuilder,
-) -> Result<(), <LocalTaskExecutionCacheStore as TaskExecutionCacheStore>::Error>
-{
-    for p in files {
-        let p = p.resolve(roots);
-
-        let path = if p.is_relative() {
-            std::path::absolute(project_dir.join(p))?
-        } else {
-            p.to_path_buf()
-        };
-
-        let glob = Glob::new(path.to_string_lossy().as_ref())?;
-        output_globset.add(glob);
-        includes.push(path);
-    }
-    Ok(())
-}
-
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
 pub struct LocalTaskExecutionCacheStoreError {
@@ -721,6 +573,9 @@ enum LocalTaskExecutionCacheStoreErrorInner {
 
     #[error(transparent)]
     Decode(#[from] bincode::error::DecodeError),
+
+    #[error(transparent)]
+    Collect(#[from] omni_collector::error::Error),
 }
 
 #[cfg(test)]
@@ -744,6 +599,7 @@ mod tests {
     }
 
     async fn write_project(dir: &Path, sys: RealSys) {
+        // Create the project folders
         sys.fs_create_dir_all_async(dir.join("src"))
             .await
             .expect("failed to create project1 src dir");
@@ -751,6 +607,7 @@ mod tests {
             .await
             .expect("failed to create project1 dist dir");
 
+        // Content
         sys.fs_write_async(dir.join("src/a-test.txt"), TXT_CONTENT)
             .await
             .expect("failed to write test file");
@@ -770,7 +627,7 @@ mod tests {
         fixture_with_ignore(projects, "*").await
     }
 
-    async fn __fixture_inner__(projects: &[&str]) -> tempfile::TempDir {
+    async fn _fixture_inner(projects: &[&str]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("failed to create tempdir");
         let root = dir.path();
         let sys = sys();
@@ -792,7 +649,7 @@ mod tests {
         projects: &[&str],
         ignore: &str,
     ) -> tempfile::TempDir {
-        let dir = __fixture_inner__(projects).await;
+        let dir = _fixture_inner(projects).await;
         let root = dir.path();
 
         let sys = sys();

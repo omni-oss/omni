@@ -1926,6 +1926,7 @@ dependencies = [
  "globset",
  "maps",
  "mockall",
+ "omni_collector",
  "omni_hasher",
  "omni_types",
  "omni_utils",
@@ -2003,6 +2004,7 @@ dependencies = [
 name = "omni_collector"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "derive-new",
  "dir_walker",
  "enum-map",
  "eyre",
