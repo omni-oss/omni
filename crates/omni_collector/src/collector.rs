@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use derive_new::new;
 use dir_walker::{DirEntry as _, DirWalker as _, impls::RealGlobDirWalker};
 use enum_map::enum_map;
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -17,9 +18,11 @@ pub struct CollectConfig {
 
 #[allow(clippy::too_many_arguments)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct CollectionInfo<'a> {
+pub struct ProjectTaskInfo<'a> {
     pub project_name: &'a str,
     pub project_dir: &'a Path,
+    pub task_name: &'a str,
+    pub task_command: &'a str,
     pub output_files: &'a [OmniPath],
     pub input_files: &'a [OmniPath],
 }
@@ -32,37 +35,38 @@ pub trait CollectorSys:
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectResult<'a> {
-    task: CollectionInfo<'a>,
-    input_files: Option<Vec<OmniPath>>,
-    output_files: Option<Vec<OmniPath>>,
-    roots: RootMap<'a>,
+    pub task: ProjectTaskInfo<'a>,
+    pub input_files: Option<Vec<OmniPath>>,
+    pub output_files: Option<Vec<OmniPath>>,
+    pub roots: RootMap<'a>,
 }
 
-pub struct Collector<TSys: CollectorSys = RealSys> {
-    ws_root_dir: PathBuf,
+#[derive(Debug, new)]
+pub struct Collector<'a, TSys: CollectorSys = RealSys> {
+    ws_root_dir: &'a Path,
     sys: TSys,
 }
 
-impl<TSys: CollectorSys> Collector<TSys> {
+struct Holder<'a> {
+    output_files_globset: Option<GlobSet>,
+    resolved_output_files: Option<Vec<OmniPath>>,
+    input_files_globset: Option<GlobSet>,
+    resolved_input_files: Option<Vec<OmniPath>>,
+    task: ProjectTaskInfo<'a>,
+    roots: RootMap<'a>,
+}
+
+impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = "debug", skip(self))
     )]
-    pub async fn collect<'a>(
-        &'a self,
-        projects: &[CollectionInfo<'a>],
+    pub async fn collect(
+        &self,
+        project_tasks: &[ProjectTaskInfo<'a>],
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, Error> {
-        struct Holder<'a> {
-            output_files_globset: Option<GlobSet>,
-            resolved_output_files: Option<Vec<OmniPath>>,
-            input_files_globset: Option<GlobSet>,
-            resolved_input_files: Option<Vec<OmniPath>>,
-            task: CollectionInfo<'a>,
-            roots: RootMap<'a>,
-        }
-
-        let mut to_process = Vec::with_capacity(projects.len());
+        let mut to_process = Vec::with_capacity(project_tasks.len());
 
         let should_collect_input_files = config.input_files;
 
@@ -70,7 +74,7 @@ impl<TSys: CollectorSys> Collector<TSys> {
 
         // holds paths in input files and output files
         let mut includes = Vec::with_capacity(
-            projects
+            project_tasks
                 .iter()
                 .map(|i| {
                     let mut count = 0;
@@ -88,7 +92,7 @@ impl<TSys: CollectorSys> Collector<TSys> {
                 .sum(),
         );
 
-        for project in projects {
+        for project in project_tasks {
             trace::debug!(
                 project_name = ?project.project_name,
                 project = ?project,
@@ -154,7 +158,7 @@ impl<TSys: CollectorSys> Collector<TSys> {
 
         if !includes.is_empty() {
             let topmost =
-                topmost_dirs(self.sys.clone(), &includes, &self.ws_root_dir)
+                topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
                     .into_iter()
                     .map(|p| p.to_path_buf())
                     .collect::<Vec<_>>();
@@ -196,7 +200,7 @@ impl<TSys: CollectorSys> Collector<TSys> {
             let dirwalker = RealGlobDirWalker::config()
                 .standard_filters(true)
                 .include(forced_includes)
-                .root_dir(&self.ws_root_dir)
+                .root_dir(self.ws_root_dir)
                 .custom_ignore_filenames(vec![".omniignore".to_string()])
                 .build()?
                 .build_walker()?;
@@ -218,11 +222,11 @@ impl<TSys: CollectorSys> Collector<TSys> {
                                 project_dir,
                             ))
                         } else if original_file_abs_path
-                            .starts_with(&self.ws_root_dir)
+                            .starts_with(self.ws_root_dir)
                         {
                             OmniPath::new_ws_rooted(relpath(
                                 original_file_abs_path,
-                                &self.ws_root_dir,
+                                self.ws_root_dir,
                             ))
                         } else {
                             OmniPath::new(original_file_abs_path)

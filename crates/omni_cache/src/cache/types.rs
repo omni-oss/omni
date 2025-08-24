@@ -21,7 +21,7 @@ pub struct TaskExecutionInfo<'a> {
     pub dependency_hashes: &'a [DefaultHash],
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, new, Yokeable)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, new)]
 pub struct NewCacheInfo<'a> {
     pub task: TaskExecutionInfo<'a>,
     pub logs: Option<&'a Bytes>,
