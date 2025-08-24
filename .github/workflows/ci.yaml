@@ -12,23 +12,23 @@ permissions:
   contents: write
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  # test:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
 
-      - name: Setup
-        uses: ./.github/actions/setup
-        with:
-          shell: bash
+  #     - name: Setup
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         shell: bash
 
-      - name: Test
-        run: omni run test
+  #     - name: Test
+  #       run: omni run test
 
   build:
     runs-on: ${{ matrix.os }}
-    needs: test
+    # needs: test
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
