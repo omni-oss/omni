@@ -1,5 +1,6 @@
 mod error;
 mod hasher;
+pub mod project_dir_hasher;
 
 pub use error::*;
 pub use hasher::*;

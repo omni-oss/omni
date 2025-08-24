@@ -1,8 +1,7 @@
 [package]
 name = "omni_hasher"
 rust-version.workspace = true
-#edition.workspace = true
-edition = "2024"
+edition.workspace = true
 version.workspace = true
 repository.workspace = true
 
@@ -17,3 +16,18 @@ strum = { workspace = true }
 system_traits = { workspace = true }
 blake3 = { workspace = true, optional = true }
 serde = { workspace = true }
+async-trait = { workspace = true }
+rs_merkle = { workspace = true }
+omni_types = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }
+futures = { workspace = true }
+byteorder = { workspace = true }
+dir_walker = { workspace = true }
+bincode = { workspace = true }
+omni_utils = { workspace = true }
+
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
