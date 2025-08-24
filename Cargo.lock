@@ -1918,19 +1918,17 @@ dependencies = [
  "async-trait",
  "bincode 2.0.1",
  "bs58",
- "byteorder",
  "bytes",
  "derive-new",
  "derive_builder",
  "dir_walker",
  "eyre",
- "futures",
  "globset",
  "maps",
  "mockall",
  "omni_hasher",
  "omni_types",
- "rs_merkle",
+ "omni_utils",
  "serde",
  "strum 0.27.2",
  "system_traits",
@@ -1940,7 +1938,6 @@ dependencies = [
  "tokio",
  "trace",
  "tracing",
- "url",
  "yoke",
 ]
 
@@ -2003,6 +2000,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_collector"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "dir_walker",
+ "enum-map",
+ "eyre",
+ "globset",
+ "omni_hasher",
+ "omni_types",
+ "omni_utils",
+ "strum 0.27.2",
+ "system_traits",
+ "thiserror 2.0.12",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_core"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -2049,12 +2064,24 @@ dependencies = [
 name = "omni_hasher"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "async-trait",
+ "bincode 2.0.1",
  "blake3",
+ "byteorder",
+ "derive-new",
+ "derive_builder",
+ "dir_walker",
  "eyre",
+ "futures",
+ "omni_types",
+ "omni_utils",
+ "rs_merkle",
  "serde",
  "strum 0.27.2",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]
@@ -2086,6 +2113,19 @@ dependencies = [
  "serde_json",
  "strum 0.27.2",
  "thiserror 2.0.12",
+]
+
+[[package]]
+name = "omni_utils"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "bs58",
+ "eyre",
+ "strum 0.27.2",
+ "system_traits",
+ "thiserror 2.0.12",
+ "trace",
+ "tracing",
 ]
 
 [[package]]
