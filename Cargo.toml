@@ -120,7 +120,7 @@ blake3 = { version = "^1.8.2" }
 faster-hex = { version = "^0.10.0" }
 tempfile = { version = "^3.20.0" }
 bs58 = { version = "^0.5.1" }
-yoke = { version = "^0.8.0" }
+yoke = { version = "^0.8.0", features = ["derive"] }
 owo-colors = { version = "^4.2.2" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
@@ -132,6 +132,8 @@ shlex = { version = "^1.3.0" }
 path-clean = { version = "^1.0.1" }
 num_cpus = { version = "^1.17.0" }
 omni_generator = { path = "./crates/omni_generator" }
+omni_collector = { path = "./crates/omni_collector" }
+omni_utils = { path = "./crates/omni_utils" }
 
 [profile.release]
 incremental = true

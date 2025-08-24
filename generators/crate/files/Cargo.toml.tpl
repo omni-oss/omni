@@ -2,7 +2,6 @@
 name = "js_runtime"
 authors.workspace = true
 edition.workspace = true
-# edition = "2024"
 rust-version.workspace = true
 repository.workspace = true
 
