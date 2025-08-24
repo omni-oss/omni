@@ -55,7 +55,9 @@ jobs:
 
       - name: Compress binary on Windows
         if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
-        run: 7z a omni-${{ github.ref_name }}-${{ matrix.os }}.zip target\release\*.exe
+        run: |
+          cd target/release
+          7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
         shell: pwsh
 
       - name: Upload compressed binary
