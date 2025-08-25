@@ -57,7 +57,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: |
-          ~/.omni
+          .omni
         key: ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-${{ steps.get_workspace_hash.outputs.workspace_hash }}
         restore-keys: |
           ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-
