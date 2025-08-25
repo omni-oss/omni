@@ -81,6 +81,9 @@ omni_collector = { workspace = true }
 shlex = { workspace = true }
 path-clean = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
 eyre = { workspace = true }

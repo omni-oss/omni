@@ -118,6 +118,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
     }
 }
 
+#[derive(Debug)]
 pub struct IgnoreRealDirEntry(ignore::DirEntry);
 
 impl Metadata for std::fs::Metadata {

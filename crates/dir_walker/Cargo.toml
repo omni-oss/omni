@@ -31,3 +31,4 @@ tracing = { workspace = true, optional = true }
 derive-new = { workspace = true }
 crossbeam-channel = { workspace = true }
 num_cpus = { workspace = true }
+path-slash = { workspace = true }
