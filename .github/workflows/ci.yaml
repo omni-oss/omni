@@ -24,8 +24,7 @@ jobs:
           shell: bash
 
       - name: Test
-        run: cargo test
-        #run: omni run test
+        run: omni run test
 
   build:
     runs-on: ${{ matrix.os }}
