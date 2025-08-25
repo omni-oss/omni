@@ -56,10 +56,7 @@ runs:
 
     - name: Install Rust
       if: inputs.install-rust == 'true'
-      uses: dtolnay/rust-toolchain@v1
-      with:
-        toolchain: + # use the toolchain specified in rust-toolchain.toml
-        components: rustfmt, clippy
+      uses: actions-rust-lang/setup-rust-toolchain@v1
 
     - name: Install Bun
       if: inputs.install-bun == 'true'
