@@ -171,6 +171,6 @@ pub enum CliSubcommands {
     Completion(CompletionCommand),
     #[command(about = "Execute specified task in projects")]
     Run(RunCommand),
-    #[command(about = "Execute specified task in projects")]
+    #[command(about = "Get hash for workspace or projects")]
     Hash(HashCommand),
 }
