@@ -29,6 +29,7 @@ bincode = { workspace = true }
 omni_utils = { workspace = true }
 trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
+path-clean = { workspace = true }
 
 
 [dev-dependencies]

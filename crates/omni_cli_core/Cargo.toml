@@ -79,6 +79,7 @@ tiny-gradient = { workspace = true }
 omni_expressions = { workspace = true }
 omni_collector = { workspace = true }
 shlex = { workspace = true }
+path-clean = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
