@@ -22,6 +22,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           shell: bash
+          omni-cache-key-prefix: test
 
       - name: Test
         run: omni run test
@@ -41,6 +42,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+          omni-cache-key-prefix: build
 
       - name: Apply version
         if: ${{ github.ref_type == 'tag' }}
