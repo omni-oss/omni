@@ -82,7 +82,12 @@ pub async fn build_merkle_tree<THasher: Hasher>(
     let bytes;
 
     let file_entries = if sys.fs_exists_async(&partial_hashes_file).await? {
-        bytes = sys.fs_read_async(&partial_hashes_file).await?;
+        bytes =
+            sys.fs_read_async(&partial_hashes_file)
+                .await
+                .inspect_err(|e| {
+                    trace::error!("failed to read partial hashes file {partial_hashes_file:?}: {e}");
+                })?;
 
         let (file_entries, _size): (Vec<FileEntry<THasher>>, usize) =
             bincode::serde::borrow_decode_from_slice(
@@ -143,7 +148,9 @@ pub async fn build_merkle_tree<THasher: Hasher>(
             bincode::config::standard(),
         )?;
 
-        sys.fs_write_async(&partial_hashes_file, &bytes).await?;
+        sys.fs_write_async(&partial_hashes_file, &bytes).await.inspect_err(|e| {
+            trace::error!("failed to write partial hashes file {partial_hashes_file:?}: {e}");
+        })?;
     }
 
     let mut tree = MerkleTree::new();

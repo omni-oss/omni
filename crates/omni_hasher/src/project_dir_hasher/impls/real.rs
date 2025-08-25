@@ -19,7 +19,7 @@ pub struct RealDirHasher {
     #[builder(setter(skip), default)]
     sys: RealSys,
     #[builder(setter(into))]
-    dir: PathBuf,
+    index_dir: PathBuf,
     #[builder(setter(into))]
     workspace_root_dir: PathBuf,
 }
@@ -40,11 +40,25 @@ impl ProjectDirHasher for RealDirHasher {
         project_dir: &Path,
         files: &[OmniPath],
     ) -> Result<MerkleTree<Compat<THasher>>, Self::Error> {
-        let proj_dir = self.sys.fs_canonicalize_async(project_dir).await?;
+        let proj_dir = self
+            .sys
+            .fs_canonicalize_async(project_dir)
+            .await
+            .inspect_err(|e| {
+                trace::error!(
+                    "failed to canonicalize project dir {project_dir:?}: {e}"
+                );
+            })?;
         let ws_dir = self
             .sys
             .fs_canonicalize_async(&self.workspace_root_dir)
-            .await?;
+            .await
+            .inspect_err(|e| {
+                trace::error!(
+                    "failed to canonicalize workspace dir {:?}: {e}",
+                    self.workspace_root_dir
+                );
+            })?;
 
         let bases = enum_map! {
             Root::Workspace => ws_dir.as_path(),
@@ -73,7 +87,7 @@ impl ProjectDirHasher for RealDirHasher {
             project_name,
             &bases,
             &paths,
-            &self.dir,
+            &self.index_dir,
             self.sys.clone(),
         )
         .await?;
@@ -176,7 +190,7 @@ mod tests {
 
     fn dir_hasher(root: &Path) -> RealDirHasher {
         RealDirHasher::builder()
-            .dir(root.join(".omni/index"))
+            .index_dir(root.join(".omni/index"))
             .workspace_root_dir(root)
             .build()
             .expect("failed to build hasher")

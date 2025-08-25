@@ -1,19 +1,28 @@
 use std::path::{Path, PathBuf};
 
-use derive_new::new;
 use dir_walker::{DirEntry as _, DirWalker as _, impls::RealGlobDirWalker};
 use enum_map::enum_map;
 use globset::{Glob, GlobSet, GlobSetBuilder};
+use maps::Map;
+use omni_hasher::{
+    Hasher,
+    impls::{DefaultHash, DefaultHasher},
+    project_dir_hasher::{ProjectDirHasher, impls::RealDirHasher},
+};
 use omni_types::{OmniPath, Root, RootMap};
-use omni_utils::path::{has_globs, relpath, remove_globs, topmost_dirs};
+use omni_utils::path::{
+    has_globs, path_safe, relpath, remove_globs, topmost_dirs,
+};
 use system_traits::{FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys};
 
-use super::error::Error;
+use crate::error::{Error, ErrorInner};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CollectConfig {
     pub output_files: bool,
     pub input_files: bool,
+    pub hashes: bool,
+    pub cache_output_dirs: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -25,6 +34,9 @@ pub struct ProjectTaskInfo<'a> {
     pub task_command: &'a str,
     pub output_files: &'a [OmniPath],
     pub input_files: &'a [OmniPath],
+    pub input_env_keys: &'a [String],
+    pub env_vars: &'a Map<String, String>,
+    pub dependency_hashes: &'a [DefaultHash],
 }
 
 #[auto_impl]
@@ -39,12 +51,19 @@ pub struct CollectResult<'a> {
     pub input_files: Option<Vec<OmniPath>>,
     pub output_files: Option<Vec<OmniPath>>,
     pub roots: RootMap<'a>,
+    pub hash: Option<DefaultHash>,
+    pub cache_output_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, new)]
-pub struct Collector<'a, TSys: CollectorSys = RealSys> {
-    ws_root_dir: &'a Path,
-    sys: TSys,
+struct HashInput<'a> {
+    pub task_name: &'a str,
+    pub task_command: &'a str,
+    pub project_name: &'a str,
+    pub project_dir: &'a Path,
+    pub input_files: &'a [OmniPath],
+    pub input_env_cache_keys: &'a [String],
+    pub env_vars: &'a Map<String, String>,
+    pub dependency_hashes: &'a [DefaultHash],
 }
 
 struct Holder<'a> {
@@ -54,9 +73,111 @@ struct Holder<'a> {
     resolved_input_files: Option<Vec<OmniPath>>,
     task: ProjectTaskInfo<'a>,
     roots: RootMap<'a>,
+    hash: Option<DefaultHash>,
+    cache_output_dir: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+pub struct Collector<'a, TSys: CollectorSys = RealSys> {
+    ws_root_dir: &'a Path,
+    sys: TSys,
+    dir_hasher: RealDirHasher,
+    cache_dir: &'a Path,
 }
 
 impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
+    pub fn new(ws_root_dir: &'a Path, cache_dir: &'a Path, sys: TSys) -> Self {
+        let dir_hasher = RealDirHasher::builder()
+            .workspace_root_dir(ws_root_dir.to_path_buf())
+            .index_dir(cache_dir.to_path_buf())
+            .build()
+            .expect("failed to build hasher");
+
+        Self {
+            ws_root_dir,
+            sys,
+            dir_hasher,
+            cache_dir,
+        }
+    }
+}
+
+impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
+    fn get_project_dir(&self, project_name: &str) -> PathBuf {
+        let name = path_safe(project_name);
+
+        self.cache_dir.join(name).join("output")
+    }
+
+    async fn get_output_dir(
+        &self,
+        project_name: &str,
+        hash: &str,
+    ) -> Result<PathBuf, Error> {
+        let proj_dir = self.get_project_dir(project_name);
+        let output_dir = proj_dir.join(hash);
+
+        Ok(output_dir)
+    }
+    async fn get_hash(
+        &self,
+        hash_input: &HashInput<'_>,
+    ) -> Result<DefaultHash, Error> {
+        let mut tree = self
+            .dir_hasher
+            .hash_tree::<DefaultHasher>(
+                hash_input.project_name,
+                hash_input.project_dir,
+                hash_input.input_files,
+            )
+            .await
+            .map_err(|e| ErrorInner::ProjectDirHasher(e.to_string()))?;
+
+        let mut dep_hashes = hash_input.dependency_hashes.to_vec();
+
+        dep_hashes.sort();
+
+        for dep_hash in dep_hashes {
+            tree.insert(dep_hash);
+        }
+
+        if !hash_input.env_vars.is_empty() {
+            let mut buff = vec![];
+            let mut env_keys = hash_input
+                .input_env_cache_keys
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>();
+
+            env_keys.sort();
+
+            for env_key in env_keys {
+                let value = hash_input
+                    .env_vars
+                    .get(env_key)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+
+                buff.push(format!("{env_key}={value}"));
+            }
+
+            let env_vars = buff.join("\n");
+
+            tree.insert(DefaultHasher::hash(env_vars.as_bytes()));
+        }
+        let full_task_name = format!(
+            "{}#{}: {}",
+            hash_input.project_name,
+            hash_input.task_name,
+            hash_input.task_command
+        );
+        tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
+
+        tree.commit();
+
+        Ok(tree.root().expect("unable to get root"))
+    }
+
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = "debug", skip(self))
@@ -68,7 +189,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     ) -> Result<Vec<CollectResult<'a>>, Error> {
         let mut to_process = Vec::with_capacity(project_tasks.len());
 
-        let should_collect_input_files = config.input_files;
+        let should_collect_input_files =
+            config.input_files || config.hashes || config.cache_output_dirs;
 
         let should_collect_output_files = config.output_files;
 
@@ -153,6 +275,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 },
                 task: *project,
                 roots,
+                cache_output_dir: None,
+                hash: None,
             });
         }
 
@@ -253,6 +377,41 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
         }
 
+        if config.hashes || config.cache_output_dirs {
+            for holder in &mut to_process {
+                let hash = self
+                    .get_hash(&HashInput {
+                        task_name: holder.task.task_name,
+                        task_command: holder.task.task_command,
+                        project_name: holder.task.project_name,
+                        project_dir: holder.task.project_dir,
+                        input_files: holder
+                            .resolved_input_files
+                            .as_ref()
+                            .expect("should be some"),
+                        input_env_cache_keys: holder.task.input_env_keys,
+                        env_vars: holder.task.env_vars,
+                        dependency_hashes: holder.task.dependency_hashes,
+                    })
+                    .await?;
+
+                holder.hash = Some(hash);
+            }
+        }
+
+        if config.cache_output_dirs {
+            for holder in &mut to_process {
+                let hashstring =
+                    bs58::encode(holder.hash.as_ref().expect("should be some"))
+                        .into_string();
+                let output_dir = self
+                    .get_output_dir(holder.task.project_name, &hashstring)
+                    .await?;
+
+                holder.cache_output_dir = Some(output_dir);
+            }
+        }
+
         Ok(to_process
             .into_iter()
             .map(|p| CollectResult {
@@ -260,6 +419,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 input_files: p.resolved_input_files,
                 output_files: p.resolved_output_files,
                 roots: p.roots,
+                cache_output_dir: p.cache_output_dir,
+                hash: p.hash,
             })
             .collect::<Vec<_>>())
     }

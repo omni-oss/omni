@@ -12,7 +12,9 @@ pub async fn hash_file_in_path_async<THasher: Hasher>(
     path: &Path,
     sys: impl FsReadAsync + Sync,
 ) -> Result<THasher::Hash, HasherError> {
-    let file = sys.fs_read_async(path).await?;
+    let file = sys.fs_read_async(path).await.inspect_err(|e| {
+        trace::error!("failed to hash file at path {path:?}: {e}");
+    })?;
 
     hash_bytes::<THasher>(&file)
 }

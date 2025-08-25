@@ -23,3 +23,5 @@ enum-map = { workspace = true }
 globset = { workspace = true }
 omni_utils = { workspace = true }
 derive-new = { workspace = true }
+maps = { workspace = true }
+bs58 = { workspace = true }
