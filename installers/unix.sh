@@ -22,7 +22,7 @@ LATEST_RELEASE=$(curl -sL "$latest_url" | jq -r '.tag_name')
 echo "Latest release: $LATEST_RELEASE"
 
 # Check if the latest release version is already installed
-if [[ -f ~/.omni/bin/omni ]]; then
+if [ -f ~/.omni/bin/omni ]; then
     # Compare the installed version with the latest release version
     INSTALLED_VERSION=$(~/.omni/bin/omni --version | cut -d' ' -f2)
 
