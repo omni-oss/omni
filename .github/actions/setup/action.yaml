@@ -29,6 +29,15 @@ inputs:
     description: "Additional text to prepend to cache keys"
     required: false
     default: "global"
+  rust-target-cache-key-prefix:
+    description: "Additional text to prepend to cache keys"
+    required: false
+  omni-cache-key-prefix:
+    description: "Additional text to prepend to cache keys"
+    required: false
+  node-modules-cache-key-prefix:
+    description: "Additional text to prepend to cache keys"
+    required: false
   shell:
     description: "Shell to use"
     required: true
@@ -49,9 +58,10 @@ runs:
       with:
         path: |
           ~/.omni
-        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-omni-${{ steps.get_workspace_hash.outputs.workspace_hash }}
+        key: ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-${{ steps.get_workspace_hash.outputs.workspace_hash }}
         restore-keys: |
-          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-omni-
+          ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-
+          ${{ runner.os }}-omni-
 
     - name: Install Rust
       if: inputs.install-rust == 'true'
@@ -77,9 +87,10 @@ runs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ inputs.cache-key-prefix }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-cargo-
+          ${{ runner.os }}-cargo-${{ inputs.cache-key-prefix }}-
+          ${{ runner.os }}-cargo-
 
     - name: Cache target folder
       if: inputs.install-rust == 'true'
@@ -87,9 +98,10 @@ runs:
       with:
         path: |
           target
-        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-target-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-target-${{ inputs.rust-target-cache-key-prefix || inputs.cache-key-prefix }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-target-
+          ${{ runner.os }}-target-${{ inputs.rust-target-cache-key-prefix || inputs.cache-key-prefix }}-
+          ${{ runner.os }}-target-
 
     - name: Cache Bun install
       if: inputs.install-bun == 'true' || inputs.install-node-modules == 'true'
@@ -97,9 +109,10 @@ runs:
       with:
         path: |
           ~/.bun/install
-        key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-bun-${{ hashFiles('**/package.json') }}
+        key: ${{ runner.os }}-bun-${{ inputs.node-modules-cache-key-prefix || inputs.cache-key-prefix }}-${{ hashFiles('**/package.json') }}
         restore-keys: |
-          ${{ runner.os }}-${{ inputs.cache-key-prefix }}-bun-
+          ${{ runner.os }}-bun-${{ inputs.node-modules-cache-key-prefix || inputs.cache-key-prefix }}-
+          ${{ runner.os }}-bun-
 
     - name: Install Node dependencies
       if: inputs.install-bun == 'true' && inputs.install-node-modules == 'true'
