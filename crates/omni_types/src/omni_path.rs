@@ -220,6 +220,20 @@ mod tests {
 
     use super::*;
 
+    fn base() -> RootMap<'static> {
+        if cfg!(windows) {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("E:\\workspace"),
+                Root::Project => Path::new("E:\\project"),
+            }
+        } else {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("/workspace"),
+                Root::Project => Path::new("/project"),
+            }
+        }
+    }
+
     #[test]
     fn test_serialize() {
         let path = OmniPath::new_ws_rooted("foo");
@@ -257,17 +271,7 @@ mod tests {
     fn test_resolve() {
         let path = OmniPath::new_ws_rooted("foo");
 
-        let base = if cfg!(windows) {
-            enum_map::enum_map! {
-                Root::Workspace => Path::new("E:\\workspace"),
-                Root::Project => Path::new("E:\\project"),
-            }
-        } else {
-            enum_map::enum_map! {
-                Root::Workspace => Path::new("/workspace"),
-                Root::Project => Path::new("/project"),
-            }
-        };
+        let base = base();
 
         if cfg!(windows) {
             assert_eq!(path.resolve(&base), Path::new("E:\\workspace\\foo"));
@@ -280,18 +284,7 @@ mod tests {
     fn test_resolve_in_place() {
         let mut path = OmniPath::new_ws_rooted("foo");
 
-        let base = if cfg!(windows) {
-            enum_map::enum_map! {
-                Root::Workspace => Path::new("E:\\workspace"),
-                Root::Project => Path::new("E:\\project"),
-            }
-        } else {
-            enum_map::enum_map! {
-                Root::Workspace => Path::new("/workspace"),
-                Root::Project => Path::new("/project"),
-            }
-        };
-
+        let base = base();
         path.resolve_in_place(&base);
 
         if cfg!(windows) {
