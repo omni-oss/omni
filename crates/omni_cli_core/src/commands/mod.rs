@@ -8,13 +8,14 @@ use exec::ExecCommand;
 use run::RunCommand;
 mod utils;
 
-use crate::{build, tracer::TraceLevel};
+use crate::{build, commands::hash::HashCommand, tracer::TraceLevel};
 
 pub mod completion;
 pub mod config;
 pub mod env;
 pub mod exec;
 pub mod run;
+pub mod hash;
 
 const ABOUT: &str = "omni is development workflow orchestration tool";
 const LONG_ABOUT: &str = r#"
@@ -170,4 +171,6 @@ pub enum CliSubcommands {
     Completion(CompletionCommand),
     #[command(about = "Execute specified task in projects")]
     Run(RunCommand),
+    #[command(about = "Execute specified task in projects")]
+    Hash(HashCommand),
 }

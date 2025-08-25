@@ -24,7 +24,8 @@ jobs:
           shell: bash
 
       - name: Test
-        run: omni run test
+        run: cargo test
+        #run: omni run test
 
   build:
     runs-on: ${{ matrix.os }}
@@ -47,7 +48,8 @@ jobs:
         run: bun run ./scripts/apply-version/src/index.ts
 
       - name: Build
-        run: omni run --project=omni build
+        #run: omni run --project=omni build
+        run: cargo build --release -p omni
 
       - name: Compress binary on Linux/macOS
         if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}

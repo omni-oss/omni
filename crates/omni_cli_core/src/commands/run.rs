@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use crate::{
     commands::utils::report_execution_results,
     context::Context,
@@ -53,6 +55,13 @@ pub struct RunCommand {
 
     #[arg(
         long,
+        short = 'L',
+        help = "Don't replay the logs of cached task executions"
+    )]
+    no_replay_logs: bool,
+
+    #[arg(
+        long,
         short,
         help = "Force execution of the task, even if it's already cached",
         default_value_t = false
@@ -60,7 +69,10 @@ pub struct RunCommand {
     force: bool,
 }
 
-pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(
+    command: &RunCommand,
+    ctx: &Context,
+) -> eyre::Result<ExitCode> {
     let mut builder = TaskOrchestrator::builder();
 
     builder
@@ -69,6 +81,7 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
         .on_failure(command.on_failure)
         .no_cache(command.no_cache)
         .force(command.force)
+        .replay_cached_logs(!command.no_replay_logs)
         .call(Call::new_task(&command.task));
 
     if let Some(filter) = &command.project {
@@ -85,5 +98,11 @@ pub async fn run(command: &RunCommand, ctx: &Context) -> eyre::Result<()> {
 
     report_execution_results(&results);
 
-    Ok(())
+    let has_error = results.iter().any(|r| !r.success());
+
+    Ok(if has_error {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }

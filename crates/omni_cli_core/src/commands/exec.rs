@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use clap::Args;
 
 use crate::{
@@ -32,7 +34,10 @@ pub struct ExecCommand {
     args: ExecArgs,
 }
 
-pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
+pub async fn run(
+    command: &ExecCommand,
+    ctx: &Context,
+) -> eyre::Result<ExitCode> {
     let mut builder = TaskOrchestrator::builder();
 
     builder.context(ctx.clone()).call(Call::new_command(
@@ -54,5 +59,11 @@ pub async fn run(command: &ExecCommand, ctx: &Context) -> eyre::Result<()> {
 
     report_execution_results(&results);
 
-    Ok(())
+    let has_error = results.iter().any(|r| !r.success());
+
+    Ok(if has_error {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }
