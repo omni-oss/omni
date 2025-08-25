@@ -11,12 +11,12 @@ $OmniPath = Join-Path $BinDir "omni.exe"
 
 $update_url = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 
-Write-Output "Checking for updates... $update_url"
+Write-Output "Checking latest version..."
 
 # Get the latest release tag from GitHub
 $LATEST_RELEASE = (Invoke-RestMethod "$update_url").tag_name
 
-Write-Output "Latest release: $LATEST_RELEASE"
+Write-Output "Latest version: $LATEST_RELEASE"
 
 # Check if omni is already installed
 if (Test-Path $OmniPath) {
@@ -24,7 +24,7 @@ if (Test-Path $OmniPath) {
     Write-Output "Found installed version: v$INSTALLED_VERSION"
 
     if ($LATEST_RELEASE -eq "v$INSTALLED_VERSION") {
-        Write-Output "omni is already up to date ($LATEST_VERSION)."
+        Write-Output "omni is already up to date ($LATEST_RELEASE)."
         exit 0
     }
 }
