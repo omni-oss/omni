@@ -8,15 +8,22 @@ $TARGET = "windows-latest"  # Adjust if you need linux/macos builds
 $BinDir = "$HOME\AppData\Local\omni\bin"
 $OmniPath = Join-Path $BinDir "omni.exe"
 
+
+$update_url = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
+
+Write-Output "Checking for updates... $update_url"
+
 # Get the latest release tag from GitHub
-$LATEST_RELEASE = (Invoke-RestMethod "https://api.github.com/repos/$OWNER/$REPO/releases/latest").tag_name
+$LATEST_RELEASE = (Invoke-RestMethod "$update_url").tag_name
+
+Write-Output "Latest release: $LATEST_RELEASE"
 
 # Check if omni is already installed
 if (Test-Path $OmniPath) {
     $INSTALLED_VERSION = & $OmniPath --version | ForEach-Object { ($_ -split ' ')[1] }
-    $LATEST_VERSION = $LATEST_RELEASE.TrimStart('v')
+    Write-Output "Found installed version: v$INSTALLED_VERSION"
 
-    if ($INSTALLED_VERSION -eq $LATEST_VERSION) {
+    if ($LATEST_RELEASE -eq "v$INSTALLED_VERSION") {
         Write-Output "omni is already up to date ($LATEST_VERSION)."
         exit 0
     }

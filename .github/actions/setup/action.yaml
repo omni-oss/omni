@@ -37,9 +37,8 @@ runs:
   using: "composite"
   steps:
     - name: Install Omni
-      uses: omni-oss/setup-omni@main # use main temporarily to check if it works
+      uses: omni-oss/setup-omni@v1
 
-    # Placeholder for future use
     - name: Get Workspace Hash
       id: get_workspace_hash
       run: echo "workspace_hash=$(omni hash -r workspace)" >> $GITHUB_OUTPUT
