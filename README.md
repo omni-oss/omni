@@ -16,7 +16,7 @@ curl -fsSL https://raw.githubusercontent.com/omni-oss/omni/main/installers/unix.
 ```
 
 
-### Windows
-```bash
-curl -fsSL https://raw.githubusercontent.com/omni-oss/omni/main/installers/windows.ps1 | powershell
+### Windows (PowerShell)
+```pwsh
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/omni-oss/omni/main/installers/windows.ps1" -UseBasicParsing | Invoke-Expression
 ```
