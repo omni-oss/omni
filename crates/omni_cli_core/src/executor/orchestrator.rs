@@ -128,6 +128,9 @@ pub struct TaskOrchestrator<TSys: ContextSys + 'static = RealSys> {
 
     #[builder(default = true)]
     replay_cached_logs: bool,
+
+    #[builder(default)]
+    max_concurrency: Option<usize>,
 }
 
 impl<TSys: ContextSys> TaskOrchestrator<TSys> {
@@ -397,6 +400,8 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             None
         };
 
+        let max_concurrency = self.max_concurrency.unwrap_or(num_cpus::get());
+
         'main_loop: for batch in &execution_plan {
             // Short circuit if any task failed and the user wants to skip the next batches if any
             // task failed
@@ -489,6 +494,7 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
             };
 
             let mut futs = Vec::with_capacity(task_ctxs.len());
+            let mut task_results = Vec::with_capacity(task_ctxs.len());
             'inner_loop: for task_ctx in task_ctxs {
                 // Short circuit if dependee task failed and the user wants to skip the dependent tasks
                 if self.on_failure == OnFailure::SkipDependents
@@ -606,9 +612,13 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         Err(e) => Err((task_ctx, e)),
                     }
                 });
+
+                if task_results.len() >= max_concurrency {
+                    task_results.extend(join_all(futs.drain(..)).await);
+                }
             }
             // run all tasks in a batch concurrently
-            let task_results = join_all(futs).await;
+            task_results.extend(join_all(futs).await);
 
             // hoist execution info to the cache to not drop it
             let exec_infos;

@@ -49,8 +49,8 @@ jobs:
         run: bun run ./scripts/apply-version/src/index.ts
 
       - name: Build
-        run: omni run -p=omni -L build
-        # run: cargo build --release -p omni
+        # run: omni run -p=omni -L build
+        run: cargo build --release -p omni
 
       - name: Compress binary on Linux/macOS
         if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}

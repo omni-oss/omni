@@ -26,6 +26,9 @@ pub struct ExecArgs {
         help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
     )]
     meta: Option<String>,
+
+    #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
+    max_concurrency: Option<usize>,
 }
 
 #[derive(Args)]
@@ -51,6 +54,10 @@ pub async fn run(
 
     if let Some(filter) = &command.args.meta {
         builder.meta_filter(filter);
+    }
+
+    if let Some(max_concurrency) = command.args.max_concurrency {
+        builder.max_concurrency(max_concurrency);
     }
 
     let orchestrator = builder.build()?;
