@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use clap::Parser as _;
 #[cfg(feature = "enable-tracing")]
 use omni_cli_core::tracer::TracerConfig;
@@ -22,6 +24,10 @@ fn init_tracing(config: &TracerConfig) -> eyre::Result<()> {
     Ok(())
 }
 
+fn exit(code: ExitCode) -> ! {
+    std::process::exit(if code == ExitCode::SUCCESS { 0 } else { 1 })
+}
+
 pub async fn run(cli: Cli) -> eyre::Result<()> {
     let sys = RealSys;
     let mut context =
@@ -29,7 +35,8 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
 
     match cli.subcommand {
         CliSubcommands::Exec(ref exec) => {
-            commands::exec::run(exec, &context).await?;
+            let res = commands::exec::run(exec, &context).await?;
+            exit(res);
         }
         CliSubcommands::Env(ref env) => {
             commands::env::run(env, &mut context).await?;
@@ -41,7 +48,11 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
             commands::completion::run(completion, &context).await?;
         }
         CliSubcommands::Run(ref run) => {
-            commands::run::run(run, &context).await?;
+            let res = commands::run::run(run, &context).await?;
+            exit(res);
+        }
+        CliSubcommands::Hash(ref hash_command) => {
+            commands::hash::run(hash_command, &context).await?;
         }
     }
 

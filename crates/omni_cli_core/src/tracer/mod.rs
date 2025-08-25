@@ -59,6 +59,16 @@ pub struct TracerConfig {
     pub stderr_trace_enabled: bool,
 }
 
+pub fn noop_subscriber() -> TracerSubscriber {
+    TracerSubscriber::new(&TracerConfig {
+        file_path: None,
+        file_trace_level: TraceLevel::None,
+        stderr_trace_enabled: false,
+        stdout_trace_level: TraceLevel::None,
+    })
+    .unwrap()
+}
+
 pub struct TracerSubscriber {
     inner: Box<dyn Subscriber + Send + Sync>,
 }

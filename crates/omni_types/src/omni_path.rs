@@ -125,7 +125,8 @@ impl OmniPath {
     pub fn resolve_in_place(&mut self, base: &EnumMap<Root, &StdPath>) {
         if let Some(root) = self.root {
             *self = Self {
-                path: base[root].join(&self.path),
+                path: std::path::absolute(base[root].join(&self.path))
+                    .expect("it should be absolute"),
                 root: None,
             };
         }

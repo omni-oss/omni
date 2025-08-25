@@ -6,6 +6,12 @@ pub(crate) use env_loader::{EnvLoader, GetVarsArgs};
 use maps::UnorderedMap;
 use merge::Merge;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
+use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
+use omni_hasher::{
+    Hasher,
+    impls::{DefaultHash, DefaultHasher},
+    project_dir_hasher::Hash,
+};
 use omni_types::{OmniPath, Root};
 use std::{
     borrow::Cow,
@@ -637,11 +643,114 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.workspace
     }
 
+    const CACHE_DIR: &str = ".omni/cache";
+
     pub fn create_local_cache_store(&self) -> LocalTaskExecutionCacheStore {
         LocalTaskExecutionCacheStore::new(
-            self.root_dir.join(".omni/cache"),
+            self.root_dir.join(Self::CACHE_DIR),
             self.root_dir.clone(),
         )
+    }
+
+    pub async fn get_workspace_hash(&self) -> eyre::Result<DefaultHash> {
+        let projects = self.get_projects().ok_or_else(|| {
+            eyre::eyre!(
+                "failed to get projects. Did you call load_projects first?"
+            )
+        })?;
+
+        let seed = self
+            .workspace
+            .name
+            .as_ref()
+            .map(|s| s as &str)
+            .unwrap_or("DEFAULT_SEED");
+        let seed = DefaultHasher::hash(seed.as_bytes());
+
+        let mut task_infos_tmp = Vec::with_capacity(projects.len());
+
+        struct ProjectTaskInfoTmp<'a> {
+            project_name: &'a str,
+            project_dir: &'a Path,
+            task_name: &'a str,
+            task_command: &'a str,
+            input_files: Vec<OmniPath>,
+            env_vars: maps::Map<String, String>,
+            input_env_keys: Vec<String>,
+        }
+
+        for project in projects {
+            let task_prefix = format!("{}#", project.name);
+            let tasks_keys = self
+                .cache_infos
+                .keys()
+                .filter(|k| k.starts_with(&task_prefix))
+                .collect::<Vec<_>>();
+
+            let mut input_files = HashSet::new();
+
+            for key in tasks_keys {
+                let ci = self.cache_infos[key].key_input_files.clone();
+                input_files.extend(ci);
+            }
+
+            let input_files = input_files.into_iter().collect::<Vec<_>>();
+
+            task_infos_tmp.push(ProjectTaskInfoTmp {
+                project_dir: &project.dir,
+                project_name: &project.name,
+                task_name: "temp",
+                task_command: "",
+                input_files,
+                env_vars: maps::map![],
+                input_env_keys: vec![],
+            });
+        }
+
+        let cache_dir = self.root_dir.join(Self::CACHE_DIR);
+
+        let task_infos = task_infos_tmp
+            .iter()
+            .map(|p| ProjectTaskInfo {
+                project_dir: p.project_dir,
+                project_name: p.project_name,
+                task_name: p.task_name,
+                task_command: p.task_command,
+                input_files: &p.input_files,
+                output_files: &[],
+                dependency_hashes: &[],
+                env_vars: &p.env_vars,
+                input_env_keys: &p.input_env_keys,
+            })
+            .collect::<Vec<_>>();
+
+        let collected =
+            Collector::new(&self.root_dir, &cache_dir, self.sys.clone())
+                .collect(
+                    &task_infos,
+                    &CollectConfig {
+                        input_files: true,
+                        output_files: false,
+                        hashes: true,
+                        cache_output_dirs: false,
+                    },
+                )
+                .await?;
+
+        let mut hash = Hash::<DefaultHasher>::new(seed);
+
+        for collected in collected {
+            hash.combine_in_place(
+                collected.hash.as_ref().expect("should be some"),
+            );
+        }
+
+        Ok(hash.to_inner())
+    }
+
+    pub async fn get_workspace_hash_string(&self) -> eyre::Result<String> {
+        Ok(bs58::encode(self.get_workspace_hash().await?.as_ref())
+            .into_string())
     }
 }
 

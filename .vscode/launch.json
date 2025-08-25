@@ -29,14 +29,7 @@
                     "kind": "bin"
                 }
             },
-            "args": [
-                "-f=debug",
-                "run",
-                "--force",
-                "--ignore-deps",
-                "--project=omni",
-                "build"
-            ],
+            "args": ["hash", "workspace"],
             "cwd": "${workspaceFolder}"
         },
         {

@@ -18,6 +18,7 @@ use omni_core::{
     TaskExecutionGraphError, TaskExecutionNode,
 };
 use omni_hasher::impls::DefaultHash;
+use owo_colors::{OwoColorize, Style};
 use strum::{Display, EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::impls::RealSys;
 
@@ -124,6 +125,9 @@ pub struct TaskOrchestrator<TSys: ContextSys + 'static = RealSys> {
 
     /// How to handle failures
     on_failure: OnFailure,
+
+    #[builder(default = true)]
+    replay_cached_logs: bool,
 }
 
 impl<TSys: ContextSys> TaskOrchestrator<TSys> {
@@ -524,7 +528,31 @@ impl<TSys: ContextSys> TaskOrchestrator<TSys> {
                         ),
                     );
 
-                    if let Some(logs_path) = &res.logs_path {
+                    const EXIT_CODE_ERROR_STYLE: Style =
+                        Style::new().red().bold();
+
+                    const EXIT_CODE_SUCCESS_STYLE: Style =
+                        Style::new().green().bold();
+
+                    trace::info!(
+                        "Cache hit for task '{}' with exit code '{}' {}",
+                        task_ctx.node.full_task_name(),
+                        res.exit_code.style(if res.exit_code == 0 {
+                            EXIT_CODE_SUCCESS_STYLE
+                        } else {
+                            EXIT_CODE_ERROR_STYLE
+                        }),
+                        (if self.replay_cached_logs {
+                            "(replaying logs)"
+                        } else {
+                            "(skipping logs)"
+                        })
+                        .dimmed()
+                    );
+
+                    if self.replay_cached_logs
+                        && let Some(logs_path) = &res.logs_path
+                    {
                         let file = AllowStdIo::new(
                             std::fs::OpenOptions::new()
                                 .read(true)
