@@ -134,6 +134,7 @@ num_cpus = { version = "^1.17.0" }
 omni_generator = { path = "./crates/omni_generator" }
 omni_collector = { path = "./crates/omni_collector" }
 omni_utils = { path = "./crates/omni_utils" }
+tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 
 [profile.release]
 incremental = true

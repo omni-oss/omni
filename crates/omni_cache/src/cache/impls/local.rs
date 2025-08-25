@@ -1,17 +1,9 @@
-use std::{
-    collections::HashMap,
-    hash::{Hash as _, Hasher as _},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
 use maps::{Map, UnorderedMap};
-use omni_collector::Collector;
-use omni_hasher::{
-    Hasher,
-    impls::{DefaultHash, DefaultHasher},
-};
-use omni_types::{OmniPath, RootMap};
+use omni_collector::{CollectConfig, CollectResult, Collector};
+use omni_hasher::{Hasher, impls::DefaultHasher};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
     FsCanonicalizeAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
@@ -29,15 +21,11 @@ pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 
-use omni_hasher::project_dir_hasher::{
-    ProjectDirHasher,
-    impls::{RealDirHasher, RealDirHasherError},
-};
+use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
 #[derive(Clone, Debug)]
 pub struct LocalTaskExecutionCacheStore {
     sys: RealSys,
-    hasher: RealDirHasher,
     cache_dir: PathBuf,
     ws_root_dir: PathBuf,
 }
@@ -51,44 +39,10 @@ impl LocalTaskExecutionCacheStore {
         let ws_root_dir = ws_root_dir.into();
         Self {
             sys: RealSys,
-            hasher: RealDirHasher::builder()
-                .workspace_root_dir(ws_root_dir.clone())
-                .dir(dir.clone())
-                .build()
-                .expect("failed to build hasher"),
             cache_dir: dir,
             ws_root_dir,
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CollectResult<'a> {
-    task: TaskExecutionInfo<'a>,
-    input_files: Option<Vec<OmniPath>>,
-    output_files: Option<Vec<OmniPath>>,
-    hash: Option<DefaultHash>,
-    cache_output_dir: Option<PathBuf>,
-    roots: RootMap<'a>,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-struct CollectConfig {
-    pub output_files: bool,
-    pub input_files: bool,
-    pub hashes: bool,
-    pub cache_output_dirs: bool,
-}
-
-struct HashInput<'a> {
-    pub task_name: &'a str,
-    pub task_command: &'a str,
-    pub project_name: &'a str,
-    pub project_dir: &'a Path,
-    pub input_files: &'a [OmniPath],
-    pub input_env_cache_keys: &'a [String],
-    pub env_vars: &'a Map<String, String>,
-    pub dependency_hashes: &'a [DefaultHash],
 }
 
 fn hashtext(text: &str) -> String {
@@ -103,75 +57,6 @@ impl LocalTaskExecutionCacheStore {
         self.cache_dir.join(name).join("output")
     }
 
-    async fn get_output_dir(
-        &self,
-        project_name: &str,
-        hash: &str,
-    ) -> Result<PathBuf, LocalTaskExecutionCacheStoreError> {
-        let proj_dir = self.get_project_dir(project_name);
-        let output_dir = proj_dir.join(hash);
-
-        Ok(output_dir)
-    }
-
-    async fn get_hash(
-        &self,
-        hash_input: &HashInput<'_>,
-    ) -> Result<DefaultHash, LocalTaskExecutionCacheStoreError> {
-        let mut tree = self
-            .hasher
-            .hash_tree::<DefaultHasher>(
-                hash_input.project_name,
-                hash_input.project_dir,
-                hash_input.input_files,
-            )
-            .await?;
-
-        let mut dep_hashes = hash_input.dependency_hashes.to_vec();
-
-        dep_hashes.sort();
-
-        for dep_hash in dep_hashes {
-            tree.insert(dep_hash);
-        }
-
-        if !hash_input.env_vars.is_empty() {
-            let mut buff = vec![];
-            let mut env_keys = hash_input
-                .input_env_cache_keys
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>();
-
-            env_keys.sort();
-
-            for env_key in env_keys {
-                let value = hash_input
-                    .env_vars
-                    .get(env_key)
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
-
-                buff.push(format!("{env_key}={value}"));
-            }
-
-            let env_vars = buff.join("\n");
-
-            tree.insert(DefaultHasher::hash(env_vars.as_bytes()));
-        }
-        let full_task_name = format!(
-            "{}#{}: {}",
-            hash_input.project_name,
-            hash_input.task_name,
-            hash_input.task_command
-        );
-        tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
-
-        tree.commit();
-
-        Ok(tree.root().expect("unable to get root"))
-    }
-
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = "debug", skip(self))
@@ -181,20 +66,6 @@ impl LocalTaskExecutionCacheStore {
         projects: &[TaskExecutionInfo<'a>],
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError> {
-        struct Holder<'a> {
-            resolved_output_files: Option<Vec<OmniPath>>,
-            resolved_input_files: Option<Vec<OmniPath>>,
-            task: TaskExecutionInfo<'a>,
-            roots: RootMap<'a>,
-            hash: Option<DefaultHash>,
-            cache_output_dir: Option<PathBuf>,
-        }
-
-        let should_collect_input_files =
-            config.input_files || config.hashes || config.cache_output_dirs;
-
-        let should_collect_output_files = config.output_files;
-
         let collect_task_infos = projects
             .iter()
             .map(|project| omni_collector::ProjectTaskInfo {
@@ -204,102 +75,22 @@ impl LocalTaskExecutionCacheStore {
                 project_name: project.project_name,
                 task_command: project.task_command,
                 task_name: project.task_name,
+                dependency_hashes: project.dependency_hashes,
+                env_vars: project.env_vars,
+                input_env_keys: project.input_env_keys,
             })
             .collect::<Vec<_>>();
 
-        let task_map = project_task_map(projects);
+        let to_process = Collector::new(
+            self.ws_root_dir.as_path(),
+            self.cache_dir.as_path(),
+            self.sys.clone(),
+        )
+        .collect(&collect_task_infos, config)
+        .await?;
 
-        let mut to_process =
-            Collector::new(self.ws_root_dir.as_path(), self.sys.clone())
-                .collect(
-                    &collect_task_infos,
-                    &omni_collector::CollectConfig {
-                        output_files: should_collect_output_files,
-                        input_files: should_collect_input_files,
-                    },
-                )
-                .await?
-                .into_iter()
-                .map(|r| Holder {
-                    cache_output_dir: None,
-                    resolved_input_files: r.input_files,
-                    hash: None,
-                    resolved_output_files: r.output_files,
-                    roots: r.roots,
-                    task: task_map[&project_task_hash(
-                        r.task.project_name,
-                        r.task.task_name,
-                    )],
-                })
-                .collect::<Vec<_>>();
-
-        if config.hashes || config.cache_output_dirs {
-            for holder in &mut to_process {
-                let hash = self
-                    .get_hash(&HashInput {
-                        task_name: holder.task.task_name,
-                        task_command: holder.task.task_command,
-                        project_name: holder.task.project_name,
-                        project_dir: holder.task.project_dir,
-                        input_files: holder
-                            .resolved_input_files
-                            .as_ref()
-                            .expect("should be some"),
-                        input_env_cache_keys: holder.task.input_env_keys,
-                        env_vars: holder.task.env_vars,
-                        dependency_hashes: holder.task.dependency_hashes,
-                    })
-                    .await?;
-
-                holder.hash = Some(hash);
-            }
-        }
-
-        if config.cache_output_dirs {
-            for holder in &mut to_process {
-                let hashstring =
-                    bs58::encode(holder.hash.as_ref().expect("should be some"))
-                        .into_string();
-                let output_dir = self
-                    .get_output_dir(holder.task.project_name, &hashstring)
-                    .await?;
-
-                holder.cache_output_dir = Some(output_dir);
-            }
-        }
-
-        Ok(to_process
-            .into_iter()
-            .map(|p| CollectResult {
-                task: p.task,
-                input_files: p.resolved_input_files,
-                output_files: p.resolved_output_files,
-                hash: p.hash,
-                cache_output_dir: p.cache_output_dir,
-                roots: p.roots,
-            })
-            .collect::<Vec<_>>())
+        Ok(to_process)
     }
-}
-
-fn project_task_hash(project_name: &str, task_name: &str) -> u64 {
-    let mut hasher = std::hash::DefaultHasher::new();
-    project_name.hash(&mut hasher);
-    task_name.hash(&mut hasher);
-    hasher.finish()
-}
-
-fn project_task_map<'a>(
-    tasks: &[TaskExecutionInfo<'a>],
-) -> HashMap<u64, TaskExecutionInfo<'a>> {
-    let mut map = HashMap::with_capacity(tasks.len());
-
-    for task in tasks {
-        let hash = project_task_hash(task.project_name, task.task_name);
-        map.insert(hash, *task);
-    }
-
-    map
 }
 
 const LOGS_CACHE_FILE: &str = "logs.cache";
@@ -584,6 +375,7 @@ mod tests {
     use crate::{NewCacheInfo, cache::impls::LocalTaskExecutionCacheStore};
     use bytes::Bytes;
     use derive_new::new;
+    use omni_types::OmniPath;
     use std::path::Path;
     use system_traits::{FsRename, FsRenameAsync, impls::RealSys};
     use tokio::io::AsyncReadExt as _;

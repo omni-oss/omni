@@ -16,6 +16,12 @@ pub trait ProjectDirHasher {
         project_dir: &Path,
         files: &[OmniPath],
     ) -> Result<Hash<THasher>, Self::Error> {
+        trace::info!(
+            project_name = project_name,
+            project_dir = ?project_dir,
+            files = ?files,
+            "Hashing project directory"
+        );
         let mut tree = self
             .hash_tree::<THasher>(project_name, project_dir, files)
             .await?;

@@ -20,7 +20,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
-enum ErrorInner {
+pub(crate) enum ErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
@@ -40,4 +40,7 @@ enum ErrorInner {
 
     #[error(transparent)]
     IgnoreRealDirWalker(#[from] IgnoreRealDirWalkerError),
+
+    #[error("failed to hash project directory: {0}")]
+    ProjectDirHasher(String),
 }
