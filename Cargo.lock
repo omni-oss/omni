@@ -2160,6 +2160,7 @@ dependencies = [
  "lazy-regex",
  "maps",
  "merge",
+ "num_cpus",
  "omni_cache",
  "omni_collector",
  "omni_core",

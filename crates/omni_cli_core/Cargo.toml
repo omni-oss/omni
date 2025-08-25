@@ -80,6 +80,7 @@ omni_expressions = { workspace = true }
 omni_collector = { workspace = true }
 shlex = { workspace = true }
 path-clean = { workspace = true }
+num_cpus = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -67,6 +67,9 @@ pub struct RunCommand {
         default_value_t = false
     )]
     force: bool,
+
+    #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
+    max_concurrency: Option<usize>,
 }
 
 pub async fn run(
@@ -90,6 +93,10 @@ pub async fn run(
 
     if let Some(filter) = &command.meta {
         builder.meta_filter(filter);
+    }
+
+    if let Some(max_concurrency) = command.max_concurrency {
+        builder.max_concurrency(max_concurrency);
     }
 
     let orchestrator = builder.build()?;
