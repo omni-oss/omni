@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use dir_walker::{DirEntry as _, DirWalker as _, impls::RealGlobDirWalker};
 use enum_map::enum_map;
@@ -281,28 +284,19 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         }
 
         if !includes.is_empty() {
-            let topmost =
-                topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
-                    .into_iter()
-                    .map(|p| p.to_path_buf())
-                    .collect::<Vec<_>>();
-
-            let topmost =
-                topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
-
             // for some reason, ignore doesn't like it when a folder is ignored
             // and a file inside the ignored folder is included
             // so include all the parent folders of the included file
             // so that ignore walks to it and doesn't ignore it
-            let mut forced_includes = Vec::with_capacity(includes.len());
+            let mut forced_includes = HashSet::with_capacity(includes.len());
 
             for include in &includes {
-                forced_includes.push(include.to_path_buf());
+                forced_includes.insert(include.to_path_buf());
 
                 let clean = if has_globs(include.to_string_lossy().as_ref()) {
                     let clean = remove_globs(include);
 
-                    forced_includes.push(clean.to_path_buf());
+                    forced_includes.insert(clean.to_path_buf());
 
                     clean
                 } else {
@@ -315,11 +309,19 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         break;
                     }
 
-                    forced_includes.push(parent.to_path_buf());
+                    forced_includes.insert(parent.to_path_buf());
                 }
             }
+            let forced_includes =
+                forced_includes.into_iter().collect::<Vec<_>>();
+            let topmost =
+                topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
+                    .into_iter()
+                    .map(|p| p.to_path_buf())
+                    .collect::<Vec<_>>();
 
-            forced_includes.dedup();
+            let topmost =
+                topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
             let dirwalker = RealGlobDirWalker::config()
                 .standard_filters(true)

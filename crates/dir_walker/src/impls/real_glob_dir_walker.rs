@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use derive_builder::Builder;
 pub use globset::Error as GlobsetError;
 pub use ignore::Error as IgnoreError;
+use path_slash::PathExt;
 
 use crate::{
     DirWalkerBase,
@@ -52,7 +53,7 @@ impl RealGlobDirWalkerConfig {
                         .iter()
                         .map(|p| {
                             try_relpath(&self.root_dir, p)
-                                .to_string_lossy()
+                                .to_slash_lossy()
                                 .to_string()
                         })
                         .collect(),
@@ -61,7 +62,7 @@ impl RealGlobDirWalkerConfig {
                         .iter()
                         .map(|p| {
                             try_relpath(&self.root_dir, p)
-                                .to_string_lossy()
+                                .to_slash_lossy()
                                 .to_string()
                         })
                         .collect(),
