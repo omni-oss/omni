@@ -13,6 +13,7 @@ use omni_hasher::{
     project_dir_hasher::Hash,
 };
 use omni_types::{OmniPath, Root};
+use path_clean::clean;
 use std::{
     borrow::Cow,
     collections::HashSet,
@@ -315,6 +316,7 @@ impl<TSys: ContextSys> Context<TSys> {
         {
             num_iterations += 1;
             let f = f.map_err(|e| eyre::eyre!("failed to walk dir: {e}"))?;
+            trace::debug!("checking path: {:?}", f.path());
 
             let meta = f.metadata()?;
 
@@ -322,9 +324,9 @@ impl<TSys: ContextSys> Context<TSys> {
                 continue;
             }
 
-            let path = self.sys.fs_canonicalize(f.path())?;
+            let path = clean(f.path());
 
-            if matcher.is_match(path.as_os_str()) {
+            if matcher.is_match(&*path) {
                 for project_file in &project_files {
                     if *f.file_name().to_string_lossy() == *project_file {
                         trace::debug!("Found project directory: {:?}", path);
