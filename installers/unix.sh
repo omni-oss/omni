@@ -12,16 +12,23 @@ case "$(uname)" in
   *)        echo "Unsupported OS. Please install omni manually."; exit 1;;
 esac
 
+latest_url="https://api.github.com/repos/$OWNER/$REPO/releases/latest"
+
+echo "Checking for updates... $latest_url"
+
 # Get the latest release version from the GitHub API
-LATEST_RELEASE=$(curl -sL "https://api.github.com/repos/$OWNER/$REPO/releases/latest" | jq -r '.tag_name')
+LATEST_RELEASE=$(curl -sL "$latest_url" | jq -r '.tag_name')
+
+echo "Latest release: $LATEST_RELEASE"
 
 # Check if the latest release version is already installed
-if [ -f ~/.omni/bin/omni ]; then
+if [[ -f ~/.omni/bin/omni ]]; then
     # Compare the installed version with the latest release version
     INSTALLED_VERSION=$(~/.omni/bin/omni --version | cut -d' ' -f2)
+
+    echo "Found installed version: $INSTALLED_VERSION"
     # Remove the v prefix from the version string
-    LATEST_VERSION=$(echo "$LATEST_RELEASE" | cut -c2-)
-    if [ "$LATEST_VERSION" == "$INSTALLED_VERSION" ]; then
+    if [ "$LATEST_RELEASE" == "v$INSTALLED_VERSION" ]; then
         echo "omni is already up to date ($LATEST_VERSION)."
         exit 0
     fi
