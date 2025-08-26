@@ -7,15 +7,14 @@ use futures::{
     future::try_join_all,
 };
 use maps::Map;
-use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 
-use crate::executor::{CommandExecutor, CommandExecutorError};
+use crate::{CommandExecutor, CommandExecutorError};
 
 #[derive(new)]
-pub struct TaskExecutor {
+pub struct ChildProcess {
     #[new(into)]
     task: TaskExecutionNode,
 
@@ -42,7 +41,7 @@ pub trait TaskExecutorWriter: AsyncWrite + Send {}
 pub trait TaskExecutorReader: AsyncRead + Send {}
 
 #[derive(Debug, Clone, PartialEq, Eq, new)]
-pub struct ExecutionResult {
+pub struct ChildProcessResult {
     #[new(into)]
     pub node: TaskExecutionNode,
     #[new(into)]
@@ -53,7 +52,7 @@ pub struct ExecutionResult {
     pub logs: Option<Bytes>,
 }
 
-impl ExecutionResult {
+impl ChildProcessResult {
     pub fn success(&self) -> bool {
         self.exit_code == 0
     }
@@ -63,7 +62,7 @@ impl ExecutionResult {
     }
 }
 
-impl TaskExecutor {
+impl ChildProcess {
     pub fn output_writer(
         &mut self,
         writer: impl TaskExecutorWriter + 'static,
@@ -94,9 +93,9 @@ impl TaskExecutor {
         self
     }
 
-    pub async fn exec(self) -> Result<ExecutionResult, TaskExecutorError> {
+    pub async fn exec(self) -> Result<ChildProcessResult, TaskExecutorError> {
         if self.task.task_command().is_empty() {
-            return Ok(ExecutionResult {
+            return Ok(ChildProcessResult {
                 node: self.task,
                 exit_code: 0,
                 elapsed: std::time::Duration::ZERO,
@@ -194,7 +193,7 @@ impl TaskExecutor {
 
         let elapsed = start_time.elapsed();
 
-        Ok(ExecutionResult {
+        Ok(ChildProcessResult {
             node: task,
             exit_code,
             elapsed,
@@ -259,7 +258,4 @@ enum TaskExecutorErrorInner {
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
-
-    #[error(transparent)]
-    LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 }

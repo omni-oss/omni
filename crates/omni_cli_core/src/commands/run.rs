@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use crate::{
     commands::utils::report_execution_results,
     context::Context,
-    executor::{Call, OnFailure, TaskOrchestrator},
+    executor::{Call, OnFailure, TaskExecutor},
 };
 
 #[derive(clap::Args)]
@@ -76,7 +76,7 @@ pub async fn run(
     command: &RunCommand,
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
-    let mut builder = TaskOrchestrator::builder();
+    let mut builder = TaskExecutor::builder();
 
     builder
         .context(ctx.clone())

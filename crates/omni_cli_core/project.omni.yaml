@@ -10,4 +10,5 @@ dependencies:
   - omni_expressions
   - config_utils
   - omni_types
+  - omni_process
   - system_traits

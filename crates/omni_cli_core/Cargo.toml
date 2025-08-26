@@ -61,26 +61,22 @@ strum = { workspace = true }
 garde = { workspace = true }
 env_loader = { workspace = true }
 env = { workspace = true }
-os_pipe = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
 enum-map = { workspace = true }
-portable-pty = { workspace = true }
-terminal_size = { workspace = true }
 rmcp = { workspace = true }
 omni_cache = { workspace = true }
 omni_hasher = { workspace = true }
 derive_builder = { workspace = true }
 bs58 = { workspace = true }
 ahash = { workspace = true }
-bytes = { workspace = true }
 owo-colors = { workspace = true }
 tiny-gradient = { workspace = true }
 omni_expressions = { workspace = true }
 omni_collector = { workspace = true }
-shlex = { workspace = true }
 path-clean = { workspace = true }
 num_cpus = { workspace = true }
+omni_process = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

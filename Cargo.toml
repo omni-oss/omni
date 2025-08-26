@@ -137,6 +137,8 @@ omni_utils = { path = "./crates/omni_utils" }
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
 path-slash = { version = "^0.2.1" }
+atty = { version = "^0.2.14" }
+omni_process = { path = "./crates/omni_process" }
 
 [profile.release]
 incremental = true

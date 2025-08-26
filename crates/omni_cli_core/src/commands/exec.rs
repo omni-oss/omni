@@ -5,7 +5,7 @@ use clap::Args;
 use crate::{
     commands::utils::report_execution_results,
     context::Context,
-    executor::{Call, TaskOrchestrator},
+    executor::{Call, TaskExecutor},
 };
 
 #[derive(Args, Debug)]
@@ -41,7 +41,7 @@ pub async fn run(
     command: &ExecCommand,
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
-    let mut builder = TaskOrchestrator::builder();
+    let mut builder = TaskExecutor::builder();
 
     builder.context(ctx.clone()).call(Call::new_command(
         command.args.command.clone(),
