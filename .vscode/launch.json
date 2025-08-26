@@ -29,7 +29,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["hash", "workspace"],
+            "args": ["run", "test"],
             "cwd": "${workspaceFolder}"
         },
         {
