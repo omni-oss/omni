@@ -818,138 +818,156 @@ mod tests {
     use crate::tracer::TraceLevel;
 
     use super::*;
-    use system_traits::impls::RealSys;
+    use system_traits::impls::{InMemorySys, RealSys};
     use system_traits::*;
     use tempfile::TempDir;
 
-    fn sys() -> RealSys {
+    fn real_sys() -> RealSys {
         RealSys::default()
+    }
+
+    fn mem_sys() -> InMemorySys {
+        InMemorySys::default()
     }
 
     fn tmp() -> TempDir {
         let tmp = TempDir::new().expect("can't create temp dir");
-
         tmp
     }
 
-    async fn default_fixture() -> (TempDir, RealSys) {
+    #[system_traits::auto_impl]
+    trait TestSys:
+        EnvCurrentDir
+        + FsMetadata
+        + EnvVars
+        + FsWrite
+        + FsCanonicalize
+        + FsCreateDirAll
+        + FsMetadata
+        + Clone
+        + Send
+        + Sync
+    {
+    }
+
+    fn xp(p: &str) -> Cow<'_, Path> {
+        if cfg!(windows) && p.contains('/') {
+            PathBuf::from(p.replace("/", "\\")).into()
+        } else {
+            Cow::Borrowed(Path::new(p))
+        }
+    }
+
+    fn default_fixture() -> (TempDir, RealSys) {
+        // wrap it in an Arc so that it doesn't get dropped before the test due to being async
         let tmp = tmp();
-        let sys = sys();
-        setup_fixture(tmp.path(), &sys).await;
+        let sys = real_sys();
+        setup_fixture(tmp.path(), sys.clone());
 
         (tmp, sys)
     }
 
-    async fn setup_fixture(root: &Path, sys: &RealSys) {
-        sys.fs_create_dir_all_async(root.join("nested/project-1"))
-            .await
+    fn setup_fixture(root: &Path, sys: impl TestSys) {
+        sys.fs_create_dir_all(root.join(xp("nested/project-1")))
             .expect("Can't create project-1 dir");
 
-        sys.fs_create_dir_all_async(root.join("nested/project-2"))
-            .await
+        sys.fs_create_dir_all(root.join(xp("nested/project-2")))
             .expect("Can't create project-2 dir");
-        sys.fs_create_dir_all_async(root.join("nested/project-3"))
-            .await
+        sys.fs_create_dir_all(root.join(xp("nested/project-3")))
             .expect("Can't create project-3 dir");
-        sys.fs_create_dir_all_async(root.join("base"))
-            .await
+        sys.fs_create_dir_all(root.join("base"))
             .expect("Can't create project-2 dir");
 
-        sys.fs_write_async(
+        sys.fs_write(
             root.join(".env"),
             include_str!("../../test_fixtures/.env.root"),
         )
-        .await
         .expect("Can't write root env file");
-        sys.fs_write_async(
+        sys.fs_write(
             root.join(".env.local"),
             include_str!("../../test_fixtures/.env.root.local"),
         )
-        .await
         .expect("Can't write root local env file");
 
-        sys.fs_write_async(
-            root.join("nested/.env"),
+        sys.fs_write(
+            root.join(xp("nested/.env")),
             include_str!("../../test_fixtures/.env.nested"),
         )
-        .await
         .expect("Can't write nested env file");
-        sys.fs_write_async(
-            root.join("nested/.env.local"),
+        sys.fs_write(
+            root.join(xp("nested/.env.local")),
             include_str!("../../test_fixtures/.env.nested.local"),
         )
-        .await
         .expect("Can't write nested local env file");
 
-        sys.fs_write_async(
-            root.join("nested/project-1/.env"),
+        sys.fs_write(
+            root.join(xp("nested/project-1/.env")),
             include_str!("../../test_fixtures/.env.project-1"),
         )
-        .await
         .expect("Can't write project env file");
-        sys.fs_write_async(
-            root.join("nested/project-1/.env.local"),
+        sys.fs_write(
+            root.join(xp("nested/project-1/.env.local")),
             include_str!("../../test_fixtures/.env.project-1.local"),
         )
-        .await
         .expect("Can't write project local env file");
-        sys.fs_write_async(
-            root.join("nested/project-1/project.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("nested/project-1/project.omni.yaml")),
             include_str!("../../test_fixtures/project-1.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
 
-        sys.fs_write_async(
-            root.join("nested/project-2/.env"),
+        sys.fs_write(
+            root.join(xp("nested/project-2/.env")),
             include_str!("../../test_fixtures/.env.project-2"),
         )
-        .await
         .expect("Can't write project env file");
-        sys.fs_write_async(
-            root.join("nested/project-2/.env.local"),
+        sys.fs_write(
+            root.join(xp("nested/project-2/.env.local")),
             include_str!("../../test_fixtures/.env.project-2.local"),
         )
-        .await
         .expect("Can't write project local env file");
-        sys.fs_write_async(
-            root.join("nested/project-2/project.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("nested/project-2/project.omni.yaml")),
             include_str!("../../test_fixtures/project-2.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
-        sys.fs_write_async(
-            root.join("nested/project-3/project.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("nested/project-3/project.omni.yaml")),
             include_str!("../../test_fixtures/project-3.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
 
-        sys.fs_write_async(
-            root.join("workspace.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("workspace.omni.yaml")),
             include_str!("../../test_fixtures/workspace.omni.yaml"),
         )
-        .await
         .expect("Can't write workspace config file");
 
-        sys.fs_write_async(
-            root.join("base/base-1.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("base/base-1.omni.yaml")),
             include_str!("../../test_fixtures/base-1.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
-        sys.fs_write_async(
-            root.join("base/base-2.omni.yaml"),
+        sys.fs_write(
+            root.join(xp("base/base-2.omni.yaml")),
             include_str!("../../test_fixtures/base-2.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
-
-        sys.env_set_current_dir(root.join("nested/project-1"))
-            .expect("Can't set current dir");
     }
 
-    fn ctx(env: &str, sys: RealSys) -> Context<RealSys> {
+    fn block_on<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    fn ctx<TSys: ContextSys + 'static>(
+        env: &str,
+        root_dir: &Path,
+        sys: TSys,
+    ) -> Context<TSys> {
         let cli = &CliArgs {
             env_root_dir_marker: None,
             env_file: vec![
@@ -968,13 +986,21 @@ mod tests {
             no_stderr_trace: false,
         };
 
-        Context::from_args_and_sys(cli, sys).expect("Can't create context")
+        Context::from_args_root_dir_and_sys(cli, root_dir, sys)
+            .expect("Can't create context")
     }
 
-    #[tokio::test]
-    pub async fn test_load_env_vars() {
-        let (_tmp, sys) = default_fixture().await;
-        let mut ctx = ctx("testing", sys);
+    #[test]
+    pub fn test_load_env_vars() {
+        let root = Path::new("/root");
+        let sys = mem_sys();
+
+        setup_fixture(root, sys.clone());
+
+        sys.env_set_current_dir(root.join("nested").join("project-1"))
+            .expect("Can't set current dir");
+
+        let mut ctx = ctx("testing", root, sys.clone());
 
         let env = ctx.get_env_vars(None).expect("Can't load env vars");
 
@@ -984,13 +1010,15 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_load_projects() {
-        let (_tmp, sys) = default_fixture().await;
+    #[test]
+    fn test_load_projects() {
+        let (tmp, sys) = default_fixture();
 
-        let mut ctx = ctx("testing", sys);
+        let mut ctx = ctx("testing", tmp.path(), sys);
 
-        ctx.load_projects().await.expect("can't load projects");
+        block_on(async {
+            ctx.load_projects().await.expect("can't load projects");
+        });
 
         let projects = ctx.get_projects().expect("Can't get projects");
 
@@ -1009,28 +1037,25 @@ mod tests {
         assert!(project_3.is_some(), "Can't find project-3");
     }
 
-    #[tokio::test]
-    async fn test_load_projects_with_duplicate_names() {
-        let sys = sys();
+    #[test]
+    fn test_load_projects_with_duplicate_names() {
+        let sys = real_sys();
         let tmp = tmp();
-
         let project4dir = tmp.path().join("nested").join("project-4");
 
-        sys.fs_create_dir_all_async(&project4dir)
-            .await
+        sys.fs_create_dir_all(&project4dir)
             .expect("Can't create project-4 dir");
-        sys.fs_write_async(
+        sys.fs_write(
             &project4dir.join("project.omni.yaml"),
             include_str!("../../test_fixtures/project-1.omni.yaml"),
         )
-        .await
         .expect("Can't write project config file");
 
-        setup_fixture(tmp.path(), &sys).await;
+        setup_fixture(tmp.path(), sys.clone());
 
-        let mut ctx = ctx("testing", sys);
+        let mut ctx = ctx("testing", tmp.path(), sys);
 
-        let projects = ctx.load_projects().await;
+        let projects = block_on(async { ctx.load_projects().await });
 
         assert!(
             projects
@@ -1041,26 +1066,30 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_get_project_graph() {
-        let (_tmp, sys) = default_fixture().await;
+    #[test]
+    fn test_get_project_graph() {
+        let (tmp, sys) = default_fixture();
 
-        let mut ctx = ctx("testing", sys);
+        let mut ctx = ctx("testing", tmp.path(), sys.clone());
 
-        ctx.load_projects().await.expect("can't load projects");
+        block_on(async {
+            ctx.load_projects().await.expect("can't load projects");
+        });
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
 
         assert_eq!(project_graph.count(), 3);
     }
 
-    #[tokio::test]
-    async fn test_project_extensions() {
-        let (_tmp, sys) = default_fixture().await;
+    #[test]
+    fn test_project_extensions() {
+        let (tmp, sys) = default_fixture();
 
-        let mut ctx = ctx("testing", sys);
+        let mut ctx = ctx("testing", tmp.path(), sys.clone());
 
-        ctx.load_projects().await.expect("can't load projects");
+        block_on(async {
+            ctx.load_projects().await.expect("can't load projects");
+        });
 
         let project_graph = ctx.get_project_graph().expect("Can't get graph");
         let project3 = project_graph
@@ -1078,13 +1107,15 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_loaded_environmental_variables() {
-        let (tmp, sys) = default_fixture().await;
+    #[test]
+    fn test_loaded_environmental_variables() {
+        let (tmp, sys) = default_fixture();
 
-        let mut ctx = ctx("testing", sys);
+        let mut ctx = ctx("testing", tmp.path(), sys.clone());
 
-        ctx.load_projects().await.expect("can't load projects");
+        block_on(async {
+            ctx.load_projects().await.expect("can't load projects");
+        });
 
         let project3dir = tmp.path().join("nested").join("project-3");
         let envs = ctx
@@ -1092,6 +1123,15 @@ mod tests {
             .expect("can't get env vars");
 
         assert_eq!(envs["PROJECT_NAME"], "project-3");
-        assert_eq!(envs["PROJECT_DIR"], project3dir.to_string_lossy());
+
+        let project3dircanon = sys
+            .fs_canonicalize(project3dir)
+            .expect("can't canonicalize");
+
+        let env_project3dircanon = sys
+            .fs_canonicalize(Path::new(&envs["PROJECT_DIR"]))
+            .expect("can't canonicalize");
+
+        assert_eq!(env_project3dircanon, project3dircanon);
     }
 }
