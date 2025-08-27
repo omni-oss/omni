@@ -9,6 +9,9 @@ $BinDir = "$HOME\AppData\Local\omni\bin"
 $OmniPath = Join-Path $BinDir "omni.exe"
 $UpdateUrl = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 
+# Optional GitHub token for higher rate limit
+$GitHubToken = $env:GITHUB_TOKEN
+
 Write-Output "Checking latest version..."
 
 # Retry function for API requests
@@ -18,9 +21,14 @@ function Get-LatestRelease {
         [int]$DelaySeconds = 2
     )
 
+    $Headers = @{ "User-Agent" = "PowerShell" }
+    if ($GitHubToken) {
+        $Headers["Authorization"] = "Bearer $GitHubToken"
+    }
+
     for ($i = 1; $i -le $Retries; $i++) {
         try {
-            $Response = Invoke-RestMethod -Uri $UpdateUrl -Headers @{ "User-Agent" = "PowerShell" }
+            $Response = Invoke-RestMethod -Uri $UpdateUrl -Headers $Headers
             if ($Response -and $Response.tag_name) {
                 return $Response.tag_name
             }
