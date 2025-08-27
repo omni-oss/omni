@@ -1,6 +1,6 @@
 use std::{
-    cell::Cell, collections::HashMap, ffi::OsString, io, os::fd::AsFd,
-    path::PathBuf, pin::Pin, process::Stdio,
+    cell::Cell, collections::HashMap, ffi::OsString, io, path::PathBuf,
+    pin::Pin, process::Stdio,
 };
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -57,6 +57,7 @@ impl Child {
         #[cfg(unix)]
         {
             use nix::sys::termios;
+            use std::os::fd::AsFd;
 
             struct AsFdImp(i32);
 
