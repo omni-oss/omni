@@ -1,6 +1,5 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -eu
-(set -o pipefail 2>/dev/null) || true
 
 OWNER="omni-oss"
 REPO="omni"
@@ -18,20 +17,24 @@ echo "Checking latest version..."
 
 # Try up to 3 times to fetch the latest release
 LATEST_RELEASE=""
-for i in {1..3}; do
+i=1
+while [ $i -le 3 ]; do
     if [ -n "${GITHUB_TOKEN:-}" ]; then
-        response=$(curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" "$latest_url")
+        response=$(curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" "$latest_url") || response=""
     else
-        response=$(curl -sL "$latest_url")
+        response=$(curl -sL "$latest_url") || response=""
     fi
 
-    LATEST_RELEASE=$(echo "$response" | jq -r '.tag_name')
+    if [ -n "$response" ]; then
+        LATEST_RELEASE=$(printf '%s' "$response" | jq -r '.tag_name') || LATEST_RELEASE=""
+    fi
 
     if [ -n "$LATEST_RELEASE" ] && [ "$LATEST_RELEASE" != "null" ]; then
         break
     fi
 
     echo "Failed to fetch latest release (attempt $i). Retrying..."
+    i=$((i+1))
     sleep 2
 done
 
@@ -45,10 +48,10 @@ fi
 echo "Latest version: $LATEST_RELEASE"
 
 # Check if the latest release version is already installed
-if [ -f ~/.omni/bin/omni ]; then
-    INSTALLED_VERSION=$(~/.omni/bin/omni --version | cut -d' ' -f2)
+if [ -f "$HOME/.omni/bin/omni" ]; then
+    INSTALLED_VERSION=$("$HOME/.omni/bin/omni" --version | cut -d' ' -f2)
     echo "Found installed version: v$INSTALLED_VERSION"
-    if [ "$LATEST_RELEASE" == "v$INSTALLED_VERSION" ]; then
+    if [ "$LATEST_RELEASE" = "v$INSTALLED_VERSION" ]; then
         echo "omni is already up to date ($LATEST_RELEASE)."
         exit 0
     fi
@@ -57,23 +60,23 @@ fi
 echo "Downloading omni $LATEST_RELEASE..."
 
 DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/$LATEST_RELEASE/omni-$LATEST_RELEASE-$TARGET.zip"
-mkdir -p ~/.omni/bin
-curl -L -o ~/.omni/bin/omni "$DOWNLOAD_URL"
+mkdir -p "$HOME/.omni/bin"
+curl -L -o "$HOME/.omni/bin/omni" "$DOWNLOAD_URL"
 
-unzip -o ~/.omni/bin/omni -d ~/.omni/bin
-chmod +x ~/.omni/bin/omni
+unzip -o "$HOME/.omni/bin/omni" -d "$HOME/.omni/bin"
+chmod +x "$HOME/.omni/bin/omni"
 
 # Setup PATH env
 if [ -n "${ZSH_VERSION:-}" ] || [ -n "${BASH_VERSION:-}" ]; then
-    if [ ! -f ~/.omni/env ]; then
+    if [ ! -f "$HOME/.omni/env" ]; then
         if [ -n "${ZSH_VERSION:-}" ]; then
-            echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> ~/.zshrc
+            echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> "$HOME/.zshrc"
         fi
         if [ -n "${BASH_VERSION:-}" ]; then
-            echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> ~/.bashrc
+            echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> "$HOME/.bashrc"
         fi
     fi
-    echo "export PATH=\$HOME/.omni/bin:\$PATH" >| "$HOME/.omni/env"
+    echo "export PATH=\$HOME/.omni/bin:\$PATH" > "$HOME/.omni/env"
 else
     echo "Unsupported shell. Please add manually:"
     echo "export PATH=\$HOME/.omni/bin:\$PATH"
