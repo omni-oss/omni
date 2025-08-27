@@ -4,10 +4,6 @@ codegen-backend = true
 [profile.dev]
 codegen-backend = "cranelift"
 
-# [env]
-# ORT_STRATEGY = { value = "system" }
-# ORT_LIB_LOCATION = { value = "vendor/lib", relative = true }
-
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-Clink-arg=-fuse-ld=mold", "-Clink-arg=-Wl,--no-rosegment"]
 

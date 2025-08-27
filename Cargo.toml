@@ -139,6 +139,7 @@ pathdiff = { version = "^0.2.3" }
 path-slash = { version = "^0.2.1" }
 atty = { version = "^0.2.14" }
 omni_process = { path = "./crates/omni_process" }
+nix = { version = "^0.30.1" }
 
 [profile.release]
 incremental = true
