@@ -1,6 +1,6 @@
 use std::{
-    cell::Cell, collections::HashMap, ffi::OsString, io, path::PathBuf,
-    pin::Pin, process::Stdio,
+    cell::Cell, collections::HashMap, ffi::OsString, io, os::fd::AsFd,
+    path::PathBuf, pin::Pin, process::Stdio,
 };
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
@@ -57,10 +57,21 @@ impl Child {
         #[cfg(unix)]
         {
             use nix::sys::termios;
-            if let Some((file_desc, mut termios)) = cmd
-                .master
-                .as_raw_fd()
-                .and_then(|fd| Some(fd).zip(termios::tcgetattr(fd).ok()))
+
+            struct AsFdImp(i32);
+
+            impl AsFd for AsFdImp {
+                fn as_fd(&self) -> std::os::unix::prelude::BorrowedFd<'_> {
+                    unsafe {
+                        std::os::unix::prelude::BorrowedFd::borrow_raw(self.0)
+                    }
+                }
+            }
+
+            if let Some((file_desc, mut termios)) =
+                cmd.master.as_raw_fd().and_then(|fd| {
+                    Some(AsFdImp(fd)).zip(termios::tcgetattr(AsFdImp(fd)).ok())
+                })
             {
                 // We unset ECHOCTL to disable rendering of the closing of stdin
                 // as ^D
@@ -164,7 +175,7 @@ impl Child {
                     trace::error!("wait error: {e}");
                 })?;
 
-                Ok(status.exit_code() as u32)
+                Ok(status.exit_code())
             }
             ChildInner::Normal(mut child) => {
                 let status = child.wait().await.inspect_err(|e| {
