@@ -11,7 +11,7 @@ use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 
-use crate::{CommandExecutor, CommandExecutorError};
+use crate::{Child, ChildError};
 
 #[derive(new)]
 pub struct ChildProcess {
@@ -117,19 +117,19 @@ impl ChildProcess {
             TaskExecutorErrorInner::CantParseCommand(command.to_string())
         })?;
 
-        let cmd_exec = CommandExecutor::from_command_and_env(
+        let child = Child::spawn(
             parsed[0].clone(),
             parsed.iter().skip(1).cloned().collect::<Vec<_>>(),
             task.project_dir(),
             self.env_vars.unwrap_or_default(),
         )?;
 
-        let mut stdout = cmd_exec
-            .take_reader()
+        let mut stdout = child
+            .take_output_reader()
             .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
 
-        let mut input = cmd_exec
-            .take_writer()
+        let mut input = child
+            .take_input_writer()
             .ok_or(TaskExecutorErrorInner::CantTakeStdin)?;
 
         let mut tasks = vec![];
@@ -184,7 +184,7 @@ impl ChildProcess {
         let all_tasks = try_join_all(tasks);
 
         let (vec_result, stdout, exit_status) =
-            tokio::join!(all_tasks, stdout_task, cmd_exec.run());
+            tokio::join!(all_tasks, stdout_task, child.wait());
 
         let _ = vec_result?;
         let logs = stdout??;
@@ -238,7 +238,7 @@ enum TaskExecutorErrorInner {
     Io(#[from] std::io::Error),
 
     #[error("can't run command: {0}")]
-    CantRunCommand(#[from] CommandExecutorError),
+    CantRunCommand(#[from] ChildError),
 
     #[error("can't parse command: {0}")]
     CantParseCommand(String),
