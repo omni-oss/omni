@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Exit immediately if a command exits with a non-zero status
-set -e
+set -euo pipefail
 
 OWNER="omni-oss"
 REPO="omni"
@@ -16,18 +15,38 @@ latest_url="https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 
 echo "Checking latest version..."
 
-# Get the latest release version from the GitHub API
-LATEST_RELEASE=$(curl -sL "$latest_url" | jq -r '.tag_name')
+# Try up to 3 times to fetch the latest release
+LATEST_RELEASE=""
+for i in {1..3}; do
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        response=$(curl -sL -H "Authorization: Bearer $GITHUB_TOKEN" "$latest_url")
+    else
+        response=$(curl -sL "$latest_url")
+    fi
+
+    LATEST_RELEASE=$(echo "$response" | jq -r '.tag_name')
+
+    if [ -n "$LATEST_RELEASE" ] && [ "$LATEST_RELEASE" != "null" ]; then
+        break
+    fi
+
+    echo "Failed to fetch latest release (attempt $i). Retrying..."
+    sleep 2
+done
+
+# Final validation
+if [ -z "$LATEST_RELEASE" ] || [ "$LATEST_RELEASE" = "null" ]; then
+    echo "❌ Could not fetch latest release. Full response:"
+    echo "$response"
+    exit 1
+fi
 
 echo "Latest version: $LATEST_RELEASE"
 
 # Check if the latest release version is already installed
 if [ -f ~/.omni/bin/omni ]; then
-    # Compare the installed version with the latest release version
     INSTALLED_VERSION=$(~/.omni/bin/omni --version | cut -d' ' -f2)
-
     echo "Found installed version: v$INSTALLED_VERSION"
-    # Remove the v prefix from the version string
     if [ "$LATEST_RELEASE" == "v$INSTALLED_VERSION" ]; then
         echo "omni is already up to date ($LATEST_RELEASE)."
         exit 0
@@ -36,35 +55,27 @@ fi
 
 echo "Downloading omni $LATEST_RELEASE..."
 
-# Download the latest release asset
 DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/$LATEST_RELEASE/omni-$LATEST_RELEASE-$TARGET.zip"
 mkdir -p ~/.omni/bin
-curl -L -o ~/.omni/bin/omni $DOWNLOAD_URL
+curl -L -o ~/.omni/bin/omni "$DOWNLOAD_URL"
 
-# Extract the downloaded asset
 unzip -o ~/.omni/bin/omni -d ~/.omni/bin
-
-# Make the binary executable
 chmod +x ~/.omni/bin/omni
 
-# Add environment variables to the appropriate files
-# check which shell is running
-if [ -n "$ZSH_VERSION" ] || [ -n "$BASH_VERSION" ]; then
-    # Don't overwrite existing environment variables if env file already exists
+# Setup PATH env
+if [ -n "${ZSH_VERSION:-}" ] || [ -n "${BASH_VERSION:-}" ]; then
     if [ ! -f ~/.omni/env ]; then
-        if [ -n "$ZSH_VERSION" ]; then
+        if [ -n "${ZSH_VERSION:-}" ]; then
             echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> ~/.zshrc
         fi
-        
-        if [ -n "$BASH_VERSION" ]; then
+        if [ -n "${BASH_VERSION:-}" ]; then
             echo "[[ -s \"\$HOME/.omni/env\" ]] && . \"\$HOME/.omni/env\"" >> ~/.bashrc
         fi
     fi
-
-    echo "export PATH=\$HOME/.omni/bin:\$PATH" >| $HOME/.omni/env
+    echo "export PATH=\$HOME/.omni/bin:\$PATH" >| "$HOME/.omni/env"
 else
-    echo "Unsupported shell. Please add the following line to your shell's configuration file:"
+    echo "Unsupported shell. Please add manually:"
     echo "export PATH=\$HOME/.omni/bin:\$PATH"
 fi
 
-echo "omni $LATEST_RELEASE has been installed successfully."
+echo "✅ omni $LATEST_RELEASE has been installed successfully."
