@@ -33,7 +33,7 @@ function Get-LatestRelease {
                 return $Response.tag_name
             }
         } catch {
-            Write-Warning "Attempt $i: Failed to fetch latest release."
+            Write-Warning "Attempt ${i}: Failed to fetch latest release."
         }
         Start-Sleep -Seconds $DelaySeconds
     }
@@ -76,7 +76,7 @@ function Invoke-Download {
             Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing
             return
         } catch {
-            Write-Warning "Attempt $i: Download failed. Retrying in $DelaySeconds seconds..."
+            Write-Warning "Attempt ${i}: Download failed. Retrying in $DelaySeconds seconds..."
             Start-Sleep -Seconds $DelaySeconds
         }
     }
