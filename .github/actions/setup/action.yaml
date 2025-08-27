@@ -41,12 +41,18 @@ inputs:
   shell:
     description: "Shell to use"
     required: true
+  github-token:
+    description: "GitHub token for higher rate limit"
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: "composite"
   steps:
     - name: Install Omni
       uses: omni-oss/setup-omni@v1
+      with:
+        github-token: ${{ inputs.github-token }}
 
     - name: Get Workspace Hash
       id: get_workspace_hash
