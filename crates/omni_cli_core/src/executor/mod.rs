@@ -404,7 +404,8 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
             None
         };
 
-        let max_concurrency = self.max_concurrency.unwrap_or(num_cpus::get());
+        let max_concurrency =
+            self.max_concurrency.unwrap_or(num_cpus::get() * 4);
 
         'main_loop: for batch in &execution_plan {
             // Short circuit if any task failed and the user wants to skip the next batches if any
