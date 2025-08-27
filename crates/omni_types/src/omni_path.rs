@@ -220,6 +220,20 @@ mod tests {
 
     use super::*;
 
+    fn base() -> RootMap<'static> {
+        if cfg!(windows) {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("E:\\workspace"),
+                Root::Project => Path::new("E:\\project"),
+            }
+        } else {
+            enum_map::enum_map! {
+                Root::Workspace => Path::new("/workspace"),
+                Root::Project => Path::new("/project"),
+            }
+        }
+    }
+
     #[test]
     fn test_serialize() {
         let path = OmniPath::new_ws_rooted("foo");
@@ -257,28 +271,32 @@ mod tests {
     fn test_resolve() {
         let path = OmniPath::new_ws_rooted("foo");
 
-        let base = enum_map::enum_map! {
-            Root::Workspace => Path::new("/workspace"),
-            Root::Project => Path::new("/project"),
-        };
+        let base = base();
 
-        assert_eq!(path.resolve(&base), Path::new("/workspace/foo"));
+        if cfg!(windows) {
+            assert_eq!(path.resolve(&base), Path::new("E:\\workspace\\foo"));
+        } else {
+            assert_eq!(path.resolve(&base), Path::new("/workspace/foo"));
+        }
     }
 
     #[test]
     fn test_resolve_in_place() {
         let mut path = OmniPath::new_ws_rooted("foo");
 
-        let base = enum_map::enum_map! {
-            Root::Workspace => Path::new("/workspace"),
-            Root::Project => Path::new("/project"),
-        };
-
+        let base = base();
         path.resolve_in_place(&base);
 
-        assert_eq!(
-            path.path().expect("path should be resolved"),
-            Path::new("/workspace/foo")
-        );
+        if cfg!(windows) {
+            assert_eq!(
+                path.path().expect("path should be resolved"),
+                Path::new("E:\\workspace\\foo")
+            );
+        } else {
+            assert_eq!(
+                path.path().expect("path should be resolved"),
+                Path::new("/workspace/foo")
+            );
+        }
     }
 }

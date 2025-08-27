@@ -6,9 +6,9 @@ use omni_collector::{CollectConfig, CollectResult, Collector};
 use omni_hasher::{Hasher, impls::DefaultHasher};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
-    FsCanonicalizeAsync as _, FsCreateDirAllAsync, FsHardLinkAsync as _,
-    FsMetadataAsync, FsReadAsync as _, FsRemoveDirAllAsync as _,
-    FsWriteAsync as _, impls::RealSys,
+    FsCreateDirAllAsync, FsHardLinkAsync as _, FsMetadataAsync,
+    FsReadAsync as _, FsRemoveDirAllAsync as _, FsWriteAsync as _,
+    impls::RealSys,
 };
 use time::OffsetDateTime;
 
@@ -270,7 +270,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                         continue 'outer_loop;
                     }
 
-                    *logs_path = self.sys.fs_canonicalize_async(p).await?;
+                    *logs_path = p;
                 }
 
                 for file in cached_output.files.iter_mut() {
@@ -281,8 +281,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                         continue 'outer_loop;
                     }
 
-                    file.cached_path =
-                        self.sys.fs_canonicalize_async(c).await?;
+                    file.cached_path = c;
 
                     file.original_path.resolve_in_place(&project.roots);
                 }
@@ -467,7 +466,7 @@ mod tests {
         vec!["KEY".to_string()]
     }
 
-    #[derive(new)]
+    #[derive(new, Debug)]
     struct TaskExecutionInfoStatic {
         task_name: String,
         task_command: String,

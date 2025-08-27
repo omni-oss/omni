@@ -9,9 +9,10 @@ use super::utils;
 use derive_builder::Builder;
 use derive_new::new;
 use omni_types::{OmniPath, Root, enum_map};
+use path_clean::clean;
 use rs_merkle::MerkleTree;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use system_traits::{FsCanonicalizeAsync, impls::RealSys};
+use system_traits::impls::RealSys;
 
 #[derive(Clone, Debug, new, Builder)]
 pub struct RealDirHasher {
@@ -40,25 +41,8 @@ impl ProjectDirHasher for RealDirHasher {
         project_dir: &Path,
         files: &[OmniPath],
     ) -> Result<MerkleTree<Compat<THasher>>, Self::Error> {
-        let proj_dir = self
-            .sys
-            .fs_canonicalize_async(project_dir)
-            .await
-            .inspect_err(|e| {
-                trace::error!(
-                    "failed to canonicalize project dir {project_dir:?}: {e}"
-                );
-            })?;
-        let ws_dir = self
-            .sys
-            .fs_canonicalize_async(&self.workspace_root_dir)
-            .await
-            .inspect_err(|e| {
-                trace::error!(
-                    "failed to canonicalize workspace dir {:?}: {e}",
-                    self.workspace_root_dir
-                );
-            })?;
+        let proj_dir = clean(project_dir);
+        let ws_dir = clean(&self.workspace_root_dir);
 
         let bases = enum_map! {
             Root::Workspace => ws_dir.as_path(),

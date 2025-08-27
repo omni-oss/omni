@@ -7,15 +7,14 @@ use futures::{
     future::try_join_all,
 };
 use maps::Map;
-use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 
-use crate::executor::{CommandExecutor, CommandExecutorError};
+use crate::{Child, ChildError};
 
 #[derive(new)]
-pub struct TaskExecutor {
+pub struct ChildProcess {
     #[new(into)]
     task: TaskExecutionNode,
 
@@ -42,7 +41,7 @@ pub trait TaskExecutorWriter: AsyncWrite + Send {}
 pub trait TaskExecutorReader: AsyncRead + Send {}
 
 #[derive(Debug, Clone, PartialEq, Eq, new)]
-pub struct ExecutionResult {
+pub struct ChildProcessResult {
     #[new(into)]
     pub node: TaskExecutionNode,
     #[new(into)]
@@ -53,7 +52,7 @@ pub struct ExecutionResult {
     pub logs: Option<Bytes>,
 }
 
-impl ExecutionResult {
+impl ChildProcessResult {
     pub fn success(&self) -> bool {
         self.exit_code == 0
     }
@@ -63,7 +62,7 @@ impl ExecutionResult {
     }
 }
 
-impl TaskExecutor {
+impl ChildProcess {
     pub fn output_writer(
         &mut self,
         writer: impl TaskExecutorWriter + 'static,
@@ -94,9 +93,9 @@ impl TaskExecutor {
         self
     }
 
-    pub async fn exec(self) -> Result<ExecutionResult, TaskExecutorError> {
+    pub async fn exec(self) -> Result<ChildProcessResult, TaskExecutorError> {
         if self.task.task_command().is_empty() {
-            return Ok(ExecutionResult {
+            return Ok(ChildProcessResult {
                 node: self.task,
                 exit_code: 0,
                 elapsed: std::time::Duration::ZERO,
@@ -118,19 +117,19 @@ impl TaskExecutor {
             TaskExecutorErrorInner::CantParseCommand(command.to_string())
         })?;
 
-        let cmd_exec = CommandExecutor::from_command_and_env(
+        let child = Child::spawn(
             parsed[0].clone(),
             parsed.iter().skip(1).cloned().collect::<Vec<_>>(),
             task.project_dir(),
             self.env_vars.unwrap_or_default(),
         )?;
 
-        let mut stdout = cmd_exec
-            .take_reader()
+        let mut stdout = child
+            .take_output_reader()
             .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
 
-        let mut input = cmd_exec
-            .take_writer()
+        let mut input = child
+            .take_input_writer()
             .ok_or(TaskExecutorErrorInner::CantTakeStdin)?;
 
         let mut tasks = vec![];
@@ -185,7 +184,7 @@ impl TaskExecutor {
         let all_tasks = try_join_all(tasks);
 
         let (vec_result, stdout, exit_status) =
-            tokio::join!(all_tasks, stdout_task, cmd_exec.run());
+            tokio::join!(all_tasks, stdout_task, child.wait());
 
         let _ = vec_result?;
         let logs = stdout??;
@@ -194,7 +193,7 @@ impl TaskExecutor {
 
         let elapsed = start_time.elapsed();
 
-        Ok(ExecutionResult {
+        Ok(ChildProcessResult {
             node: task,
             exit_code,
             elapsed,
@@ -239,7 +238,7 @@ enum TaskExecutorErrorInner {
     Io(#[from] std::io::Error),
 
     #[error("can't run command: {0}")]
-    CantRunCommand(#[from] CommandExecutorError),
+    CantRunCommand(#[from] ChildError),
 
     #[error("can't parse command: {0}")]
     CantParseCommand(String),
@@ -259,7 +258,4 @@ enum TaskExecutorErrorInner {
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
-
-    #[error(transparent)]
-    LocalTaskExecutionCacheStore(#[from] LocalTaskExecutionCacheStoreError),
 }

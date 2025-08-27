@@ -1,4 +1,6 @@
 name: base-1
 
+base: true
+
 tasks:
   from-base-1: echo "from base-1"

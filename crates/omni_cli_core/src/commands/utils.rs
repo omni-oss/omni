@@ -24,7 +24,10 @@ pub fn report_execution_results(
             success += 1;
         }
 
-        if let TaskExecutionResult::CacheHit { execution, .. } = res {
+        if let TaskExecutionResult::CacheHit {
+            result: execution, ..
+        } = res
+        {
             if execution.success() {
                 cached_success += 1;
             } else {

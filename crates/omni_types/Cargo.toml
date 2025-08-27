@@ -18,6 +18,7 @@ merge = { workspace = true, optional = true }
 enum-map = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
+path-clean = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
