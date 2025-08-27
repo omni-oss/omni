@@ -21,6 +21,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           shell: bash
           omni-cache-key-prefix: test
 
@@ -41,6 +42,7 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
           omni-cache-key-prefix: build
 
@@ -50,7 +52,6 @@ jobs:
 
       - name: Build
         run: omni run -p=omni -L build
-        # run: cargo build --release -p omni
 
       - name: Compress binary on Linux/macOS
         if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
