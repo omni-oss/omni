@@ -504,7 +504,9 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
             let cache_inputs = task_ctxs
                 .iter()
                 .filter_map(|c| {
-                    if c.cache_info.is_some_and(|ci| ci.cache_execution) {
+                    if !c.node.persistent()
+                        && c.cache_info.is_some_and(|ci| ci.cache_execution)
+                    {
                         c.execution_info()
                     } else {
                         None
@@ -663,7 +665,11 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
 
                     proc.output_writer(AllowStdIo::new(std::io::stdout()))
                         .record_logs(record_logs)
-                        .env_vars(&task_ctx.env_vars);
+                        .env_vars(&task_ctx.env_vars)
+                        .keep_stdin_open(
+                            task_ctx.node.persistent()
+                                || task_ctx.node.interactive(),
+                        );
 
                     let this = proc.exec().await;
                     match this {
@@ -692,6 +698,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                             && task_ctx
                                 .cache_info
                                 .is_some_and(|ci| ci.cache_execution)
+                            && !task_ctx.node.persistent()
                             && let Some(exec_info) = task_ctx.execution_info()
                         {
                             Some(NewCacheInfo {

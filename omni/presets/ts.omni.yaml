@@ -12,5 +12,22 @@ cache:
 extends:
   - "./base.omni.yaml"
 
+tasks:
+  test:unit:
+    command: bun x vitest --config ./vitest.config.unit.ts run
+
+  test:integration:
+    command: bun x vitest --config ./vitest.config.integration.ts run
+    dependencies:
+      - test:unit
+
+  test:
+    dependencies:
+      - test:unit
+      - test:integration
+
+  build:
+    command: bun run build
+
 meta:
   language: typescript

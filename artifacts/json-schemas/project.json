@@ -473,21 +473,6 @@
         }
       ]
     },
-    "TaskConfigurationEnvConfiguration": {
-      "type": "object",
-      "properties": {
-        "vars": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DictConfig"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
     "TaskConfigurationLongForm": {
       "type": "object",
       "properties": {
@@ -523,11 +508,19 @@
           ],
           "default": null
         },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
         "env": {
-          "$ref": "#/$defs/TaskConfigurationEnvConfiguration",
+          "$ref": "#/$defs/TaskEnvConfiguration",
           "default": {
             "vars": null
           }
+        },
+        "interactive": {
+          "type": "boolean",
+          "default": false
         },
         "meta": {
           "$ref": "#/$defs/MetaConfiguration",
@@ -541,6 +534,31 @@
             },
             "logs": true
           }
+        },
+        "persistent": {
+          "type": "boolean",
+          "default": false
+        },
+        "siblings": {
+          "$ref": "#/$defs/ListConfig",
+          "default": {
+            "append": []
+          }
+        }
+      }
+    },
+    "TaskEnvConfiguration": {
+      "type": "object",
+      "properties": {
+        "vars": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DictConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
