@@ -613,9 +613,7 @@ impl TaskExecutionGraph {
         // Step 1: Get all nodes that match the predicate, all persistent tasks are considered as roots since no one depends on them
         let mut possible_roots = HashSet::new();
         for node in self.di_graph.node_indices() {
-            if criteria(&self.di_graph[node])?
-                || self.di_graph[node].persistent()
-            {
+            if criteria(&self.di_graph[node])? {
                 possible_roots.insert(node);
             }
         }
