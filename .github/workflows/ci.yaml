@@ -93,8 +93,8 @@ jobs:
 
   publish-json-schemas:
     runs-on: ubuntu-latest
-    needs: release
-    if: github.ref_type == 'tag'
+    # needs: release
+    # if: github.ref_type == 'tag'
     steps:
       - name: Setup Omni
         uses: omni-oss/setup-omni@v1
@@ -108,7 +108,7 @@ jobs:
           INSTALLED_VERSION=$(omni --version | cut -d' ' -f2)
 
           # loop through all the json schemas and publish them
-          schemas=("project", "workspace", "generator")
+          schemas=("project" "workspace" "generator")
           for schema in "${schemas[@]}"; do
             echo "Publishing $schema schema..."
             
