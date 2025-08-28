@@ -32,6 +32,9 @@ pub struct ChildProcess {
 
     #[new(default)]
     record_logs: bool,
+
+    #[new(default)]
+    keep_stdin_open: bool,
 }
 
 #[auto_impl]
@@ -76,6 +79,11 @@ impl ChildProcess {
             Some(::env::expand(self.task.task_command(), vars));
         self.env_vars = Some(vars_os(vars));
 
+        self
+    }
+
+    pub fn keep_stdin_open(&mut self, keep_stdin_open: bool) -> &mut Self {
+        self.keep_stdin_open = keep_stdin_open;
         self
     }
 
@@ -177,7 +185,7 @@ impl ChildProcess {
             };
 
             tasks.push(stdin_task);
-        } else {
+        } else if !self.keep_stdin_open {
             std::mem::drop(input);
         }
 

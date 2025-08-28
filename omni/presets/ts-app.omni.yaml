@@ -4,5 +4,10 @@ name: ts-app
 extends:
   - "./ts.omni.yaml"
 
+tasks:
+  dev:
+    command: bun run dev
+    persistent: true
+
 meta:
   type: app
