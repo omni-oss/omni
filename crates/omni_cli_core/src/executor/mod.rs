@@ -446,7 +446,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                 }
 
                 for task in batch {
-                    trace::info!(
+                    trace::error!(
                         "Skipping task '{}' due to previous batch failure",
                         task.full_task_name()
                     );
@@ -567,7 +567,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                         ),
                     );
 
-                    trace::info!(
+                    trace::error!(
                         "Skipping task '{}' due to failed dependency '{}'",
                         task_ctx.node.full_task_name(),
                         error

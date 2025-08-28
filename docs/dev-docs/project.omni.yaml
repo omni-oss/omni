@@ -5,10 +5,10 @@ extends:
 
 tasks:
   test:unit:
-    command: ""
+    command: exit 0
 
   test:integration:
-    command: ""
+    command: exit 0
 
   test:
-    command: ""
+    command: exit 0
