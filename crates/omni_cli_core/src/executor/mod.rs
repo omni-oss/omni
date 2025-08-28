@@ -542,8 +542,12 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                     );
 
                     trace::info!(
-                        "Skipping disabled task '{}'",
-                        task_ctx.node.full_task_name()
+                        "{}",
+                        format!(
+                            "Skipping disabled task '{}'",
+                            task_ctx.node.full_task_name()
+                        )
+                        .yellow()
                     );
 
                     continue 'inner_loop;
@@ -669,8 +673,42 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                                 || task_ctx.node.interactive(),
                         );
 
-                    let this = proc.exec().await;
-                    match this {
+                    let result = proc.exec().await;
+
+                    if let Err(e) = &result {
+                        trace::error!(
+                            "{}",
+                            format!(
+                                "Failed to execute task '{}': {}",
+                                task_ctx.node.full_task_name(),
+                                e
+                            )
+                            .red()
+                        );
+                    }
+
+                    if let Ok(t) = &result {
+                        if t.success() {
+                            trace::info!(
+                                "{}",
+                                format!(
+                                    "Executed task '{}'",
+                                    task_ctx.node.full_task_name()
+                                )
+                            );
+                        } else {
+                            trace::error!(
+                                "{}",
+                                format!(
+                                    "Failed to execute task '{}', exit code '{}'",
+                                    task_ctx.node.full_task_name(),
+                                    t.exit_code()
+                                )
+                            );
+                        }
+                    }
+
+                    match result {
                         Ok(t) => Ok((task_ctx, t)),
                         Err(e) => Err((task_ctx, e)),
                     }

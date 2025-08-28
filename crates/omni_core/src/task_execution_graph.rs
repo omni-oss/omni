@@ -605,7 +605,7 @@ impl TaskExecutionGraph {
     )]
     pub fn get_batched_execution_plan(
         &self,
-        is_root: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
         // Determine the root nodes. A root node is a node that is not a dependency of any other node
         // Root nodes should always be in the last batch, persistent root nodes should be sorted to the end of the last batch
@@ -613,7 +613,7 @@ impl TaskExecutionGraph {
         // Step 1: Get all nodes that match the predicate, all persistent tasks are considered as roots since no one depends on them
         let mut possible_roots = HashSet::new();
         for node in self.di_graph.node_indices() {
-            if is_root(&self.di_graph[node])? {
+            if filter(&self.di_graph[node])? {
                 possible_roots.insert(node);
             }
         }
@@ -1220,6 +1220,27 @@ mod tests {
             assert_eq!(batch.len(), expected_plan[i].len());
             for (j, task) in batch.iter().enumerate() {
                 assert_eq!(task, &expected_plan[i][j]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_batched_execution_plan_must_not_include_persistent_tasks_if_not_matching_filter()
+     {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let actual_plan = task_graph
+            .get_batched_execution_plan(|n| Ok(n.task_name == "p1t4"))
+            .unwrap();
+
+        for batch in &actual_plan {
+            for task in batch {
+                assert!(
+                    !task.persistent,
+                    "persistent task should not be included in the plan"
+                );
             }
         }
     }
