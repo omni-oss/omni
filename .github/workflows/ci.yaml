@@ -94,5 +94,3 @@ jobs:
   publish-json-schemas:
     needs: release
     uses: ./.github/workflows/publish-json-schemas.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
