@@ -1,7 +1,7 @@
 use clap::CommandFactory as _;
 use clap_complete::Shell;
 
-use crate::{build, context::Context};
+use crate::build;
 
 use super::Cli;
 
@@ -23,10 +23,7 @@ pub struct CompletionArgs {
     pub shell: Option<Shell>,
 }
 
-pub async fn run(
-    completion: &CompletionCommand,
-    _ctx: &Context,
-) -> eyre::Result<()> {
+pub async fn run(completion: &CompletionCommand) -> eyre::Result<()> {
     let shell = completion.args.shell.unwrap_or(Shell::Bash);
 
     clap_complete::generate(
