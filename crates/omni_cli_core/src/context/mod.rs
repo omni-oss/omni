@@ -747,7 +747,7 @@ impl<TSys: ContextSys> Context<TSys> {
             })
             .collect::<Vec<_>>();
 
-        let collected =
+        let mut collected =
             Collector::new(&self.root_dir, &cache_dir, self.sys.clone())
                 .collect(
                     &task_infos,
@@ -759,6 +759,9 @@ impl<TSys: ContextSys> Context<TSys> {
                     },
                 )
                 .await?;
+
+        // hash deterministically by sorting by hash
+        collected.sort_by_key(|c| c.hash);
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
