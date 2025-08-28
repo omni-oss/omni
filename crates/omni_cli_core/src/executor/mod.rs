@@ -145,6 +145,8 @@ pub enum SkipReason {
     PreviousBatchFailure,
     #[strum(to_string = "dependee task failed")]
     DependeeTaskFailure,
+    #[strum(to_string = "task is disabled")]
+    Disabled,
 }
 
 #[derive(Debug, new, EnumIs)]
@@ -185,8 +187,21 @@ impl TaskExecutionResult {
         }
     }
 
+    pub fn is_skipped_due_to_error(&self) -> bool {
+        matches!(
+            self,
+            TaskExecutionResult::Skipped {
+                reason: SkipReason::DependeeTaskFailure
+                    | SkipReason::PreviousBatchFailure,
+                ..
+            }
+        )
+    }
+
     pub fn skipped_or_error(&self) -> bool {
-        self.is_skipped() || self.is_error_before_complete() || !self.success()
+        self.is_skipped_due_to_error()
+            || self.is_error_before_complete()
+            || !self.success()
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
@@ -232,12 +247,12 @@ impl<'a> TaskContext<'a> {
 impl<TSys: ContextSys> TaskExecutor<TSys> {
     pub async fn execute(
         &self,
-    ) -> Result<Vec<TaskExecutionResult>, TaskOrchestratorError> {
+    ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
         let mut ctx = self.context.clone();
         if let Call::Task(task) = &self.call
             && task.is_empty()
         {
-            return Err(TaskOrchestratorErrorInner::TaskIsEmpty.into());
+            return Err(TaskExecutorErrorInner::TaskIsEmpty.into());
         }
 
         ctx.load_projects().await?;
@@ -272,7 +287,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                                 e
                             );
                         })
-                        .map_err(TaskOrchestratorErrorInner::MetaFilter)
+                        .map_err(TaskExecutorErrorInner::MetaFilter)
                 } else {
                     Ok(true)
                 }
@@ -286,7 +301,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
             let projects = ctx.get_filtered_projects(filter)?;
 
             if projects.is_empty() {
-                Err(TaskOrchestratorErrorInner::NoProjectFound {
+                Err(TaskExecutorErrorInner::NoProjectFound {
                     filter: filter.to_string(),
                 })?;
             }
@@ -304,6 +319,9 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                                 full_cmd.clone(),
                                 p.name.clone(),
                                 p.dir.clone(),
+                                true,
+                                false,
+                                false,
                             )
                         })
                         .collect::<Vec<_>>()
@@ -317,6 +335,9 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                                 task.command.clone(),
                                 p.name.clone(),
                                 p.dir.clone(),
+                                task.enabled,
+                                task.interactive,
+                                task.persistent,
                             )
                         })
                     })
@@ -360,6 +381,10 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                                     task: task_name.clone(),
                                 }],
                                 None,
+                                true,
+                                false,
+                                false,
+                                vec![],
                             ),
                         );
                     });
@@ -390,9 +415,7 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
         let task_count: usize = execution_plan.iter().map(|b| b.len()).sum();
 
         if task_count == 0 {
-            Err(TaskOrchestratorErrorInner::NothingToExecute(
-                self.call.clone(),
-            ))?;
+            Err(TaskExecutorErrorInner::NothingToExecute(self.call.clone()))?;
         }
 
         let mut overall_results =
@@ -423,6 +446,14 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                         ),
                     );
                 }
+
+                for task in batch {
+                    trace::info!(
+                        "Skipping task '{}' due to previous batch failure",
+                        task.full_task_name()
+                    );
+                }
+
                 continue 'main_loop;
             }
 
@@ -501,14 +532,32 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
             let mut futs = Vec::with_capacity(task_ctxs.len());
             let mut task_results = Vec::with_capacity(task_ctxs.len());
             'inner_loop: for task_ctx in task_ctxs {
+                if !task_ctx.node.enabled() {
+                    overall_results.insert(
+                        task_ctx.node.full_task_name().to_string(),
+                        TaskExecutionResult::new_skipped(
+                            task_ctx.node.clone(),
+                            SkipReason::Disabled,
+                        ),
+                    );
+
+                    trace::info!(
+                        "Skipping disabled task '{}'",
+                        task_ctx.node.full_task_name()
+                    );
+
+                    continue 'inner_loop;
+                }
+
                 // Short circuit if dependee task failed and the user wants to skip the dependent tasks
                 if self.on_failure == OnFailure::SkipDependents
                     && !task_ctx.dependencies.is_empty()
-                    && task_ctx.dependencies.iter().any(|d| {
-                        overall_results
-                            .get(*d)
-                            .is_some_and(|r| r.skipped_or_error())
-                    })
+                    && let Some(error) =
+                        task_ctx.dependencies.iter().find(|d| {
+                            overall_results
+                                .get(**d)
+                                .is_some_and(|r| r.skipped_or_error())
+                        })
                 {
                     overall_results.insert(
                         task_ctx.node.full_task_name().to_string(),
@@ -516,6 +565,12 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
                             task_ctx.node.clone(),
                             SkipReason::DependeeTaskFailure,
                         ),
+                    );
+
+                    trace::info!(
+                        "Skipping task '{}' due to failed dependency '{}'",
+                        task_ctx.node.full_task_name(),
+                        error
                     );
 
                     continue 'inner_loop;
@@ -739,19 +794,19 @@ fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
 
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
-pub struct TaskOrchestratorError {
+pub struct TaskExecutorError {
     kind: TaskOrchestratorErrorKind,
     #[source]
-    inner: TaskOrchestratorErrorInner,
+    inner: TaskExecutorErrorInner,
 }
 
-impl TaskOrchestratorError {
+impl TaskExecutorError {
     pub fn kind(&self) -> TaskOrchestratorErrorKind {
         self.kind
     }
 }
 
-impl<T: Into<TaskOrchestratorErrorInner>> From<T> for TaskOrchestratorError {
+impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();
         let kind = inner.discriminant();
@@ -761,7 +816,7 @@ impl<T: Into<TaskOrchestratorErrorInner>> From<T> for TaskOrchestratorError {
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(TaskOrchestratorErrorKind), vis(pub))]
-enum TaskOrchestratorErrorInner {
+enum TaskExecutorErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

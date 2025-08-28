@@ -1,5 +1,9 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
 name: "@repo/bridge-rpc"
+
+extends:
+  - "@workspace/omni/presets/ts-lib.omni.yaml"
+
 tasks:
   build:
     command: bun x vite build

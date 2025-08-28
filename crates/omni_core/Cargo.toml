@@ -20,3 +20,4 @@ trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 strum = { workspace = true }
 derive-new = { workspace = true }
+maps = { workspace = true }

@@ -12,3 +12,4 @@ dependencies:
   - omni_types
   - omni_process
   - system_traits
+  - dir_walker
