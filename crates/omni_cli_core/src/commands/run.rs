@@ -105,7 +105,7 @@ pub async fn run(
 
     report_execution_results(&results);
 
-    let has_error = results.iter().any(|r| !r.success());
+    let has_error = results.iter().any(|r| r.skipped_or_error());
 
     Ok(if has_error {
         ExitCode::FAILURE
