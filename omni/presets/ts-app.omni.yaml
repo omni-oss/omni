@@ -7,7 +7,7 @@ extends:
 tasks:
   dev:
     command: bun run dev
-    # persistent: true
+    persistent: true
 
 meta:
   type: app
