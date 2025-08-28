@@ -46,6 +46,7 @@ impl RealGlobDirWalkerConfig {
             IgnoreRealDirWalker::new_with_config(IgnoreRealDirWalkerConfig {
                 standard_filters: self.standard_filters,
                 custom_ignore_filenames: self.custom_ignore_filenames.clone(),
+                filter_entry: None,
                 overrides: Some(IgnoreOverridesConfig {
                     root: self.root_dir.to_string_lossy().to_string(),
                     excludes: self

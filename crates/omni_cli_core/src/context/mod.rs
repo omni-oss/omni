@@ -24,9 +24,7 @@ use trace::Level;
 use ::env_loader::EnvLoaderError;
 use dir_walker::{
     DirEntry as _, DirWalker, Metadata,
-    impls::{
-        IgnoreOverridesConfig, IgnoreRealDirWalker, IgnoreRealDirWalkerConfig,
-    },
+    impls::{IgnoreRealDirWalker, IgnoreRealDirWalkerConfig},
 };
 use eyre::{Context as _, ContextCompat};
 use globset::{Glob, GlobMatcher, GlobSetBuilder};
@@ -263,23 +261,43 @@ impl<TSys: ContextSys> Context<TSys> {
         self.project_meta_configs.get(project_name)
     }
 
-    fn create_default_dir_walker(&self) -> impl DirWalker + 'static {
-        let cfg = IgnoreRealDirWalkerConfig {
-            custom_ignore_filenames: vec![constants::OMNI_IGNORE.to_string()],
-            standard_filters: true,
-            overrides: Some(IgnoreOverridesConfig {
-                root: self.root_dir.to_string_lossy().to_string(),
-                excludes: vec![],
-                includes: self.workspace.projects.clone(),
-            }),
-        };
+    fn create_default_dir_walker(
+        &self,
+    ) -> eyre::Result<impl DirWalker + 'static> {
+        let mut cfg_builder = IgnoreRealDirWalkerConfig::builder();
 
-        IgnoreRealDirWalker::new_with_config(cfg)
+        let mut globset = GlobSetBuilder::new();
+
+        let root = if cfg!(windows) {
+            let root = self.root_dir.to_string_lossy().to_string();
+            if root.contains('\\') {
+                root.replace('\\', "/")
+            } else {
+                root
+            }
+        } else {
+            self.root_dir.to_string_lossy().to_string()
+        };
+        for glob in &self.workspace.projects {
+            globset.add(
+                Glob::new(&format!("{}/{}", root, glob))
+                    .expect("can't create glob"),
+            );
+        }
+        let matcher = globset.build()?;
+
+        let cfg = cfg_builder
+            .standard_filters(true)
+            .filter_entry(move |entry| matcher.is_match(entry.path()))
+            .custom_ignore_filenames(vec![constants::OMNI_IGNORE.to_string()])
+            .build()?;
+
+        Ok(IgnoreRealDirWalker::new_with_config(cfg))
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
     pub async fn load_projects(&mut self) -> eyre::Result<&Vec<Project>> {
-        let dir_walker = self.create_default_dir_walker();
+        let dir_walker = self.create_default_dir_walker()?;
         self.load_projects_with_walker(&dir_walker).await
     }
 

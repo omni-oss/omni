@@ -1,4 +1,4 @@
-use std::result::Result;
+use std::{result::Result, sync::Arc};
 
 use derive_builder::Builder;
 use ignore::{WalkState, overrides::OverrideBuilder};
@@ -6,11 +6,34 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{DirEntry, DirWalkerBase, Metadata};
 
-#[derive(Clone, Debug, Builder)]
+pub type Predicate =
+    Arc<dyn Fn(&ignore::DirEntry) -> bool + Send + Sync + 'static>;
+
+#[derive(Clone, Builder)]
+#[builder(setter(into, strip_option))]
 pub struct IgnoreRealDirWalkerConfig {
     pub standard_filters: bool,
     pub custom_ignore_filenames: Vec<String>,
+    #[builder(default)]
     pub overrides: Option<IgnoreOverridesConfig>,
+    #[builder(setter(custom), default)]
+    pub filter_entry: Option<Predicate>,
+}
+
+impl IgnoreRealDirWalkerConfigBuilder {
+    pub fn filter_entry<F>(&mut self, filter_entry: F) -> &mut Self
+    where
+        F: Fn(&ignore::DirEntry) -> bool + Send + Sync + 'static,
+    {
+        self.filter_entry = Some(Some(Arc::new(filter_entry)));
+        self
+    }
+}
+
+impl IgnoreRealDirWalkerConfig {
+    pub fn builder() -> IgnoreRealDirWalkerConfigBuilder {
+        IgnoreRealDirWalkerConfigBuilder::default()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -26,6 +49,7 @@ impl Default for IgnoreRealDirWalkerConfig {
             standard_filters: true,
             custom_ignore_filenames: vec![],
             overrides: None,
+            filter_entry: None,
         }
     }
 }
@@ -68,7 +92,7 @@ impl IgnoreRealDirWalkerConfig {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct IgnoreRealDirWalker {
     config: IgnoreRealDirWalkerConfig,
 }
