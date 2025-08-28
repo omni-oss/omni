@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     configurations::{
         CacheConfiguration, MetaConfiguration, TaskOutputConfiguration,
+        utils::default_true,
     },
     core::Task,
 };
@@ -26,8 +27,22 @@ pub struct TaskConfigurationLongForm {
     )]
     pub dependencies: ListConfig<TaskDependencyConfiguration>,
 
+    #[serde(
+        default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
+    )]
+    pub siblings: ListConfig<TaskDependencyConfiguration>,
+
     #[serde(default)]
     pub description: Option<String>,
+
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    #[serde(default)]
+    pub interactive: bool,
+
+    #[serde(default)]
+    pub persistent: bool,
 
     #[serde(default)]
     pub env: TaskEnvConfiguration,
@@ -40,6 +55,24 @@ pub struct TaskConfigurationLongForm {
 
     #[serde(default)]
     pub meta: MetaConfiguration,
+}
+
+impl Default for TaskConfigurationLongForm {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            dependencies: ListConfig::append(vec![]),
+            description: None,
+            env: TaskEnvConfiguration::default(),
+            cache: CacheConfiguration::default(),
+            output: TaskOutputConfiguration::default(),
+            meta: MetaConfiguration::default(),
+            enabled: true,
+            interactive: false,
+            persistent: false,
+            siblings: ListConfig::append(vec![]),
+        }
+    }
 }
 
 #[derive(
@@ -87,16 +120,28 @@ impl TaskConfiguration {
                     task: name.to_string(),
                 }],
                 None,
+                true,
+                false,
+                false,
+                vec![],
             ),
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
                 command,
                 dependencies,
                 description,
+                enabled,
+                interactive,
+                persistent,
+                siblings: with,
                 ..
             }) => Task::new(
                 command.clone(),
                 dependencies.iter().cloned().map(Into::into).collect(),
                 description.clone(),
+                *enabled,
+                *interactive,
+                *persistent,
+                with.iter().cloned().map(Into::into).collect(),
             ),
         }
     }
@@ -155,6 +200,10 @@ impl Merge for TaskConfiguration {
                     cache: a_cache_key,
                     output: a_output,
                     meta: a_meta,
+                    enabled: a_enabled,
+                    interactive: a_interactive,
+                    persistent: a_persistent,
+                    siblings: a_with,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -164,6 +213,10 @@ impl Merge for TaskConfiguration {
                     cache: b_cache_key,
                     output: b_output,
                     meta: b_meta,
+                    enabled: b_enabled,
+                    interactive: b_interactive,
+                    persistent: b_persistent,
+                    siblings: b_with,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -175,6 +228,10 @@ impl Merge for TaskConfiguration {
                 a_cache_key.merge(b_cache_key);
                 a_output.merge(b_output);
                 a_meta.merge(b_meta);
+                *a_enabled = b_enabled;
+                *a_interactive = b_interactive;
+                *a_persistent = b_persistent;
+                a_with.merge(b_with);
             }
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
@@ -211,6 +268,7 @@ mod tests {
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
             meta: Default::default(),
+            ..TaskConfigurationLongForm::default()
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -226,6 +284,7 @@ mod tests {
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
             meta: Default::default(),
+            ..TaskConfigurationLongForm::default()
         });
 
         a.merge(b);
@@ -240,6 +299,7 @@ mod tests {
                 cache: Default::default(),
                 output: Default::default(),
                 meta: Default::default(),
+                ..TaskConfigurationLongForm::default()
             })
         );
     }

@@ -8,7 +8,7 @@ use petgraph::{
     Direction,
     algo::is_cyclic_directed,
     graph::{DiGraph, NodeIndex},
-    visit::{Dfs, Topo, Walker},
+    visit::{Dfs, IntoNeighborsDirected as _, Reversed, Topo, Walker},
 };
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -24,6 +24,9 @@ pub struct TaskExecutionNode {
     project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
+    enabled: bool,
+    interactive: bool,
+    persistent: bool,
 }
 
 impl TaskExecutionNode {
@@ -32,6 +35,9 @@ impl TaskExecutionNode {
         task_command: impl Into<String>,
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
+        enabled: bool,
+        interactive: bool,
+        persistent: bool,
     ) -> Self {
         let project_name = project_name.into();
         let task_name = task_name.into();
@@ -41,6 +47,9 @@ impl TaskExecutionNode {
             task_command: task_command.into(),
             project_name,
             project_dir: project_dir.into(),
+            enabled,
+            interactive,
+            persistent,
         }
     }
 }
@@ -66,16 +75,41 @@ impl TaskExecutionNode {
         self.full_task_name.as_str()
     }
 
-    /// (task_name, task_command, project_name, project_dir, full_task_name)
-    pub fn deconstruct(self) -> (String, String, String, PathBuf, String) {
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn interactive(&self) -> bool {
+        self.interactive
+    }
+
+    pub fn persistent(&self) -> bool {
+        self.persistent
+    }
+
+    /// (task_name, task_command, project_name, project_dir, full_task_name, enabled, interactive, persistent)
+    pub fn deconstruct(
+        self,
+    ) -> (String, String, String, PathBuf, String, bool, bool, bool) {
         (
             self.task_name,
             self.task_command,
             self.project_name,
             self.project_dir,
             self.full_task_name,
+            self.enabled,
+            self.interactive,
+            self.persistent,
         )
     }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Copy,
+)]
+pub enum EdgeType {
+    Dependency,
+    Sibling,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Copy)]
@@ -92,10 +126,12 @@ impl TaskKey {
     }
 }
 
+type InnerGraph = DiGraph<TaskExecutionNode, EdgeType>;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct TaskExecutionGraph {
     node_map: HashMap<TaskKey, NodeIndex>,
-    di_graph: DiGraph<TaskExecutionNode, ()>,
+    di_graph: InnerGraph,
 }
 
 impl TaskExecutionGraph {
@@ -125,12 +161,17 @@ impl TaskExecutionGraph {
                     task.1.command.clone(),
                     project_name.to_string(),
                     project_dir.to_path_buf(),
+                    task.1.enabled,
+                    task.1.interactive,
+                    task.1.persistent,
                 );
 
-                let node_index = graph.di_graph.add_node(task_execution_node);
-                graph
-                    .node_map
-                    .insert(TaskKey::new(project_name, task_name), node_index);
+                let dep_node_index =
+                    graph.di_graph.add_node(task_execution_node.clone());
+                graph.node_map.insert(
+                    TaskKey::new(project_name, task_name),
+                    dep_node_index,
+                );
             }
         }
 
@@ -148,6 +189,7 @@ impl TaskExecutionGraph {
                                 tname,
                                 &project.name,
                                 task,
+                                EdgeType::Dependency,
                             )?;
                         }
                         crate::TaskDependency::ExplicitProject {
@@ -155,17 +197,59 @@ impl TaskExecutionGraph {
                             task,
                         } => {
                             graph.add_edge_by_names(
-                                pname, tname, project, task,
+                                pname,
+                                tname,
+                                project,
+                                task,
+                                EdgeType::Dependency,
                             )?;
                         }
                         crate::TaskDependency::Upstream { task } => {
-                            add_upstream_dependencies(
+                            add_upstream(
                                 project_graph,
                                 &mut graph,
                                 project,
                                 pname,
                                 tname,
                                 task,
+                                EdgeType::Dependency,
+                            )?;
+                        }
+                    };
+                }
+
+                for sibling in task.1.siblings.iter() {
+                    match sibling {
+                        crate::TaskDependency::Own { task } => {
+                            graph.add_edge_by_names(
+                                pname,
+                                tname,
+                                &project.name,
+                                task,
+                                EdgeType::Sibling,
+                            )?;
+                        }
+                        crate::TaskDependency::ExplicitProject {
+                            project,
+                            task,
+                        } => {
+                            graph.add_edge_by_names(
+                                pname,
+                                tname,
+                                project,
+                                task,
+                                EdgeType::Sibling,
+                            )?;
+                        }
+                        crate::TaskDependency::Upstream { task } => {
+                            add_upstream(
+                                project_graph,
+                                &mut graph,
+                                project,
+                                pname,
+                                tname,
+                                task,
+                                EdgeType::Sibling,
                             )?;
                         }
                     };
@@ -177,13 +261,14 @@ impl TaskExecutionGraph {
     }
 }
 
-fn add_upstream_dependencies(
+fn add_upstream(
     project_graph: &ProjectGraph,
     task_graph: &mut TaskExecutionGraph,
     project: &&Project,
     dependent_project_name: &str,
     dependent_task_name: &str,
     task: &str,
+    edge_type: EdgeType,
 ) -> Result<(), TaskExecutionGraphError> {
     let dependencies =
         project_graph.get_direct_dependencies_by_name(&project.name)?;
@@ -194,27 +279,39 @@ fn add_upstream_dependencies(
 
     for (_, p) in dependencies.iter() {
         if p.tasks.contains_key(task) {
-            if !task_graph.contains_dependency_by_names(
-                dependent_project_name,
-                dependent_task_name,
-                &p.name,
-                task,
-            )? {
+            let add = match edge_type {
+                EdgeType::Dependency => !task_graph
+                    .contains_dependency_by_names(
+                        dependent_project_name,
+                        dependent_task_name,
+                        &p.name,
+                        task,
+                    )?,
+                EdgeType::Sibling => !task_graph.contains_sibling_by_names(
+                    dependent_project_name,
+                    dependent_task_name,
+                    &p.name,
+                    task,
+                )?,
+            };
+            if add {
                 task_graph.add_edge_by_names(
                     dependent_project_name,
                     dependent_task_name,
                     &p.name,
                     task,
+                    edge_type,
                 )?;
             }
         } else {
-            add_upstream_dependencies(
+            add_upstream(
                 project_graph,
                 task_graph,
                 &p,
                 dependent_project_name,
                 dependent_task_name,
                 task,
+                edge_type,
             )?;
         };
     }
@@ -223,7 +320,32 @@ fn add_upstream_dependencies(
 
 pub type BatchedExecutionPlan = Vec<Vec<TaskExecutionNode>>;
 
+macro_rules! filtered_graph {
+    ($graph:expr, $edge_type:expr) => {
+        petgraph::visit::EdgeFiltered::from_fn($graph, |e| {
+            *e.weight() == $edge_type
+        })
+    };
+}
+
 impl TaskExecutionGraph {
+    fn has_connected_node(
+        &self,
+        from: NodeIndex,
+        to: NodeIndex,
+        edge_type: EdgeType,
+    ) -> TaskExecutionGraphResult<bool> {
+        let edge = self.di_graph.find_edge(to, from);
+
+        if let Some(edge) = edge
+            && self.di_graph[edge] == edge_type
+        {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
     fn contains_dependency_by_names(
         &self,
         dependent_project_name: &str,
@@ -240,41 +362,59 @@ impl TaskExecutionGraph {
             dependee_task_name,
         )?;
 
-        self.contains_dependency(depedent, dependee)
+        self.has_connected_node(depedent, dependee, EdgeType::Dependency)
     }
 
-    fn contains_dependency(
+    fn contains_sibling_by_names(
         &self,
-        dependent_idx: NodeIndex,
-        dependee_idx: NodeIndex,
+        from_project_name: &str,
+        from_task_name: &str,
+        to_project_name: &str,
+        to_task_name: &str,
     ) -> TaskExecutionGraphResult<bool> {
-        Ok(self.di_graph.contains_edge(dependee_idx, dependent_idx))
+        let from =
+            self.get_task_index_by_name(from_project_name, from_task_name)?;
+        let to = self.get_task_index_by_name(to_project_name, to_task_name)?;
+
+        self.has_connected_node(from, to, EdgeType::Sibling)
     }
 
     fn add_edge_by_names(
         &mut self,
-        dependent_project_name: &str,
-        dependent_task_name: &str,
-        dependee_project_name: &str,
-        dependee_task_name: &str,
+        from_project_name: &str,
+        from_task_name: &str,
+        to_project_name: &str,
+        to_task_name: &str,
+        edge_type: EdgeType,
     ) -> TaskExecutionGraphResult<()> {
-        let a_idx = self.get_task_index_by_name(
-            dependee_project_name,
-            dependee_task_name,
-        )?;
-        let b_idx = self.get_task_index_by_name(
-            dependent_project_name,
-            dependent_task_name,
-        )?;
+        let to_idx =
+            self.get_task_index_by_name(to_project_name, to_task_name)?;
 
-        let edge_idx = self.di_graph.add_edge(a_idx, b_idx, ());
+        if edge_type == EdgeType::Dependency && self.di_graph[to_idx].persistent
+        {
+            return Err(
+                TaskExecutionGraphError::cant_depend_on_persistent_task(
+                    from_project_name,
+                    from_task_name,
+                    to_project_name,
+                    to_task_name,
+                ),
+            );
+        }
 
-        if is_cyclic_directed(&self.di_graph) {
+        let from_idx =
+            self.get_task_index_by_name(from_project_name, from_task_name)?;
+
+        let edge_idx = self.di_graph.add_edge(to_idx, from_idx, edge_type);
+
+        let graph = filtered_graph!(&self.di_graph, edge_type);
+
+        if is_cyclic_directed(&graph) {
             self.di_graph.remove_edge(edge_idx);
-            let dependee = self.di_graph[b_idx].clone();
-            let dependent = self.di_graph[a_idx].clone();
+            let dependee = self.di_graph[from_idx].clone();
+            let dependent = self.di_graph[to_idx].clone();
 
-            return Err(TaskExecutionGraphError::cyclic_dependency(
+            return Err(TaskExecutionGraphError::cycle_detected(
                 dependent.project_name(),
                 dependent.task_name(),
                 dependee.project_name(),
@@ -419,36 +559,44 @@ impl TaskExecutionGraph {
         &self,
         task_index: NodeIndex,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, TaskExecutionNode)>> {
-        self.get_direct_dependencies_impl(task_index, |ni, node| {
-            (ni, node.clone())
-        })
+        self.get_connected_nodes_impl(
+            task_index,
+            EdgeType::Dependency,
+            |ni, node| (ni, node.clone()),
+        )
     }
 
-    fn get_direct_dependencies_impl<'a, R>(
+    fn get_connected_nodes_impl<'a, R>(
         &'a self,
         task_index: NodeIndex,
+        edge_type: EdgeType,
         map: impl Fn(NodeIndex, &'a TaskExecutionNode) -> R,
     ) -> TaskExecutionGraphResult<Vec<R>>
     where
         R: 'a,
     {
-        let neighbors = self
-            .di_graph
-            .neighbors_directed(task_index, Direction::Incoming);
+        let map = |ni| {
+            let node = &self.di_graph[ni];
+            map(ni, node)
+        };
 
-        Ok(neighbors
-            .map(|ni| {
-                let node = &self.di_graph[ni];
-                map(ni, node)
-            })
-            .collect())
+        let graph = filtered_graph!(&self.di_graph, edge_type);
+
+        let neighbors =
+            graph.neighbors_directed(task_index, Direction::Incoming);
+
+        Ok(neighbors.map(map).collect())
     }
 
     pub fn get_direct_dependencies_ref(
         &self,
         task_index: NodeIndex,
     ) -> TaskExecutionGraphResult<Vec<(NodeIndex, &TaskExecutionNode)>> {
-        self.get_direct_dependencies_impl(task_index, |ni, node| (ni, node))
+        self.get_connected_nodes_impl(
+            task_index,
+            EdgeType::Dependency,
+            |ni, node| (ni, node),
+        )
     }
 
     #[cfg_attr(
@@ -457,59 +605,61 @@ impl TaskExecutionGraph {
     )]
     pub fn get_batched_execution_plan(
         &self,
-        is_root_node: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        criteria: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
-        let mut roots = HashSet::new();
+        // Determine the root nodes. A root node is a node that is not a dependency of any other node
+        // Root nodes should always be in the last batch, persistent root nodes should be sorted to the end of the last batch
 
-        // Step 1: Get all nodes that match the predicate
+        // Step 1: Get all nodes that match the predicate, all persistent tasks are considered as roots since no one depends on them
+        let mut possible_roots = HashSet::new();
         for node in self.di_graph.node_indices() {
-            if is_root_node(&self.di_graph[node])? {
-                roots.insert(node);
+            if criteria(&self.di_graph[node])?
+                || self.di_graph[node].persistent()
+            {
+                possible_roots.insert(node);
             }
         }
 
-        let mut filtered = vec![];
+        let mut actual_roots = vec![];
 
-        let graph = &self.di_graph;
-        // Step 2: Filter out nodes that are direct or indirect dependencies of other nodes
-        for i in roots.iter() {
-            let other_roots = roots
+        let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
+        // Step 2: Filter out root nodes that are direct or indirect dependencies of other root nodes
+        for i in possible_roots.iter() {
+            let other_roots = possible_roots
                 .difference(&HashSet::from([*i]))
                 .copied()
                 .collect::<HashSet<_>>();
-            let dfs = Dfs::new(&graph, *i);
+            let dfs = Dfs::new(&dep_graph, *i);
 
-            if dfs.iter(&graph).any(|n| other_roots.contains(&n)) {
+            if dfs.iter(&dep_graph).any(|n| other_roots.contains(&n)) {
                 continue;
             }
 
-            filtered.push(*i);
+            actual_roots.push(*i);
         }
 
         // Step 3: Get all reachable nodes based from filtered roots
         let mut reachable = HashSet::new();
-        let mut stack = filtered.clone();
+        let mut stack = actual_roots.clone();
         while let Some(i) = stack.pop() {
             if reachable.insert(i) {
-                for n in
-                    self.di_graph.neighbors_directed(i, Direction::Incoming)
-                {
+                for n in dep_graph.neighbors_directed(i, Direction::Incoming) {
                     stack.push(n);
                 }
             }
         }
 
-        // Step 4: Assign levels = max(level of predecessors) + 1
+        // Use longest path to determine the level of each node
+        // Level = max(level of predecessors) + 1
         let mut levels = HashMap::new();
-        let mut topo = Topo::new(&self.di_graph);
+        let mut topo = Topo::new(&dep_graph);
 
-        while let Some(node) = topo.next(&self.di_graph) {
+        while let Some(node) = topo.next(&dep_graph) {
             if !reachable.contains(&node) {
                 continue;
             }
 
-            let level = self
-                .di_graph
+            let level = dep_graph
                 .neighbors_directed(node, Direction::Incoming)
                 .filter(|n| reachable.contains(n))
                 .map(|n| levels.get(&n).copied().unwrap_or(0))
@@ -517,6 +667,34 @@ impl TaskExecutionGraph {
                 .unwrap_or(0);
 
             levels.insert(node, level + 1);
+        }
+
+        let max_level = *levels.values().max().unwrap_or(&0);
+        for (node, level) in levels.iter_mut() {
+            let node = &self.di_graph[*node];
+
+            // if the node is persistent, it should be sorted to the end of the last batch
+            if node.persistent {
+                *level = max_level;
+            }
+        }
+
+        // add sibling nodes
+        let sibling_graph = filtered_graph!(&self.di_graph, EdgeType::Sibling);
+        let reversed = Reversed(&sibling_graph);
+        for (node, level) in levels.clone() {
+            let dfs = Dfs::new(reversed, node);
+
+            for n in dfs.iter(reversed) {
+                // bring down the level of the existing node to the level of the sibling node if it is higher
+                if let Some(n) = levels.get_mut(&n)
+                    && *n > level
+                {
+                    *n = level;
+                } else {
+                    levels.insert(n, level);
+                }
+            }
         }
 
         // Step 5: Group nodes by level
@@ -584,15 +762,33 @@ impl TaskExecutionGraphError {
     }
 
     #[doc(hidden)]
-    pub fn cyclic_dependency(
+    pub fn cycle_detected(
         from_project: &str,
         from_task: &str,
         to_project: &str,
         to_task: &str,
     ) -> Self {
         Self {
-            kind: TaskExecutionGraphErrorKind::CyclicDependency,
-            inner: TaskExecutionGraphErrorInner::CyclicDependency {
+            kind: TaskExecutionGraphErrorKind::CycleDetected,
+            inner: TaskExecutionGraphErrorInner::CycleDetected {
+                from_project: from_project.to_string(),
+                from_task: from_task.to_string(),
+                to_project: to_project.to_string(),
+                to_task: to_task.to_string(),
+            },
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn cant_depend_on_persistent_task(
+        from_project: &str,
+        from_task: &str,
+        to_project: &str,
+        to_task: &str,
+    ) -> Self {
+        Self {
+            kind: TaskExecutionGraphErrorKind::CantDependOnPersistentTask,
+            inner: TaskExecutionGraphErrorInner::CantDependOnPersistentTask {
                 from_project: from_project.to_string(),
                 from_task: from_task.to_string(),
                 to_project: to_project.to_string(),
@@ -631,9 +827,19 @@ enum TaskExecutionGraphErrorInner {
     TaskNotFoundByKey { key: TaskKey },
 
     #[error(
-        "cyclic dependency detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
+        "cycle detected from '{from_project}#{from_task}' to '{to_project}#{to_task}'"
     )]
-    CyclicDependency {
+    CycleDetected {
+        from_project: String,
+        from_task: String,
+        to_project: String,
+        to_task: String,
+    },
+
+    #[error(
+        "can't depend on persistent task '{from_project}#{from_task}' from '{to_project}#{to_task}'"
+    )]
+    CantDependOnPersistentTask {
         from_project: String,
         from_task: String,
         to_project: String,
@@ -686,6 +892,10 @@ mod tests {
                 .task("shared-task-3", "echo shared-task-3", |b| {
                     b.upstream_dependency("shared-task-3")
                 })
+                .task("sibling-1", "echo sibling-1", |b| {
+                    b.persistent(true)
+                        .explicit_project_sibling("project2", "sibling-2")
+                })
                 .build(),
             ..create_project("project1")
         };
@@ -701,6 +911,12 @@ mod tests {
                     b.explicit_project_dependency("project3", "shared-task-3")
                         .own_dependency("p2t1")
                 })
+                .task("sibling-2", "echo sibling-2", |b| {
+                    b.own_sibling("sibling-2.1")
+                })
+                .task("sibling-2.1", "echo sibling-2.1", |b| {
+                    b.upstream_sibling("sibling-3")
+                })
                 .build(),
             ..create_project("project2")
         };
@@ -714,6 +930,9 @@ mod tests {
                 .task("shared-task-3", "echo shared-task-3", |b| {
                     b.upstream_dependency("shared-task-3")
                 })
+                .task("sibling-3", "echo sibling-3", |b| {
+                    b.upstream_sibling("sibling-4")
+                })
                 .build(),
             ..create_project("project3")
         };
@@ -722,6 +941,7 @@ mod tests {
             tasks: TasksBuilder::new()
                 .task("p4t1", "echo p4t1", |b| b)
                 .task("shared-task-3", "echo shared-task-3", |b| b)
+                .task("sibling-4", "echo sibling-4", |b| b)
                 .build(),
             ..create_project("project4")
         };
@@ -738,7 +958,7 @@ mod tests {
         let task_graph =
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
-        assert_eq!(task_graph.count(), 14, "Should have 14 nodes");
+        assert_eq!(task_graph.count(), 19, "Should have 19 nodes");
     }
 
     #[test]
@@ -884,18 +1104,27 @@ mod tests {
                     "echo p3t1".to_string(),
                     "project3".to_string(),
                     blank_path.clone(),
+                    true,
+                    false,
+                    false,
                 ),
                 TaskExecutionNode::new(
                     "p2t1".to_string(),
                     "echo p2t1".to_string(),
                     "project2".to_string(),
                     blank_path.clone(),
+                    true,
+                    false,
+                    false,
                 ),
                 TaskExecutionNode::new(
                     "shared-task-3".to_string(),
                     "echo shared-task-3".to_string(),
                     "project4".to_string(),
                     blank_path.clone(),
+                    true,
+                    false,
+                    false,
                 ),
             ],
             vec![TaskExecutionNode::new(
@@ -903,25 +1132,84 @@ mod tests {
                 "echo shared-task-3".to_string(),
                 "project3".to_string(),
                 blank_path.clone(),
+                true,
+                false,
+                false,
             )],
             vec![TaskExecutionNode::new(
                 "shared-task-3".to_string(),
                 "echo shared-task-3".to_string(),
                 "project2".to_string(),
                 blank_path.clone(),
+                true,
+                false,
+                false,
             )],
             vec![TaskExecutionNode::new(
                 "shared-task-3".to_string(),
                 "echo shared-task-3".to_string(),
                 "project1".to_string(),
                 blank_path.clone(),
+                true,
+                false,
+                false,
             )],
-            vec![TaskExecutionNode::new(
-                "p1t4".to_string(),
-                "echo p1t4".to_string(),
-                "project1".to_string(),
-                blank_path.clone(),
-            )],
+            vec![
+                TaskExecutionNode::new(
+                    "p1t4".to_string(),
+                    "echo p1t4".to_string(),
+                    "project1".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    false,
+                ),
+                TaskExecutionNode::new(
+                    "sibling-2".to_string(),
+                    "echo sibling-2".to_string(),
+                    "project2".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    false,
+                ),
+                TaskExecutionNode::new(
+                    "sibling-2.1".to_string(),
+                    "echo sibling-2.1".to_string(),
+                    "project2".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    false,
+                ),
+                TaskExecutionNode::new(
+                    "sibling-3".to_string(),
+                    "echo sibling-3".to_string(),
+                    "project3".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    false,
+                ),
+                TaskExecutionNode::new(
+                    "sibling-4".to_string(),
+                    "echo sibling-4".to_string(),
+                    "project4".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    false,
+                ),
+                TaskExecutionNode::new(
+                    "sibling-1".to_string(),
+                    "echo sibling-1".to_string(),
+                    "project1".to_string(),
+                    blank_path.clone(),
+                    true,
+                    false,
+                    true,
+                ),
+            ],
         ];
 
         expected_plan.iter_mut().for_each(|batch| {
@@ -929,6 +1217,7 @@ mod tests {
         });
 
         for (i, batch) in actual_plan.iter().enumerate() {
+            assert_eq!(batch.len(), expected_plan[i].len());
             for (j, task) in batch.iter().enumerate() {
                 assert_eq!(task, &expected_plan[i][j]);
             }

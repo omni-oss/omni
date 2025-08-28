@@ -113,6 +113,7 @@ impl TaskGenerator {
                     })
                     .collect(),
             ),
+            ..Default::default()
         }))
     }
 }

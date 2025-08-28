@@ -13,7 +13,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant};
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
 #[derive(Debug, thiserror::Error)]
-#[error("ProjectGraphError: {inner}")]
+#[error("{inner}")]
 pub struct ProjectGraphError {
     kind: ProjectGraphErrorKind,
     #[source]
@@ -128,11 +128,6 @@ impl ProjectGraph {
 }
 
 impl ProjectGraph {
-    // #[inline(always)]
-    // pub(crate) fn raw_graph(&self) -> &DiGraph<Project, ()> {
-    //     &self.di_graph
-    // }
-
     #[inline(always)]
     pub fn count(&self) -> usize {
         self.di_graph.node_count()
@@ -227,11 +222,11 @@ impl ProjectGraph {
 
     pub fn get_direct_dependencies(
         &self,
-        project_index: NodeIndex,
+        node_index: NodeIndex,
     ) -> ProjectGraphResult<Vec<(NodeIndex, Project)>> {
         let projects = self
             .di_graph
-            .edges_directed(project_index, Direction::Incoming)
+            .edges_directed(node_index, Direction::Incoming)
             .map(|edge| (edge.source(), self.di_graph[edge.source()].clone()))
             .collect::<Vec<_>>();
 
