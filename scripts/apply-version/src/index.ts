@@ -24,16 +24,21 @@ if (await Bun.file(`${currentDir}/.version`).exists()) {
     versionText = (await Bun.file(`${currentDir}/.version`).text()).trim();
     console.log(`Found version file containing: ${versionText}`);
 } else {
-    const gitTag = await git().tag(["--points-at", "HEAD"]);
+    let version = (await git().tag(["--points-at", "HEAD"])).trim();
 
-    if (gitTag.trim() === "") {
-        console.error("No git tag found");
+    if (!version) {
+        const hash = await git().revparse(["HEAD"]);
+        version = `v0.0.0-${hash.trim()}`;
+    }
+
+    if (!version) {
+        console.error("Failed to determine version");
         process.exit(1);
     }
 
-    console.log(`Found git tag: ${gitTag}`);
+    console.log(`Found version: ${version}`);
 
-    versionText = (gitTag.startsWith("v") ? gitTag.slice(1) : gitTag).trim();
+    versionText = (version.startsWith("v") ? version.slice(1) : version).trim();
 }
 
 if (!VERSION_REGEX.test(versionText)) {
