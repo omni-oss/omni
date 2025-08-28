@@ -92,35 +92,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   publish-json-schemas:
-    runs-on: ubuntu-latest
     needs: release
-    if: github.ref_type == 'tag'
-    steps:
-      - name: Setup Omni
-        uses: omni-oss/setup-omni@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate JSON Schemas
-        shell: bash
-        run: |
-          mkdir -p ./json-schemas
-          INSTALLED_VERSION=$(omni --version | cut -d' ' -f2)
-
-          # loop through all the json schemas and publish them
-          schemas=("project" "workspace" "generator")
-          for schema in "${schemas[@]}"; do
-            echo "Publishing $schema schema..."
-            
-            omni config print-schema $schema >| "./json-schemas/$schema-$INSTALLED_VERSION.json"
-            omni config print-schema $schema >| "./json-schemas/$schema-latest.json"
-          done
-
-      - name: Publish JSON Schemas
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          publish_branch: json-schemas
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./json-schemas
-          destination_dir: ./artifacts/json-schemas
-          keep_files: true
+    uses: ./.github/workflows/publish-json-schemas.yaml
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
