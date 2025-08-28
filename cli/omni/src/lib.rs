@@ -24,34 +24,41 @@ fn init_tracing(config: &TracerConfig) -> eyre::Result<()> {
     Ok(())
 }
 
+#[inline(always)]
 fn exit(code: ExitCode) -> ! {
     std::process::exit(if code == ExitCode::SUCCESS { 0 } else { 1 })
 }
 
-pub async fn run(cli: Cli) -> eyre::Result<()> {
+#[inline(always)]
+fn ctx(cli: &Cli) -> eyre::Result<context::Context<RealSys>> {
     let sys = RealSys;
-    let mut context =
-        context::Context::from_args_and_sys(&cli.args, sys.clone())?;
+    context::Context::from_args_and_sys(&cli.args, sys)
+}
 
+pub async fn run(cli: Cli) -> eyre::Result<()> {
     match cli.subcommand {
+        CliSubcommands::Config(ref config) => {
+            commands::config::run(config).await?;
+        }
+        CliSubcommands::Completion(ref completion) => {
+            commands::completion::run(completion).await?;
+        }
         CliSubcommands::Exec(ref exec) => {
+            let context = ctx(&cli)?;
             let res = commands::exec::run(exec, &context).await?;
             exit(res);
         }
         CliSubcommands::Env(ref env) => {
+            let mut context = ctx(&cli)?;
             commands::env::run(env, &mut context).await?;
         }
-        CliSubcommands::Config(ref config) => {
-            commands::config::run(config, &context).await?;
-        }
-        CliSubcommands::Completion(ref completion) => {
-            commands::completion::run(completion, &context).await?;
-        }
         CliSubcommands::Run(ref run) => {
+            let context = ctx(&cli)?;
             let res = commands::run::run(run, &context).await?;
             exit(res);
         }
         CliSubcommands::Hash(ref hash_command) => {
+            let context = ctx(&cli)?;
             commands::hash::run(hash_command, &context).await?;
         }
     }

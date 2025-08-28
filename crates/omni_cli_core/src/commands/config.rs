@@ -1,11 +1,8 @@
 use clap::ValueEnum;
 use schemars::{Schema as SchemarsSchema, schema_for};
 
-use crate::{
-    configurations::{
-        GeneratorConfiguration, ProjectConfiguration, WorkspaceConfiguration,
-    },
-    context::Context,
+use crate::configurations::{
+    GeneratorConfiguration, ProjectConfiguration, WorkspaceConfiguration,
 };
 
 #[derive(clap::Args)]
@@ -58,7 +55,7 @@ fn output_schema(
     Ok(())
 }
 
-pub async fn run(config: &ConfigCommand, _ctx: &Context) -> eyre::Result<()> {
+pub async fn run(config: &ConfigCommand) -> eyre::Result<()> {
     match config.subcommand {
         ConfigSubcommands::PrintSchema {
             schema: ref subcommand,
