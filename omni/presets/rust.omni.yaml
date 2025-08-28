@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: rust
+
+cache:
+  enabled: true
+  key:
+    defaults: true
+    files:
+      - "Cargo.toml"
+      - "./src/**/*.rs"
+
+extends:
+  - "./base.omni.yaml"
+
+tasks:
+  test:
+    command: cargo test -p ${PROJECT_NAME}
+    dependencies:
+      - ^test
+    cache:
+      key:
+        files:
+          append: ["./tests/**/*.rs"]
+
+  bench:
+    command: cargo bench -p ${PROJECT_NAME}
+    dependencies:
+      - test
+      - ^bench
+    cache:
+      key:
+        files:
+          append: ["./benches/**/*.rs"]
+
+  profile:
+    command: cargo flamegraph --profile=${profile:-bench-with-debug} --bench ${bench:-${PROJECT_NAME}_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
+
+meta:
+  language: rust

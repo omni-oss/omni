@@ -2,7 +2,7 @@
 name: rust-cli
 
 extends:
-  - ./rust-lib.omni.yaml
+  - ./rust.omni.yaml
 
 tasks:
   build:

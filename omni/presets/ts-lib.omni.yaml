@@ -1,8 +1,8 @@
 # yaml-language-server: $schema=../../artifacts/json-schemas/project.json
-name: rust-lib
+name: ts-lib
 
 extends:
-  - "./rust.omni.yaml"
+  - "./ts.omni.yaml"
 
 meta:
   type: lib

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../artifacts/json-schemas/project.json
+name: ts
+
+cache:
+  enabled: true
+  key:
+    defaults: true
+    files:
+      - "package.json"
+      - "./src/**/*.{ts,tsx,js,jsx,cjs,mjs,mts,cts}"
+
+extends:
+  - "./base.omni.yaml"
+
+meta:
+  language: typescript
