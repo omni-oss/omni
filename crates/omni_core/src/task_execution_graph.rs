@@ -605,7 +605,7 @@ impl TaskExecutionGraph {
     )]
     pub fn get_batched_execution_plan(
         &self,
-        criteria: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        is_root: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
         // Determine the root nodes. A root node is a node that is not a dependency of any other node
         // Root nodes should always be in the last batch, persistent root nodes should be sorted to the end of the last batch
@@ -613,7 +613,7 @@ impl TaskExecutionGraph {
         // Step 1: Get all nodes that match the predicate, all persistent tasks are considered as roots since no one depends on them
         let mut possible_roots = HashSet::new();
         for node in self.di_graph.node_indices() {
-            if criteria(&self.di_graph[node])? {
+            if is_root(&self.di_graph[node])? {
                 possible_roots.insert(node);
             }
         }
@@ -1086,7 +1086,9 @@ mod tests {
             TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
 
         let mut actual_plan = task_graph
-            .get_batched_execution_plan(|n| Ok(n.task_name == "p1t4"))
+            .get_batched_execution_plan(|n| {
+                Ok(n.task_name == "p1t4" || n.task_name == "sibling-1")
+            })
             .unwrap();
 
         actual_plan.iter_mut().for_each(|batch| {
