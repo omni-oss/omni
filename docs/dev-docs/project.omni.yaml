@@ -5,10 +5,10 @@ extends:
 
 tasks:
   test:unit:
-    enabled: false
+    command: ""
 
   test:integration:
-    enabled: false
+    command: ""
 
   test:
-    enabled: false
+    command: ""
