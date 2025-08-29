@@ -1,7 +1,4 @@
-use std::{
-    fs::OpenOptions, os::unix::ffi::OsStrExt, path::PathBuf, process::ExitCode,
-    time::Duration,
-};
+use std::{fs::OpenOptions, path::PathBuf, process::ExitCode, time::Duration};
 
 use eyre::OptionExt;
 use owo_colors::OwoColorize as _;
@@ -98,9 +95,9 @@ pub fn get_result_format(
                 .extension()
                 .ok_or_eyre("results file has no extension")?;
 
-            match ext.as_bytes() {
-                b"json" => ResultFormat::Json,
-                b"yaml" | b"yml" => ResultFormat::Yaml,
+            match ext.to_string_lossy().as_ref() {
+                "json" => ResultFormat::Json,
+                "yaml" | "yml" => ResultFormat::Yaml,
                 _ => {
                     eyre::bail!(
                         "results file has an unsupported extension '{ext:?}'"
@@ -151,7 +148,7 @@ pub fn write_results(
 }
 
 pub fn exit_code(results: &[TaskExecutionResult]) -> ExitCode {
-    let has_error = results.iter().any(|r| r.skipped_or_error());
+    let has_error = results.iter().any(|r| r.is_failure());
 
     if has_error {
         ExitCode::FAILURE

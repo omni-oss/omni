@@ -223,8 +223,8 @@ impl TaskExecutionResult {
         )
     }
 
-    pub fn skipped_or_error(&self) -> bool {
-        self.is_skipped_due_to_error() || self.is_error()
+    pub fn is_failure(&self) -> bool {
+        self.is_skipped_due_to_error() || self.is_error() || !self.success()
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
@@ -546,7 +546,6 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 };
 
                 trace::debug!(
-                    task_context = ?ctx,
                     "added task context to queue: '{}#{}'",
                     node.project_name(),
                     node.task_name()
@@ -617,7 +616,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                         task_ctx.dependencies.iter().find(|d| {
                             overall_results
                                 .get(**d)
-                                .is_some_and(|r| r.skipped_or_error())
+                                .is_some_and(|r| r.is_failure())
                         })
                 {
                     overall_results.insert(
@@ -829,17 +828,14 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     .collect::<Vec<_>>();
 
                 if !exec_infos.is_empty() {
-                    trace::debug!(
+                    trace::trace!(
                         task_execution_infos = ?exec_infos,
                         "caching task executions"
                     );
 
                     let results = cache_store.cache_many(&exec_infos).await?;
 
-                    trace::debug!(
-                        results = ?results,
-                        "cached task execution info successfully"
-                    );
+                    trace::debug!("cached task execution info successfully");
 
                     results
                         .into_iter()

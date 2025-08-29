@@ -87,7 +87,7 @@ pub async fn main() -> eyre::Result<()> {
             stdout_trace_level: cli.args.stdout_trace_level,
         };
         init_tracing(&tracing_config)?;
-        trace::debug!("Tracing config: {:?}", tracing_config);
+        trace::info!("Tracing config: {:?}", tracing_config);
     }
 
     run(cli).await

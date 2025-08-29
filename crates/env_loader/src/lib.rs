@@ -96,7 +96,7 @@ where
         })
         .unwrap_or_else(|| PathBuf::from("/"));
 
-    trace::debug!("Root dir: {:?}", abs_root_dir);
+    trace::trace!("Root dir: {:?}", abs_root_dir);
 
     let mut files = vec![];
     let default_envs = [Path::new(".env")];
@@ -107,12 +107,12 @@ where
     env.extend(config.extra_envs.unwrap_or(&maps::map!()).clone());
 
     for dir in start_dir.ancestors().collect::<Vec<_>>() {
-        trace::debug!("Looking for env files in dir: {:?}", dir);
+        trace::trace!("Looking for env files in dir: {:?}", dir);
         // If we've already processed this dir, don't process it again
         if let Some(cache_ref) = cache.as_mut()
             && let Some(vars) = cache_ref.get(dir)
         {
-            trace::debug!("Cache hit for dir: {:?}, setting env vars", dir);
+            trace::trace!("Cache hit for dir: {:?}, setting env vars", dir);
 
             env = vars.clone();
             break;
@@ -122,7 +122,7 @@ where
         for env_file in env_files.iter().rev() {
             let env_file = dir.join(env_file);
 
-            trace::debug!("Checking env file: {:?}", env_file);
+            trace::trace!("Checking env file: {:?}", env_file);
 
             if sys.fs_exists(&env_file)? && sys.fs_is_file(&env_file)? {
                 to_process.push(env_file);
@@ -132,17 +132,17 @@ where
         files.push((dir, to_process));
 
         if dir == abs_root_dir {
-            trace::debug!("Reached root dir");
+            trace::trace!("Reached root dir");
             // We've reached topmost dir
             break;
         }
     }
 
-    trace::debug!("Loading env files: {:#?}", files);
+    trace::trace!("Loading env files: {:#?}", files);
 
     // Process it in reverse order so that we can process the files in the same order as they were specified
     for (dir, files) in files.iter().rev() {
-        trace::debug!("Processing dir: {:?}", dir);
+        trace::trace!("Processing dir: {:?}", dir);
 
         if files.is_empty() {
             if let Some(cache) = cache.as_mut() {
@@ -159,7 +159,7 @@ where
         if let Some(cache) = cache.as_mut()
             && let Some(vars) = cache.get(dir)
         {
-            trace::debug!("Cache hit for dir: {:?}", dir);
+            trace::trace!("Cache hit for dir: {:?}", dir);
             env.extend(vars.clone());
             continue;
         }
