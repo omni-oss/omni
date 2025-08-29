@@ -7,6 +7,7 @@ use env::EnvCommand;
 use exec::ExecCommand;
 use run::RunCommand;
 mod utils;
+mod common_args;
 
 use crate::{build, commands::hash::HashCommand, tracer::TraceLevel};
 
