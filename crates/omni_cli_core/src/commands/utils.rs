@@ -151,7 +151,7 @@ pub fn write_results(
 }
 
 pub fn exit_code(results: &[TaskExecutionResult]) -> ExitCode {
-    let has_error = results.iter().any(|r| r.skipped_or_error());
+    let has_error = results.iter().any(|r| r.is_failure());
 
     if has_error {
         ExitCode::FAILURE

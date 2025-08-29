@@ -223,7 +223,7 @@ impl TaskExecutionResult {
         )
     }
 
-    pub fn skipped_or_error(&self) -> bool {
+    pub fn is_failure(&self) -> bool {
         self.is_skipped_due_to_error() || self.is_error() || !self.success()
     }
 
@@ -617,7 +617,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                         task_ctx.dependencies.iter().find(|d| {
                             overall_results
                                 .get(**d)
-                                .is_some_and(|r| r.skipped_or_error())
+                                .is_some_and(|r| r.is_failure())
                         })
                 {
                     overall_results.insert(
