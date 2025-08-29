@@ -165,11 +165,11 @@ impl ChildProcess {
             let mut stderr = stderr.map(BufReader::new);
             let mut stdout = BufReader::new(stdout);
             loop {
-                let mut stdout_line = String::new();
-                let mut stderr_line = String::new();
                 let n;
-                let is_stderr;
+                let line;
                 if let Some(stderr_mut) = stderr.as_mut() {
+                    let mut stdout_line = String::new();
+                    let mut stderr_line = String::new();
                     tokio::select! {
                         res = stderr_mut.read_line(&mut stderr_line) => {
                             n = res?;
@@ -177,7 +177,7 @@ impl ChildProcess {
                                 stderr = None;
                                 continue;
                             }
-                            is_stderr = true;
+                            line = stderr_line;
                         }
                         res = stdout.read_line(&mut stdout_line) => {
                             n = res?;
@@ -185,33 +185,29 @@ impl ChildProcess {
                                 trace::debug!("stdout is empty, breaking");
                                 break;
                             }
-                            is_stderr = false;
+                            line = stdout_line;
                         }
                     }
                 } else {
+                    let mut stdout_line = String::new();
                     n = stdout.read_line(&mut stdout_line).await?;
                     if n == 0 {
                         trace::debug!("stdout is empty, breaking");
                         break;
                     }
-                    is_stderr = false;
+                    line = stdout_line;
                 }
 
                 trace::debug!("received log chunk to write: {}", n);
-                let line = if is_stderr {
-                    stderr_line.as_bytes()
-                } else {
-                    stdout_line.as_bytes()
-                };
 
                 if let Some(logs_output) = &mut logs_output {
                     trace::debug!("writing log chunk to logs output");
-                    logs_output.put_slice(line);
+                    logs_output.put_slice(line.as_bytes());
                 }
 
                 if let Some(writer) = writer.as_mut() {
                     trace::debug!("writing log chunk to output writer");
-                    writer.write_all(line).await?;
+                    writer.write_all(line.as_bytes()).await?;
                 }
             }
             trace::debug!("logs output task done");
