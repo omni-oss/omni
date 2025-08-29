@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: dev-docs
+name: "@repo/dev-docs"
 extends:
   - "@workspace/omni/presets/ts-app.omni.yaml"
 
@@ -12,3 +12,8 @@ tasks:
 
   test:
     enabled: false
+
+  build:
+    output:
+      files:
+        - ./dist
