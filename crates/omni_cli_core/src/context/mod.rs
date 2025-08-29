@@ -334,7 +334,7 @@ impl<TSys: ContextSys> Context<TSys> {
         {
             num_iterations += 1;
             let f = f.map_err(|e| eyre::eyre!("failed to walk dir: {e}"))?;
-            trace::debug!("checking path: {:?}", f.path());
+            trace::trace!("checking path: {:?}", f.path());
 
             let meta = f.metadata()?;
 
@@ -345,7 +345,7 @@ impl<TSys: ContextSys> Context<TSys> {
             if matcher.is_match(f.path()) {
                 for project_file in &project_files {
                     if *f.file_name().to_string_lossy() == *project_file {
-                        trace::debug!(
+                        trace::trace!(
                             "Found project directory: {:?}",
                             f.path()
                         );
@@ -386,7 +386,7 @@ impl<TSys: ContextSys> Context<TSys> {
                 })?;
 
                 let elapsed = start_time.elapsed().unwrap_or_default();
-                trace::debug!(
+                trace::trace!(
                     project_configuration = ?project,
                     "loaded project configuration file {:?} in {} ms",
                     conf,
@@ -466,7 +466,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     config.file.path().expect("path should be resolved"),
                 )
         }) {
-            trace::debug!(
+            trace::trace!(
                 project_configuration = ?project_config,
                 "processing project config: {}",
                 project_config.name
