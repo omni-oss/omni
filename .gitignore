@@ -8,3 +8,7 @@ node_modules
 perf.data*
 flamegraph.svg
 dhat-heap.json
+result.json
+result.yaml
+result.yml
+result.toml
