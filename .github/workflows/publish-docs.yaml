@@ -50,6 +50,6 @@ jobs:
         with:
           publish_branch: docs
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/dev-docs/dist
+          publish_dir: ./docs/dev-docs/.output/public
           destination_dir: .
           keep_files: false
