@@ -21,7 +21,7 @@ use omni_hasher::impls::DefaultHash;
 use omni_process::{ChildProcess, ChildProcessResult};
 use owo_colors::{OwoColorize, Style};
 use strum::{Display, EnumDiscriminants, EnumIs, IntoDiscriminant as _};
-use system_traits::impls::RealSys;
+use system_traits::{FsCreateDirAllAsync, impls::RealSys};
 
 use crate::{
     context::{CacheInfo, Context, ContextSys},
@@ -43,7 +43,10 @@ pub enum Call {
     Task(#[new(into)] String),
 }
 
-impl<TSys: ContextSys> TaskExecutorBuilder<TSys> {
+#[system_traits::auto_impl]
+pub trait TaskExecutorSys: ContextSys + FsCreateDirAllAsync {}
+
+impl<TSys: TaskExecutorSys> TaskExecutorBuilder<TSys> {
     pub fn call(&mut self, call: impl Into<Call>) -> &mut Self {
         let call: Call = call.into();
 
@@ -101,7 +104,7 @@ pub enum OnFailure {
 
 #[derive(Builder)]
 #[builder(setter(into, strip_option))]
-pub struct TaskExecutor<TSys: ContextSys + 'static = RealSys> {
+pub struct TaskExecutor<TSys: TaskExecutorSys + 'static = RealSys> {
     context: Context<TSys>,
     #[builder(setter(custom))]
     call: Call,
@@ -133,7 +136,7 @@ pub struct TaskExecutor<TSys: ContextSys + 'static = RealSys> {
     max_concurrency: Option<usize>,
 }
 
-impl<TSys: ContextSys> TaskExecutor<TSys> {
+impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
     pub fn builder() -> TaskExecutorBuilder<TSys> {
         TaskExecutorBuilder::default()
     }
@@ -242,7 +245,7 @@ impl<'a> TaskContext<'a> {
     }
 }
 
-impl<TSys: ContextSys> TaskExecutor<TSys> {
+impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
@@ -647,6 +650,13 @@ impl<TSys: ContextSys> TaskExecutor<TSys> {
 
                         if sys.fs_exists_async(original_path).await? {
                             continue;
+                        }
+
+                        let dir =
+                            original_path.parent().expect("should have parent");
+                        // check if dir exists
+                        if !sys.fs_exists_async(dir).await? {
+                            sys.fs_create_dir_all_async(dir).await?;
                         }
 
                         sys.fs_hard_link_async(
