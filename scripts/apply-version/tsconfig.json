@@ -1,9 +1,14 @@
-
 {
 	"extends": ["@repo/tsconfig/with-paths.json"],
 	"compilerOptions": {
 		"outDir": "./dist",
+        "types": ["bun-types"],
+        "module": "ESNext",
 	},
+    "include": [
+        "src/**/*",
+        "build.ts"
+    ],
 	"exclude": [
         "coverage",
 		"dist",
@@ -13,6 +18,7 @@
 		".vercel",
 		".solid",
 		"public",
-		"build"
+		"build",
+        "bin/**"
 	]
 }

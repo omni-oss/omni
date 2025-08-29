@@ -58,7 +58,7 @@ jobs:
 
       - name: Apply version
         if: ${{ github.ref_type == 'tag' }}
-        run: bun run ./scripts/apply-version/src/index.ts
+        run: bun run ./scripts/apply-version/bin/index.js
 
       - name: Build
         run: omni run -p=omni -L build

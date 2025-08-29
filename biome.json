@@ -44,7 +44,8 @@
             "!**/*.tsbuildinfo",
             "!**/*.config.js",
             "!./**/*.gen.*",
-            "!./**/*.generated.*"
+            "!./**/*.generated.*",
+            "!./**/bin/**/*"
         ]
     }
 }
