@@ -21,7 +21,6 @@ jobs:
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
         with:
-          version: v0.4.6
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: test
 
@@ -50,7 +49,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: build
-          version: v0.4.6
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -106,3 +104,7 @@ jobs:
   publish-json-schemas:
     needs: release
     uses: ./.github/workflows/publish-json-schemas.yaml
+
+  publish-docs:
+    needs: release
+    uses: ./.github/workflows/publish-docs.yaml
