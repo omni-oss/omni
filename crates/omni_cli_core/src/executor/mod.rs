@@ -224,7 +224,7 @@ impl TaskExecutionResult {
     }
 
     pub fn skipped_or_error(&self) -> bool {
-        self.is_skipped_due_to_error() || self.is_error()
+        self.is_skipped_due_to_error() || self.is_error() || !self.success()
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
