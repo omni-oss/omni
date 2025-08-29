@@ -1,3 +1,9 @@
+# Parameter to accept an optional version argument
+# parameter should be first in the script
+param(
+    [string]$Version = "latest"
+)
+
 # Exit on first error
 $ErrorActionPreference = "Stop"
 
@@ -12,10 +18,6 @@ $UpdateUrl = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 # Optional GitHub token for higher rate limit
 $GitHubToken = $env:GITHUB_TOKEN
 
-# Parameter to accept an optional version argument
-param(
-    [string]$Version = "latest"
-)
 
 # Retry function for API requests
 function Get-LatestRelease {
