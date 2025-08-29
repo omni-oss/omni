@@ -3,32 +3,20 @@ use std::process::ExitCode;
 use clap::Args;
 
 use crate::{
-    commands::utils::report_execution_results,
+    commands::{common_args::RunArgs, utils::report_execution_results},
     context::Context,
     executor::{Call, TaskExecutor},
 };
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
-    #[arg(
-        long,
-        short,
-        help = "Run the command based on the project name matching the filter"
-    )]
-    project: Option<String>,
     #[arg(required = true)]
     command: String,
     #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
-    #[arg(
-        short,
-        long,
-        help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
-    )]
-    meta: Option<String>,
 
-    #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
-    max_concurrency: Option<usize>,
+    #[command(flatten)]
+    run: RunArgs,
 }
 
 #[derive(Args)]
@@ -48,17 +36,7 @@ pub async fn run(
         command.args.args.clone(),
     ));
 
-    if let Some(filter) = &command.args.project {
-        builder.project_filter(filter);
-    }
-
-    if let Some(filter) = &command.args.meta {
-        builder.meta_filter(filter);
-    }
-
-    if let Some(max_concurrency) = command.args.max_concurrency {
-        builder.max_concurrency(max_concurrency);
-    }
+    command.args.run.apply_to(&mut builder);
 
     let orchestrator = builder.build()?;
 
