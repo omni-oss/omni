@@ -42,7 +42,7 @@ jobs:
           install-node: true
 
       - name: Generate Docs
-        run: omni run -p '@repo/docs' build
+        run: omni run -p '@repo/dev-docs' build
 
       - name: Publish Docs
         uses: peaceiris/actions-gh-pages@v3
