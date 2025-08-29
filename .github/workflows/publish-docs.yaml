@@ -31,7 +31,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
-          omni-cache-key-prefix: build
+          cache-key-prefix: docs
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
