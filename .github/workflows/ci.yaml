@@ -23,6 +23,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: test
+          version: v0.4.6
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -49,6 +50,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: build
+          version: v0.4.6
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
