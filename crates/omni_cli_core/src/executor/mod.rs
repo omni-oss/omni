@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     hash::{Hash, Hasher as _},
+    time::Duration,
 };
 
 use clap::ValueEnum;
@@ -129,6 +130,9 @@ pub struct TaskExecutor<TSys: TaskExecutorSys + 'static = RealSys> {
     /// How to handle failures
     on_failure: OnFailure,
 
+    #[builder(default = false)]
+    dry_run: bool,
+
     #[builder(default = true)]
     replay_cached_logs: bool,
 
@@ -219,7 +223,7 @@ impl TaskExecutionResult {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TaskContext<'a> {
     node: &'a TaskExecutionNode,
     dependencies: Vec<&'a str>,
@@ -249,6 +253,12 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
+        if self.dry_run {
+            trace::info!(
+                "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed"
+            );
+        }
+
         let mut ctx = self.context.clone();
         if let Call::Task(task) = &self.call
             && task.is_empty()
@@ -623,7 +633,8 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                         .dimmed()
                     );
 
-                    if self.replay_cached_logs
+                    if !self.dry_run
+                        && self.replay_cached_logs
                         && let Some(logs_path) = &res.logs_path
                     {
                         let file = AllowStdIo::new(
@@ -641,29 +652,32 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     }
 
                     // hard link the cached files to the original file paths if they don't exist
-                    let sys = self.context.sys();
-                    for file in res.files.iter() {
-                        let original_path = file
-                            .original_path
-                            .path()
-                            .expect("should be resolved");
+                    if !self.dry_run {
+                        let sys = self.context.sys();
+                        for file in res.files.iter() {
+                            let original_path = file
+                                .original_path
+                                .path()
+                                .expect("should be resolved");
 
-                        if sys.fs_exists_async(original_path).await? {
-                            continue;
+                            if sys.fs_exists_async(original_path).await? {
+                                continue;
+                            }
+
+                            let dir = original_path
+                                .parent()
+                                .expect("should have parent");
+                            // check if dir exists
+                            if !sys.fs_exists_async(dir).await? {
+                                sys.fs_create_dir_all_async(dir).await?;
+                            }
+
+                            sys.fs_hard_link_async(
+                                file.cached_path.as_path(),
+                                original_path,
+                            )
+                            .await?;
                         }
-
-                        let dir =
-                            original_path.parent().expect("should have parent");
-                        // check if dir exists
-                        if !sys.fs_exists_async(dir).await? {
-                            sys.fs_create_dir_all_async(dir).await?;
-                        }
-
-                        sys.fs_hard_link_async(
-                            file.cached_path.as_path(),
-                            original_path,
-                        )
-                        .await?;
                     }
 
                     continue;
@@ -672,59 +686,68 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 let record_logs =
                     task_ctx.cache_info.is_some_and(|ci| ci.cache_logs);
 
-                futs.push(async move {
-                    let mut proc = ChildProcess::new(task_ctx.node.clone());
+                if self.dry_run {
+                    let node = task_ctx.node.clone();
+                    task_results.push(Ok((
+                        task_ctx,
+                        ChildProcessResult::new(
+                            node,
+                            0u32,
+                            Duration::ZERO,
+                            None,
+                        ),
+                    )));
+                } else {
+                    futs.push(async move {
+                        let mut proc = ChildProcess::new(task_ctx.node.clone());
 
-                    proc.output_writer(AllowStdIo::new(std::io::stdout()))
-                        .record_logs(record_logs)
-                        .env_vars(&task_ctx.env_vars)
-                        .keep_stdin_open(
-                            task_ctx.node.persistent()
-                                || task_ctx.node.interactive(),
-                        );
+                        proc.output_writer(AllowStdIo::new(std::io::stdout()))
+                            .record_logs(record_logs)
+                            .env_vars(&task_ctx.env_vars)
+                            .keep_stdin_open(
+                                task_ctx.node.persistent()
+                                    || task_ctx.node.interactive(),
+                            );
 
-                    let result = proc.exec().await;
+                        let result = proc.exec().await;
 
-                    if let Err(e) = &result {
-                        trace::error!(
-                            "{}",
-                            format!(
+                        if let Err(e) = &result {
+                            trace::error!(
                                 "Failed to execute task '{}': {}",
                                 task_ctx.node.full_task_name(),
                                 e
-                            )
-                            .red()
-                        );
-                    }
-
-                    if let Ok(t) = &result {
-                        if t.success() {
-                            trace::info!(
-                                "{}",
-                                format!(
-                                    "Executed task '{}'",
-                                    task_ctx.node.full_task_name()
-                                )
-                            );
-                        } else {
-                            trace::error!(
-                                "{}",
-                                format!(
-                                    "Failed to execute task '{}', exit code '{}'",
-                                    task_ctx.node.full_task_name(),
-                                    t.exit_code()
-                                )
                             );
                         }
-                    }
 
-                    match result {
-                        Ok(t) => Ok((task_ctx, t)),
-                        Err(e) => Err((task_ctx, e)),
-                    }
-                });
+                        if let Ok(t) = &result {
+                            if t.success() {
+                                trace::info!(
+                                    "{}",
+                                    format!(
+                                        "Executed task '{}'",
+                                        task_ctx.node.full_task_name()
+                                    )
+                                );
+                            } else {
+                                trace::error!(
+                                    "{}",
+                                    format!(
+                                        "Failed to execute task '{}', exit code '{}'",
+                                        task_ctx.node.full_task_name(),
+                                        t.exit_code()
+                                    )
+                                );
+                            }
+                        }
 
-                if task_results.len() >= max_concurrency {
+                        match result {
+                            Ok(t) => Ok((task_ctx, t)),
+                            Err(e) => Err((task_ctx, e)),
+                        }
+                    });
+                }
+
+                if futs.len() >= max_concurrency {
                     task_results.extend(join_all(futs.drain(..)).await);
                 }
             }
@@ -740,7 +763,8 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 exec_infos = task_results
                     .iter()
                     .filter_map(|r| {
-                        if let Ok((task_ctx, result)) = r
+                        if !self.dry_run
+                            && let Ok((task_ctx, result)) = r
                             && task_ctx
                                 .cache_info
                                 .is_some_and(|ci| ci.cache_execution)

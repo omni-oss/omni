@@ -19,6 +19,15 @@ pub struct RunArgs {
 
     #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
     max_concurrency: Option<usize>,
+
+    #[arg(
+        long,
+        short,
+        action = clap::ArgAction::SetTrue,
+        default_value_t = false,
+        help = "Don't execute the task, just print the command to be executed"
+    )]
+    dry_run: bool,
 }
 
 impl RunArgs {
@@ -34,5 +43,7 @@ impl RunArgs {
         if let Some(max_concurrency) = self.max_concurrency {
             builder.max_concurrency(max_concurrency);
         }
+
+        builder.dry_run(self.dry_run);
     }
 }
