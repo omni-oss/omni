@@ -24,16 +24,20 @@ pub fn report_execution_results(
             success += 1;
         }
 
-        if let TaskExecutionResult::CacheHit {
-            result: execution, ..
+        if let TaskExecutionResult::Completed {
+            exit_code,
+            elapsed,
+            cache_hit,
+            ..
         } = res
+            && *cache_hit
         {
-            if execution.success() {
+            if *exit_code == 0 {
                 cached_success += 1;
             } else {
                 cached_error += 1;
             }
-            total_saved_time += execution.elapsed;
+            total_saved_time += *elapsed;
         }
     }
 
