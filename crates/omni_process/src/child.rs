@@ -13,13 +13,16 @@ use tokio::task::yield_now;
 
 use crate::utils::{get_pty_size, should_use_pty};
 
+pub type DynChildOutputReader = Box<dyn ChildOutputReader>;
+pub type DynChildInputWriter = Box<dyn ChildInputWriter>;
+
 #[allow(clippy::too_many_arguments)]
 #[derive(new)]
 pub struct Child {
     inner: ChildInner,
-    input: Cell<Option<Pin<Box<dyn ChildInputWriter>>>>,
-    output: Cell<Option<Pin<Box<dyn ChildOutputReader>>>>,
-    error: Cell<Option<Option<Pin<Box<dyn ChildOutputReader>>>>>,
+    input: Cell<Option<Pin<DynChildInputWriter>>>,
+    output: Cell<Option<Pin<DynChildOutputReader>>>,
+    error: Cell<Option<Option<Pin<DynChildOutputReader>>>>,
     pid: Option<u32>,
 }
 
