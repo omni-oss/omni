@@ -10,6 +10,7 @@ use portable_pty::{MasterPty, SlavePty, native_pty_system};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 use tokio::task::yield_now;
+use tracing::field;
 
 use crate::utils::{get_pty_size, should_use_pty};
 
@@ -27,14 +28,27 @@ pub struct Child {
 }
 
 impl Child {
+    #[cfg_attr(
+        feature="enable-tracing", 
+        tracing::instrument(skip_all, fields(command = field::Empty, args = field::Empty))
+    )]
     pub fn spawn(
         command: impl Into<String>,
         args: impl Into<Vec<String>>,
         cwd: impl Into<PathBuf>,
         env: impl Into<HashMap<OsString, OsString>>,
     ) -> Result<Self, ChildError> {
-        let child =
-            create_inner(command.into(), args.into(), cwd.into(), env.into())?;
+        let command = command.into();
+        let args = args.into();
+
+        if cfg!(feature = "enable-tracing") {
+            let span = tracing::Span::current();
+
+            span.record("command", &command);
+            span.record("args", format_args!("{args:?}"));
+        }
+
+        let child = create_inner(command, args, cwd.into(), env.into())?;
 
         match child {
             Command::Pty(child) => Self::spawn_pty(child),
@@ -43,6 +57,8 @@ impl Child {
     }
 
     fn spawn_pty(cmd: PtyCommand) -> Result<Self, ChildError> {
+        trace::trace!("spawning pty");
+
         let writer = cmd
             .master
             .take_writer()
@@ -86,6 +102,8 @@ impl Child {
                     &termios,
                 ) {
                     trace::debug!("failed to set termios: {e}");
+                } else {
+                    trace::trace!("termios set");
                 }
             }
         }
@@ -101,6 +119,7 @@ impl Child {
     }
 
     fn spawn_normal(mut cmd: StdCommand) -> Result<Self, ChildError> {
+        trace::trace!("spawning normal");
         let builder = cmd
             .cmd
             .stdin(Stdio::piped())
@@ -113,7 +132,12 @@ impl Child {
             use nix::unistd::setsid;
             unsafe {
                 builder.pre_exec(|| {
-                    setsid()?;
+                    setsid().inspect_err(|e| {
+                        tracing::debug!(
+                            "failed to create child process group: {e}"
+                        )
+                    })?;
+                    trace::debug!("child process group created");
                     Ok(())
                 });
             }
@@ -181,12 +205,16 @@ impl Child {
                     trace::error!("wait error: {e}");
                 })?;
 
+                trace::trace!("child exited with status: {status:?}");
+
                 Ok(status.exit_code())
             }
             ChildInner::Normal(mut child) => {
                 let status = child.wait().await.inspect_err(|e| {
                     trace::error!("wait error: {e}");
                 })?;
+
+                trace::trace!("child exited with status: {status:?}");
 
                 Ok(status.code().unwrap_or(0) as u32)
             }
