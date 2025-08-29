@@ -1,22 +1,26 @@
 name: "Setup Tools"
 description: "Setup Tools"
 inputs:
+  install-all:
+    description: "Install all tools"
+    required: false
+    default: "false"
   install-rust:
     description: "Install Rust toolchain"
     required: false
-    default: "true"
+    default: "false"
+  install-rust-target:
+    description: "Install Rust target director"
+    required: false
+    default: "false"
   install-bun:
     description: "Install Bun runtime"
     required: false
-    default: "true"
-  install-omni:
-    description: "Install Omni"
-    required: false
-    default: "true"
+    default: "false"
   install-node:
     description: "Install Node.js"
     required: false
-    default: "true"
+    default: "false"
   bun-version:
     description: "Bun version to install"
     required: false
@@ -24,7 +28,7 @@ inputs:
   install-node-modules:
     description: "Install Node.js modules"
     required: false
-    default: "true"
+    default: "false"
   node-version:
     description: "Node version to install"
     required: false
@@ -34,9 +38,6 @@ inputs:
     required: false
     default: "global"
   rust-target-cache-key-prefix:
-    description: "Additional text to prepend to cache keys"
-    required: false
-  omni-cache-key-prefix:
     description: "Additional text to prepend to cache keys"
     required: false
   node-modules-cache-key-prefix:
@@ -55,24 +56,24 @@ runs:
   using: "composite"
   steps:
     - name: Install Rust
-      if: inputs.install-rust == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-rust == 'true' }}
       uses: actions-rust-lang/setup-rust-toolchain@v1
 
     - name: Install Bun
-      if: inputs.install-bun == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' }}
       uses: oven-sh/setup-bun@v2
       with:
         bun-version: ${{ inputs.bun-version }}
 
     - name: Install Node
-      if: inputs.install-node == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-node == 'true' }}
       uses: actions/setup-node@v4
       with:
         check-latest: true
         node-version: ${{ inputs.node-version }}
 
     - name: Cache cargo registry
-      if: inputs.install-rust == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-rust-target == 'true' }}
       uses: actions/cache@v4
       with:
         path: |
@@ -84,7 +85,7 @@ runs:
           ${{ runner.os }}-cargo-
 
     - name: Cache target folder
-      if: inputs.install-rust == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-rust-target == 'true' }}
       uses: actions/cache@v4
       with:
         path: |
@@ -95,7 +96,7 @@ runs:
           ${{ runner.os }}-target-
 
     - name: Cache Bun install
-      if: inputs.install-bun == 'true' || inputs.install-node-modules == 'true'
+      if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' || inputs.install-node-modules == 'true' }}
       uses: actions/cache@v4
       with:
         path: |
@@ -106,6 +107,6 @@ runs:
           ${{ runner.os }}-bun-
 
     - name: Install Node dependencies
-      if: inputs.install-bun == 'true' && inputs.install-node-modules == 'true'
+        if: ${{ inputs.install-all == 'true' ||  inputs.install-bun == 'true' && inputs.install-node-modules == 'true' }}
       run: bun install
       shell: ${{ inputs.shell }}

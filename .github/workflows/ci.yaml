@@ -22,13 +22,13 @@ jobs:
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: build
+          cache-key-prefix: test
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
+          install-all: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          omni-cache-key-prefix: test
 
       - name: Test
         run: omni run -L test
@@ -53,6 +53,7 @@ jobs:
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
+          install-all: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply version
