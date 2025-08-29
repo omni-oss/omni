@@ -1003,8 +1003,6 @@ mod tests {
             stderr_trace: false,
             file_trace_output: None,
             inherit_env_vars: false,
-            no_inherit_env_vars: true,
-            no_stderr_trace: false,
         };
 
         Context::from_args_root_dir_and_sys(cli, root_dir, sys)

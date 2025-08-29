@@ -55,22 +55,10 @@ pub struct CliArgs {
         group = "stderr-trace",
         help = "Output Error traces to stderr",
         env = "OMNI_STDERR_TRACE_ENABLED",
-        default_value = "false",
+        default_value_t = false,
         action = clap::ArgAction::SetTrue,
-        overrides_with = "no_stderr_trace"
     )]
     pub stderr_trace: bool,
-
-    #[arg(
-        long,
-        group = "stderr-trace",
-        help = "Output Error traces to stderr",
-        env = "OMNI_STDERR_TRACE_ENABLED",
-        default_value = "false",
-        action = clap::ArgAction::SetTrue,
-        overrides_with = "stderr_trace"
-    )]
-    pub no_stderr_trace: bool,
 
     #[arg(
         long = "file-trace-output",
@@ -116,25 +104,13 @@ pub struct CliArgs {
 
     #[arg(
         long,
+        short = 'i',
         help = "Inherit environment variables from the parent process", 
         action = clap::ArgAction::SetTrue, 
         default_value_t = false,
         group = "inherit-env-vars",
-        conflicts_with = "no_inherit_env_vars",
-        overrides_with = "no_inherit_env_vars",
     )]
     pub inherit_env_vars: bool,
-
-    #[arg(
-        long,
-        help = "Do not inherit environment variables from the parent process",
-        action = clap::ArgAction::SetTrue, 
-        default_value_t = true,
-        group = "inherit-env-vars",
-        overrides_with = "inherit_env_vars",
-        conflicts_with = "inherit_env_vars",
-    )]
-    pub no_inherit_env_vars: bool,
 }
 
 impl Default for CliArgs {
@@ -142,7 +118,6 @@ impl Default for CliArgs {
         Self {
             stdout_trace_level: TraceLevel::None,
             stderr_trace: false,
-            no_stderr_trace: false,
             file_trace_output: None,
             file_trace_level: TraceLevel::None,
             env_root_dir_marker: None,
@@ -154,7 +129,6 @@ impl Default for CliArgs {
             ],
             env: None,
             inherit_env_vars: false,
-            no_inherit_env_vars: true,
         }
     }
 }
