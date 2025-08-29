@@ -1,0 +1,129 @@
+{
+  "../../../../../../../~start/default-client-entry.tsx": {
+    "file": "assets/main-5D_NJHf7.js",
+    "name": "main",
+    "src": "../../../../../../../~start/default-client-entry.tsx",
+    "isEntry": true,
+    "dynamicImports": [
+      "../../node_modules/fumadocs-ui/dist/components/dialog/search-default.js",
+      "src/routes/index.tsx?tsr-split=component",
+      "content/index.mdx?collection=docs",
+      "content/test.mdx?collection=docs",
+      "src/routes/docs/$.tsx?tsr-split=component"
+    ],
+    "assets": [
+      "assets/app-BA1uFX3t.css"
+    ]
+  },
+  "../../node_modules/fumadocs-core/dist/algolia-KPRGMSJO.js": {
+    "file": "assets/algolia-KPRGMSJO-DGS7i7Ft.js",
+    "name": "algolia-KPRGMSJO",
+    "src": "../../node_modules/fumadocs-core/dist/algolia-KPRGMSJO.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-CNWEGOUF-qJr9DjGl.js"
+    ]
+  },
+  "../../node_modules/fumadocs-core/dist/fetch-C3XV44E6.js": {
+    "file": "assets/fetch-C3XV44E6-F2YKbHTa.js",
+    "name": "fetch-C3XV44E6",
+    "src": "../../node_modules/fumadocs-core/dist/fetch-C3XV44E6.js",
+    "isDynamicEntry": true
+  },
+  "../../node_modules/fumadocs-core/dist/mixedbread-AG5AAOKO.js": {
+    "file": "assets/mixedbread-AG5AAOKO-DWAJ-1Nh.js",
+    "name": "mixedbread-AG5AAOKO",
+    "src": "../../node_modules/fumadocs-core/dist/mixedbread-AG5AAOKO.js",
+    "isDynamicEntry": true
+  },
+  "../../node_modules/fumadocs-core/dist/orama-cloud-BYTAI6QU.js": {
+    "file": "assets/orama-cloud-BYTAI6QU-C3bA58un.js",
+    "name": "orama-cloud-BYTAI6QU",
+    "src": "../../node_modules/fumadocs-core/dist/orama-cloud-BYTAI6QU.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-KAOEMCTI-D0VL4AeO.js",
+      "_chunk-CNWEGOUF-qJr9DjGl.js"
+    ]
+  },
+  "../../node_modules/fumadocs-core/dist/static-IWYDJ3C5.js": {
+    "file": "assets/static-IWYDJ3C5-BLZpqdhv.js",
+    "name": "static-IWYDJ3C5",
+    "src": "../../node_modules/fumadocs-core/dist/static-IWYDJ3C5.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chunk-KAOEMCTI-D0VL4AeO.js",
+      "_chunk-CNWEGOUF-qJr9DjGl.js"
+    ]
+  },
+  "../../node_modules/fumadocs-ui/dist/components/dialog/search-default.js": {
+    "file": "assets/search-default-DHZiaEXX.js",
+    "name": "search-default",
+    "src": "../../node_modules/fumadocs-ui/dist/components/dialog/search-default.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "../../../../../../../~start/default-client-entry.tsx"
+    ],
+    "dynamicImports": [
+      "../../node_modules/fumadocs-core/dist/fetch-C3XV44E6.js",
+      "../../node_modules/fumadocs-core/dist/algolia-KPRGMSJO.js",
+      "../../node_modules/fumadocs-core/dist/orama-cloud-BYTAI6QU.js",
+      "../../node_modules/fumadocs-core/dist/static-IWYDJ3C5.js",
+      "../../node_modules/fumadocs-core/dist/mixedbread-AG5AAOKO.js"
+    ]
+  },
+  "/home/runner/work/omni/omni/docs/dev-docs/src/styles/app.css": {
+    "file": "assets/app-BA1uFX3t.css",
+    "src": "/home/runner/work/omni/omni/docs/dev-docs/src/styles/app.css"
+  },
+  "_chunk-CNWEGOUF-qJr9DjGl.js": {
+    "file": "assets/chunk-CNWEGOUF-qJr9DjGl.js",
+    "name": "chunk-CNWEGOUF"
+  },
+  "_chunk-KAOEMCTI-D0VL4AeO.js": {
+    "file": "assets/chunk-KAOEMCTI-D0VL4AeO.js",
+    "name": "chunk-KAOEMCTI"
+  },
+  "_layout.shared-DFamaIhK.js": {
+    "file": "assets/layout.shared-DFamaIhK.js",
+    "name": "layout.shared"
+  },
+  "content/index.mdx?collection=docs": {
+    "file": "assets/index-Pn-mkw2u.js",
+    "name": "index",
+    "src": "content/index.mdx?collection=docs",
+    "isDynamicEntry": true,
+    "imports": [
+      "../../../../../../../~start/default-client-entry.tsx"
+    ]
+  },
+  "content/test.mdx?collection=docs": {
+    "file": "assets/test-WHS3kyHq.js",
+    "name": "test",
+    "src": "content/test.mdx?collection=docs",
+    "isDynamicEntry": true,
+    "imports": [
+      "../../../../../../../~start/default-client-entry.tsx"
+    ]
+  },
+  "src/routes/docs/$.tsx?tsr-split=component": {
+    "file": "assets/_-DalYSoJ4.js",
+    "name": "_",
+    "src": "src/routes/docs/$.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "../../../../../../../~start/default-client-entry.tsx",
+      "_layout.shared-DFamaIhK.js"
+    ]
+  },
+  "src/routes/index.tsx?tsr-split=component": {
+    "file": "assets/index-DGv218Tk.js",
+    "name": "index",
+    "src": "src/routes/index.tsx?tsr-split=component",
+    "isDynamicEntry": true,
+    "imports": [
+      "../../../../../../../~start/default-client-entry.tsx",
+      "_layout.shared-DFamaIhK.js"
+    ]
+  }
+}

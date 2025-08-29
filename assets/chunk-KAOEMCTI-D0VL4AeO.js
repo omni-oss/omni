@@ -1,0 +1,1 @@
+function t(f,e=!1){const o=f;for(const r of Object.keys(o))o[r]===void 0&&delete o[r],e&&typeof o[r]=="object"&&o[r]!==null?t(o[r],e):e&&Array.isArray(o[r])&&o[r].forEach(n=>t(n,e));return f}export{t as r};
