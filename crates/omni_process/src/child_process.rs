@@ -101,6 +101,7 @@ impl ChildProcess {
         self
     }
 
+    #[tracing::instrument(skip_all, fields(task = self.task.full_task_name()))]
     pub async fn exec(
         mut self,
     ) -> Result<ChildProcessResult, TaskExecutorError> {
@@ -127,6 +128,8 @@ impl ChildProcess {
             TaskExecutorErrorInner::CantParseCommand(command.to_string())
         })?;
 
+        trace::trace!("executing command: {:?}", parsed);
+
         let child = Child::spawn(
             parsed[0].clone(),
             parsed.iter().skip(1).cloned().collect::<Vec<_>>(),
@@ -150,7 +153,8 @@ impl ChildProcess {
 
         let mut writer = self.output_writer.take();
         let logs_output_task = tokio::spawn(async move {
-            if !self.record_logs && self.output_writer.is_none() {
+            if !self.record_logs && writer.is_none() {
+                trace::trace!("no logs output, exit early");
                 return Ok::<_, TaskExecutorError>(None);
             }
 
@@ -160,7 +164,7 @@ impl ChildProcess {
                 None
             };
 
-            trace::debug!("logs output task started");
+            trace::trace!("logs output task started");
 
             let mut stderr = stderr.map(BufReader::new);
             let mut stdout = BufReader::new(stdout);
@@ -175,6 +179,7 @@ impl ChildProcess {
                             n = res?;
                             if n == 0 {
                                 stderr = None;
+                                trace::trace!("stderr is empty, breaking");
                                 continue;
                             }
                             line = stderr_line;
@@ -182,7 +187,7 @@ impl ChildProcess {
                         res = stdout.read_line(&mut stdout_line) => {
                             n = res?;
                             if n == 0 {
-                                trace::debug!("stdout is empty, breaking");
+                                trace::trace!("stdout is empty, breaking");
                                 break;
                             }
                             line = stdout_line;
@@ -192,25 +197,25 @@ impl ChildProcess {
                     let mut stdout_line = String::new();
                     n = stdout.read_line(&mut stdout_line).await?;
                     if n == 0 {
-                        trace::debug!("stdout is empty, breaking");
+                        trace::trace!("stdout is empty, breaking");
                         break;
                     }
                     line = stdout_line;
                 }
 
-                trace::debug!("received log chunk to write: {}", n);
+                trace::trace!("received log chunk to write: {}", n);
 
                 if let Some(logs_output) = &mut logs_output {
-                    trace::debug!("writing log chunk to logs output");
+                    trace::trace!("writing log chunk to logs output");
                     logs_output.put_slice(line.as_bytes());
                 }
 
                 if let Some(writer) = writer.as_mut() {
-                    trace::debug!("writing log chunk to output writer");
+                    trace::trace!("writing log chunk to output writer");
                     writer.write_all(line.as_bytes()).await?;
                 }
             }
-            trace::debug!("logs output task done");
+            trace::trace!("logs output task done");
             Ok::<_, TaskExecutorError>(logs_output.map(|b| b.freeze()))
         });
 
@@ -229,6 +234,7 @@ impl ChildProcess {
 
             tasks.push(stdin_task);
         } else if !self.keep_stdin_open {
+            trace::trace!("dropping input");
             std::mem::drop(input);
         }
 
