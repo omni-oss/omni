@@ -6,6 +6,11 @@ import starlightThemeGalaxy from "starlight-theme-galaxy";
 
 // https://astro.build/config
 export default defineConfig({
+    vite: {
+        ssr: {
+            noExternal: ["zod"],
+        },
+    },
     integrations: [
         starlight({
             plugins: [starlightThemeGalaxy()],
