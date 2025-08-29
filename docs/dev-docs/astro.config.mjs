@@ -11,6 +11,7 @@ export default defineConfig({
             noExternal: ["zod"],
         },
     },
+    base: "/omni/",
     integrations: [
         starlight({
             plugins: [starlightThemeGalaxy()],
