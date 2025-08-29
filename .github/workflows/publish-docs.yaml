@@ -38,11 +38,14 @@ jobs:
           install-node-modules: true
           install-node: true
 
+      - name: Generate Docs
+        run: omni run -p '@repo/docs' build
+
       - name: Publish Docs
         uses: peaceiris/actions-gh-pages@v3
         with:
           publish_branch: docs
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs
+          publish_dir: ./docs/dev-docs/dist
           destination_dir: .
           keep_files: true
