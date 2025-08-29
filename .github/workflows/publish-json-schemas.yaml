@@ -26,7 +26,7 @@ jobs:
       - name: Setup Omni
         uses: omni-oss/setup-omni@v1
         with:
-          version: ${{ inputs.version || "latest" }}
+          version: ${{ github.event.inputs.version || 'latest' }}
           github-token: ${{ github.token }}
 
       - name: Generate JSON Schemas

@@ -32,7 +32,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
           cache-key-prefix: docs
-          version: ${{ inputs.version || "latest" }}
+          version: ${{ github.event.inputs.version || 'latest' }}
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
