@@ -12,7 +12,10 @@ $UpdateUrl = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 # Optional GitHub token for higher rate limit
 $GitHubToken = $env:GITHUB_TOKEN
 
-Write-Output "Checking latest version..."
+# Parameter to accept an optional version argument
+param(
+    [string]$Version = "latest"
+)
 
 # Retry function for API requests
 function Get-LatestRelease {
@@ -40,23 +43,41 @@ function Get-LatestRelease {
     throw "Failed to fetch latest release after $Retries attempts."
 }
 
-$LATEST_RELEASE = Get-LatestRelease
-Write-Output "Latest version: $LATEST_RELEASE"
+# Determine the version to install
+if ($Version -eq "latest") {
+    # Fetch the latest version from the GitHub API.
+    Write-Output "Checking for latest version..."
+    $TO_INSTALL_VERSION = Get-LatestRelease
+    Write-Output "Latest version: $TO_INSTALL_VERSION"
+} else {
+    # Use the specified version.
+    # We prepend 'v' if it's not already there to match release tag format.
+    if ($Version.StartsWith("v")) {
+        $TO_INSTALL_VERSION = $Version
+    } else {
+        $TO_INSTALL_VERSION = "v$Version"
+    }
+    Write-Output "Installing specified version: $TO_INSTALL_VERSION"
+}
 
-# Check if omni is already installed
+# Check if omni is already installed and matches the target version
 if (Test-Path $OmniPath) {
     $INSTALLED_VERSION = & $OmniPath --version | ForEach-Object { ($_ -split ' ')[1] }
     Write-Output "Found installed version: v$INSTALLED_VERSION"
 
-    if ($LATEST_RELEASE -eq "v$INSTALLED_VERSION") {
-        Write-Output "omni is already up to date ($LATEST_RELEASE)."
+    if ($TO_INSTALL_VERSION -eq "v$INSTALLED_VERSION") {
+        if ($VERSION -eq "latest") {
+            Write-Output "omni is already update to with the latest version ($TO_INSTALL_VERSION)."
+        } else {
+            Write-Output "omni is already installed at the specified version ($TO_INSTALL_VERSION)."
+        }
         exit 0
     }
 }
 
-Write-Output "Downloading omni $LATEST_RELEASE..."
+Write-Output "Downloading omni $TO_INSTALL_VERSION..."
 
-$DOWNLOAD_URL = "https://github.com/$OWNER/$REPO/releases/download/$LATEST_RELEASE/omni-$LATEST_RELEASE-$TARGET.zip"
+$DOWNLOAD_URL = "https://github.com/$OWNER/$REPO/releases/download/$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
 $ZipFile = Join-Path $BinDir "omni.zip"
 
 # Ensure directory exists
@@ -96,4 +117,4 @@ if (-not ($CurrentPath -split ";" | Where-Object { $_ -eq $BinDir })) {
     Write-Output "Added $BinDir to PATH. Restart your shell or run `$env:Path = '$BinDir;' + $env:Path` to use immediately."
 }
 
-Write-Output "✅ omni $LATEST_RELEASE has been installed successfully."
+Write-Output "✅ omni $TO_INSTALL_VERSION has been installed successfully."
