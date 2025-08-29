@@ -1,0 +1,40 @@
+name: Publish Docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: false
+        type: string
+        description: "Version to publish"
+
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: "latest"
+        description: "Version to publish"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+          omni-cache-key-prefix: build
+
+      - name: Publish Docs
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          publish_branch: docs
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./json-schemas
+          destination_dir: .
+          keep_files: true

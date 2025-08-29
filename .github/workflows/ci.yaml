@@ -18,11 +18,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-key-prefix: build
+
       - name: Setup
         uses: ./.github/actions/setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          shell: bash
           omni-cache-key-prefix: test
 
       - name: Test
@@ -38,13 +43,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup
-        uses: ./.github/actions/setup
+        
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
-          omni-cache-key-prefix: build
+          cache-key-prefix: build
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply version
         if: ${{ github.ref_type == 'tag' }}
