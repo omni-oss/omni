@@ -13,6 +13,10 @@ inputs:
     description: "GitHub token for higher rate limit"
     required: false
     default: ${{ github.token }}
+  version:
+    description: "Version of Omni to install"
+    required: false
+    default: "latest"
 
 runs:
   using: "composite"
@@ -21,6 +25,7 @@ runs:
       uses: omni-oss/setup-omni@v1
       with:
         github-token: ${{ inputs.github-token }}
+        version: ${{ inputs.version }}
 
     - name: Get Workspace Hash
       id: get_workspace_hash
