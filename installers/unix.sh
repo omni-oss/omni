@@ -55,11 +55,10 @@ if [ "$VERSION" = "latest" ]; then
     echo "Latest version: $TO_INSTALL_VERSION"
 else
     # Use the specified version. Prepend 'v' if it's not already there.
-    if [[ "$VERSION" =~ ^v.* ]]; then
-        TO_INSTALL_VERSION="$VERSION"
-    else
-        TO_INSTALL_VERSION="v$VERSION"
-    fi
+    case "$VERSION" in
+    v*) TO_INSTALL_VERSION=$VERSION ;;
+    *) TO_INSTALL_VERSION="v$VERSION" ;;
+    esac
     echo "Installing specified version: $TO_INSTALL_VERSION"
 fi
 
