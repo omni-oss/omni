@@ -1,4 +1,6 @@
-use clap::Args;
+use std::path::PathBuf;
+
+use clap::{Args, ValueEnum};
 
 use crate::executor::TaskExecutorBuilder;
 
@@ -28,6 +30,25 @@ pub struct RunArgs {
         help = "Don't execute the task, just print the command to be executed"
     )]
     dry_run: bool,
+
+    #[arg(
+        long,
+        help = "Output the results of the execution to the specified file"
+    )]
+    pub(crate) result: Option<PathBuf>,
+
+    #[arg(
+        long,
+        help = "Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension",
+        value_enum
+    )]
+    pub(crate) result_format: Option<ResultFormat>,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+pub enum ResultFormat {
+    Json,
+    Yaml,
 }
 
 impl RunArgs {

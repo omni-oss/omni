@@ -1,7 +1,13 @@
 use std::process::ExitCode;
 
 use crate::{
-    commands::{common_args::RunArgs, utils::report_execution_results},
+    commands::{
+        common_args::RunArgs,
+        utils::{
+            exit_code, get_results_settings, report_execution_results,
+            write_results,
+        },
+    },
     context::Context,
     executor::{Call, OnFailure, TaskExecutor},
 };
@@ -61,7 +67,13 @@ pub async fn run(
     command: &RunCommand,
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
+    let output_settings = get_results_settings(&command.run)?;
+
     let mut builder = TaskExecutor::builder();
+
+    if output_settings.is_some() {
+        builder.add_task_details(true);
+    }
 
     builder
         .context(ctx.clone())
@@ -80,11 +92,9 @@ pub async fn run(
 
     report_execution_results(&results);
 
-    let has_error = results.iter().any(|r| r.skipped_or_error());
+    if let Some((fmt, results_file_path)) = output_settings {
+        write_results(&results, fmt, results_file_path)?;
+    }
 
-    Ok(if has_error {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    Ok(exit_code(&results))
 }

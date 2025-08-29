@@ -1,3 +1,5 @@
+mod serde_impls;
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -21,10 +23,12 @@ use omni_core::{
 use omni_hasher::impls::DefaultHash;
 use omni_process::{ChildProcess, ChildProcessResult};
 use owo_colors::{OwoColorize, Style};
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{FsCreateDirAllAsync, impls::RealSys};
 
 use crate::{
+    configurations::MetaConfiguration,
     context::{CacheInfo, Context, ContextSys},
     utils::env::EnvVarsMap,
 };
@@ -138,6 +142,9 @@ pub struct TaskExecutor<TSys: TaskExecutorSys + 'static = RealSys> {
 
     #[builder(default)]
     max_concurrency: Option<usize>,
+
+    #[builder(default)]
+    add_task_details: bool,
 }
 
 impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
@@ -146,7 +153,8 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
     }
 }
 
-#[derive(Debug, new, EnumIs, Display)]
+#[derive(Debug, new, EnumIs, Display, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum SkipReason {
     #[strum(to_string = "task in a previous batch failed")]
     PreviousBatchFailure,
@@ -156,22 +164,36 @@ pub enum SkipReason {
     Disabled,
 }
 
-#[derive(Debug, new, EnumIs)]
+#[derive(Debug, Clone, new, Serialize, Deserialize, Default)]
+pub struct TaskDetails {
+    meta: Option<MetaConfiguration>,
+}
+
+#[derive(Debug, new, EnumIs, Serialize, Deserialize)]
+#[serde(tag = "status")]
+#[serde(rename_all = "kebab-case")]
 pub enum TaskExecutionResult {
     Completed {
+        #[serde(with = "serde_impls::default_hash_option_to_string")]
         hash: Option<DefaultHash>,
         task: TaskExecutionNode,
         exit_code: u32,
         elapsed: std::time::Duration,
         cache_hit: bool,
+        #[new(default)]
+        details: Option<TaskDetails>,
     },
-    ErrorBeforeComplete {
+    Error {
         task: TaskExecutionNode,
-        error: eyre::Report,
+        error: String,
+        #[new(default)]
+        details: Option<TaskDetails>,
     },
     Skipped {
         task: TaskExecutionNode,
-        reason: SkipReason,
+        skip_reason: SkipReason,
+        #[new(default)]
+        details: Option<TaskDetails>,
     },
 }
 
@@ -185,7 +207,7 @@ impl TaskExecutionResult {
     pub fn hash(&self) -> Option<DefaultHash> {
         match self {
             TaskExecutionResult::Completed { hash, .. } => *hash,
-            TaskExecutionResult::ErrorBeforeComplete { .. } => None,
+            TaskExecutionResult::Error { .. } => None,
             TaskExecutionResult::Skipped { .. } => None,
         }
     }
@@ -194,7 +216,7 @@ impl TaskExecutionResult {
         matches!(
             self,
             TaskExecutionResult::Skipped {
-                reason: SkipReason::DependeeTaskFailure
+                skip_reason: SkipReason::DependeeTaskFailure
                     | SkipReason::PreviousBatchFailure,
                 ..
             }
@@ -202,14 +224,40 @@ impl TaskExecutionResult {
     }
 
     pub fn skipped_or_error(&self) -> bool {
-        self.is_skipped_due_to_error() || self.is_error_before_complete()
+        self.is_skipped_due_to_error() || self.is_error()
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
         match self {
             TaskExecutionResult::Completed { task, .. } => task,
-            TaskExecutionResult::ErrorBeforeComplete { task, .. } => task,
+            TaskExecutionResult::Error { task, .. } => task,
             TaskExecutionResult::Skipped { task, .. } => task,
+        }
+    }
+
+    pub fn details(&self) -> Option<&TaskDetails> {
+        match self {
+            TaskExecutionResult::Completed { details, .. }
+            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Skipped { details, .. } => details.as_ref(),
+        }
+    }
+
+    pub fn details_mut(&mut self) -> Option<&mut TaskDetails> {
+        match self {
+            TaskExecutionResult::Completed { details, .. }
+            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Skipped { details, .. } => details.as_mut(),
+        }
+    }
+
+    pub fn set_details(&mut self, td: TaskDetails) {
+        match self {
+            TaskExecutionResult::Completed { details, .. }
+            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Skipped { details, .. } => {
+                *details = Some(td);
+            }
         }
     }
 }
@@ -253,6 +301,8 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed"
             );
         }
+
+        let start = std::time::Instant::now();
 
         let mut ctx = self.context.clone();
         if let Call::Task(task) = &self.call
@@ -439,9 +489,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
         'main_loop: for batch in &execution_plan {
             // Short circuit if any task failed and the user wants to skip the next batches if any
             // task failed
-            let any_failed = overall_results
-                .values()
-                .any(|r| r.is_error_before_complete());
+            let any_failed = overall_results.values().any(|r| r.is_error());
             if any_failed && self.on_failure == OnFailure::SkipNextBatches {
                 for task in batch {
                     overall_results.insert(
@@ -840,9 +888,9 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     }
                     Err((task, error)) => (
                         task.node.full_task_name().to_string(),
-                        TaskExecutionResult::new_error_before_complete(
+                        TaskExecutionResult::new_error(
                             task.node.clone(),
-                            eyre::eyre!("{error}"),
+                            error.to_string(),
                         ),
                     ),
                 };
@@ -850,8 +898,24 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 overall_results.insert(key, result);
             }
         }
+        let mut results = overall_results.into_values().collect::<Vec<_>>();
 
-        Ok(overall_results.into_values().collect())
+        if self.add_task_details {
+            for result in results.iter_mut() {
+                let task = result.task();
+                let mut details = result.details().cloned().unwrap_or_default();
+
+                if details.meta.is_none() {
+                    details.meta = get_meta(task).cloned();
+                }
+
+                result.set_details(details);
+            }
+        }
+
+        trace::info!("Overrall execution time: {:?}", start.elapsed());
+
+        Ok(results)
     }
 }
 
