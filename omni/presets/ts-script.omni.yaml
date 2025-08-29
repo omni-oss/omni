@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: ts-script
+
+tasks:
+  test:
+    enabled: false
+
+  test:unit:
+    enabled: false
+
+  test:integration:
+    enabled: false
+
+  build:
+    output:
+      files:
+        - "./bin/**/*"
+
+cache:
+  key:
+    files:
+      append:
+        - build.ts
+
+extends:
+  - "./ts.omni.yaml"
+
+meta:
+  type: script

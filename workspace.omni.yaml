@@ -5,6 +5,7 @@ projects:
   - crates/**
   - packages/**
   - docs/**
+  - scripts/**
 
 generators:
   - generators/**
