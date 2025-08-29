@@ -23,6 +23,9 @@ jobs:
   publish-docs:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
         with:
