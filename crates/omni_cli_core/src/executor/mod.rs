@@ -159,12 +159,11 @@ pub enum SkipReason {
 #[derive(Debug, new, EnumIs)]
 pub enum TaskExecutionResult {
     Completed {
-        result: ChildProcessResult,
         hash: Option<DefaultHash>,
-    },
-    CacheHit {
-        result: ChildProcessResult,
-        hash: Option<DefaultHash>,
+        task: TaskExecutionNode,
+        exit_code: u32,
+        elapsed: std::time::Duration,
+        cache_hit: bool,
     },
     ErrorBeforeComplete {
         task: TaskExecutionNode,
@@ -179,16 +178,13 @@ pub enum TaskExecutionResult {
 impl TaskExecutionResult {
     pub fn success(&self) -> bool {
         matches!(self,
-            TaskExecutionResult::Completed { result, .. }
-            | TaskExecutionResult::CacheHit { result, .. }
-            if result.success()
+            TaskExecutionResult::Completed {exit_code, ..} if *exit_code == 0
         )
     }
 
     pub fn hash(&self) -> Option<DefaultHash> {
         match self {
             TaskExecutionResult::Completed { hash, .. } => *hash,
-            TaskExecutionResult::CacheHit { hash, .. } => *hash,
             TaskExecutionResult::ErrorBeforeComplete { .. } => None,
             TaskExecutionResult::Skipped { .. } => None,
         }
@@ -211,14 +207,9 @@ impl TaskExecutionResult {
 
     pub fn task(&self) -> &TaskExecutionNode {
         match self {
-            TaskExecutionResult::Completed {
-                result: execution, ..
-            } => &execution.node,
+            TaskExecutionResult::Completed { task, .. } => task,
             TaskExecutionResult::ErrorBeforeComplete { task, .. } => task,
             TaskExecutionResult::Skipped { task, .. } => task,
-            TaskExecutionResult::CacheHit {
-                result: execution, ..
-            } => &execution.node,
         }
     }
 }
@@ -250,6 +241,10 @@ impl<'a> TaskContext<'a> {
 }
 
 impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
+    fn should_replay_logs(&self) -> bool {
+        !self.dry_run && self.replay_cached_logs
+    }
+
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
@@ -560,7 +555,8 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                             "Skipping disabled task '{}'",
                             task_ctx.node.full_task_name()
                         )
-                        .yellow()
+                        .white()
+                        .dimmed()
                     );
 
                     continue 'inner_loop;
@@ -600,14 +596,12 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 {
                     overall_results.insert(
                         task_ctx.node.full_task_name().to_string(),
-                        TaskExecutionResult::new_cache_hit(
-                            ChildProcessResult::new(
-                                task_ctx.node.clone(),
-                                res.exit_code,
-                                res.execution_duration,
-                                None,
-                            ),
+                        TaskExecutionResult::new_completed(
                             Some(res.execution_hash),
+                            task_ctx.node.clone(),
+                            res.exit_code,
+                            res.execution_duration,
+                            true,
                         ),
                     );
 
@@ -625,7 +619,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                         } else {
                             EXIT_CODE_ERROR_STYLE
                         }),
-                        (if self.replay_cached_logs {
+                        (if self.should_replay_logs() {
                             "(replaying logs)"
                         } else {
                             "(skipping logs)"
@@ -633,8 +627,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                         .dimmed()
                     );
 
-                    if !self.dry_run
-                        && self.replay_cached_logs
+                    if self.should_replay_logs()
                         && let Some(logs_path) = &res.logs_path
                     {
                         let file = AllowStdIo::new(
@@ -687,6 +680,10 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     task_ctx.cache_info.is_some_and(|ci| ci.cache_logs);
 
                 if self.dry_run {
+                    trace::info!(
+                        "Executing task '{}'",
+                        task_ctx.node.full_task_name()
+                    );
                     let node = task_ctx.node.clone();
                     task_results.push(Ok((
                         task_ctx,
@@ -820,24 +817,26 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     Ok((ctx, result)) => {
                         let fname = result.node.full_task_name().to_string();
 
-                        let exec_result = if !self.no_cache
+                        let exec_hash = if !self.no_cache
                             && ctx
                                 .cache_info
                                 .is_some_and(|ci| ci.cache_execution)
                             && let Some(cte) = saved_caches.get(&fname)
                         {
-                            TaskExecutionResult::new_completed(
-                                result.clone(),
-                                Some(cte.execution_hash),
-                            )
+                            Some(cte.execution_hash)
                         } else {
-                            TaskExecutionResult::new_completed(
-                                result.clone(),
-                                None,
-                            )
+                            None
                         };
 
-                        (fname, exec_result)
+                        let task_results = TaskExecutionResult::new_completed(
+                            exec_hash,
+                            result.node.clone(),
+                            result.exit_code,
+                            result.elapsed,
+                            false,
+                        );
+
+                        (fname, task_results)
                     }
                     Err((task, error)) => (
                         task.node.full_task_name().to_string(),
