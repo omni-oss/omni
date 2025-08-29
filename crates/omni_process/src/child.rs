@@ -19,7 +19,7 @@ pub struct Child {
     inner: ChildInner,
     input: Cell<Option<Pin<Box<dyn ChildInputWriter>>>>,
     output: Cell<Option<Pin<Box<dyn ChildOutputReader>>>>,
-    error: Cell<Option<Pin<Box<dyn ChildOutputReader>>>>,
+    error: Cell<Option<Option<Pin<Box<dyn ChildOutputReader>>>>>,
     pid: Option<u32>,
 }
 
@@ -92,7 +92,7 @@ impl Child {
             ChildInner::Pty(child),
             Cell::new(Some(Box::pin(AllowStdIo::new(writer)))),
             Cell::new(Some(Box::pin(AllowStdIo::new(reader)))),
-            Cell::new(None),
+            Cell::new(Some(None)),
             pid,
         ))
     }
@@ -138,7 +138,7 @@ impl Child {
             ChildInner::Normal(child),
             Cell::new(Some(Box::pin(stdin.compat_write()))),
             Cell::new(Some(Box::pin(stdout.compat()))),
-            Cell::new(Some(Box::pin(stderr.compat()))),
+            Cell::new(Some(Some(Box::pin(stderr.compat())))),
             pid,
         ))
     }
@@ -159,7 +159,9 @@ impl Child {
         self.output.take()
     }
 
-    pub fn take_error_reader(&self) -> Option<impl ChildOutputReader + use<>> {
+    pub fn take_error_reader(
+        &self,
+    ) -> Option<Option<impl ChildOutputReader + use<>>> {
         self.error.take()
     }
     pub fn pid(&self) -> Option<u32> {

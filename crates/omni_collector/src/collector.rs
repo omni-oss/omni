@@ -218,7 +218,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         );
 
         for project in project_tasks {
-            trace::debug!(
+            trace::trace!(
                 project_name = ?project.project_name,
                 project = ?project,
                 "processing project"

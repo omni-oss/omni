@@ -10,6 +10,7 @@ use maps::Map;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
+use tokio::sync::mpsc;
 
 use crate::{Child, ChildError};
 
@@ -101,7 +102,9 @@ impl ChildProcess {
         self
     }
 
-    pub async fn exec(self) -> Result<ChildProcessResult, TaskExecutorError> {
+    pub async fn exec(
+        mut self,
+    ) -> Result<ChildProcessResult, TaskExecutorError> {
         if self.task.task_command().is_empty() {
             return Ok(ChildProcessResult {
                 node: self.task,
@@ -132,9 +135,13 @@ impl ChildProcess {
             self.env_vars.unwrap_or_default(),
         )?;
 
-        let mut stdout = child
+        let stdout = child
             .take_output_reader()
             .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
+
+        let stderr = child
+            .take_error_reader()
+            .ok_or(TaskExecutorErrorInner::CantTakeStderr)?;
 
         let mut input = child
             .take_input_writer()
@@ -142,33 +149,85 @@ impl ChildProcess {
 
         let mut tasks = vec![];
 
-        let stdout_task = tokio::spawn(async move {
+        let (logs_tx, mut logs_rx) = mpsc::channel::<Bytes>(256);
+
+        let has_output_writer = self.output_writer.is_some();
+        if has_output_writer || self.record_logs {
+            {
+                let logs_tx = logs_tx.clone();
+
+                tasks.push(tokio::spawn(async move {
+                    let mut buff = [0; 4096];
+                    let mut reader = stdout.take(u64::MAX);
+
+                    while let Ok(n) = reader.read(&mut buff).await {
+                        if n == 0 {
+                            trace::trace!("stdout is empty, breaking");
+                            break;
+                        }
+                        logs_tx
+                            .send(Bytes::copy_from_slice(&buff[..n]))
+                            .await?;
+                    }
+
+                    trace::trace!("stdout task done");
+
+                    Ok::<_, TaskExecutorError>(())
+                }));
+            }
+
+            if let Some(stderr) = stderr {
+                let logs_tx = logs_tx.clone();
+
+                tasks.push(tokio::spawn(async move {
+                    let mut buff = [0; 4096];
+                    let mut reader = stderr.take(u64::MAX);
+
+                    while let Ok(n) = reader.read(&mut buff).await {
+                        if n == 0 {
+                            trace::trace!("stderr is empty, breaking");
+                            break;
+                        }
+                        logs_tx
+                            .send(Bytes::copy_from_slice(&buff[..n]))
+                            .await?;
+                    }
+
+                    trace::trace!("stderr task done");
+
+                    Ok::<_, TaskExecutorError>(())
+                }));
+            }
+
+            drop(logs_tx);
+        }
+
+        let mut writer = self.output_writer.take();
+        let logs_output_task = tokio::spawn(async move {
             if !self.record_logs && self.output_writer.is_none() {
                 return Ok::<_, TaskExecutorError>(None);
             }
 
-            let mut bytes = if self.record_logs {
+            let mut logs_output = if self.record_logs {
                 Some(BytesMut::new())
             } else {
                 None
             };
 
-            let mut buff = [0; 4096];
-            let mut writer = self.output_writer;
-
-            while let Ok(n) = stdout.read(&mut buff).await
-                && n > 0
-            {
-                if let Some(bytes) = &mut bytes {
-                    bytes.put_slice(&buff[..n]);
+            while let Some(buff) = logs_rx.recv().await {
+                trace::debug!("received log chunk");
+                if let Some(logs_output) = &mut logs_output {
+                    trace::debug!("writing log chunk to logs output");
+                    logs_output.put_slice(&buff[..]);
                 }
 
                 if let Some(writer) = writer.as_mut() {
-                    writer.write_all(&buff[..n]).await?;
+                    trace::debug!("writing log chunk to output writer");
+                    writer.write_all(&buff[..]).await?;
                 }
             }
-
-            Ok::<_, TaskExecutorError>(bytes.map(|b| b.freeze()))
+            trace::debug!("logs output task done");
+            Ok::<_, TaskExecutorError>(logs_output.map(|b| b.freeze()))
         });
 
         if let Some(input_reader) = self.input_reader {
@@ -191,11 +250,10 @@ impl ChildProcess {
 
         let all_tasks = try_join_all(tasks);
 
-        let (vec_result, stdout, exit_status) =
-            tokio::join!(all_tasks, stdout_task, child.wait());
+        let (vec_result, exit_status) = tokio::join!(all_tasks, child.wait());
 
         let _ = vec_result?;
-        let logs = stdout??;
+        let logs = logs_output_task.await??;
 
         let exit_code = exit_status?;
 
@@ -259,6 +317,9 @@ enum TaskExecutorErrorInner {
     #[error("cant't take stdout")]
     CantTakeStdout,
 
+    #[error("cant't take stderr")]
+    CantTakeStderr,
+
     // #[error("cant't take stderr")]
     // CantTakeStderr,
     #[error(transparent)]
@@ -266,4 +327,7 @@ enum TaskExecutorErrorInner {
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),
+
+    #[error(transparent)]
+    Mpsc(#[from] tokio::sync::mpsc::error::SendError<Bytes>),
 }

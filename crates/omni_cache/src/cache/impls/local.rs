@@ -128,7 +128,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             )
             .await?;
 
-        trace::debug!(
+        trace::trace!(
             results = ?results,
             "collected results: {}",
             results.len()
