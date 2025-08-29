@@ -1,0 +1,38 @@
+name: "Setup Omni"
+description: "Setup Omni"
+inputs:
+  cache-key-prefix:
+    description: "Additional text to prepend to cache keys"
+    required: false
+    default: "global"
+  shell:
+    description: "Shell to use"
+    required: false
+    default: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+  github-token:
+    description: "GitHub token for higher rate limit"
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Omni
+      uses: omni-oss/setup-omni@v1
+      with:
+        github-token: ${{ inputs.github-token }}
+
+    - name: Get Workspace Hash
+      id: get_workspace_hash
+      run: echo "workspace_hash=$(omni hash -r workspace)" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Cache Omni directory
+      uses: actions/cache@v4
+      with:
+        path: |
+          .omni
+        key: ${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}-${{ steps.get_workspace_hash.outputs.workspace_hash }}
+        restore-keys: |
+          ${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}-
+          ${{ runner.os }}-omni-

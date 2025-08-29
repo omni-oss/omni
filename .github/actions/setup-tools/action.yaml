@@ -1,5 +1,5 @@
-name: "Setup"
-description: "Setup all the dependencies for the project"
+name: "Setup Tools"
+description: "Setup Tools"
 inputs:
   install-rust:
     description: "Install Rust toolchain"
@@ -7,6 +7,10 @@ inputs:
     default: "true"
   install-bun:
     description: "Install Bun runtime"
+    required: false
+    default: "true"
+  install-omni:
+    description: "Install Omni"
     required: false
     default: "true"
   install-node:
@@ -40,7 +44,8 @@ inputs:
     required: false
   shell:
     description: "Shell to use"
-    required: true
+    required: false
+    default: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
   github-token:
     description: "GitHub token for higher rate limit"
     required: false
@@ -49,26 +54,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Install Omni
-      uses: omni-oss/setup-omni@v1
-      with:
-        github-token: ${{ inputs.github-token }}
-
-    - name: Get Workspace Hash
-      id: get_workspace_hash
-      run: echo "workspace_hash=$(omni hash -r workspace)" >> $GITHUB_OUTPUT
-      shell: bash
-
-    - name: Cache Omni directory
-      uses: actions/cache@v4
-      with:
-        path: |
-          .omni
-        key: ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-${{ steps.get_workspace_hash.outputs.workspace_hash }}
-        restore-keys: |
-          ${{ runner.os }}-omni-${{ inputs.omni-cache-key-prefix || inputs.cache-key-prefix }}-
-          ${{ runner.os }}-omni-
-
     - name: Install Rust
       if: inputs.install-rust == 'true'
       uses: actions-rust-lang/setup-rust-toolchain@v1
