@@ -96,7 +96,7 @@ impl TracerSubscriber {
             layers.push(stdout_layer);
         }
 
-        if !config.stderr_trace_enabled {
+        if config.stderr_trace_enabled {
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stderr)
                 .with_filter(
