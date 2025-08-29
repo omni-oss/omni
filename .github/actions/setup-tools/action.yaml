@@ -107,6 +107,6 @@ runs:
           ${{ runner.os }}-bun-
 
     - name: Install Node dependencies
-        if: ${{ inputs.install-all == 'true' ||  inputs.install-bun == 'true' && inputs.install-node-modules == 'true' }}
+      if: ${{ inputs.install-all == 'true' ||  inputs.install-bun == 'true' && inputs.install-node-modules == 'true' }}
       run: bun install
       shell: ${{ inputs.shell }}
