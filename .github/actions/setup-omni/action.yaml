@@ -24,7 +24,7 @@ runs:
 
     - name: Get Workspace Hash
       id: get_workspace_hash
-      run: echo "workspace_hash=$(omni hash -r workspace)" >> $GITHUB_OUTPUT
+      run: echo "workspace_hash=\"$(omni hash -r workspace)\"" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Cache Omni directory
