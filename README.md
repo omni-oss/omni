@@ -1,6 +1,8 @@
 # Omni
 Development workflow orchestration tool
 
+[Documentation](https://omni-docs-chi.vercel.app/)
+
 
 ## Features
 - Task runner
