@@ -19,6 +19,11 @@ on:
 permissions:
   contents: write
 
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
 jobs:
   publish-docs:
     runs-on: ubuntu-latest
@@ -41,15 +46,15 @@ jobs:
           install-bun: true
           install-node-modules: true
           install-node: true
-
+          
+      - name: Install Vercel CLI
+        run: bun add -g vercel
+        
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
+        
       - name: Generate Docs
         run: omni run -p '@repo/dev-docs' build
 
       - name: Publish Docs
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          publish_branch: docs
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./docs/dev-docs/.output/public
-          destination_dir: .
-          keep_files: false
+        run: vercel deploy --prebuilt --token=${{ env.VERCEL_TOKEN }} --cwd ./docs/dev-docs/.vercel
