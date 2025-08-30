@@ -4,8 +4,4 @@ export const docs = defineDocs({
     dir: "content",
 });
 
-export default defineConfig({
-    mdxOptions: {
-        baseUrl: "/omni",
-    },
-});
+export default defineConfig({});
