@@ -16,7 +16,7 @@ export default defineConfig({
             projects: ["./tsconfig.json"],
         }),
         tanstackStart({
-            target: "static",
+            target: "vercel-static",
             customViteReactPlugin: true,
             prerender: {
                 enabled: true,

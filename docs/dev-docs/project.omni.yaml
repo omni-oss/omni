@@ -26,4 +26,4 @@ tasks:
   build:
     output:
       files:
-        - .output/**/*
+        - .vercel/**/*
