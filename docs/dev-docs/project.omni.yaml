@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
 name: "@repo/dev-docs"
 
+extends:
+  - "@workspace/omni/presets/ts-app.omni.yaml"
+
 cache:
   key:
     files:
@@ -23,7 +26,4 @@ tasks:
   build:
     output:
       files:
-        - .vercel/**/*
-
-extends:
-  - "@workspace/omni/presets/ts-app.omni.yaml"
+        - .output/**/*
