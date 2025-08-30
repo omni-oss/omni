@@ -57,4 +57,4 @@ jobs:
         run: omni run -p '@repo/dev-docs' build
 
       - name: Publish Docs
-        run: vercel deploy --prebuilt --token=${{ env.VERCEL_TOKEN }} --cwd ./docs/dev-docs
+        run: vercel deploy --prod --prebuilt --token=${{ env.VERCEL_TOKEN }} --cwd ./docs/dev-docs
