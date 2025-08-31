@@ -6,6 +6,8 @@ description: "omni is development workflow orchestration tool"
 
 version: "0.4.12"
 
+author: "Clarence Manuel &lt;rencedm112@gmail.com&gt;"
+
 ---
 
 
@@ -24,8 +26,6 @@ omni [OPTIONS] <SUBCOMMAND>
 
 Print traces to stdout
 
-
-
 - **Required:** No
 
 - **Default:** `info`
@@ -37,8 +37,6 @@ Print traces to stdout
 ### `--stderr-trace`
 
 Output Error traces to stderr
-
-
 
 - **Required:** No
 
@@ -52,8 +50,6 @@ Output Error traces to stderr
 
 The file to write traces to
 
-
-
 - **Required:** No
 
 - **Default:** `./.omni/trace/logs`
@@ -61,8 +57,6 @@ The file to write traces to
 ### `-f`, `--file-trace-level`
 
 The trace level to use for file traces
-
-
 
 - **Required:** No
 
@@ -76,8 +70,6 @@ The trace level to use for file traces
 
 The file which marks the root dir where to stop looking for env files
 
-
-
 - **Required:** No
 
 - **Default:** `workspace.omni.yaml`
@@ -85,8 +77,6 @@ The file which marks the root dir where to stop looking for env files
 ### `-e`, `--env-file`
 
 The env files to load per directory
-
-
 
 - **Required:** No
 
@@ -96,8 +86,6 @@ The env files to load per directory
 
 The environment to use
 
-
-
 - **Required:** No
 
 - **Environment variable:** `OMNI_ENV`
@@ -105,8 +93,6 @@ The environment to use
 ### `-i`, `--inherit-env-vars`
 
 Inherit environment variables from the parent process
-
-
 
 - **Required:** No
 

@@ -22,15 +22,11 @@ omni run [OPTIONS] <task> [args]
 
 The task to run
 
-
-
 - **Required:** Yes
 
 ### `[args]`
 
 The arguments to pass to the task
-
-
 
 - **Required:** No
 
@@ -42,8 +38,6 @@ The arguments to pass to the task
 
 Run the command without dependencies
 
-
-
 - **Required:** No
 
 - **Default:** `false`
@@ -53,8 +47,6 @@ Run the command without dependencies
 ### `-o`, `--on-failure`
 
 How to handle failures
-
-
 
 - **Required:** No
 
@@ -66,8 +58,6 @@ How to handle failures
 
 Don't save the execution result to the cache
 
-
-
 - **Required:** No
 
 - **Default:** `false`
@@ -78,8 +68,6 @@ Don't save the execution result to the cache
 
 Don't replay the logs of cached task executions
 
-
-
 - **Required:** No
 
 - **Possible values:** `true`, `false`
@@ -87,8 +75,6 @@ Don't replay the logs of cached task executions
 ### `-f`, `--force`
 
 Force execution of the task, even if it's already cached
-
-
 
 - **Required:** No
 
@@ -100,15 +86,11 @@ Force execution of the task, even if it's already cached
 
 Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language
 
-
-
 - **Required:** No
 
 ### `-p`, `--project`
 
 Run the command based on the project name matching the filter
-
-
 
 - **Required:** No
 
@@ -116,15 +98,11 @@ Run the command based on the project name matching the filter
 
 How many concurrent tasks to run
 
-
-
 - **Required:** No
 
 ### `-d`, `--dry-run`
 
 Don't execute the task, just print the command to be executed
-
-
 
 - **Required:** No
 
@@ -136,15 +114,11 @@ Don't execute the task, just print the command to be executed
 
 Output the results of the execution to the specified file
 
-
-
 - **Required:** No
 
 ### `--result-format`
 
 Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension
-
-
 
 - **Required:** No
 
