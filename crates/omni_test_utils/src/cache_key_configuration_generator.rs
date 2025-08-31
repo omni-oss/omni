@@ -9,7 +9,7 @@ use omni_types::OmniPath;
 #[builder(setter(into, strip_option), derive(Debug))]
 pub struct CacheKeyConfigurationGenerator {
     #[builder(default)]
-    defaults: bool,
+    defaults: Option<bool>,
     #[builder(default)]
     env: Vec<String>,
     #[builder(default)]

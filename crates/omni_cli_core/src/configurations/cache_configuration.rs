@@ -48,9 +48,9 @@ impl Default for CacheConfiguration {
     Ord,
 )]
 pub struct CacheKeyConfiguration {
-    #[serde(default = "super::utils::default_true")]
-    #[merge(strategy = config_utils::replace)]
-    pub defaults: bool,
+    #[serde(default)]
+    #[merge(strategy = config_utils::replace_if_some)]
+    pub defaults: Option<bool>,
 
     #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
     pub env: ListConfig<Replace<String>>,
@@ -62,9 +62,41 @@ pub struct CacheKeyConfiguration {
 impl Default for CacheKeyConfiguration {
     fn default() -> Self {
         Self {
-            defaults: true,
+            defaults: None,
             env: list_config_default(),
             files: list_config_default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_cache_key_merge_defaults() {
+        // It should only replace if the right side is Some
+        let mut default = CacheKeyConfiguration {
+            defaults: Some(true),
+            ..Default::default()
+        };
+        let custom = CacheKeyConfiguration {
+            defaults: None,
+            ..Default::default()
+        };
+
+        let mut default2 = CacheKeyConfiguration {
+            defaults: Some(true),
+            ..Default::default()
+        };
+
+        let custom2 = CacheKeyConfiguration {
+            defaults: Some(false),
+            ..Default::default()
+        };
+
+        default.merge(custom);
+        default2.merge(custom2);
+        assert_eq!(default.defaults, Some(true));
+        assert_eq!(default2.defaults, Some(false));
     }
 }

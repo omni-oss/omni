@@ -536,7 +536,9 @@ impl<TSys: ContextSys> Context<TSys> {
                     project_cache.clone()
                 };
 
-                let key_files = if cache.key.defaults {
+                let use_defaults = cache.key.defaults.unwrap_or(true);
+
+                let key_files = if use_defaults {
                     let mut files = cache.key.files.clone();
                     let mut additional_files = xt_graph
                         .get_transitive_extendee_ids(project_config.id())?;
@@ -553,7 +555,7 @@ impl<TSys: ContextSys> Context<TSys> {
                     format!("{}#{}", project_config.name, name),
                     CacheInfo {
                         cache_execution: cache.enabled,
-                        key_defaults: cache.key.defaults,
+                        key_defaults: use_defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
                         key_input_files: key_files,
                         cache_output_files: task_output.files.to_vec(),
