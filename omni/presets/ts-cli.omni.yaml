@@ -5,4 +5,4 @@ extends:
   - "./ts.omni.yaml"
 
 meta:
-  type: app
+  type: cli

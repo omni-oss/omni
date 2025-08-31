@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: "@repo/site"
+
+extends:
+  - "@workspace/omni/presets/ts-app.omni.yaml"
+
+cache:
+  key:
+    files:
+      append:
+        - content/**/*
+        - source.config.ts
+        - vite.config.ts
+        - source.generated.ts
+
+tasks:
+  test:
+    enabled: false
+
+  test:unit:
+    enabled: false
+
+  test:integration:
+    enabled: false
+
+  build:
+    output:
+      files:
+        - .vercel/**/*
+
+  preview:
+    dependencies:
+      - build
+    persistent: true
+    command: bun run preview

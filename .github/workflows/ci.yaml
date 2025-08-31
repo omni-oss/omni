@@ -105,6 +105,6 @@ jobs:
     needs: release
     uses: ./.github/workflows/publish-json-schemas.yaml
 
-  publish-docs:
+  publish-site:
     needs: release
-    uses: ./.github/workflows/publish-docs.yaml
+    uses: ./.github/workflows/publish-site.yaml
