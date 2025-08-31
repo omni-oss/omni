@@ -25,7 +25,7 @@ env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
 jobs:
-  publish-docs:
+  publish-site:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
