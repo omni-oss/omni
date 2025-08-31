@@ -90,14 +90,14 @@ class DeclspecMdxDocGenerator {
         await this.fs.writeFile(path, content);
     }
 
-    // private escapeHtml(str: string): string {
-    //     return str
-    //         .replace(/&/g, "&amp;")
-    //         .replace(/</g, "&lt;")
-    //         .replace(/>/g, "&gt;")
-    //         .replace(/"/g, "&quot;")
-    //         .replace(/'/g, "&#39;");
-    // }
+    private escapeHtml(str: string): string {
+        return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
 
     private generateCommandMdx(
         parents: string[],
@@ -115,6 +115,9 @@ class DeclspecMdxDocGenerator {
         if (command.version) {
             mdx.push(`version: "${command.version}"`);
         }
+        if (command.author) {
+            mdx.push(`author: "${this.escapeHtml(command.author)}"`);
+        }
         mdx.push("---");
         mdx.push("");
 
@@ -122,10 +125,9 @@ class DeclspecMdxDocGenerator {
         // mdx.push(`# ${command.name}`);
         // mdx.push("");
 
-        // if (command.about) {
-        //     mdx.push(command.about);
-        //     mdx.push("");
-        // }
+        if (command.long_about && command.long_about !== command.about) {
+            mdx.push(command.long_about);
+        }
 
         // Version and author info
         // const metadata = [];
@@ -210,10 +212,11 @@ class DeclspecMdxDocGenerator {
 
             mdx.push(`### ${flagsStr}`);
         }
+        
+        const help = arg.long_help || arg.help;
 
-        if (arg.help) {
-            mdx.push(arg.help);
-            mdx.push("");
+        if (help) {
+            mdx.push(help);
         }
 
         const details = [];

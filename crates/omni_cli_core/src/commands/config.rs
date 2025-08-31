@@ -19,7 +19,7 @@ pub struct ConfigArgs {}
 
 #[derive(clap::Subcommand)]
 pub enum ConfigSubcommands {
-    PrintSchema {
+    Schema {
         #[arg(value_enum, required = true)]
         schema: Schema,
 
@@ -57,7 +57,7 @@ fn output_schema(
 
 pub async fn run(config: &ConfigCommand) -> eyre::Result<()> {
     match config.subcommand {
-        ConfigSubcommands::PrintSchema {
+        ConfigSubcommands::Schema {
             schema: ref subcommand,
             ref args,
         } => {
