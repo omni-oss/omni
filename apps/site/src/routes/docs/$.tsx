@@ -27,7 +27,7 @@ export const Route = createFileRoute("/docs/$")({
 // a wrapper because we don't want `loader` to be called on client-side
 const loader = createServerFn({
     method: "GET",
-    type: "static",
+    type: import.meta.hot ? "dynamic" : "static",
 })
     .validator((slugs: string[]) => slugs)
     .handler(async ({ data: slugs }) => {
