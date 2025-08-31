@@ -78,6 +78,7 @@ omni_collector = { workspace = true }
 path-clean = { workspace = true }
 num_cpus = { workspace = true }
 omni_process = { workspace = true }
+clap_declspec = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

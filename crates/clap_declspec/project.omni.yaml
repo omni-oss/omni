@@ -1,16 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omni_cli_core
+name: clap_declspec
 
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - omni_core
-  - env_loader
-  - omni_expressions
-  - config_utils
-  - omni_types
-  - omni_process
-  - system_traits
-  - dir_walker
-  - clap_declspec
+  - env

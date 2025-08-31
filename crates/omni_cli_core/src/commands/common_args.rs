@@ -49,6 +49,7 @@ pub struct RunArgs {
 pub enum ResultFormat {
     Json,
     Yaml,
+    Toml,
 }
 
 impl RunArgs {

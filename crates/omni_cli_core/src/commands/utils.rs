@@ -1,4 +1,7 @@
-use std::{fs::OpenOptions, path::PathBuf, process::ExitCode, time::Duration};
+use std::{
+    fs::OpenOptions, io::Write as _, path::PathBuf, process::ExitCode,
+    time::Duration,
+};
 
 use eyre::OptionExt;
 use owo_colors::OwoColorize as _;
@@ -98,6 +101,7 @@ pub fn get_result_format(
             match ext.to_string_lossy().as_ref() {
                 "json" => ResultFormat::Json,
                 "yaml" | "yml" => ResultFormat::Yaml,
+                "toml" => ResultFormat::Toml,
                 _ => {
                     eyre::bail!(
                         "results file has an unsupported extension '{ext:?}'"
@@ -141,6 +145,10 @@ pub fn write_results(
         }
         ResultFormat::Yaml => {
             serde_yml::to_writer(&mut f, results)?;
+        }
+        ResultFormat::Toml => {
+            let text = toml::ser::to_string(results)?;
+            f.write_all(text.as_bytes())?;
         }
     }
 

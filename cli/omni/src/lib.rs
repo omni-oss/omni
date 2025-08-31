@@ -4,7 +4,7 @@ use clap::Parser as _;
 #[cfg(feature = "enable-tracing")]
 use omni_cli_core::tracer::TracerConfig;
 use omni_cli_core::{
-    commands::{self, Cli, CliSubcommands},
+    commands::{self, Cli, CliArgs, CliSubcommands},
     context,
 };
 use system_traits::impls::RealSys;
@@ -30,36 +30,39 @@ fn exit(code: ExitCode) -> ! {
 }
 
 #[inline(always)]
-fn ctx(cli: &Cli) -> eyre::Result<context::Context<RealSys>> {
+fn ctx(args: &CliArgs) -> eyre::Result<context::Context<RealSys>> {
     let sys = RealSys;
-    context::Context::from_args_and_sys(&cli.args, sys)
+    context::Context::from_args_and_sys(args, sys)
 }
 
-pub async fn run(cli: Cli) -> eyre::Result<()> {
-    match cli.subcommand {
-        CliSubcommands::Config(ref config) => {
+pub async fn run(sc: &CliSubcommands, args: &CliArgs) -> eyre::Result<()> {
+    match sc {
+        CliSubcommands::Config(config) => {
             commands::config::run(config).await?;
         }
-        CliSubcommands::Completion(ref completion) => {
+        CliSubcommands::Completion(completion) => {
             commands::completion::run(completion).await?;
         }
-        CliSubcommands::Exec(ref exec) => {
-            let context = ctx(&cli)?;
+        CliSubcommands::Exec(exec) => {
+            let context = ctx(args)?;
             let res = commands::exec::run(exec, &context).await?;
             exit(res);
         }
-        CliSubcommands::Env(ref env) => {
-            let mut context = ctx(&cli)?;
+        CliSubcommands::Env(env) => {
+            let mut context = ctx(args)?;
             commands::env::run(env, &mut context).await?;
         }
-        CliSubcommands::Run(ref run) => {
-            let context = ctx(&cli)?;
+        CliSubcommands::Run(run) => {
+            let context = ctx(args)?;
             let res = commands::run::run(run, &context).await?;
             exit(res);
         }
-        CliSubcommands::Hash(ref hash_command) => {
-            let context = ctx(&cli)?;
+        CliSubcommands::Hash(hash_command) => {
+            let context = ctx(args)?;
             commands::hash::run(hash_command, &context).await?;
+        }
+        CliSubcommands::Declspec(declspec_command) => {
+            commands::declspec::run(declspec_command).await?;
         }
     }
 
@@ -90,5 +93,5 @@ pub async fn main() -> eyre::Result<()> {
         trace::trace!("Tracing config: {:?}", tracing_config);
     }
 
-    run(cli).await
+    run(&cli.subcommand, &cli.args).await
 }
