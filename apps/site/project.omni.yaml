@@ -23,7 +23,32 @@ tasks:
   test:integration:
     enabled: false
 
+  gen:declspec:
+    command: bun run gen:declspec
+
+  gen:refdocs:
+    cache:
+      key:
+        files:
+          append:
+            - ./scripts/generate-references/**/*
+            - ./omni-declspec.json
+
+    dependencies:
+      - gen:declspec
+    command: bun run gen:refdocs
+    output:
+      files:
+        - content/docs/references/**/*
+
+  gen:
+    dependencies:
+      - gen:refdocs
+
   build:
+    dependencies:
+      - gen:refdocs
+
     output:
       files:
         - .vercel/**/*

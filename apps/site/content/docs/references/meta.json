@@ -1,5 +1,5 @@
 {
     "root": true,
-    "pages": ["commands"],
+    "pages": ["index", "commands"],
     "defaultOpen": false
 }

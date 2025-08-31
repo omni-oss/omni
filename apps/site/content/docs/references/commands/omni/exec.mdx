@@ -1,0 +1,99 @@
+---
+
+title: "exec"
+
+description: "Execute an ad-hoc command in projects"
+
+---
+
+
+
+## Usage
+
+```bash
+omni exec [OPTIONS] <command> [args]
+```
+
+---
+
+## Positional arguments
+
+### `<command>`
+
+- **Required:** Yes
+
+### `[args]`
+
+The arguments to pass to the task
+
+
+
+- **Required:** No
+
+---
+
+## Options
+
+### `-m`, `--meta`
+
+Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language
+
+
+
+- **Required:** No
+
+### `-p`, `--project`
+
+Run the command based on the project name matching the filter
+
+
+
+- **Required:** No
+
+### `-c`, `--max-concurrency`
+
+How many concurrent tasks to run
+
+
+
+- **Required:** No
+
+### `-d`, `--dry-run`
+
+Don't execute the task, just print the command to be executed
+
+
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--result`
+
+Output the results of the execution to the specified file
+
+
+
+- **Required:** No
+
+### `--result-format`
+
+Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension
+
+
+
+- **Required:** No
+
+- **Possible values:** `json`, `yaml`, `toml`
+
+---
+
+## Examples
+
+```bash
+omni exec [OPTIONS] <command> [args]
+```
+
+---
