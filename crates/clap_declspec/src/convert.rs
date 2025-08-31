@@ -9,6 +9,7 @@ fn convert_arg(arg: &Arg) -> CliArg {
         short: arg.get_short(),
         long: arg.get_long().map(|s| s.to_string()),
         help: arg.get_help().map(|s| s.to_string()),
+        long_help: arg.get_long_help().map(|s| s.to_string()),
         required: arg.is_required_set(),
         aliases: arg
             .get_all_aliases()
@@ -44,12 +45,16 @@ fn convert_command(cmd: &Command) -> CliCommand {
         name: cmd.get_name().to_string(),
         bin_name: cmd.get_bin_name().map(|s| s.to_string()),
         about: cmd.get_about().map(|s| s.to_string()),
+        long_about: cmd.get_long_about().map(|s| s.to_string()),
         positionals: cmd.get_positionals().map(convert_arg).collect(),
         opts: cmd.get_opts().map(convert_arg).collect(),
         subcommands,
         aliases,
         author,
         version: cmd.get_version().map(|s| s.to_string()),
+        long_version: cmd.get_long_version().map(|s| s.to_string()),
+        long_flag: cmd.get_long_flag().map(|s| s.to_string()),
+        short_flag: cmd.get_short_flag(),
     }
 }
 

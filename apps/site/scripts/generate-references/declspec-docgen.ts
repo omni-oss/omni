@@ -12,6 +12,7 @@ const CliArgSchema = z.object({
     short: z.string().length(1).nullable().optional(),
     long: z.string().nullable().optional(),
     help: z.string().nullable().optional(),
+    long_help: z.string().nullable().optional(),
     env: z.string().nullable().optional(),
 });
 
@@ -24,9 +25,13 @@ const CliCommandSchema = z.object({
         return z.array(CliCommandSchema);
     },
     about: z.string().nullable().optional(),
+    long_about: z.string().nullable().optional(),
     author: z.string().nullable().optional(),
     bin_name: z.string().nullable().optional(),
     version: z.string().nullable().optional(),
+    long_version: z.string().nullable().optional(),
+    short_flag: z.string().length(1).nullable().optional(),
+    long_flag: z.string().nullable().optional(),
 });
 
 // Type inference from Zod schemas
