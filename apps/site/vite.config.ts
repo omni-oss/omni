@@ -16,7 +16,7 @@ export default defineConfig({
             projects: ["./tsconfig.json"],
         }),
         tanstackStart({
-            target: "vercel-static",
+            target: "vercel",
             customViteReactPlugin: true,
             sitemap: {
                 host: "https://omni-oss.vercel.app",
