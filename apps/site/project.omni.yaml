@@ -25,6 +25,9 @@ tasks:
 
   gen:declspec:
     command: bun run gen:declspec
+    output:
+      files:
+        - ./omni-declspec.json
 
   gen:refdocs:
     cache:
