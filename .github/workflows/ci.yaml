@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "!./apps/site/**"
+      - "!bun.lock"
     tags:
       - "v*.*.*" # Trigger release on version tags like v1.0.0
   pull_request:
