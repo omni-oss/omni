@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "./apps/site/**"
     tags:
       - "v*.*.*" # Trigger release on version tags like v1.0.0
   pull_request:
