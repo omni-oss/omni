@@ -15,6 +15,13 @@ on:
         type: string
         default: "latest"
         description: "Version to publish"
+    secrets:
+      VERCEL_ORG_ID:
+        required: true
+      VERCEL_PROJECT_ID:
+        required: true
+      VERCEL_TOKEN:
+        required: true
 
 permissions:
   contents: write
