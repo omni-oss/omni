@@ -13,6 +13,6 @@
     "workspaces": [
         "packages/*",
         "scripts/*",
-        "docs/*"
+        "apps/*"
     ]
 }

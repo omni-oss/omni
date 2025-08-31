@@ -1,0 +1,14 @@
+{
+    "root": true,
+    "pages": [
+        "---Introduction---",
+        "...(introduction)",
+        "---[Settings]Setup---",
+        "...(setup)",
+        "---In Depth---",
+        "tutorial",
+        "guides",
+        "references",
+        "..."
+    ]
+}
