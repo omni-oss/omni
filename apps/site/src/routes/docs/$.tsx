@@ -74,28 +74,31 @@ function Page() {
     );
 }
 
-function transformPageTree(tree: PageTree.Folder): PageTree.Folder {
-    function page(item: PageTree.Item) {
-        if (typeof item.icon !== "string") return item;
-
-        return {
-            ...item,
-            icon: (
-                <span
-                    // biome-ignore lint/security/noDangerouslySetInnerHtml: false
-                    dangerouslySetInnerHTML={{
-                        __html: item.icon,
-                    }}
-                />
-            ),
-        };
-    }
+function transformItem<
+    T extends PageTree.Item | PageTree.Separator = PageTree.Item,
+>(item: T): T {
+    if (typeof item.icon !== "string") return item;
 
     return {
+        ...item,
+        icon: (
+            <span
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: false
+                dangerouslySetInnerHTML={{
+                    __html: item.icon,
+                }}
+            />
+        ),
+    };
+}
+
+function transformPageTree(tree: PageTree.Folder): PageTree.Folder {
+    return {
         ...tree,
-        index: tree.index ? page(tree.index) : undefined,
+        index: tree.index ? transformItem(tree.index) : undefined,
         children: tree.children.map((item) => {
-            if (item.type === "page") return page(item);
+            if (item.type === "page" || item.type === "separator")
+                return transformItem(item);
             if (item.type === "folder") return transformPageTree(item);
             return item;
         }),
