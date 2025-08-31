@@ -9,7 +9,7 @@ use run::RunCommand;
 mod utils;
 mod common_args;
 
-use crate::{build, commands::hash::HashCommand, tracer::TraceLevel};
+use crate::{build, commands::{declspec::DeclspecCommand, hash::HashCommand}, tracer::TraceLevel};
 
 pub mod completion;
 pub mod config;
@@ -17,6 +17,7 @@ pub mod env;
 pub mod exec;
 pub mod run;
 pub mod hash;
+pub mod declspec;
 
 const ABOUT: &str = "omni is development workflow orchestration tool";
 const LONG_ABOUT: &str = r#"
@@ -148,4 +149,6 @@ pub enum CliSubcommands {
     Run(RunCommand),
     #[command(about = "Get hash for workspace or projects")]
     Hash(HashCommand),
+    #[command(about = "Generate machine readable CLI specification")]
+    Declspec(DeclspecCommand),
 }

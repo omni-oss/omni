@@ -1,3 +1,5 @@
+use std::io::BufWriter;
+
 use clap::CommandFactory as _;
 use clap_complete::Shell;
 
@@ -25,12 +27,13 @@ pub struct CompletionArgs {
 
 pub async fn run(completion: &CompletionCommand) -> eyre::Result<()> {
     let shell = completion.args.shell.unwrap_or(Shell::Bash);
+    let mut buf = BufWriter::new(std::io::stdout());
 
     clap_complete::generate(
         shell,
         &mut Cli::command(),
         build::PROJECT_NAME,
-        &mut std::io::stdout(),
+        &mut buf,
     );
 
     Ok(())
