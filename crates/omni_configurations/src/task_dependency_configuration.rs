@@ -99,17 +99,17 @@ impl TaskDependencyConfiguration {
     }
 }
 
-impl From<TaskDependencyConfiguration> for crate::core::TaskDependency {
+impl From<TaskDependencyConfiguration> for omni_core::TaskDependency {
     fn from(val: TaskDependencyConfiguration) -> Self {
         match val {
             TaskDependencyConfiguration::Own { task } => {
-                crate::core::TaskDependency::Own { task }
+                omni_core::TaskDependency::Own { task }
             }
             TaskDependencyConfiguration::ExplicitProject { project, task } => {
-                crate::core::TaskDependency::ExplicitProject { project, task }
+                omni_core::TaskDependency::ExplicitProject { project, task }
             }
             TaskDependencyConfiguration::Upstream { task } => {
-                crate::core::TaskDependency::Upstream { task }
+                omni_core::TaskDependency::Upstream { task }
             }
         }
     }

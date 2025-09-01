@@ -4,7 +4,7 @@ use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::configurations::utils::list_config_default;
+use crate::utils::list_config_default;
 
 #[derive(
     Debug,

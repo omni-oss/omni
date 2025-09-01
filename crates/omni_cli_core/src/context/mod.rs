@@ -38,12 +38,11 @@ use system_traits::{
 use crate::{
     commands::CliArgs,
     configurations::{
-        ExtensionGraph, ExtensionGraphNode, MetaConfiguration,
-        ProjectConfiguration, TaskConfiguration, TaskOutputConfiguration,
-        WorkspaceConfiguration,
+        MetaConfiguration, ProjectConfiguration, TaskConfiguration,
+        TaskOutputConfiguration, WorkspaceConfiguration,
     },
     constants::{self},
-    core::{Project, Task},
+    core::{ExtensionGraph, ExtensionGraphNode, Project, Task},
     utils::env::EnvVarsMap,
 };
 

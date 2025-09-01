@@ -134,6 +134,7 @@ num_cpus = { version = "^1.17.0" }
 omni_generator = { path = "./crates/omni_generator" }
 omni_collector = { path = "./crates/omni_collector" }
 omni_utils = { path = "./crates/omni_utils" }
+omni_configurations = { path = "./crates/omni_configurations" }
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
 path-slash = { version = "^0.2.1" }

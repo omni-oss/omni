@@ -5,10 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
-use crate::{
-    configurations::ExecutorsConfiguration, constants::WORKSPACE_NAME_REGEX,
-    utils,
-};
+use crate::{ExecutorsConfiguration, constants::WORKSPACE_NAME_REGEX, utils};
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
