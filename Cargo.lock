@@ -2217,6 +2217,7 @@ dependencies = [
  "num_cpus",
  "omni_cache",
  "omni_collector",
+ "omni_configurations",
  "omni_core",
  "omni_expressions",
  "omni_hasher",
@@ -2270,6 +2271,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_configurations"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "config_utils",
+ "derive-new",
+ "derive_more",
+ "eyre",
+ "garde",
+ "js_runtime",
+ "lazy-regex",
+ "maps",
+ "merge",
+ "omni_core",
+ "omni_expressions",
+ "omni_types",
+ "petgraph",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "strum 0.27.2",
+ "system_traits",
+ "thiserror 2.0.12",
+ "toml",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_core"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -2277,9 +2307,11 @@ dependencies = [
  "derive_more",
  "eyre",
  "maps",
+ "merge",
  "petgraph",
  "schemars",
  "serde",
+ "sets",
  "strum 0.27.2",
  "thiserror 2.0.12",
  "trace",

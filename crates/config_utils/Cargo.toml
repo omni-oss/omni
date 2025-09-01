@@ -6,7 +6,7 @@ version.workspace = true
 repository.workspace = true
 
 [features]
-default = []
+default = ["serde", "schemars", "validator-garde"]
 serde = ["dep:serde"]
 schemars = ["dep:schemars"]
 validator-garde = ["dep:garde"]

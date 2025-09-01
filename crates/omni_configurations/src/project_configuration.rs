@@ -8,10 +8,8 @@ use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
 use crate::{
-    configurations::{
-        CacheConfiguration, ExtensionGraphNode, MetaConfiguration,
-        utils::list_config_default,
-    },
+    CacheConfiguration, MetaConfiguration,
+    utils::list_config_default,
     utils::{self},
 };
 
@@ -58,7 +56,7 @@ pub struct ProjectConfiguration {
     pub tasks: DictConfig<TaskConfiguration>,
 }
 
-impl ExtensionGraphNode for ProjectConfiguration {
+impl omni_core::ExtensionGraphNode for ProjectConfiguration {
     type Id = OmniPath;
 
     fn id(&self) -> &Self::Id {

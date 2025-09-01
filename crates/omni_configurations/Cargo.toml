@@ -1,5 +1,5 @@
 [package]
-name = "omni_core"
+name = "omni_configurations"
 rust-version.workspace = true
 edition.workspace = true
 version.workspace = true
@@ -11,6 +11,9 @@ enable-tracing = ["trace/enabled", "dep:tracing"]
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yml = { workspace = true }
+toml = { workspace = true }
 schemars = { workspace = true }
 derive_more = { workspace = true }
 petgraph = { workspace = true }
@@ -22,4 +25,11 @@ strum = { workspace = true }
 derive-new = { workspace = true }
 maps = { workspace = true }
 merge = { workspace = true }
-sets = { workspace = true }
+omni_core = { workspace = true }
+omni_expressions = { workspace = true }
+config_utils = { workspace = true }
+omni_types = { workspace = true }
+js_runtime = { workspace = true }
+garde = { workspace = true }
+system_traits = { workspace = true }
+lazy-regex = { workspace = true }

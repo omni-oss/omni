@@ -1,16 +1,13 @@
 use config_utils::{DictConfig, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
-use omni_core::TaskDependency;
+use omni_core::{Task, TaskDependency};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    configurations::{
-        CacheConfiguration, MetaConfiguration, TaskOutputConfiguration,
-        utils::default_true,
-    },
-    core::Task,
+    CacheConfiguration, MetaConfiguration, TaskOutputConfiguration,
+    utils::default_true,
 };
 
 use super::TaskDependencyConfiguration;
