@@ -4,8 +4,7 @@ use derive_builder::Builder;
 
 use crate::{ProjectGenerator, ProjectGeneratorBuilder};
 use omni_cli_core::configurations::{
-    JsRuntime, JsScriptingConfiguration, ScriptingConfiguration,
-    WorkspaceConfiguration,
+    ExecutorsConfiguration, WorkspaceConfiguration,
 };
 
 #[derive(Builder, Debug)]
@@ -75,11 +74,7 @@ impl WorkspaceGenerator {
         let ws = WorkspaceConfiguration {
             projects: vec!["./projects/*".to_string()],
             generators: vec!["./generators/*".to_string()],
-            scripting: ScriptingConfiguration {
-                js: JsScriptingConfiguration {
-                    runtime: JsRuntime::Auto,
-                },
-            },
+            executors: ExecutorsConfiguration::default(),
             name: self.name.clone(),
         };
 

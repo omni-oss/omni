@@ -16,25 +16,28 @@ use serde::{Deserialize, Serialize};
     Validate,
 )]
 #[garde(allow_unvalidated)]
-pub struct ScriptingConfiguration {
+pub struct ExecutorsConfiguration {
     #[serde(default)]
-    pub js: JsScriptingConfiguration,
+    pub javascript: JsScriptingConfiguration,
+
+    #[serde(default)]
+    pub task: TaskExecutorConfiguration,
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, Copy,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Copy,
+    Default,
 )]
 pub struct JsScriptingConfiguration {
     #[serde(default)]
     pub runtime: JsRuntime,
-}
-
-impl Default for JsScriptingConfiguration {
-    fn default() -> Self {
-        Self {
-            runtime: JsRuntime::Auto,
-        }
-    }
 }
 
 #[derive(
@@ -66,4 +69,41 @@ impl From<JsRuntime> for DelegatingJsRuntimeOption {
             JsRuntime::Auto => DelegatingJsRuntimeOption::Auto,
         }
     }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Copy,
+    Default,
+)]
+pub struct TaskExecutorConfiguration {
+    #[serde(default)]
+    shell: Shell,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Shell {
+    Sh,
+    Bash,
+    Zsh,
+    Pwsh,
+    #[default]
+    Auto,
 }
