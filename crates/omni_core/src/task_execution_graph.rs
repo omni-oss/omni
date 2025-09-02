@@ -24,17 +24,20 @@ pub struct TaskExecutionNode {
     project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
+    dependencies: Vec<String>,
     enabled: bool,
     interactive: bool,
     persistent: bool,
 }
 
 impl TaskExecutionNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         task_name: impl Into<String>,
         task_command: impl Into<String>,
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
+        dependencies: Vec<String>,
         enabled: bool,
         interactive: bool,
         persistent: bool,
@@ -47,6 +50,7 @@ impl TaskExecutionNode {
             task_command: task_command.into(),
             project_name,
             project_dir: project_dir.into(),
+            dependencies,
             enabled,
             interactive,
             persistent,
@@ -75,6 +79,10 @@ impl TaskExecutionNode {
         self.full_task_name.as_str()
     }
 
+    pub fn dependencies(&self) -> &[String] {
+        &self.dependencies
+    }
+
     pub fn enabled(&self) -> bool {
         self.enabled
     }
@@ -87,16 +95,27 @@ impl TaskExecutionNode {
         self.persistent
     }
 
-    /// (task_name, task_command, project_name, project_dir, full_task_name, enabled, interactive, persistent)
+    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent)
     pub fn deconstruct(
         self,
-    ) -> (String, String, String, PathBuf, String, bool, bool, bool) {
+    ) -> (
+        String,
+        String,
+        String,
+        PathBuf,
+        String,
+        Vec<String>,
+        bool,
+        bool,
+        bool,
+    ) {
         (
             self.task_name,
             self.task_command,
             self.project_name,
             self.project_dir,
             self.full_task_name,
+            self.dependencies,
             self.enabled,
             self.interactive,
             self.persistent,
@@ -161,6 +180,7 @@ impl TaskExecutionGraph {
                     task.1.command.clone(),
                     project_name.to_string(),
                     project_dir.to_path_buf(),
+                    vec![],
                     task.1.enabled,
                     task.1.interactive,
                     task.1.persistent,
@@ -420,6 +440,12 @@ impl TaskExecutionGraph {
                 dependee.project_name(),
                 dependee.task_name(),
             ));
+        }
+
+        let to_full_name = self.di_graph[to_idx].full_task_name.clone();
+
+        if edge_type == EdgeType::Dependency {
+            self.di_graph[from_idx].dependencies.push(to_full_name);
         }
 
         Ok(())
@@ -1079,6 +1105,58 @@ mod tests {
         assert_eq!(p1t3_dependency.1.project_name, "project3");
     }
 
+    fn node_mut(
+        task_name: &str,
+        task_command: &str,
+        project_name: &str,
+        update: impl Fn(&mut TaskExecutionNode),
+    ) -> TaskExecutionNode {
+        node_with_deps_mut(task_name, task_command, project_name, &[], update)
+    }
+
+    fn node_with_deps_mut(
+        task_name: &str,
+        task_command: &str,
+        project_name: &str,
+        dependencies: &[&str],
+        update: impl Fn(&mut TaskExecutionNode),
+    ) -> TaskExecutionNode {
+        let mut node =
+            node_with_deps(task_name, task_command, project_name, dependencies);
+        update(&mut node);
+
+        node
+    }
+
+    fn node(
+        task_name: &str,
+        task_command: &str,
+        project_name: &str,
+    ) -> TaskExecutionNode {
+        return TaskExecutionNode::new(
+            task_name.to_string(),
+            task_command.to_string(),
+            project_name.to_string(),
+            PathBuf::from(""),
+            vec![],
+            true,
+            false,
+            false,
+        );
+    }
+
+    fn node_with_deps(
+        task_name: &str,
+        task_command: &str,
+        project_name: &str,
+        dependencies: &[&str],
+    ) -> TaskExecutionNode {
+        let mut node = node(task_name, task_command, project_name);
+        node.dependencies =
+            dependencies.iter().map(|s| s.to_string()).collect();
+        node
+    }
+
     #[test]
     fn test_batched_execution_plan() {
         let project_graph = create_project_graph();
@@ -1099,116 +1177,42 @@ mod tests {
 
         let mut expected_plan = vec![
             vec![
-                TaskExecutionNode::new(
-                    "p3t1".to_string(),
-                    "echo p3t1".to_string(),
-                    "project3".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "p2t1".to_string(),
-                    "echo p2t1".to_string(),
-                    "project2".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "shared-task-3".to_string(),
-                    "echo shared-task-3".to_string(),
-                    "project4".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
+                node("p3t1", "echo p3t1", "project3"),
+                node("p2t1", "echo p2t1", "project2"),
+                node("shared-task-3", "echo shared-task-3", "project4"),
             ],
-            vec![TaskExecutionNode::new(
-                "shared-task-3".to_string(),
-                "echo shared-task-3".to_string(),
-                "project3".to_string(),
-                blank_path.clone(),
-                true,
-                false,
-                false,
+            vec![node_with_deps(
+                "shared-task-3",
+                "echo shared-task-3",
+                "project3",
+                &["project4#shared-task-3"],
             )],
-            vec![TaskExecutionNode::new(
-                "shared-task-3".to_string(),
-                "echo shared-task-3".to_string(),
-                "project2".to_string(),
-                blank_path.clone(),
-                true,
-                false,
-                false,
+            vec![node_with_deps(
+                "shared-task-3",
+                "echo shared-task-3",
+                "project2",
+                &["project3#shared-task-3", "project2#p2t1"],
             )],
-            vec![TaskExecutionNode::new(
-                "shared-task-3".to_string(),
-                "echo shared-task-3".to_string(),
-                "project1".to_string(),
-                blank_path.clone(),
-                true,
-                false,
-                false,
+            vec![node_with_deps(
+                "shared-task-3",
+                "echo shared-task-3",
+                "project1",
+                &["project3#shared-task-3", "project2#shared-task-3"],
             )],
             vec![
-                TaskExecutionNode::new(
-                    "p1t4".to_string(),
-                    "echo p1t4".to_string(),
-                    "project1".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
+                node_with_deps(
+                    "p1t4",
+                    "echo p1t4",
+                    "project1",
+                    &["project3#p3t1", "project1#shared-task-3"],
                 ),
-                TaskExecutionNode::new(
-                    "sibling-2".to_string(),
-                    "echo sibling-2".to_string(),
-                    "project2".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "sibling-2.1".to_string(),
-                    "echo sibling-2.1".to_string(),
-                    "project2".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "sibling-3".to_string(),
-                    "echo sibling-3".to_string(),
-                    "project3".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "sibling-4".to_string(),
-                    "echo sibling-4".to_string(),
-                    "project4".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    false,
-                ),
-                TaskExecutionNode::new(
-                    "sibling-1".to_string(),
-                    "echo sibling-1".to_string(),
-                    "project1".to_string(),
-                    blank_path.clone(),
-                    true,
-                    false,
-                    true,
-                ),
+                node("sibling-2", "echo sibling-2", "project2"),
+                node("sibling-2.1", "echo sibling-2.1", "project2"),
+                node("sibling-3", "echo sibling-3", "project3"),
+                node("sibling-4", "echo sibling-4", "project4"),
+                node_mut("sibling-1", "echo sibling-1", "project1", |n| {
+                    n.persistent = true
+                }),
             ],
         ];
 

@@ -267,7 +267,7 @@ impl TaskExecutionResult {
 #[derive(Debug, Clone)]
 struct TaskContext<'a> {
     node: &'a TaskExecutionNode,
-    dependencies: Vec<&'a str>,
+    dependencies: &'a [String],
     dependency_hashes: Vec<DefaultHash>,
     env_vars: Cow<'a, EnvVarsMap>,
     cache_info: Option<&'a CacheInfo>,
@@ -319,7 +319,6 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
 
         // serves as a flag as well to signal whether it needs to consider dependencies
         // to execute the task
-        let mut task_execution_graph = None;
 
         let use_project_meta = self.call.is_command();
 
@@ -377,6 +376,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                                 full_cmd.clone(),
                                 p.name.clone(),
                                 p.dir.clone(),
+                                vec![],
                                 true,
                                 false,
                                 false,
@@ -393,6 +393,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                                 task.command.clone(),
                                 p.name.clone(),
                                 p.dir.clone(),
+                                vec![],
                                 task.enabled,
                                 task.interactive,
                                 task.persistent,
@@ -455,7 +456,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
             let matcher = ctx.get_filter_matcher(filter)?;
             let x_graph = project_graph.get_task_execution_graph()?;
 
-            let plan = x_graph.get_batched_execution_plan(|n| {
+            x_graph.get_batched_execution_plan(|n| {
                 Ok(n.task_name() == task_name
                     && matcher.is_match(n.project_name())
                     && if let Some(filter) = &is_meta_matched {
@@ -463,11 +464,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     } else {
                         true
                     })
-            })?;
-
-            // signal to the executor that it needs to consider dependencies
-            task_execution_graph = Some(x_graph);
-            plan
+            })?
         };
 
         let task_count: usize = execution_plan.iter().map(|b| b.len()).sum();
@@ -516,18 +513,11 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
             let mut task_ctxs = Vec::with_capacity(batch.len());
 
             for node in batch {
-                let dependencies =
-                    if let Some(deps) = task_execution_graph.as_ref() {
-                        deps.get_direct_dependencies_ref_by_name(
-                            node.project_name(),
-                            node.task_name(),
-                        )?
-                        .into_iter()
-                        .map(|(_, node)| node.full_task_name())
-                        .collect()
-                    } else {
-                        vec![]
-                    };
+                let dependencies = if self.ignore_dependencies {
+                    node.dependencies()
+                } else {
+                    &[]
+                };
 
                 let envs = ctx.get_task_env_vars(node)?;
                 let cache_info =
@@ -536,7 +526,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                 let dep_hashes = dependencies
                     .iter()
                     .filter_map(|d| {
-                        overall_results.get(*d).and_then(|r| r.hash())
+                        overall_results.get(d).and_then(|r| r.hash())
                     })
                     .collect::<Vec<_>>();
                 let ctx = TaskContext {
@@ -617,7 +607,7 @@ impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
                     && let Some(error) =
                         task_ctx.dependencies.iter().find(|d| {
                             overall_results
-                                .get(**d)
+                                .get(*d)
                                 .is_some_and(|r| r.is_failure())
                         })
                 {

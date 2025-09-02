@@ -1,4 +1,5 @@
 use config_utils::{DictConfig, ListConfig};
+use derive_new::new;
 use garde::Validate;
 use merge::Merge;
 use schemars::JsonSchema;
@@ -15,6 +16,7 @@ use serde_json::Value as JsonValue;
     Merge,
     Validate,
     Default,
+    new,
 )]
 #[garde(allow_unvalidated)]
 #[serde(transparent)]
@@ -36,17 +38,17 @@ impl MetaConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[serde(untagged)]
 #[garde(allow_unvalidated)]
 pub enum MetaValue {
-    Boolean(bool),
-    Integer(i64),
-    Float(f64),
-    String(String),
-    List(ListConfig<MetaValue>),
-    Dict(DictConfig<MetaValue>),
+    Boolean(#[new(into)] bool),
+    Integer(#[new(into)] i64),
+    Float(#[new(into)] f64),
+    String(#[new(into)] String),
+    List(#[new(into)] ListConfig<MetaValue>),
+    Dict(#[new(into)] DictConfig<MetaValue>),
 }
 
 impl Merge for MetaValue {
