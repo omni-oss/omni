@@ -34,3 +34,6 @@ globset = { workspace = true }
 config_utils = { workspace = true }
 derive_builder = { workspace = true }
 getset = { workspace = true }
+serde = { workspace = true }
+base64 = { workspace = true }
+omni_cache = { workspace = true }

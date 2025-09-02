@@ -9,6 +9,7 @@ dependencies:
   - omni_configurations
   - omni_expressions
   - omni_hasher
+  - omni_cache
   - system_traits
   - maps
   - config_utils
