@@ -428,7 +428,7 @@ impl<TSys: ContextSys> Context<TSys> {
             // load the env vars for the project
             let _loaded = self.get_env_vars(Some(&GetVarsArgs {
                 start_dir: Some(dir),
-                override_vars: Some(&extras),
+                project_override_vars: Some(&extras),
                 env_files: if env_files.is_empty() {
                     Some(&env_files[..])
                 } else {

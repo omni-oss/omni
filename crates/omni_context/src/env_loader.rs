@@ -24,7 +24,7 @@ pub struct EnvLoader<T: EnvCacheSys> {
 pub struct GetVarsArgs<'a> {
     pub start_dir: Option<&'a Path>,
     pub env_files: Option<&'a [&'a Path]>,
-    pub override_vars: Option<&'a Map<String, String>>,
+    pub project_override_vars: Option<&'a Map<String, String>>,
     pub inherit_env_vars: bool,
 }
 
@@ -54,11 +54,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         let start_dir = args.start_dir.unwrap_or(&cwd);
 
         if let Some(cached) = self.env_cache.get(start_dir) {
-            let mut env = cached.clone();
-            if let Some(override_vars) = args.override_vars {
-                env.extend(override_vars.clone());
-            }
-            return Ok(env);
+            return Ok(cached.clone());
         }
 
         let mut env_vars = maps::map!();
@@ -89,7 +85,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             &mut self.env_cache,
         )?;
 
-        if let Some(override_vars) = args.override_vars {
+        if let Some(override_vars) = args.project_override_vars {
             let mut override_vars = override_vars.clone();
             expand_into(&mut override_vars, &env);
 
