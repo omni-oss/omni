@@ -1353,6 +1353,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "getset"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cf0fc11e47561d47397154977bc219f4cf809b2974facc3ccb3b89e2436f912"
+dependencies = [
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "gimli"
 version = "0.31.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2300,6 +2312,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_context"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "bs58",
+ "config_utils",
+ "dir_walker",
+ "enum-map",
+ "env",
+ "env_loader",
+ "eyre",
+ "globset",
+ "maps",
+ "merge",
+ "omni_cache",
+ "omni_collector",
+ "omni_configurations",
+ "omni_core",
+ "omni_hasher",
+ "omni_types",
+ "path-clean",
+ "serde",
+ "serde_yml",
+ "sets",
+ "strum 0.27.2",
+ "system_traits",
+ "thiserror 2.0.12",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_core"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -2391,6 +2434,36 @@ dependencies = [
  "strum 0.27.2",
  "system_traits",
  "terminal_size",
+ "thiserror 2.0.12",
+ "tokio 1.46.1",
+ "tokio-util",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_task_executor"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "atty",
+ "bytes 1.10.1",
+ "config_utils",
+ "derive-new",
+ "derive_builder",
+ "env",
+ "eyre",
+ "futures 0.3.31",
+ "getset",
+ "globset",
+ "maps",
+ "omni_configurations",
+ "omni_context",
+ "omni_core",
+ "omni_expressions",
+ "omni_hasher",
+ "shlex",
+ "strum 0.27.2",
+ "system_traits",
  "thiserror 2.0.12",
  "tokio 1.46.1",
  "tokio-util",

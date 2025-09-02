@@ -135,6 +135,7 @@ omni_generator = { path = "./crates/omni_generator" }
 omni_collector = { path = "./crates/omni_collector" }
 omni_utils = { path = "./crates/omni_utils" }
 omni_configurations = { path = "./crates/omni_configurations" }
+omni_context = { path = "./crates/omni_context" }
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
 path-slash = { version = "^0.2.1" }
@@ -143,6 +144,7 @@ omni_process = { path = "./crates/omni_process" }
 nix = { version = "^0.30.1" }
 base64 = { version = "^0.22.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
+getset = { version = "^0.1.6" }
 
 [profile.release]
 incremental = true
