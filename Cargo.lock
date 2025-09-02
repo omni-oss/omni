@@ -2446,6 +2446,7 @@ name = "omni_task_executor"
 version = "0.0.0-semantically-released"
 dependencies = [
  "atty",
+ "base64",
  "bytes 1.10.1",
  "config_utils",
  "derive-new",
@@ -2456,11 +2457,13 @@ dependencies = [
  "getset",
  "globset",
  "maps",
+ "omni_cache",
  "omni_configurations",
  "omni_context",
  "omni_core",
  "omni_expressions",
  "omni_hasher",
+ "serde",
  "shlex",
  "strum 0.27.2",
  "system_traits",
