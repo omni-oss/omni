@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 mod cache;
 mod error;
@@ -30,7 +33,7 @@ pub struct EnvConfig<'a> {
 pub fn load<'a, TSys: EnvLoaderSys>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
-) -> Result<Map<String, String>, EnvLoaderError> {
+) -> Result<Arc<Map<String, String>>, EnvLoaderError> {
     load_internal::<TSys, DefaultEnvCache<TSys>>(config, sys, None)
 }
 
@@ -38,7 +41,7 @@ pub fn load_with_caching<'a, TSys, TCache>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
     mut cache: &mut TCache,
-) -> Result<Map<String, String>, EnvLoaderError>
+) -> Result<Arc<Map<String, String>>, EnvLoaderError>
 where
     TSys: EnvLoaderSys,
     TCache: EnvCache,
@@ -50,7 +53,7 @@ fn load_internal<'a, TSys, TCache>(
     config: &'a EnvConfig<'a>,
     sys: TSys,
     mut cache: Option<&mut TCache>,
-) -> Result<Map<String, String>, EnvLoaderError>
+) -> Result<Arc<Map<String, String>>, EnvLoaderError>
 where
     TSys: EnvLoaderSys,
     TCache: EnvCache,
@@ -114,7 +117,7 @@ where
         {
             trace::trace!("Cache hit for dir: {:?}, setting env vars", dir);
 
-            env = vars.clone();
+            env = (*vars).clone();
             break;
         }
 
@@ -160,7 +163,7 @@ where
             && let Some(vars) = cache.get(dir)
         {
             trace::trace!("Cache hit for dir: {:?}", dir);
-            env.extend(vars.clone());
+            env.extend((*vars).clone());
             continue;
         }
 
@@ -190,20 +193,49 @@ where
             env.extend(parsed);
         }
         if let Some(cache) = cache.as_mut() {
-            cache.insert_value(dir.to_path_buf(), env.clone());
+            let dir = dir.to_path_buf();
+            cache.insert_value(dir, env.clone());
         }
     }
 
-    // Commented out for now, as it's very slow
-    // trace::debug!("Loaded env vars: {:?}", env);
-
-    Ok(env)
+    Ok(Arc::new(env))
 }
 
 #[cfg(test)]
 mod tests {
     use super::test_utils::create_sys;
     use super::*;
+
+    macro_rules! env_assertions {
+        ($env:expr) => {
+            assert_eq!($env.get("ROOT_ENV").map(|s| s.as_str()), Some("root"));
+            assert_eq!(
+                $env.get("ROOT_LOCAL_ENV").map(|s| s.as_str()),
+                Some("root-local")
+            );
+            assert_eq!($env.get("EMPTY_ENV").map(|s| s.as_str()), Some(""));
+            assert_eq!(
+                $env.get("NESTED_ENV").map(|s| s.as_str()),
+                Some("nested")
+            );
+            assert_eq!(
+                $env.get("NESTED_LOCAL_ENV").map(|s| s.as_str()),
+                Some("nested-local")
+            );
+            assert_eq!(
+                $env.get("PROJECT_ENV").map(|s| s.as_str()),
+                Some("project")
+            );
+            assert_eq!(
+                $env.get("PROJECT_LOCAL_ENV").map(|s| s.as_str()),
+                Some("project-local")
+            );
+            assert_eq!(
+                $env.get("SHARED_ENV").map(|s| s.as_str()),
+                Some("root-local-nested-local-project-local")
+            );
+        };
+    }
 
     #[test]
     fn test_load_order() {
@@ -219,25 +251,25 @@ mod tests {
         let sys = create_sys();
         let env = load(&config, sys).expect("Can't load env");
 
-        assert_eq!(env.get("ROOT_ENV").map(|s| s.as_str()), Some("root"));
-        assert_eq!(
-            env.get("ROOT_LOCAL_ENV").map(|s| s.as_str()),
-            Some("root-local")
-        );
-        assert_eq!(env.get("EMPTY_ENV").map(|s| s.as_str()), Some(""));
-        assert_eq!(env.get("NESTED_ENV").map(|s| s.as_str()), Some("nested"));
-        assert_eq!(
-            env.get("NESTED_LOCAL_ENV").map(|s| s.as_str()),
-            Some("nested-local")
-        );
-        assert_eq!(env.get("PROJECT_ENV").map(|s| s.as_str()), Some("project"));
-        assert_eq!(
-            env.get("PROJECT_LOCAL_ENV").map(|s| s.as_str()),
-            Some("project-local")
-        );
-        assert_eq!(
-            env.get("SHARED_ENV").map(|s| s.as_str()),
-            Some("root-local-nested-local-project-local")
-        );
+        env_assertions!(env);
+    }
+
+    #[test]
+    fn test_load_order_with_caching() {
+        let config = EnvConfig {
+            env_files: Some(&[Path::new(".env"), Path::new(".env.local")]),
+            extra_envs: None,
+            matcher: None,
+            root_file: Some(Path::new("/root")),
+            start_dir: Some(Path::new("/root/nested/project")),
+            ..Default::default()
+        };
+
+        let sys = create_sys();
+        let mut cache = DefaultEnvCache::new(sys.clone());
+        let env = load_with_caching(&config, sys, &mut cache)
+            .expect("Can't load env");
+
+        env_assertions!(env);
     }
 }

@@ -3,9 +3,7 @@ use system_traits::{
     impls::InMemorySys,
 };
 
-use crate::EnvLoaderSys;
-
-pub fn create_sys() -> impl EnvLoaderSys {
+pub fn create_sys() -> InMemorySys {
     let sys = InMemorySys::default();
 
     sys.fs_create_dir_all("/root/nested/project")
