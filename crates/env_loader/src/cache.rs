@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use maps::Map;
 use mockall::automock;
@@ -10,10 +13,10 @@ pub trait EnvCacheSys: FsCanonicalize {}
 #[automock]
 pub trait EnvCache {
     fn is_cached(&self, path: &Path) -> bool;
-    fn get<'a>(&'a self, path: &Path) -> Option<&'a Map<String, String>>;
+    fn get(&self, path: &Path) -> Option<Arc<Map<String, String>>>;
     fn clear(&mut self, path: &Path);
     fn clear_all(&mut self);
-    fn insert(&mut self, path: PathBuf, vars: Option<Map<String, String>>);
+    fn insert(&mut self, path: PathBuf, vars: Option<Arc<Map<String, String>>>);
 }
 
 pub trait EnvCacheExt: EnvCache {
@@ -21,8 +24,16 @@ pub trait EnvCacheExt: EnvCache {
         self.insert(path, None);
     }
 
-    fn insert_value(&mut self, path: PathBuf, value: Map<String, String>) {
+    fn insert_shared(
+        &mut self,
+        path: PathBuf,
+        value: Arc<Map<String, String>>,
+    ) {
         self.insert(path, Some(value));
+    }
+
+    fn insert_value(&mut self, path: PathBuf, value: Map<String, String>) {
+        self.insert(path, Some(Arc::new(value)));
     }
 }
 
@@ -31,7 +42,7 @@ impl<TCache: EnvCache> EnvCacheExt for TCache {}
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 
 pub struct DefaultEnvCache<TSys: EnvCacheSys> {
-    inner: Map<PathBuf, Option<Map<String, String>>>,
+    inner: Map<PathBuf, Option<Arc<Map<String, String>>>>,
     sys: TSys,
 }
 
@@ -45,7 +56,11 @@ impl<TSys: EnvCacheSys> DefaultEnvCache<TSys> {
 }
 
 impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
-    fn insert(&mut self, path: PathBuf, vars: Option<Map<String, String>>) {
+    fn insert(
+        &mut self,
+        path: PathBuf,
+        vars: Option<Arc<Map<String, String>>>,
+    ) {
         let key = key(path, &self.sys);
 
         self.inner.insert(key, vars);
@@ -78,18 +93,18 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
         false
     }
 
-    fn get(&self, path: &Path) -> Option<&Map<String, String>> {
+    fn get(&self, path: &Path) -> Option<Arc<Map<String, String>>> {
         let k = key(path.to_path_buf(), &self.sys);
         let value = self.inner.get(&k)?;
 
         if let Some(value) = value {
-            return Some(value);
+            return Some(value.clone());
         } else {
             for p in path.ancestors() {
                 let key = key(p.to_path_buf(), &self.sys);
 
                 match self.inner.get(&key) {
-                    Some(Some(value)) => return Some(value),
+                    Some(Some(value)) => return Some(value.clone()),
                     Some(None) => {
                         // Continue to the next ancestor, this just means that it was processed but no new vars were added
                     }
@@ -132,11 +147,11 @@ mod tests {
         let mut cache = DefaultEnvCache::new(sys);
         let key = Path::new("/root/nested/project");
 
-        cache.insert(
+        cache.insert_value(
             key.to_path_buf(),
-            Some(env![
+            env![
                 "ROOT_ENV" => "root",
-            ]),
+            ],
         );
 
         cache.clear_all();
@@ -172,14 +187,14 @@ mod tests {
         let mut cache = DefaultEnvCache::new(sys);
 
         let key = Path::new("/root/nested/project");
-        cache.insert(
+        cache.insert_value(
             key.to_path_buf(),
-            Some(env![
+            env![
                 "ROOT_ENV" => "root",
-            ]),
+            ],
         );
 
-        assert!(cache.is_cached(key,), "Should be cached");
+        assert!(cache.is_cached(key), "Should be cached");
     }
 
     #[test]
@@ -201,7 +216,11 @@ mod tests {
         let key = Path::new("/root/nested/project");
         cache.insert_value(key.to_path_buf(), val.clone());
 
-        assert_eq!(cache.get(key,), Some(&val), "Should be cached");
+        assert_eq!(
+            *cache.get(key).expect("should be some"),
+            val,
+            "Should be cached"
+        );
     }
 
     #[test]
@@ -231,6 +250,10 @@ mod tests {
         let child_key = Path::new("/root/nested/project/another/child/project");
         cache.insert_none(child_key.to_path_buf());
 
-        assert_eq!(cache.get(child_key,), Some(&val), "Should be cached");
+        assert_eq!(
+            *cache.get(child_key).expect("should be some"),
+            val,
+            "Should be cached"
+        );
     }
 }
