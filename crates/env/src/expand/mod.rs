@@ -1,3 +1,5 @@
+use std::{collections::HashMap, ffi::OsString, path::Path};
+
 use derive_new::new;
 use maps::Map;
 
@@ -27,9 +29,6 @@ enum ExpansionConfig {
     Command {
         #[new(into)]
         command: String,
-
-        #[new(into)]
-        args: Vec<String>,
     },
 }
 
@@ -55,12 +54,17 @@ fn replace_at(
 }
 
 impl Expansion {
-    pub fn expand(&self, text: &str, envs: &Map<String, String>) -> String {
+    pub fn expand(
+        &self,
+        text: &str,
+        vars: &Map<String, String>,
+        command_expansion_config: &CommandExpansionConfig,
+    ) -> String {
         let expanded: String;
 
         match self.config {
             ExpansionConfig::Variable { ref key } => {
-                if let Some(value) = envs.get(key) {
+                if let Some(value) = vars.get(key) {
                     expanded = replace_at(
                         text,
                         self.start_index,
@@ -76,7 +80,7 @@ impl Expansion {
                 ref fallback,
                 mode,
             } => {
-                let value = envs.get(key);
+                let value = vars.get(key);
                 let expand_result: String;
 
                 let allow_empty = mode == FallbackMode::UnsetOrEmpty;
@@ -90,19 +94,41 @@ impl Expansion {
                     {
                         value
                     } else {
-                        expand_result = expand(fallback, envs);
+                        expand_result = expand(fallback, vars);
                         &expand_result
                     },
                 );
             }
-            ExpansionConfig::Command { .. } => {
-                unimplemented!(
-                    "command expansion is not implemented yet. use variable expansion instead"
-                )
-            }
+            ExpansionConfig::Command { .. } => match command_expansion_config {
+                CommandExpansionConfig::Disabled => {
+                    expanded = text.to_string();
+                }
+                CommandExpansionConfig::Enabled { .. } => {
+                    unimplemented!(
+                        "command expansion is not implemented yet. use variable expansion instead"
+                    )
+                }
+            },
         };
 
         expanded
+    }
+}
+
+#[derive(Debug, Clone, new)]
+pub enum CommandExpansionConfig<'a> {
+    Disabled,
+    Enabled {
+        #[new(into)]
+        cwd: &'a Path,
+        #[new(into)]
+        env_vars: &'a HashMap<OsString, OsString>,
+    },
+}
+
+impl Default for CommandExpansionConfig<'_> {
+    fn default() -> Self {
+        Self::Disabled
     }
 }
 
@@ -120,7 +146,11 @@ impl<'a> Expansions<'a> {
         self.expansions.is_empty()
     }
 
-    pub fn expand(&self, envs: &Map<String, String>) -> String {
+    pub fn expand(
+        &self,
+        envs: &Map<String, String>,
+        command_config: &CommandExpansionConfig,
+    ) -> String {
         let mut expansions = self.expansions.clone();
         // from shortest to longest
         expansions.sort_by_key(|b| std::cmp::Reverse(b.start_index));
@@ -128,7 +158,7 @@ impl<'a> Expansions<'a> {
         let mut expanded = self.text.to_string();
 
         for expansion in expansions.iter() {
-            expanded = expansion.expand(&expanded, envs);
+            expanded = expansion.expand(&expanded, envs, command_config);
         }
 
         expanded
@@ -370,7 +400,11 @@ fn replace_escaped(text: &str) -> String {
     text.replace(r"\$", "$")
 }
 
-pub fn expand(str: &str, envs: &Map<String, String>) -> String {
+pub fn expand_with_command_config(
+    str: &str,
+    envs: &Map<String, String>,
+    command_config: &CommandExpansionConfig,
+) -> String {
     let parsed = ExpansionParser::new(str).parse();
 
     // short circuit if there are no expansions
@@ -378,21 +412,39 @@ pub fn expand(str: &str, envs: &Map<String, String>) -> String {
         return replace_escaped(str);
     }
 
-    let expanded = parsed.expand(envs);
+    let expanded = parsed.expand(envs, command_config);
 
     replace_escaped(&expanded)
 }
 
+pub fn expand_into_with_command_config(
+    into: &mut Map<String, String>,
+    using: &Map<String, String>,
+    command_config: &CommandExpansionConfig,
+) {
+    let mut using = using.clone();
+    for (key, value) in into.iter_mut() {
+        *value = expand_with_command_config(value, &using, command_config);
+
+        using.insert(key.clone(), value.clone());
+    }
+}
+
+#[inline(always)]
+pub fn expand(str: &str, envs: &Map<String, String>) -> String {
+    expand_with_command_config(str, envs, &CommandExpansionConfig::default())
+}
+
+#[inline(always)]
 pub fn expand_into(
     into: &mut Map<String, String>,
     using: &Map<String, String>,
 ) {
-    let mut using = using.clone();
-    for (key, value) in into.iter_mut() {
-        *value = expand(value, &using);
-
-        using.insert(key.clone(), value.clone());
-    }
+    expand_into_with_command_config(
+        into,
+        using,
+        &CommandExpansionConfig::default(),
+    )
 }
 
 #[cfg(test)]

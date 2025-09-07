@@ -145,6 +145,7 @@ nix = { version = "^0.30.1" }
 base64 = { version = "^0.22.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.6" }
+either = { version = "^1.15.0" }
 
 [profile.release]
 incremental = true

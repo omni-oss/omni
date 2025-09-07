@@ -35,3 +35,10 @@ enum-map = { workspace = true }
 globset = { workspace = true }
 bs58 = { workspace = true }
 serde_yml = { workspace = true }
+derive-new = { workspace = true }
+async-trait = { workspace = true }
+either = { workspace = true }
+
+[build-dependencies]
+shadow-rs = { workspace = true, features = ["default"] }
+eyre = { workspace = true }

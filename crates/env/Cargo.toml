@@ -19,6 +19,7 @@ convert_case = { workspace = true }
 strum = { workspace = true }
 maps = { workspace = true }
 derive-new = { workspace = true }
+shlex = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

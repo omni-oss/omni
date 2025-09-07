@@ -5,7 +5,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
 
-use crate::{ExecutorsConfiguration, constants::WORKSPACE_NAME_REGEX, utils};
+use crate::{
+    ExecutorsConfiguration,
+    constants::WORKSPACE_NAME_REGEX,
+    utils::{self, fs::LoadConfigError},
+};
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
@@ -27,8 +31,8 @@ pub struct WorkspaceConfiguration {
 impl WorkspaceConfiguration {
     pub async fn load<'a>(
         path: impl Into<&'a Path>,
-        sys: impl FsReadAsync + Send + Sync,
-    ) -> eyre::Result<Self> {
+        sys: &(impl FsReadAsync + Send + Sync),
+    ) -> Result<Self, LoadConfigError> {
         utils::fs::load_config(path, sys).await
     }
 }

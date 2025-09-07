@@ -1173,8 +1173,6 @@ mod tests {
             batch.sort();
         });
 
-        let blank_path = PathBuf::from("");
-
         let mut expected_plan = vec![
             vec![
                 node("p3t1", "echo p3t1", "project3"),
