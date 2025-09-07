@@ -1077,6 +1077,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "maps",
+ "shlex",
  "strum 0.27.2",
  "thiserror 2.0.12",
 ]
@@ -2315,9 +2316,12 @@ dependencies = [
 name = "omni_context"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "async-trait",
  "bs58",
  "config_utils",
+ "derive-new",
  "dir_walker",
+ "either",
  "enum-map",
  "env",
  "env_loader",
@@ -2335,6 +2339,7 @@ dependencies = [
  "serde",
  "serde_yml",
  "sets",
+ "shadow-rs",
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.12",

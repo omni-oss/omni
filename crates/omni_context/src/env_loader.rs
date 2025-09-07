@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use env::expand_into;
-use env_loader::{
-    EnvCache as _, EnvCacheExt as _, EnvLoaderError, EnvLoaderSys,
-};
+use env_loader::{EnvCache as _, EnvCacheExt, EnvLoaderError, EnvLoaderSys};
 use maps::Map;
 use system_traits::{EnvCurrentDir, EnvVars, auto_impl};
 
@@ -12,7 +13,7 @@ use crate::utils::EnvVarsMap;
 #[auto_impl]
 pub trait EnvCacheSys: EnvLoaderSys + EnvVars + Clone + EnvCurrentDir {}
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnvLoader<T: EnvCacheSys> {
     env_cache: env_loader::DefaultEnvCache<T>,
     sys: T,
@@ -24,7 +25,7 @@ pub struct EnvLoader<T: EnvCacheSys> {
 pub struct GetVarsArgs<'a> {
     pub start_dir: Option<&'a Path>,
     pub env_files: Option<&'a [&'a Path]>,
-    pub project_override_vars: Option<&'a Map<String, String>>,
+    pub project_env_var_overrides: Option<&'a Map<String, String>>,
     pub inherit_env_vars: bool,
 }
 
@@ -42,19 +43,25 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         }
     }
 
-    pub fn get_cached(&self, path: &Path) -> Option<&EnvVarsMap> {
-        self.env_cache.get(path)
+    pub fn get_cached(&self, path: &Path) -> Option<Arc<EnvVarsMap>> {
+        self.env_cache.get(path).clone()
     }
 
     pub fn get(
         &mut self,
         args: &GetVarsArgs,
-    ) -> Result<EnvVarsMap, EnvLoaderError> {
+    ) -> Result<Arc<EnvVarsMap>, EnvLoaderError> {
         let cwd = self.sys.env_current_dir()?;
         let start_dir = args.start_dir.unwrap_or(&cwd);
 
         if let Some(cached) = self.env_cache.get(start_dir) {
-            return Ok(cached.clone());
+            if let Some(override_vars) = args.project_env_var_overrides {
+                let mut env = (*cached).clone();
+                env.extend(override_vars.clone());
+                return Ok(Arc::new(env));
+            } else {
+                return Ok(cached);
+            }
         }
 
         let mut env_vars = maps::map!();
@@ -79,23 +86,33 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             matcher: None,
         };
 
-        let mut env = env_loader::load_with_caching(
-            &config,
-            self.sys.clone(),
-            &mut self.env_cache,
-        )?;
-
-        if let Some(override_vars) = args.project_override_vars {
+        if let Some(override_vars) = args.project_env_var_overrides {
+            let mut env = (*env_loader::load_with_caching(
+                &config,
+                self.sys.clone(),
+                &mut self.env_cache,
+            )?)
+            .clone();
             let mut override_vars = override_vars.clone();
             expand_into(&mut override_vars, &env);
 
             env.extend(override_vars);
 
+            let shared_env = Arc::new(env);
+
             // replace the cache with the new env vars if there are overrides
             self.env_cache
-                .insert_value(start_dir.to_path_buf(), env.clone());
-        }
+                .insert_shared(start_dir.to_path_buf(), shared_env.clone());
 
-        Ok(env)
+            Ok(shared_env)
+        } else {
+            let env = env_loader::load_with_caching(
+                &config,
+                self.sys.clone(),
+                &mut self.env_cache,
+            )?;
+
+            Ok(env)
+        }
     }
 }

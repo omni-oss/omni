@@ -10,10 +10,12 @@ pub fn list_config_default<T: Merge>() -> ListConfig<T> {
 }
 
 pub mod fs {
-    use std::path::Path;
+    use std::{io, path::Path};
 
     use serde::de::DeserializeOwned;
+    use strum::{EnumDiscriminants, IntoDiscriminant as _};
     use system_traits::FsReadAsync;
+    use thiserror::Error;
 
     pub async fn load_config<
         'a,
@@ -23,8 +25,8 @@ pub mod fs {
         TSys: FsReadAsync + Send + Sync,
     >(
         path: TPath,
-        sys: TSys,
-    ) -> eyre::Result<TConfig>
+        sys: &TSys,
+    ) -> Result<TConfig, LoadConfigError>
     where
         TConfig: DeserializeOwned,
         TPath: Into<&'a Path>,
@@ -37,12 +39,51 @@ pub mod fs {
             "yaml" | "yml" => Ok(serde_yml::from_str(&content)?),
             "json" => Ok(serde_json::from_str(&content)?),
             "toml" => Ok(toml::from_str(&content)?),
-            _ => {
-                eyre::bail!(
-                    "Unsupported file extension for project configuration file {:?}",
-                    path
-                )
-            }
+            ext => Err(LoadConfigErrorInner::UnsupportedFileExtension(
+                ext.to_string(),
+            )
+            .into()),
         }
+    }
+
+    #[derive(Error, Debug)]
+    #[error("{inner}")]
+    pub struct LoadConfigError {
+        #[source]
+        inner: LoadConfigErrorInner,
+        kind: LoadConfigErrorKind,
+    }
+
+    impl LoadConfigError {
+        pub fn kind(&self) -> LoadConfigErrorKind {
+            self.kind
+        }
+    }
+
+    impl<T: Into<LoadConfigErrorInner>> From<T> for LoadConfigError {
+        fn from(value: T) -> Self {
+            let inner = value.into();
+            let kind = inner.discriminant();
+            Self { inner, kind }
+        }
+    }
+
+    #[derive(Error, Debug, EnumDiscriminants)]
+    #[strum_discriminants(vis(pub), name(LoadConfigErrorKind))]
+    enum LoadConfigErrorInner {
+        #[error("unsupported file extension: {0}")]
+        UnsupportedFileExtension(String),
+
+        #[error(transparent)]
+        Io(#[from] io::Error),
+
+        #[error(transparent)]
+        TomlDeserialize(#[from] toml::de::Error),
+
+        #[error(transparent)]
+        YmlDeserialize(#[from] serde_yml::Error),
+
+        #[error(transparent)]
+        JsonDeserialize(#[from] serde_json::Error),
     }
 }

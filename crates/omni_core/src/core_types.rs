@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use derive_more::Constructor;
 use derive_new::new;
 use maps::OrderedMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Constructor, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, new)]
 pub struct Project {
+    #[new(into)]
     pub name: String,
     pub dir: PathBuf,
     pub dependencies: Vec<String>,

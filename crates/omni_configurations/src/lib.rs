@@ -20,4 +20,5 @@ pub use project_configuration::*;
 pub use task_configuration::*;
 pub use task_dependency_configuration::*;
 pub use task_output_configuration::*;
+pub use utils::fs::{LoadConfigError, LoadConfigErrorKind};
 pub use workspace_configuration::*;

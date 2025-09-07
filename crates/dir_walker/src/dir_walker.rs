@@ -4,8 +4,8 @@ use crate::DirEntry;
 
 pub trait DirWalkerBase {
     type DirEntry: DirEntry;
-    type Error: Error;
-    type IterError: Error;
+    type Error: Error + Send + Sync + 'static;
+    type IterError: Error + Send + Sync + 'static;
     type WalkDir: IntoIterator<Item = Result<Self::DirEntry, Self::IterError>>;
 
     fn base_walk_dir(

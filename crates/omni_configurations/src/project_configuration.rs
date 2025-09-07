@@ -9,8 +9,7 @@ use system_traits::FsReadAsync;
 
 use crate::{
     CacheConfiguration, MetaConfiguration,
-    utils::list_config_default,
-    utils::{self},
+    utils::{self, fs::LoadConfigError, list_config_default},
 };
 
 use super::TaskConfiguration;
@@ -71,8 +70,8 @@ impl omni_core::ExtensionGraphNode for ProjectConfiguration {
 impl ProjectConfiguration {
     pub async fn load<'a>(
         path: impl Into<&'a Path>,
-        sys: impl FsReadAsync + Send + Sync,
-    ) -> eyre::Result<Self> {
+        sys: &(impl FsReadAsync + Send + Sync),
+    ) -> Result<Self, LoadConfigError> {
         utils::fs::load_config(path, sys).await
     }
 }
