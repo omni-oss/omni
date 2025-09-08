@@ -46,7 +46,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let root_dir = self.root_dir.to_string_lossy().to_string();
 
-        for project_config in project_configs.into_iter().filter(|config| {
+        for project_config in project_configs.iter().filter(|config| {
             !config.base
                 && project_paths.contains(
                     config.file.path().expect("path should be resolved"),

@@ -38,6 +38,7 @@ serde_yml = { workspace = true }
 derive-new = { workspace = true }
 async-trait = { workspace = true }
 either = { workspace = true }
+shadow-rs = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

@@ -6,7 +6,6 @@ use std::{
 use derive_new::new;
 use env::expand_into;
 use env_loader::EnvLoaderError;
-use globset::{Glob, GlobMatcher};
 use omni_configurations::{MetaConfiguration, WorkspaceConfiguration};
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_hasher::impls::DefaultHash;
@@ -21,13 +20,13 @@ use crate::{
 };
 
 #[derive(Clone, Debug, new)]
-pub struct LoadedContext<TSys: ContextSys + 'static = RealSys> {
+pub struct LoadedContext<TSys: ContextSys = RealSys> {
     env_loader: EnvLoader<TSys>,
     unloaded_context: Context<TSys>,
     extracted: ProjectDataExtractions,
 }
 
-impl<TSys: ContextSys + 'static> LoadedContext<TSys> {
+impl<TSys: ContextSys> LoadedContext<TSys> {
     pub fn sys(&self) -> &TSys {
         self.unloaded_context.sys()
     }
@@ -83,31 +82,6 @@ impl<TSys: ContextSys + 'static> LoadedContext<TSys> {
         self.extracted.project_meta_configs.get(project_name)
     }
 
-    fn get_filter_matcher(
-        &self,
-        glob_filter: &str,
-    ) -> Result<GlobMatcher, globset::Error> {
-        Ok(Glob::new(glob_filter)?.compile_matcher())
-    }
-
-    pub fn get_filtered_projects(
-        &self,
-        glob_filter: &str,
-    ) -> Result<Vec<&Project>, LoadedContextError> {
-        // short circuit if glob_filter is * or **, micro-optimization
-        if glob_filter == "*" || glob_filter == "**" {
-            return Ok(self.projects().iter().collect::<Vec<_>>());
-        }
-
-        let matcher = self.get_filter_matcher(glob_filter)?;
-        let result = self.projects();
-
-        Ok(result
-            .iter()
-            .filter(|p| matcher.is_match(&p.name))
-            .collect())
-    }
-
     pub async fn get_workspace_hash(
         &self,
     ) -> Result<DefaultHash, LoadedContextError> {
@@ -131,7 +105,7 @@ impl<TSys: ContextSys + 'static> LoadedContext<TSys> {
     pub fn get_project_graph(&self) -> Result<ProjectGraph, ProjectGraphError> {
         let projects = self.projects().to_vec();
 
-        Ok(ProjectGraph::from_projects(projects)?)
+        ProjectGraph::from_projects(projects)
     }
 
     pub fn get_env_vars(

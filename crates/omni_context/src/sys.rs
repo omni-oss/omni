@@ -17,5 +17,6 @@ pub trait ContextSys:
     + FsHardLinkAsync
     + Send
     + Sync
+    + 'static
 {
 }
