@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use env::expand_into;
 use env_loader::{
@@ -42,23 +45,25 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         }
     }
 
-    pub fn get_cached(&self, path: &Path) -> Option<&EnvVarsMap> {
-        self.env_cache.get(path)
+    pub fn get_cached(&self, path: &Path) -> Option<Arc<EnvVarsMap>> {
+        self.env_cache.get(path).clone()
     }
 
     pub fn get(
         &mut self,
         args: &GetVarsArgs,
-    ) -> Result<EnvVarsMap, EnvLoaderError> {
+    ) -> Result<Arc<EnvVarsMap>, EnvLoaderError> {
         let cwd = self.sys.env_current_dir()?;
         let start_dir = args.start_dir.unwrap_or(&cwd);
 
         if let Some(cached) = self.env_cache.get(start_dir) {
-            let mut env = cached.clone();
             if let Some(override_vars) = args.override_vars {
+                let mut env = (*cached).clone();
                 env.extend(override_vars.clone());
+                return Ok(Arc::new(env));
+            } else {
+                return Ok(cached);
             }
-            return Ok(env);
         }
 
         let mut env_vars = maps::map!();
@@ -83,23 +88,33 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             matcher: None,
         };
 
-        let mut env = env_loader::load_with_caching(
-            &config,
-            self.sys.clone(),
-            &mut self.env_cache,
-        )?;
-
         if let Some(override_vars) = args.override_vars {
+            let mut env = (*env_loader::load_with_caching(
+                &config,
+                self.sys.clone(),
+                &mut self.env_cache,
+            )?)
+            .clone();
             let mut override_vars = override_vars.clone();
             expand_into(&mut override_vars, &env);
 
             env.extend(override_vars);
 
+            let shared_env = Arc::new(env);
+
             // replace the cache with the new env vars if there are overrides
             self.env_cache
-                .insert_value(start_dir.to_path_buf(), env.clone());
-        }
+                .insert_shared(start_dir.to_path_buf(), shared_env.clone());
 
-        Ok(env)
+            Ok(shared_env)
+        } else {
+            let env = env_loader::load_with_caching(
+                &config,
+                self.sys.clone(),
+                &mut self.env_cache,
+            )?;
+
+            Ok(env)
+        }
     }
 }

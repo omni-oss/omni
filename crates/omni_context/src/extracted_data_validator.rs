@@ -64,7 +64,7 @@ impl ExtractedDataValidator {
         if errors.is_empty() {
             Ok(())
         } else {
-            return Err(errors)?;
+            Err(errors)?
         }
     }
 }
@@ -100,7 +100,7 @@ fn format_multi_errors(errors: &[ExtractedDataValidationError]) -> String {
 #[derive(Debug, thiserror::Error)]
 #[error(
     "validation errors: \n{errors}", 
-    errors = format_multi_errors(&errors)
+    errors = format_multi_errors(errors)
 )]
 pub struct ExtractedDataValidationErrors {
     pub errors: Vec<ExtractedDataValidationError>,

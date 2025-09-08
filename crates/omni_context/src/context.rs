@@ -25,7 +25,7 @@ use system_traits::impls::RealSys as RealSysSync;
 use omni_configurations::WorkspaceConfiguration;
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Context<TSys: ContextSys + 'static = RealSysSync> {
+pub struct Context<TSys: ContextSys = RealSysSync> {
     env_root_dir_marker: String,
     env_files: Vec<String>,
     inherit_env_vars: bool,
@@ -34,10 +34,9 @@ pub struct Context<TSys: ContextSys + 'static = RealSysSync> {
     sys: TSys,
 }
 
-pub type UnloadedContext<TSys: ContextSys + 'static = RealSysSync> =
-    Context<TSys>;
+pub type UnloadedContext<TSys = RealSysSync> = Context<TSys>;
 
-impl<TSys: ContextSys + 'static> Context<TSys> {
+impl<TSys: ContextSys> Context<TSys> {
     pub fn new(
         root_dir: &Path,
         inherit_env_vars: bool,

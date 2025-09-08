@@ -17,3 +17,4 @@ pub use cache_info::*;
 pub use context::*;
 pub use loaded_context::*;
 pub use sys::*;
+pub use utils::EnvVarsMap;

@@ -6,6 +6,8 @@ extends:
 
 dependencies:
   - omni_core
+  - omni_context
+  - omni_task_executor
   - env_loader
   - omni_expressions
   - config_utils
