@@ -87,7 +87,7 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
             .collect::<Vec<_>>();
 
         let mut collected =
-            Collector::new(&self.root_dir, &self.cache_dir, self.sys.clone())
+            Collector::new(self.root_dir, self.cache_dir, self.sys.clone())
                 .collect(
                     &task_infos,
                     &CollectConfig {
