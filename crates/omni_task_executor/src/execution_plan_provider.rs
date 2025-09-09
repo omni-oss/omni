@@ -46,7 +46,7 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
         project_filter: Option<&str>,
         meta_filter: Option<&str>,
         ignore_deps: bool,
-    ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error> {
+    ) -> Result<BatchedExecutionPlan, Self::Error> {
         if ignore_deps {
             self.get_execution_plan_ignored_dependencies(
                 call,
@@ -226,6 +226,7 @@ pub struct ExecutionPlanProviderError {
 }
 
 impl ExecutionPlanProviderError {
+    #[allow(unused)]
     pub fn kind(&self) -> ExecutionPlanProviderErrorKind {
         self.kind
     }
