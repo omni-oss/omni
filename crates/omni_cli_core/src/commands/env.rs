@@ -33,7 +33,7 @@ pub async fn run(env: &EnvCommand, ctx: &mut Context) -> eyre::Result<()> {
             }
         }
         EnvSubcommands::All => {
-            for (key, value) in ctx.get_env_vars(None)? {
+            for (key, value) in ctx.get_env_vars(None)?.iter() {
                 println!("{key}={value}");
             }
         }

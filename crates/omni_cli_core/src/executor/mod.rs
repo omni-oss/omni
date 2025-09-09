@@ -1,9 +1,9 @@
 mod serde_impls;
 
 use std::{
-    borrow::Cow,
     collections::HashMap,
     hash::{Hash, Hasher as _},
+    sync::Arc,
     time::Duration,
 };
 
@@ -269,7 +269,7 @@ struct TaskContext<'a> {
     node: &'a TaskExecutionNode,
     dependencies: &'a [String],
     dependency_hashes: Vec<DefaultHash>,
-    env_vars: Cow<'a, EnvVarsMap>,
+    env_vars: Arc<EnvVarsMap>,
     cache_info: Option<&'a CacheInfo>,
 }
 

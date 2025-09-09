@@ -15,9 +15,9 @@ use omni_hasher::{
 use omni_types::{OmniPath, Root};
 use path_clean::clean;
 use std::{
-    borrow::Cow,
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use trace::Level;
 
@@ -195,7 +195,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn get_env_vars(
         &mut self,
         args: Option<&GetVarsArgs>,
-    ) -> Result<EnvVarsMap, EnvLoaderError> {
+    ) -> Result<Arc<EnvVarsMap>, EnvLoaderError> {
         let envs = self.env_loader.get(args.unwrap_or(&GetVarsArgs {
             ..Default::default()
         }))?;
@@ -206,22 +206,22 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn get_task_env_vars(
         &self,
         task: &TaskExecutionNode,
-    ) -> eyre::Result<Cow<'_, EnvVarsMap>> {
+    ) -> eyre::Result<Arc<EnvVarsMap>> {
         let cached = self.get_cached_env_vars(task.project_dir())?;
 
         if let Some(overrides) = self.task_env_vars.get(task.full_task_name()) {
-            let mut cached = cached.clone();
+            let mut cached = (*cached).clone();
             cached.extend(overrides.clone());
-            Ok(Cow::Owned(cached))
+            Ok(Arc::new(cached))
         } else {
-            Ok(Cow::Borrowed(cached))
+            Ok(cached)
         }
     }
 
     pub fn get_cached_env_vars(
         &self,
         path: &Path,
-    ) -> eyre::Result<&EnvVarsMap> {
+    ) -> eyre::Result<Arc<EnvVarsMap>> {
         let envs = self.env_loader.get_cached(path).ok_or_else(|| {
             eyre::eyre!(
                 "env vars not found for path {} not found in cache",
@@ -374,7 +374,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
                 let mut project = ProjectConfiguration::load(
                     &conf as &Path,
-                    sys.clone(),
+                    &sys,
                 )
                 .await
                 .wrap_err_with(|| {
