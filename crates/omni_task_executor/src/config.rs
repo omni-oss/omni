@@ -1,7 +1,7 @@
 use derive_builder::Builder;
-use derive_new::new;
 use getset::{CloneGetters, CopyGetters};
-use strum::{Display, EnumIs};
+
+use crate::{OnFailure, call::Call};
 
 #[derive(
     Debug,
@@ -99,31 +99,4 @@ impl ExecutionConfig {
     pub fn should_replay_logs(&self) -> bool {
         !self.dry_run && self.replay_cached_logs
     }
-}
-
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, new, Display, EnumIs,
-)]
-pub enum Call {
-    #[strum(to_string = "command '{command} {args:?}'")]
-    Command {
-        #[new(into)]
-        command: String,
-        args: Vec<String>,
-    },
-
-    #[strum(to_string = "task '{0}'")]
-    Task(#[new(into)] String),
-}
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIs, Display,
-)]
-pub enum OnFailure {
-    #[strum(to_string = "continue")]
-    Continue,
-    #[strum(to_string = "skip-next-batches")]
-    SkipNextBatches,
-    #[strum(to_string = "skip-dependents")]
-    SkipDependents,
 }

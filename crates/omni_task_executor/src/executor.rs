@@ -1,8 +1,31 @@
+use derive_new::new;
 use omni_cache::impls::LocalTaskExecutionCacheStoreError;
+use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use system_traits::impls::RealSys;
 
-use crate::Call;
+use crate::{
+    Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
+    pipeline::ExecutionPipeline,
+};
+
+#[derive(Debug, new)]
+pub struct TaskExecutor<TSys: TaskExecutorSys = RealSys> {
+    #[new(into)]
+    sys: TSys,
+    #[new(into)]
+    config: ExecutionConfig,
+}
+
+impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
+    pub async fn execute<'a>(
+        &self,
+        context: &'a LoadedContext<TSys>,
+    ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
+        todo!("")
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
