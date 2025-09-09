@@ -15,6 +15,7 @@ use system_traits::impls::RealSys;
 use crate::{
     CacheInfo, Context, ContextSys, EnvLoader, GetVarsArgs,
     project_data_extractor::ProjectDataExtractions,
+    project_query::ProjectQuery,
     utils::EnvVarsMap,
     workspace_hasher::{WorkspaceHasher, WorkspaceHasherError},
 };
@@ -53,6 +54,10 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
 
     pub fn projects(&self) -> &[Project] {
         self.extracted.projects.as_slice()
+    }
+
+    pub fn query_projects(&self) -> ProjectQuery<'_> {
+        ProjectQuery::new(self.projects())
     }
 
     pub fn get_cache_info(

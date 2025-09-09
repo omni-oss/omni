@@ -134,6 +134,7 @@ pub struct WorkspaceHasherError {
 }
 
 impl WorkspaceHasherError {
+    #[allow(unused)]
     pub fn kind(&self) -> WorkspaceHasherErrorKind {
         self.kind
     }

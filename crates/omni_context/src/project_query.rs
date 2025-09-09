@@ -1,16 +1,16 @@
 use derive_new::new;
 use globset::Glob;
-use omni_core::{Project, ProjectGraph, ProjectGraphError};
+use omni_core::{Project, ProjectGraphError};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Clone, Debug, new)]
-pub struct ProjectQuery {
-    projects: Vec<Project>,
+pub struct ProjectQuery<'a> {
+    projects: &'a [Project],
 }
 
-impl ProjectQuery {
+impl<'a> ProjectQuery<'a> {
     pub fn all(&self) -> &[Project] {
-        &self.projects
+        self.projects
     }
 
     pub fn by_name(&self, name: &str) -> Option<&Project> {
@@ -34,10 +34,6 @@ impl ProjectQuery {
             .filter(|p| matcher.is_match(&p.name))
             .collect())
     }
-
-    pub fn to_graph(&self) -> Result<ProjectGraph, ProjectQueryError> {
-        Ok(ProjectGraph::from_projects(self.projects.clone())?)
-    }
 }
 
 #[derive(thiserror::Error, Debug, new)]
@@ -45,6 +41,13 @@ impl ProjectQuery {
 pub struct ProjectQueryError {
     inner: ProjectQueryErrorInner,
     kind: ProjectQueryErrorKind,
+}
+
+impl ProjectQueryError {
+    #[allow(unused)]
+    pub fn kind(&self) -> ProjectQueryErrorKind {
+        self.kind
+    }
 }
 
 impl<T: Into<ProjectQueryErrorInner>> From<T> for ProjectQueryError {
@@ -74,7 +77,7 @@ mod tests {
 
     use crate::project_query::ProjectQuery;
 
-    fn test_fixture() -> ProjectQuery {
+    fn test_fixture() -> Vec<Project> {
         let projects = vec![
             Project::new(
                 "project-1",
@@ -95,13 +98,12 @@ mod tests {
                 OrderedMap::new(),
             ),
         ];
-
-        ProjectQuery::new(projects)
     }
 
     #[test]
     fn test_filter_by_glob() {
         let fixture = test_fixture();
+        let fixture = ProjectQuery::new(fixture.as_slice());
 
         let projects = fixture
             .filter_by_glob("project-*")
@@ -123,6 +125,7 @@ mod tests {
     #[test]
     fn test_filter_by_name() {
         let fixture = test_fixture();
+        let fixture = ProjectQuery::new(fixture.as_slice());
 
         let project = fixture.by_name("project-1");
 
@@ -132,6 +135,7 @@ mod tests {
     #[test]
     fn test_retrieve_all() {
         let fixture = test_fixture();
+        let fixture = ProjectQuery::new(fixture.as_slice());
 
         assert_eq!(
             fixture.all().len(),

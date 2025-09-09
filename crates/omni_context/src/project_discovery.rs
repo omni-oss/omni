@@ -144,6 +144,7 @@ pub enum DiscoveredPath {
         #[new(into)]
         file: PathBuf,
     },
+    #[allow(unused)]
     Virtual {
         #[new(into)]
         dir: PathBuf,
@@ -159,6 +160,7 @@ pub struct ProjectDiscoveryError {
 }
 
 impl ProjectDiscoveryError {
+    #[allow(unused)]
     pub fn kind(&self) -> ProjectDiscoveryErrorKind {
         self.kind
     }
