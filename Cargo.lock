@@ -2451,8 +2451,10 @@ dependencies = [
 name = "omni_task_executor"
 version = "0.0.0-semantically-released"
 dependencies = [
+ "ahash",
  "atty",
  "base64",
+ "bs58",
  "bytes 1.10.1",
  "config_utils",
  "derive-new",
