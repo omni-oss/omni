@@ -208,6 +208,7 @@ pub struct ProjectDataExtractorError {
 }
 
 impl ProjectDataExtractorError {
+    #[allow(unused)]
     pub fn kind(&self) -> ProjectDataExtractorErrorKind {
         self.kind
     }

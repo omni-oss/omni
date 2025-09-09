@@ -121,6 +121,7 @@ pub struct ExtractedDataValidationError {
 }
 
 impl ExtractedDataValidationError {
+    #[allow(unused)]
     pub fn kind(&self) -> ExtractedDataValidationErrorKind {
         self.kind
     }

@@ -187,14 +187,11 @@ pub trait ProjectFilterExt: ProjectFilter {
             .collect::<Vec<_>>()
     }
 
-    fn filter_projects_cloned<'a>(
-        &self,
-        projects: &'a [Project],
-    ) -> Vec<Project> {
+    fn filter_projects_cloned(&self, projects: &[Project]) -> Vec<Project> {
         projects
             .iter()
             .filter(|p| self.should_include_project(p).unwrap_or(false))
-            .map(|p| p.clone())
+            .cloned()
             .collect::<Vec<_>>()
     }
 }
@@ -212,14 +209,14 @@ pub trait TaskFilterExt: TaskFilter {
             .collect::<Vec<_>>()
     }
 
-    fn filter_tasks_cloned<'a>(
+    fn filter_tasks_cloned(
         &self,
-        tasks: &'a [TaskExecutionNode],
+        tasks: &[TaskExecutionNode],
     ) -> Vec<TaskExecutionNode> {
         tasks
             .iter()
             .filter(|t| self.should_include_task(t).unwrap_or(false))
-            .map(|t| t.clone())
+            .cloned()
             .collect::<Vec<_>>()
     }
 }

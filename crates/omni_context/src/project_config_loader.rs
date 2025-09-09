@@ -120,6 +120,7 @@ pub struct ProjectConfigLoaderError {
 }
 
 impl ProjectConfigLoaderError {
+    #[allow(unused)]
     pub fn kind(&self) -> ProjectConfigLoaderErrorKind {
         self.kind
     }
