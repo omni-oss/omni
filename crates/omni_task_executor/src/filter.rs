@@ -166,6 +166,7 @@ pub struct FilterError {
 }
 
 impl FilterError {
+    #[allow(unused)]
     pub fn kind(&self) -> TaskFilterErrorKind {
         self.kind
     }
@@ -187,6 +188,7 @@ pub trait ProjectFilterExt: ProjectFilter {
             .collect::<Vec<_>>()
     }
 
+    #[allow(unused)]
     fn filter_projects_cloned(&self, projects: &[Project]) -> Vec<Project> {
         projects
             .iter()
@@ -199,6 +201,7 @@ pub trait ProjectFilterExt: ProjectFilter {
 impl<T: ProjectFilter> ProjectFilterExt for T {}
 
 pub trait TaskFilterExt: TaskFilter {
+    #[allow(unused)]
     fn filter_tasks<'a>(
         &self,
         tasks: &'a [TaskExecutionNode],

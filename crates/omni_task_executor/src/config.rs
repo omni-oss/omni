@@ -1,5 +1,5 @@
 use derive_builder::Builder;
-use getset::{CloneGetters, CopyGetters};
+use getset::{CloneGetters, CopyGetters, Getters};
 
 use crate::{OnFailure, call::Call};
 
@@ -13,6 +13,7 @@ use crate::{OnFailure, call::Call};
     Builder,
     CloneGetters,
     CopyGetters,
+    Getters,
 )]
 #[builder(setter(into, strip_option))]
 pub struct ExecutionConfig {

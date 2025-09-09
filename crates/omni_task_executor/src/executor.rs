@@ -3,27 +3,38 @@ use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use system_traits::impls::RealSys;
 
 use crate::{
-    Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
-    pipeline::ExecutionPipeline,
+    ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
+    execution_plan_provider::{
+        ContextExecutionPlanProvider, ExecutionPlanProvider,
+        ExecutionPlanProviderError,
+    },
+    pipeline::{ExecutionPipeline, ExecutionPipelineError},
 };
 
 #[derive(Debug, new)]
-pub struct TaskExecutor<TSys: TaskExecutorSys = RealSys> {
-    #[new(into)]
-    sys: TSys,
+pub struct TaskExecutor {
     #[new(into)]
     config: ExecutionConfig,
 }
 
-impl<TSys: TaskExecutorSys> TaskExecutor<TSys> {
-    pub async fn execute<'a>(
+impl TaskExecutor {
+    pub async fn execute<TSys: TaskExecutorSys>(
         &self,
-        context: &'a LoadedContext<TSys>,
+        context: &LoadedContext<TSys>,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
-        todo!("")
+        let plan = ContextExecutionPlanProvider::new(context)
+            .get_execution_plan(
+                self.config.call(),
+                self.config.project_filter().as_deref(),
+                self.config.meta_filter().as_deref(),
+                self.config.ignore_dependencies(),
+            )?;
+
+        let pipeline = ExecutionPipeline::new(plan);
+
+        Ok(pipeline.run(context).await?)
     }
 }
 
@@ -53,23 +64,13 @@ impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
 #[strum_discriminants(name(TaskExecutorErrorKind), vis(pub))]
 enum TaskExecutorErrorInner {
     #[error(transparent)]
+    ExecutionPipeline(#[from] ExecutionPipelineError),
+
+    #[error(transparent)]
+    ExecutionPlanProvider(#[from] ExecutionPlanProviderError),
+
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    // #[error(transparent)]
-    // CantGetEnvVars(eyre::Report),
-    #[error("task is empty")]
-    TaskIsEmpty,
-
-    // #[error("command is empty")]
-    // CommandIsEmpty,
-
-    // #[error("task '{task}' not found")]
-    // TaskNotFound { task: String },
-    #[error("no project found for criteria: filter = '{filter}'")]
-    NoProjectFound { filter: String },
-
-    #[error("no task to execute: {0} not found")]
-    NothingToExecute(Call),
 
     #[error(transparent)]
     TaskExecutionGraph(#[from] TaskExecutionGraphError),

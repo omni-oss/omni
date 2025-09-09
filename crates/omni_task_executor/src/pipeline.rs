@@ -1,19 +1,19 @@
 use derive_new::new;
-use omni_cache::impls::LocalTaskExecutionCacheStore;
 use omni_context::LoadedContext;
+use omni_core::BatchedExecutionPlan;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{TaskExecutionResult, TaskExecutorSys};
 
 #[derive(Debug, new)]
-pub struct ExecutionPipeline<'a, TSys: TaskExecutorSys> {
-    context: &'a LoadedContext<TSys>,
-    cache_store: Option<LocalTaskExecutionCacheStore>,
+pub struct ExecutionPipeline {
+    plan: BatchedExecutionPlan,
 }
 
-impl<'a, TSys: TaskExecutorSys + 'static> ExecutionPipeline<'a, TSys> {
-    pub async fn run(
-        &mut self,
+impl ExecutionPipeline {
+    pub async fn run<TSys: TaskExecutorSys>(
+        self,
+        context: &LoadedContext<TSys>,
     ) -> Result<Vec<TaskExecutionResult>, ExecutionPipelineError> {
         todo!("implement pipeline")
     }
