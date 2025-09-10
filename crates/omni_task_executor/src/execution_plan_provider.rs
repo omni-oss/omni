@@ -15,8 +15,8 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use crate::{
     Call,
     filter::{
-        DefaultProjectFilter, DefaultTaskFilter, FilterError, ProjectFilterExt,
-        TaskFilter as _, TaskFilterExt as _,
+        DefaultProjectFilter, DefaultTaskFilter, FilterError, ProjectFilter,
+        ProjectFilterExt, TaskFilter as _, TaskFilterExt as _,
     },
 };
 
@@ -176,6 +176,22 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
         project_filter: Option<&str>,
         meta_filter: Option<&str>,
     ) -> Result<Vec<Vec<TaskExecutionNode>>, ExecutionPlanProviderError> {
+        let pf = DefaultProjectFilter::new(project_filter)?;
+
+        if let Some(filter) = project_filter
+            && !self
+                .context
+                .projects()
+                .iter()
+                .any(|p| pf.should_include_project(p).unwrap_or(false))
+        {
+            return Err(
+                ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
+                    filter: filter.to_string(),
+                },
+            )?;
+        }
+
         let mut project_graph = self.context.get_project_graph()?;
 
         let task_name = match call {

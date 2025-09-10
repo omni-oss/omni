@@ -9,6 +9,11 @@ repository.workspace = true
 default = ["enable-tracing"]
 enable-tracing = ["trace/enabled", "dep:tracing"]
 
+[[bench]]
+path = "./benches/omni_context_benchmarks.rs"
+name = "omni_context_benchmarks"
+harness = false
+
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
@@ -43,6 +48,8 @@ shadow-rs = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true }
+criterion = { workspace = true }
+omni_test_utils = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
