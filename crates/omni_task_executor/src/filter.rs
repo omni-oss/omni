@@ -297,9 +297,6 @@ mod tests {
 
     #[test]
     fn test_default_task_filter_not_matching_project_name() {
-        let meta = MetaConfiguration::new(DictConfig::value(maps::map! {
-            "a".to_string() => MetaValue::new_integer(1),
-        }));
         let filter =
             DefaultTaskFilter::new("test", Some("project1"), None, |_| None)
                 .unwrap();

@@ -1,4 +1,7 @@
-use std::hash::{Hash as _, Hasher as _};
+use std::{
+    error::Error,
+    hash::{Hash as _, Hasher as _},
+};
 
 use derive_new::new;
 use omni_configurations::MetaConfiguration;
@@ -8,7 +11,6 @@ use omni_core::{
     TaskExecutionGraphError, TaskExecutionNode,
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use thiserror::Error;
 
 use crate::{
     Call,
@@ -19,7 +21,7 @@ use crate::{
 };
 
 pub trait ExecutionPlanProvider {
-    type Error;
+    type Error: Error + Send + Sync + 'static;
 
     fn get_execution_plan(
         &self,
@@ -127,8 +129,12 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
             }
         };
 
-        let tf =
-            self.get_task_filter(&task_name, project_filter, meta_filter)?;
+        let tf = self.get_task_filter(
+            call.is_command(),
+            &task_name,
+            project_filter,
+            meta_filter,
+        )?;
 
         let filtered = tf.filter_tasks_cloned(&all_tasks);
 
@@ -137,6 +143,7 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
 
     fn get_task_filter(
         &self,
+        use_project_meta: bool,
         task_name: &str,
         project_filter: Option<&str>,
         meta_filter: Option<&str>,
@@ -151,9 +158,13 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
             task_name,
             project_filter,
             meta_filter,
-            |n| {
-                self.context
-                    .get_task_meta_config(n.project_name(), n.task_name())
+            move |n| {
+                if use_project_meta {
+                    self.context.get_project_meta_config(n.project_name())
+                } else {
+                    self.context
+                        .get_task_meta_config(n.project_name(), n.task_name())
+                }
             },
         )?;
         Ok(tf)
@@ -194,8 +205,12 @@ impl<'a, TSys: ContextSys> ContextExecutionPlanProvider<'a, TSys> {
             Call::Task(task_name) => task_name.clone(),
         };
 
-        let tf =
-            self.get_task_filter(&task_name, project_filter, meta_filter)?;
+        let tf = self.get_task_filter(
+            call.is_command(),
+            &task_name,
+            project_filter,
+            meta_filter,
+        )?;
 
         let x_graph = project_graph.get_task_execution_graph()?;
 
@@ -217,7 +232,7 @@ fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
     format!("{prefix}-{enc}")
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 #[error("{inner}")]
 pub struct ExecutionPlanProviderError {
     #[source]
@@ -242,7 +257,7 @@ impl<T: Into<ExecutionPlanProviderErrorInner>> From<T>
     }
 }
 
-#[derive(Error, Debug, EnumDiscriminants)]
+#[derive(thiserror::Error, Debug, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ExecutionPlanProviderErrorKind))]
 enum ExecutionPlanProviderErrorInner {
     #[error(transparent)]

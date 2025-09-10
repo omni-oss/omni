@@ -1,23 +1,22 @@
-use std::collections::HashMap;
+use std::error::Error;
 
 use derive_new::new;
+use maps::UnorderedMap;
 use omni_context::{ContextSys, LoadedContext};
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{TaskExecutionResult, task_context::TaskContext};
 
-pub trait TaskContextProvider<'a>: 'a {
-    type Error;
+pub trait TaskContextProvider {
+    type Error: Error + Send + Sync + 'static;
 
-    fn get_task_contexts<'b>(
-        &self,
-        batch: &'b [TaskExecutionNode],
+    fn get_task_contexts<'a>(
+        &'a self,
+        batch: &'a [TaskExecutionNode],
         ignore_dependencies: bool,
-        overall_results: &HashMap<String, TaskExecutionResult>,
-    ) -> Result<Vec<TaskContext<'b>>, Self::Error>
-    where
-        'a: 'b;
+        hashes: &UnorderedMap<String, TaskExecutionResult>,
+    ) -> Result<Vec<TaskContext<'a>>, Self::Error>;
 }
 
 #[derive(Debug, Clone, new)]
@@ -25,28 +24,19 @@ pub struct ContextTaskContextProvider<'a, TSys: ContextSys> {
     context: &'a LoadedContext<TSys>,
 }
 
-impl<'a, TSys: ContextSys> TaskContextProvider<'a>
-    for ContextTaskContextProvider<'a, TSys>
+impl<'b, TSys: ContextSys> TaskContextProvider
+    for ContextTaskContextProvider<'b, TSys>
 {
     type Error = TaskContextProviderError;
 
-    fn get_task_contexts<'b>(
-        &self,
-        batch: &'b [TaskExecutionNode],
+    fn get_task_contexts<'a>(
+        &'a self,
+        batch: &'a [TaskExecutionNode],
         ignore_dependencies: bool,
-        overall_results: &HashMap<String, TaskExecutionResult>,
-    ) -> Result<Vec<TaskContext<'b>>, TaskContextProviderError>
-    where
-        'a: 'b,
-    {
+        overall_results: &UnorderedMap<String, TaskExecutionResult>,
+    ) -> Result<Vec<TaskContext<'a>>, TaskContextProviderError> {
         let mut task_ctxs = Vec::with_capacity(batch.len());
         for node in batch {
-            let dependencies = if ignore_dependencies {
-                node.dependencies()
-            } else {
-                &[]
-            };
-
             let envs =
                 self.context.get_task_env_vars(node).ok_or_else(|| {
                     TaskContextProviderErrorInner::NoEnvVarsForTask {
@@ -58,13 +48,19 @@ impl<'a, TSys: ContextSys> TaskContextProvider<'a>
                 .context
                 .get_cache_info(node.project_name(), node.task_name());
 
-            let dep_hashes = dependencies
-                .iter()
-                .filter_map(|d| overall_results.get(d).and_then(|r| r.hash()))
-                .collect::<Vec<_>>();
+            let dep_hashes = if ignore_dependencies {
+                node.dependencies()
+                    .iter()
+                    .filter_map(|d| {
+                        overall_results.get(d).and_then(|r| r.hash())
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                vec![]
+            };
+
             let ctx = TaskContext {
                 node,
-                dependencies,
                 env_vars: envs,
                 cache_info,
                 dependency_hashes: dep_hashes,
@@ -91,6 +87,7 @@ pub struct TaskContextProviderError {
 }
 
 impl TaskContextProviderError {
+    #[allow(unused)]
     pub fn kind(&self) -> TaskContextProviderErrorKind {
         self.kind
     }

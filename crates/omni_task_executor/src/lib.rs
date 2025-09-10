@@ -1,3 +1,4 @@
+mod batch_executor;
 mod cache_manager;
 mod cache_store_provider;
 mod call;

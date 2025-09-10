@@ -104,7 +104,7 @@ impl ChildProcess {
     #[tracing::instrument(skip_all, fields(task = self.task.full_task_name()))]
     pub async fn exec(
         mut self,
-    ) -> Result<ChildProcessResult, TaskExecutorError> {
+    ) -> Result<ChildProcessResult, ChildProcessError> {
         if self.task.task_command().is_empty() {
             return Ok(ChildProcessResult {
                 node: self.task,
@@ -125,7 +125,7 @@ impl ChildProcess {
         };
 
         let parsed = shlex::split(command).ok_or_else(|| {
-            TaskExecutorErrorInner::CantParseCommand(command.to_string())
+            ChildProcessErrorInner::CantParseCommand(command.to_string())
         })?;
 
         trace::trace!("executing command: {:?}", parsed);
@@ -139,15 +139,15 @@ impl ChildProcess {
 
         let stdout = child
             .take_output_reader()
-            .ok_or(TaskExecutorErrorInner::CantTakeStdout)?;
+            .ok_or(ChildProcessErrorInner::CantTakeStdout)?;
 
         let stderr = child
             .take_error_reader()
-            .ok_or(TaskExecutorErrorInner::CantTakeStderr)?;
+            .ok_or(ChildProcessErrorInner::CantTakeStderr)?;
 
         let mut input = child
             .take_input_writer()
-            .ok_or(TaskExecutorErrorInner::CantTakeStdin)?;
+            .ok_or(ChildProcessErrorInner::CantTakeStdin)?;
 
         let mut tasks = vec![];
 
@@ -155,7 +155,7 @@ impl ChildProcess {
         let logs_output_task = tokio::spawn(async move {
             if !self.record_logs && writer.is_none() {
                 trace::trace!("no logs output, exit early");
-                return Ok::<_, TaskExecutorError>(None);
+                return Ok::<_, ChildProcessError>(None);
             }
 
             let mut logs_output = if self.record_logs {
@@ -216,7 +216,7 @@ impl ChildProcess {
                 }
             }
             trace::trace!("logs output task done");
-            Ok::<_, TaskExecutorError>(logs_output.map(|b| b.freeze()))
+            Ok::<_, ChildProcessError>(logs_output.map(|b| b.freeze()))
         });
 
         if let Some(input_reader) = self.input_reader {
@@ -228,7 +228,7 @@ impl ChildProcess {
                     )
                     .await?;
 
-                    Ok::<_, TaskExecutorError>(())
+                    Ok::<_, ChildProcessError>(())
                 })
             };
 
@@ -261,19 +261,19 @@ impl ChildProcess {
 
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
-pub struct TaskExecutorError {
-    kind: TaskExecutorErrorKind,
+pub struct ChildProcessError {
+    kind: ChildProcessErrorKind,
     #[source]
-    inner: TaskExecutorErrorInner,
+    inner: ChildProcessErrorInner,
 }
 
-impl TaskExecutorError {
-    pub fn kind(&self) -> TaskExecutorErrorKind {
+impl ChildProcessError {
+    pub fn kind(&self) -> ChildProcessErrorKind {
         self.kind
     }
 }
 
-impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
+impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
     fn from(value: T) -> Self {
         let inner = value.into();
         let kind = inner.discriminant();
@@ -288,9 +288,9 @@ fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(TaskExecutorErrorKind), vis(pub), repr(u8))]
+#[strum_discriminants(name(ChildProcessErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
-enum TaskExecutorErrorInner {
+enum ChildProcessErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

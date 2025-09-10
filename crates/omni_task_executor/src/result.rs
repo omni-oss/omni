@@ -113,5 +113,5 @@ pub enum SkipReason {
 
 #[derive(Debug, Clone, new, Serialize, Deserialize, Default)]
 pub struct TaskDetails {
-    meta: Option<MetaConfiguration>,
+    pub meta: Option<MetaConfiguration>,
 }

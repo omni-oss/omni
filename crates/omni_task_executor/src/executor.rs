@@ -14,17 +14,17 @@ use crate::{
 };
 
 #[derive(Debug, new)]
-pub struct TaskExecutor {
+pub struct TaskExecutor<'a, TSys: TaskExecutorSys> {
     #[new(into)]
     config: ExecutionConfig,
+    context: &'a LoadedContext<TSys>,
 }
 
-impl TaskExecutor {
-    pub async fn execute<TSys: TaskExecutorSys>(
+impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
+    pub async fn execute(
         &self,
-        context: &LoadedContext<TSys>,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
-        let plan = ContextExecutionPlanProvider::new(context)
+        let plan = ContextExecutionPlanProvider::new(self.context)
             .get_execution_plan(
                 self.config.call(),
                 self.config.project_filter().as_deref(),
@@ -40,9 +40,33 @@ impl TaskExecutor {
             ))?;
         }
 
-        let pipeline = ExecutionPipeline::new(plan);
+        let pipeline = ExecutionPipeline::new(plan, self.context, &self.config);
 
-        Ok(pipeline.run(context, &self.config).await?)
+        let mut results = pipeline.run().await?;
+
+        if self.config.add_task_details() {
+            for result in results.iter_mut() {
+                let task = result.task();
+                let mut details = result.details().cloned().unwrap_or_default();
+
+                if details.meta.is_none() {
+                    details.meta = (if self.config.call().is_command() {
+                        self.context
+                            .get_project_meta_config(task.project_name())
+                    } else {
+                        self.context.get_task_meta_config(
+                            task.project_name(),
+                            task.task_name(),
+                        )
+                    })
+                    .cloned();
+                }
+
+                result.set_details(details);
+            }
+        }
+
+        Ok(results)
     }
 }
 
