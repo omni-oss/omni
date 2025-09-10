@@ -1,5 +1,5 @@
 use derive_builder::Builder;
-use omni_cli_core::configurations::CacheConfiguration;
+use omni_configurations::CacheConfiguration;
 
 use crate::{
     CacheKeyConfigurationGenerator, CacheKeyConfigurationGeneratorBuilder,

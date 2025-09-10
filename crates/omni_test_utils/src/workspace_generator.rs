@@ -3,9 +3,7 @@ use std::fs;
 use derive_builder::Builder;
 
 use crate::{ProjectGenerator, ProjectGeneratorBuilder};
-use omni_cli_core::configurations::{
-    ExecutorsConfiguration, WorkspaceConfiguration,
-};
+use omni_configurations::{ExecutorsConfiguration, WorkspaceConfiguration};
 
 #[derive(Builder, Debug)]
 #[builder(setter(into, strip_option))]

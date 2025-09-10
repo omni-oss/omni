@@ -1,6 +1,6 @@
 use config_utils::ListConfig;
 use derive_builder::Builder;
-use omni_cli_core::configurations::TaskOutputConfiguration;
+use omni_configurations::TaskOutputConfiguration;
 use omni_types::OmniPath;
 
 #[derive(Debug, Builder, Clone, Default)]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use config_utils::DictConfig;
 use derive_builder::Builder;
-use omni_cli_core::configurations::{MetaConfiguration, MetaValue};
+use omni_configurations::{MetaConfiguration, MetaValue};
 
 #[derive(Debug, Clone, Default, Builder)]
 #[builder(setter(into, strip_option), derive(Debug))]

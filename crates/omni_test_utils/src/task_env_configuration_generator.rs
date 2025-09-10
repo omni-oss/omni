@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use config_utils::{DictConfig, Replace};
 use derive_builder::Builder;
-use omni_cli_core::configurations::TaskEnvConfiguration;
+use omni_configurations::TaskEnvConfiguration;
 
 #[derive(Debug, Clone, Default, Builder)]
 #[builder(setter(into, strip_option), derive(Debug))]
