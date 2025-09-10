@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use config_utils::{DictConfig, ListConfig, Replace};
 use derive_builder::Builder;
-use omni_cli_core::configurations::ProjectEnvConfiguration;
+use omni_configurations::ProjectEnvConfiguration;
 
 #[derive(Debug, Clone, Default, Builder)]
 #[builder(setter(into, strip_option), derive(Debug))]

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use config_utils::{ListConfig, Replace};
 use derive_builder::Builder;
-use omni_cli_core::configurations::CacheKeyConfiguration;
+use omni_configurations::CacheKeyConfiguration;
 use omni_types::OmniPath;
 
 #[derive(Debug, Clone, Builder, Default)]

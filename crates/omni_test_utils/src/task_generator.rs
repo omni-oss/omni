@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use config_utils::ListConfig;
 use derive_builder::Builder;
-use omni_cli_core::configurations::{
+use omni_configurations::{
     TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
 };
 

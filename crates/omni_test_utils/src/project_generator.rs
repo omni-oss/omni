@@ -2,7 +2,7 @@ use std::{collections::HashMap, fs, path::Path};
 
 use config_utils::{DictConfig, ListConfig, Replace};
 use derive_builder::Builder;
-use omni_cli_core::configurations::ProjectConfiguration;
+use omni_configurations::ProjectConfiguration;
 use omni_types::OmniPath;
 
 use crate::{

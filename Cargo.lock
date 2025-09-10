@@ -2492,7 +2492,7 @@ dependencies = [
  "config_utils",
  "derive_builder",
  "eyre",
- "omni_cli_core",
+ "omni_configurations",
  "omni_types",
  "serde",
  "serde_yml",
