@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub(crate) use crate::env_loader::{EnvLoader, GetVarsArgs};
+pub(crate) use crate::env_loader::EnvLoader;
 use env_loader::EnvLoaderError;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};

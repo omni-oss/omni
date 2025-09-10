@@ -1,6 +1,6 @@
 pub mod build;
 mod cache_info;
-mod constants;
+pub mod constants;
 mod context;
 mod env_loader;
 mod extracted_data_validator;
@@ -17,6 +17,7 @@ mod workspace_hasher;
 
 pub use cache_info::*;
 pub use context::*;
+pub use env_loader::*;
 pub use loaded_context::*;
 pub use sys::*;
 pub use utils::EnvVarsMap;

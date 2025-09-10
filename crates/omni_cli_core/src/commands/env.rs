@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use omni_context::GetVarsArgs;
 
 use crate::context::Context;
 
@@ -22,18 +23,19 @@ pub struct EnvCommand {
 }
 
 pub async fn run(env: &EnvCommand, ctx: &mut Context) -> eyre::Result<()> {
+    let mut env_loader = ctx.create_env_loader();
+    let env_vars = env_loader.get(&GetVarsArgs::default())?;
+
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {
-            let env = ctx.get_env_vars(None)?;
-
-            if let Some(env) = env.get(key) {
+            if let Some(env) = env_vars.get(key) {
                 print!("{env}");
             } else {
                 trace::warn!("environmental variable does not exists: {}", key);
             }
         }
         EnvSubcommands::All => {
-            for (key, value) in ctx.get_env_vars(None)?.iter() {
+            for (key, value) in env_vars.iter() {
                 println!("{key}={value}");
             }
         }

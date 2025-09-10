@@ -6,11 +6,6 @@ version = "0.0.0-semantically-released"
 authors.workspace = true
 repository.workspace = true
 
-[[bench]]
-path = "./benches/omni_benchmarks.rs"
-name = "omni_benchmarks"
-harness = false
-
 [features]
 default = ["enable-tracing"]
 dhat-heap = ["dep:dhat"]

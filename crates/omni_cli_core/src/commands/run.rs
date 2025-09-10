@@ -1,5 +1,7 @@
 use std::process::ExitCode;
 
+use omni_task_executor::ExecutionConfigBuilder;
+
 use crate::{
     commands::{
         common_args::RunArgs,
@@ -69,14 +71,13 @@ pub async fn run(
 ) -> eyre::Result<ExitCode> {
     let output_settings = get_results_settings(&command.run)?;
 
-    let mut builder = TaskExecutor::builder();
+    let mut builder = ExecutionConfigBuilder::default();
 
     if output_settings.is_some() {
         builder.add_task_details(true);
     }
 
     builder
-        .context(ctx.clone())
         .ignore_dependencies(command.ignore_dependencies)
         .on_failure(command.on_failure)
         .no_cache(command.no_cache)
@@ -86,9 +87,12 @@ pub async fn run(
 
     command.run.apply_to(&mut builder);
 
-    let orchestrator = builder.build()?;
+    let config = builder.build()?;
 
-    let results = orchestrator.execute().await?;
+    let ctx = ctx.clone().into_loaded().await?;
+    let executor = TaskExecutor::new(config, &ctx);
+
+    let results = executor.execute().await?;
 
     report_execution_results(&results);
 

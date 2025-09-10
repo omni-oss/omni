@@ -6,6 +6,7 @@ use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_core::TaskExecutionNode;
 use omni_process::{ChildProcess, ChildProcessResult};
+use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
@@ -82,8 +83,28 @@ where
 
     async fn replay_cached_results(
         &self,
+        task_ctx: &TaskContext<'_>,
         res: &CachedTaskExecution,
     ) -> Result<(), BatchExecutorError> {
+        const EXIT_CODE_ERROR_STYLE: Style = Style::new().red().bold();
+        const EXIT_CODE_SUCCESS_STYLE: Style = Style::new().green().bold();
+
+        trace::info!(
+            "Cache hit for task '{}' with exit code '{}' {}",
+            task_ctx.node.full_task_name(),
+            res.exit_code.style(if res.exit_code == 0 {
+                EXIT_CODE_SUCCESS_STYLE
+            } else {
+                EXIT_CODE_ERROR_STYLE
+            }),
+            (if self.replay_cached_logs {
+                "(replaying logs)"
+            } else {
+                "(skipping logs)"
+            })
+            .dimmed()
+        );
+
         if self.replay_cached_logs
             && let Some(logs_path) = &res.logs_path
         {
@@ -132,6 +153,13 @@ where
         // skip this batch if any error was encountered in a previous batch
         // when on_failure is set to skip_next_batches
         if self.should_skip_batch(overall_results) {
+            for task in batch {
+                trace::error!(
+                    "Skipping task '{}' due to previous batch failure",
+                    task.full_task_name()
+                );
+            }
+
             let skipped_results = self.skipped_results_for_batch(batch);
             return Ok(skipped_results);
         }
@@ -152,7 +180,33 @@ where
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in &task_contexts {
-            if self.should_skip_task(task_ctx.node, overall_results) {
+            if !task_ctx.node.enabled() {
+                new_results.insert(
+                    task_ctx.node.full_task_name().to_string(),
+                    TaskExecutionResult::new_skipped(
+                        task_ctx.node.clone(),
+                        SkipReason::Disabled,
+                    ),
+                );
+
+                trace::info!(
+                    "{}",
+                    format!(
+                        "Skipping disabled task '{}'",
+                        task_ctx.node.full_task_name()
+                    )
+                    .white()
+                    .dimmed()
+                );
+                continue;
+            }
+
+            if self.should_skip_task(task_ctx.node, overall_results)
+                && let Some(error) =
+                    task_ctx.node.dependencies().iter().find(|d| {
+                        overall_results.get(*d).is_some_and(|r| r.is_failure())
+                    })
+            {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_skipped(
@@ -160,14 +214,17 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
+                trace::error!(
+                    "Skipping task '{}' due to failed dependency '{}'",
+                    task_ctx.node.full_task_name(),
+                    error
+                );
                 continue;
             }
 
             if let Some(cached_result) =
                 cached_results.get(task_ctx.node.full_task_name())
             {
-                self.replay_cached_results(&cached_result).await?;
-
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_completed(
@@ -178,6 +235,8 @@ where
                         true,
                     ),
                 );
+
+                self.replay_cached_results(task_ctx, &cached_result).await?;
 
                 continue;
             }
