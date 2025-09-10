@@ -30,6 +30,7 @@ env = { workspace = true }
 omni_configurations = { workspace = true }
 omni_expressions = { workspace = true }
 omni_context = { workspace = true }
+omni_process = { workspace = true }
 globset = { workspace = true }
 config_utils = { workspace = true }
 derive_builder = { workspace = true }
@@ -39,3 +40,4 @@ base64 = { workspace = true }
 omni_cache = { workspace = true }
 ahash = { workspace = true }
 bs58 = { workspace = true }
+num_cpus = { workspace = true }

@@ -1,3 +1,4 @@
+#[derive(Debug, thiserror::Error)]
 pub struct BatchExecutor<'a, TSys: TaskExecutorSys> {
     executor: &'a TaskExecutor<TSys>,
     context: &'a mut Context<TSys>,

@@ -5,7 +5,7 @@ use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
-    ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
+    Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     execution_plan_provider::{
         ContextExecutionPlanProvider, ExecutionPlanProvider,
         ExecutionPlanProviderError,
@@ -32,9 +32,17 @@ impl TaskExecutor {
                 self.config.ignore_dependencies(),
             )?;
 
+        let empty = plan.is_empty() || plan.iter().all(|b| b.is_empty());
+
+        if empty {
+            Err(TaskExecutorErrorInner::NothingToExecute(
+                self.config.call().clone(),
+            ))?;
+        }
+
         let pipeline = ExecutionPipeline::new(plan);
 
-        Ok(pipeline.run(context).await?)
+        Ok(pipeline.run(context, &self.config).await?)
     }
 }
 
@@ -86,4 +94,7 @@ enum TaskExecutorErrorInner {
 
     #[error(transparent)]
     MetaFilter(#[from] omni_expressions::Error),
+
+    #[error("no task to execute, nothing matches the call: {0}")]
+    NothingToExecute(Call),
 }
