@@ -1,31 +1,73 @@
+use std::time::Duration;
+
+use bytes::Bytes;
 use derive_builder::Builder;
 use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{
     CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
-    TaskExecutionCacheStore, TaskExecutionInfo,
+    TaskExecutionCacheStore,
 };
-use omni_process::ChildProcessResult;
+use omni_process::{ChildProcessError, ChildProcessResult};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-use crate::{TaskExecutionResult, task_context::TaskContext};
+use crate::task_context::TaskContext;
 
 #[derive(Debug, Builder, new)]
 #[builder(setter(into, strip_option))]
 pub struct CacheManager<TCacheStore: TaskExecutionCacheStore> {
     store: TCacheStore,
+
     #[builder(default = false)]
     dry_run: bool,
+
     #[builder(default = false)]
     force: bool,
+
     #[builder(default = false)]
     no_cache: bool,
 }
 
-#[derive(Debug, Clone, new)]
-pub struct TaskResultContext<'a> {
-    pub task_context: &'a TaskContext<'a>,
-    pub result: &'a ChildProcessResult,
+#[derive(Debug, new)]
+pub enum TaskResultContext<'a> {
+    Completed {
+        task_context: &'a TaskContext<'a>,
+        result: ChildProcessResult,
+    },
+    Error {
+        task_context: &'a TaskContext<'a>,
+        error: ChildProcessError,
+    },
+}
+
+impl<'a> TaskResultContext<'a> {
+    pub fn task_context(&self) -> &TaskContext<'a> {
+        match self {
+            TaskResultContext::Completed { task_context, .. }
+            | TaskResultContext::Error { task_context, .. } => task_context,
+        }
+    }
+
+    pub fn exit_code(&self) -> u32 {
+        match self {
+            TaskResultContext::Completed { result, .. } => result.exit_code,
+            TaskResultContext::Error { .. } => 1,
+        }
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        match self {
+            TaskResultContext::Completed { result, .. } => result.elapsed,
+            TaskResultContext::Error { .. } => Duration::ZERO,
+        }
+    }
+
+    pub fn logs(&self) -> Option<&Bytes> {
+        match self {
+            TaskResultContext::Completed { result, .. } => result.logs.as_ref(),
+            TaskResultContext::Error { .. } => None,
+        }
+    }
 }
 
 impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
@@ -39,14 +81,19 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
 
     pub async fn get_cached_results(
         &self,
-        inputs: &[TaskExecutionInfo<'_>],
+        inputs: &[TaskContext<'_>],
     ) -> Result<UnorderedMap<String, CachedTaskExecution>, CacheManagerError>
     {
         if !self.should_use_cache() {
             return Ok(unordered_map!());
         }
 
-        let cached_items = self.store.get_many(inputs).await.map_err(|e| {
+        let inputs = inputs
+            .iter()
+            .filter_map(|i| i.execution_info())
+            .collect::<Vec<_>>();
+
+        let cached_items = self.store.get_many(&inputs).await.map_err(|e| {
             CacheManagerErrorInner::GetCacheFailed { source: e.into() }
         })?;
 
@@ -65,7 +112,7 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
 
     pub async fn cache_results<'a>(
         &'a self,
-        cache_contexts: &[TaskResultContext<'a>],
+        cache_contexts: &'a [TaskResultContext<'a>],
     ) -> Result<
         UnorderedMap<String, CachedTaskExecutionHash<'a>>,
         CacheManagerError,
@@ -78,17 +125,17 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
             .iter()
             .filter_map(|r| {
                 if !self.dry_run
-                    && r.task_context
+                    && r.task_context()
                         .cache_info
                         .is_some_and(|ci| ci.cache_execution)
-                    && !r.task_context.node.persistent()
-                    && let Some(exec_info) = r.task_context.execution_info()
+                    && !r.task_context().node.persistent()
+                    && let Some(exec_info) = r.task_context().execution_info()
                 {
                     Some(NewCacheInfo {
-                        execution_duration: r.result.elapsed,
-                        exit_code: r.result.exit_code(),
+                        execution_duration: r.elapsed(),
+                        exit_code: r.exit_code(),
                         task: exec_info,
-                        logs: r.result.logs.as_ref(),
+                        logs: r.logs(),
                     })
                 } else {
                     None
@@ -121,6 +168,7 @@ pub struct CacheManagerError {
 }
 
 impl CacheManagerError {
+    #[allow(unused)]
     pub fn kind(&self) -> CacheManagerErrorKind {
         self.kind
     }
