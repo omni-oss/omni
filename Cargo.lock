@@ -2343,7 +2343,9 @@ dependencies = [
  "shadow-rs",
  "strum 0.27.2",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.16",
+ "tokio 1.47.1",
  "trace",
  "tracing",
 ]

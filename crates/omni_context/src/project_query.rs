@@ -1,6 +1,6 @@
 use derive_new::new;
 use globset::Glob;
-use omni_core::{Project, ProjectGraphError};
+use omni_core::{Project, ProjectGraph, ProjectGraphError};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Clone, Debug, new)]
@@ -33,6 +33,10 @@ impl<'a> ProjectQuery<'a> {
             .iter()
             .filter(|p| matcher.is_match(&p.name))
             .collect())
+    }
+
+    pub fn to_graph(&self) -> Result<ProjectGraph, ProjectGraphError> {
+        ProjectGraph::from_projects(self.all().to_vec())
     }
 }
 

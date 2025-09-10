@@ -116,3 +116,46 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use system_traits::EnvSetCurrentDir as _;
+
+    use super::*;
+    use crate::{EnvLoader, test_fixture::*};
+
+    const ENV: &str = "testing";
+
+    #[tokio::test]
+    pub async fn test_load_env_vars() {
+        let root = Path::new("/root");
+        let sys = mem_sys();
+
+        setup_fixture(root, sys.clone());
+
+        sys.env_set_current_dir(root.join("nested").join("project-1"))
+            .expect("Can't set current dir");
+
+        let mut env_loader = EnvLoader::new(
+            sys.clone(),
+            PathBuf::from("workspace.omni.yaml"),
+            vec![
+                PathBuf::from(".env"),
+                PathBuf::from(".env.local"),
+                PathBuf::from(format!(".env.{ENV}")),
+                PathBuf::from(format!(".env.{ENV}.local")),
+            ],
+        );
+
+        let env = env_loader
+            .get(&GetVarsArgs::default())
+            .expect("Can't load env vars");
+
+        assert_eq!(
+            env.get("SHARED_ENV").map(String::as_str),
+            Some("root-local-nested-local-project-local")
+        );
+    }
+}
