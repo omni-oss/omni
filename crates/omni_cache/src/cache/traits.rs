@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::error::Error;
 
 use crate::{
     CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
@@ -7,7 +7,7 @@ use crate::{
 
 #[async_trait::async_trait]
 pub trait TaskExecutionCacheStore: Send + Sync {
-    type Error: Display;
+    type Error: Error + Send + Sync + 'static;
 
     async fn cache<'a>(
         &'a self,

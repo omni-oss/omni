@@ -1,4 +1,5 @@
 mod cache_manager;
+mod cache_store_provider;
 mod call;
 mod config;
 mod execution_plan_provider;
