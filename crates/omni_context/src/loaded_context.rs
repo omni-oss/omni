@@ -124,6 +124,10 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         Ok(envs)
     }
 
+    pub fn get_cached_env_vars(&self, path: &Path) -> Option<Arc<EnvVarsMap>> {
+        self.env_loader.get_cached(path)
+    }
+
     pub fn get_task_env_vars(
         &self,
         task: &TaskExecutionNode,

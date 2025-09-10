@@ -40,6 +40,10 @@ async-trait = { workspace = true }
 either = { workspace = true }
 shadow-rs = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }
 eyre = { workspace = true }

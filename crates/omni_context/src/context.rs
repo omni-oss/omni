@@ -128,14 +128,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
         let project_configs = xt_graph.get_or_process_all_nodes()?;
 
-        let mut env_loader = EnvLoader::new(
-            self.sys.clone(),
-            PathBuf::from(&self.env_root_dir_marker),
-            self.env_files
-                .iter()
-                .map(|s| Path::new(&s).to_path_buf())
-                .collect(),
-        );
+        let mut env_loader = self.create_env_loader();
 
         let extractions = ProjectDataExtractor::new(
             &self.root_dir,
@@ -148,6 +141,15 @@ impl<TSys: ContextSys> Context<TSys> {
         ExtractedDataValidator::new(false).validate(&extractions)?;
 
         Ok(LoadedContext::new(env_loader, self, extractions))
+    }
+
+    pub fn create_env_loader(&self) -> EnvLoader<TSys> {
+        let env_loader = EnvLoader::new(
+            self.sys.clone(),
+            PathBuf::from(&self.env_root_dir_marker),
+            self.env_files.iter().map(|s| PathBuf::from(&s)).collect(),
+        );
+        env_loader
     }
 
     const CACHE_DIR: &str = ".omni/cache";
@@ -272,323 +274,139 @@ pub(crate) enum ContextErrorInner {
     ValidationError(#[from] ExtractedDataValidationErrors),
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::tracer::TraceLevel;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixture::*;
+    use system_traits::*;
 
-//     use super::*;
-//     use system_traits::impls::{InMemorySys, RealSys};
-//     use system_traits::*;
-//     use tempfile::TempDir;
+    fn ctx<TSys: ContextSys + 'static>(
+        env: &str,
+        root_dir: &Path,
+        sys: TSys,
+    ) -> Context<TSys> {
+        Context::new(
+            root_dir,
+            false,
+            "workspace.omni.yaml",
+            vec![
+                ".env".to_string(),
+                ".env.local".to_string(),
+                format!(".env.{env}"),
+                format!(".env.{env}.local"),
+            ],
+            sys,
+        )
+        .expect("Can't create context")
+    }
 
-//     fn real_sys() -> RealSys {
-//         RealSys::default()
-//     }
+    #[tokio::test]
+    async fn test_load_projects() {
+        let (tmp, sys) = default_fixture();
 
-//     fn mem_sys() -> InMemorySys {
-//         InMemorySys::default()
-//     }
+        let loaded = ctx("testing", tmp.path(), sys)
+            .into_loaded()
+            .await
+            .expect("can't load projects");
 
-//     fn tmp() -> TempDir {
-//         let tmp = TempDir::new().expect("can't create temp dir");
-//         tmp
-//     }
+        let projects = loaded.projects();
 
-//     #[system_traits::auto_impl]
-//     trait TestSys:
-//         EnvCurrentDir
-//         + FsMetadata
-//         + EnvVars
-//         + FsWrite
-//         + FsCanonicalize
-//         + FsCreateDirAll
-//         + FsMetadata
-//         + Clone
-//         + Send
-//         + Sync
-//     {
-//     }
+        assert_eq!(projects.len(), 3, "Should be 3 projects");
 
-//     fn xp(p: &str) -> Cow<'_, Path> {
-//         if cfg!(windows) && p.contains('/') {
-//             PathBuf::from(p.replace("/", "\\")).into()
-//         } else {
-//             Cow::Borrowed(Path::new(p))
-//         }
-//     }
+        let project_1 = projects.iter().find(|p| p.name == "project-1");
 
-//     fn default_fixture() -> (TempDir, RealSys) {
-//         // wrap it in an Arc so that it doesn't get dropped before the test due to being async
-//         let tmp = tmp();
-//         let sys = real_sys();
-//         setup_fixture(tmp.path(), sys.clone());
+        assert!(project_1.is_some(), "Can't find project-1");
 
-//         (tmp, sys)
-//     }
+        let project_2 = projects.iter().find(|p| p.name == "project-2");
 
-//     fn setup_fixture(root: &Path, sys: impl TestSys) {
-//         sys.fs_create_dir_all(root.join(xp("nested/project-1")))
-//             .expect("Can't create project-1 dir");
+        assert!(project_2.is_some(), "Can't find project-2");
 
-//         sys.fs_create_dir_all(root.join(xp("nested/project-2")))
-//             .expect("Can't create project-2 dir");
-//         sys.fs_create_dir_all(root.join(xp("nested/project-3")))
-//             .expect("Can't create project-3 dir");
-//         sys.fs_create_dir_all(root.join("base"))
-//             .expect("Can't create project-2 dir");
+        let project_3 = projects.iter().find(|p| p.name == "project-3");
 
-//         sys.fs_write(
-//             root.join(".env"),
-//             include_str!("../../test_fixtures/.env.root"),
-//         )
-//         .expect("Can't write root env file");
-//         sys.fs_write(
-//             root.join(".env.local"),
-//             include_str!("../../test_fixtures/.env.root.local"),
-//         )
-//         .expect("Can't write root local env file");
+        assert!(project_3.is_some(), "Can't find project-3");
+    }
 
-//         sys.fs_write(
-//             root.join(xp("nested/.env")),
-//             include_str!("../../test_fixtures/.env.nested"),
-//         )
-//         .expect("Can't write nested env file");
-//         sys.fs_write(
-//             root.join(xp("nested/.env.local")),
-//             include_str!("../../test_fixtures/.env.nested.local"),
-//         )
-//         .expect("Can't write nested local env file");
+    #[tokio::test]
+    async fn test_load_projects_with_duplicate_names() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let project4dir = tmp.path().join("nested").join("project-4");
 
-//         sys.fs_write(
-//             root.join(xp("nested/project-1/.env")),
-//             include_str!("../../test_fixtures/.env.project-1"),
-//         )
-//         .expect("Can't write project env file");
-//         sys.fs_write(
-//             root.join(xp("nested/project-1/.env.local")),
-//             include_str!("../../test_fixtures/.env.project-1.local"),
-//         )
-//         .expect("Can't write project local env file");
-//         sys.fs_write(
-//             root.join(xp("nested/project-1/project.omni.yaml")),
-//             include_str!("../../test_fixtures/project-1.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
+        sys.fs_create_dir_all(&project4dir)
+            .expect("Can't create project-4 dir");
+        sys.fs_write(
+            &project4dir.join("project.omni.yaml"),
+            include_str!("../test_fixtures/project-1.omni.yaml"),
+        )
+        .expect("Can't write project config file");
 
-//         sys.fs_write(
-//             root.join(xp("nested/project-2/.env")),
-//             include_str!("../../test_fixtures/.env.project-2"),
-//         )
-//         .expect("Can't write project env file");
-//         sys.fs_write(
-//             root.join(xp("nested/project-2/.env.local")),
-//             include_str!("../../test_fixtures/.env.project-2.local"),
-//         )
-//         .expect("Can't write project local env file");
-//         sys.fs_write(
-//             root.join(xp("nested/project-2/project.omni.yaml")),
-//             include_str!("../../test_fixtures/project-2.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
-//         sys.fs_write(
-//             root.join(xp("nested/project-3/project.omni.yaml")),
-//             include_str!("../../test_fixtures/project-3.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
+        setup_fixture(tmp.path(), sys.clone());
 
-//         sys.fs_write(
-//             root.join(xp("workspace.omni.yaml")),
-//             include_str!("../../test_fixtures/workspace.omni.yaml"),
-//         )
-//         .expect("Can't write workspace config file");
+        let ctx = ctx("testing", tmp.path(), sys);
 
-//         sys.fs_write(
-//             root.join(xp("base/base-1.omni.yaml")),
-//             include_str!("../../test_fixtures/base-1.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
-//         sys.fs_write(
-//             root.join(xp("base/base-2.omni.yaml")),
-//             include_str!("../../test_fixtures/base-2.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
-//     }
+        let loaded = ctx.into_loaded().await;
+        let error = loaded.expect_err("should be an error");
 
-//     fn block_on<F: Future>(future: F) -> F::Output {
-//         tokio::runtime::Builder::new_current_thread()
-//             .enable_all()
-//             .build()
-//             .unwrap()
-//             .block_on(future)
-//     }
+        assert_eq!(
+            error.kind(),
+            ContextErrorKind::ValidationError,
+            "should be a validation error"
+        );
+        assert!(
+            error.to_string().contains("duplicate project name"),
+            "should report duplicate project name"
+        );
+    }
 
-//     fn ctx<TSys: ContextSys + 'static>(
-//         env: &str,
-//         root_dir: &Path,
-//         sys: TSys,
-//     ) -> Context<TSys> {
-//         let cli = &CliArgs {
-//             env_root_dir_marker: None,
-//             env_file: vec![
-//                 ".env".to_string(),
-//                 ".env.local".to_string(),
-//                 ".env.{ENV}".to_string(),
-//                 ".env.{ENV}.local".to_string(),
-//             ],
-//             env: Some(String::from(env)),
-//             stdout_trace_level: TraceLevel::None,
-//             file_trace_level: TraceLevel::None,
-//             stderr_trace: false,
-//             file_trace_output: None,
-//             inherit_env_vars: false,
-//         };
+    #[tokio::test]
+    async fn test_project_extensions() {
+        let (tmp, sys) = default_fixture();
 
-//         Context::from_args_root_dir_and_sys(cli, root_dir, sys)
-//             .expect("Can't create context")
-//     }
+        let ctx = ctx("testing", tmp.path(), sys.clone())
+            .into_loaded()
+            .await
+            .expect("can't load context");
 
-//     #[test]
-//     pub fn test_load_env_vars() {
-//         let root = Path::new("/root");
-//         let sys = mem_sys();
+        let project_graph = ctx.get_project_graph().expect("Can't get graph");
+        let project3 = project_graph
+            .get_project_by_name("project-3")
+            .expect("Can't get project-3");
 
-//         setup_fixture(root, sys.clone());
+        assert_eq!(project3.tasks.len(), 2, "Should be 2 tasks");
+        assert_eq!(
+            project3.tasks["from-base-1"].command,
+            "echo \"from base-1\""
+        );
+        assert_eq!(
+            project3.tasks["from-base-2"].command,
+            "echo \"from base-2\""
+        );
+    }
 
-//         sys.env_set_current_dir(root.join("nested").join("project-1"))
-//             .expect("Can't set current dir");
+    #[tokio::test]
+    async fn test_loaded_environmental_variables() {
+        let (tmp, sys) = default_fixture();
 
-//         let mut ctx = ctx("testing", root, sys.clone());
+        let ctx = ctx("testing", tmp.path(), sys.clone())
+            .into_loaded()
+            .await
+            .expect("can't load context");
 
-//         let env = ctx.get_env_vars(None).expect("Can't load env vars");
+        let project3dir = tmp.path().join("nested").join("project-3");
+        let envs = ctx
+            .get_cached_env_vars(&project3dir)
+            .expect("can't get env vars");
 
-//         assert_eq!(
-//             env.get("SHARED_ENV").map(String::as_str),
-//             Some("root-local-nested-local-project-local")
-//         );
-//     }
+        assert_eq!(envs["PROJECT_NAME"], "project-3");
 
-//     #[test]
-//     fn test_load_projects() {
-//         let (tmp, sys) = default_fixture();
+        let project3dircanon = sys
+            .fs_canonicalize(project3dir)
+            .expect("can't canonicalize");
 
-//         let mut ctx = ctx("testing", tmp.path(), sys);
+        let env_project3dircanon = sys
+            .fs_canonicalize(Path::new(&envs["PROJECT_DIR"]))
+            .expect("can't canonicalize");
 
-//         block_on(async {
-//             ctx.load_projects().await.expect("can't load projects");
-//         });
-
-//         let projects = ctx.get_projects().expect("Can't get projects");
-
-//         assert_eq!(projects.len(), 3, "Should be 3 projects");
-
-//         let project_1 = projects.iter().find(|p| p.name == "project-1");
-
-//         assert!(project_1.is_some(), "Can't find project-1");
-
-//         let project_2 = projects.iter().find(|p| p.name == "project-2");
-
-//         assert!(project_2.is_some(), "Can't find project-2");
-
-//         let project_3 = projects.iter().find(|p| p.name == "project-3");
-
-//         assert!(project_3.is_some(), "Can't find project-3");
-//     }
-
-//     #[test]
-//     fn test_load_projects_with_duplicate_names() {
-//         let sys = real_sys();
-//         let tmp = tmp();
-//         let project4dir = tmp.path().join("nested").join("project-4");
-
-//         sys.fs_create_dir_all(&project4dir)
-//             .expect("Can't create project-4 dir");
-//         sys.fs_write(
-//             &project4dir.join("project.omni.yaml"),
-//             include_str!("../../test_fixtures/project-1.omni.yaml"),
-//         )
-//         .expect("Can't write project config file");
-
-//         setup_fixture(tmp.path(), sys.clone());
-
-//         let mut ctx = ctx("testing", tmp.path(), sys);
-
-//         let projects = block_on(async { ctx.load_projects().await });
-
-//         assert!(
-//             projects
-//                 .expect_err("should be an error")
-//                 .to_string()
-//                 .contains("Duplicate project name: project-1"),
-//             "should report duplicate project name"
-//         );
-//     }
-
-//     #[test]
-//     fn test_get_project_graph() {
-//         let (tmp, sys) = default_fixture();
-
-//         let mut ctx = ctx("testing", tmp.path(), sys.clone());
-
-//         block_on(async {
-//             ctx.load_projects().await.expect("can't load projects");
-//         });
-
-//         let project_graph = ctx.get_project_graph().expect("Can't get graph");
-
-//         assert_eq!(project_graph.count(), 3);
-//     }
-
-//     #[test]
-//     fn test_project_extensions() {
-//         let (tmp, sys) = default_fixture();
-
-//         let mut ctx = ctx("testing", tmp.path(), sys.clone());
-
-//         block_on(async {
-//             ctx.load_projects().await.expect("can't load projects");
-//         });
-
-//         let project_graph = ctx.get_project_graph().expect("Can't get graph");
-//         let project3 = project_graph
-//             .get_project_by_name("project-3")
-//             .expect("Can't get project-3");
-
-//         assert_eq!(project3.tasks.len(), 2, "Should be 2 tasks");
-//         assert_eq!(
-//             project3.tasks["from-base-1"].command,
-//             "echo \"from base-1\""
-//         );
-//         assert_eq!(
-//             project3.tasks["from-base-2"].command,
-//             "echo \"from base-2\""
-//         );
-//     }
-
-//     #[test]
-//     fn test_loaded_environmental_variables() {
-//         let (tmp, sys) = default_fixture();
-
-//         let mut ctx = ctx("testing", tmp.path(), sys.clone());
-
-//         block_on(async {
-//             ctx.load_projects().await.expect("can't load projects");
-//         });
-
-//         let project3dir = tmp.path().join("nested").join("project-3");
-//         let envs = ctx
-//             .get_cached_env_vars(&project3dir)
-//             .expect("can't get env vars");
-
-//         assert_eq!(envs["PROJECT_NAME"], "project-3");
-
-//         let project3dircanon = sys
-//             .fs_canonicalize(project3dir)
-//             .expect("can't canonicalize");
-
-//         let env_project3dircanon = sys
-//             .fs_canonicalize(Path::new(&envs["PROJECT_DIR"]))
-//             .expect("can't canonicalize");
-
-//         assert_eq!(env_project3dircanon, project3dircanon);
-//     }
-// }
+        assert_eq!(env_project3dircanon, project3dircanon);
+    }
+}

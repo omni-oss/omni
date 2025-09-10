@@ -10,6 +10,8 @@ mod project_data_extractor;
 mod project_discovery;
 mod project_query;
 mod sys;
+#[cfg(test)]
+mod test_fixture;
 mod utils;
 mod workspace_hasher;
 

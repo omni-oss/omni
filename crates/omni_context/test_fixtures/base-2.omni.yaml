@@ -1,0 +1,9 @@
+name: base-2
+
+base: true
+
+extends:
+  - "@workspace/base/base-1.omni.yaml"
+
+tasks:
+  from-base-2: echo "from base-2"
