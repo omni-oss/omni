@@ -10,6 +10,7 @@ default = ["enable-tracing"]
 enable-tracing = ["dep:tracing", "dep:trace", "trace/enabled"]
 
 [dependencies]
+clap = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
@@ -23,6 +24,7 @@ shlex = { workspace = true }
 omni_hasher = { workspace = true }
 system_traits = { workspace = true }
 bytes = { workspace = true }
+owo-colors = { workspace = true }
 derive-new = { workspace = true }
 futures = { workspace = true }
 maps = { workspace = true }

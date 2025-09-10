@@ -37,7 +37,7 @@ impl<'b, TSys: ContextSys> TaskContextProvider
     ) -> Result<Vec<TaskContext<'a>>, TaskContextProviderError> {
         let mut task_ctxs = Vec::with_capacity(batch.len());
         for node in batch {
-            let envs =
+            let env_vars =
                 self.context.get_task_env_vars(node).ok_or_else(|| {
                     TaskContextProviderErrorInner::NoEnvVarsForTask {
                         full_task_name: node.full_task_name().to_string(),
@@ -48,7 +48,7 @@ impl<'b, TSys: ContextSys> TaskContextProvider
                 .context
                 .get_cache_info(node.project_name(), node.task_name());
 
-            let dep_hashes = if ignore_dependencies {
+            let dependency_hashes = if !ignore_dependencies {
                 node.dependencies()
                     .iter()
                     .filter_map(|d| {
@@ -61,9 +61,9 @@ impl<'b, TSys: ContextSys> TaskContextProvider
 
             let ctx = TaskContext {
                 node,
-                env_vars: envs,
+                env_vars,
                 cache_info,
-                dependency_hashes: dep_hashes,
+                dependency_hashes,
             };
 
             trace::debug!(

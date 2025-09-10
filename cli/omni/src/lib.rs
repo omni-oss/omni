@@ -32,7 +32,7 @@ fn exit(code: ExitCode) -> ! {
 #[inline(always)]
 fn ctx(args: &CliArgs) -> eyre::Result<context::Context<RealSys>> {
     let sys = RealSys;
-    context::Context::from_args_and_sys(args, sys)
+    context::from_args_and_sys(args, sys)
 }
 
 pub async fn run(sc: &CliSubcommands, args: &CliArgs) -> eyre::Result<()> {

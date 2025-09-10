@@ -1,8 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-
-use crate::executor::TaskExecutorBuilder;
+use omni_task_executor::ExecutionConfigBuilder;
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
@@ -53,7 +52,7 @@ pub enum ResultFormat {
 }
 
 impl RunArgs {
-    pub fn apply_to(&self, builder: &mut TaskExecutorBuilder) {
+    pub fn apply_to(&self, builder: &mut ExecutionConfigBuilder) {
         if let Some(meta) = &self.meta {
             builder.meta_filter(meta);
         }

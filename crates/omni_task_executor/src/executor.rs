@@ -24,6 +24,13 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
     pub async fn execute(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
+        let start_time = std::time::Instant::now();
+        if self.config.dry_run() {
+            trace::info!(
+                "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed"
+            );
+        }
+
         let plan = ContextExecutionPlanProvider::new(self.context)
             .get_execution_plan(
                 self.config.call(),
@@ -65,6 +72,8 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
                 result.set_details(details);
             }
         }
+
+        trace::info!("Overrall execution time: {:?}", start_time.elapsed());
 
         Ok(results)
     }

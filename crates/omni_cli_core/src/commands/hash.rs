@@ -32,15 +32,13 @@ pub enum HashSubcommands {
 }
 
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
-    let mut ctx = ctx.clone();
+    let ctx = ctx.clone();
 
-    if command.args.raw_value {
-        ctx.load_projects()
-            .with_subscriber(noop_subscriber())
-            .await?;
+    let ctx = if command.args.raw_value {
+        ctx.into_loaded().with_subscriber(noop_subscriber()).await?
     } else {
-        ctx.load_projects().await?;
-    }
+        ctx.into_loaded().await?
+    };
 
     match command.subcommand {
         HashSubcommands::Workspace => {

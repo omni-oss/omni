@@ -72,7 +72,7 @@ impl<'a> TaskResultContext<'a> {
 
 impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
     fn should_use_cache(&self) -> bool {
-        !!self.force
+        !self.force
     }
 
     fn should_save_cache(&self) -> bool {
@@ -117,7 +117,7 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
         UnorderedMap<String, CachedTaskExecutionHash<'a>>,
         CacheManagerError,
     > {
-        if !self.should_save_cache() {
+        if !self.should_save_cache() || cache_contexts.is_empty() {
             return Ok(unordered_map!());
         }
 
@@ -142,10 +142,6 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
                 }
             })
             .collect::<Vec<_>>();
-
-        if to_cache.is_empty() {
-            return Ok(unordered_map!());
-        }
 
         let cached_items =
             self.store.cache_many(&to_cache).await.map_err(|e| {

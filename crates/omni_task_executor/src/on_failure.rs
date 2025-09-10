@@ -1,7 +1,17 @@
+use clap::ValueEnum;
 use strum::{Display, EnumIs};
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIs, Display,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    EnumIs,
+    Display,
+    ValueEnum,
 )]
 pub enum OnFailure {
     #[strum(to_string = "continue")]
