@@ -872,11 +872,11 @@ mod tests {
     {
     }
 
-    fn xp(p: &str) -> Cow<'_, Path> {
+    fn xp(p: &str) -> PathBuf {
         if cfg!(windows) && p.contains('/') {
-            PathBuf::from(p.replace("/", "\\")).into()
+            PathBuf::from(p.replace("/", "\\"))
         } else {
-            Cow::Borrowed(Path::new(p))
+            PathBuf::from(p)
         }
     }
 

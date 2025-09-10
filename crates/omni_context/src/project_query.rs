@@ -98,6 +98,8 @@ mod tests {
                 OrderedMap::new(),
             ),
         ];
+
+        return projects;
     }
 
     #[test]
