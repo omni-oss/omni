@@ -1,4 +1,4 @@
-use env::ParseError;
+use env::{EnvParseError, ExpansionError};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 
 #[derive(Debug, thiserror::Error)]
@@ -28,10 +28,13 @@ pub(crate) enum EnvLoaderErrorInner {
     CantReadFile(String),
 
     #[error("can't parse env: {0:?}")]
-    CantParseEnv(Vec<ParseError>),
+    CantParseEnv(EnvParseError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Expansion(#[from] ExpansionError),
 }
 
 impl<T: Into<EnvLoaderErrorInner>> From<T> for EnvLoaderError {

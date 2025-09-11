@@ -4,7 +4,9 @@ use std::{
 };
 
 use derive_new::new;
-use env::expand_into;
+use env::{
+    CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
+};
 use env_loader::EnvLoaderError;
 use omni_configurations::{MetaConfiguration, WorkspaceConfiguration};
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
@@ -16,7 +18,7 @@ use crate::{
     CacheInfo, Context, ContextSys, EnvLoader, GetVarsArgs,
     project_data_extractor::ProjectDataExtractions,
     project_query::ProjectQuery,
-    utils::EnvVarsMap,
+    utils::{EnvVarsMap, vars_os},
     workspace_hasher::{WorkspaceHasher, WorkspaceHasherError},
 };
 
@@ -131,14 +133,14 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     pub fn get_task_env_vars(
         &self,
         task: &TaskExecutionNode,
-    ) -> Option<Arc<EnvVarsMap>> {
+    ) -> Result<Option<Arc<EnvVarsMap>>, LoadedContextError> {
         let cached = self.env_loader.get_cached(task.project_dir());
         let overrides = self
             .extracted
             .task_env_var_overrides
             .get(task.full_task_name());
 
-        match (cached, overrides) {
+        Ok(match (cached, overrides) {
             (None, None) => None,
             (None, Some(overrides)) => Some(Arc::new(overrides.clone())),
             (Some(cached), None) => Some(cached),
@@ -146,11 +148,17 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
                 let mut cached = (*cached).clone();
                 let mut overrides = overrides.clone();
 
-                expand_into(&mut overrides, &cached);
+                let vars = vars_os(&cached);
+                let cfg = CommandExpansionConfig::new_enabled(
+                    task.project_dir(),
+                    &vars,
+                );
+                expand_into_with_command_config(&mut overrides, &cached, &cfg)?;
+
                 cached.extend(overrides);
                 Some(Arc::new(cached))
             }
-        }
+        })
     }
 
     fn cache_dir(&self) -> PathBuf {
@@ -222,4 +230,7 @@ enum LoadedContextErrorInner {
 
     #[error(transparent)]
     WorkspaceHasher(#[from] WorkspaceHasherError),
+
+    #[error(transparent)]
+    Expansion(#[from] ExpansionError),
 }
