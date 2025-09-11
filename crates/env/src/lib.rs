@@ -7,13 +7,15 @@ mod tokens;
 mod utils;
 
 pub use config::*;
+use derive_new::new;
 pub use error::*;
 use escape::unescape;
 pub use expand::*;
 use lexer::{Lexer, Token};
 use maps::Map;
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
-pub fn parse_default(text: &str) -> EnvParserResult<Map<String, String>> {
+pub fn parse_default(text: &str) -> Result<Map<String, String>, EnvParseError> {
     parse(text, &ParseConfig::default())
 }
 
@@ -38,7 +40,7 @@ fn report_long_message(
 pub fn parse(
     text: &str,
     config: &ParseConfig,
-) -> EnvParserResult<Map<String, String>> {
+) -> Result<Map<String, String>, EnvParseError> {
     let n_lines = text
         .lines()
         .filter(|s| {
@@ -69,6 +71,9 @@ pub fn parse(
 
     let mut stx_errors: Vec<ParseError> = Vec::new();
 
+    let cmd_config_def = CommandExpansionConfig::default();
+    let cmd_config = config.command_expand.unwrap_or(&cmd_config_def);
+
     match result {
         Ok(tokens) => {
             for token in &tokens {
@@ -93,7 +98,7 @@ pub fn parse(
                                     let expanded = if config.expand
                                         && matches!(string.token_type,lexer::TokenType::UnqoutedString | lexer::TokenType::DoubleQuotedString
                                 ) {
-                                        expand(&unescaped, &combined)
+                                        expand_with_command_config(&unescaped, &combined, cmd_config)?
                                     } else {
                                         unescaped
                                     };
@@ -197,10 +202,45 @@ pub fn parse(
     }
 
     if !stx_errors.is_empty() {
-        return Err(stx_errors);
+        Err(EnvParseErrorInner::new_parse(stx_errors))?;
     }
 
     Ok(env)
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{inner}")]
+pub struct EnvParseError {
+    kind: EnvParseErrorKind,
+    inner: EnvParseErrorInner,
+}
+
+impl EnvParseError {
+    pub fn kind(&self) -> EnvParseErrorKind {
+        self.kind
+    }
+}
+
+impl<T: Into<EnvParseErrorInner>> From<T> for EnvParseError {
+    fn from(inner: T) -> Self {
+        let inner = inner.into();
+        let kind = inner.discriminant();
+
+        Self { kind, inner }
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[strum_discriminants(vis(pub), name(EnvParseErrorKind), derive(EnumIs))]
+pub enum EnvParseErrorInner {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Expansion(#[from] ExpansionError),
+
+    #[error("parser error: {first}", first = errors.first().unwrap())]
+    Parse { errors: Vec<ParseError> },
 }
 
 #[cfg(test)]
@@ -234,7 +274,7 @@ mod tests {
             # Comment
             TEST=VALUE
             TEST2=${TEST}-value
-            
+
             "#;
 
         let env = parse_default(text).unwrap();

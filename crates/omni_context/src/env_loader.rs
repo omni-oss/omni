@@ -3,12 +3,12 @@ use std::{
     sync::Arc,
 };
 
-use env::expand_into;
+use env::{CommandExpansionConfig, expand_into_with_command_config};
 use env_loader::{EnvCache as _, EnvCacheExt, EnvLoaderError, EnvLoaderSys};
 use maps::Map;
 use system_traits::{EnvCurrentDir, EnvVars, auto_impl};
 
-use crate::utils::EnvVarsMap;
+use crate::utils::{EnvVarsMap, vars_os};
 
 #[auto_impl]
 pub trait EnvCacheSys: EnvLoaderSys + EnvVars + Clone + EnvCurrentDir {}
@@ -55,13 +55,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         let start_dir = args.start_dir.unwrap_or(&cwd);
 
         if let Some(cached) = self.env_cache.get(start_dir) {
-            if let Some(override_vars) = args.project_env_var_overrides {
-                let mut env = (*cached).clone();
-                env.extend(override_vars.clone());
-                return Ok(Arc::new(env));
-            } else {
-                return Ok(cached);
-            }
+            return Ok(cached);
         }
 
         let mut env_vars = maps::map!();
@@ -94,7 +88,9 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             )?)
             .clone();
             let mut override_vars = override_vars.clone();
-            expand_into(&mut override_vars, &env);
+            let vars = vars_os(&env);
+            let cfg = CommandExpansionConfig::new_enabled(start_dir, &vars);
+            expand_into_with_command_config(&mut override_vars, &env, &cfg)?;
 
             env.extend(override_vars);
 

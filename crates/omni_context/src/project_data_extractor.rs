@@ -84,7 +84,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             _ = self.env_loader.get(&GetVarsArgs {
                 start_dir: Some(dir),
                 project_env_var_overrides: Some(&extras),
-                env_files: if env_files.is_empty() {
+                env_files: if !env_files.is_empty() {
                     Some(&env_files[..])
                 } else {
                     None

@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use env::{EnvParserResult, ParseConfig};
+use env::{EnvParseError, ParseConfig};
 use maps::Map;
 use std::hint::black_box;
 
@@ -7,7 +7,7 @@ const LARGE_TEST_CONTENT: &str = include_str!("./fixtures/5000.env");
 const MEDIUM_TEST_CONTENT: &str = include_str!("./fixtures/500.env");
 const TRIVIAL_TEST_CONTENT: &str = include_str!("./fixtures/trivial.env");
 
-fn parse(text: &str) -> EnvParserResult<Map<String, String>> {
+fn parse(text: &str) -> Result<Map<String, String>, EnvParseError> {
     env::parse(text, &ParseConfig::default())
 }
 

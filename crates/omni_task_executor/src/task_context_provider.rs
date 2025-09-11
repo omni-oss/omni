@@ -2,7 +2,7 @@ use std::error::Error;
 
 use derive_new::new;
 use maps::UnorderedMap;
-use omni_context::{ContextSys, LoadedContext};
+use omni_context::{ContextSys, LoadedContext, LoadedContextError};
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -38,7 +38,7 @@ impl<'b, TSys: ContextSys> TaskContextProvider
         let mut task_ctxs = Vec::with_capacity(batch.len());
         for node in batch {
             let env_vars =
-                self.context.get_task_env_vars(node).ok_or_else(|| {
+                self.context.get_task_env_vars(node)?.ok_or_else(|| {
                     TaskContextProviderErrorInner::NoEnvVarsForTask {
                         full_task_name: node.full_task_name().to_string(),
                     }
@@ -108,4 +108,7 @@ impl<T: Into<TaskContextProviderErrorInner>> From<T>
 enum TaskContextProviderErrorInner {
     #[error("no env vars for task: {full_task_name}")]
     NoEnvVarsForTask { full_task_name: String },
+
+    #[error(transparent)]
+    LoadedContext(#[from] LoadedContextError),
 }

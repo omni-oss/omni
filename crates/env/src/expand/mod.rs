@@ -146,7 +146,7 @@ impl Expansion {
     }
 }
 
-#[derive(Debug, Clone, new)]
+#[derive(Debug, Clone, Copy, new, PartialEq, Eq)]
 pub enum CommandExpansionConfig<'a> {
     Disabled,
     Enabled {

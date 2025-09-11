@@ -1,4 +1,6 @@
 use std::{
+    collections::HashMap,
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -11,6 +13,7 @@ mod sys;
 pub mod test_utils;
 
 pub use cache::*;
+use env::CommandExpansionConfig;
 pub use error::*;
 use maps::Map;
 pub use sys::*;
@@ -109,6 +112,11 @@ where
 
     env.extend(config.extra_envs.unwrap_or(&maps::map!()).clone());
 
+    let env_vars_os = vars_os(&env);
+
+    let command_expansion_cfg =
+        CommandExpansionConfig::new_enabled(start_dir.as_path(), &env_vars_os);
+
     for dir in start_dir.ancestors().collect::<Vec<_>>() {
         trace::trace!("Looking for env files in dir: {:?}", dir);
         // If we've already processed this dir, don't process it again
@@ -177,6 +185,7 @@ where
             let parsed = env::parse(
                 &contents,
                 &env::ParseConfig {
+                    command_expand: Some(&command_expansion_cfg),
                     expand: true,
                     extra_envs: Some(&env),
                 },
@@ -199,6 +208,12 @@ where
     }
 
     Ok(Arc::new(env))
+}
+
+fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
+    vars.iter()
+        .map(|(k, v)| (k.clone().into(), v.clone().into()))
+        .collect()
 }
 
 #[cfg(test)]
