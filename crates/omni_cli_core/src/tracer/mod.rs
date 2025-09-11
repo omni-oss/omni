@@ -13,7 +13,7 @@ use tracing::span;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 use tracing_subscriber::filter::Targets;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::SubscriberExt as _;
 
 #[derive(
     Default,
@@ -86,6 +86,7 @@ impl TracerSubscriber {
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .with_writer(std::io::stdout)
                 .pretty()
+                .with_ansi(atty::is(atty::Stream::Stdout))
                 .with_file(false)
                 .without_time()
                 .with_target(false)
@@ -98,6 +99,7 @@ impl TracerSubscriber {
 
         if config.stderr_trace_enabled {
             let stderr_layer = tracing_subscriber::fmt::layer()
+                .with_ansi(atty::is(atty::Stream::Stderr))
                 .with_writer(std::io::stderr)
                 .with_filter(
                     main_filters.clone().with_default(LevelFilter::ERROR),

@@ -3,12 +3,13 @@ use std::path::{Path, PathBuf};
 pub(crate) use crate::env_loader::EnvLoader;
 use env_loader::EnvLoaderError;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
+use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
-    constants::{self},
+    constants::{self, CACHE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
@@ -84,6 +85,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub async fn into_loaded(
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
+        let start = std::time::Instant::now();
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
             self.workspace.projects.as_slice(),
@@ -91,7 +93,14 @@ impl<TSys: ContextSys> Context<TSys> {
         .discover_project_files()
         .await?;
 
-        self.into_loaded_impl(project_paths).await
+        let result = self.into_loaded_impl(project_paths).await;
+
+        trace::info!(
+            "{}",
+            format!("Loaded context in {:?}", start.elapsed()).bold()
+        );
+
+        result
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
@@ -99,6 +108,7 @@ impl<TSys: ContextSys> Context<TSys> {
         self,
         walker: &TDirWalker,
     ) -> Result<LoadedContext<TSys>, ContextError> {
+        let start = std::time::Instant::now();
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
             self.workspace.projects.as_slice(),
@@ -106,7 +116,14 @@ impl<TSys: ContextSys> Context<TSys> {
         .discover_project_files_with_walker(walker)
         .await?;
 
-        self.into_loaded_impl(project_paths).await
+        let result = self.into_loaded_impl(project_paths).await;
+
+        trace::info!(
+            "{}",
+            format!("Loaded context in {:?}", start.elapsed()).bold()
+        );
+
+        result
     }
 
     async fn into_loaded_impl(
@@ -152,11 +169,9 @@ impl<TSys: ContextSys> Context<TSys> {
         env_loader
     }
 
-    const CACHE_DIR: &str = ".omni/cache";
-
     pub fn create_local_cache_store(&self) -> LocalTaskExecutionCacheStore {
         LocalTaskExecutionCacheStore::new(
-            self.root_dir.join(Self::CACHE_DIR),
+            self.root_dir.join(CACHE_DIR),
             self.root_dir.clone(),
         )
     }
