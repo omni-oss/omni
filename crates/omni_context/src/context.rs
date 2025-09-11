@@ -70,7 +70,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn env_files(&self) -> &[PathBuf] {
         self.override_env_files
             .as_deref()
-            .unwrap_or(&self.workspace.env.files[..])
+            .unwrap_or(&self.workspace.env.files)
     }
 
     pub fn env_root_dir_marker(&self) -> &str {
