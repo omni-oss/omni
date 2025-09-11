@@ -74,6 +74,7 @@ impl WorkspaceGenerator {
             generators: vec!["./generators/*".to_string()],
             executors: ExecutorsConfiguration::default(),
             name: self.name.clone(),
+            env: Default::default(),
         };
 
         fs::create_dir_all(workspace_dir.join("projects"))?;
