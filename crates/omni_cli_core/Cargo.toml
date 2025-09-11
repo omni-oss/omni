@@ -82,6 +82,7 @@ omni_configurations = { workspace = true }
 omni_context = { workspace = true }
 omni_task_executor = { workspace = true }
 clap_declspec = { workspace = true }
+atty = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

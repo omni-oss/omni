@@ -44,6 +44,7 @@ derive-new = { workspace = true }
 async-trait = { workspace = true }
 either = { workspace = true }
 shadow-rs = { workspace = true }
+owo-colors = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
