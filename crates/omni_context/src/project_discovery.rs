@@ -90,24 +90,22 @@ impl<'a> ProjectDiscovery<'a> {
             .collect();
 
         for f in walker.walk_dir(&[self.root_dir]).map_err(|e| {
-            ProjectDiscoveryErrorInner::WalkDir {
-                dir: self.root_dir.to_path_buf(),
-                source: eyre::Report::new(e),
-            }
+            ProjectDiscoveryErrorInner::new_walk_dir(
+                self.root_dir.to_path_buf(),
+                e,
+            )
         })? {
             num_iterations += 1;
-            let f = f.map_err(|e| {
-                ProjectDiscoveryErrorInner::FailedToGetDirEntry {
-                    source: eyre::Report::new(e),
-                }
-            })?;
+            let f = f.map_err(
+                ProjectDiscoveryErrorInner::new_failed_to_get_dir_entry,
+            )?;
             trace::trace!("checking path: {:?}", f.path());
 
             let meta = f.metadata().map_err(|e| {
-                ProjectDiscoveryErrorInner::FailedToGetMetadata {
-                    path: f.path().to_path_buf(),
-                    source: eyre::Report::new(e),
-                }
+                ProjectDiscoveryErrorInner::new_failed_to_get_metadata(
+                    f.path().to_path_buf(),
+                    e,
+                )
             })?;
 
             if meta.is_dir() {
@@ -177,7 +175,7 @@ impl<T: Into<ProjectDiscoveryErrorInner>> From<T> for ProjectDiscoveryError {
     }
 }
 
-#[derive(Error, Debug, EnumDiscriminants)]
+#[derive(Error, Debug, EnumDiscriminants, new)]
 #[strum_discriminants(vis(pub), name(ProjectDiscoveryErrorKind))]
 enum ProjectDiscoveryErrorInner {
     #[error(transparent)]
@@ -186,6 +184,7 @@ enum ProjectDiscoveryErrorInner {
     #[error("failed to walk dir: {dir}")]
     WalkDir {
         dir: PathBuf,
+        #[new(into)]
         #[source]
         source: eyre::Report,
     },
@@ -193,18 +192,24 @@ enum ProjectDiscoveryErrorInner {
     #[error("failed to get metadata for path: {path}")]
     FailedToGetMetadata {
         path: PathBuf,
+        #[new(into)]
         #[source]
         source: eyre::Report,
     },
 
     #[error("failed to get dir entry")]
     FailedToGetDirEntry {
+        #[new(into)]
         #[source]
         source: eyre::Report,
     },
 
     #[error(transparent)]
-    Unknown(#[from] eyre::Report),
+    Unknown(
+        #[new(into)]
+        #[from]
+        eyre::Report,
+    ),
 
     #[error(transparent)]
     IgnoreRealDirWalkerConfigBuilderError(
