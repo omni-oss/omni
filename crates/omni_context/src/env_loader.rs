@@ -24,7 +24,6 @@ pub struct EnvLoader<T: EnvCacheSys> {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct GetVarsArgs<'a> {
     pub start_dir: Option<&'a Path>,
-    pub env_files: Option<&'a [&'a Path]>,
     pub project_env_var_overrides: Option<&'a Map<String, String>>,
     pub inherit_env_vars: bool,
 }
@@ -65,12 +64,8 @@ impl<T: EnvCacheSys> EnvLoader<T> {
             env_vars.extend(existing_env_vars);
         }
 
-        let env_files = args
-            .env_files
-            .map(|s| s.iter().map(Path::new).collect::<Vec<_>>())
-            .unwrap_or_else(|| {
-                self.env_files.iter().map(Path::new).collect::<Vec<_>>()
-            });
+        let env_files =
+            self.env_files.iter().map(Path::new).collect::<Vec<_>>();
 
         let config = env_loader::EnvConfig {
             root_file: Some(&self.root_dir_marker),

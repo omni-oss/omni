@@ -6,18 +6,22 @@ use config::ConfigCommand;
 use env::EnvCommand;
 use exec::ExecCommand;
 use run::RunCommand;
-mod utils;
 mod common_args;
+mod utils;
 
-use crate::{build, commands::{declspec::DeclspecCommand, hash::HashCommand}, tracer::TraceLevel};
+use crate::{
+    build,
+    commands::{declspec::DeclspecCommand, hash::HashCommand},
+    tracer::TraceLevel,
+};
 
 pub mod completion;
 pub mod config;
+pub mod declspec;
 pub mod env;
 pub mod exec;
-pub mod run;
 pub mod hash;
-pub mod declspec;
+pub mod run;
 
 const ABOUT: &str = "omni is development workflow orchestration tool";
 const LONG_ABOUT: &str = r#"
@@ -90,15 +94,9 @@ pub struct CliArgs {
         short = 'e',
         long,
         help = "The env files to load per directory",
-        default_values = [
-            ".env",
-            ".env.local",
-            ".env.{ENV}",
-            ".env.{ENV}.local",
-        ],
         action = clap::ArgAction::Append,
     )]
-    pub env_file: Vec<String>,
+    pub env_file: Option<Vec<String>>,
 
     #[arg(long = "env", help = "The environment to use", env = "OMNI_ENV")]
     pub env: Option<String>,
@@ -106,8 +104,8 @@ pub struct CliArgs {
     #[arg(
         long,
         short = 'i',
-        help = "Inherit environment variables from the parent process", 
-        action = clap::ArgAction::SetTrue, 
+        help = "Inherit environment variables from the parent process",
+        action = clap::ArgAction::SetTrue,
         default_value_t = false,
         group = "inherit-env-vars",
     )]
@@ -122,12 +120,7 @@ impl Default for CliArgs {
             file_trace_output: None,
             file_trace_level: TraceLevel::None,
             env_root_dir_marker: None,
-            env_file: vec![
-                ".env".to_string(),
-                ".env.local".to_string(),
-                ".env.{ENV}".to_string(),
-                ".env.{ENV}.local".to_string(),
-            ],
+            env_file: None,
             env: None,
             inherit_env_vars: false,
         }

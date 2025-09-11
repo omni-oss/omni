@@ -8,11 +8,12 @@ use system_traits::impls::RealSys;
 
 async fn load_projects(ws_dir: &Path) {
     let ctx = Context::new(
+        RealSys,
+        "development",
         ws_dir,
         false,
         "workspace.omni.yaml",
-        vec![".env".to_string()],
-        RealSys,
+        Some(vec![".env".into()]),
     )
     .expect("can't create context");
 

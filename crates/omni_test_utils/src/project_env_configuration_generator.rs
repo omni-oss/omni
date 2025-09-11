@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
-use config_utils::{DictConfig, ListConfig, Replace};
+use config_utils::{DictConfig, Replace};
 use derive_builder::Builder;
 use omni_configurations::ProjectEnvConfiguration;
 
@@ -9,8 +9,6 @@ use omni_configurations::ProjectEnvConfiguration;
 pub struct ProjectEnvConfigurationGenerator {
     #[builder(default)]
     vars: HashMap<String, String>,
-    #[builder(default)]
-    files: Vec<String>,
 }
 
 impl ProjectEnvConfigurationGeneratorBuilder {
@@ -38,12 +36,6 @@ impl ProjectEnvConfigurationGenerator {
 impl ProjectEnvConfigurationGenerator {
     pub fn generate(&self) -> ProjectEnvConfiguration {
         ProjectEnvConfiguration {
-            files: ListConfig::append(
-                self.files
-                    .iter()
-                    .map(|env| Replace::new(PathBuf::from(env)))
-                    .collect(),
-            ),
             vars: DictConfig::value(
                 self.vars
                     .iter()

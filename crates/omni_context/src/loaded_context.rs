@@ -34,7 +34,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         self.unloaded_context.sys()
     }
 
-    pub fn env_files(&self) -> &[String] {
+    pub fn env_files(&self) -> &[PathBuf] {
         self.unloaded_context.env_files()
     }
 

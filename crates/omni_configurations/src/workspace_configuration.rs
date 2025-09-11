@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use garde::Validate;
 use schemars::JsonSchema;
@@ -26,6 +26,9 @@ pub struct WorkspaceConfiguration {
 
     #[serde(default)]
     pub generators: Vec<String>,
+
+    #[serde(default)]
+    pub env: WorkspaceEnvConfiguration,
 }
 
 impl WorkspaceConfiguration {
@@ -34,5 +37,31 @@ impl WorkspaceConfiguration {
         sys: &(impl FsReadAsync + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
         utils::fs::load_config(path, sys).await
+    }
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
+)]
+#[garde(allow_unvalidated)]
+pub struct WorkspaceEnvConfiguration {
+    #[serde(default = "default_files")]
+    pub files: Vec<PathBuf>,
+}
+
+fn default_files() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from(".env"),
+        PathBuf::from(".env.local"),
+        PathBuf::from(".env.{ENV}"),
+        PathBuf::from(".env.{ENV}.local"),
+    ]
+}
+
+impl Default for WorkspaceEnvConfiguration {
+    fn default() -> Self {
+        Self {
+            files: default_files(),
+        }
     }
 }

@@ -72,23 +72,10 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 extras.extend(overrides.to_map_to_inner());
             }
 
-            let env_files = project_config
-                .env
-                .files
-                .as_vec()
-                .iter()
-                .map::<&Path, _>(|s| s)
-                .collect::<Vec<_>>();
-
             // load the env vars for the project
             _ = self.env_loader.get(&GetVarsArgs {
                 start_dir: Some(dir),
                 project_env_var_overrides: Some(&extras),
-                env_files: if !env_files.is_empty() {
-                    Some(&env_files[..])
-                } else {
-                    None
-                },
                 inherit_env_vars: self.inherit_env_vars,
             })?;
 

@@ -28,7 +28,8 @@ use omni_configurations::WorkspaceConfiguration;
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
     env_root_dir_marker: String,
-    env_files: Vec<String>,
+    env: String,
+    override_env_files: Option<Vec<PathBuf>>,
     inherit_env_vars: bool,
     workspace: WorkspaceConfiguration,
     root_dir: PathBuf,
@@ -39,16 +40,21 @@ pub type UnloadedContext<TSys = RealSysSync> = Context<TSys>;
 
 impl<TSys: ContextSys> Context<TSys> {
     pub fn new(
+        sys: TSys,
+        env: impl Into<String>,
         root_dir: &Path,
         inherit_env_vars: bool,
         root_marker: &str,
-        env_files: Vec<String>,
-        sys: TSys,
+        override_env_files: Option<Vec<PathBuf>>,
     ) -> Result<Self, ContextError> {
+        let env = env.into();
+        let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
+
         Ok(Self {
+            env,
             inherit_env_vars,
-            env_files,
-            workspace: get_workspace_configuration(root_dir, &sys)?,
+            override_env_files,
+            workspace,
             root_dir: root_dir.to_path_buf(),
             env_root_dir_marker: root_marker.to_string(),
             sys,
@@ -61,8 +67,10 @@ impl<TSys: ContextSys> Context<TSys> {
         &self.sys
     }
 
-    pub fn env_files(&self) -> &[String] {
-        &self.env_files
+    pub fn env_files(&self) -> &[PathBuf] {
+        self.override_env_files
+            .as_deref()
+            .unwrap_or(&self.workspace.env.files[..])
     }
 
     pub fn env_root_dir_marker(&self) -> &str {
@@ -164,7 +172,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let env_loader = EnvLoader::new(
             self.sys.clone(),
             PathBuf::from(&self.env_root_dir_marker),
-            self.env_files.iter().map(|s| PathBuf::from(&s)).collect(),
+            self.env_files().iter().cloned().collect(),
         );
         env_loader
     }
@@ -197,6 +205,7 @@ pub fn get_root_dir(sys: &impl ContextSys) -> Result<PathBuf, ContextError> {
 }
 
 fn get_workspace_configuration(
+    env: &str,
     root_dir: &Path,
     sys: &impl ContextSys,
 ) -> Result<WorkspaceConfiguration, ContextError> {
@@ -218,13 +227,20 @@ fn get_workspace_configuration(
         ws_path.ok_or(ContextErrorInner::FailedToFindWorkspaceConfiguration)?;
 
     let f = sys.fs_read(&ws_path)?;
-    let w =
+    let mut w =
         serde_yml::from_slice::<WorkspaceConfiguration>(&f).map_err(|e| {
             ContextErrorInner::FailedToLoadWorkspaceConfiguration(
                 ws_path.clone(),
                 e,
             )
         })?;
+
+    w.env.files.iter_mut().for_each(|x| {
+        let string = x.to_string_lossy();
+        if string.contains("{ENV}") {
+            *x = string.replace("{ENV}", &env).into();
+        }
+    });
 
     Ok(w)
 }
@@ -301,16 +317,17 @@ mod tests {
         sys: TSys,
     ) -> Context<TSys> {
         Context::new(
+            sys,
+            env,
             root_dir,
             false,
             "workspace.omni.yaml",
-            vec![
-                ".env".to_string(),
-                ".env.local".to_string(),
-                format!(".env.{env}"),
-                format!(".env.{env}.local"),
-            ],
-            sys,
+            Some(vec![
+                PathBuf::from(".env"),
+                ".env.local".into(),
+                ".env.{ENV}".into(),
+                ".env.{ENV}.local".into(),
+            ]),
         )
         .expect("Can't create context")
     }

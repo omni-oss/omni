@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use config_utils::{DictConfig, ListConfig, Replace, merge::Merge};
 use garde::Validate;
@@ -90,9 +90,6 @@ impl ProjectConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct ProjectEnvConfiguration {
-    #[serde(default = "super::utils::list_config_default::<Replace<PathBuf>>")]
-    pub files: ListConfig<Replace<PathBuf>>,
-
     #[serde(default)]
     pub vars: DictConfig<Replace<String>>,
 }
