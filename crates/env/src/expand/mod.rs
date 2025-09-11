@@ -1,16 +1,23 @@
-use std::{collections::HashMap, ffi::OsString, path::Path};
+use std::{
+    collections::HashMap,
+    ffi::OsString,
+    io::{BufReader, Read as _},
+    path::Path,
+    process::{Command, Stdio},
+};
 
 use derive_new::new;
 use maps::Map;
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum FallbackMode {
+pub enum FallbackMode {
     Unset,
     UnsetOrEmpty,
 }
 
 #[derive(Debug, Clone, PartialEq, new)]
-enum ExpansionConfig {
+pub enum ExpansionConfig {
     Variable {
         #[new(into)]
         key: String,
@@ -28,7 +35,10 @@ enum ExpansionConfig {
     #[allow(dead_code)]
     Command {
         #[new(into)]
-        command: String,
+        program: String,
+
+        #[new(into)]
+        args: Vec<String>,
     },
 }
 
@@ -59,7 +69,7 @@ impl Expansion {
         text: &str,
         vars: &Map<String, String>,
         command_expansion_config: &CommandExpansionConfig,
-    ) -> String {
+    ) -> Result<String, ExpansionError> {
         let expanded: String;
 
         match self.config {
@@ -99,19 +109,40 @@ impl Expansion {
                     },
                 );
             }
-            ExpansionConfig::Command { .. } => match command_expansion_config {
+            ExpansionConfig::Command {
+                ref program,
+                ref args,
+            } => match command_expansion_config {
                 CommandExpansionConfig::Disabled => {
                     expanded = text.to_string();
                 }
-                CommandExpansionConfig::Enabled { .. } => {
-                    unimplemented!(
-                        "command expansion is not implemented yet. use variable expansion instead"
-                    )
+                CommandExpansionConfig::Enabled { cwd, env_vars } => {
+                    let mut cmd = Command::new(program);
+
+                    cmd.args(args)
+                        .envs(*env_vars)
+                        .current_dir(cwd)
+                        .stdin(Stdio::null())
+                        .stderr(Stdio::null())
+                        .stdout(Stdio::piped());
+
+                    let mut child = cmd.spawn()?;
+
+                    let stdout = child.stdout.take();
+                    if let Some(stdout) = stdout {
+                        let mut reader = BufReader::new(stdout);
+                        let mut text_output = String::new();
+                        reader.read_to_string(&mut text_output)?;
+
+                        expanded = text_output;
+                    } else {
+                        expanded = text.to_string();
+                    }
                 }
             },
         };
 
-        expanded
+        Ok(expanded)
     }
 }
 
@@ -133,7 +164,7 @@ impl Default for CommandExpansionConfig<'_> {
 }
 
 #[derive(Debug, Clone, PartialEq, new)]
-struct Expansions<'a> {
+pub struct Expansions<'a> {
     #[new(into)]
     expansions: Vec<Expansion>,
 
@@ -150,7 +181,7 @@ impl<'a> Expansions<'a> {
         &self,
         envs: &Map<String, String>,
         command_config: &CommandExpansionConfig,
-    ) -> String {
+    ) -> Result<String, ExpansionError> {
         let mut expansions = self.expansions.clone();
         // from shortest to longest
         expansions.sort_by_key(|b| std::cmp::Reverse(b.start_index));
@@ -158,14 +189,15 @@ impl<'a> Expansions<'a> {
         let mut expanded = self.text.to_string();
 
         for expansion in expansions.iter() {
-            expanded = expansion.expand(&expanded, envs, command_config);
+            expanded = expansion.expand(&expanded, envs, command_config)?;
         }
 
-        expanded
+        Ok(expanded)
     }
 }
 
-struct ExpansionParser<'a> {
+#[derive(Debug)]
+pub struct ExpansionParser<'a> {
     text: &'a str,
     chars: Vec<char>,
     pos: usize,
@@ -358,6 +390,54 @@ impl<'a> ExpansionParser<'a> {
         None
     }
 
+    // parse syntax $(command ...args)
+    fn try_parse_command_expansion(&mut self) -> Option<Expansion> {
+        let start_pos = self.pos;
+
+        if self.current()? != '$' {
+            return None;
+        }
+
+        if !self.match_char('(') {
+            return None;
+        }
+
+        if !self.at_end() {
+            self.advance()?;
+        }
+
+        let mut acc = String::new();
+        while let Some(c) = self.current() {
+            if c == ')' {
+                break;
+            }
+
+            acc.push(c);
+
+            self.advance()?;
+        }
+
+        let end_pos = self.pos;
+        self.advance();
+
+        let command = shlex::split(&acc);
+        if let Some(command) = command
+            && !command.is_empty()
+        {
+            let program =
+                command.first().expect("should have at least one element");
+
+            let args = command.iter().skip(1).cloned().collect::<Vec<_>>();
+
+            let config = ExpansionConfig::new_command(program, args);
+            let expansion = Expansion::new(start_pos, end_pos, config);
+
+            Some(expansion)
+        } else {
+            None
+        }
+    }
+
     fn set_pos(&mut self, pos: usize) {
         self.pos = pos;
     }
@@ -372,20 +452,27 @@ impl<'a> ExpansionParser<'a> {
         let mut expansions = Vec::with_capacity(dollar_signs_count);
 
         while let Some(c) = self.current() {
-            if c == '$'
-                && (self.peek() == Some('{')
+            if c == '$' && self.peek_back() != Some('\\') {
+                let current_pos = self.pos;
+                if self.peek() == Some('{')
                     || self
                         .peek()
                         .map(|x| x.is_alphabetic() || x == '_')
-                        .unwrap_or(false))
-                && self.peek_back() != Some('\\')
-            {
-                let current_pos = self.pos;
-                let ex = self.try_parse_variable_expansion();
-                if let Some(ex) = ex {
-                    expansions.push(ex);
-                } else {
-                    self.set_pos(current_pos);
+                        .unwrap_or(false)
+                {
+                    let ex = self.try_parse_variable_expansion();
+                    if let Some(ex) = ex {
+                        expansions.push(ex);
+                    } else {
+                        self.set_pos(current_pos);
+                    }
+                } else if self.peek() == Some('(') {
+                    let ex = self.try_parse_command_expansion();
+                    if let Some(ex) = ex {
+                        expansions.push(ex);
+                    } else {
+                        self.set_pos(current_pos);
+                    }
                 }
             }
 
@@ -404,35 +491,38 @@ pub fn expand_with_command_config(
     str: &str,
     envs: &Map<String, String>,
     command_config: &CommandExpansionConfig,
-) -> String {
+) -> Result<String, ExpansionError> {
     let parsed = ExpansionParser::new(str).parse();
 
     // short circuit if there are no expansions
     if parsed.is_empty() {
-        return replace_escaped(str);
+        return Ok(replace_escaped(str));
     }
 
-    let expanded = parsed.expand(envs, command_config);
+    let expanded = parsed.expand(envs, command_config)?;
 
-    replace_escaped(&expanded)
+    Ok(replace_escaped(&expanded))
 }
 
 pub fn expand_into_with_command_config(
     into: &mut Map<String, String>,
     using: &Map<String, String>,
     command_config: &CommandExpansionConfig,
-) {
+) -> Result<(), ExpansionError> {
     let mut using = using.clone();
     for (key, value) in into.iter_mut() {
-        *value = expand_with_command_config(value, &using, command_config);
+        *value = expand_with_command_config(value, &using, command_config)?;
 
         using.insert(key.clone(), value.clone());
     }
+
+    Ok(())
 }
 
 #[inline(always)]
 pub fn expand(str: &str, envs: &Map<String, String>) -> String {
     expand_with_command_config(str, envs, &CommandExpansionConfig::default())
+        .expect("should have no error at this point")
 }
 
 #[inline(always)]
@@ -445,6 +535,30 @@ pub fn expand_into(
         using,
         &CommandExpansionConfig::default(),
     )
+    .expect("should have no error at this point")
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{inner}")]
+pub struct ExpansionError {
+    kind: ExpansionErrorKind,
+    inner: ExpansionErrorInner,
+}
+
+impl<T: Into<ExpansionErrorInner>> From<T> for ExpansionError {
+    fn from(inner: T) -> Self {
+        let inner = inner.into();
+        let kind = inner.discriminant();
+
+        Self { kind, inner }
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(vis(pub), name(ExpansionErrorKind), derive(EnumIs))]
+pub enum ExpansionErrorInner {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
@@ -567,5 +681,48 @@ mod tests {
         let expanded = expand(text, &envs);
 
         assert_eq!(expanded, "${TEST}TEST_VALUE");
+    }
+
+    #[test]
+    fn test_parse_command_expansion() {
+        let text = r#"$(echo TEST_VALUE)"#;
+
+        let mut parser = ExpansionParser::new(text);
+        let expansion = parser.parse();
+
+        assert_eq!(
+            expansion.expansions.len(),
+            1,
+            "there should be one expansion"
+        );
+    }
+
+    #[test]
+    fn test_with_command_expansion_disabled() {
+        let text = r#"$(echo TEST_VALUE)"#;
+
+        let envs = maps::map![];
+
+        let cmd_cfg = CommandExpansionConfig::new_disabled();
+        let expanded = expand_with_command_config(text, &envs, &cmd_cfg)
+            .expect("should run without error");
+
+        assert_eq!(expanded, "$(echo TEST_VALUE)");
+    }
+
+    #[test]
+    fn test_with_command_expansion_enabled() {
+        let text = r#"$(echo TEST_VALUE)"#;
+
+        let envs = maps::map![];
+
+        let env_vars = HashMap::new();
+        let cmd_cfg =
+            CommandExpansionConfig::new_enabled(Path::new("."), &env_vars);
+
+        let expanded = expand_with_command_config(text, &envs, &cmd_cfg)
+            .expect("should be able to expand");
+
+        assert_eq!(expanded, "TEST_VALUE\n");
     }
 }
