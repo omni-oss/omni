@@ -1,9 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use derive_new::new;
 use dir_walker::{
     DirEntry as _, DirWalker, Metadata as _,
-    impls::{IgnoreRealDirWalker, IgnoreRealDirWalkerConfig},
+    impls::{
+        IgnoreRealDirWalker, IgnoreRealDirWalkerConfig,
+        IgnoreRealDirWalkerConfigBuilderError,
+    },
 };
 use globset::{Glob, GlobSetBuilder};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -22,21 +28,18 @@ pub struct ProjectDiscovery<'a> {
 impl<'a> ProjectDiscovery<'a> {
     fn create_default_dir_walker(
         &self,
-    ) -> eyre::Result<impl DirWalker + 'static> {
+    ) -> Result<impl DirWalker + 'static, ProjectDiscoveryError> {
         let mut cfg_builder = IgnoreRealDirWalkerConfig::builder();
 
         let mut globset = GlobSetBuilder::new();
 
-        let root = if cfg!(windows) {
-            let root = self.root_dir.to_string_lossy().to_string();
-            if root.contains('\\') {
-                root.replace('\\', "/")
-            } else {
-                root
-            }
+        let root = self.root_dir.to_string_lossy().to_string();
+        let root = if cfg!(windows) && root.contains('\\') {
+            root.replace('\\', "/")
         } else {
-            self.root_dir.to_string_lossy().to_string()
+            root
         };
+
         for glob in self.project_patterns {
             globset.add(
                 Glob::new(&format!("{}/{}", root, glob))
@@ -77,7 +80,7 @@ impl<'a> ProjectDiscovery<'a> {
 
         let matcher = match_b.build()?;
 
-        let start_walk_time = std::time::SystemTime::now();
+        let start_walk_time = SystemTime::now();
 
         let mut num_iterations = 0;
 
@@ -202,4 +205,9 @@ enum ProjectDiscoveryErrorInner {
 
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
+
+    #[error(transparent)]
+    IgnoreRealDirWalkerConfigBuilderError(
+        #[from] IgnoreRealDirWalkerConfigBuilderError,
+    ),
 }
