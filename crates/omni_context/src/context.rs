@@ -181,7 +181,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn create_local_cache_store(&self) -> LocalTaskExecutionCacheStore {
         LocalTaskExecutionCacheStore::new(
-            self.root_dir.join(CACHE_DIR),
+            self.cache_dir(),
             self.root_dir.clone(),
         )
     }
