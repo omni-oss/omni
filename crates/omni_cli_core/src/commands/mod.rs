@@ -11,10 +11,13 @@ mod utils;
 
 use crate::{
     build,
-    commands::{declspec::DeclspecCommand, hash::HashCommand},
+    commands::{
+        cache::CacheCommand, declspec::DeclspecCommand, hash::HashCommand,
+    },
     tracer::TraceLevel,
 };
 
+pub mod cache;
 pub mod completion;
 pub mod config;
 pub mod declspec;
@@ -151,4 +154,7 @@ pub enum CliSubcommands {
 
     #[command(about = "Generate machine readable CLI specification")]
     Declspec(DeclspecCommand),
+
+    #[command(about = "Cache related subcommands")]
+    Cache(CacheCommand),
 }

@@ -64,6 +64,10 @@ pub async fn run(sc: &CliSubcommands, args: &CliArgs) -> eyre::Result<()> {
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
         }
+        CliSubcommands::Cache(cache_command) => {
+            let context = ctx(args)?;
+            commands::cache::run(cache_command, &context).await?;
+        }
     }
 
     Ok(())
