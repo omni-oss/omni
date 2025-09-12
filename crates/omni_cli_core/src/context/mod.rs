@@ -8,7 +8,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     root_dir: impl AsRef<Path>,
     sys: TSys,
-) -> eyre::Result<Context<TSys>> {
+) -> Result<Context<TSys>, ContextError> {
     let env = cli.env.as_deref().unwrap_or("development");
     let env_files = cli.env_file.as_ref().map(|v| {
         v.iter()
@@ -41,7 +41,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
 pub fn from_args_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     sys: TSys,
-) -> eyre::Result<Context<TSys>> {
+) -> Result<Context<TSys>, ContextError> {
     let root_dir = get_root_dir(&sys)?;
 
     let ctx = from_args_root_dir_and_sys(cli, root_dir, sys)?;

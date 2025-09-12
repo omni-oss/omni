@@ -5,7 +5,7 @@ use clap::Parser as _;
 use omni_cli_core::tracer::TracerConfig;
 use omni_cli_core::{
     commands::{self, Cli, CliArgs, CliSubcommands},
-    context,
+    context::{self, Context, ContextError},
 };
 use system_traits::impls::RealSys;
 
@@ -30,7 +30,7 @@ fn exit(code: ExitCode) -> ! {
 }
 
 #[inline(always)]
-fn ctx(args: &CliArgs) -> eyre::Result<context::Context<RealSys>> {
+fn ctx(args: &CliArgs) -> Result<Context<RealSys>, ContextError> {
     let sys = RealSys;
     context::from_args_and_sys(args, sys)
 }
