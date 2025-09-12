@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use garde::Validate;
+use maps::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::FsReadAsync;
@@ -47,6 +48,9 @@ impl WorkspaceConfiguration {
 pub struct WorkspaceEnvConfiguration {
     #[serde(default = "default_files")]
     pub files: Vec<PathBuf>,
+
+    #[serde(default)]
+    pub vars: Map<String, String>,
 }
 
 fn default_files() -> Vec<PathBuf> {
@@ -62,6 +66,7 @@ impl Default for WorkspaceEnvConfiguration {
     fn default() -> Self {
         Self {
             files: default_files(),
+            vars: Default::default(),
         }
     }
 }

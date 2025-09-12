@@ -20,4 +20,4 @@ pub use context::*;
 pub use env_loader::*;
 pub use loaded_context::*;
 pub use sys::*;
-pub use utils::EnvVarsMap;
+pub use utils::{EnvVarsMap, EnvVarsOsMap};

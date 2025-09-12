@@ -2,31 +2,66 @@ use std::path::{Path, PathBuf};
 
 use config_utils::ListConfig;
 use derive_new::new;
+use env::{
+    CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
+};
 use env_loader::EnvLoaderError;
 use maps::{Map, UnorderedMap};
 use merge::Merge as _;
 use omni_configurations::{
     MetaConfiguration, ProjectConfiguration, TaskOutputConfiguration,
+    WorkspaceConfiguration,
 };
 use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
 };
+use omni_types::OmniPathError;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
-    CacheInfo, EnvLoader, GetVarsArgs, build, env_loader::EnvCacheSys,
+    CacheInfo, EnvLoader, EnvVarsMap, GetVarsArgs, build,
+    env_loader::EnvCacheSys,
+    utils::{EnvVarsOsMap, vars_os},
 };
 
 #[derive(new)]
 pub struct ProjectDataExtractor<'a, TSys: EnvCacheSys> {
+    sys: &'a TSys,
     root_dir: &'a Path,
     env_loader: &'a mut EnvLoader<TSys>,
     inherit_env_vars: bool,
+    workspace_configuration: &'a WorkspaceConfiguration,
 }
 
 impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
+    fn get_ws_vars_vars(
+        &self,
+    ) -> Result<(EnvVarsMap, EnvVarsOsMap), ProjectDataExtractorError> {
+        if self.workspace_configuration.env.vars.is_empty() {
+            return Ok((EnvVarsMap::default(), EnvVarsOsMap::default()));
+        }
+
+        let base_vars = if self.inherit_env_vars {
+            self.sys.env_vars().collect::<Map<_, _>>()
+        } else {
+            Map::default()
+        };
+
+        let base_vars_os = vars_os(&base_vars);
+
+        let cfg =
+            CommandExpansionConfig::new_enabled(self.root_dir, &base_vars_os);
+
+        let mut ws_vars = self.workspace_configuration.env.vars.clone();
+        expand_into_with_command_config(&mut ws_vars, &base_vars, &cfg)?;
+
+        let ws_vars_os = vars_os(&ws_vars);
+
+        Ok((ws_vars, ws_vars_os))
+    }
+
     pub fn extract_all(
         &mut self,
         project_configs: &[ProjectConfiguration],
@@ -46,12 +81,16 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
         let root_dir = self.root_dir.to_string_lossy().to_string();
 
-        for project_config in project_configs.iter().filter(|config| {
+        let (ws_vars, ws_vars_os) = self.get_ws_vars_vars()?;
+
+        let filtered = project_configs.iter().filter(|config| {
             !config.base
                 && project_paths.contains(
                     config.file.path().expect("path should be resolved"),
                 )
-        }) {
+        });
+
+        for project_config in filtered {
             trace::trace!(
                 project_configuration = ?project_config,
                 "processing project config: {}",
@@ -70,6 +109,19 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             let overrides = &project_config.env.vars;
             if !overrides.as_map().is_empty() {
                 extras.extend(overrides.to_map_to_inner());
+                if !ws_vars_os.is_empty() {
+                    let cfg = CommandExpansionConfig::new_enabled(
+                        project_config.dir.path()?,
+                        &ws_vars_os,
+                    );
+                    expand_into_with_command_config(
+                        &mut extras,
+                        &self.workspace_configuration.env.vars,
+                        &cfg,
+                    )?;
+
+                    extras.extend(ws_vars.clone());
+                }
             }
 
             // load the env vars for the project
@@ -222,4 +274,10 @@ enum ProjectDataExtractorErrorInner {
 
     #[error(transparent)]
     EnvLoader(#[from] EnvLoaderError),
+
+    #[error(transparent)]
+    CommandExpansion(#[from] ExpansionError),
+
+    #[error(transparent)]
+    OmniPath(#[from] OmniPathError),
 }

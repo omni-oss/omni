@@ -156,9 +156,11 @@ impl<TSys: ContextSys> Context<TSys> {
         let mut env_loader = self.create_env_loader();
 
         let extractions = ProjectDataExtractor::new(
+            self.sys(),
             &self.root_dir,
             &mut env_loader,
             self.inherit_env_vars,
+            self.workspace_configuration(),
         )
         .extract_all(&project_configs, &project_paths, &xt_graph)?;
 
