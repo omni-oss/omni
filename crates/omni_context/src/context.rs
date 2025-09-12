@@ -185,6 +185,10 @@ impl<TSys: ContextSys> Context<TSys> {
             self.root_dir.clone(),
         )
     }
+
+    pub fn cache_dir(&self) -> PathBuf {
+        self.root_dir.join(CACHE_DIR)
+    }
 }
 
 pub fn get_root_dir(sys: &impl ContextSys) -> Result<PathBuf, ContextError> {
