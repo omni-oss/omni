@@ -31,6 +31,7 @@ Flexible task runner and scaffolding CLI for streamlined development workflows.
 #[derive(Parser)]
 #[command(author = "Clarence Manuel <rencedm112@gmail.com>")]
 #[command(version = build::PKG_VERSION, propagate_version = true)]
+#[command(name = "omni")]
 #[command(about = ABOUT)]
 #[command(long_about = LONG_ABOUT)]
 #[command(next_line_help = true)]
@@ -132,16 +133,22 @@ impl Default for CliArgs {
 pub enum CliSubcommands {
     #[command(about = "Output environment variabls values")]
     Env(EnvCommand),
+
     #[command(about = "Execute an ad-hoc command in projects")]
     Exec(ExecCommand),
+
     #[command(about = "Print configuration schemas in JSON")]
     Config(ConfigCommand),
+
     #[command(about = "Print shell completions")]
     Completion(CompletionCommand),
+
     #[command(about = "Execute specified task in projects")]
     Run(RunCommand),
+
     #[command(about = "Get hash for workspace or projects")]
     Hash(HashCommand),
+
     #[command(about = "Generate machine readable CLI specification")]
     Declspec(DeclspecCommand),
 }
