@@ -112,7 +112,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         self.cache_dir.join(name).join("output")
     }
 
-    async fn get_output_dir(
+    fn get_output_dir(
         &self,
         project_name: &str,
         hash: &str,
@@ -220,7 +220,6 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         for project in project_tasks {
             trace::trace!(
                 project_name = ?project.project_name,
-                project = ?project,
                 "processing project"
             );
             let roots = enum_map! {
@@ -406,9 +405,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 let hashstring =
                     bs58::encode(holder.hash.as_ref().expect("should be some"))
                         .into_string();
-                let output_dir = self
-                    .get_output_dir(holder.task.project_name, &hashstring)
-                    .await?;
+                let output_dir =
+                    self.get_output_dir(holder.task.project_name, &hashstring)?;
 
                 holder.cache_output_dir = Some(output_dir);
             }

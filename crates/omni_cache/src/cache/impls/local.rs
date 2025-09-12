@@ -128,11 +128,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             )
             .await?;
 
-        trace::trace!(
-            results = ?results,
-            "collected results: {}",
-            results.len()
-        );
+        trace::trace!("collected results: {}", results.len());
 
         let logs_map = cache_infos
             .iter()

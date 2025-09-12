@@ -1,5 +1,4 @@
-use clap::ValueEnum;
-use strum::{Display, EnumIs};
+use strum::{Display, EnumIs, VariantArray};
 
 #[derive(
     Debug,
@@ -11,13 +10,13 @@ use strum::{Display, EnumIs};
     Ord,
     EnumIs,
     Display,
-    ValueEnum,
+    VariantArray,
 )]
 pub enum OnFailure {
-    #[strum(to_string = "continue")]
+    #[strum(serialize = "continue")]
     Continue,
-    #[strum(to_string = "skip-next-batches")]
+    #[strum(serialize = "skip-next-batches")]
     SkipNextBatches,
-    #[strum(to_string = "skip-dependents")]
+    #[strum(serialize = "skip-dependents")]
     SkipDependents,
 }
