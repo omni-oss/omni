@@ -7,13 +7,7 @@ use crate::context::Context;
 pub struct CacheCommand {
     #[command(subcommand)]
     subcommand: CacheSubcommands,
-
-    #[command(flatten)]
-    args: CacheArgs,
 }
-
-#[derive(clap::Args)]
-pub struct CacheArgs {}
 
 #[derive(Subcommand)]
 pub enum CacheSubcommands {

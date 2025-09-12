@@ -10,7 +10,6 @@ default = ["enable-tracing"]
 enable-tracing = ["dep:tracing", "trace/enabled"]
 
 [dependencies]
-clap = { workspace = true }
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }

@@ -16,3 +16,4 @@ dependencies:
   - system_traits
   - dir_walker
   - clap_declspec
+  - clap_utils

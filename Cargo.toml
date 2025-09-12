@@ -64,7 +64,7 @@ http = { version = "^1.3.1" }
 http-body = { version = "^1.0.1" }
 http-body-util = { version = "^0.1.3" }
 percent-encoding = { version = "^2.3.2" }
-clap = { version = "^4.5.47", features = ["derive", "env"] }
+clap = { version = "^4.5.47", features = ["derive", "env", "string"] }
 clap_complete = { version = "^4.5.57" }
 globset = { version = "^0.4" }
 shadow-rs = { version = "^1.3.0", default-features = false }
@@ -147,6 +147,10 @@ base64 = { version = "^0.22.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.6" }
 either = { version = "^1.15.0" }
+ratatui = { version = "^0.29.0" }
+crossterm = { version = "^0.27.0" }
+omni_term_ui = { path = "./crates/omni_term_ui" }
+clap_utils = { path = "./crates/clap_utils" }
 
 [profile.release]
 incremental = true

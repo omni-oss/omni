@@ -83,6 +83,7 @@ omni_context = { workspace = true }
 omni_task_executor = { workspace = true }
 clap_declspec = { workspace = true }
 atty = { workspace = true }
+clap_utils = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1,5 +1,6 @@
 use std::process::ExitCode;
 
+use clap_utils::EnumValueAdapter;
 use omni_task_executor::ExecutionConfigBuilder;
 
 use crate::{
@@ -35,9 +36,10 @@ pub struct RunCommand {
         long,
         short,
         help = "How to handle failures",
-        default_value_t = OnFailure::SkipDependents
+        default_value_t = EnumValueAdapter::new(OnFailure::SkipDependents),
+        value_enum
     )]
-    on_failure: OnFailure,
+    on_failure: EnumValueAdapter<OnFailure>,
 
     #[arg(
         long,
@@ -79,7 +81,7 @@ pub async fn run(
 
     builder
         .ignore_dependencies(command.ignore_dependencies)
-        .on_failure(command.on_failure)
+        .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
         .force(command.force)
         .replay_cached_logs(!command.no_replay_logs)
