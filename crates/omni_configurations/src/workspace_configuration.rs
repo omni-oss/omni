@@ -4,14 +4,17 @@ use garde::Validate;
 use maps::Map;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use system_traits::FsReadAsync;
+use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    ExecutorsConfiguration,
+    ExecutorsConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
 
+/// # Workspace Configuration
+/// This is the configuration file for a workspace.
+/// It is used to configure the workspace and its projects.
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
 )]
@@ -21,6 +24,9 @@ pub struct WorkspaceConfiguration {
     pub name: Option<String>,
 
     pub projects: Vec<String>,
+
+    #[serde(default)]
+    pub ui: Ui,
 
     #[serde(default)]
     pub executors: ExecutorsConfiguration,
@@ -33,11 +39,18 @@ pub struct WorkspaceConfiguration {
 }
 
 impl WorkspaceConfiguration {
-    pub async fn load<'a>(
+    pub async fn load_async<'a>(
         path: impl Into<&'a Path>,
         sys: &(impl FsReadAsync + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
-        utils::fs::load_config(path, sys).await
+        utils::fs::load_config_async(path, sys).await
+    }
+
+    pub fn load<'a>(
+        path: impl Into<&'a Path>,
+        sys: &(impl FsRead + Send + Sync),
+    ) -> Result<Self, LoadConfigError> {
+        utils::fs::load_config(path, sys)
     }
 }
 

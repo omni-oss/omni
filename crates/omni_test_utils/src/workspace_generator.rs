@@ -3,7 +3,7 @@ use std::fs;
 use derive_builder::Builder;
 
 use crate::{ProjectGenerator, ProjectGeneratorBuilder};
-use omni_configurations::{ExecutorsConfiguration, WorkspaceConfiguration};
+use omni_configurations::{ExecutorsConfiguration, Ui, WorkspaceConfiguration};
 
 #[derive(Builder, Debug)]
 #[builder(setter(into, strip_option))]
@@ -75,6 +75,7 @@ impl WorkspaceGenerator {
             executors: ExecutorsConfiguration::default(),
             name: self.name.clone(),
             env: Default::default(),
+            ui: Ui::Stream,
         };
 
         fs::create_dir_all(workspace_dir.join("projects"))?;

@@ -1,11 +1,15 @@
 use std::time::Duration;
 
 use derive_new::new;
-use futures::{AsyncReadExt as _, future::join_all, io::AllowStdIo};
+use futures::{future::join_all, io::AllowStdIo};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_core::TaskExecutionNode;
 use omni_process::{ChildProcess, ChildProcessResult};
+use omni_term_ui::mux_output_presenter::{
+    MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
+    MuxOutputPresenterStatic, StreamHandleError,
+};
 use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -16,8 +20,8 @@ use crate::{
     task_context_provider::TaskContextProvider,
 };
 
-#[derive(Debug, thiserror::Error, new)]
-pub struct BatchExecutor<TCacheStore, TTaskContextProvider, TSys>
+#[derive(new)]
+pub struct BatchExecutor<'s, TCacheStore, TTaskContextProvider, TSys>
 where
     TCacheStore: TaskExecutionCacheStore,
     TTaskContextProvider: TaskContextProvider,
@@ -26,7 +30,7 @@ where
     task_context_provider: TTaskContextProvider,
     cache_manager: CacheManager<TCacheStore>,
     sys: TSys,
-
+    presenter: &'s MuxOutputPresenterStatic,
     max_concurrent_tasks: usize,
     ignore_dependencies: bool,
     on_failure: OnFailure,
@@ -34,8 +38,8 @@ where
     replay_cached_logs: bool,
 }
 
-impl<TCacheStore, TTaskContextProvider, TSys>
-    BatchExecutor<TCacheStore, TTaskContextProvider, TSys>
+impl<'s, TCacheStore, TTaskContextProvider, TSys>
+    BatchExecutor<'s, TCacheStore, TTaskContextProvider, TSys>
 where
     TCacheStore: TaskExecutionCacheStore,
     TTaskContextProvider: TaskContextProvider,
@@ -111,9 +115,13 @@ where
             let file = AllowStdIo::new(
                 std::fs::OpenOptions::new().read(true).open(logs_path)?,
             );
-            let mut stdout = AllowStdIo::new(std::io::stdout());
 
-            futures::io::copy(&mut file.take(u64::MAX), &mut stdout).await?;
+            let handle = self.presenter.add_stream_generic(
+                task_ctx.node.full_task_name().to_string(),
+                file,
+            )?;
+
+            handle.await?;
         }
 
         // hard link the cached files to the original file paths if they don't exist
@@ -255,7 +263,7 @@ where
                     ChildProcessResult::new(node, 0u32, Duration::ZERO, None),
                 ));
             } else {
-                futs.push(run_process(task_ctx, record_logs));
+                futs.push(run_process(self.presenter, task_ctx, record_logs));
             }
 
             if futs.len() >= self.max_concurrent_tasks {
@@ -266,6 +274,8 @@ where
         if !futs.is_empty() {
             fut_results.extend(join_all(futs.drain(..)).await);
         }
+
+        self.presenter.wait().await?;
 
         let hashes = self
             .cache_manager
@@ -306,11 +316,16 @@ where
 }
 
 async fn run_process<'a>(
+    presenter: &'a MuxOutputPresenterStatic,
     task_ctx: &'a TaskContext<'a>,
     record_logs: bool,
 ) -> TaskResultContext<'a> {
     let mut proc = ChildProcess::new(task_ctx.node.clone());
-    proc.output_writer(AllowStdIo::new(std::io::stdout()))
+    let (stream, handle) = presenter
+        .add_piped_stream(task_ctx.node.full_task_name())
+        .expect("failed to add stream");
+
+    proc.output_writer(stream)
         .record_logs(record_logs)
         .env_vars(&task_ctx.env_vars)
         .keep_stdin_open(
@@ -341,6 +356,9 @@ async fn run_process<'a>(
             );
         }
     }
+
+    handle.wait().await.expect("failed to wait for stream");
+
     match result {
         Ok(t) => TaskResultContext::new_completed(task_ctx, t),
         Err(e) => TaskResultContext::new_error(task_ctx, e),
@@ -396,4 +414,10 @@ enum BatchExecutorErrorInner {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    MuxOutputPresenter(#[from] MuxOutputPresenterError),
+
+    #[error(transparent)]
+    StreamHandle(#[from] StreamHandleError),
 }
