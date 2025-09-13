@@ -23,7 +23,7 @@ use dir_walker::DirWalker;
 use omni_core::{ExtensionGraph, ExtensionGraphError};
 use system_traits::impls::RealSys as RealSysSync;
 
-use omni_configurations::WorkspaceConfiguration;
+use omni_configurations::{LoadConfigError, WorkspaceConfiguration};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
@@ -232,9 +232,8 @@ fn get_workspace_configuration(
     let ws_path =
         ws_path.ok_or(ContextErrorInner::FailedToFindWorkspaceConfiguration)?;
 
-    let f = sys.fs_read(&ws_path)?;
     let mut w =
-        serde_yml::from_slice::<WorkspaceConfiguration>(&f).map_err(|e| {
+        WorkspaceConfiguration::load(ws_path.as_path(), sys).map_err(|e| {
             ContextErrorInner::FailedToLoadWorkspaceConfiguration(
                 ws_path.clone(),
                 e,
@@ -287,7 +286,7 @@ pub(crate) enum ContextErrorInner {
     FailedToFindWorkspaceConfiguration,
 
     #[error("failed to load workspace configuration: '{0}'")]
-    FailedToLoadWorkspaceConfiguration(PathBuf, #[source] serde_yml::Error),
+    FailedToLoadWorkspaceConfiguration(PathBuf, #[source] LoadConfigError),
 
     #[error(transparent)]
     ProjectLoader(#[from] ProjectConfigLoaderError),

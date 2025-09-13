@@ -14,10 +14,10 @@ pub mod fs {
 
     use serde::de::DeserializeOwned;
     use strum::{EnumDiscriminants, IntoDiscriminant as _};
-    use system_traits::FsReadAsync;
+    use system_traits::{FsRead, FsReadAsync};
     use thiserror::Error;
 
-    pub async fn load_config<
+    pub async fn load_config_async<
         'a,
         'b,
         TConfig,
@@ -35,6 +35,31 @@ pub mod fs {
         let ext = path.extension().unwrap_or_default();
         let content = sys.fs_read_to_string_async(path).await?;
 
+        deseralize_config(ext, content)
+    }
+
+    pub fn load_config<'a, 'b, TConfig, TPath, TSys: FsRead + Send + Sync>(
+        path: TPath,
+        sys: &TSys,
+    ) -> Result<TConfig, LoadConfigError>
+    where
+        TConfig: DeserializeOwned,
+        TPath: Into<&'a Path>,
+    {
+        let path: &'a Path = path.into();
+        let ext = path.extension().unwrap_or_default();
+        let content = sys.fs_read_to_string(path)?;
+
+        deseralize_config(ext, content)
+    }
+
+    fn deseralize_config<TConfig>(
+        ext: &std::ffi::OsStr,
+        content: std::borrow::Cow<'_, str>,
+    ) -> Result<TConfig, LoadConfigError>
+    where
+        TConfig: DeserializeOwned,
+    {
         match ext.to_string_lossy().as_ref() {
             "yaml" | "yml" => Ok(serde_yml::from_str(&content)?),
             "json" => Ok(serde_json::from_str(&content)?),

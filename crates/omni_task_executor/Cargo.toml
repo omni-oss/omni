@@ -42,3 +42,4 @@ omni_cache = { workspace = true }
 ahash = { workspace = true }
 bs58 = { workspace = true }
 num_cpus = { workspace = true }
+omni_term_ui = { workspace = true }

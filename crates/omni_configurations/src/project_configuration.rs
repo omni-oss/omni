@@ -72,7 +72,7 @@ impl ProjectConfiguration {
         path: impl Into<&'a Path>,
         sys: &(impl FsReadAsync + Send + Sync),
     ) -> Result<Self, LoadConfigError> {
-        utils::fs::load_config(path, sys).await
+        utils::fs::load_config_async(path, sys).await
     }
 }
 

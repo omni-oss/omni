@@ -3,6 +3,10 @@ use maps::unordered_map;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
 use omni_context::LoadedContext;
 use omni_core::BatchedExecutionPlan;
+use omni_term_ui::mux_output_presenter::{
+    MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterStatic,
+    StreamPresenter,
+};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
@@ -45,10 +49,13 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         let task_context_provider =
             ContextTaskContextProvider::new(self.context);
 
+        let presenter: MuxOutputPresenterStatic = StreamPresenter::new().into();
+
         let mut batch_exec = BatchExecutor::new(
             task_context_provider,
             cache_manager,
             self.context.sys().clone(),
+            &presenter,
             self.config.max_concurrency().unwrap_or(num_cpus::get() * 4),
             self.config.ignore_dependencies(),
             self.config.on_failure(),
@@ -63,6 +70,8 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
 
             results_accumulator.extend(results);
         }
+
+        presenter.close().await?;
 
         Ok(results_accumulator.into_values().collect())
     }
@@ -96,4 +105,7 @@ impl<T: Into<ExecutionPipelineErrorInner>> From<T> for ExecutionPipelineError {
 enum ExecutionPipelineErrorInner {
     #[error(transparent)]
     BatchExecutor(#[from] BatchExecutorError),
+
+    #[error(transparent)]
+    MuxOutputPresenter(#[from] MuxOutputPresenterError),
 }

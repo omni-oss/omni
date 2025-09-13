@@ -1,0 +1,29 @@
+[package]
+name = "omni_term_ui"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["dep:tracing", "trace/enabled"]
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace=true }
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+serde = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }
+omni_hasher = { workspace = true }
+trace = { workspace = true }
+tracing = { workspace = true, optional = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+maps = { workspace = true }
+parking_lot = { workspace = true }
