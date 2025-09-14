@@ -357,7 +357,8 @@ fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
     let paragraph = if let Some(active_screen) = active_screen {
         active_screen.apply_pending_actions();
 
-        Paragraph::new(active_screen.buffer()).block(
+        let paragraph = active_screen.paragraph();
+        paragraph.block(
             Block::new()
                 .title(format!(
                     "Output - {} ({})",

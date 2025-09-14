@@ -1,7 +1,9 @@
 use bytes::Bytes;
 use derive_new::new;
+use ratatui::widgets::Paragraph;
 use strum::{Display, EnumDiscriminants, EnumIs};
-use vte::Perform;
+
+use crate::mux_output_presenter::ansi_parser::AnsiParser;
 
 #[derive(Debug, Clone, Copy, EnumIs, Default, Display)]
 pub enum TaskScreenStatus {
@@ -21,17 +23,7 @@ pub struct TaskScreen {
     pub status: TaskScreenStatus,
     pub actions: crossbeam_channel::Receiver<ScreenAction>,
     #[new(default)]
-    pub parser: vte::Parser,
-    #[new(default)]
-    pub buffer: TaskScreenBuffer,
-}
-
-#[derive(new, Default, Clone, PartialEq, Eq)]
-pub struct TaskScreenBuffer {
-    #[new(default)]
-    pub rows: Vec<String>,
-    #[new(default)]
-    pub current_row: String,
+    pub parser: AnsiParser,
 }
 
 #[derive(Debug, Clone, EnumDiscriminants)]
@@ -42,8 +34,9 @@ pub enum ScreenAction {
 }
 
 impl TaskScreen {
-    pub fn buffer(&self) -> String {
-        self.buffer.rows.join("\n")
+    pub fn paragraph(&mut self) -> Paragraph<'static> {
+        let snapshot = self.parser.snapshot();
+        Paragraph::new(snapshot)
     }
 
     pub fn apply_pending_actions(&mut self) {
@@ -58,23 +51,8 @@ impl TaskScreen {
                 self.status = status;
             }
             ScreenAction::Write(bytes) => {
-                self.parser.advance(&mut self.buffer, &bytes);
+                self.parser.feed(&bytes);
             }
-        }
-    }
-}
-
-impl Perform for TaskScreenBuffer {
-    fn print(&mut self, c: char) {
-        self.current_row.push(c);
-    }
-
-    fn execute(&mut self, byte: u8) {
-        match byte {
-            b'\n' => {
-                self.rows.push(std::mem::take(&mut self.current_row));
-            }
-            _ => {}
         }
     }
 }

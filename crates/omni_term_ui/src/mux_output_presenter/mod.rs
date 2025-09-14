@@ -1,3 +1,4 @@
+mod ansi_parser;
 mod static_dispatch;
 mod stream;
 mod stream_driver_handle;
