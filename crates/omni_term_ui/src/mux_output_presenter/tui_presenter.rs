@@ -133,6 +133,10 @@ impl MuxOutputPresenter for TuiPresenter {
                         screen_actions_tx.send(ScreenAction::Write(
                             Bytes::copy_from_slice(&buff[..n]),
                         )).map_err(|e| TuiPresenterErrorInner::new_failed_to_send_action(ScreenActionsKind::Write, e))?;
+                    } else {
+                        trace::debug!(
+                            "{t_id}: UI task is not running anymore, ignoring data"
+                        );
                     }
                 }
 
