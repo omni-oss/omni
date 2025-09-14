@@ -7,5 +7,7 @@ node_modules
 .nitro
 /build/
 
+content/docs/references/commands/omni
+
 .tanstack
 omni-declspec.json

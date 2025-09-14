@@ -273,7 +273,7 @@ fn run_tui(
         }
 
         let _ = terminal.draw(|f| {
-            draw_ui(f, &fd);
+            draw_ui(f, fd);
         })?;
 
         trace::debug!("ui drawn");
@@ -331,6 +331,7 @@ struct FrameData {
     active_index: usize,
     order: Vec<String>,
     paragraph: Paragraph<'static>,
+    line_count: usize,
 }
 
 fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
@@ -354,26 +355,31 @@ fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
         None
     };
 
-    let paragraph = if let Some(active_screen) = active_screen {
+    let (paragraph, line_count) = if let Some(active_screen) = active_screen {
         active_screen.apply_pending_actions();
 
-        let paragraph = active_screen.paragraph();
-        paragraph.block(
-            Block::new()
-                .title(format!(
-                    "Output - {} ({})",
-                    active_screen.title, active_screen.status
-                ))
-                .borders(Borders::ALL),
+        let (paragraph, line_count) = active_screen.paragraph();
+
+        (
+            paragraph.block(
+                Block::new()
+                    .title(format!(
+                        "Output - {} ({})",
+                        active_screen.title, active_screen.status
+                    ))
+                    .borders(Borders::ALL),
+            ),
+            line_count,
         )
     } else {
-        Paragraph::new("<no data>")
+        (Paragraph::new("<no data>"), 1)
     };
 
     FrameData {
         active_index,
         order,
         paragraph,
+        line_count,
     }
 }
 
@@ -384,12 +390,14 @@ fn draw_ui<'a>(
         active_index,
         order,
         paragraph,
-    }: &FrameData,
+        line_count,
+    }: FrameData,
 ) {
+    let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(24), Constraint::Min(10)].as_ref())
-        .split(f.area());
+        .split(area);
 
     let items: Vec<ListItem> =
         order.iter().map(|s| ListItem::new(Text::raw(s))).collect();
@@ -403,14 +411,17 @@ fn draw_ui<'a>(
     f.render_stateful_widget(list, chunks[0], &mut {
         let mut state = ratatui::widgets::ListState::default();
         if !order.is_empty() {
-            state.select(Some((*active_index).min(order_len - 1)));
+            state.select(Some(active_index.min(order_len - 1)));
         }
         state
     });
 
     // right pane: content
+    let vp_height = chunks[1].height.saturating_sub(2);
 
-    f.render_widget(paragraph, chunks[1]);
+    let scroll_y = (line_count as u16).saturating_sub(vp_height);
+
+    f.render_widget(paragraph.scroll((scroll_y, 0)), chunks[1]);
 }
 
 #[derive(Debug, thiserror::Error)]
