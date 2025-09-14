@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use futures::{AsyncReadExt, future::try_join_all, io::AllowStdIo};
-use parking_lot::Mutex;
+use futures::future::try_join_all;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use tokio::{io::AsyncReadExt as _, sync::Mutex};
 
 use crate::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterReader, MuxOutputPresenterWriter,
@@ -24,8 +24,8 @@ impl StreamPresenter {
 }
 
 impl StreamPresenter {
-    fn clear_closed_tasks(&self) {
-        self.tasks.lock().retain(|_, j| j.is_finished());
+    async fn clear_closed_tasks(&self) {
+        self.tasks.lock().await.retain(|_, j| j.is_finished());
     }
 }
 
@@ -33,12 +33,12 @@ impl StreamPresenter {
 impl MuxOutputPresenter for StreamPresenter {
     type Error = StreamPresenterError;
 
-    fn add_stream(
+    async fn add_stream(
         &self,
         id: String,
         reader: Box<dyn MuxOutputPresenterReader>,
     ) -> Result<StreamHandle, Self::Error> {
-        self.clear_closed_tasks();
+        self.clear_closed_tasks().await;
 
         let (handle, driver) = stream::handle();
 
@@ -46,25 +46,25 @@ impl MuxOutputPresenter for StreamPresenter {
             let id = id.clone();
             let tasks = self.tasks.clone();
             tokio::spawn(async move {
-                let mut stdout = AllowStdIo::new(std::io::stdout());
+                let mut stdout = tokio::io::stdout();
 
-                futures::io::copy(&mut reader.take(u64::MAX), &mut stdout)
+                tokio::io::copy(&mut reader.take(u64::MAX), &mut stdout)
                     .await?;
 
                 driver.mark_completed().await?;
 
-                tasks.lock().remove(&id);
+                tasks.lock().await.remove(&id);
 
                 Ok::<(), Self::Error>(())
             })
         };
 
-        self.tasks.lock().insert(id, join_handle);
+        self.tasks.lock().await.insert(id, join_handle);
 
         return Ok(handle);
     }
 
-    fn register_input_writer(
+    async fn register_input_writer(
         &self,
         _writer: Box<dyn MuxOutputPresenterWriter>,
     ) -> Result<(), Self::Error> {
@@ -79,7 +79,7 @@ impl MuxOutputPresenter for StreamPresenter {
 
     async fn wait(&self) -> Result<(), Self::Error> {
         let all_values = {
-            let mut tasks = self.tasks.lock();
+            let mut tasks = self.tasks.lock().await;
             if tasks.is_empty() {
                 return Ok(());
             }
@@ -96,7 +96,7 @@ impl MuxOutputPresenter for StreamPresenter {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), Self::Error> {
+    async fn close(self) -> Result<(), Self::Error> {
         self.wait().await?;
         Ok(())
     }

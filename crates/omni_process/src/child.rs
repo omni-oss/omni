@@ -2,14 +2,19 @@ use std::{
     cell::Cell, collections::HashMap, ffi::OsString, io, path::PathBuf,
     pin::Pin, process::Stdio,
 };
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use derive_new::new;
-use futures::{AsyncRead, AsyncWrite, io::AllowStdIo};
+use futures::io::AllowStdIo;
 use portable_pty::{MasterPty, SlavePty, native_pty_system};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
-use tokio::task::yield_now;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    task::yield_now,
+};
+use tokio_util::compat::{
+    FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt,
+};
 use tracing::field;
 
 use crate::utils::{get_pty_size, should_use_pty};
@@ -29,7 +34,7 @@ pub struct Child {
 
 impl Child {
     #[cfg_attr(
-        feature="enable-tracing", 
+        feature="enable-tracing",
         tracing::instrument(skip_all, fields(command = field::Empty, args = field::Empty))
     )]
     pub fn spawn(
@@ -111,8 +116,8 @@ impl Child {
 
         Ok(Self::new(
             ChildInner::Pty(child),
-            Cell::new(Some(Box::pin(AllowStdIo::new(writer)))),
-            Cell::new(Some(Box::pin(AllowStdIo::new(reader)))),
+            Cell::new(Some(Box::pin(AllowStdIo::new(writer).compat_write()))),
+            Cell::new(Some(Box::pin(AllowStdIo::new(reader).compat()))),
             Cell::new(Some(None)),
             pid,
         ))
@@ -163,9 +168,9 @@ impl Child {
 
         Ok(Self::new(
             ChildInner::Normal(child),
-            Cell::new(Some(Box::pin(stdin.compat_write()))),
-            Cell::new(Some(Box::pin(stdout.compat()))),
-            Cell::new(Some(Some(Box::pin(stderr.compat())))),
+            Cell::new(Some(Box::pin(stdin))),
+            Cell::new(Some(Box::pin(stdout))),
+            Cell::new(Some(Some(Box::pin(stderr)))),
             pid,
         ))
     }

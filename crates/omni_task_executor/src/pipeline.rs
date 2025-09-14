@@ -5,7 +5,6 @@ use omni_context::LoadedContext;
 use omni_core::BatchedExecutionPlan;
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterStatic,
-    StreamPresenter,
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -49,7 +48,12 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         let task_context_provider =
             ContextTaskContextProvider::new(self.context);
 
-        let presenter: MuxOutputPresenterStatic = StreamPresenter::new().into();
+        let presenter = match self.config.ui() {
+            omni_configurations::Ui::Stream => {
+                MuxOutputPresenterStatic::new_stream()
+            }
+            omni_configurations::Ui::Tui => MuxOutputPresenterStatic::new_tui(),
+        };
 
         let mut batch_exec = BatchExecutor::new(
             task_context_provider,

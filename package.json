@@ -1,18 +1,19 @@
 {
-    "name": "@repo/root",
-    "version": "0.0.0-semantically-released",
-    "dependencies": {
-        "@repo/biome-config": "workspace:*",
-        "@repo/tsconfig": "workspace:*",
-        "@biomejs/biome": "^2.2.4",
-        "@repo/apply-version": "workspace:*",
-        "vite": "^7.1.5",
-        "vitest": "^3.2.4",
-        "typescript": "^5.9.2"
-    },
-    "workspaces": [
-        "packages/*",
-        "scripts/*",
-        "apps/*"
-    ]
+  "name": "@repo/root",
+  "version": "0.0.0-semantically-released",
+  "dependencies": {
+    "@repo/biome-config": "workspace:*",
+    "@repo/tsconfig": "workspace:*",
+    "@biomejs/biome": "^2.2.4",
+    "@repo/apply-version": "workspace:*",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4",
+    "typescript": "^5.9.2"
+  },
+  "packageManager": "bun@1.2.22",
+  "workspaces": [
+    "packages/*",
+    "scripts/*",
+    "apps/*"
+  ]
 }
