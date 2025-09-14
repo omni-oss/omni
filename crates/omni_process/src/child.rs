@@ -4,16 +4,12 @@ use std::{
 };
 
 use derive_new::new;
-use futures::io::AllowStdIo;
 use portable_pty::{MasterPty, SlavePty, native_pty_system};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    task::yield_now,
-};
-use tokio_util::compat::{
-    FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt,
+    io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
+    task::JoinHandle,
 };
 use tracing::field;
 
@@ -64,12 +60,12 @@ impl Child {
     fn spawn_pty(cmd: PtyCommand) -> Result<Self, ChildError> {
         trace::trace!("spawning pty");
 
-        let writer = cmd
+        let mut writer = cmd
             .master
             .take_writer()
             .map_err(|e| ChildErrorInner::CantTakeInputWriter(e.to_string()))?;
 
-        let reader = cmd.master.try_clone_reader().map_err(|e| {
+        let mut reader = cmd.master.try_clone_reader().map_err(|e| {
             ChildErrorInner::CantTakeOutputReader(e.to_string())
         })?;
 
@@ -114,10 +110,58 @@ impl Child {
         }
         let pid = child.process_id();
 
+        let (mut out_writer, out_reader) = tokio::io::duplex(1024);
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(1024);
+        let (in_writer, mut in_reader) = tokio::io::duplex(1024);
+
+        let reader_task = tokio::task::spawn_blocking(move || {
+            let mut buff = [0u8; 1024];
+            loop {
+                let n = reader.read(&mut buff)?;
+
+                if n > 0 {
+                    out_tx.blocking_send(buff[0..n].to_vec())?;
+                } else {
+                    break;
+                }
+            }
+
+            Ok::<(), ChildError>(())
+        });
+
+        let reader_async_bridge = tokio::task::spawn(async move {
+            while let Some(buff) = out_rx.recv().await
+                && buff.len() > 0
+            {
+                out_writer.write_all(&buff).await?;
+            }
+            Ok::<(), ChildError>(())
+        });
+
+        let writer_task = tokio::task::spawn(async move {
+            let mut buff = [0u8; 1024];
+            loop {
+                let n = in_reader.read(&mut buff).await?;
+
+                if n > 0 {
+                    writer.write_all(&buff[..n])?;
+                } else {
+                    break;
+                }
+            }
+
+            Ok::<(), ChildError>(())
+        });
+
         Ok(Self::new(
-            ChildInner::Pty(child),
-            Cell::new(Some(Box::pin(AllowStdIo::new(writer).compat_write()))),
-            Cell::new(Some(Box::pin(AllowStdIo::new(reader).compat()))),
+            ChildInner::Pty {
+                child,
+                reader_task,
+                reader_async_bridge_task: reader_async_bridge,
+                writer_task,
+            },
+            Cell::new(Some(Box::pin(in_writer))),
+            Cell::new(Some(Box::pin(out_reader))),
             Cell::new(Some(None)),
             pid,
         ))
@@ -203,12 +247,23 @@ impl Child {
     #[tracing::instrument(skip_all)]
     pub async fn wait(self) -> Result<u32, ChildError> {
         match self.inner {
-            ChildInner::Pty(mut child) => {
-                yield_now().await;
-
-                let status = child.wait().inspect_err(|e| {
-                    trace::error!("wait error: {e}");
-                })?;
+            ChildInner::Pty {
+                mut child,
+                reader_task,
+                reader_async_bridge_task,
+                writer_task,
+            } => {
+                let status = tokio::task::spawn_blocking(move || child.wait());
+                let (reader, reader_async_bridge, writer, status) = tokio::try_join!(
+                    reader_task,
+                    reader_async_bridge_task,
+                    writer_task,
+                    status
+                )?;
+                reader?;
+                reader_async_bridge?;
+                writer?;
+                let status = status?;
 
                 trace::trace!("child exited with status: {status:?}");
 
@@ -270,6 +325,12 @@ enum ChildErrorInner {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Join(#[from] tokio::task::JoinError),
+
+    #[error(transparent)]
+    Send(#[from] tokio::sync::mpsc::error::SendError<Vec<u8>>),
 }
 
 fn create_inner(
@@ -323,6 +384,11 @@ enum Command {
 }
 
 enum ChildInner {
-    Pty(Box<dyn portable_pty::Child + Send + Sync>),
+    Pty {
+        child: Box<dyn portable_pty::Child + Send + Sync>,
+        reader_task: JoinHandle<Result<(), ChildError>>,
+        reader_async_bridge_task: JoinHandle<Result<(), ChildError>>,
+        writer_task: JoinHandle<Result<(), ChildError>>,
+    },
     Normal(tokio::process::Child),
 }
