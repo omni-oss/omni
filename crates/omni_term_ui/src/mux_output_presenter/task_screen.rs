@@ -34,9 +34,10 @@ pub enum ScreenAction {
 }
 
 impl TaskScreen {
-    pub fn paragraph(&mut self) -> Paragraph<'static> {
+    pub fn paragraph(&mut self) -> (Paragraph<'static>, usize) {
         let snapshot = self.parser.snapshot();
-        Paragraph::new(snapshot)
+        let line_count = snapshot.len();
+        (Paragraph::new(snapshot), line_count)
     }
 
     pub fn apply_pending_actions(&mut self) {
