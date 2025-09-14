@@ -2,14 +2,15 @@ use std::{collections::HashMap, ffi::OsString, pin::Pin};
 
 use bytes::{BufMut, Bytes, BytesMut};
 use derive_new::new;
-use futures::{
-    AsyncBufReadExt, AsyncRead, AsyncReadExt as _, AsyncWrite,
-    AsyncWriteExt as _, future::try_join_all, io::BufReader,
-};
+use futures::future::try_join_all;
 use maps::Map;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
+use tokio::io::{
+    AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
+    AsyncWriteExt as _, BufReader,
+};
 
 use crate::{Child, ChildError};
 
@@ -222,7 +223,7 @@ impl ChildProcess {
         if let Some(input_reader) = self.input_reader {
             let stdin_task = {
                 tokio::spawn(async move {
-                    futures::io::copy(
+                    tokio::io::copy(
                         &mut input_reader.take(u64::MAX),
                         &mut input,
                     )

@@ -87,14 +87,16 @@ pub async fn run(
         .replay_cached_logs(!command.no_replay_logs)
         .call(Call::new_task(&command.task));
 
-    command.run.apply_to(&mut builder);
+    command
+        .run
+        .apply_to(&mut builder, ctx.workspace_configuration());
 
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
     let executor = TaskExecutor::new(config, &ctx);
 
-    let results = executor.execute().await?;
+    let results = executor.run().await?;
 
     report_execution_results(&results);
 

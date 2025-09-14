@@ -1,5 +1,6 @@
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
+use omni_configurations::Ui;
 
 use crate::{OnFailure, call::Call};
 
@@ -65,6 +66,10 @@ pub struct ExecutionConfig {
     #[builder(setter(custom))]
     #[getset(get = "pub")]
     call: Call,
+
+    #[builder(default)]
+    #[getset(get_copy = "pub")]
+    ui: Ui,
 }
 
 impl ExecutionConfigBuilder {

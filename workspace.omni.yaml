@@ -1,5 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/workspace-latest.json
 
+ui: tui
+
 projects:
   - cli/**
   - crates/**

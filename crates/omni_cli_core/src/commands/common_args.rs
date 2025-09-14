@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
+use clap_utils::EnumValueAdapter;
+use omni_configurations::{Ui, WorkspaceConfiguration};
 use omni_task_executor::ExecutionConfigBuilder;
 
 #[derive(Args, Debug)]
@@ -42,6 +44,9 @@ pub struct RunArgs {
         value_enum
     )]
     pub(crate) result_format: Option<ResultFormat>,
+
+    #[arg(long, help = "Ui mode to use while running the command", value_enum)]
+    pub ui: Option<EnumValueAdapter<Ui>>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -52,7 +57,11 @@ pub enum ResultFormat {
 }
 
 impl RunArgs {
-    pub fn apply_to(&self, builder: &mut ExecutionConfigBuilder) {
+    pub fn apply_to(
+        &self,
+        builder: &mut ExecutionConfigBuilder,
+        ws_config: &WorkspaceConfiguration,
+    ) {
         if let Some(meta) = &self.meta {
             builder.meta_filter(meta);
         }
@@ -63,6 +72,17 @@ impl RunArgs {
 
         if let Some(max_concurrency) = self.max_concurrency {
             builder.max_concurrency(max_concurrency);
+        }
+
+        if let Some(ui) = self.ui {
+            builder.ui(ui.value());
+        } else {
+            builder.ui(ws_config.ui);
+        }
+
+        // additional check if tty is available, since `Ui::Tui` is only available if tty is available
+        if !atty::is(atty::Stream::Stdout) {
+            builder.ui(Ui::Stream);
         }
 
         builder.dry_run(self.dry_run);

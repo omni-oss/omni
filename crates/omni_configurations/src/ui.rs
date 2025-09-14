@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::VariantArray;
+use strum::{EnumIs, VariantArray};
 
 #[derive(
     Debug,
@@ -15,6 +15,9 @@ use strum::VariantArray;
     Deserialize,
     Default,
     JsonSchema,
+    PartialOrd,
+    Ord,
+    EnumIs,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Ui {

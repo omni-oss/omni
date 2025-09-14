@@ -21,7 +21,7 @@ pub struct TaskExecutor<'a, TSys: TaskExecutorSys> {
 }
 
 impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
-    pub async fn execute(
+    pub async fn run(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
         let start_time = std::time::Instant::now();
