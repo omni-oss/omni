@@ -5,7 +5,6 @@ use std::{
 
 use bytes::Bytes;
 use crossterm::{
-    event::{self, Event as CEvent, KeyCode},
     execute,
     terminal::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
@@ -14,26 +13,31 @@ use crossterm::{
 };
 use derive_new::new;
 use futures::future::try_join_all;
-use maps::Map;
-use parking_lot::Mutex;
+use maps::{Map, UnorderedMap};
+use parking_lot::RwLock;
 use ratatui::{
     Frame, Terminal,
+    crossterm::event::{
+        self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers,
+    },
     layout::{Constraint, Direction, Layout},
     prelude::CrosstermBackend,
-    style::{Modifier, Style},
-    text::Text,
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, block::Title},
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::{
     io::AsyncReadExt,
-    sync::{Mutex as AsyncMutex, RwLock, oneshot},
+    sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock, oneshot},
     task::JoinHandle,
 };
 
 use crate::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterReader, MuxOutputPresenterWriter,
-    StreamHandle, stream,
+    StreamHandle,
+    scrollable_tabs::ScrollableTabs,
+    stream,
     stream_driver_handle::StreamDriverError,
     task_screen::{
         ScreenAction, ScreenActionsKind, TaskScreen, TaskScreenStatus,
@@ -42,22 +46,22 @@ use crate::mux_output_presenter::{
 };
 
 type ShutdownTx = Arc<AsyncMutex<Option<oneshot::Sender<()>>>>;
-type Screens = Arc<Mutex<Map<String, TaskScreen>>>;
-type ActiveId = Arc<Mutex<Option<String>>>;
+type Screens = Arc<RwLock<Map<String, TaskScreen>>>;
+type ActiveId = Arc<RwLock<Option<String>>>;
 
 pub struct TuiPresenter {
     screens: Screens,
     tasks: Arc<AsyncMutex<TasksMap<TuiPresenterError>>>,
-    ui_task: Arc<RwLock<Option<JoinHandle<()>>>>,
+    ui_task: Arc<AsyncRwLock<Option<JoinHandle<()>>>>,
     ui_shutdown_tx: ShutdownTx,
     input_writer: Arc<AsyncMutex<Option<Box<dyn MuxOutputPresenterWriter>>>>,
 }
 
 impl TuiPresenter {
     pub fn new() -> Self {
-        let screens = Arc::new(Mutex::new(Map::default()));
+        let screens = Arc::new(RwLock::new(Map::default()));
         let tasks = Arc::new(AsyncMutex::new(TasksMap::default()));
-        let active_id = Arc::new(Mutex::new(None));
+        let active_id = Arc::new(RwLock::new(None));
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -79,7 +83,7 @@ impl TuiPresenter {
             tasks,
             ui_shutdown_tx: Arc::new(AsyncMutex::new(Some(shutdown_tx))),
             input_writer: Arc::new(AsyncMutex::new(None)), // new
-            ui_task: Arc::new(RwLock::new(Some(ui))),
+            ui_task: Arc::new(AsyncRwLock::new(Some(ui))),
         }
     }
 }
@@ -100,7 +104,7 @@ impl MuxOutputPresenter for TuiPresenter {
         // prepare buffer
         let screen = TaskScreen::new(id.clone(), screen_actions_rx);
         trace::debug!("{id}: buffer created");
-        self.screens.lock().insert(id.clone(), screen);
+        self.screens.write().insert(id.clone(), screen);
         trace::debug!("{id}: buffer inserted");
 
         // spawn a task that copies reader -> buffer via BufferWriter
@@ -156,7 +160,7 @@ impl MuxOutputPresenter for TuiPresenter {
 
                 t_tasks.lock().await.remove(&t_id);
                 trace::debug!("{t_id}: task removed");
-                t_screens.lock().shift_remove(&t_id);
+                t_screens.write().shift_remove(&t_id);
                 trace::debug!("{t_id}: screen removed");
 
                 // signal driver completion
@@ -228,6 +232,21 @@ async fn wait(
     Ok(())
 }
 
+#[derive(Debug, Copy, Clone)]
+struct ScrollState {
+    pub scroll_y: u16,
+    pub follow: bool,
+}
+
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self {
+            scroll_y: 0,
+            follow: true,
+        }
+    }
+}
+
 fn run_tui(
     active_id: ActiveId,
     screens: Screens,
@@ -235,6 +254,8 @@ fn run_tui(
 ) -> eyre::Result<()> {
     let tick_rate = Duration::from_millis(250);
     let mut last_tick = Instant::now();
+    let mut scroll_states = UnorderedMap::default();
+    let mut input_enabled = false;
 
     // Setup terminal (must be done on a thread that can manipulate stdout).
     // Use spawn_blocking to avoid blocking the tokio runtime thread on synchronous crossterm setup/reads.
@@ -252,41 +273,114 @@ fn run_tui(
             shutdown_rx.close();
             break;
         }
-        let mut fd = get_frame_data(&screens, &active_id);
+
+        let fd =
+            get_frame_data(&screens, &active_id, input_enabled, &scroll_states);
+        let order = fd.order.clone();
+        let active_index = fd.active_index;
+        let line_count = fd.line_count;
+        let acting_active_id = fd.active_id.clone();
+        let _ = terminal.draw(|f| {
+            let state = draw_ui(f, fd);
+
+            if let Some(active_id) = acting_active_id.as_deref()
+                && let Some(scroll_state) = scroll_states.get_mut(active_id)
+            {
+                scroll_state.scroll_y = state.paragraph_scroll_y;
+            }
+        })?;
 
         let timeout = tick_rate.saturating_sub(last_tick.elapsed());
 
         if event::poll(timeout)? {
             let ev = event::read()?;
             trace::debug!("polled event: {:?}", ev);
-            if let CEvent::Key(key) = ev {
-                match key.code {
-                    KeyCode::Up => {
-                        let (new_active_id, new_active_index) =
-                            compute_active(&fd, Compute::Prev);
-                        *active_id.lock() = new_active_id;
-                        fd.active_index = new_active_index;
+            if let CEvent::Key(key) = ev
+                && key.kind == KeyEventKind::Press
+            {
+                match (key.modifiers, key.code) {
+                    (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
+                        input_enabled = !input_enabled;
                     }
-                    KeyCode::Down => {
-                        let (new_active_id, new_active_index) =
-                            compute_active(&fd, Compute::Next);
-                        *active_id.lock() = new_active_id;
-                        fd.active_index = new_active_index;
-                    }
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        trace::debug!("received ESC or q, shutdown requested");
-                        break;
-                    }
+                    (_, code) if !input_enabled => match code {
+                        KeyCode::Char('f') => {
+                            update_or_insert_scroll_state(
+                                acting_active_id.as_deref(),
+                                &mut scroll_states,
+                                |scroll_state| {
+                                    scroll_state.scroll_y = line_count as u16;
+                                    scroll_state.follow = !scroll_state.follow;
+                                },
+                                || ScrollState {
+                                    scroll_y: line_count as u16,
+                                    follow: false,
+                                },
+                            );
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            update_or_insert_scroll_state(
+                                acting_active_id.as_deref(),
+                                &mut scroll_states,
+                                |scroll_state| {
+                                    let content_len = line_count as u16;
+                                    scroll_state.scroll_y = scroll_state
+                                        .scroll_y
+                                        .saturating_add(1)
+                                        .min(content_len);
+                                    scroll_state.follow = false;
+                                },
+                                || ScrollState {
+                                    scroll_y: 1,
+                                    follow: false,
+                                },
+                            );
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            update_or_insert_scroll_state(
+                                acting_active_id.as_deref(),
+                                &mut scroll_states,
+                                |scroll_state| {
+                                    scroll_state.scroll_y =
+                                        scroll_state.scroll_y.saturating_sub(1);
+                                    scroll_state.follow = false;
+                                },
+                                || ScrollState {
+                                    scroll_y: line_count as u16 - 1,
+                                    follow: false,
+                                },
+                            );
+                        }
+                        KeyCode::Left | KeyCode::Char('l') => {
+                            let (new_active_id, _idx) = compute_active(
+                                active_index,
+                                &order,
+                                Compute::Prev,
+                            );
+                            *active_id.write() = new_active_id.cloned();
+                        }
+                        KeyCode::Right | KeyCode::Char('h') => {
+                            let (new_active_id, _idx) = compute_active(
+                                active_index,
+                                &order,
+                                Compute::Next,
+                            );
+                            *active_id.write() = new_active_id.cloned();
+                        }
+                        KeyCode::Char('q') | KeyCode::Esc => {
+                            trace::debug!(
+                                "received ESC or q, shutdown requested"
+                            );
+                            break;
+                        }
+                        _ => {}
+                    },
+                    _ if input_enabled => {}
                     _ => {
-                        trace::debug!("no key matched, sleeping");
+                        trace::trace!("no events matching")
                     }
                 }
             }
         }
-
-        let _ = terminal.draw(|f| {
-            draw_ui(f, fd);
-        })?;
 
         trace::debug!("ui drawn");
 
@@ -311,25 +405,57 @@ fn run_tui(
     Ok(())
 }
 
+fn update_or_insert_scroll_state(
+    active_id: Option<&str>,
+    scroll_states: &mut UnorderedMap<String, ScrollState>,
+    mut update_fn: impl FnMut(&mut ScrollState),
+    insert_fn: impl FnOnce() -> ScrollState,
+) -> Option<ScrollState> {
+    if let Some(scroll_state) =
+        get_current_scroll_state(active_id, scroll_states)
+    {
+        update_fn(scroll_state);
+        return Some(*scroll_state);
+    } else if let Some(active_id) = active_id.as_deref() {
+        let scroll_state = insert_fn();
+
+        scroll_states.insert(active_id.to_string(), scroll_state);
+        return Some(scroll_state);
+    }
+
+    None
+}
+
+fn get_current_scroll_state<'a>(
+    active_id: Option<&str>,
+    scroll_states: &'a mut UnorderedMap<String, ScrollState>,
+) -> Option<&'a mut ScrollState> {
+    if let Some(id) = active_id {
+        scroll_states.get_mut(id)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Compute {
     Next,
     Prev,
 }
 
-fn compute_active(
-    frame_data: &FrameData,
+fn compute_active<'a>(
+    current_index: usize,
+    order: &'a [String],
     compute: Compute,
-) -> (Option<String>, usize) {
-    let order_len = frame_data.order.len();
-
+) -> (Option<&'a String>, usize) {
+    let order_len = order.len();
     if order_len == 0 {
         return (None, 0);
     }
 
     let proposed_index: i32 = match compute {
-        Compute::Next => frame_data.active_index as i32 + 1,
-        Compute::Prev => frame_data.active_index as i32 - 1,
+        Compute::Next => current_index as i32 + 1,
+        Compute::Prev => current_index as i32 - 1,
     };
 
     let active_index = if proposed_index < 0 {
@@ -338,14 +464,17 @@ fn compute_active(
         proposed_index as usize % order_len
     };
 
-    (frame_data.order.get(active_index).cloned(), active_index)
+    (order.get(active_index), active_index)
 }
 
 struct FrameData {
     active_index: usize,
+    active_id: Option<String>,
     order: Vec<String>,
     paragraph: Paragraph<'static>,
     line_count: usize,
+    scroll_state: ScrollState,
+    input_enabled: bool,
 }
 
 fn get_active_index(order: &[String], active_id: Option<&str>) -> usize {
@@ -360,13 +489,20 @@ fn get_active_index(order: &[String], active_id: Option<&str>) -> usize {
     active_index
 }
 
-fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
-    let order = buffers.lock().keys().rev().cloned().collect::<Vec<_>>();
+fn get_frame_data<'a>(
+    buffers: &Screens,
+    active_id: &ActiveId,
+    input_enabled: bool,
+    scroll_states: &UnorderedMap<String, ScrollState>,
+) -> FrameData {
+    let order = buffers.read().keys().rev().cloned().collect::<Vec<_>>();
 
-    let active_id = active_id.lock();
+    let active_id = active_id.read();
+    trace::debug!("active id: {active_id:?}");
     let active_index = get_active_index(&order, active_id.as_deref());
+    let active_id = order.get(active_index);
 
-    let mut buffers = buffers.lock();
+    let mut buffers = buffers.write();
     let active_screen = if let Some(id) = order.get(active_index)
         && let Some(buf) = buffers.get_mut(id)
     {
@@ -375,32 +511,50 @@ fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
         None
     };
 
+    fn block<'a, T: Into<Title<'a>>>(title: T) -> Block<'a> {
+        Block::new().title(title).borders(Borders::ALL)
+    }
+
     let (paragraph, line_count) = if let Some(active_screen) = active_screen {
         active_screen.apply_pending_actions();
 
         let (paragraph, line_count) = active_screen.paragraph();
 
         (
-            paragraph.block(
-                Block::new()
-                    .title(format!(
-                        "Output - {} ({})",
-                        active_screen.title, active_screen.status
-                    ))
-                    .borders(Borders::ALL),
-            ),
+            paragraph.block(block(format!(
+                " Output - {} ({}) ",
+                active_screen.title, active_screen.status
+            ))),
             line_count,
         )
     } else {
-        (Paragraph::new("<no data>"), 1)
+        (Paragraph::new("<no data>").block(block(" Output ")), 1)
+    };
+
+    let scroll_state = if let Some(id) = active_id.as_deref() {
+        trace::debug!("scroll state for {id}: {:?}", scroll_states.get(id));
+        scroll_states.get(id).copied().unwrap_or_default()
+    } else {
+        trace::debug!("no scroll state for active id: {active_id:?}");
+        ScrollState::default()
     };
 
     FrameData {
         active_index,
+        active_id: active_id.cloned(),
         order,
         paragraph,
         line_count,
+        scroll_state,
+        input_enabled,
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DrawState {
+    paragraph_scroll_y: u16,
+    #[allow(unused)]
+    paragraph_vp_height: u16,
 }
 
 /// Draw UI frame: left vertical tab list + right content for selected stream
@@ -411,37 +565,83 @@ fn draw_ui<'a>(
         order,
         paragraph,
         line_count,
+        scroll_state,
+        input_enabled,
+        active_id: _,
     }: FrameData,
-) {
+) -> DrawState {
     let area = f.area();
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(24), Constraint::Min(10)].as_ref())
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(10)].as_ref())
         .split(area);
 
-    let items: Vec<ListItem> =
-        order.iter().map(|s| ListItem::new(Text::raw(s))).collect();
+    let items: Vec<Line> = order.iter().map(|s| Line::raw(s)).collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Tasks"))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol(">> ");
+    let tabs = ScrollableTabs::new(items)
+        .highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
+        .padding(" ", " ")
+        .select(active_index);
 
-    let order_len = order.len();
-    f.render_stateful_widget(list, chunks[0], &mut {
-        let mut state = ratatui::widgets::ListState::default();
-        if !order.is_empty() {
-            state.select(Some(active_index.min(order_len - 1)));
-        }
-        state
-    });
+    f.render_widget(tabs, chunks[0]);
 
-    // right pane: content
-    let vp_height = chunks[1].height.saturating_sub(2);
+    // right pane
+    let right_pane_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)].as_ref())
+        .split(chunks[1]);
 
-    let scroll_y = (line_count as u16).saturating_sub(vp_height);
+    // terminal output
+    let vp_height = right_pane_chunks[0].height.saturating_sub(2); // remove the borders
+    let scroll_y = (if scroll_state.follow {
+        line_count as u16
+    } else {
+        scroll_state.scroll_y
+    })
+    .saturating_sub(vp_height);
+    f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
 
-    f.render_widget(paragraph.scroll((scroll_y, 0)), chunks[1]);
+    // controls
+    const CONTROL_STYLE: Style = Style::new()
+        .fg(Color::White)
+        .bg(Color::Blue)
+        .add_modifier(Modifier::BOLD);
+
+    let controls = if input_enabled {
+        vec![Span::styled(
+            " ctrl+z = Disable Input ",
+            CONTROL_STYLE.clone(),
+        )]
+    } else {
+        vec![
+            Span::styled(" ESC / q = Quit ", CONTROL_STYLE.clone()),
+            Span::raw(" • "),
+            if scroll_state.follow {
+                Span::styled(" f = Unfollow Scroll ", CONTROL_STYLE.clone())
+            } else {
+                Span::styled(" f = Follow Scroll ", CONTROL_STYLE.clone())
+            },
+            Span::raw(" • "),
+            Span::styled(" ⟵ ⟶ / h-l = Select Task ", CONTROL_STYLE.clone()),
+            Span::raw(" • "),
+            Span::styled(" ↑ ↓ / j-k = Scroll Up/Down ", CONTROL_STYLE.clone()),
+            Span::raw(" • "),
+            Span::styled(" ctrl+z = Enable Input ", CONTROL_STYLE.clone()),
+        ]
+    };
+
+    let control_paragraph = Paragraph::new(Line::from(controls));
+    f.render_widget(control_paragraph, right_pane_chunks[1]);
+
+    DrawState {
+        paragraph_scroll_y: scroll_y,
+        paragraph_vp_height: vp_height,
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

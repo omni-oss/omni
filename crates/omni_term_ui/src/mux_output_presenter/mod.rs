@@ -1,4 +1,5 @@
 mod ansi_parser;
+mod scrollable_tabs;
 mod static_dispatch;
 mod stream;
 mod stream_driver_handle;
