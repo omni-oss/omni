@@ -31,3 +31,4 @@ vte = { workspace = true }
 crossbeam-channel = { workspace = true }
 bytes = { workspace = true }
 unicode-width = { workspace = true }
+system_traits = { workspace = true }

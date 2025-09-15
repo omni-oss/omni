@@ -18,7 +18,7 @@ use parking_lot::RwLock;
 use ratatui::{
     Frame, Terminal,
     crossterm::event::{
-        self, Event as CEvent, KeyCode, KeyEventKind, KeyModifiers,
+        self, Event as CEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
     },
     layout::{Constraint, Direction, Layout},
     prelude::CrosstermBackend,
@@ -28,8 +28,8 @@ use ratatui::{
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::{
-    io::AsyncReadExt,
-    sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock, oneshot},
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock, mpsc, oneshot},
     task::JoinHandle,
 };
 
@@ -48,13 +48,16 @@ use crate::mux_output_presenter::{
 type ShutdownTx = Arc<AsyncMutex<Option<oneshot::Sender<()>>>>;
 type Screens = Arc<RwLock<Map<String, TaskScreen>>>;
 type ActiveId = Arc<RwLock<Option<String>>>;
+type InputHandle = Box<dyn MuxOutputPresenterWriter>;
+type Inputs = Arc<AsyncMutex<UnorderedMap<String, InputHandle>>>;
 
 pub struct TuiPresenter {
     screens: Screens,
     tasks: Arc<AsyncMutex<TasksMap<TuiPresenterError>>>,
+    inputs: Inputs,
+    inputs_task: JoinHandle<Result<(), TuiPresenterError>>,
     ui_task: Arc<AsyncRwLock<Option<JoinHandle<()>>>>,
     ui_shutdown_tx: ShutdownTx,
-    input_writer: Arc<AsyncMutex<Option<Box<dyn MuxOutputPresenterWriter>>>>,
 }
 
 impl TuiPresenter {
@@ -62,6 +65,11 @@ impl TuiPresenter {
         let screens = Arc::new(RwLock::new(Map::default()));
         let tasks = Arc::new(AsyncMutex::new(TasksMap::default()));
         let active_id = Arc::new(RwLock::new(None));
+        let inputs = Arc::new(AsyncMutex::new(UnorderedMap::<
+            String,
+            InputHandle,
+        >::default()));
+        let (keys_tx, mut keys_rx) = mpsc::unbounded_channel();
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -73,17 +81,40 @@ impl TuiPresenter {
         // spawn the UI loop in a task
         let ui_active_id = active_id.clone();
         let ui = tokio::task::spawn_blocking(move || {
-            if let Err(e) = run_tui(ui_active_id, ui_buffers, shutdown_rx) {
+            if let Err(e) =
+                run_tui(ui_active_id, ui_buffers, shutdown_rx, keys_tx)
+            {
                 trace::error!("TUI exited with error: {:?}", e);
             }
+        });
+
+        let i_inputs = inputs.clone();
+        let inputs_task = tokio::spawn(async move {
+            while let Some(key) = keys_rx.recv().await {
+                trace::debug!(
+                    "received_key: {} => {:?}",
+                    key.id,
+                    key.key_event
+                );
+
+                let mut uts = i_inputs.lock().await;
+                let mut input = uts.get_mut(&key.id);
+                if let Some(w) = input.as_mut() {
+                    let bytes = key_event_to_bytes(key.key_event);
+                    trace::debug!("found input, sending bytes: {:?}", bytes);
+                    w.write_all(&bytes).await?;
+                }
+            }
+            Ok(())
         });
 
         Self {
             screens,
             tasks,
             ui_shutdown_tx: Arc::new(AsyncMutex::new(Some(shutdown_tx))),
-            input_writer: Arc::new(AsyncMutex::new(None)), // new
             ui_task: Arc::new(AsyncRwLock::new(Some(ui))),
+            inputs,
+            inputs_task,
         }
     }
 }
@@ -95,7 +126,8 @@ impl MuxOutputPresenter for TuiPresenter {
     async fn add_stream(
         &self,
         id: String,
-        reader: Box<dyn MuxOutputPresenterReader>,
+        output: Box<dyn MuxOutputPresenterReader>,
+        input: Option<Box<dyn MuxOutputPresenterWriter>>,
     ) -> Result<StreamHandle, Self::Error> {
         let (handle, driver) = stream::handle();
         let (screen_actions_tx, screen_actions_rx) =
@@ -103,9 +135,13 @@ impl MuxOutputPresenter for TuiPresenter {
 
         // prepare buffer
         let screen = TaskScreen::new(id.clone(), screen_actions_rx);
-        trace::debug!("{id}: buffer created");
+        trace::trace!("{id}: buffer created");
         self.screens.write().insert(id.clone(), screen);
-        trace::debug!("{id}: buffer inserted");
+        trace::trace!("{id}: buffer inserted");
+        if let Some(input) = input {
+            self.inputs.lock().await.insert(id.clone(), input);
+            trace::trace!("{id}: input inserted");
+        }
 
         // spawn a task that copies reader -> buffer via BufferWriter
         let join_handle: JoinHandle<Result<(), TuiPresenterError>> = {
@@ -113,7 +149,8 @@ impl MuxOutputPresenter for TuiPresenter {
             let t_id = id.clone();
             let t_ui_task = self.ui_task.clone();
             let t_screens = self.screens.clone();
-            let mut t_reader = reader;
+            let t_inputs = self.inputs.clone();
+            let mut t_reader = output;
 
             tokio::spawn(async move {
                 let mut buff = [0u8; 4096];
@@ -141,7 +178,7 @@ impl MuxOutputPresenter for TuiPresenter {
                             Bytes::copy_from_slice(&buff[..n]),
                         )).map_err(|e| TuiPresenterErrorInner::new_failed_to_send_action(ScreenActionsKind::Write, e))?;
                     } else {
-                        trace::debug!(
+                        trace::trace!(
                             "{t_id}: UI task is not running anymore, ignoring data"
                         );
                     }
@@ -159,30 +196,23 @@ impl MuxOutputPresenter for TuiPresenter {
                     })?;
 
                 t_tasks.lock().await.remove(&t_id);
-                trace::debug!("{t_id}: task removed");
+                trace::trace!("{t_id}: task removed");
                 t_screens.write().shift_remove(&t_id);
-                trace::debug!("{t_id}: screen removed");
+                trace::trace!("{t_id}: screen removed");
+                t_inputs.lock().await.remove(&t_id);
+                trace::trace!("{t_id}: input removed");
 
                 // signal driver completion
                 driver.mark_completed().await?;
-                trace::debug!("{t_id}: completed");
+                trace::trace!("{t_id}: completed");
 
                 Ok(())
             })
         };
 
         self.tasks.lock().await.insert(id.clone(), join_handle);
-        trace::debug!("{id}: task inserted");
+        trace::trace!("{id}: task inserted");
         Ok(handle)
-    }
-
-    #[inline(always)]
-    async fn register_input_writer(
-        &self,
-        writer: Box<dyn MuxOutputPresenterWriter>,
-    ) -> Result<(), Self::Error> {
-        *self.input_writer.lock().await = Some(writer);
-        Ok(())
     }
 
     #[inline(always)]
@@ -209,8 +239,8 @@ impl MuxOutputPresenter for TuiPresenter {
         {
             trace::error!("UI task exited with error: {:?}", e);
         }
-
         wait(&self.tasks.clone()).await?;
+        self.inputs_task.await??;
         Ok(())
     }
 }
@@ -232,6 +262,12 @@ async fn wait(
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+struct InputEvent {
+    key_event: KeyEvent,
+    id: String,
+}
+
 #[derive(Debug, Copy, Clone)]
 struct ScrollState {
     pub scroll_y: u16,
@@ -251,6 +287,7 @@ fn run_tui(
     active_id: ActiveId,
     screens: Screens,
     mut shutdown_rx: oneshot::Receiver<()>,
+    keys_tx: mpsc::UnboundedSender<InputEvent>,
 ) -> eyre::Result<()> {
     let tick_rate = Duration::from_millis(250);
     let mut last_tick = Instant::now();
@@ -269,7 +306,7 @@ fn run_tui(
 
     loop {
         if let Ok(_) = shutdown_rx.try_recv() {
-            trace::debug!("shutdown requested");
+            trace::trace!("shutdown requested");
             shutdown_rx.close();
             break;
         }
@@ -294,7 +331,7 @@ fn run_tui(
 
         if event::poll(timeout)? {
             let ev = event::read()?;
-            trace::debug!("polled event: {:?}", ev);
+            trace::trace!("polled event: {:?}", ev);
             if let CEvent::Key(key) = ev
                 && key.kind == KeyEventKind::Press
             {
@@ -367,30 +404,41 @@ fn run_tui(
                             *active_id.write() = new_active_id.cloned();
                         }
                         KeyCode::Char('q') | KeyCode::Esc => {
-                            trace::debug!(
+                            trace::trace!(
                                 "received ESC or q, shutdown requested"
                             );
                             break;
                         }
-                        _ => {}
+                        _ => {
+                            trace::trace!("no events matching")
+                        }
                     },
-                    _ if input_enabled => {}
                     _ => {
-                        trace::trace!("no events matching")
+                        if input_enabled
+                            && let Some(active_id) = acting_active_id.as_deref()
+                        {
+                            let input_event = InputEvent {
+                                key_event: key,
+                                id: active_id.to_string(),
+                            };
+                            keys_tx.send(input_event)?;
+                        } else {
+                            trace::trace!("no events matching")
+                        }
                     }
                 }
             }
         }
 
-        trace::debug!("ui drawn");
+        trace::trace!("ui drawn");
 
-        trace::debug!("looped");
+        trace::trace!("looped");
         if last_tick.elapsed() >= tick_rate {
             last_tick = Instant::now();
         }
     }
 
-    trace::debug!("ui loop exited");
+    trace::trace!("ui loop exited");
 
     disable_raw_mode()?;
     execute!(
@@ -399,9 +447,9 @@ fn run_tui(
         LeaveAlternateScreen
     )?;
 
-    trace::debug!("stdout cleanup done");
+    trace::trace!("stdout cleanup done");
 
-    trace::debug!("exiting ui loop");
+    trace::trace!("exiting ui loop");
     Ok(())
 }
 
@@ -498,7 +546,7 @@ fn get_frame_data<'a>(
     let order = buffers.read().keys().rev().cloned().collect::<Vec<_>>();
 
     let active_id = active_id.read();
-    trace::debug!("active id: {active_id:?}");
+    trace::trace!("active id: {active_id:?}");
     let active_index = get_active_index(&order, active_id.as_deref());
     let active_id = order.get(active_index);
 
@@ -532,10 +580,10 @@ fn get_frame_data<'a>(
     };
 
     let scroll_state = if let Some(id) = active_id.as_deref() {
-        trace::debug!("scroll state for {id}: {:?}", scroll_states.get(id));
+        trace::trace!("scroll state for {id}: {:?}", scroll_states.get(id));
         scroll_states.get(id).copied().unwrap_or_default()
     } else {
-        trace::debug!("no scroll state for active id: {active_id:?}");
+        trace::trace!("no scroll state for active id: {active_id:?}");
         ScrollState::default()
     };
 
@@ -642,6 +690,93 @@ fn draw_ui<'a>(
         paragraph_scroll_y: scroll_y,
         paragraph_vp_height: vp_height,
     }
+}
+
+fn key_event_to_bytes(ev: KeyEvent) -> Vec<u8> {
+    use KeyCode::*;
+    use KeyModifiers as M;
+
+    let mut out = Vec::<u8>::new();
+
+    // helper: prepend ESC for Alt-modified sequences
+    let mut push_with_alt = |bytes: &[u8]| {
+        if ev.modifiers.contains(M::ALT) {
+            out.push(0x1B);
+        }
+        out.extend_from_slice(bytes);
+    };
+
+    match ev.code {
+        Char(c) => {
+            // Ctrl+char -> control code (e.g. Ctrl-A = 0x01)
+            if ev.modifiers.contains(M::CONTROL) {
+                let lc = (c as u8).to_ascii_lowercase();
+                // common mapping for letters and a few symbols
+                let ctrl = match lc {
+                    b'@' => 0x00,
+                    b'a'..=b'z' => lc & 0x1F,
+                    b'[' => 0x1B, // Ctrl-[ = ESC
+                    b'\\' => 0x1C,
+                    b']' => 0x1D,
+                    b'^' => 0x1E,
+                    b'_' => 0x1F,
+                    _ => lc & 0x1F, // best-effort
+                };
+                out.push(ctrl);
+            } else {
+                // normal char (respect Shift in the char value already)
+                if ev.modifiers.contains(M::ALT) {
+                    out.push(0x1B);
+                }
+                let mut buf = [0; 4];
+                let s = c.encode_utf8(&mut buf);
+                out.extend_from_slice(s.as_bytes());
+            }
+        }
+
+        Enter => out.push(b'\r'),
+        Tab => out.push(b'\t'),
+        Backspace => out.push(0x7f), // DEL commonly used
+        Esc => out.push(0x1B),
+
+        Left => push_with_alt(b"\x1b[D"),
+        Right => push_with_alt(b"\x1b[C"),
+        Up => push_with_alt(b"\x1b[A"),
+        Down => push_with_alt(b"\x1b[B"),
+
+        Home => push_with_alt(b"\x1b[H"),
+        End => push_with_alt(b"\x1b[F"),
+        PageUp => push_with_alt(b"\x1b[5~"),
+        PageDown => push_with_alt(b"\x1b[6~"),
+        Insert => push_with_alt(b"\x1b[2~"),
+        Delete => push_with_alt(b"\x1b[3~"),
+
+        F(n) => {
+            // rough, commonly-used function key sequences
+            let seq: &[u8] = match n {
+                1 => b"\x1bOP",
+                2 => b"\x1bOQ",
+                3 => b"\x1bOR",
+                4 => b"\x1bOS",
+                5 => b"\x1b[15~",
+                6 => b"\x1b[17~",
+                7 => b"\x1b[18~",
+                8 => b"\x1b[19~",
+                9 => b"\x1b[20~",
+                10 => b"\x1b[21~",
+                11 => b"\x1b[23~",
+                12 => b"\x1b[24~",
+                _ => b"",
+            };
+            push_with_alt(seq);
+        }
+
+        // numeric keypad / other keys not covered above
+        Null => {}
+        _ => {}
+    }
+
+    out
 }
 
 #[derive(Debug, thiserror::Error)]

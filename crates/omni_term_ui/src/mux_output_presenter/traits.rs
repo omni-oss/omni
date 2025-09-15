@@ -4,21 +4,15 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::mux_output_presenter::StreamHandle;
 
+#[system_traits::auto_impl]
 pub trait MuxOutputPresenterReader:
     AsyncRead + Unpin + Send + Sync + 'static
 {
 }
-impl<T> MuxOutputPresenterReader for T where
-    T: AsyncRead + Unpin + Send + Sync + 'static
-{
-}
 
+#[system_traits::auto_impl]
 pub trait MuxOutputPresenterWriter:
     AsyncWrite + Unpin + Send + Sync + 'static
-{
-}
-impl<T> MuxOutputPresenterWriter for T where
-    T: AsyncWrite + Unpin + Send + Sync + 'static
 {
 }
 
@@ -31,13 +25,8 @@ pub trait MuxOutputPresenter: Send + Sync {
         &self,
         id: String,
         reader: Box<dyn MuxOutputPresenterReader>,
+        writer: Option<Box<dyn MuxOutputPresenterWriter>>,
     ) -> Result<StreamHandle, Self::Error>;
-
-    /// Register a writable handle for sending input to the process with `id`.
-    async fn register_input_writer(
-        &self,
-        writer: Box<dyn MuxOutputPresenterWriter>,
-    ) -> Result<(), Self::Error>;
 
     /// Whether this presenter consumes user input/events (e.g. keyboard, UI events).
     fn accepts_input(&self) -> bool;
@@ -50,7 +39,7 @@ pub trait MuxOutputPresenter: Send + Sync {
 #[async_trait::async_trait]
 pub trait MuxOutputPresenterExt: MuxOutputPresenter {
     #[inline(always)]
-    async fn add_stream_generic<I, R>(
+    async fn add_stream_output<I, R>(
         &self,
         id: I,
         reader: R,
@@ -59,11 +48,27 @@ pub trait MuxOutputPresenterExt: MuxOutputPresenter {
         R: MuxOutputPresenterReader,
         I: Into<String> + Send + Sync,
     {
-        self.add_stream(id.into(), Box::new(reader)).await
+        self.add_stream(id.into(), Box::new(reader), None).await
     }
 
     #[inline(always)]
-    async fn add_piped_stream<I>(
+    async fn add_stream_full<I, R, W>(
+        &self,
+        id: I,
+        output: R,
+        input: W,
+    ) -> Result<StreamHandle, Self::Error>
+    where
+        I: Into<String> + Send + Sync,
+        R: MuxOutputPresenterReader,
+        W: MuxOutputPresenterWriter,
+    {
+        self.add_stream(id.into(), Box::new(output), Some(Box::new(input)))
+            .await
+    }
+
+    #[inline(always)]
+    async fn add_piped_stream_output<I>(
         &self,
         id: I,
     ) -> Result<(impl AsyncWrite + 'static, StreamHandle), Self::Error>
@@ -71,20 +76,31 @@ pub trait MuxOutputPresenterExt: MuxOutputPresenter {
         I: Into<String> + Send + Sync,
     {
         let (reader, writer) = tokio::io::duplex(1024);
-        let handle = self.add_stream_generic(id, reader).await?;
+        let handle = self.add_stream_output(id, reader).await?;
 
         Ok((writer, handle))
     }
 
     #[inline(always)]
-    async fn register_input_reader_generic<W>(
+    async fn add_piped_stream_full<I>(
         &self,
-        writer: W,
-    ) -> Result<(), Self::Error>
+        id: I,
+    ) -> Result<
+        (
+            impl AsyncWrite + 'static,
+            impl AsyncRead + 'static,
+            StreamHandle,
+        ),
+        Self::Error,
+    >
     where
-        W: MuxOutputPresenterWriter,
+        I: Into<String> + Send + Sync,
     {
-        self.register_input_writer(Box::new(writer)).await
+        let (out_reader, out_writer) = tokio::io::duplex(1024);
+        let (in_reader, in_writer) = tokio::io::duplex(1024);
+        let handle = self.add_stream_full(id, out_reader, in_writer).await?;
+
+        Ok((out_writer, in_reader, handle))
     }
 }
 
