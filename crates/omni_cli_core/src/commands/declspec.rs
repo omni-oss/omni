@@ -15,6 +15,7 @@ pub struct DeclspecCommand {
 #[derive(clap::Args)]
 pub struct DeclspecArgs {
     #[arg(
+        short = 'f',
         long = "format",
         help = "The format to use for the output",
         value_enum,

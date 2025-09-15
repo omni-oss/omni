@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use bytes::Bytes;
 use crossterm::{
@@ -230,6 +233,9 @@ fn run_tui(
     screens: Screens,
     mut shutdown_rx: oneshot::Receiver<()>,
 ) -> eyre::Result<()> {
+    let tick_rate = Duration::from_millis(250);
+    let mut last_tick = Instant::now();
+
     // Setup terminal (must be done on a thread that can manipulate stdout).
     // Use spawn_blocking to avoid blocking the tokio runtime thread on synchronous crossterm setup/reads.
     enable_raw_mode()?;
@@ -246,20 +252,26 @@ fn run_tui(
             shutdown_rx.close();
             break;
         }
-        let fd = get_frame_data(&screens, &active_id);
+        let mut fd = get_frame_data(&screens, &active_id);
 
-        if event::poll(std::time::Duration::from_millis(100))? {
+        let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+
+        if event::poll(timeout)? {
             let ev = event::read()?;
             trace::debug!("polled event: {:?}", ev);
             if let CEvent::Key(key) = ev {
                 match key.code {
                     KeyCode::Up => {
-                        *active_id.lock() =
-                            compute_active_id(&fd, Compute::Prev);
+                        let (new_active_id, new_active_index) =
+                            compute_active(&fd, Compute::Prev);
+                        *active_id.lock() = new_active_id;
+                        fd.active_index = new_active_index;
                     }
                     KeyCode::Down => {
-                        *active_id.lock() =
-                            compute_active_id(&fd, Compute::Next);
+                        let (new_active_id, new_active_index) =
+                            compute_active(&fd, Compute::Next);
+                        *active_id.lock() = new_active_id;
+                        fd.active_index = new_active_index;
                     }
                     KeyCode::Char('q') | KeyCode::Esc => {
                         trace::debug!("received ESC or q, shutdown requested");
@@ -279,7 +291,9 @@ fn run_tui(
         trace::debug!("ui drawn");
 
         trace::debug!("looped");
-        std::thread::sleep(Duration::from_millis(5));
+        if last_tick.elapsed() >= tick_rate {
+            last_tick = Instant::now();
+        }
     }
 
     trace::debug!("ui loop exited");
@@ -303,14 +317,14 @@ enum Compute {
     Prev,
 }
 
-fn compute_active_id(
+fn compute_active(
     frame_data: &FrameData,
     compute: Compute,
-) -> Option<String> {
+) -> (Option<String>, usize) {
     let order_len = frame_data.order.len();
 
     if order_len == 0 {
-        return None;
+        return (None, 0);
     }
 
     let proposed_index: i32 = match compute {
@@ -324,7 +338,7 @@ fn compute_active_id(
         proposed_index as usize % order_len
     };
 
-    frame_data.order.get(active_index).cloned()
+    (frame_data.order.get(active_index).cloned(), active_index)
 }
 
 struct FrameData {
@@ -334,17 +348,23 @@ struct FrameData {
     line_count: usize,
 }
 
-fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
-    let order = buffers.lock().keys().rev().cloned().collect::<Vec<_>>();
-
-    let f_active_id =
-        active_id.lock().clone().or_else(|| order.first().cloned());
+fn get_active_index(order: &[String], active_id: Option<&str>) -> usize {
+    let f_active_id = active_id;
 
     let active_index = if let Some(id) = f_active_id {
         order.iter().position(|s| s == &id).unwrap_or(0)
     } else {
         0
     };
+
+    active_index
+}
+
+fn get_frame_data(buffers: &Screens, active_id: &ActiveId) -> FrameData {
+    let order = buffers.lock().keys().rev().cloned().collect::<Vec<_>>();
+
+    let active_id = active_id.lock();
+    let active_index = get_active_index(&order, active_id.as_deref());
 
     let mut buffers = buffers.lock();
     let active_screen = if let Some(id) = order.get(active_index)
