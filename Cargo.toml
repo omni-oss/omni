@@ -153,6 +153,7 @@ crossterm = { version = "^0.27.0" }
 omni_term_ui = { path = "./crates/omni_term_ui" }
 clap_utils = { path = "./crates/clap_utils" }
 vte = { version = "^0.15.0" }
+unicode-width = "=0.2.0" # hard requirement for ratatui
 
 [profile.release]
 incremental = true
