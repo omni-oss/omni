@@ -41,28 +41,15 @@ impl MuxOutputPresenter for MuxOutputPresenterStatic {
     async fn add_stream(
         &self,
         id: String,
-        reader: Box<dyn MuxOutputPresenterReader>,
+        output: Box<dyn MuxOutputPresenterReader>,
+        input: Option<Box<dyn MuxOutputPresenterWriter>>,
     ) -> Result<StreamHandle, Self::Error> {
         Ok(match self {
             MuxOutputPresenterStatic::Stream(s) => {
-                s.add_stream(id, reader).await?
+                s.add_stream(id, output, input).await?
             }
             MuxOutputPresenterStatic::Tui(t) => {
-                t.add_stream(id, reader).await?
-            }
-        })
-    }
-
-    async fn register_input_writer(
-        &self,
-        writer: Box<dyn MuxOutputPresenterWriter>,
-    ) -> Result<(), Self::Error> {
-        Ok(match self {
-            MuxOutputPresenterStatic::Stream(s) => {
-                s.register_input_writer(writer).await?
-            }
-            MuxOutputPresenterStatic::Tui(t) => {
-                t.register_input_writer(writer).await?
+                t.add_stream(id, output, input).await?
             }
         })
     }

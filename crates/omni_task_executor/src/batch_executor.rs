@@ -121,7 +121,7 @@ where
 
             let handle = self
                 .presenter
-                .add_stream_generic(
+                .add_stream_output(
                     task_ctx.node.full_task_name().to_string(),
                     file,
                 )
@@ -339,17 +339,31 @@ async fn run_process<'a>(
     do_trace: bool,
 ) -> TaskResultContext<'a> {
     let mut proc = ChildProcess::new(task_ctx.node.clone());
-    let (stream, handle) = presenter
-        .add_piped_stream(task_ctx.node.full_task_name())
-        .await
-        .expect("failed to add stream");
 
-    proc.output_writer(stream)
-        .record_logs(record_logs)
+    let handle = if presenter.accepts_input() {
+        let (out_writer, in_reader, handle) = presenter
+            .add_piped_stream_full(task_ctx.node.full_task_name())
+            .await
+            .expect("failed to add stream");
+
+        proc.output_writer(out_writer).input_reader(in_reader);
+        handle
+    } else {
+        let (stream, handle) = presenter
+            .add_piped_stream_output(task_ctx.node.full_task_name())
+            .await
+            .expect("failed to add stream");
+
+        proc.output_writer(stream);
+        handle
+    };
+
+    proc.record_logs(record_logs)
         .env_vars(&task_ctx.env_vars)
         .keep_stdin_open(
             task_ctx.node.persistent() || task_ctx.node.interactive(),
         );
+
     let result = proc.exec().await;
     if do_trace && let Err(e) = &result {
         trace::error!(

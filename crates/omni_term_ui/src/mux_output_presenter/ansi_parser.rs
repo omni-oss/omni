@@ -214,7 +214,7 @@ impl AnsiToSpans {
             i += 1;
         }
 
-        trace::debug!("parsed state: {:?}", self.cur);
+        trace::trace!("parsed state: {:?}", self.cur);
     }
 
     fn reset_all(&mut self) {
@@ -268,7 +268,7 @@ impl Perform for AnsiToSpans {
         }
 
         if action == 'm' {
-            trace::debug!("parsed params: {:?}", params);
+            trace::trace!("parsed params: {:?}", params);
             self.flush_buf();
             for p in params.iter() {
                 self.handle_sgr(p);

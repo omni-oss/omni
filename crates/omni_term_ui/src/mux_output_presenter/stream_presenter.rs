@@ -37,6 +37,7 @@ impl MuxOutputPresenter for StreamPresenter {
         &self,
         id: String,
         reader: Box<dyn MuxOutputPresenterReader>,
+        _writer: Option<Box<dyn MuxOutputPresenterWriter>>,
     ) -> Result<StreamHandle, Self::Error> {
         self.clear_closed_tasks().await;
 
@@ -62,14 +63,6 @@ impl MuxOutputPresenter for StreamPresenter {
         self.tasks.lock().await.insert(id, join_handle);
 
         return Ok(handle);
-    }
-
-    async fn register_input_writer(
-        &self,
-        _writer: Box<dyn MuxOutputPresenterWriter>,
-    ) -> Result<(), Self::Error> {
-        // does not support input
-        Ok(())
     }
 
     #[inline(always)]
