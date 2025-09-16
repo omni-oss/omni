@@ -10,7 +10,7 @@ use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
-    constants::{self, CACHE_DIR},
+    constants::{self, CACHE_DIR, TRACE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
@@ -196,6 +196,10 @@ impl<TSys: ContextSys> Context<TSys> {
 
     pub fn cache_dir(&self) -> PathBuf {
         self.root_dir.join(CACHE_DIR)
+    }
+
+    pub fn trace_dir(&self) -> PathBuf {
+        self.root_dir.join(TRACE_DIR)
     }
 }
 

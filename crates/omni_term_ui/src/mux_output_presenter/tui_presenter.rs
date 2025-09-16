@@ -32,6 +32,7 @@ use tokio::{
     sync::{Mutex as AsyncMutex, RwLock as AsyncRwLock, mpsc, oneshot},
     task::JoinHandle,
 };
+use tracing::dispatcher;
 
 use crate::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterReader, MuxOutputPresenterWriter,
@@ -80,12 +81,15 @@ impl TuiPresenter {
 
         // spawn the UI loop in a task
         let ui_active_id = active_id.clone();
+        let dispatch = dispatcher::get_default(|d| d.clone());
         let ui = tokio::task::spawn_blocking(move || {
-            if let Err(e) =
-                run_tui(ui_active_id, ui_buffers, shutdown_rx, keys_tx)
-            {
-                trace::error!("TUI exited with error: {:?}", e);
-            }
+            dispatcher::with_default(&dispatch, || {
+                if let Err(e) =
+                    run_tui(ui_active_id, ui_buffers, shutdown_rx, keys_tx)
+                {
+                    trace::error!("TUI exited with error: {:?}", e);
+                }
+            })
         });
 
         let i_inputs = inputs.clone();

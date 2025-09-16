@@ -2594,6 +2594,7 @@ dependencies = [
  "bs58",
  "bytes 1.10.1",
  "config_utils",
+ "crossbeam-channel",
  "derive-new",
  "derive_builder",
  "env",

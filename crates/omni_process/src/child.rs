@@ -11,7 +11,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
     task::JoinHandle,
 };
-use tracing::field;
+use tracing::{dispatcher, field};
 
 use crate::utils::{get_pty_size, should_use_pty};
 
@@ -114,19 +114,23 @@ impl Child {
         let (out_tx, mut out_rx) = tokio::sync::mpsc::channel(1024);
         let (in_writer, mut in_reader) = tokio::io::duplex(1024);
 
+        let dispatch = dispatcher::get_default(|d| d.clone());
+
         let reader_task = tokio::task::spawn_blocking(move || {
-            let mut buff = [0u8; 1024];
-            loop {
-                let n = reader.read(&mut buff)?;
+            dispatcher::with_default(&dispatch, || {
+                let mut buff = [0u8; 1024];
+                loop {
+                    let n = reader.read(&mut buff)?;
 
-                if n > 0 {
-                    out_tx.blocking_send(buff[0..n].to_vec())?;
-                } else {
-                    break;
+                    if n > 0 {
+                        out_tx.blocking_send(buff[0..n].to_vec())?;
+                    } else {
+                        break;
+                    }
                 }
-            }
 
-            Ok::<(), ChildError>(())
+                Ok::<(), ChildError>(())
+            })
         });
 
         let reader_async_bridge = tokio::task::spawn(async move {
@@ -253,7 +257,10 @@ impl Child {
                 reader_async_bridge_task,
                 writer_task,
             } => {
-                let status = tokio::task::spawn_blocking(move || child.wait());
+                let dispatch = dispatcher::get_default(|d| d.clone());
+                let status = tokio::task::spawn_blocking(move || {
+                    dispatcher::with_default(&dispatch, || child.wait())
+                });
                 let (reader, reader_async_bridge, writer, status) = tokio::try_join!(
                     reader_task,
                     reader_async_bridge_task,

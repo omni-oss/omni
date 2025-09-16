@@ -55,6 +55,14 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         self.unloaded_context.root_dir()
     }
 
+    pub fn cache_dir(&self) -> PathBuf {
+        self.unloaded_context.cache_dir()
+    }
+
+    pub fn trace_dir(&self) -> PathBuf {
+        self.unloaded_context.trace_dir()
+    }
+
     pub fn workspace_configuration(&self) -> &WorkspaceConfiguration {
         self.unloaded_context.workspace_configuration()
     }
@@ -164,10 +172,6 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
                 Some(Arc::new(cached))
             }
         })
-    }
-
-    fn cache_dir(&self) -> PathBuf {
-        self.unloaded_context.root_dir().join(".omni/cache")
     }
 
     fn seed(&self) -> &str {
