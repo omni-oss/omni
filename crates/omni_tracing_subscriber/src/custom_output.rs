@@ -57,7 +57,7 @@ impl Default for OutputType {
     }
 }
 
-#[bitflags(default = Pretty |  WithAnsi | WithTimestamp | WithLevel | WithThreadId | WithThreadName )]
+#[bitflags(default = Pretty |  WithAnsi |  WithLevel )]
 #[repr(u16)]
 #[derive(Debug, Clone, Copy)]
 pub enum FormatOption {

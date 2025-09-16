@@ -20,7 +20,7 @@ derive-new = { workspace = true }
 derive_builder = { workspace = true }
 omni_hasher = { workspace = true }
 trace = { workspace = true }
-tracing = { workspace = true, optional = true }
+tracing = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
