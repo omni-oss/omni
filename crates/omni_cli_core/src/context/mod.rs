@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 pub use omni_context::*;
+use omni_tracing_subscriber::TracingConfig;
 
 use crate::commands::CliArgs;
 
@@ -8,6 +9,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     root_dir: impl AsRef<Path>,
     sys: TSys,
+    tracing: &TracingConfig,
 ) -> Result<Context<TSys>, ContextError> {
     let env = cli.env.as_deref().unwrap_or("development");
     let env_files = cli.env_file.as_ref().map(|v| {
@@ -33,6 +35,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
         cli.inherit_env_vars,
         &root_marker,
         env_files,
+        tracing,
     )?;
 
     Ok(ctx)
@@ -41,10 +44,11 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
 pub fn from_args_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     sys: TSys,
+    tracing: &TracingConfig,
 ) -> Result<Context<TSys>, ContextError> {
     let root_dir = get_root_dir(&sys)?;
 
-    let ctx = from_args_root_dir_and_sys(cli, root_dir, sys)?;
+    let ctx = from_args_root_dir_and_sys(cli, root_dir, sys, tracing)?;
 
     Ok(ctx)
 }

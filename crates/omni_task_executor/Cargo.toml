@@ -7,7 +7,7 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["dep:tracing", "trace/enabled"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 eyre = { workspace = true }
@@ -43,3 +43,4 @@ ahash = { workspace = true }
 bs58 = { workspace = true }
 num_cpus = { workspace = true }
 omni_term_ui = { workspace = true }
+omni_tracing_subscriber = { workspace = true }

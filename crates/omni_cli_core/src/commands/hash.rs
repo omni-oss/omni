@@ -1,7 +1,8 @@
 use clap::Subcommand;
+use omni_tracing_subscriber::noop_subscriber;
 use tracing_futures::WithSubscriber;
 
-use crate::{context::Context, tracer::noop_subscriber};
+use crate::context::Context;
 
 #[derive(clap::Args)]
 #[command(author, version, about = "Get hashes for the workspace or projects")]

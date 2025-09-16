@@ -3,6 +3,7 @@
 // This version supports partial stream parsing: you can feed bytes as they arrive
 // and get accumulated lines/spans.
 
+use enumflags2::{BitFlags, bitflags};
 use ratatui::style::{Color, Modifier, Style, Stylize as _};
 use ratatui::text::{Line, Span};
 use std::borrow::Cow;
@@ -59,10 +60,10 @@ pub struct AnsiParser {
 impl AnsiParser {
     #[inline(always)]
     #[allow(unused)]
-    pub fn new() -> Self {
+    pub fn new(flags: Flags) -> Self {
         Self {
             parser: Parser::new(),
-            performer: AnsiToSpans::new(),
+            performer: AnsiToSpans::new(flags),
         }
     }
 
@@ -85,52 +86,108 @@ impl AnsiParser {
     }
 }
 
+#[bitflags]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Flag {
+    Onlcr,
+}
+
+pub type Flags = BitFlags<Flag>;
+
+#[derive(Clone, Default, Debug, Copy)]
+struct Cursor {
+    x: usize,
+    y: usize,
+}
+
+impl Cursor {
+    fn nextline(&mut self, flags: &Flags) {
+        if flags.contains(Flag::Onlcr) {
+            self.x = 0;
+        }
+        self.y += 1;
+    }
+
+    fn move_up(&mut self, movement: usize) {
+        self.y = self.y.saturating_sub(movement);
+    }
+
+    fn carriage_return(&mut self) {
+        self.x = 0;
+    }
+
+    fn move_down(&mut self, movement: usize) {
+        self.y = self.y.saturating_add(movement);
+    }
+
+    fn move_right(&mut self, movement: usize) {
+        self.x = self.x.saturating_add(movement);
+    }
+
+    fn move_left(&mut self, movement: usize) {
+        self.x = self.x.saturating_sub(movement);
+    }
+}
+
 #[derive(Clone, Default, Debug)]
 struct AnsiToSpans {
-    cur: AttributeState,
-    buf: String,
-    spans: Vec<Span<'static>>,
+    current_span_state: AttributeState,
+    current_span_buf: String,
+    current_line_spans: Vec<Span<'static>>,
     lines: Vec<Line<'static>>,
+    cursor: Cursor,
+    flags: Flags,
 }
 
 impl AnsiToSpans {
-    fn new() -> Self {
+    fn new(flags: Flags) -> Self {
         Self {
-            cur: AttributeState::default(),
-            buf: String::new(),
-            spans: Vec::new(),
+            current_span_state: AttributeState::default(),
+            current_span_buf: String::new(),
+            current_line_spans: Vec::new(),
             lines: Vec::new(),
+            cursor: Cursor::default(),
+            flags,
         }
     }
 
-    fn flush_buf(&mut self) {
-        if !self.buf.is_empty() {
-            let style = self.cur.to_style();
-            let owned = Cow::Owned(self.buf.clone());
-            self.spans.push(Span::styled(owned, style));
-            self.buf.clear();
+    fn flush_span_buf(&mut self) {
+        if !self.current_span_buf.is_empty() {
+            let style = self.current_span_state.to_style();
+            let owned = Cow::Owned(self.current_span_buf.clone());
+            self.current_line_spans.push(Span::styled(owned, style));
+            self.current_span_buf.clear();
         }
     }
 
     fn newline(&mut self) {
-        self.flush_buf();
-        if !self.spans.is_empty() {
-            let s = Line::from(self.spans.clone());
+        self.flush_span_buf();
+        if !self.current_line_spans.is_empty() {
+            let s = Line::from(self.current_line_spans.clone());
             self.lines.push(s);
-            self.spans.clear();
+            self.current_line_spans.clear();
         } else {
             self.lines.push(Line::from(vec![Span::raw("")]));
         }
+        self.cursor.nextline(&self.flags);
     }
 
-    fn snapshot(&mut self) -> Vec<Line<'static>> {
+    fn char(&mut self, c: char) {
+        self.current_span_buf.push(c);
+        self.cursor.x += 1;
+    }
+
+    fn snapshot(&self) -> Vec<Line<'static>> {
         // Return current lines + in-progress line
         let mut lines = self.lines.clone();
-        if !self.buf.is_empty() || !self.spans.is_empty() {
-            let mut temp_spans = self.spans.clone();
-            if !self.buf.is_empty() {
-                let style = self.cur.to_style();
-                let owned = Cow::Owned(self.buf.clone());
+        if !self.current_span_buf.is_empty()
+            || !self.current_line_spans.is_empty()
+        {
+            let mut temp_spans = self.current_line_spans.clone();
+            if !self.current_span_buf.is_empty() {
+                let style = self.current_span_state.to_style();
+                let owned = Cow::Owned(self.current_span_buf.clone());
                 temp_spans.push(Span::styled(owned, style));
             }
             lines.push(Line::from(temp_spans));
@@ -139,9 +196,9 @@ impl AnsiToSpans {
     }
 
     fn finish(mut self) -> Vec<Line<'static>> {
-        self.flush_buf();
-        if !self.spans.is_empty() {
-            self.lines.push(Line::from(self.spans));
+        self.flush_span_buf();
+        if !self.current_line_spans.is_empty() {
+            self.lines.push(Line::from(self.current_line_spans));
         }
         self.lines
     }
@@ -156,25 +213,29 @@ impl AnsiToSpans {
             let p = params[i];
             match p {
                 0 => self.reset_all(),
-                1 => self.cur.bold = true,
-                3 => self.cur.italic = true,
-                4 => self.cur.underline = true,
-                7 => self.cur.reversed = true,
-                22 => self.cur.bold = false,
-                23 => self.cur.italic = false,
-                24 => self.cur.underline = false,
-                27 => self.cur.reversed = false,
+                1 => self.current_span_state.bold = true,
+                3 => self.current_span_state.italic = true,
+                4 => self.current_span_state.underline = true,
+                7 => self.current_span_state.reversed = true,
+                22 => self.current_span_state.bold = false,
+                23 => self.current_span_state.italic = false,
+                24 => self.current_span_state.underline = false,
+                27 => self.current_span_state.reversed = false,
                 30..=37 => {
-                    self.cur.fg = Some(self.basic_color((p - 30) as u8, false));
+                    self.current_span_state.fg =
+                        Some(self.basic_color((p - 30) as u8, false));
                 }
                 40..=47 => {
-                    self.cur.bg = Some(self.basic_color((p - 40) as u8, false));
+                    self.current_span_state.bg =
+                        Some(self.basic_color((p - 40) as u8, false));
                 }
                 90..=97 => {
-                    self.cur.fg = Some(self.basic_color((p - 90) as u8, true));
+                    self.current_span_state.fg =
+                        Some(self.basic_color((p - 90) as u8, true));
                 }
                 100..=107 => {
-                    self.cur.bg = Some(self.basic_color((p - 100) as u8, true));
+                    self.current_span_state.bg =
+                        Some(self.basic_color((p - 100) as u8, true));
                 }
                 38 | 48 => {
                     let is_fg = p == 38;
@@ -184,9 +245,9 @@ impl AnsiToSpans {
                             let idx = params[i + 2] as u8;
                             let c = Color::Indexed(idx);
                             if is_fg {
-                                self.cur.fg = Some(c);
+                                self.current_span_state.fg = Some(c);
                             } else {
-                                self.cur.bg = Some(c);
+                                self.current_span_state.bg = Some(c);
                             }
                             i += 2;
                         } else if mode == 2 && i + 4 < params.len() {
@@ -195,30 +256,85 @@ impl AnsiToSpans {
                             let b = params[i + 4] as u8;
                             let c = Color::Rgb(r, g, b);
                             if is_fg {
-                                self.cur.fg = Some(c);
+                                self.current_span_state.fg = Some(c);
                             } else {
-                                self.cur.bg = Some(c);
+                                self.current_span_state.bg = Some(c);
                             }
                             i += 4;
                         }
                     }
                 }
                 39 => {
-                    self.cur.fg = None;
+                    self.current_span_state.fg = None;
                 }
                 49 => {
-                    self.cur.bg = None;
+                    self.current_span_state.bg = None;
                 }
                 _ => {}
             }
             i += 1;
         }
 
-        trace::trace!("parsed state: {:?}", self.cur);
+        trace::trace!("parsed state: {:?}", self.current_span_state);
     }
 
     fn reset_all(&mut self) {
-        self.cur.reset();
+        self.current_span_state.reset();
+    }
+
+    fn handle_cursor_movement(&mut self, action: char, params: &Params) {
+        fn params_sum(params: &Params) -> usize {
+            let mut sum = 0;
+            for param in params {
+                sum += param.iter().sum::<u16>() as usize;
+            }
+            sum
+        }
+
+        match action {
+            'A' => {
+                let movement = params_sum(params);
+                self.cursor.move_up(movement);
+            }
+            'B' => {
+                let movement = params_sum(params);
+                self.cursor.move_down(movement);
+            }
+            'C' => {
+                let movement = params_sum(params);
+                self.cursor.move_right(movement);
+            }
+            'D' => {
+                let movement = params_sum(params);
+                self.cursor.move_left(movement);
+            }
+            'E' => {
+                let movement = params_sum(params);
+                self.cursor.move_down(movement);
+                self.cursor.carriage_return();
+            }
+            'F' => {
+                let movement = params_sum(params);
+                self.cursor.move_up(movement);
+                self.cursor.carriage_return();
+            }
+            'G' => {
+                let new_pos = params_sum(params);
+                self.cursor.x = new_pos - 1; // translate to 0-based
+            }
+            // the following are unsupported for now
+            // TODO: implement when needed
+            // 'd' => {}
+            // 'H' => {}
+            // 'f' => {}
+            // 's' => {}
+            // 'u' => {}
+            c => {
+                trace::warn!(
+                    "unsupported movement action: {c}, if seen please contact the maintainers to add support"
+                );
+            }
+        }
     }
 
     fn basic_color(&self, idx: u8, bright: bool) -> Color {
@@ -242,17 +358,26 @@ impl AnsiToSpans {
             _ => Color::Reset,
         }
     }
+
+    fn carriage_return(&mut self) {
+        self.cursor.carriage_return();
+    }
 }
 
 impl Perform for AnsiToSpans {
     fn print(&mut self, c: char) {
-        self.buf.push(c);
+        self.char(c);
     }
 
     fn execute(&mut self, byte: u8) {
         match byte {
             b'\n' => self.newline(),
-            _ => {}
+            b'\r' => self.carriage_return(),
+            b => {
+                trace::warn!(
+                    "unsupported byte: {b:?}, if seen please contact the maintainers to add support"
+                );
+            }
         }
     }
 
@@ -266,12 +391,22 @@ impl Perform for AnsiToSpans {
         if ignore {
             return;
         }
-
-        if action == 'm' {
-            trace::trace!("parsed params: {:?}", params);
-            self.flush_buf();
-            for p in params.iter() {
-                self.handle_sgr(p);
+        match action {
+            'm' => {
+                trace::trace!("parsed params: {:?}", params);
+                self.flush_span_buf();
+                for p in params.iter() {
+                    self.handle_sgr(p);
+                }
+            }
+            'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'd' | 'H' | 'f' | 's'
+            | 'u' => {
+                self.handle_cursor_movement(action, params);
+            }
+            c => {
+                trace::warn!(
+                    "unsupported action: {c}, if seen please contact the maintainers to add support"
+                );
             }
         }
     }

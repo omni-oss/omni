@@ -7,5 +7,4 @@ pub mod constants;
 pub mod context;
 pub mod core;
 pub mod executor;
-pub mod tracer;
 pub mod utils;

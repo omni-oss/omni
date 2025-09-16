@@ -4,6 +4,7 @@ use std::path::Path;
 use criterion::{BenchmarkId, criterion_group, criterion_main};
 use omni_context::Context;
 use omni_test_utils::presets;
+use omni_tracing_subscriber::TracingConfig;
 use system_traits::impls::RealSys;
 
 async fn load_projects(ws_dir: &Path) {
@@ -14,6 +15,7 @@ async fn load_projects(ws_dir: &Path) {
         false,
         "workspace.omni.yaml",
         Some(vec![".env".into()]),
+        &TracingConfig::default(),
     )
     .expect("can't create context");
 

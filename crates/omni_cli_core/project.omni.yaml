@@ -17,3 +17,4 @@ dependencies:
   - dir_walker
   - clap_declspec
   - clap_utils
+  - omni_tracing_subscriber

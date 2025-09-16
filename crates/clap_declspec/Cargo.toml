@@ -8,7 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["trace/enabled", "dep:tracing"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 trace = { workspace = true, optional = true }

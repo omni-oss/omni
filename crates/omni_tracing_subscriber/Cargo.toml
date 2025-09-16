@@ -1,0 +1,18 @@
+[package]
+name = "omni_tracing_subscriber"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+
+[dependencies]
+tracing-core = { workspace = true }
+tracing-subscriber = { workspace = true }
+eyre = { workspace = true }
+atty = { workspace = true }
+strum = { workspace = true }
+parking_lot = { workspace = true }
+enumflags2 = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }

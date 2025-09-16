@@ -1128,6 +1128,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enumflags2"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1027f7680c853e056ebcec683615fb6fbbc07dbaa13b4d5d9442b146ded4ecef"
+dependencies = [
+ "enumflags2_derive",
+]
+
+[[package]]
+name = "enumflags2_derive"
+version = "0.7.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "env"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -2267,6 +2287,7 @@ dependencies = [
  "eyre",
  "omni_cli_core",
  "omni_test_utils",
+ "omni_tracing_subscriber",
  "shadow-rs",
  "system_traits",
  "tempfile",
@@ -2345,6 +2366,7 @@ dependencies = [
  "omni_hasher",
  "omni_process",
  "omni_task_executor",
+ "omni_tracing_subscriber",
  "omni_types",
  "owo-colors",
  "path-clean",
@@ -2446,6 +2468,7 @@ dependencies = [
  "omni_core",
  "omni_hasher",
  "omni_test_utils",
+ "omni_tracing_subscriber",
  "omni_types",
  "owo-colors",
  "path-clean",
@@ -2588,6 +2611,7 @@ dependencies = [
  "omni_hasher",
  "omni_process",
  "omni_term_ui",
+ "omni_tracing_subscriber",
  "owo-colors",
  "serde",
  "shlex",
@@ -2610,6 +2634,7 @@ dependencies = [
  "crossterm 0.27.0",
  "derive-new",
  "derive_builder",
+ "enumflags2",
  "eyre",
  "futures 0.3.31",
  "maps",
@@ -2644,6 +2669,21 @@ dependencies = [
  "thiserror 2.0.16",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_tracing_subscriber"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "atty",
+ "derive-new",
+ "derive_builder",
+ "enumflags2",
+ "eyre",
+ "parking_lot 0.12.4",
+ "strum 0.27.2",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -17,7 +17,7 @@ harness = false
 default = ["enable-tracing", "serde", "schemars"]
 schemars = ["dep:schemars"]
 serde = ["dep:serde"]
-enable-tracing = ["dep:trace", "trace/enabled", "dep:tracing"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 thiserror = { workspace = true }

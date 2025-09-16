@@ -7,7 +7,7 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["dep:tracing", "dep:trace", "trace/enabled"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 eyre = { workspace = true }
@@ -19,8 +19,8 @@ omni_core = { workspace = true }
 portable-pty = { workspace = true }
 terminal_size = { workspace = true }
 atty = { workspace = true }
-trace = { workspace = true, optional = true }
-tracing = { workspace = true, optional = true }
+trace = { workspace = true }
+tracing = { workspace = true }
 shlex = { workspace = true }
 omni_hasher = { workspace = true }
 system_traits = { workspace = true }
