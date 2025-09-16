@@ -14,5 +14,6 @@ default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
 
 [dependencies]
-trace = { workspace = true, optional = true }
+trace = { workspace = true }
+tracing = { workspace = true }
 {% endif %}

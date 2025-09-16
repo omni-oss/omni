@@ -8,7 +8,7 @@ repository.workspace = true
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["trace/enabled", "dep:tracing"]
+enable-tracing = ["dep:tracing"]
 
 [dependencies]
 eyre = { workspace = true }

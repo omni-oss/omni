@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 pub(crate) use crate::env_loader::EnvLoader;
 use env_loader::EnvLoaderError;
 use omni_cache::impls::LocalTaskExecutionCacheStore;
+use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use trace::Level;
@@ -33,6 +34,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     inherit_env_vars: bool,
     workspace: WorkspaceConfiguration,
     root_dir: PathBuf,
+    tracing_config: TracingConfig,
     sys: TSys,
 }
 
@@ -46,6 +48,7 @@ impl<TSys: ContextSys> Context<TSys> {
         inherit_env_vars: bool,
         root_marker: &str,
         override_env_files: Option<Vec<PathBuf>>,
+        tracing_config: &TracingConfig,
     ) -> Result<Self, ContextError> {
         let env = env.into();
         let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
@@ -58,11 +61,16 @@ impl<TSys: ContextSys> Context<TSys> {
             root_dir: root_dir.to_path_buf(),
             env_root_dir_marker: root_marker.to_string(),
             sys,
+            tracing_config: tracing_config.clone(),
         })
     }
 }
 
 impl<TSys: ContextSys> Context<TSys> {
+    pub fn tracing_config(&self) -> &TracingConfig {
+        &self.tracing_config
+    }
+
     pub fn sys(&self) -> &TSys {
         &self.sys
     }
@@ -333,6 +341,7 @@ mod tests {
                 ".env.{ENV}".into(),
                 ".env.{ENV}.local".into(),
             ]),
+            &TracingConfig::default(),
         )
         .expect("Can't create context")
     }

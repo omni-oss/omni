@@ -17,7 +17,7 @@ full = ["ignore", "memory", "glob"]
 ignore = ["dep:ignore"]
 memory = []
 glob = ["ignore", "dep:globset"]
-enable-tracing = ["dep:tracing", "dep:trace", "trace/enabled"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 ignore = { workspace = true, optional = true }

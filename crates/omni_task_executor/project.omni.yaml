@@ -11,6 +11,7 @@ dependencies:
   - omni_hasher
   - omni_cache
   - omni_term_ui
+  - omni_tracing_subscriber
   - system_traits
   - maps
   - config_utils

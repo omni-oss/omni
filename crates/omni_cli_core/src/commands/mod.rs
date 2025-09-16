@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
+use clap_utils::EnumValueAdapter;
 use completion::CompletionCommand;
 use config::ConfigCommand;
 use env::EnvCommand;
 use exec::ExecCommand;
+use omni_tracing_subscriber::TraceLevel;
 use run::RunCommand;
 mod common_args;
 mod utils;
@@ -14,7 +16,6 @@ use crate::{
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand, hash::HashCommand,
     },
-    tracer::TraceLevel,
 };
 
 pub mod cache;
@@ -57,7 +58,7 @@ pub struct CliArgs {
         default_value = "info",
         env = "OMNI_STDOUT_TRACE_LEVEL"
     )]
-    pub stdout_trace_level: TraceLevel,
+    pub stdout_trace_level: EnumValueAdapter<TraceLevel>,
 
     #[arg(
         long,
@@ -84,7 +85,7 @@ pub struct CliArgs {
         default_value = "none",
         env = "OMNI_FILE_TRACE_LEVEL"
     )]
-    pub file_trace_level: TraceLevel,
+    pub file_trace_level: EnumValueAdapter<TraceLevel>,
 
     #[arg(
         short = 'r',
@@ -119,10 +120,10 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            stdout_trace_level: TraceLevel::None,
+            stdout_trace_level: EnumValueAdapter::new(TraceLevel::None),
             stderr_trace: false,
             file_trace_output: None,
-            file_trace_level: TraceLevel::None,
+            file_trace_level: EnumValueAdapter::new(TraceLevel::None),
             env_root_dir_marker: None,
             env_file: None,
             env: None,

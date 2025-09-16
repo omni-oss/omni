@@ -154,6 +154,8 @@ omni_term_ui = { path = "./crates/omni_term_ui" }
 clap_utils = { path = "./crates/clap_utils" }
 vte = { version = "^0.15.0" }
 unicode-width = "=0.2.0" # hard requirement for ratatui
+enumflags2 = { version = "^0.7.12" }
+omni_tracing_subscriber = { path = "./crates/omni_tracing_subscriber" }
 
 [profile.release]
 incremental = true

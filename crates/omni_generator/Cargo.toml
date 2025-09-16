@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["dep:trace", "trace/enabled", "dep:tracing"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 thiserror = { workspace = true }

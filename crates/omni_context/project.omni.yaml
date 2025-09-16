@@ -10,6 +10,7 @@ dependencies:
   - omni_hasher
   - omni_cache
   - omni_test_utils
+  - omni_tracing_subscriber
   - trace
   - system_traits
   - env

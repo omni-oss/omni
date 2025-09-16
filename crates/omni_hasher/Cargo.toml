@@ -7,7 +7,7 @@ repository.workspace = true
 
 [features]
 default = ["blake3", "enable-tracing"]
-enable-tracing = ["dep:tracing", "dep:trace", "trace/enabled"]
+enable-tracing = ["trace/enabled"]
 blake3 = ["dep:blake3"]
 
 [dependencies]

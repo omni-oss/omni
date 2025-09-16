@@ -9,17 +9,18 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 dhat-heap = ["dep:dhat"]
-enable-tracing = ["trace/enabled", "dep:trace", "dep:tracing-subscriber"]
+enable-tracing = ["trace/enabled"]
 
 [dependencies]
 dhat = { workspace = true, optional = true }
 omni_cli_core = { workspace = true }
-trace = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true }
+trace = { workspace = true }
+tracing-subscriber = { workspace = true }
 eyre = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 system_traits = { workspace = true }
+omni_tracing_subscriber = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

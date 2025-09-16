@@ -11,6 +11,7 @@ use env_loader::EnvLoaderError;
 use omni_configurations::{MetaConfiguration, WorkspaceConfiguration};
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_hasher::impls::DefaultHash;
+use omni_tracing_subscriber::TracingConfig;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::impls::RealSys;
 
@@ -30,6 +31,10 @@ pub struct LoadedContext<TSys: ContextSys = RealSys> {
 }
 
 impl<TSys: ContextSys> LoadedContext<TSys> {
+    pub fn tracing_config(&self) -> &TracingConfig {
+        self.unloaded_context.tracing_config()
+    }
+
     pub fn sys(&self) -> &TSys {
         self.unloaded_context.sys()
     }
