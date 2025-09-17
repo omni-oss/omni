@@ -16,10 +16,10 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 fn init_tracing(
     config: &omni_tracing_subscriber::TracingConfig,
 ) -> eyre::Result<()> {
-    use omni_tracing_subscriber::TracerSubscriber;
+    use omni_tracing_subscriber::TracingSubscriber;
     use tracing_subscriber::util::SubscriberInitExt;
 
-    TracerSubscriber::new(config, vec![])?.try_init()?;
+    TracingSubscriber::new(config, vec![])?.try_init()?;
 
     Ok(())
 }

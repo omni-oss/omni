@@ -6,8 +6,8 @@ describe("Rpc to Rpc Integration", () => {
     const rpcs: ReturnType<typeof createRpcs>[] = [];
 
     type Rpcs = {
-        rpc1: BridgeRpc;
-        rpc2: BridgeRpc;
+        rpc1: BridgeRpc<string[]>;
+        rpc2: BridgeRpc<string[]>;
         start: () => Promise<void>;
         stop: () => Promise<void>;
     };

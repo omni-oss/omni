@@ -52,9 +52,7 @@ describe("BridgeRpc", () => {
 
     it("should be able to send a request", async () => {
         const t = mockTransport();
-
         const id = crypto.randomUUID();
-
         const expectedResponse = { testResponseField: "test" };
 
         const rpc = new BridgeRpcBuilder(t).build();
@@ -77,9 +75,7 @@ describe("BridgeRpc", () => {
 
     it("should be able to handle a request", async () => {
         const t = mockTransport();
-
         const handler = vi.fn();
-
         const responseData = { testResponseField: "test" };
 
         handler.mockImplementation(async (data) => {
@@ -91,9 +87,7 @@ describe("BridgeRpc", () => {
             .build();
 
         const id = crypto.randomUUID();
-
         const requestData = { testRequestField: "test" };
-
         const requestBytes = encode(fReq(id, "test/path", requestData));
 
         await rpc.start();
@@ -101,5 +95,7 @@ describe("BridgeRpc", () => {
         for (const cb of t.onReceiveHandlers) {
             cb(requestBytes);
         }
+
+        expect(handler).toBeCalledWith(requestData);
     });
 });
