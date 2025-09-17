@@ -17,12 +17,17 @@ struct AttributeState {
     italic: bool,
     underline: bool,
     reversed: bool,
+    dim: bool,
+    hidden: bool,
+    crossed_out: bool,
+    blink: bool,
 }
 
 impl AttributeState {
     fn reset(&mut self) {
         *self = AttributeState::default();
     }
+
     fn to_style(&self) -> Style {
         let mut s = Style::default();
         if let Some(fg) = self.fg {
@@ -47,6 +52,18 @@ impl AttributeState {
         if self.reversed {
             s = s.reversed();
         }
+        if self.dim {
+            s = s.dim();
+        }
+        if self.hidden {
+            s = s.hidden();
+        }
+        if self.crossed_out {
+            s = s.crossed_out();
+        }
+        if self.blink {
+            s = s.slow_blink();
+        }
         s
     }
 }
@@ -54,7 +71,7 @@ impl AttributeState {
 #[derive(Default)]
 pub struct AnsiParser {
     parser: Parser,
-    performer: AnsiToSpans,
+    performer: AnsiToGrid,
 }
 
 impl AnsiParser {
@@ -63,7 +80,7 @@ impl AnsiParser {
     pub fn new(flags: Flags) -> Self {
         Self {
             parser: Parser::new(),
-            performer: AnsiToSpans::new(flags),
+            performer: AnsiToGrid::new(flags),
         }
     }
 
@@ -109,6 +126,10 @@ impl Cursor {
         self.y += 1;
     }
 
+    fn nextchar(&mut self) {
+        self.x += 1;
+    }
+
     fn move_up(&mut self, movement: usize) {
         self.y = self.y.saturating_sub(movement);
     }
@@ -131,76 +152,94 @@ impl Cursor {
 }
 
 #[derive(Clone, Default, Debug)]
-struct AnsiToSpans {
+struct Cell {
+    content: char,
+    style: Style,
+}
+
+#[derive(Clone, Default, Debug)]
+struct AnsiToGrid {
+    grid: Vec<Vec<Cell>>,
     current_span_state: AttributeState,
-    current_span_buf: String,
-    current_line_spans: Vec<Span<'static>>,
-    lines: Vec<Line<'static>>,
     cursor: Cursor,
     flags: Flags,
 }
 
-impl AnsiToSpans {
+impl AnsiToGrid {
     fn new(flags: Flags) -> Self {
+        let mut grid = vec![Vec::new()];
+        let default_cell = Cell::default();
+        grid[0].push(default_cell);
         Self {
+            grid,
             current_span_state: AttributeState::default(),
-            current_span_buf: String::new(),
-            current_line_spans: Vec::new(),
-            lines: Vec::new(),
             cursor: Cursor::default(),
             flags,
         }
     }
 
-    fn flush_span_buf(&mut self) {
-        if !self.current_span_buf.is_empty() {
-            let style = self.current_span_state.to_style();
-            let owned = Cow::Owned(self.current_span_buf.clone());
-            self.current_line_spans.push(Span::styled(owned, style));
-            self.current_span_buf.clear();
+    fn ensure_cursor_in_bounds(&mut self) {
+        if self.cursor.y >= self.grid.len() {
+            self.grid.resize_with(self.cursor.y + 1, || Vec::new());
         }
+        let line_len = self.grid[self.cursor.y].len();
+        if self.cursor.x >= line_len {
+            self.grid[self.cursor.y].resize_with(self.cursor.x + 1, || Cell {
+                content: ' ',
+                style: Style::default(),
+            });
+        }
+    }
+
+    fn print_char(&mut self, c: char) {
+        self.ensure_cursor_in_bounds();
+        let style = self.current_span_state.to_style();
+        self.grid[self.cursor.y][self.cursor.x] = Cell { content: c, style };
+        self.cursor.nextchar();
     }
 
     fn newline(&mut self) {
-        self.flush_span_buf();
-        if !self.current_line_spans.is_empty() {
-            let s = Line::from(self.current_line_spans.clone());
-            self.lines.push(s);
-            self.current_line_spans.clear();
-        } else {
-            self.lines.push(Line::from(vec![Span::raw("")]));
-        }
         self.cursor.nextline(&self.flags);
-    }
-
-    fn char(&mut self, c: char) {
-        self.current_span_buf.push(c);
-        self.cursor.x += 1;
+        self.ensure_cursor_in_bounds();
     }
 
     fn snapshot(&self) -> Vec<Line<'static>> {
-        // Return current lines + in-progress line
-        let mut lines = self.lines.clone();
-        if !self.current_span_buf.is_empty()
-            || !self.current_line_spans.is_empty()
-        {
-            let mut temp_spans = self.current_line_spans.clone();
-            if !self.current_span_buf.is_empty() {
-                let style = self.current_span_state.to_style();
-                let owned = Cow::Owned(self.current_span_buf.clone());
-                temp_spans.push(Span::styled(owned, style));
+        let mut lines = Vec::new();
+        for row in &self.grid {
+            let mut spans = Vec::new();
+            let mut current_span_content = String::new();
+            let mut current_span_style = None;
+
+            for cell in row {
+                let cell_style = Some(cell.style);
+                if current_span_style.is_none() {
+                    current_span_style = cell_style;
+                }
+                if current_span_style != cell_style {
+                    if !current_span_content.is_empty() {
+                        spans.push(Span::styled(
+                            Cow::Owned(current_span_content.clone()),
+                            current_span_style.unwrap_or_default(),
+                        ));
+                    }
+                    current_span_content.clear();
+                    current_span_style = cell_style;
+                }
+                current_span_content.push(cell.content);
             }
-            lines.push(Line::from(temp_spans));
+            if !current_span_content.is_empty() {
+                spans.push(Span::styled(
+                    Cow::Owned(current_span_content),
+                    current_span_style.unwrap_or_default(),
+                ));
+            }
+            lines.push(Line::from(spans));
         }
         lines
     }
 
-    fn finish(mut self) -> Vec<Line<'static>> {
-        self.flush_span_buf();
-        if !self.current_line_spans.is_empty() {
-            self.lines.push(Line::from(self.current_line_spans));
-        }
-        self.lines
+    fn finish(self) -> Vec<Line<'static>> {
+        self.snapshot()
     }
 
     fn handle_sgr(&mut self, params: &[u16]) {
@@ -214,12 +253,15 @@ impl AnsiToSpans {
             match p {
                 0 => self.reset_all(),
                 1 => self.current_span_state.bold = true,
+                2 => self.current_span_state.dim = true,
                 3 => self.current_span_state.italic = true,
                 4 => self.current_span_state.underline = true,
+                5 => self.current_span_state.blink = true,
                 7 => self.current_span_state.reversed = true,
                 22 => self.current_span_state.bold = false,
                 23 => self.current_span_state.italic = false,
                 24 => self.current_span_state.underline = false,
+                25 => self.current_span_state.blink = false,
                 27 => self.current_span_state.reversed = false,
                 30..=37 => {
                     self.current_span_state.fg =
@@ -270,16 +312,61 @@ impl AnsiToSpans {
                 49 => {
                     self.current_span_state.bg = None;
                 }
-                _ => {}
+                u => {
+                    trace::warn!("unknown escape sequence: {}", u);
+                }
             }
             i += 1;
         }
-
-        trace::trace!("parsed state: {:?}", self.current_span_state);
     }
 
     fn reset_all(&mut self) {
         self.current_span_state.reset();
+    }
+
+    fn erase_in_line(&mut self, erase_opt: EraseFrom) {
+        self.ensure_cursor_in_bounds();
+        let line = &mut self.grid[self.cursor.y];
+        match erase_opt {
+            EraseFrom::CursorToEnd => {
+                for i in self.cursor.x..line.len() {
+                    line[i] = Cell {
+                        content: ' ',
+                        style: Style::default(),
+                    };
+                }
+            }
+            EraseFrom::StartToCursor => {
+                for i in 0..self.cursor.x {
+                    line[i] = Cell {
+                        content: ' ',
+                        style: Style::default(),
+                    };
+                }
+            }
+        }
+    }
+
+    fn erase_line(&mut self, params: &Params) {
+        for param in params {
+            for i in param {
+                match i {
+                    0 => {
+                        self.erase_in_line(EraseFrom::CursorToEnd);
+                    }
+                    1 => {
+                        self.erase_in_line(EraseFrom::StartToCursor);
+                    }
+                    2 => {
+                        self.grid[self.cursor.y].clear();
+                        self.cursor.x = 0;
+                    }
+                    _ => {
+                        // trace::warn!("unsupported erase line param: {i}");
+                    }
+                }
+            }
+        }
     }
 
     fn handle_cursor_movement(&mut self, action: char, params: &Params) {
@@ -325,7 +412,8 @@ impl AnsiToSpans {
             // the following are unsupported for now
             // TODO: implement when needed
             // 'd' => {}
-            // 'H' => {}
+            // 'H' => {
+            // }
             // 'f' => {}
             // 's' => {}
             // 'u' => {}
@@ -364,9 +452,15 @@ impl AnsiToSpans {
     }
 }
 
-impl Perform for AnsiToSpans {
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+enum EraseFrom {
+    CursorToEnd,
+    StartToCursor,
+}
+
+impl Perform for AnsiToGrid {
     fn print(&mut self, c: char) {
-        self.char(c);
+        self.print_char(c);
     }
 
     fn execute(&mut self, byte: u8) {
@@ -393,19 +487,26 @@ impl Perform for AnsiToSpans {
         }
         match action {
             'm' => {
-                trace::trace!("parsed params: {:?}", params);
-                self.flush_span_buf();
-                for p in params.iter() {
-                    self.handle_sgr(p);
+                for param in params {
+                    self.handle_sgr(param);
                 }
             }
             'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'd' | 'H' | 'f' | 's'
             | 'u' => {
                 self.handle_cursor_movement(action, params);
             }
+            'K' => {
+                self.erase_line(params);
+            }
+            'h' => {
+                // explicitly ignore h
+            }
+            'l' => {
+                // explicitly ignore l
+            }
             c => {
                 trace::warn!(
-                    "unsupported action: {c}, if seen please contact the maintainers to add support"
+                    "unsupported CSI action: {c} (params = {params:?}), if seen please contact the maintainers to add support"
                 );
             }
         }

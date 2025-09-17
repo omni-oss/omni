@@ -60,45 +60,8 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         let pipeline = ExecutionPipeline::new(plan, self.context, &self.config);
 
         let mut results = if self.config.ui().is_tui() {
-            let stdout_trace_level =
-                self.context.tracing_config().stdout_trace_level;
-            let config = TracingConfig {
-                stderr_trace_enabled: false,
-                stdout_trace_level: TraceLevel::None,
-                ..self.context.tracing_config().clone()
-            };
-
-            let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);
-
-            let temp = self.context.trace_dir().join("temp.log");
-            let f_temp = temp.clone();
-            let file_write_task = tokio::task::spawn_blocking(move || {
-                let mut file = std::fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .open(f_temp)?;
-
-                for chunk in rx {
-                    std::io::copy(&mut chunk.take(u64::MAX), &mut file)?;
-                }
-                Ok::<(), std::io::Error>(())
-            });
-
-            let tracer = InMemoryTracer::new(tx);
-
-            let custom_output = CustomOutput::new_instance(
-                CustomOutputConfig {
-                    trace_level: stdout_trace_level,
-                    output_type: OutputType::new_text(FormatOptions::default()),
-                },
-                tracer,
-            );
-
-            let sub = omni_tracing_subscriber::TracerSubscriber::new(
-                &config,
-                vec![custom_output],
-            )?;
+            let (temp, file_write_task, sub) =
+                self.prepare_in_memory_subscriber()?;
 
             let result = pipeline.run().with_subscriber(sub).await?;
 
@@ -138,6 +101,53 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         trace::info!("Overrall execution time: {:?}", start_time.elapsed());
 
         Ok(results)
+    }
+
+    fn prepare_in_memory_subscriber(
+        &self,
+    ) -> Result<
+        (
+            std::path::PathBuf,
+            tokio::task::JoinHandle<Result<(), std::io::Error>>,
+            omni_tracing_subscriber::TracingSubscriber,
+        ),
+        TaskExecutorError,
+    > {
+        let stdout_trace_level =
+            self.context.tracing_config().stdout_trace_level;
+        let config = TracingConfig {
+            stderr_trace_enabled: false,
+            stdout_trace_level: TraceLevel::None,
+            ..self.context.tracing_config().clone()
+        };
+        let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);
+        let temp = self.context.trace_dir().join("temp.log");
+        let f_temp = temp.clone();
+        let file_write_task = tokio::task::spawn_blocking(move || {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(f_temp)?;
+
+            for chunk in rx {
+                std::io::copy(&mut chunk.take(u64::MAX), &mut file)?;
+            }
+            Ok::<(), std::io::Error>(())
+        });
+        let tracer = InMemoryTracer::new(tx);
+        let custom_output = CustomOutput::new_instance(
+            CustomOutputConfig {
+                trace_level: stdout_trace_level,
+                output_type: OutputType::new_text(FormatOptions::default()),
+            },
+            tracer,
+        );
+        let sub = omni_tracing_subscriber::TracingSubscriber::new(
+            &config,
+            vec![custom_output],
+        )?;
+        Ok((temp, file_write_task, sub))
     }
 }
 

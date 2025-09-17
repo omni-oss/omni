@@ -28,8 +28,8 @@ use crate::custom_output::CustomOutputFactory;
 use crate::custom_output::FormatOption;
 use crate::custom_output::FormatOptions;
 
-pub fn noop_subscriber() -> TracerSubscriber {
-    TracerSubscriber::new(
+pub fn noop_subscriber() -> TracingSubscriber {
+    TracingSubscriber::new(
         &TracingConfig {
             file_path: None,
             file_trace_level: TraceLevel::None,
@@ -41,11 +41,11 @@ pub fn noop_subscriber() -> TracerSubscriber {
     .unwrap()
 }
 
-pub struct TracerSubscriber {
+pub struct TracingSubscriber {
     inner: Box<dyn Subscriber + Send + Sync>,
 }
 
-impl TracerSubscriber {
+impl TracingSubscriber {
     pub fn new(
         config: &TracingConfig,
         custom_outputs: Vec<CustomOutput>,
@@ -200,7 +200,7 @@ where
     }
 }
 
-impl Subscriber for TracerSubscriber {
+impl Subscriber for TracingSubscriber {
     #[inline(always)]
     fn enabled(&self, metadata: &tracing_core::Metadata<'_>) -> bool {
         self.inner.enabled(metadata)
