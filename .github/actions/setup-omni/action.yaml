@@ -16,7 +16,7 @@ inputs:
   version:
     description: "Version of Omni to install"
     required: false
-    default: "v0.4.15" # most stable version
+    default: "v0.4.16" # most stable version
 
 runs:
   using: "composite"
