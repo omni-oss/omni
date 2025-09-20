@@ -362,7 +362,7 @@ impl AnsiToGrid {
                         self.cursor.x = 0;
                     }
                     _ => {
-                        // trace::warn!("unsupported erase line param: {i}");
+                        trace::warn!("unsupported erase line param: {i}");
                     }
                 }
             }
