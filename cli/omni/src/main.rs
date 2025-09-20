@@ -1,3 +1,3 @@
-fn main() -> eyre::Result<()> {
+fn main() {
     omni::main()
 }
