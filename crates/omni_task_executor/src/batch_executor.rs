@@ -73,16 +73,19 @@ where
 
     fn should_skip_task(
         &self,
-        node: &TaskExecutionNode,
+        task_ctx: &TaskContext<'_>,
         overall_results: &UnorderedMap<String, TaskExecutionResult>,
-    ) -> bool {
+    ) -> Option<String> {
         if self.on_failure.is_continue() {
-            return false;
+            return None;
         }
 
-        let fname = node.full_task_name();
-
-        overall_results.get(fname).map_or(false, |r| r.is_failure())
+        task_ctx
+            .node
+            .dependencies()
+            .iter()
+            .find(|d| overall_results.get(*d).is_some_and(|r| r.is_failure()))
+            .cloned()
     }
 
     async fn replay_cached_results(
@@ -219,11 +222,8 @@ where
                 continue;
             }
 
-            if self.should_skip_task(task_ctx.node, overall_results)
-                && let Some(error) =
-                    task_ctx.node.dependencies().iter().find(|d| {
-                        overall_results.get(*d).is_some_and(|r| r.is_failure())
-                    })
+            if let Some(error) =
+                self.should_skip_task(task_ctx, overall_results)
             {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
