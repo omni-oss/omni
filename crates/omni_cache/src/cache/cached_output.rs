@@ -33,6 +33,9 @@ pub struct CachedTaskExecution {
     pub execution_hash: DefaultHash,
 
     #[new(into)]
+    pub dependency_hashes: Vec<DefaultHash>,
+
+    #[new(into)]
     /// Location of the cached output
     pub logs_path: Option<PathBuf>,
 

@@ -1,4 +1,6 @@
+use bytesize::ByteSize;
 use clap::Subcommand;
+use omni_cache::TaskExecutionCacheStore;
 
 use crate::context::Context;
 
@@ -14,12 +16,32 @@ pub enum CacheSubcommands {
     #[command(about = "Print the cache directory")]
     Dir,
     #[command(about = "Show statistics about the cache")]
-    Stats,
+    Stats {
+        #[command(flatten)]
+        args: StatsArgs,
+    },
     #[command(about = "Prune the cache")]
     Prune {
         #[command(flatten)]
         args: PruneArgs,
     },
+}
+
+#[derive(clap::Args)]
+pub struct StatsArgs {
+    #[arg(
+        long,
+        short,
+        help = "Filter the cache entries by project name, accepts glob patterns"
+    )]
+    project: Option<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Filter the cache entries by task name, accepts glob patterns"
+    )]
+    task: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -79,8 +101,8 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
         CacheSubcommands::Dir => {
             println!("{}", ctx.cache_dir().display());
         }
-        CacheSubcommands::Stats => {
-            stats(ctx).await?;
+        CacheSubcommands::Stats { args } => {
+            stats(ctx, args).await?;
         }
         CacheSubcommands::Prune { args } => {
             prune(ctx, args).await?;
@@ -90,7 +112,74 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn stats(_ctx: &Context) -> eyre::Result<()> {
+async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
+    let cache_store = ctx.create_cache_store();
+    let stats = cache_store
+        .get_stats(args.project.as_deref(), args.task.as_deref())
+        .await?;
+
+    for (i, project) in stats.projects.iter().enumerate() {
+        println!("Project: {}", project.project_name);
+        println!("  Tasks:");
+        if project.tasks.is_empty() {
+            println!("    (No tasks)");
+        } else {
+            for task in &project.tasks {
+                println!("    - Task: {}", task.task_name);
+                println!(
+                    "      Created: {}",
+                    task.created_timestamp
+                        .format(&time::format_description::well_known::Rfc3339)
+                        .unwrap()
+                );
+
+                if let Some(last_used) = task.last_used_timestamp {
+                    println!(
+                        "      Last Used: {}",
+                        last_used
+                            .format(
+                                &time::format_description::well_known::Rfc3339
+                            )
+                            .unwrap()
+                    );
+                } else {
+                    println!("      Last Used: N/A");
+                }
+                let cached_files_total = task
+                    .cached_files
+                    .iter()
+                    .map(|f| f.size.as_u64())
+                    .sum::<u64>();
+                let meta_total = task.meta_file.size.as_u64();
+                let log_total =
+                    task.log_file.as_ref().map_or(0, |f| f.size.as_u64());
+                let total =
+                    ByteSize::b(cached_files_total + meta_total + log_total);
+
+                println!("      File Sizes: {total}");
+                if let Some(log_file) = &task.log_file {
+                    println!("        Log: {}", log_file.size);
+                } else {
+                    println!("        Log: N/A");
+                }
+                println!("        Meta: {}", task.meta_file.size);
+
+                if task.cached_files.is_empty() {
+                    println!("        Cached Files: N/A",);
+                } else {
+                    println!(
+                        "        Cached Files: {}",
+                        ByteSize::b(cached_files_total)
+                    );
+                }
+            }
+        }
+
+        if i != stats.projects.len() - 1 {
+            println!();
+        }
+    }
+
     Ok(())
 }
 

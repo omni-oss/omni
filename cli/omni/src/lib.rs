@@ -83,7 +83,7 @@ pub async fn run(
 }
 
 #[tokio::main(flavor = "multi_thread")]
-pub async fn main() {
+pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     let result: eyre::Result<()> = try {
@@ -107,10 +107,14 @@ pub async fn main() {
         run(&cli.subcommand, &cli.args, &tracing_config).await?
     };
 
-    if let Err(err) = result {
-        eprintln!("{err}");
-        exit(ExitCode::FAILURE);
+    if cfg!(debug_assertions) {
+        result
     } else {
-        exit(ExitCode::SUCCESS);
+        if let Err(err) = result {
+            eprintln!("{err}");
+            exit(ExitCode::FAILURE);
+        } else {
+            exit(ExitCode::SUCCESS);
+        }
     }
 }

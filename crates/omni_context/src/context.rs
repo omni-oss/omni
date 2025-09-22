@@ -187,7 +187,7 @@ impl<TSys: ContextSys> Context<TSys> {
         env_loader
     }
 
-    pub fn create_local_cache_store(&self) -> LocalTaskExecutionCacheStore {
+    pub fn create_cache_store(&self) -> LocalTaskExecutionCacheStore {
         LocalTaskExecutionCacheStore::new(
             self.cache_dir(),
             self.root_dir.clone(),
