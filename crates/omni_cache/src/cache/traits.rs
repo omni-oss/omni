@@ -2,7 +2,7 @@ use std::error::Error;
 
 use crate::{
     CacheStats, CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
-    TaskExecutionInfo,
+    PruneCacheArgs, PrunedCacheEntry, TaskExecutionInfo,
 };
 
 #[async_trait::async_trait]
@@ -39,9 +39,14 @@ pub trait TaskExecutionCacheStore: Send + Sync {
         task_infos: &[TaskExecutionInfo],
     ) -> Result<Vec<Option<CachedTaskExecution>>, Self::Error>;
 
-    async fn invalidate_caches(
+    async fn prune_caches(
         &self,
-        project_name: &str,
+        args: &PruneCacheArgs,
+    ) -> Result<Vec<PrunedCacheEntry>, Self::Error>;
+
+    async fn force_prune_caches(
+        &self,
+        entries: &[PrunedCacheEntry],
     ) -> Result<(), Self::Error>;
 
     async fn get_stats(
