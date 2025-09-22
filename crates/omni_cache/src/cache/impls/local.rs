@@ -425,7 +425,9 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     let mut files_set = JoinSet::new();
 
                     for file in cache_meta.files {
-                        files_set.spawn(load_stats(file.cached_path));
+                        files_set.spawn(load_stats(
+                            entry.path().join(file.cached_path),
+                        ));
                     }
 
                     let (meta_file, log_file) =
@@ -1370,7 +1372,7 @@ mod tests {
                 ..Default::default()
             })
             .await
-            .expect("failed to invalidate caches");
+            .expect("failed to prune caches");
 
         let cached_output = cache
             .get(task.get())
