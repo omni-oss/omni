@@ -1,6 +1,11 @@
+use std::{collections::HashMap, time::Duration};
+
+use base64::Engine;
 use bytesize::ByteSize;
 use clap::Subcommand;
-use omni_cache::TaskExecutionCacheStore;
+use itertools::Itertools;
+use omni_cache::{PruneCacheArgs, PruneStaleOnly, TaskExecutionCacheStore};
+use owo_colors::OwoColorize;
 
 use crate::context::Context;
 
@@ -44,18 +49,8 @@ pub struct StatsArgs {
     task: Option<String>,
 }
 
-#[derive(clap::Args)]
+#[derive(clap::Args, Debug)]
 pub struct PruneArgs {
-    #[arg(
-        long,
-        short,
-        default_value = "false",
-        help = "Clear all cache entries, conflicts with filter flags",
-        action = clap::ArgAction::SetTrue,
-        conflicts_with_all = ["stale_only", "meta", "project", "task"],
-    )]
-    all: bool,
-
     #[arg(
         long,
         short,
@@ -66,11 +61,19 @@ pub struct PruneArgs {
     stale_only: bool,
 
     #[arg(
-        short,
         long,
-        help = "Add filter to clear only cache entries belonging to a project or task that matches the given meta"
+        short,
+        help = "Add filter to clear only stale cache entries",
+        value_parser = humantime::parse_duration
     )]
-    meta: Option<String>,
+    older_than: Option<Duration>,
+
+    #[arg(
+        long,
+        short,
+        help = "Add filter to clear only cache entries that are larger than the given size"
+    )]
+    larger_than: Option<ByteSize>,
 
     #[arg(
         long,
@@ -90,8 +93,17 @@ pub struct PruneArgs {
         long,
         short,
         action = clap::ArgAction::SetTrue,
+        help = "Prune the cache without prompting for confirmation"
+    )]
+    yes: bool,
+
+    #[arg(
+        long,
+        short,
+        action = clap::ArgAction::SetTrue,
         default_value_t = false,
         help = "Show the cache entries that would be deleted",
+        conflicts_with = "yes"
     )]
     dry_run: bool,
 }
@@ -145,18 +157,8 @@ async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
                 } else {
                     println!("      Last Used: N/A");
                 }
-                let cached_files_total = task
-                    .cached_files
-                    .iter()
-                    .map(|f| f.size.as_u64())
-                    .sum::<u64>();
-                let meta_total = task.meta_file.size.as_u64();
-                let log_total =
-                    task.log_file.as_ref().map_or(0, |f| f.size.as_u64());
-                let total =
-                    ByteSize::b(cached_files_total + meta_total + log_total);
 
-                println!("      File Sizes: {total}");
+                println!("      File Sizes: {}", task.total_size);
                 if let Some(log_file) = &task.log_file {
                     println!("        Log: {}", log_file.size);
                 } else {
@@ -165,11 +167,11 @@ async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
                 println!("        Meta: {}", task.meta_file.size);
 
                 if task.cached_files.is_empty() {
-                    println!("        Cached Files: N/A",);
+                    println!("        Cached Files: N/A");
                 } else {
                     println!(
                         "        Cached Files: {}",
-                        ByteSize::b(cached_files_total)
+                        task.cached_files_total_size
                     );
                 }
             }
@@ -183,6 +185,117 @@ async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn prune(_ctx: &Context, _args: &PruneArgs) -> eyre::Result<()> {
+async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
+    trace::debug!(?cli_args, "prune");
+    let cache_store = ctx.create_cache_store();
+
+    let args = PruneCacheArgs::new(
+        if cli_args.dry_run {
+            true
+        } else {
+            !cli_args.yes
+        },
+        if cli_args.stale_only {
+            // loaded_context.get_cache_info(project_name, task_name);
+            PruneStaleOnly::On {}
+        } else {
+            PruneStaleOnly::Off
+        },
+        cli_args.older_than,
+        cli_args.project.as_deref(),
+        cli_args.task.as_deref(),
+        cli_args.larger_than,
+    );
+    let pruned = cache_store.prune_caches(&args).await?;
+    if pruned.is_empty() {
+        trace::warn!("No cache entries matched the given filters");
+    } else {
+        if !cli_args.dry_run {
+            trace::info!("--- Cache Entries ---");
+        }
+
+        let pruned_count = pruned.len();
+        let grouped = pruned
+            .iter()
+            .into_group_map_by(|p| p.project_name.to_string())
+            .into_iter()
+            .map(|(project_name, entries)| {
+                let entries = entries.into_iter().into_group_map_by(|e| {
+                    format!("{}#{}", e.project_name, e.task_name)
+                });
+
+                (project_name, entries)
+            })
+            .collect::<HashMap<String, HashMap<String, _>>>();
+
+        let project_count = grouped.len();
+        for (project_name, entries) in grouped {
+            println!("Project: {}", project_name);
+            for (task_name, entries) in entries {
+                let task_name =
+                    task_name.split("#").nth(1).expect("should be some");
+                println!("  Task: {}", task_name);
+                for entry in entries {
+                    let hash = base64::engine::general_purpose::STANDARD
+                        .encode(&entry.execution_hash);
+                    println!(
+                        "   {} {}({})",
+                        hash,
+                        (match entry.stale {
+                            omni_cache::StaleStatus::Unknown => {
+                                ""
+                            }
+                            omni_cache::StaleStatus::Stale => {
+                                "(stale) "
+                            }
+                            omni_cache::StaleStatus::Fresh => {
+                                "(fresh) "
+                            }
+                        })
+                        .to_string(),
+                        entry.size
+                    );
+                }
+            }
+
+            println!();
+        }
+
+        let should_confirm = if cli_args.dry_run {
+            false
+        } else {
+            !cli_args.yes
+        };
+
+        if should_confirm {
+            println!("Are you sure you want to prune the cache? [y/N]");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim() != "y" {
+                println!("Aborting");
+                return Ok(());
+            } else {
+                println!("Proceeding to prune the cache");
+            }
+        }
+
+        if !cli_args.dry_run {
+            cache_store.force_prune_caches(&pruned).await?;
+            trace::info!(
+                "{}",
+                format!(
+                    "Pruned {} cache entries from {} projects",
+                    pruned_count, project_count
+                )
+                .red()
+            );
+        } else {
+            trace::info!(
+                "Dry mode enabled, would prune {} cache entries from {} projects",
+                pruned_count,
+                project_count
+            );
+        }
+    }
     Ok(())
 }

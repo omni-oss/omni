@@ -45,7 +45,12 @@ pub struct RunArgs {
     )]
     pub(crate) result_format: Option<ResultFormat>,
 
-    #[arg(long, help = "Ui mode to use while running the command", value_enum)]
+    #[arg(
+        long,
+        short,
+        help = "Ui mode to use while running the command",
+        value_enum
+    )]
     pub ui: Option<EnumValueAdapter<Ui>>,
 }
 

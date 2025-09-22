@@ -17,8 +17,8 @@ use tokio::task::JoinSet;
 
 use crate::{
     CacheStats, CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
-    FileCacheStats, ProjectCacheStats, TaskCacheStats, TaskExecutionCacheStore,
-    TaskExecutionInfo,
+    FileCacheStats, ProjectCacheStats, PruneCacheArgs, PrunedCacheEntry,
+    StaleStatus, TaskCacheStats, TaskExecutionCacheStore, TaskExecutionInfo,
     impls::last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
 };
 
@@ -56,12 +56,6 @@ fn hashtext(text: &str) -> String {
 }
 
 impl LocalTaskExecutionCacheStore {
-    fn get_project_dir(&self, project_name: &str) -> PathBuf {
-        let name = path_safe(project_name);
-
-        self.cache_dir.join(name).join("output")
-    }
-
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = "debug", skip(self))
@@ -443,19 +437,35 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     for file in output {
                         cached_files.push(file?);
                     }
+                    let cached_files_total_size = cached_files
+                        .iter()
+                        .map(|f| f.size.as_u64())
+                        .sum::<u64>();
+                    let total_size = cached_files_total_size
+                        + meta_file.size.as_u64()
+                        + log_file
+                            .as_ref()
+                            .map(|f| f.size.as_u64())
+                            .unwrap_or(0);
 
                     tasks.push(TaskCacheStats {
                         task_name: cache_meta.task_name.to_string(),
                         execution_hash: cache_meta.execution_hash,
                         created_timestamp: cache_meta.execution_time,
                         execution_duration: cache_meta.execution_duration,
+                        total_size: ByteSize::b(total_size),
+                        cached_files_total_size: ByteSize::b(
+                            cached_files_total_size,
+                        ),
                         cached_files,
                         last_used_timestamp: None,
                         meta_file,
                         log_file,
+                        entry_dir: entry.path().to_path_buf(),
                     });
                 }
 
+                //
                 Ok::<_, LocalTaskExecutionCacheStoreError>(ProjectCacheStats {
                     project_name: project_name.to_string(),
                     tasks,
@@ -485,13 +495,77 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
         Ok(CacheStats { projects })
     }
 
-    async fn invalidate_caches(
+    async fn prune_caches(
         &self,
-        project_name: &str,
-    ) -> Result<(), Self::Error> {
-        let path = self.get_project_dir(project_name);
+        args: &PruneCacheArgs,
+    ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
+        let stats = self
+            .get_stats(args.project_name_glob, args.task_name_glob)
+            .await?;
+        let time_upper_limit = if let Some(older_than) = args.older_than {
+            Some(OffsetDateTime::now_utc() - older_than)
+        } else {
+            None
+        };
 
-        self.sys.fs_remove_dir_all_async(path).await?;
+        let mut entries = vec![];
+
+        for project in stats.projects {
+            for task in project.tasks {
+                if let Some(time_upper_limit) = time_upper_limit {
+                    let last_used = task
+                        .last_used_timestamp
+                        .unwrap_or(task.created_timestamp);
+                    if last_used >= time_upper_limit {
+                        continue;
+                    }
+                }
+
+                if let Some(larger_than) = args.larger_than {
+                    if task.total_size <= larger_than {
+                        continue;
+                    }
+                }
+
+                entries.push(PrunedCacheEntry {
+                    project_name: project.project_name.clone(),
+                    task_name: task.task_name,
+                    execution_hash: task.execution_hash,
+                    size: task.total_size,
+                    entry_dir: task.entry_dir,
+                    stale: StaleStatus::Unknown,
+                });
+            }
+        }
+
+        if !args.dry_run {
+            self.force_prune_caches(&entries).await?;
+        }
+
+        Ok(entries)
+    }
+
+    async fn force_prune_caches(
+        &self,
+        entries: &[PrunedCacheEntry],
+    ) -> Result<(), Self::Error> {
+        for entry in entries {
+            if !tokio::fs::try_exists(&entry.entry_dir).await? {
+                trace::debug!(
+                    "Cache entry does not exist: {}",
+                    entry.entry_dir.display()
+                );
+                continue;
+            }
+
+            tokio::fs::remove_dir_all(&entry.entry_dir)
+                .await
+                .inspect_err(|e| {
+                    trace::debug!("Failed to delete cache entry: {}", e)
+                })?;
+
+            trace::debug!("Pruned cache entry: {}", entry.entry_dir.display());
+        }
 
         Ok(())
     }
@@ -1278,7 +1352,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invalidate_caches() {
+    async fn test_prune() {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
@@ -1290,7 +1364,11 @@ mod tests {
             .expect("failed to cache");
 
         cache
-            .invalidate_caches("project1")
+            .prune_caches(&PruneCacheArgs {
+                project_name_glob: Some("project1"),
+                dry_run: false,
+                ..Default::default()
+            })
             .await
             .expect("failed to invalidate caches");
 

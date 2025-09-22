@@ -87,6 +87,8 @@ clap_utils = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 time = { workspace = true }
 bytesize = { workspace = true }
+humantime = { workspace = true }
+itertools = { workspace=true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
