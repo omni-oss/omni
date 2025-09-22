@@ -77,8 +77,6 @@ impl TuiPresenter {
         // clone for UI task
         let ui_buffers = screens.clone();
 
-        trace::warn!("Tui mode is currently experimental");
-
         // spawn the UI loop in a task
         let ui_active_id = active_id.clone();
         let dispatch = dispatcher::get_default(|d| d.clone());

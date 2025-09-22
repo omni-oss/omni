@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use bytesize::ByteSize;
 use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
+use globset::Glob;
 use maps::{Map, UnorderedMap};
 use omni_collector::{CollectConfig, CollectResult, Collector};
 use omni_hasher::{Hasher, impls::DefaultHasher};
@@ -11,10 +13,13 @@ use system_traits::{
     impls::RealSys,
 };
 use time::OffsetDateTime;
+use tokio::task::JoinSet;
 
 use crate::{
-    CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
-    TaskExecutionCacheStore, TaskExecutionInfo,
+    CacheStats, CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
+    FileCacheStats, ProjectCacheStats, TaskCacheStats, TaskExecutionCacheStore,
+    TaskExecutionInfo,
+    impls::last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
 };
 
 pub use omni_utils::path::{
@@ -91,10 +96,34 @@ impl LocalTaskExecutionCacheStore {
 
         Ok(to_process)
     }
+
+    async fn update_last_used_timestamps(
+        &self,
+        tasks: &[Option<CachedTaskExecution>],
+    ) -> Result<(), LocalTaskExecutionCacheStoreError> {
+        let path = self.cache_dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
+        let mut last_used_db = LocalLastUsedDb::load(&path).await?;
+        let dir = OffsetDateTime::now_utc();
+
+        for exec in tasks.iter().filter_map(|t| t.as_ref()) {
+            last_used_db
+                .update_last_used_timestamp(
+                    &exec.project_name,
+                    &exec.task_name,
+                    exec.execution_hash,
+                    dir,
+                )
+                .await?;
+        }
+
+        last_used_db.save().await?;
+        Ok(())
+    }
 }
 
 const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
+const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
 
 #[async_trait::async_trait]
 impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
@@ -209,6 +238,10 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 execution_duration: new_cache_info.execution_duration,
                 exit_code: new_cache_info.exit_code,
                 execution_time: OffsetDateTime::now_utc(),
+                dependency_hashes: new_cache_info
+                    .task
+                    .dependency_hashes
+                    .to_vec(),
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -290,7 +323,166 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             outputs.push(output);
         }
 
+        self.update_last_used_timestamps(&outputs).await?;
+
         Ok(outputs)
+    }
+
+    async fn get_stats(
+        &self,
+        project_glob: Option<&str>,
+        task_glob: Option<&str>,
+    ) -> Result<CacheStats, Self::Error> {
+        let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
+
+        let project_glob =
+            Glob::new(project_glob.unwrap_or("**"))?.compile_matcher();
+        let task_glob = Glob::new(task_glob.unwrap_or("**"))?.compile_matcher();
+
+        let mut futs = JoinSet::new();
+
+        let last_used_db_path =
+            self.cache_dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
+
+        while let Some(entry) = entries.next_entry().await? {
+            if !entry.file_type().await?.is_dir() {
+                continue;
+            }
+
+            let file_name = entry.file_name();
+            let enc_project_name = file_name.to_string_lossy();
+            let project_name =
+                bs58::decode(&enc_project_name as &str).into_vec()?;
+            let project_name =
+                String::from_utf8_lossy(&project_name).to_string();
+
+            if !project_glob.is_match(&project_name) {
+                continue;
+            }
+
+            let t_task_glob = task_glob.clone();
+            futs.spawn(async move {
+                let mut tasks = vec![];
+                let project_output_dir = &entry.path().join("output");
+
+                if !tokio::fs::try_exists(project_output_dir).await? {
+                    trace::debug!(
+                        "no output dir found for {}",
+                        entry.path().display()
+                    );
+
+                    return Ok::<_, LocalTaskExecutionCacheStoreError>(
+                        ProjectCacheStats {
+                            project_name: project_name.to_string(),
+                            tasks,
+                        },
+                    );
+                }
+
+                let mut task_entries =
+                    tokio::fs::read_dir(project_output_dir).await?;
+
+                while let Some(entry) = task_entries.next_entry().await? {
+                    if !entry.file_type().await?.is_dir() {
+                        trace::debug!(
+                            "not a directory: {}",
+                            entry.path().display()
+                        );
+                        continue;
+                    }
+
+                    let cache_meta_path =
+                        entry.path().join(CACHE_OUTPUT_METADATA_FILE);
+
+                    if !tokio::fs::try_exists(&cache_meta_path).await? {
+                        trace::debug!(
+                            "no cache metadata found for {}",
+                            entry.path().display()
+                        );
+                        continue;
+                    }
+
+                    let cache_meta_bytes =
+                        tokio::fs::read(&cache_meta_path).await?;
+
+                    let (cache_meta, _): (CachedTaskExecution, _) =
+                        bincode::serde::decode_from_slice(
+                            &cache_meta_bytes,
+                            bincode::config::standard(),
+                        )?;
+
+                    if !t_task_glob.is_match(&cache_meta.task_name) {
+                        continue;
+                    }
+
+                    let meta_file = load_stats(&cache_meta_path);
+
+                    let log_file = async {
+                        if let Some(logs_path) = cache_meta.logs_path {
+                            Ok(Some(
+                                load_stats(entry.path().join(logs_path))
+                                    .await?,
+                            ))
+                        } else {
+                            Ok(None)
+                        }
+                    };
+
+                    let mut files_set = JoinSet::new();
+
+                    for file in cache_meta.files {
+                        files_set.spawn(load_stats(file.cached_path));
+                    }
+
+                    let (meta_file, log_file) =
+                        tokio::try_join!(meta_file, log_file)?;
+
+                    let output = files_set.join_all().await;
+                    let mut cached_files = vec![];
+
+                    for file in output {
+                        cached_files.push(file?);
+                    }
+
+                    tasks.push(TaskCacheStats {
+                        task_name: cache_meta.task_name.to_string(),
+                        execution_hash: cache_meta.execution_hash,
+                        created_timestamp: cache_meta.execution_time,
+                        execution_duration: cache_meta.execution_duration,
+                        cached_files,
+                        last_used_timestamp: None,
+                        meta_file,
+                        log_file,
+                    });
+                }
+
+                Ok::<_, LocalTaskExecutionCacheStoreError>(ProjectCacheStats {
+                    project_name: project_name.to_string(),
+                    tasks,
+                })
+            });
+        }
+
+        let results = futs.join_all().await;
+        let mut projects = vec![];
+        let last_used_db = LocalLastUsedDb::load(&last_used_db_path).await?;
+        for result in results {
+            let mut result = result?;
+
+            for task in result.tasks.iter_mut() {
+                task.last_used_timestamp = last_used_db
+                    .get_last_used_timestamp(
+                        &result.project_name,
+                        &task.task_name,
+                        task.execution_hash,
+                    )
+                    .await?;
+            }
+
+            projects.push(result);
+        }
+
+        Ok(CacheStats { projects })
     }
 
     async fn invalidate_caches(
@@ -303,6 +495,24 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
         Ok(())
     }
+}
+
+async fn load_stats<P: AsRef<Path> + Clone>(
+    path: P,
+) -> Result<FileCacheStats, LocalTaskExecutionCacheStoreError> {
+    let path_ref = path.as_ref();
+    let meta = tokio::fs::metadata(path_ref).await.inspect_err(|e| {
+        trace::debug!(
+            "failed to get metadata for {}: {}",
+            path_ref.display(),
+            e
+        )
+    })?;
+
+    Ok::<_, LocalTaskExecutionCacheStoreError>(FileCacheStats {
+        path: path_ref.to_string_lossy().to_string(),
+        size: ByteSize::b(meta.len()),
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -355,13 +565,19 @@ enum LocalTaskExecutionCacheStoreErrorInner {
     IgnoreBuild(#[from] dir_walker::impls::IgnoreRealDirWalkerError),
 
     #[error(transparent)]
-    Encode(#[from] bincode::error::EncodeError),
+    BincodeEncode(#[from] bincode::error::EncodeError),
 
     #[error(transparent)]
-    Decode(#[from] bincode::error::DecodeError),
+    BincodeDecode(#[from] bincode::error::DecodeError),
+
+    #[error(transparent)]
+    Bs58(#[from] bs58::decode::Error),
 
     #[error(transparent)]
     Collect(#[from] omni_collector::error::Error),
+
+    #[error(transparent)]
+    LastUsedDb(#[from] LocalLastUsedDbError),
 }
 
 #[cfg(test)]

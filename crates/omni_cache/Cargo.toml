@@ -37,6 +37,8 @@ tracing = { workspace = true }
 time = { workspace = true }
 omni_utils = { workspace = true }
 omni_collector = { workspace = true }
+tokio = { workspace = true }
+bytesize = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
