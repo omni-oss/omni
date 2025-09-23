@@ -273,7 +273,10 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         };
 
         if should_confirm {
-            println!("Are you sure you want to prune the cache? [y/N]");
+            println!(
+                "Are you sure you want to prune the cache ({} entries from {} projects)? [y/N]",
+                pruned_count, project_count
+            );
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
             if input.trim() != "y" {
