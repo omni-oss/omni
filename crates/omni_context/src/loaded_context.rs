@@ -122,10 +122,12 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
             .await?)
     }
 
-    pub fn get_project_graph(&self) -> Result<ProjectGraph, ProjectGraphError> {
+    pub fn get_project_graph(
+        &self,
+    ) -> Result<ProjectGraph, LoadedContextError> {
         let projects = self.projects().to_vec();
 
-        ProjectGraph::from_projects(projects)
+        Ok(ProjectGraph::from_projects(projects)?)
     }
 
     pub fn get_env_vars(

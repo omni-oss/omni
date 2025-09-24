@@ -4,21 +4,8 @@ use omni_core::{Project, TaskExecutionNode};
 use omni_expressions::Evaluator;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-pub trait ProjectFilter {
-    type Error;
-    fn should_include_project(
-        &self,
-        project: &Project,
-    ) -> Result<bool, Self::Error>;
-}
+use crate::{ProjectFilter, TaskFilter};
 
-pub trait TaskFilter {
-    type Error;
-    fn should_include_task(
-        &self,
-        node: &TaskExecutionNode,
-    ) -> Result<bool, Self::Error>;
-}
 pub struct DefaultProjectFilter {
     project_matcher: Option<GlobMatcher>,
     fast_path_include_all: bool,

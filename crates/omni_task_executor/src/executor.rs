@@ -4,6 +4,9 @@ use derive_new::new;
 use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
+use omni_execution_plan::{
+    ExecutionPlanProvider as _, ExecutionPlanProviderError,
+};
 use omni_tracing_subscriber::{
     TraceLevel, TracingConfig,
     custom_output::{
@@ -15,10 +18,7 @@ use trace::instrument::WithSubscriber;
 
 use crate::{
     Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
-    execution_plan_provider::{
-        ContextExecutionPlanProvider, ExecutionPlanProvider,
-        ExecutionPlanProviderError,
-    },
+    execution_plan_provider::ContextExecutionPlanProvider,
     in_memory_tracer::InMemoryTracer,
     pipeline::{ExecutionPipeline, ExecutionPipelineError},
 };

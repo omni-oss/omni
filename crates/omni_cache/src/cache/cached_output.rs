@@ -54,24 +54,6 @@ pub struct CachedTaskExecution {
 
 #[derive(
     Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    new,
-)]
-pub struct CachedTaskDependency {
-    pub project_name: String,
-    pub task_name: String,
-    pub execution_hash: DefaultHash,
-}
-
-#[derive(
-    Debug,
     Copy,
     Serialize,
     Deserialize,

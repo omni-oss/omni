@@ -49,11 +49,9 @@ impl<'a> LocalLastUsedDb<'a> {
             .data
             .last_used_map
             .entry(project_name.to_string())
-            .or_insert_with(Default::default);
+            .or_default();
 
-        let task_map = project_map
-            .entry(task_name.to_string())
-            .or_insert_with(Default::default);
+        let task_map = project_map.entry(task_name.to_string()).or_default();
 
         task_map.insert(hash, last_used);
 
