@@ -1,0 +1,28 @@
+[package]
+name = "omni_execution_plan"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+serde = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }
+globset = { workspace = true }
+trace = { workspace = true }
+tracing = { workspace = true }
+omni_configurations = { workspace = true }
+omni_core = { workspace = true }
+omni_expressions = { workspace = true }
+config_utils = { workspace = true }
+maps = { workspace = true }
+ahash = { workspace = true }
+bs58 = { workspace = true }

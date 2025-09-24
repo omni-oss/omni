@@ -2534,6 +2534,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_execution_plan"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "ahash",
+ "bs58",
+ "config_utils",
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "globset",
+ "maps",
+ "omni_configurations",
+ "omni_core",
+ "omni_expressions",
+ "serde",
+ "strum 0.27.2",
+ "thiserror 2.0.16",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_expressions"
 version = "0.0.0"
 dependencies = [
@@ -2637,6 +2659,7 @@ dependencies = [
  "omni_configurations",
  "omni_context",
  "omni_core",
+ "omni_execution_plan",
  "omni_expressions",
  "omni_hasher",
  "omni_process",

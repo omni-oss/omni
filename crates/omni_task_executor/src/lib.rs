@@ -1,11 +1,9 @@
 mod batch_executor;
 mod cache_manager;
 mod cache_store_provider;
-mod call;
 mod config;
 mod execution_plan_provider;
 mod executor;
-mod filter;
 mod in_memory_tracer;
 mod on_failure;
 mod pipeline;
@@ -15,9 +13,9 @@ mod sys;
 mod task_context;
 mod task_context_provider;
 
-pub use call::*;
 pub use config::*;
 pub use executor::*;
+pub use omni_execution_plan::Call;
 pub use on_failure::*;
 pub use result::*;
 pub use sys::*;

@@ -1,19 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omni_task_executor
+name: omni_execution_plan
 
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - omni_core
   - omni_configurations
+  - omni_core
   - omni_expressions
-  - omni_hasher
-  - omni_cache
-  - omni_term_ui
-  - omni_tracing_subscriber
-  - omni_execution_plan
-  - system_traits
-  - maps
   - config_utils
-  - omni_context
+  - maps

@@ -1,8 +1,9 @@
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use omni_configurations::Ui;
+use omni_execution_plan::Call;
 
-use crate::{OnFailure, call::Call};
+use crate::OnFailure;
 
 #[derive(
     Debug,
