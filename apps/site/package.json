@@ -7,7 +7,7 @@
         "dev": "vite dev",
         "build": "vite build && tsc --noEmit",
         "preview": "bun x serve ./.vercel/output/static",
-        "gen:declspec": "omni declspec >| omni-declspec.json",
+        "gen:declspec": "omni declspec dump >| omni-declspec.json",
         "gen:refdocs": "bun run ./scripts/generate-references ./omni-declspec.json ./content/docs/references"
     },
     "dependencies": {
