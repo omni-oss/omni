@@ -86,6 +86,9 @@ jobs:
           name: omni-${{ github.ref_name }}-${{ matrix.os }}
           path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
 
+      - name: Prune Unused Caches
+        run: omni prune -sy -o="7d" # Remove stale caches older than 7 days
+
   release:
     needs: build
     runs-on: ubuntu-latest
