@@ -7,4 +7,8 @@ extends:
 dependencies:
   - omni_hasher
   - omni_types
+  - omni_task_context
+  - omni_execution_plan
+  - omni_configurations
+  - omni_core
   - dir_walker

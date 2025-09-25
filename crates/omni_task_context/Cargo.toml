@@ -20,7 +20,6 @@ globset = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true }
 maps = { workspace = true }
-omni_cache = { workspace = true }
 omni_core = { workspace = true }
 omni_types = { workspace = true }
 omni_hasher = { workspace = true }
