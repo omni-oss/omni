@@ -13,7 +13,6 @@ use crate::{
     batch_executor::{BatchExecutor, BatchExecutorError},
     cache_manager::CacheManagerBuilder,
     cache_store_provider::{CacheStoreProvider, ContextCacheStoreProvider},
-    task_context_provider::ContextTaskContextProvider,
 };
 
 #[derive(Debug, new)]
@@ -45,9 +44,6 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
 
         let mut results_accumulator = unordered_map!(cap: task_count);
 
-        let task_context_provider =
-            ContextTaskContextProvider::new(self.context);
-
         let presenter = match self.config.ui() {
             omni_configurations::Ui::Stream => {
                 MuxOutputPresenterStatic::new_stream()
@@ -56,7 +52,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         };
 
         let mut batch_exec = BatchExecutor::new(
-            task_context_provider,
+            self.context,
             cache_manager,
             self.context.sys().clone(),
             &presenter,

@@ -11,6 +11,7 @@ dependencies:
   - omni_cache
   - omni_test_utils
   - omni_tracing_subscriber
+  - omni_task_context
   - trace
   - system_traits
   - env

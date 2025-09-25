@@ -2496,6 +2496,7 @@ dependencies = [
  "omni_configurations",
  "omni_core",
  "omni_hasher",
+ "omni_task_context",
  "omni_test_utils",
  "omni_tracing_subscriber",
  "omni_types",
@@ -2636,6 +2637,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_task_context"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "globset",
+ "maps",
+ "omni_cache",
+ "omni_core",
+ "omni_hasher",
+ "omni_types",
+ "serde",
+ "strum 0.27.2",
+ "thiserror 2.0.16",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_task_executor"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -2663,6 +2684,7 @@ dependencies = [
  "omni_expressions",
  "omni_hasher",
  "omni_process",
+ "omni_task_context",
  "omni_term_ui",
  "omni_tracing_subscriber",
  "owo-colors",

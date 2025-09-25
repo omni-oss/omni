@@ -13,6 +13,7 @@ dependencies:
   - omni_term_ui
   - omni_tracing_subscriber
   - omni_execution_plan
+  - omni_task_context
   - system_traits
   - maps
   - config_utils

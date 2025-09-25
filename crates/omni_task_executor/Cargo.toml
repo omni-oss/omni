@@ -46,3 +46,4 @@ omni_term_ui = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 crossbeam-channel = { workspace = true }
 omni_execution_plan = { workspace = true }
+omni_task_context = { workspace = true }

@@ -10,7 +10,6 @@ mod pipeline;
 mod result;
 mod serde_impls;
 mod sys;
-mod task_context;
 mod task_context_provider;
 
 pub use config::*;

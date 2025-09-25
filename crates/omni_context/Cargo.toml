@@ -46,6 +46,7 @@ either = { workspace = true }
 shadow-rs = { workspace = true }
 owo-colors = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+omni_task_context = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

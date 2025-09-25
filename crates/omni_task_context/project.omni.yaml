@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: omni_task_context
+
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - maps
+  - omni_cache
+  - omni_types
+  - omni_hasher

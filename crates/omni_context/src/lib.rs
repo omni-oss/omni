@@ -1,5 +1,4 @@
 pub mod build;
-mod cache_info;
 pub mod constants;
 mod context;
 mod env_loader;
@@ -15,7 +14,6 @@ mod test_fixture;
 mod utils;
 mod workspace_hasher;
 
-pub use cache_info::*;
 pub use context::*;
 pub use env_loader::*;
 pub use loaded_context::*;
