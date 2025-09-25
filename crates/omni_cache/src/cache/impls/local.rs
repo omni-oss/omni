@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::SystemTime,
 };
 
 use bytesize::ByteSize;
@@ -530,6 +531,8 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
         let hashes = if let PruneStaleOnly::On { context, .. } =
             &args.stale_only
         {
+            let time_now = SystemTime::now();
+
             let call = Call::new_task(args.task_name_glob.unwrap_or("**"));
             let plan =
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
@@ -576,6 +579,11 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
                 hashes.extend(t_hashes);
             }
+
+            trace::debug!(
+                "getting hashes for stale elapsed time: {:?}",
+                time_now.elapsed().unwrap()
+            );
 
             Some(hashes)
         } else {
