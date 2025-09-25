@@ -1,11 +1,25 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use bytesize::ByteSize;
+use derive_new::new;
 use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
 use globset::Glob;
-use maps::{Map, UnorderedMap};
+use maps::{Map, UnorderedMap, unordered_map};
 use omni_collector::{CollectConfig, CollectResult, Collector};
-use omni_hasher::{Hasher, impls::DefaultHasher};
+use omni_execution_plan::{
+    Call, DefaultExecutionPlanProvider, ExecutionPlanProvider,
+};
+use omni_hasher::{
+    Hasher,
+    impls::{DefaultHash, DefaultHasher},
+};
+use omni_task_context::{
+    DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
+    TaskHashProvider,
+};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
     FsCreateDirAllAsync, FsHardLinkAsync as _, FsMetadataAsync,
@@ -17,8 +31,9 @@ use tokio::task::JoinSet;
 
 use crate::{
     CacheStats, CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
-    FileCacheStats, ProjectCacheStats, PruneCacheArgs, PrunedCacheEntry,
-    StaleStatus, TaskCacheStats, TaskExecutionCacheStore, TaskExecutionInfo,
+    Context, FileCacheStats, ProjectCacheStats, PruneCacheArgs, PruneStaleOnly,
+    PrunedCacheEntry, StaleStatus, TaskCacheStats, TaskExecutionCacheStore,
+    TaskExecutionInfo, TaskExecutionInfoExt,
     impls::last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
 };
 
@@ -497,9 +512,9 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
         Ok(CacheStats { projects })
     }
 
-    async fn prune_caches(
+    async fn prune_caches<TContext: Context>(
         &self,
-        args: &PruneCacheArgs,
+        args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
         let stats = self
             .get_stats(args.project_name_glob, args.task_name_glob)
@@ -512,6 +527,61 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
         let mut entries = vec![];
 
+        let hashes = if let PruneStaleOnly::On { context, .. } =
+            &args.stale_only
+        {
+            let call = Call::new_task(args.task_name_glob.unwrap_or("**"));
+            let plan =
+                DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
+                    .get_execution_plan(
+                        &call,
+                        args.project_name_glob,
+                        None,
+                        false,
+                    )?;
+
+            let total_task = plan.iter().map(|b| b.len()).sum();
+            let mut hashes = unordered_map!(cap: total_task);
+            let collect_cfg = CollectConfig {
+                hashes: true,
+                ..Default::default()
+            };
+
+            for batch in plan {
+                let hash_provider = HashProvider::new(&hashes);
+                let task_ctx_provider = DefaultTaskContextProvider::new(
+                    hash_provider,
+                    ContextWrapper::new(context),
+                );
+                let contexts =
+                    task_ctx_provider.get_task_contexts(&batch, false)?;
+
+                let exec_infos = contexts
+                    .iter()
+                    .flat_map(|c| c.execution_info())
+                    .collect::<Vec<_>>();
+
+                let results = self.collect(&exec_infos, &collect_cfg).await?;
+                let mut t_hashes = unordered_map!(cap: batch.len());
+
+                for result in results {
+                    let hash = result.hash.expect("should be some");
+
+                    let task_full_name = format!(
+                        "{}#{}",
+                        result.task.project_name, result.task.task_name
+                    );
+                    t_hashes.insert(task_full_name, hash);
+                }
+
+                hashes.extend(t_hashes);
+            }
+
+            Some(hashes)
+        } else {
+            None
+        };
+
         for project in stats.projects {
             for task in project.tasks {
                 if let Some(time_upper_limit) = time_upper_limit {
@@ -523,10 +593,21 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     }
                 }
 
-                if let Some(larger_than) = args.larger_than {
-                    if task.total_size <= larger_than {
-                        continue;
-                    }
+                if let Some(larger_than) = args.larger_than
+                    && task.total_size <= larger_than
+                {
+                    continue;
+                }
+
+                let task_full_name =
+                    format!("{}#{}", project.project_name, task.task_name);
+
+                if args.stale_only.is_on()
+                    && let Some(hashes) = &hashes
+                    && let Some(hash) = hashes.get(&task_full_name)
+                    && task.execution_hash == *hash
+                {
+                    continue;
                 }
 
                 entries.push(PrunedCacheEntry {
@@ -570,6 +651,71 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
         }
 
         Ok(())
+    }
+}
+
+#[derive(new, Clone, Copy)]
+struct HashProvider<'a> {
+    hashes: &'a UnorderedMap<String, DefaultHash>,
+}
+
+impl<'a> TaskHashProvider for HashProvider<'a> {
+    fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
+        self.hashes.get(task_full_name).cloned()
+    }
+}
+
+#[derive(new, Clone, Copy)]
+struct ContextWrapper<'a, T: Context + 'a> {
+    inner: &'a T,
+    _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a, T: Context> omni_execution_plan::Context for ContextWrapper<'a, T> {
+    type Error = T::Error;
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.inner.get_project_meta_config(project_name)
+    }
+
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.inner.get_task_meta_config(project_name, task_name)
+    }
+
+    fn get_project_graph(
+        &self,
+    ) -> Result<omni_core::ProjectGraph, Self::Error> {
+        self.inner.get_project_graph()
+    }
+
+    fn projects(&self) -> &[omni_core::Project] {
+        self.inner.projects()
+    }
+}
+
+impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
+    type Error = T::Error;
+
+    fn get_task_env_vars(
+        &self,
+        node: &omni_core::TaskExecutionNode,
+    ) -> Result<Option<Arc<EnvVars>>, Self::Error> {
+        self.inner.get_task_env_vars(node)
+    }
+
+    fn get_cache_info(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_context::CacheInfo> {
+        self.inner.get_cache_info(project_name, task_name)
     }
 }
 
@@ -654,6 +800,12 @@ enum LocalTaskExecutionCacheStoreErrorInner {
 
     #[error(transparent)]
     LastUsedDb(#[from] LocalLastUsedDbError),
+
+    #[error(transparent)]
+    ExecutionPlan(#[from] omni_execution_plan::ExecutionPlanProviderError),
+
+    #[error(transparent)]
+    TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
 }
 
 #[cfg(test)]
@@ -1366,7 +1518,7 @@ mod tests {
             .expect("failed to cache");
 
         cache
-            .prune_caches(&PruneCacheArgs {
+            .prune_caches::<()>(&PruneCacheArgs {
                 project_name_glob: Some("project1"),
                 dry_run: false,
                 ..Default::default()

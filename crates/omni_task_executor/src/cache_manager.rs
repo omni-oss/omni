@@ -6,7 +6,7 @@ use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{
     CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
-    TaskExecutionCacheStore,
+    TaskExecutionCacheStore, TaskExecutionInfoExt as _,
 };
 use omni_process::{ChildProcessError, ChildProcessResult};
 use omni_task_context::TaskContext;

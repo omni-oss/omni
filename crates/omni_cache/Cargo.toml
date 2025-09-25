@@ -39,6 +39,10 @@ omni_utils = { workspace = true }
 omni_collector = { workspace = true }
 tokio = { workspace = true }
 bytesize = { workspace = true }
+omni_execution_plan = { workspace = true }
+omni_task_context = { workspace = true }
+omni_configurations = { workspace = true }
+omni_core = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

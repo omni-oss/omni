@@ -3,8 +3,11 @@ use std::{collections::HashMap, time::Duration};
 use base64::Engine;
 use bytesize::ByteSize;
 use clap::Subcommand;
+use derive_new::new;
 use itertools::Itertools;
+use omni_cache::Context as ContextTrait;
 use omni_cache::{PruneCacheArgs, PruneStaleOnly, TaskExecutionCacheStore};
+use omni_context::{ContextSys, EnvVarsMap, LoadedContext, LoadedContextError};
 use owo_colors::OwoColorize;
 
 use crate::context::Context;
@@ -189,6 +192,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
     trace::debug!(?cli_args, "prune");
     let cache_store = ctx.create_cache_store();
 
+    let loaded_context;
     let args = PruneCacheArgs::new(
         if cli_args.dry_run {
             true
@@ -196,10 +200,11 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
             !cli_args.yes
         },
         if cli_args.stale_only {
+            loaded_context = ctx.clone().into_loaded().await?;
             // loaded_context.get_cache_info(project_name, task_name);
-            PruneStaleOnly::On {}
+            PruneStaleOnly::new_on(ContextWrapper::new(&loaded_context))
         } else {
-            PruneStaleOnly::Off
+            PruneStaleOnly::new_off()
         },
         cli_args.older_than,
         cli_args.project.as_deref(),
@@ -208,7 +213,9 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
     );
 
     if cli_args.stale_only {
-        trace::warn!("--stale-only flags currently non functional");
+        trace::warn!(
+            "--stale-only flag is functional but currently experimental"
+        );
     }
 
     let pruned = cache_store.prune_caches(&args).await?;
@@ -306,4 +313,54 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(new)]
+#[repr(transparent)]
+struct ContextWrapper<'a, TSys: ContextSys> {
+    context: &'a LoadedContext<TSys>,
+}
+
+impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
+    type Error = LoadedContextError;
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.context.get_project_meta_config(project_name)
+    }
+
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.context.get_task_meta_config(project_name, task_name)
+    }
+
+    fn get_project_graph(
+        &self,
+    ) -> Result<omni_core::ProjectGraph, Self::Error> {
+        self.context.get_project_graph()
+    }
+
+    fn projects(&self) -> &[omni_core::Project] {
+        self.context.projects()
+    }
+
+    fn get_task_env_vars(
+        &self,
+        node: &omni_core::TaskExecutionNode,
+    ) -> Result<Option<std::sync::Arc<EnvVarsMap>>, Self::Error> {
+        self.context.get_task_env_vars(node)
+    }
+
+    fn get_cache_info(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_context::CacheInfo> {
+        self.context.get_cache_info(project_name, task_name)
+    }
 }

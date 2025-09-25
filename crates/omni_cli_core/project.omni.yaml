@@ -8,6 +8,7 @@ dependencies:
   - omni_core
   - omni_context
   - omni_task_executor
+  - omni_task_context
   - env_loader
   - omni_expressions
   - config_utils
