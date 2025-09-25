@@ -15,13 +15,14 @@ use omni_configurations::{
 use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
 };
+use omni_task_context::CacheInfo;
 use omni_types::OmniPathError;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
-    CacheInfo, EnvLoader, EnvVarsMap, GetVarsArgs, build,
+    EnvLoader, EnvVarsMap, GetVarsArgs, build,
     env_loader::EnvCacheSys,
     utils::{EnvVarsOsMap, vars_os},
 };

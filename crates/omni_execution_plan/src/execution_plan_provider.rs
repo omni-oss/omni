@@ -161,7 +161,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         call: &Call,
         project_filter: Option<&str>,
         meta_filter: Option<&str>,
-    ) -> Result<Vec<Vec<TaskExecutionNode>>, ExecutionPlanProviderError> {
+    ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filter)?;
 
         if let Some(filter) = project_filter

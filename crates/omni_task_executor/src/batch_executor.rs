@@ -4,8 +4,10 @@ use derive_new::new;
 use futures::future::join_all;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
+use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_process::{ChildProcess, ChildProcessResult};
+use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
     MuxOutputPresenterStatic, StreamHandleError,
@@ -16,18 +18,16 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use crate::{
     OnFailure, SkipReason, TaskExecutionResult, TaskExecutorSys,
     cache_manager::{CacheManager, TaskResultContext},
-    task_context::TaskContext,
-    task_context_provider::TaskContextProvider,
+    task_context_provider::DefaultTaskContextProvider,
 };
 
 #[derive(new)]
-pub struct BatchExecutor<'s, TCacheStore, TTaskContextProvider, TSys>
+pub struct BatchExecutor<'s, TCacheStore, TSys>
 where
     TCacheStore: TaskExecutionCacheStore,
-    TTaskContextProvider: TaskContextProvider,
     TSys: TaskExecutorSys,
 {
-    task_context_provider: TTaskContextProvider,
+    context: &'s LoadedContext<TSys>,
     cache_manager: CacheManager<TCacheStore>,
     sys: TSys,
     presenter: &'s MuxOutputPresenterStatic,
@@ -38,11 +38,9 @@ where
     replay_cached_logs: bool,
 }
 
-impl<'s, TCacheStore, TTaskContextProvider, TSys>
-    BatchExecutor<'s, TCacheStore, TTaskContextProvider, TSys>
+impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
 where
     TCacheStore: TaskExecutionCacheStore,
-    TTaskContextProvider: TaskContextProvider,
     TSys: TaskExecutorSys,
 {
     fn should_skip_batch(
@@ -183,9 +181,11 @@ where
             return Ok(skipped_results);
         }
 
-        let task_contexts = self
-            .task_context_provider
-            .get_task_contexts(batch, self.ignore_dependencies, overall_results)
+        let ctx_provider =
+            DefaultTaskContextProvider::new(self.context, overall_results);
+
+        let task_contexts = ctx_provider
+            .get_task_contexts(batch, self.ignore_dependencies)
             .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
 
         let cached_results = self

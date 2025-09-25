@@ -160,6 +160,7 @@ humantime = {version = "^2.3.0"}
 humantime-serde = {version = "^1.1.1"}
 itertools = { version = "^0.14.0" }
 omni_execution_plan = { path = "./crates/omni_execution_plan" }
+omni_task_context = { path = "./crates/omni_task_context" }
 
 [profile.release]
 incremental = true

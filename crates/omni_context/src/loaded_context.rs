@@ -11,12 +11,13 @@ use env_loader::EnvLoaderError;
 use omni_configurations::{MetaConfiguration, WorkspaceConfiguration};
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_hasher::impls::DefaultHash;
+use omni_task_context::CacheInfo;
 use omni_tracing_subscriber::TracingConfig;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::impls::RealSys;
 
 use crate::{
-    CacheInfo, Context, ContextSys, EnvLoader, GetVarsArgs,
+    Context, ContextSys, EnvLoader, GetVarsArgs,
     project_data_extractor::ProjectDataExtractions,
     project_query::ProjectQuery,
     utils::{EnvVarsMap, vars_os},
