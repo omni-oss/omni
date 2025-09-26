@@ -312,6 +312,7 @@ fn run_tui(
             shutdown_rx.close();
             break;
         }
+        trace::debug!("scroll states: {:?}", scroll_states);
 
         let fd =
             get_frame_data(&screens, &active_id, input_enabled, &scroll_states);
@@ -325,6 +326,9 @@ fn run_tui(
             if let Some(active_id) = acting_active_id.as_deref()
                 && let Some(scroll_state) = scroll_states.get_mut(active_id)
             {
+                trace::debug!(
+                    "State for {active_id:?}: {scroll_state:?}, {state:?}"
+                );
                 scroll_state.scroll_y = state.paragraph_scroll_y;
             }
         })?;
@@ -357,6 +361,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
+                            trace::debug!("Down key pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -375,6 +380,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
+                            trace::debug!("Up key pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -464,12 +470,21 @@ fn update_or_insert_scroll_state(
     if let Some(scroll_state) =
         get_current_scroll_state(active_id, scroll_states)
     {
+        trace::debug!(
+            "Current scroll state for {active_id:?}: {scroll_state:?}"
+        );
         update_fn(scroll_state);
+        trace::debug!(
+            "Updated scroll state for {active_id:?}, new value: {scroll_state:?}"
+        );
         return Some(*scroll_state);
     } else if let Some(active_id) = active_id.as_deref() {
         let scroll_state = insert_fn();
 
         scroll_states.insert(active_id.to_string(), scroll_state);
+        trace::debug!(
+            "Inserted scroll state for {active_id:?}, new value: {scroll_state:?}"
+        );
         return Some(scroll_state);
     }
 
@@ -648,12 +663,13 @@ fn draw_ui<'a>(
 
     // terminal output
     let vp_height = right_pane_chunks[0].height.saturating_sub(2); // remove the borders
-    let scroll_y = (if scroll_state.follow {
-        line_count as u16
+
+    let max_scroll_y = (line_count as u16).saturating_sub(vp_height);
+    let scroll_y = if scroll_state.follow {
+        max_scroll_y
     } else {
-        scroll_state.scroll_y
-    })
-    .saturating_sub(vp_height);
+        scroll_state.scroll_y.min(max_scroll_y)
+    };
     f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
 
     // controls

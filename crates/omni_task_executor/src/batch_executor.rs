@@ -94,23 +94,21 @@ where
         const EXIT_CODE_ERROR_STYLE: Style = Style::new().red().bold();
         const EXIT_CODE_SUCCESS_STYLE: Style = Style::new().green().bold();
 
-        if self.presenter.is_stream() {
-            trace::info!(
-                "Cache hit for task '{}' with exit code '{}' {}",
-                task_ctx.node.full_task_name(),
-                res.exit_code.style(if res.exit_code == 0 {
-                    EXIT_CODE_SUCCESS_STYLE
-                } else {
-                    EXIT_CODE_ERROR_STYLE
-                }),
-                (if self.replay_cached_logs {
-                    "(replaying logs)"
-                } else {
-                    "(skipping logs)"
-                })
-                .dimmed()
-            );
-        }
+        trace::info!(
+            "Cache hit for task '{}' with exit code '{}' {}",
+            task_ctx.node.full_task_name(),
+            res.exit_code.style(if res.exit_code == 0 {
+                EXIT_CODE_SUCCESS_STYLE
+            } else {
+                EXIT_CODE_ERROR_STYLE
+            }),
+            (if self.replay_cached_logs {
+                "(replaying logs)"
+            } else {
+                "(skipping logs)"
+            })
+            .dimmed()
+        );
 
         if self.replay_cached_logs
             && let Some(logs_path) = &res.logs_path
@@ -168,13 +166,11 @@ where
         // skip this batch if any error was encountered in a previous batch
         // when on_failure is set to skip_next_batches
         if self.should_skip_batch(overall_results) {
-            if self.presenter.is_stream() {
-                for task in batch {
-                    trace::error!(
-                        "Skipping task '{}' due to previous batch failure",
-                        task.full_task_name()
-                    );
-                }
+            for task in batch {
+                trace::error!(
+                    "Skipping task '{}' due to previous batch failure",
+                    task.full_task_name()
+                );
             }
 
             let skipped_results = self.skipped_results_for_batch(batch);
@@ -208,17 +204,15 @@ where
                     ),
                 );
 
-                if self.presenter.is_stream() {
-                    trace::info!(
-                        "{}",
-                        format!(
-                            "Skipping disabled task '{}'",
-                            task_ctx.node.full_task_name()
-                        )
-                        .white()
-                        .dimmed()
-                    );
-                }
+                trace::info!(
+                    "{}",
+                    format!(
+                        "Skipping disabled task '{}'",
+                        task_ctx.node.full_task_name()
+                    )
+                    .white()
+                    .dimmed()
+                );
                 continue;
             }
 
@@ -232,13 +226,11 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
-                if self.presenter.is_stream() {
-                    trace::error!(
-                        "Skipping task '{}' due to failed dependency '{}'",
-                        task_ctx.node.full_task_name(),
-                        error
-                    );
-                }
+                trace::error!(
+                    "Skipping task '{}' due to failed dependency '{}'",
+                    task_ctx.node.full_task_name(),
+                    error
+                );
                 continue;
             }
 
@@ -275,12 +267,7 @@ where
                     ChildProcessResult::new(node, 0u32, Duration::ZERO, None),
                 ));
             } else {
-                futs.push(run_process(
-                    self.presenter,
-                    task_ctx,
-                    record_logs,
-                    self.presenter.is_stream(),
-                ));
+                futs.push(run_process(self.presenter, task_ctx, record_logs));
             }
 
             if futs.len() >= self.max_concurrent_tasks {
@@ -336,7 +323,6 @@ async fn run_process<'a>(
     presenter: &'a MuxOutputPresenterStatic,
     task_ctx: &'a TaskContext<'a>,
     record_logs: bool,
-    do_trace: bool,
 ) -> TaskResultContext<'a> {
     let mut proc = ChildProcess::new(task_ctx.node.clone());
 
@@ -365,14 +351,14 @@ async fn run_process<'a>(
         );
 
     let result = proc.exec().await;
-    if do_trace && let Err(e) = &result {
+    if let Err(e) = &result {
         trace::error!(
             "Failed to execute task '{}': {}",
             task_ctx.node.full_task_name(),
             e
         );
     }
-    if do_trace && let Ok(t) = &result {
+    if let Ok(t) = &result {
         if t.success() {
             trace::info!(
                 "{}",
