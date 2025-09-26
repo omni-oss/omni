@@ -1,0 +1,34 @@
+[package]
+name = "omni_remote_cache_storage"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["enable-tracing", "s3"]
+enable-tracing = ["trace/enabled"]
+s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:http", "dep:aws-credential-types", "dep:aws-types"]
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+serde = { workspace = true }
+derive-new = { workspace = true }
+derive_builder = { workspace = true }
+trace = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+bytesize = { workspace = true }
+tokio = { workspace = true }
+aws-config = { workspace = true, optional = true }
+aws-sdk-s3 = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-types = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }
