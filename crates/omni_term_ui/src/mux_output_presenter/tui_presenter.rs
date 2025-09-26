@@ -20,11 +20,14 @@ use ratatui::{
     crossterm::event::{
         self, Event as CEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
     },
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Margin},
     prelude::CrosstermBackend,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, block::Title},
+    widgets::{
+        Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, block::Title,
+    },
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::{
@@ -295,6 +298,7 @@ fn run_tui(
     let mut last_tick = Instant::now();
     let mut scroll_states = UnorderedMap::default();
     let mut input_enabled = false;
+    let mut scrollbar_state = ScrollbarState::default();
 
     // Setup terminal (must be done on a thread that can manipulate stdout).
     // Use spawn_blocking to avoid blocking the tokio runtime thread on synchronous crossterm setup/reads.
@@ -316,12 +320,13 @@ fn run_tui(
 
         let fd =
             get_frame_data(&screens, &active_id, input_enabled, &scroll_states);
+
         let order = fd.order.clone();
         let active_index = fd.active_index;
         let line_count = fd.line_count;
         let acting_active_id = fd.active_id.clone();
         let _ = terminal.draw(|f| {
-            let state = draw_ui(f, fd);
+            let state = draw_ui(f, &mut scrollbar_state, fd);
 
             if let Some(active_id) = acting_active_id.as_deref()
                 && let Some(scroll_state) = scroll_states.get_mut(active_id)
@@ -366,11 +371,8 @@ fn run_tui(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
                                 |scroll_state| {
-                                    let content_len = line_count as u16;
-                                    scroll_state.scroll_y = scroll_state
-                                        .scroll_y
-                                        .saturating_add(1)
-                                        .min(content_len);
+                                    scroll_state.scroll_y =
+                                        scroll_state.scroll_y.saturating_add(1);
                                     scroll_state.follow = false;
                                 },
                                 || ScrollState {
@@ -625,6 +627,7 @@ struct DrawState {
 /// Draw UI frame: left vertical tab list + right content for selected stream
 fn draw_ui<'a>(
     f: &mut Frame<'a>,
+    scroll_bar_state: &mut ScrollbarState,
     FrameData {
         active_index,
         order,
@@ -670,7 +673,32 @@ fn draw_ui<'a>(
     } else {
         scroll_state.scroll_y.min(max_scroll_y)
     };
-    f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
+
+    if line_count > vp_height as usize {
+        *scroll_bar_state = scroll_bar_state
+            .content_length(line_count)
+            .position(scroll_y.into());
+
+        // show a scroll bar
+        let scroll_bar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+        let output_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                [Constraint::Length(vp_height), Constraint::Min(0)].as_ref(),
+            )
+            .split(right_pane_chunks[0]);
+        f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
+        f.render_stateful_widget(
+            scroll_bar,
+            output_chunks[1].inner(Margin {
+                horizontal: 0,
+                vertical: 1,
+            }),
+            scroll_bar_state,
+        );
+    } else {
+        f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
+    }
 
     // controls
     const CONTROL_STYLE: Style = Style::new()
