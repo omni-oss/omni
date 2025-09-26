@@ -120,6 +120,11 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             stdout_trace_level: TraceLevel::None,
             ..self.context.tracing_config().clone()
         };
+        trace::debug!(
+            ?config,
+            "updated tracing config for in-memory subscriber"
+        );
+
         let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);
         let temp = self.context.trace_dir().join("temp.log");
         let f_temp = temp.clone();
