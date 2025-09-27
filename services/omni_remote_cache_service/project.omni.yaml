@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: omni_remote_cache_service
+
+extends:
+  - "@workspace/omni/presets/rust-service.omni.yaml"
+
+tasks:
+  build:
+    output:
+      files:
+        - "@workspace/target/release/omni_remote_cache_server"
+
+  profile:
+    dependencies:
+      - ^passthrough
+
+dependencies:
+  - omni_remote_cache_storage

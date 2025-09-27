@@ -8,6 +8,7 @@ projects:
   - packages/**
   - apps/**
   - scripts/**
+  - services/**
 
 generators:
   - generators/**

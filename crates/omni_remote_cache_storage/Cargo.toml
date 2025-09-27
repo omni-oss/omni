@@ -6,9 +6,11 @@ version.workspace = true
 repository.workspace = true
 
 [features]
-default = ["enable-tracing", "s3"]
+default = ["enable-tracing", "s3", "local-disk", "in-memory"]
 enable-tracing = ["trace/enabled"]
 s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:http", "dep:aws-credential-types", "dep:aws-types"]
+local-disk = []
+in-memory = []
 
 [dependencies]
 eyre = { workspace = true }
@@ -28,6 +30,8 @@ aws-sdk-s3 = { workspace = true, optional = true }
 aws-credential-types = { workspace = true, optional = true }
 aws-types = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
+maps = { workspace = true }
+lru = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
