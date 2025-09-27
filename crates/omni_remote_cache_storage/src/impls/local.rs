@@ -28,10 +28,14 @@ impl LocalDiskCacheBackend {
 
 #[async_trait]
 impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
+    fn default_container(&self) -> &str {
+        &self.default_container
+    }
+
     async fn get(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<Option<bytes::Bytes>, Error> {
         let path = self.path(key, container);
 
@@ -87,8 +91,8 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn save(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
         value: bytes::Bytes,
     ) -> Result<(), Error> {
         let path = self.path(key, container);
@@ -110,8 +114,8 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn delete(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<(), Error> {
         let path = self.path(key, container);
 
@@ -126,8 +130,8 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
     async fn size(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<Option<ByteSize>, Error> {
         let path = self.path(key, container);
 
@@ -143,150 +147,14 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDiskCacheBackend, *};
-    use bytes::Bytes;
-
+    use super::LocalDiskCacheBackend;
+    use crate::decl_remote_cache_storage_backend_tests;
     fn temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
     }
 
-    fn backend() -> LocalDiskCacheBackend {
-        LocalDiskCacheBackend::new(temp_dir().path(), "default")
-    }
-
-    #[tokio::test]
-    async fn test_get() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend.save(key, None, value.clone()).await.unwrap();
-
-        let result = backend.get(key, None).await.unwrap();
-
-        assert_eq!(result, Some(value));
-    }
-
-    #[tokio::test]
-    async fn test_get_container() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend
-            .save(key, Some("container"), value.clone())
-            .await
-            .unwrap();
-
-        let result = backend.get(key, Some("container")).await.unwrap();
-
-        assert_eq!(result, Some(value));
-    }
-
-    #[tokio::test]
-    async fn test_delete() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend.save(key, None, value.clone()).await.unwrap();
-
-        let result = backend.delete(key, None).await.unwrap();
-
-        assert_eq!(result, ());
-
-        let result = backend.get(key, None).await.unwrap();
-
-        assert_eq!(result, None);
-    }
-
-    #[tokio::test]
-    async fn test_delete_container() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend
-            .save(key, Some("container"), value.clone())
-            .await
-            .unwrap();
-
-        let result = backend.delete(key, Some("container")).await.unwrap();
-
-        assert_eq!(result, ());
-
-        let result = backend.get(key, Some("container")).await.unwrap();
-
-        assert_eq!(result, None);
-    }
-
-    #[tokio::test]
-    async fn test_size() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend.save(key, None, value.clone()).await.unwrap();
-
-        let result = backend.size(key, None).await.unwrap();
-
-        assert_eq!(result, Some(ByteSize::b(value.len() as u64)));
-    }
-
-    #[tokio::test]
-    async fn test_size_container() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend
-            .save(key, Some("container"), value.clone())
-            .await
-            .unwrap();
-
-        let result = backend.size(key, Some("container")).await.unwrap();
-
-        assert_eq!(result, Some(ByteSize::b(value.len() as u64)));
-    }
-
-    #[tokio::test]
-    async fn test_list() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend.save(key, None, value.clone()).await.unwrap();
-
-        let result = backend.list(None).await.unwrap();
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].key, key);
-        assert_eq!(result[0].size, ByteSize::b(value.len() as u64));
-    }
-
-    #[tokio::test]
-    async fn test_list_container() {
-        let backend = backend();
-
-        let key = "test";
-        let value = Bytes::from("test");
-
-        backend
-            .save(key, Some("container"), value.clone())
-            .await
-            .unwrap();
-
-        let result = backend.list(Some("container")).await.unwrap();
-
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].key, key);
-        assert_eq!(result[0].size, ByteSize::b(value.len() as u64));
-    }
+    decl_remote_cache_storage_backend_tests!(LocalDiskCacheBackend::new(
+        temp_dir().path(),
+        "default"
+    ));
 }

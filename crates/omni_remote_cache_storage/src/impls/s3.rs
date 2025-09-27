@@ -16,7 +16,7 @@ use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
 // --- S3 Backend Struct ---
 pub struct S3CacheBackend {
     client: Client,
-    default_bucket: String,
+    default_container: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, new, Default)]
@@ -24,7 +24,8 @@ pub struct BasicS3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub endpoint: String,
-    pub default_bucket: String,
+    /// This translates to the bucket name
+    pub default_container: String,
     pub region: String,
     pub force_path_style: bool,
 }
@@ -36,7 +37,7 @@ impl S3CacheBackend {
     ) -> Self {
         Self {
             client: Client::new(config),
-            default_bucket: default_bucket.into(),
+            default_container: default_bucket.into(),
         }
     }
 
@@ -46,7 +47,7 @@ impl S3CacheBackend {
     ) -> Self {
         Self {
             client: Client::from_conf(config),
-            default_bucket: default_bucket.into(),
+            default_container: default_bucket.into(),
         }
     }
 
@@ -70,7 +71,7 @@ impl S3CacheBackend {
             .force_path_style(basic.force_path_style)
             .build();
 
-        Self::from_aws_s3_sdk_config(s3_config, basic.default_bucket.clone())
+        Self::from_aws_s3_sdk_config(s3_config, basic.default_container.clone())
     }
 
     pub async fn from_aws_config_from_env(
@@ -84,13 +85,13 @@ impl S3CacheBackend {
 
 impl S3CacheBackend {
     fn get_bucket_name<'s>(&'s self, container: Option<&'s str>) -> &'s str {
-        container.unwrap_or(&self.default_bucket)
+        container.unwrap_or(&self.default_container)
     }
 
     async fn head(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<HeadObjectOutput, aws_sdk_s3::Error> {
         let bucket = self.get_bucket_name(container);
 
@@ -108,10 +109,14 @@ impl S3CacheBackend {
 
 #[async_trait]
 impl RemoteCacheStorageBackend for S3CacheBackend {
+    fn default_container(&self) -> &str {
+        &self.default_container
+    }
+
     async fn get(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<Option<Bytes>, Error> {
         let bucket = self.get_bucket_name(container);
 
@@ -168,8 +173,8 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn save(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
         value: Bytes,
     ) -> Result<(), Error> {
         let bucket = self.get_bucket_name(container);
@@ -189,8 +194,8 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn delete(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<(), Error> {
         let bucket = self.get_bucket_name(container);
 
@@ -207,10 +212,10 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
 
     async fn size(
         &self,
-        key: &str,
         container: Option<&str>,
+        key: &str,
     ) -> Result<Option<ByteSize>, Error> {
-        let head = self.head(key, container).await;
+        let head = self.head(container, key).await;
 
         match head {
             Ok(output) => {
