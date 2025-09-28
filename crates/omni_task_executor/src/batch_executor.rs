@@ -368,7 +368,7 @@ async fn run_process<'a>(
             trace::error!(
                 "{}",
                 format!(
-                    "Failed to execute task '{}', exit code '{}'",
+                    "Executed task '{}' but errored with exit code '{}'",
                     task_ctx.node.full_task_name(),
                     t.exit_code()
                 )

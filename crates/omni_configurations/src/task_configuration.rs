@@ -1,14 +1,11 @@
-use config_utils::{DictConfig, ListConfig, Replace};
+use config_utils::{DictConfig, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
 use omni_core::{Task, TaskDependency};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    CacheConfiguration, MetaConfiguration, TaskOutputConfiguration,
-    utils::default_true,
-};
+use crate::{CacheConfiguration, MetaConfiguration, TaskOutputConfiguration};
 
 use super::TaskDependencyConfiguration;
 
@@ -30,16 +27,16 @@ pub struct TaskConfigurationLongForm {
     pub siblings: ListConfig<TaskDependencyConfiguration>,
 
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: Option<Replace<String>>,
 
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-
-    #[serde(default)]
-    pub interactive: bool,
+    #[serde(default = "default_enabled")]
+    pub enabled: Option<Replace<bool>>,
 
     #[serde(default)]
-    pub persistent: bool,
+    pub interactive: Option<Replace<bool>>,
+
+    #[serde(default)]
+    pub persistent: Option<Replace<bool>>,
 
     #[serde(default)]
     pub env: TaskEnvConfiguration,
@@ -54,6 +51,10 @@ pub struct TaskConfigurationLongForm {
     pub meta: MetaConfiguration,
 }
 
+fn default_enabled() -> Option<Replace<bool>> {
+    Some(Replace::new(true))
+}
+
 impl Default for TaskConfigurationLongForm {
     fn default() -> Self {
         Self {
@@ -64,9 +65,9 @@ impl Default for TaskConfigurationLongForm {
             cache: CacheConfiguration::default(),
             output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
-            enabled: true,
-            interactive: false,
-            persistent: false,
+            enabled: None,
+            interactive: None,
+            persistent: None,
             siblings: ListConfig::append(vec![]),
         }
     }
@@ -134,10 +135,10 @@ impl TaskConfiguration {
             }) => Task::new(
                 command.clone(),
                 dependencies.iter().cloned().map(Into::into).collect(),
-                description.clone(),
-                *enabled,
-                *interactive,
-                *persistent,
+                description.clone().map(|e| e.into_inner()),
+                enabled.map(|e| e.into_inner()).unwrap_or(true),
+                interactive.map(|e| e.into_inner()).unwrap_or(false),
+                persistent.map(|e| e.into_inner()).unwrap_or(false),
                 with.iter().cloned().map(Into::into).collect(),
             ),
         }
@@ -220,14 +221,14 @@ impl Merge for TaskConfiguration {
                 if !b_cmd.trim().is_empty() {
                     *a_cmd = b_cmd;
                 }
-                merge::option::overwrite_none(a_desc, b_desc);
+                merge::option::recurse(a_desc, b_desc);
                 a_env.merge(b_env);
                 a_cache_key.merge(b_cache_key);
                 a_output.merge(b_output);
                 a_meta.merge(b_meta);
-                *a_enabled = b_enabled;
-                *a_interactive = b_interactive;
-                *a_persistent = b_persistent;
+                merge::option::recurse(a_enabled, b_enabled);
+                merge::option::recurse(a_interactive, b_interactive);
+                merge::option::recurse(a_persistent, b_persistent);
                 a_with.merge(b_with);
             }
             (this @ Lf { .. }, other @ Sf(..))
@@ -260,12 +261,15 @@ mod tests {
         let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
             command: "a".to_string(),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
-            description: Some(String::from("a description")),
+            description: Some(Replace::new(String::from("a description"))),
             env: Default::default(),
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
             meta: Default::default(),
-            ..TaskConfigurationLongForm::default()
+            interactive: Some(Replace::new(false)),
+            persistent: Some(Replace::new(true)),
+            enabled: Some(Replace::new(true)),
+            siblings: ListConfig::append(vec![]),
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -281,7 +285,10 @@ mod tests {
             cache: Default::default(),
             output: TaskOutputConfiguration::default(),
             meta: Default::default(),
-            ..TaskConfigurationLongForm::default()
+            interactive: Some(Replace::new(true)),
+            persistent: Some(Replace::new(false)),
+            enabled: None,
+            siblings: ListConfig::append(vec![]),
         });
 
         a.merge(b);
@@ -291,12 +298,15 @@ mod tests {
             TaskConfiguration::long_form(TaskConfigurationLongForm {
                 command: "b".to_string(),
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
-                description: Some(String::from("a description")),
+                description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),
                 cache: Default::default(),
                 output: Default::default(),
                 meta: Default::default(),
-                ..TaskConfigurationLongForm::default()
+                interactive: Some(Replace::new(true)),
+                persistent: Some(Replace::new(false)),
+                enabled: Some(Replace::new(true)),
+                siblings: ListConfig::append(vec![]),
             })
         );
     }

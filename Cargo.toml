@@ -71,7 +71,7 @@ shadow-rs = { version = "^1.3.0", default-features = false }
 convert_case = { version = "^0.8.0" }
 schemars = { version = "^1.0.4", features = ["indexmap2"] }
 walkdir = { version = "^2.5.0" }
-serde_yml = { version = "^0.0.12" }
+serde_norway = { version = "^0.9.42" }
 ignore = { version = "^0.4.23" }
 regex = { version = "^1.11.2" }
 lazy-regex = { version = "^3.4.1" }
@@ -98,7 +98,7 @@ mockall = { version = "^0.13.1" }
 ntest = { version = "^0.9.3" }
 bytes = { version = "^1.10.1" }
 byteorder = { version = "^1.5.0" }
-rust-embed = { version = "8.7.2" }
+rust-embed = { version = "8.7.2", features = ["compression", "include-exclude", "deterministic-timestamps"] }
 garde = { version = "^0.22.0", features = ["full"] }
 os_pipe = { version = "^1.2.2" }
 indexmap = { version = "^2.11.1", features = ["serde", "rayon"] }
@@ -164,11 +164,34 @@ omni_task_context = { path = "./crates/omni_task_context" }
 omni_remote_cache_service = { path = "./services/omni_remote_cache_service" }
 omni_remote_cache_storage = { path = "./crates/omni_remote_cache_storage" }
 axum = { version = "^0.8.4", features = ["macros", "http2", "multipart"] }
+tower = { version = "^0.5.2" }
+tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }
+axum-valid = { version = "^0.24.0", default-features = false, features = ["full_garde"] }
+axum-extra = { version = "^0.10.1", features = [
+    "async-stream",
+    "typed-header",
+    "typed-routing",
+    "form",
+    "file-stream",
+    "error-response"
+] }
+validator = { version = "^0.20.0" }
 aws-config = { version = "^1.8.6" }
 aws-sdk-s3 = { version = "^1.106.0" }
 aws-credential-types = { version = "^1.2.6" }
 aws-types = { version = "^1.3.8" }
 lru = { version = "^0.16.1" }
+utoipa = { version = "^5.4.0", features = [
+    "indexmap",
+    "url",
+    "time",
+    "debug",
+    "uuid",
+    "ulid",
+    "openapi_extensions",
+    "repr",
+    "non_strict_integers"
+] }
 
 [profile.release]
 incremental = true
