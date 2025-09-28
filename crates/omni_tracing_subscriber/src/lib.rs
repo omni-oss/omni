@@ -54,6 +54,7 @@ impl TracingSubscriber {
 
         let main_filters = Targets::new()
             .with_target("globset", LevelFilter::OFF)
+            .with_target("mio", LevelFilter::OFF)
             .with_target("ignore", LevelFilter::OFF);
 
         if !config.stdout_trace_level.is_off() {

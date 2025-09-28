@@ -96,7 +96,7 @@ impl TuiPresenter {
         let i_inputs = inputs.clone();
         let inputs_task = tokio::spawn(async move {
             while let Some(key) = keys_rx.recv().await {
-                trace::debug!(
+                trace::trace!(
                     "received_key: {} => {:?}",
                     key.id,
                     key.key_event
@@ -106,7 +106,7 @@ impl TuiPresenter {
                 let mut input = uts.get_mut(&key.id);
                 if let Some(w) = input.as_mut() {
                     let bytes = key_event_to_bytes(key.key_event);
-                    trace::debug!("found input, sending bytes: {:?}", bytes);
+                    trace::trace!("found input, sending bytes: {:?}", bytes);
                     w.write_all(&bytes).await?;
                 }
             }
@@ -316,7 +316,7 @@ fn run_tui(
             shutdown_rx.close();
             break;
         }
-        trace::debug!("scroll states: {:?}", scroll_states);
+        trace::trace!("scroll states: {:?}", scroll_states);
 
         let fd =
             get_frame_data(&screens, &active_id, input_enabled, &scroll_states);
@@ -331,7 +331,7 @@ fn run_tui(
             if let Some(active_id) = acting_active_id.as_deref()
                 && let Some(scroll_state) = scroll_states.get_mut(active_id)
             {
-                trace::debug!(
+                trace::trace!(
                     "State for {active_id:?}: {scroll_state:?}, {state:?}"
                 );
                 scroll_state.scroll_y = state.paragraph_scroll_y;
@@ -366,7 +366,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            trace::debug!("Down key pressed");
+                            trace::trace!("Down key pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -382,7 +382,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            trace::debug!("Up key pressed");
+                            trace::trace!("Up key pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -472,11 +472,11 @@ fn update_or_insert_scroll_state(
     if let Some(scroll_state) =
         get_current_scroll_state(active_id, scroll_states)
     {
-        trace::debug!(
+        trace::trace!(
             "Current scroll state for {active_id:?}: {scroll_state:?}"
         );
         update_fn(scroll_state);
-        trace::debug!(
+        trace::trace!(
             "Updated scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
         return Some(*scroll_state);
@@ -484,7 +484,7 @@ fn update_or_insert_scroll_state(
         let scroll_state = insert_fn();
 
         scroll_states.insert(active_id.to_string(), scroll_state);
-        trace::debug!(
+        trace::trace!(
             "Inserted scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
         return Some(scroll_state);

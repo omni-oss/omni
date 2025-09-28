@@ -21,7 +21,7 @@ use crate::utils::list_config_default;
 pub struct CacheConfiguration {
     #[serde(default)]
     pub key: CacheKeyConfiguration,
-    #[serde(default)]
+    #[serde(default = "default_enabled")]
     #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
 }
@@ -119,7 +119,7 @@ mod tests {
                 defaults: Some(false),
                 ..Default::default()
             },
-            enabled: default_enabled(),
+            enabled: Some(Replace::new(false)),
         };
 
         let b = CacheConfiguration {
@@ -133,6 +133,6 @@ mod tests {
         a.merge(b);
 
         assert_eq!(a.key.defaults, Some(true));
-        assert_eq!(a.enabled, default_enabled());
+        assert_eq!(a.enabled, Some(Replace::new(false)));
     }
 }

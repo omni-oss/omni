@@ -74,7 +74,7 @@ fn hashtext(text: &str) -> String {
 impl LocalTaskExecutionCacheStore {
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self))
+        tracing::instrument(level = "debug", skip(self, projects, config))
     )]
     async fn collect<'a>(
         &'a self,
@@ -141,7 +141,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self))
+        tracing::instrument(level = "debug", skip(self, cache_infos))
     )]
     async fn cache_many<'a>(
         &'a self,
@@ -274,7 +274,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self))
+        tracing::instrument(level = "debug", skip(self, projects))
     )]
     async fn get_many(
         &self,
