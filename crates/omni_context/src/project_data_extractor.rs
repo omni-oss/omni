@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use config_utils::ListConfig;
+use config_utils::{IntoInner, ListConfig};
 use derive_new::new;
 use env::{
     CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
@@ -181,7 +181,10 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 cache_infos.insert(
                     format!("{}#{}", project_config.name, name),
                     CacheInfo {
-                        cache_execution: cache.enabled,
+                        cache_execution: cache
+                            .enabled
+                            .map(|i| i.into_inner())
+                            .unwrap_or(true),
                         key_defaults: use_defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
                         key_input_files: key_files,

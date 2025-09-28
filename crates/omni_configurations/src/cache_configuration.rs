@@ -21,16 +21,26 @@ use crate::utils::list_config_default;
 pub struct CacheConfiguration {
     #[serde(default)]
     pub key: CacheKeyConfiguration,
-    #[serde(default = "super::utils::default_true")]
-    #[merge(strategy = config_utils::replace)]
-    pub enabled: bool,
+    #[serde(default = "default_enabled")]
+    #[merge(strategy = merge::option::recurse)]
+    pub enabled: Option<Replace<bool>>,
+}
+
+#[inline(always)]
+fn default_enabled() -> Option<Replace<bool>> {
+    Some(Replace::new(true))
+}
+
+#[inline(always)]
+fn default_defaults() -> Option<bool> {
+    Some(true)
 }
 
 impl Default for CacheConfiguration {
     fn default() -> Self {
         Self {
             key: Default::default(),
-            enabled: true,
+            enabled: default_enabled(),
         }
     }
 }
@@ -48,7 +58,7 @@ impl Default for CacheConfiguration {
     Ord,
 )]
 pub struct CacheKeyConfiguration {
-    #[serde(default)]
+    #[serde(default = "default_defaults")]
     #[merge(strategy = config_utils::replace_if_some)]
     pub defaults: Option<bool>,
 
@@ -60,9 +70,10 @@ pub struct CacheKeyConfiguration {
 }
 
 impl Default for CacheKeyConfiguration {
+    #[inline(always)]
     fn default() -> Self {
         Self {
-            defaults: None,
+            defaults: default_defaults(),
             env: list_config_default(),
             files: list_config_default(),
         }
@@ -72,6 +83,7 @@ impl Default for CacheKeyConfiguration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_cache_key_merge_defaults() {
         // It should only replace if the right side is Some
@@ -98,5 +110,29 @@ mod tests {
         default2.merge(custom2);
         assert_eq!(default.defaults, Some(true));
         assert_eq!(default2.defaults, Some(false));
+    }
+
+    #[test]
+    fn test_cache_configuration_merging() {
+        let mut a = CacheConfiguration {
+            key: CacheKeyConfiguration {
+                defaults: Some(false),
+                ..Default::default()
+            },
+            enabled: default_enabled(),
+        };
+
+        let b = CacheConfiguration {
+            key: CacheKeyConfiguration {
+                defaults: Some(true),
+                ..Default::default()
+            },
+            enabled: None,
+        };
+
+        a.merge(b);
+
+        assert_eq!(a.key.defaults, Some(true));
+        assert_eq!(a.enabled, default_enabled());
     }
 }

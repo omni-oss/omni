@@ -1,10 +1,12 @@
 use config_utils::ListConfig;
 use merge::Merge;
 
+#[inline(always)]
 pub fn default_true() -> bool {
     true
 }
 
+#[inline(always)]
 pub fn list_config_default<T: Merge>() -> ListConfig<T> {
     ListConfig::append(vec![])
 }

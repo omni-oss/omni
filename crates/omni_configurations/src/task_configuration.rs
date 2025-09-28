@@ -73,9 +73,9 @@ impl Default for TaskConfigurationLongForm {
             cache: CacheConfiguration::default(),
             output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
-            enabled: None,
-            interactive: None,
-            persistent: None,
+            enabled: default_enabled(),
+            interactive: default_interactive(),
+            persistent: default_persistent(),
             siblings: ListConfig::append(vec![]),
         }
     }
