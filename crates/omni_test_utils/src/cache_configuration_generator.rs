@@ -1,3 +1,4 @@
+use config_utils::Replace;
 use derive_builder::Builder;
 use omni_configurations::CacheConfiguration;
 
@@ -37,7 +38,7 @@ impl CacheConfigurationGenerator {
 impl CacheConfigurationGenerator {
     pub fn generate(&self) -> CacheConfiguration {
         CacheConfiguration {
-            enabled: self.enabled,
+            enabled: Some(Replace::new(self.enabled)),
             key: self.key.generate(),
         }
     }
