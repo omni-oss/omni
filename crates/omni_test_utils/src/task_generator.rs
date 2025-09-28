@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use config_utils::ListConfig;
+use config_utils::{ListConfig, Replace};
 use derive_builder::Builder;
 use omni_configurations::{
     TaskConfiguration, TaskConfigurationLongForm, TaskDependencyConfiguration,
@@ -100,7 +100,7 @@ impl TaskGenerator {
         TaskConfiguration::LongForm(Box::new(TaskConfigurationLongForm {
             command: self.command.clone(),
             cache: self.cache.generate(),
-            description: self.description.clone(),
+            description: self.description.clone().map(|e| Replace::new(e)),
             env: self.env.generate(),
             meta: self.meta.generate(),
             output: self.output.generate(),
