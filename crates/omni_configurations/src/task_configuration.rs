@@ -32,10 +32,10 @@ pub struct TaskConfigurationLongForm {
     #[serde(default = "default_enabled")]
     pub enabled: Option<Replace<bool>>,
 
-    #[serde(default)]
+    #[serde(default = "default_interactive")]
     pub interactive: Option<Replace<bool>>,
 
-    #[serde(default)]
+    #[serde(default = "default_persistent")]
     pub persistent: Option<Replace<bool>>,
 
     #[serde(default)]
@@ -53,6 +53,14 @@ pub struct TaskConfigurationLongForm {
 
 fn default_enabled() -> Option<Replace<bool>> {
     Some(Replace::new(true))
+}
+
+fn default_persistent() -> Option<Replace<bool>> {
+    Some(Replace::new(false))
+}
+
+fn default_interactive() -> Option<Replace<bool>> {
+    Some(Replace::new(false))
 }
 
 impl Default for TaskConfigurationLongForm {
