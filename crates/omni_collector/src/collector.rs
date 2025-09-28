@@ -64,6 +64,7 @@ struct HashInput<'a> {
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub input_files: &'a [OmniPath],
+    pub cached_output_files_glob: &'a [OmniPath],
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
@@ -71,6 +72,7 @@ struct HashInput<'a> {
 
 struct Holder<'a> {
     output_files_globset: Option<GlobSet>,
+    output_files_glob: Vec<OmniPath>,
     resolved_output_files: Option<Vec<OmniPath>>,
     input_files_globset: Option<GlobSet>,
     resolved_input_files: Option<Vec<OmniPath>>,
@@ -122,7 +124,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
         Ok(output_dir)
     }
-    async fn get_hash(
+
+    async fn get_digest(
         &self,
         hash_input: &HashInput<'_>,
     ) -> Result<DefaultHash, Error> {
@@ -168,6 +171,23 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
             tree.insert(DefaultHasher::hash(env_vars.as_bytes()));
         }
+
+        if !hash_input.cached_output_files_glob.is_empty() {
+            let mut sorted = hash_input
+                .cached_output_files_glob
+                .iter()
+                .map(|p| p.unresolved_path())
+                .collect::<Vec<_>>();
+
+            sorted.sort();
+
+            for path in sorted {
+                tree.insert(DefaultHasher::hash(
+                    path.to_string_lossy().as_bytes(),
+                ));
+            }
+        }
+
         let full_task_name = format!(
             "{}#{}: {}",
             hash_input.project_name,
@@ -261,6 +281,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             to_process.push(Holder {
                 input_files_globset,
                 output_files_globset,
+                output_files_glob: project.output_files.to_vec(),
                 resolved_input_files: if should_collect_input_files {
                     // just in the collected input files will be the same as the
                     // original input files
@@ -381,7 +402,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         if config.digests || config.cache_output_dirs {
             for holder in &mut to_process {
                 let hash = self
-                    .get_hash(&HashInput {
+                    .get_digest(&HashInput {
                         task_name: holder.task.task_name,
                         task_command: holder.task.task_command,
                         project_name: holder.task.project_name,
@@ -393,6 +414,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         input_env_cache_keys: holder.task.input_env_keys,
                         env_vars: holder.task.env_vars,
                         dependency_digests: holder.task.dependency_digests,
+                        cached_output_files_glob: &holder.output_files_glob,
                     })
                     .await?;
 
