@@ -51,16 +51,19 @@ pub struct TaskConfigurationLongForm {
     pub meta: MetaConfiguration,
 }
 
+#[inline(always)]
 fn default_enabled() -> Option<Replace<bool>> {
-    Some(Replace::new(true))
+    None
 }
 
+#[inline(always)]
 fn default_persistent() -> Option<Replace<bool>> {
-    Some(Replace::new(false))
+    None
 }
 
+#[inline(always)]
 fn default_interactive() -> Option<Replace<bool>> {
-    Some(Replace::new(false))
+    None
 }
 
 impl Default for TaskConfigurationLongForm {
