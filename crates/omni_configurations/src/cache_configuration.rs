@@ -21,19 +21,19 @@ use crate::utils::list_config_default;
 pub struct CacheConfiguration {
     #[serde(default)]
     pub key: CacheKeyConfiguration,
-    #[serde(default = "default_enabled")]
+    #[serde(default)]
     #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
 }
 
 #[inline(always)]
 fn default_enabled() -> Option<Replace<bool>> {
-    Some(Replace::new(true))
+    None
 }
 
 #[inline(always)]
 fn default_defaults() -> Option<bool> {
-    Some(true)
+    None
 }
 
 impl Default for CacheConfiguration {
