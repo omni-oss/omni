@@ -24,7 +24,7 @@ use crate::error::{Error, ErrorInner};
 pub struct CollectConfig {
     pub output_files: bool,
     pub input_files: bool,
-    pub hashes: bool,
+    pub digests: bool,
     pub cache_output_dirs: bool,
 }
 
@@ -39,7 +39,7 @@ pub struct ProjectTaskInfo<'a> {
     pub input_files: &'a [OmniPath],
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
-    pub dependency_hashes: &'a [DefaultHash],
+    pub dependency_digests: &'a [DefaultHash],
 }
 
 #[auto_impl]
@@ -54,7 +54,7 @@ pub struct CollectResult<'a> {
     pub input_files: Option<Vec<OmniPath>>,
     pub output_files: Option<Vec<OmniPath>>,
     pub roots: RootMap<'a>,
-    pub hash: Option<DefaultHash>,
+    pub digest: Option<DefaultHash>,
     pub cache_output_dir: Option<PathBuf>,
 }
 
@@ -66,7 +66,7 @@ struct HashInput<'a> {
     pub input_files: &'a [OmniPath],
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
-    pub dependency_hashes: &'a [DefaultHash],
+    pub dependency_digests: &'a [DefaultHash],
 }
 
 struct Holder<'a> {
@@ -76,7 +76,7 @@ struct Holder<'a> {
     resolved_input_files: Option<Vec<OmniPath>>,
     task: ProjectTaskInfo<'a>,
     roots: RootMap<'a>,
-    hash: Option<DefaultHash>,
+    digest: Option<DefaultHash>,
     cache_output_dir: Option<PathBuf>,
 }
 
@@ -136,7 +136,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             .await
             .map_err(|e| ErrorInner::ProjectDirHasher(e.to_string()))?;
 
-        let mut dep_hashes = hash_input.dependency_hashes.to_vec();
+        let mut dep_hashes = hash_input.dependency_digests.to_vec();
 
         dep_hashes.sort();
 
@@ -193,7 +193,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         let mut to_process = Vec::with_capacity(project_tasks.len());
 
         let should_collect_input_files =
-            config.input_files || config.hashes || config.cache_output_dirs;
+            config.input_files || config.digests || config.cache_output_dirs;
 
         let should_collect_output_files = config.output_files;
 
@@ -278,7 +278,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 task: *project,
                 roots,
                 cache_output_dir: None,
-                hash: None,
+                digest: None,
             });
         }
 
@@ -378,7 +378,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
         }
 
-        if config.hashes || config.cache_output_dirs {
+        if config.digests || config.cache_output_dirs {
             for holder in &mut to_process {
                 let hash = self
                     .get_hash(&HashInput {
@@ -392,19 +392,20 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             .expect("should be some"),
                         input_env_cache_keys: holder.task.input_env_keys,
                         env_vars: holder.task.env_vars,
-                        dependency_hashes: holder.task.dependency_hashes,
+                        dependency_digests: holder.task.dependency_digests,
                     })
                     .await?;
 
-                holder.hash = Some(hash);
+                holder.digest = Some(hash);
             }
         }
 
         if config.cache_output_dirs {
             for holder in &mut to_process {
-                let hashstring =
-                    bs58::encode(holder.hash.as_ref().expect("should be some"))
-                        .into_string();
+                let hashstring = bs58::encode(
+                    holder.digest.as_ref().expect("should be some"),
+                )
+                .into_string();
                 let output_dir =
                     self.get_output_dir(holder.task.project_name, &hashstring)?;
 
@@ -420,7 +421,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 output_files: p.resolved_output_files,
                 roots: p.roots,
                 cache_output_dir: p.cache_output_dir,
-                hash: p.hash,
+                digest: p.digest,
             })
             .collect::<Vec<_>>())
     }

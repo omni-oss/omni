@@ -104,7 +104,7 @@ impl WorkspaceGenerator {
             .open(workspace_dir.join("workspace.omni.yml"))?;
 
         let file = std::io::BufWriter::new(file);
-        serde_yml::to_writer(file, &ws)?;
+        serde_norway::to_writer(file, &ws)?;
 
         Ok(())
     }

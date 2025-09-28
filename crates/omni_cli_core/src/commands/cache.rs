@@ -249,7 +249,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
                 println!("  Task: {}", task_name);
                 for entry in entries {
                     let hash = base64::engine::general_purpose::STANDARD
-                        .encode(&entry.execution_hash);
+                        .encode(&entry.digest);
                     println!(
                         "   {} {}({})",
                         hash,

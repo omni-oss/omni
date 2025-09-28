@@ -83,7 +83,7 @@ async fn run_dump(args: &DumpArgs) -> eyre::Result<()> {
             serde_json::to_writer_pretty(std::io::stdout(), &cli_spec)?;
         }
         DeclspecFormat::Yaml => {
-            serde_yml::to_writer(std::io::stdout(), &cli_spec)?;
+            serde_norway::to_writer(std::io::stdout(), &cli_spec)?;
         }
         DeclspecFormat::Toml => {
             let text = toml::ser::to_string(&cli_spec)?;

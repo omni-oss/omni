@@ -240,7 +240,7 @@ where
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_completed(
-                        Some(cached_result.execution_hash),
+                        Some(cached_result.digest),
                         task_ctx.node.clone(),
                         cached_result.exit_code,
                         cached_result.execution_duration,

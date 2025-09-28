@@ -17,7 +17,7 @@ strum = { workspace = true }
 trace = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 serde = { workspace = true }
-serde_yml = { workspace = true }
+serde_norway = { workspace = true }
 omni_types = { workspace = true }
 omni_configurations = { workspace = true }
 #tempfile = { workspace = true }

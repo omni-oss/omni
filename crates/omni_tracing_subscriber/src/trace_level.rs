@@ -15,8 +15,8 @@ use tracing_core::LevelFilter;
 )]
 #[repr(u8)]
 pub enum TraceLevel {
-    #[strum(serialize = "none")]
-    None = 0,
+    #[strum(serialize = "off")]
+    Off = 0,
     #[strum(serialize = "error")]
     Error = 1,
     #[strum(serialize = "warn")]
@@ -33,7 +33,7 @@ pub enum TraceLevel {
 impl From<TraceLevel> for LevelFilter {
     fn from(value: TraceLevel) -> Self {
         match value {
-            TraceLevel::None => LevelFilter::OFF,
+            TraceLevel::Off => LevelFilter::OFF,
             TraceLevel::Error => LevelFilter::ERROR,
             TraceLevel::Warn => LevelFilter::WARN,
             TraceLevel::Info => LevelFilter::INFO,

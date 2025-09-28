@@ -117,7 +117,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             self.context.tracing_config().stdout_trace_level;
         let config = TracingConfig {
             stderr_trace_enabled: false,
-            stdout_trace_level: TraceLevel::None,
+            stdout_trace_level: TraceLevel::Off,
             ..self.context.tracing_config().clone()
         };
         trace::debug!(

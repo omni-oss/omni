@@ -30,10 +30,12 @@ pub struct CachedTaskExecution {
     pub task_command: String,
 
     #[new(into)]
-    pub execution_hash: DefaultHash,
+    #[serde(alias = "execution_hash")]
+    pub digest: DefaultHash,
 
     #[new(into)]
-    pub dependency_hashes: Vec<DefaultHash>,
+    #[serde(alias = "dependency_hashes")]
+    pub dependency_digests: Vec<DefaultHash>,
 
     #[new(into)]
     /// Location of the cached output

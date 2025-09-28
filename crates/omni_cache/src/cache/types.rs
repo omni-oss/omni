@@ -20,7 +20,7 @@ pub struct TaskExecutionInfo<'a> {
     pub input_files: &'a [OmniPath],
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
-    pub dependency_hashes: &'a [DefaultHash],
+    pub dependency_digests: &'a [DefaultHash],
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, new)]
@@ -35,7 +35,7 @@ pub struct NewCacheInfo<'a> {
 pub struct PrunedCacheEntry {
     pub project_name: String,
     pub task_name: String,
-    pub execution_hash: DefaultHash,
+    pub digest: DefaultHash,
     pub size: ByteSize,
     pub entry_dir: PathBuf,
     pub stale: StaleStatus,
