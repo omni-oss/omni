@@ -1,15 +1,27 @@
 use crate::{
-    local_disk_backend::LocalDiskBackendConfig, s3_backend::S3BackendConfig,
+    local_disk_backend::LocalDiskBackendConfig, routes::root::RouterConfig,
+    s3_backend::S3BackendConfig,
 };
 
 #[derive(clap::Parser)]
 pub struct Cli {
-    #[command(flatten)]
-    pub args: CliArgs,
+    #[command(subcommand)]
+    pub subcommand: CliSubcommands,
 }
 
-#[derive(clap::Args)]
-pub struct CliArgs {
+#[derive(clap::Subcommand, Debug, Clone)]
+pub enum CliSubcommands {
+    Serve(#[command(flatten)] ServeCommand),
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct ServeCommand {
+    #[command(flatten)]
+    pub args: ServeArgs,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct ServeArgs {
     #[clap(
         long,
         short,
@@ -50,11 +62,14 @@ pub struct CliArgs {
         help = "The backend to use for storing artifacts"
     )]
     pub backend: BackendType,
+
+    #[command(flatten)]
+    pub routes: Option<RouterConfig>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub enum BackendType {
     S3,
     LocalDisk,
-    Memory,
+    InMemory,
 }

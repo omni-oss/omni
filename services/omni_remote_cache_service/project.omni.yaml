@@ -10,9 +10,16 @@ tasks:
       files:
         - "@workspace/target/release/omni_remote_cache_server"
 
+  dev:
+    env:
+      vars:
+        ADDITIONAL_ARGS: >
+          -- serve -b in-memory --routes.enable-openapi
+
   profile:
     dependencies:
       - ^passthrough
 
 dependencies:
   - omni_remote_cache_storage
+  - omni_tracing_subscriber
