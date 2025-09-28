@@ -2,9 +2,7 @@
 name: rust
 
 cache:
-  enabled: true
   key:
-    defaults: true
     files:
       - "Cargo.toml"
       - "./src/**/*.rs"

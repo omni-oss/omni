@@ -92,7 +92,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         });
 
         for project_config in filtered {
-            trace::trace!(
+            trace::debug!(
                 project_configuration = ?project_config,
                 "processing project config: {}",
                 project_config.name

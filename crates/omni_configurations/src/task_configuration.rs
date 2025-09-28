@@ -206,7 +206,7 @@ impl Merge for TaskConfiguration {
                     command: a_cmd,
                     description: a_desc,
                     env: a_env,
-                    cache: a_cache_key,
+                    cache: a_cache,
                     output: a_output,
                     meta: a_meta,
                     enabled: a_enabled,
@@ -219,7 +219,7 @@ impl Merge for TaskConfiguration {
                     command: b_cmd,
                     description: b_desc,
                     env: b_env,
-                    cache: b_cache_key,
+                    cache: b_cache,
                     output: b_output,
                     meta: b_meta,
                     enabled: b_enabled,
@@ -234,7 +234,7 @@ impl Merge for TaskConfiguration {
                 }
                 merge::option::recurse(a_desc, b_desc);
                 a_env.merge(b_env);
-                a_cache_key.merge(b_cache_key);
+                a_cache.merge(b_cache);
                 a_output.merge(b_output);
                 a_meta.merge(b_meta);
                 merge::option::recurse(a_enabled, b_enabled);

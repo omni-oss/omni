@@ -203,7 +203,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self))
+        tracing::instrument(
+            level = "debug",
+            skip(self, project_tasks, config)
+        )
     )]
     pub async fn collect(
         &self,
