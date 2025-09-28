@@ -82,7 +82,7 @@ pub struct CliArgs {
         long,
         help = "The trace level to use for file traces",
         value_enum,
-        default_value = "none",
+        default_value = "off",
         env = "OMNI_FILE_TRACE_LEVEL"
     )]
     pub file_trace_level: EnumValueAdapter<TraceLevel>,
@@ -120,10 +120,10 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            stdout_trace_level: EnumValueAdapter::new(TraceLevel::None),
+            stdout_trace_level: EnumValueAdapter::new(TraceLevel::Off),
             stderr_trace: false,
             file_trace_output: None,
-            file_trace_level: EnumValueAdapter::new(TraceLevel::None),
+            file_trace_level: EnumValueAdapter::new(TraceLevel::Off),
             env_root_dir_marker: None,
             env_file: None,
             env: None,

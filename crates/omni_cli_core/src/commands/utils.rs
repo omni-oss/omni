@@ -144,7 +144,7 @@ pub fn write_results(
             serde_json::to_writer_pretty(&mut f, results)?;
         }
         ResultFormat::Yaml => {
-            serde_yml::to_writer(&mut f, results)?;
+            serde_norway::to_writer(&mut f, results)?;
         }
         ResultFormat::Toml => {
             let text = toml::ser::to_string(results)?;

@@ -61,7 +61,7 @@ pub mod fs {
         TConfig: DeserializeOwned,
     {
         match ext.to_string_lossy().as_ref() {
-            "yaml" | "yml" => Ok(serde_yml::from_str(&content)?),
+            "yaml" | "yml" => Ok(serde_norway::from_str(&content)?),
             "json" => Ok(serde_json::from_str(&content)?),
             "toml" => Ok(toml::from_str(&content)?),
             ext => Err(LoadConfigErrorInner::UnsupportedFileExtension(
@@ -106,7 +106,7 @@ pub mod fs {
         TomlDeserialize(#[from] toml::de::Error),
 
         #[error(transparent)]
-        YmlDeserialize(#[from] serde_yml::Error),
+        YmlDeserialize(#[from] serde_norway::Error),
 
         #[error(transparent)]
         JsonDeserialize(#[from] serde_json::Error),

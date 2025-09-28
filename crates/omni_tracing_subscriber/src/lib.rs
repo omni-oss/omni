@@ -32,9 +32,9 @@ pub fn noop_subscriber() -> TracingSubscriber {
     TracingSubscriber::new(
         &TracingConfig {
             file_path: None,
-            file_trace_level: TraceLevel::None,
+            file_trace_level: TraceLevel::Off,
             stderr_trace_enabled: false,
-            stdout_trace_level: TraceLevel::None,
+            stdout_trace_level: TraceLevel::Off,
         },
         vec![],
     )
@@ -56,7 +56,7 @@ impl TracingSubscriber {
             .with_target("globset", LevelFilter::OFF)
             .with_target("ignore", LevelFilter::OFF);
 
-        if !config.stdout_trace_level.is_none() {
+        if !config.stdout_trace_level.is_off() {
             let filter: LevelFilter = config.stdout_trace_level.into();
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .pretty()
@@ -84,7 +84,7 @@ impl TracingSubscriber {
             layers.push(stderr_layer);
         }
 
-        if !config.file_trace_level.is_none() {
+        if !config.file_trace_level.is_off() {
             let file_path = config
                 .file_path
                 .as_ref()

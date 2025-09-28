@@ -81,7 +81,7 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
                 task_command: p.task_command,
                 input_files: &p.input_files,
                 output_files: &[],
-                dependency_hashes: &[],
+                dependency_digests: &[],
                 env_vars: &p.env_vars,
                 input_env_keys: &p.input_env_keys,
             })
@@ -94,20 +94,20 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
                     &CollectConfig {
                         input_files: true,
                         output_files: false,
-                        hashes: true,
+                        digests: true,
                         cache_output_dirs: false,
                     },
                 )
                 .await?;
 
         // hash deterministically by sorting by hash
-        collected.sort_by_key(|c| c.hash);
+        collected.sort_by_key(|c| c.digest);
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
         for collected in collected {
             hash.combine_in_place(
-                collected.hash.as_ref().expect("should be some"),
+                collected.digest.as_ref().expect("should be some"),
             );
         }
 

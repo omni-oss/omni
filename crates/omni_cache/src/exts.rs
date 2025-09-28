@@ -10,7 +10,7 @@ impl<'a> TaskExecutionInfoExt for TaskContext<'a> {
     fn execution_info(&self) -> Option<TaskExecutionInfo<'_>> {
         let ci = self.cache_info?;
         Some(TaskExecutionInfo {
-            dependency_hashes: &self.dependency_hashes,
+            dependency_digests: &self.dependency_hashes,
             env_vars: &self.env_vars,
             input_env_keys: &ci.key_env_keys,
             input_files: &ci.key_input_files,

@@ -29,7 +29,7 @@ pub struct TaskCacheStats {
     pub total_size: ByteSize,
     pub cached_files_total_size: ByteSize,
 
-    pub execution_hash: DefaultHash,
+    pub digest: DefaultHash,
 
     #[serde(with = "time::serde::rfc3339")]
     pub created_timestamp: OffsetDateTime,

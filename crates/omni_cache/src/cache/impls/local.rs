@@ -90,7 +90,7 @@ impl LocalTaskExecutionCacheStore {
                 project_name: project.project_name,
                 task_command: project.task_command,
                 task_name: project.task_name,
-                dependency_hashes: project.dependency_hashes,
+                dependency_digests: project.dependency_digests,
                 env_vars: project.env_vars,
                 input_env_keys: project.input_env_keys,
             })
@@ -120,7 +120,7 @@ impl LocalTaskExecutionCacheStore {
                 .update_last_used_timestamp(
                     &exec.project_name,
                     &exec.task_name,
-                    exec.execution_hash,
+                    exec.digest,
                     dir,
                 )
                 .await?;
@@ -159,7 +159,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             .collect(
                 &task_infos,
                 &CollectConfig {
-                    hashes: true,
+                    digests: true,
                     cache_output_dirs: true,
                     input_files: true,
                     output_files: true,
@@ -243,14 +243,14 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     .map(|p| relpath(&p, output_dir).to_path_buf()),
                 files: cache_output_files,
                 task_name: result.task.task_name.to_string(),
-                execution_hash: result.hash.expect("should be some"),
+                digest: result.digest.expect("should be some"),
                 task_command: result.task.task_command.to_string(),
                 execution_duration: new_cache_info.execution_duration,
                 exit_code: new_cache_info.exit_code,
                 execution_time: OffsetDateTime::now_utc(),
-                dependency_hashes: new_cache_info
+                dependency_digests: new_cache_info
                     .task
-                    .dependency_hashes
+                    .dependency_digests
                     .to_vec(),
             };
             let bytes = bincode::serde::encode_to_vec(
@@ -265,7 +265,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             cache_exec_hashes.push(CachedTaskExecutionHash {
                 project_name: result.task.project_name,
                 task_name: result.task.task_name,
-                execution_hash: result.hash.expect("should be some"),
+                execution_hash: result.digest.expect("should be some"),
             });
         }
 
@@ -468,7 +468,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
                     tasks.push(TaskCacheStats {
                         task_name: cache_meta.task_name.to_string(),
-                        execution_hash: cache_meta.execution_hash,
+                        digest: cache_meta.digest,
                         created_timestamp: cache_meta.execution_time,
                         execution_duration: cache_meta.execution_duration,
                         total_size: ByteSize::b(total_size),
@@ -502,7 +502,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                     .get_last_used_timestamp(
                         &result.project_name,
                         &task.task_name,
-                        task.execution_hash,
+                        task.digest,
                     )
                     .await?;
             }
@@ -546,7 +546,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             let total_task = plan.iter().map(|b| b.len()).sum();
             let mut hashes = unordered_map!(cap: total_task);
             let collect_cfg = CollectConfig {
-                hashes: true,
+                digests: true,
                 ..Default::default()
             };
 
@@ -568,7 +568,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 let mut t_hashes = unordered_map!(cap: batch.len());
 
                 for result in results {
-                    let hash = result.hash.expect("should be some");
+                    let hash = result.digest.expect("should be some");
 
                     let task_full_name = format!(
                         "{}#{}",
@@ -613,7 +613,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 if args.stale_only.is_on()
                     && let Some(hashes) = &hashes
                     && let Some(hash) = hashes.get(&task_full_name)
-                    && task.execution_hash == *hash
+                    && task.digest == *hash
                 {
                     continue;
                 }
@@ -621,7 +621,7 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
                 entries.push(PrunedCacheEntry {
                     project_name: project.project_name.clone(),
                     task_name: task.task_name,
-                    execution_hash: task.execution_hash,
+                    digest: task.digest,
                     size: task.total_size,
                     entry_dir: task.entry_dir,
                     stale: StaleStatus::Unknown,
@@ -1574,8 +1574,8 @@ mod tests {
         assert!(cached_output2.is_some(), "cached output should exist");
 
         assert_ne!(
-            cached_output1.unwrap().execution_hash,
-            cached_output2.unwrap().execution_hash,
+            cached_output1.unwrap().digest,
+            cached_output2.unwrap().digest,
             "cached output should have different hashes"
         );
     }

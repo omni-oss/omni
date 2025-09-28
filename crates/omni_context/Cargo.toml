@@ -39,7 +39,7 @@ path-clean = { workspace = true }
 enum-map = { workspace = true }
 globset = { workspace = true }
 bs58 = { workspace = true }
-serde_yml = { workspace = true }
+serde_norway = { workspace = true }
 derive-new = { workspace = true }
 async-trait = { workspace = true }
 either = { workspace = true }

@@ -22,7 +22,7 @@ where
     let content = sys.fs_read_to_string_async(path).await?;
 
     match ext.to_string_lossy().as_ref() {
-        "yaml" | "yml" => Ok(serde_yml::from_str(&content)?),
+        "yaml" | "yml" => Ok(serde_norway::from_str(&content)?),
         "json" => Ok(serde_json::from_str(&content)?),
         "toml" => Ok(toml::from_str(&content)?),
         _ => {

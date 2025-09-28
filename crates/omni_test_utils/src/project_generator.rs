@@ -164,7 +164,7 @@ impl ProjectGenerator {
             .open(project_dir.join("project.omni.yml"))?;
 
         let file = std::io::BufWriter::new(file);
-        serde_yml::to_writer(file, &project)?;
+        serde_norway::to_writer(file, &project)?;
 
         generate_files(
             project_dir.join("src"),

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
 
 // --- S3 Backend Struct ---
+#[derive(Debug)]
 pub struct S3CacheBackend {
     client: Client,
     default_container: String,
