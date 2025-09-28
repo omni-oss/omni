@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, clap::Args, Clone, PartialEq, Eq)]
@@ -8,7 +10,7 @@ pub struct LocalDiskBackendConfig {
         env = "OMNI_REMOTE_CACHE_SERVICE_LOCAL_DISK_ROOT_DIR",
         help = "The root directory to use for local disk storage"
     )]
-    pub root_dir: String,
+    pub root_dir: PathBuf,
 
     #[arg(
         long = "local-disk.default-subdir",
