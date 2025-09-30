@@ -5,7 +5,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use tokio::sync::Mutex;
 
-use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
+use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
 
 #[derive(Debug)]
 pub struct LruCached<T: RemoteCacheStorageBackend> {
@@ -60,6 +60,14 @@ where
         container: Option<&str>,
     ) -> Result<Vec<ListItem>, Error> {
         self.inner.list(container).await
+    }
+
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        query: PageOptions,
+    ) -> Result<Vec<ListItem>, Error> {
+        self.inner.paged_list(container, query).await
     }
 
     async fn save(

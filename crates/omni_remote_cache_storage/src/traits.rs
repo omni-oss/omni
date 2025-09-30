@@ -1,8 +1,16 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
+use derive_new::new;
+use serde::{Deserialize, Serialize};
 
 use crate::{ListItem, error::Error};
+
+#[derive(Serialize, Deserialize, new)]
+pub struct PageOptions {
+    pub after_key: Option<String>,
+    pub per_page: Option<u32>,
+}
 
 #[async_trait]
 pub trait RemoteCacheStorageBackend {
@@ -17,6 +25,12 @@ pub trait RemoteCacheStorageBackend {
     async fn list(
         &self,
         container: Option<&str>,
+    ) -> Result<Vec<ListItem>, Error>;
+
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        page_options: PageOptions,
     ) -> Result<Vec<ListItem>, Error>;
 
     async fn save(

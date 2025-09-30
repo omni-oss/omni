@@ -3,8 +3,9 @@ use std::num::NonZeroUsize;
 use async_trait::async_trait;
 use derive_new::new;
 use omni_remote_cache_storage::{
-    RemoteCacheStorageBackend,
+    ListItem, PageOptions, RemoteCacheStorageBackend,
     decorators::LruCached,
+    error::{self, Error},
     impls::{InMemoryBackend, LocalDiskCacheBackend, S3CacheBackend},
 };
 
@@ -97,8 +98,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<bytes::Bytes>, omni_remote_cache_storage::error::Error>
-    {
+    ) -> Result<Option<bytes::Bytes>, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.get(container, key).await
@@ -115,10 +115,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
     async fn list(
         &self,
         container: Option<&str>,
-    ) -> Result<
-        Vec<omni_remote_cache_storage::ListItem>,
-        omni_remote_cache_storage::error::Error,
-    > {
+    ) -> Result<Vec<ListItem>, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.list(container).await
@@ -130,12 +127,36 @@ impl RemoteCacheStorageBackend for StorageBackend {
         }
     }
 
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        query: PageOptions,
+    ) -> Result<Vec<ListItem>, Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.paged_list(container, query).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.paged_list(container, query).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.paged_list(container, query).await
+            }
+            StorageBackend::S3(inner) => {
+                inner.paged_list(container, query).await
+            }
+            StorageBackend::InMemory(inner) => {
+                inner.paged_list(container, query).await
+            }
+        }
+    }
+
     async fn save(
         &self,
         container: Option<&str>,
         key: &str,
         value: bytes::Bytes,
-    ) -> Result<(), omni_remote_cache_storage::error::Error> {
+    ) -> Result<(), error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.save(container, key, value).await
@@ -159,7 +180,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<(), omni_remote_cache_storage::error::Error> {
+    ) -> Result<(), error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.delete(container, key).await
@@ -181,10 +202,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<
-        Option<bytesize::ByteSize>,
-        omni_remote_cache_storage::error::Error,
-    > {
+    ) -> Result<Option<bytesize::ByteSize>, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.size(container, key).await

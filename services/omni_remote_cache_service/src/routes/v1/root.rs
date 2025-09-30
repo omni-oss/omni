@@ -3,7 +3,7 @@ use utoipa::OpenApi;
 
 use crate::{build, state::ServiceState};
 
-use super::artifacts::{self, ArtififactsApiDoc};
+use super::artifacts::{self, ArtifactsApiDoc};
 
 pub fn build_router() -> Router<ServiceState> {
     Router::new().nest("/artifacts", artifacts::build_router())
@@ -17,7 +17,7 @@ pub fn build_router() -> Router<ServiceState> {
         description = "A service for caching remote artifacts",
     ),
     nest(
-        (path = "/artifacts", api = ArtififactsApiDoc),
+        (path = "/artifacts", api = ArtifactsApiDoc),
     )
 )]
 pub struct V1RootApiDoc;

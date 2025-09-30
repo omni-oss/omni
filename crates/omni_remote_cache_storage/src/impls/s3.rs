@@ -11,7 +11,7 @@ use derive_new::new;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
+use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
 
 // --- S3 Backend Struct ---
 #[derive(Debug)]
@@ -156,6 +156,33 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         let list = self
             .client
             .list_objects()
+            .bucket(bucket)
+            .send()
+            .await
+            .map_err(Error::custom)?;
+
+        let mut items = Vec::new();
+        for item in list.contents.unwrap_or_default() {
+            items.push(ListItem {
+                key: item.key.unwrap_or_default(),
+                size: ByteSize::b(item.size.unwrap_or_default() as u64),
+            });
+        }
+
+        Ok(items)
+    }
+
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        query: PageOptions,
+    ) -> Result<Vec<ListItem>, Error> {
+        let bucket = self.get_bucket_name(container);
+
+        let list = self
+            .client
+            .list_objects_v2()
+            .max_keys(query.per_page.unwrap_or(100) as i32)
             .bucket(bucket)
             .send()
             .await

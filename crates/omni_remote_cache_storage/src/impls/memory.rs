@@ -5,7 +5,7 @@ use derive_new::new;
 use maps::{Map, UnorderedMap};
 use tokio::sync::Mutex;
 
-use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
+use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
 
 #[derive(Debug, new)]
 pub struct InMemoryBackend {
@@ -48,20 +48,60 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
         container: Option<&str>,
     ) -> Result<Vec<ListItem>, Error> {
         let container = self.container(container);
-        Ok(self
+        let len = self
+            .containers
+            .lock()
+            .await
+            .get(container)
+            .map(|m| m.len())
+            .unwrap_or_default();
+
+        let paged_result = self
+            .paged_list(
+                Some(container),
+                PageOptions::new(None, Some(len as u32)),
+            )
+            .await?;
+
+        Ok(paged_result)
+    }
+
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        query: PageOptions,
+    ) -> Result<Vec<ListItem>, Error> {
+        let container = self.container(container);
+        let per_page = query.per_page.unwrap_or(100);
+        let items = self
             .containers
             .lock()
             .await
             .get(container)
             .map(|m| {
+                let position = m
+                    .iter()
+                    .position(|(k, _)| {
+                        if let Some(after_key) = query.after_key.as_ref() {
+                            *k == *after_key
+                        } else {
+                            true
+                        }
+                    })
+                    .unwrap_or(0);
+
                 m.iter()
+                    .skip(position)
                     .map(|(k, v)| ListItem {
                         key: k.clone(),
                         size: ByteSize::b(v.len() as u64),
                     })
-                    .collect()
+                    .take(per_page as usize)
+                    .collect::<Vec<_>>()
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+
+        Ok(items)
     }
 
     async fn save(
