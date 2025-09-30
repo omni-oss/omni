@@ -6,7 +6,7 @@ use bytesize::ByteSize;
 use derive_new::new;
 use tokio::task::JoinSet;
 
-use crate::{ListItem, RemoteCacheStorageBackend, error::Error};
+use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
 
 #[derive(Debug, new)]
 pub struct LocalDiskCacheBackend {
@@ -87,6 +87,31 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         }
 
         Ok(items)
+    }
+
+    async fn paged_list(
+        &self,
+        container: Option<&str>,
+        query: PageOptions,
+    ) -> Result<Vec<ListItem>, Error> {
+        let all = self.list(container).await?;
+
+        let position = all
+            .iter()
+            .position(|item| {
+                if let Some(after_key) = query.after_key.as_ref() {
+                    item.key == *after_key
+                } else {
+                    true
+                }
+            })
+            .unwrap_or(0);
+
+        Ok(all
+            .into_iter()
+            .skip(position)
+            .take(query.per_page.unwrap_or(100) as usize)
+            .collect::<Vec<_>>())
     }
 
     async fn save(
