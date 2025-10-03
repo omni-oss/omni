@@ -4,14 +4,12 @@ use axum::{
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use http::StatusCode;
-use omni_remote_cache_storage::{ListItem, RemoteCacheStorageBackendExt};
+use omni_remote_cache_storage::RemoteCacheStorageBackend;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::{
-    response::data::PagedData, routes::v1::artifacts::common::key,
-    state::ServiceState,
-};
+use super::common::container;
+use crate::state::ServiceState;
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/{digest}")]
@@ -28,12 +26,15 @@ pub struct GetArtifactQuery {
 #[utoipa::path(
     get,
     path = "/{digest}",
+    description = "Download an artifact",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
         GetArtifactQuery
     ),
     responses(
-        (status = 200, description = "Success", body = PagedData<Vec<ListItem>>),
+        (status = 200, description = "Success", content(
+            ("application/octet-stream"),
+        )),
     )
 )]
 pub async fn get_artifact(
@@ -41,10 +42,10 @@ pub async fn get_artifact(
     Query(query): Query<GetArtifactQuery>,
     State(state): State<ServiceState>,
 ) -> Response {
-    let key = key(&digest, &query.ws, &query.env);
+    let container = container(&query.ws, &query.env);
     let x = state
         .storage_backend
-        .get_default(&key)
+        .get(Some(container.as_ref()), &digest)
         .await
         .map_err(|e| InternalServerError(e));
 

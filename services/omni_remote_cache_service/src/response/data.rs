@@ -15,6 +15,7 @@ impl<T: Serialize> From<T> for Data<T> {
     }
 }
 
+#[allow(unused)]
 #[derive(Deserialize, Serialize, new, ToSchema)]
 pub struct PagedData<T> {
     data: Vec<T>,

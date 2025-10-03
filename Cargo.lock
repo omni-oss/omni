@@ -4058,6 +4058,7 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.16",
  "tokio 1.47.1",
+ "tokio-util",
  "tower",
  "tower-http",
  "trace",

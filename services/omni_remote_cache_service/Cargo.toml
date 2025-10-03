@@ -34,6 +34,7 @@ rust-embed = { workspace = true, features = ["compression", "include-exclude", "
 utoipa = { workspace = true }
 shadow-rs = { workspace = true }
 bs58 = { workspace = true }
+tokio-util = { workspace = true }
 
 
 [build-dependencies]
