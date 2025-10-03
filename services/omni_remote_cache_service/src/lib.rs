@@ -6,6 +6,7 @@ mod request;
 mod response;
 mod routes;
 mod s3_backend;
+mod scalar;
 mod state;
 mod storage_backend;
 

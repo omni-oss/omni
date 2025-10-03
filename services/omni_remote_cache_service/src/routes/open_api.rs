@@ -5,11 +5,14 @@ use strum::Display;
 use utoipa::OpenApi;
 
 use crate::{
-    response::yaml::Yaml, routes::v1::root::V1RootApiDoc, state::ServiceState,
+    response::yaml::Yaml, routes::v1::root::V1RootApiDoc,
+    scalar::handler::get_scalar_ui, state::ServiceState,
 };
 
 pub fn build_router() -> Router<ServiceState> {
-    Router::new().typed_get(get_open_api_doc)
+    Router::new()
+        .typed_get(get_open_api_doc)
+        .typed_get(get_scalar_ui)
 }
 
 #[derive(TypedPath, Serialize, Deserialize)]
