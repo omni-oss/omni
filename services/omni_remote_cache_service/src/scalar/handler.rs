@@ -2,7 +2,7 @@ use axum::response::Html;
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use serde::{Deserialize, Serialize};
 
-use crate::scalar::options::ScalarOptions;
+use crate::{build, scalar::options::ScalarOptions};
 
 #[derive(TypedPath, Serialize, Deserialize)]
 #[typed_path("/{version}/{format}/scalar")]
@@ -19,7 +19,8 @@ pub async fn get_scalar_ui(
         .map_err(InternalServerError)?;
     let rendered = HTML_DOC
         .replace("{{documentPath}}", &doc_uri)
-        .replace("{ configurationJson: null }", &json);
+        .replace("{ configurationJson: null }", &json)
+        .replace("{{title}}", build::PROJECT_NAME);
 
     Ok(Html(rendered))
 }
