@@ -3,62 +3,52 @@ use axum::{
     extract::{Query, State},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use omni_remote_cache_storage::{ListItem, RemoteCacheStorageBackendExt};
+use omni_remote_cache_storage::{ListItem, RemoteCacheStorageBackend};
 use serde::Deserialize;
+use utoipa::IntoParams;
 
-use crate::{response::data::PagedData, state::ServiceState};
+use crate::{
+    response::data::Data, routes::v1::artifacts::common::container,
+    state::ServiceState,
+};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/")]
-pub struct ArtifactsPath {}
+pub struct GetArtifactsPath {}
 
-#[derive(Deserialize)]
-pub struct ArtifactsQuery {
-    #[serde(default)]
-    after_key: Option<u32>,
-    #[serde(default)]
-    per_page: Option<u32>,
+#[derive(Deserialize, IntoParams)]
+pub struct GetArtifactsQuery {
+    #[param()]
+    pub ws: String,
+    #[param()]
+    pub env: String,
 }
 
 #[utoipa::path(
     get,
-    path = "/",
+    description = "List artifacts",
+    path = "",
+    params(
+        GetArtifactsQuery
+    ),
     responses(
-        (status = 200, description = "Success", body = PagedData<Vec<ListItem>>),
+        (status = 200, description = "Success", body = Data<Vec<ListItem>>),
     )
 )]
 pub async fn get_artifacts(
-    _: ArtifactsPath,
-    Query(query): Query<ArtifactsQuery>,
+    _: GetArtifactsPath,
+    Query(query): Query<GetArtifactsQuery>,
     State(state): State<ServiceState>,
 ) -> Result<
-    Json<PagedData<ListItem>>,
+    Json<Data<Vec<ListItem>>>,
     InternalServerError<omni_remote_cache_storage::error::Error>,
 > {
-    let page = query.after_key.unwrap_or(1);
-    let per_page = query.per_page.unwrap_or(50);
+    let container = container(&query.ws, &query.env);
     let all_artifacts = state
         .storage_backend
-        .list_default()
+        .list(Some(container.as_str()))
         .await
         .map_err(InternalServerError)?;
-    let artifacts = all_artifacts
-        .iter()
-        .skip(((page - 1) * per_page) as usize)
-        .take(per_page as usize)
-        .map(|item| item.clone())
-        .collect::<Vec<_>>();
 
-    let has_next = artifacts.len() == per_page as usize;
-    let has_previous = page > 1;
-    let total_size = all_artifacts.len() as u32;
-    let page_size = artifacts.len() as u32;
-
-    Ok(Json(PagedData::new(
-        artifacts,
-        page_size,
-        total_size,
-        has_next,
-        has_previous,
-    )))
+    Ok(Json(Data::new(all_artifacts)))
 }

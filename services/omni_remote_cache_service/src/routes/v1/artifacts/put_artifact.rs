@@ -12,31 +12,31 @@ use crate::{routes::v1::artifacts::common::container, state::ServiceState};
 
 #[derive(TypedPath, Deserialize)]
 #[typed_path("/{digest}")]
-pub struct DeleteArtifactPath {
+pub struct PutArtifactPath {
     pub digest: String,
 }
 
 #[derive(Deserialize, IntoParams)]
-pub struct DeleteArtifactQuery {
+pub struct PutArtifactQuery {
     pub ws: String,
     pub env: String,
 }
 
 #[utoipa::path(
-    delete,
-    description = "Delete an artifact",
+    put,
+    description = "Upload an artifact",
     path = "/{digest}",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
-        DeleteArtifactQuery
+        PutArtifactQuery
     ),
     responses(
         (status = 200, description = "Success"),
     )
 )]
-pub async fn delete_artifact(
-    DeleteArtifactPath { digest }: DeleteArtifactPath,
-    Query(query): Query<DeleteArtifactQuery>,
+pub async fn put_artifact(
+    PutArtifactPath { digest }: PutArtifactPath,
+    Query(query): Query<PutArtifactQuery>,
     State(state): State<ServiceState>,
 ) -> Response {
     let container = container(&query.ws, &query.env);
