@@ -33,6 +33,7 @@ omni_tracing_subscriber = { workspace = true }
 rust-embed = { workspace = true, features = ["compression", "include-exclude", "deterministic-timestamps", "axum-ex"] }
 utoipa = { workspace = true }
 shadow-rs = { workspace = true }
+bs58 = { workspace = true }
 
 
 [build-dependencies]
