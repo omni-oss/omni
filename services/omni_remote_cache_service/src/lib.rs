@@ -3,6 +3,7 @@ mod build;
 mod config;
 mod data;
 mod data_impl;
+mod extractors;
 mod init_tracing;
 mod local_disk_backend;
 mod providers;

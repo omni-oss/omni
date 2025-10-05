@@ -13,7 +13,11 @@ use tokio_stream::StreamExt;
 use utoipa::IntoParams;
 
 use super::common::container;
-use crate::state::ServiceState;
+use crate::{
+    extractors::TenantCode,
+    routes::v1::artifacts::common::get_validation_response,
+    state::ServiceState,
+};
 
 #[derive(TypedPath, Deserialize, Debug)]
 #[typed_path("/{digest}")]
@@ -44,6 +48,7 @@ pub struct GetArtifactQuery {
             content_type = "application/octet-stream",
         ),
         (status = NOT_FOUND, description = "Not found"),
+        (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
@@ -51,8 +56,30 @@ pub struct GetArtifactQuery {
 pub async fn get_artifact(
     GetArtifactPath { digest }: GetArtifactPath,
     Query(query): Query<GetArtifactQuery>,
+    TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
 ) -> Response {
+    let validate_svc = state.provider.validation_service();
+
+    let result = validate_svc
+        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
+        .await
+        .map_err(InternalServerError);
+
+    match result {
+        Ok(r) => {
+            if let Some(response) = get_validation_response(
+                r.violations(),
+                &query.org,
+                &query.ws,
+                &query.env,
+            ) {
+                return response;
+            }
+        }
+        Err(e) => return e.into_response(),
+    }
+
     let container = container(&query.org, &query.ws, &query.env);
     let x = state
         .storage_backend

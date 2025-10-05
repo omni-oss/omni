@@ -20,6 +20,7 @@ pub struct TenantRepositoryError {
 }
 
 impl TenantRepositoryError {
+    #[allow(unused)]
     pub fn kind(&self) -> TenantRepositoryErrorKind {
         self.kind
     }

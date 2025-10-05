@@ -27,6 +27,7 @@ pub struct EnvironmentRepositoryError {
 }
 
 impl EnvironmentRepositoryError {
+    #[allow(unused)]
     pub fn kind(&self) -> EnvironmentRepositoryErrorKind {
         self.kind
     }

@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Query, State},
+    response::{IntoResponse as _, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use derive_new::new;
@@ -9,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    response::data::Data, routes::v1::artifacts::common::container,
+    extractors::TenantCode,
+    response::data::Data,
+    routes::v1::artifacts::common::{container, get_validation_response},
     state::ServiceState,
 };
 
@@ -44,7 +47,8 @@ pub struct CacheItem {
         GetArtifactsQuery
     ),
     responses(
-        (status = 200, description = "Success", body = Data<Vec<CacheItem>>),
+        (status = OK, description = "Success", body = Data<Vec<CacheItem>>),
+        (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
@@ -53,22 +57,46 @@ pub async fn get_artifacts(
     _: GetArtifactsPath,
     Query(query): Query<GetArtifactsQuery>,
     State(state): State<ServiceState>,
-) -> Result<
-    Json<Data<Vec<CacheItem>>>,
-    InternalServerError<omni_remote_cache_storage::error::Error>,
-> {
+    TenantCode(tenant_code): TenantCode,
+) -> Response {
+    let validate_svc = state.provider.validation_service();
+
+    let result = validate_svc
+        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
+        .await
+        .map_err(InternalServerError);
+
+    match result {
+        Ok(r) => {
+            if let Some(response) = get_validation_response(
+                r.violations(),
+                &query.org,
+                &query.ws,
+                &query.env,
+            ) {
+                return response;
+            }
+        }
+        Err(e) => return e.into_response(),
+    }
+
     let container = container(&query.org, &query.ws, &query.env);
     let all_artifacts = state
         .storage_backend
         .list(Some(container.as_str()))
         .await
-        .map_err(InternalServerError)?
-        .iter()
-        .map(|item| CacheItem {
-            digest: item.key().to_string(),
-            size: item.size().as_u64(),
-        })
-        .collect::<Vec<_>>();
+        .map_err(InternalServerError);
 
-    Ok(Json(Data::new(all_artifacts)))
+    match all_artifacts {
+        Ok(r) => Json(
+            r.iter()
+                .map(|item| CacheItem {
+                    digest: item.key().to_string(),
+                    size: item.size().as_u64(),
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(e) => e.into_response(),
+    }
 }
