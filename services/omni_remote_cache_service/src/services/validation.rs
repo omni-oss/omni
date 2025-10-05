@@ -30,6 +30,7 @@ impl ValidationResult {
         &self.violations
     }
 
+    #[allow(unused)]
     pub fn has_violations(&self) -> bool {
         !self.violations.is_empty()
     }
@@ -56,6 +57,7 @@ pub struct ValidationServiceError {
 pub type DynValidationService = Box<dyn ValidationService + Send + Sync>;
 
 impl ValidationServiceError {
+    #[allow(unused)]
     pub fn kind(&self) -> ValidationServiceErrorKind {
         self.kind
     }

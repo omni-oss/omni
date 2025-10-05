@@ -27,6 +27,7 @@ pub struct OrganizationRepositoryError {
 }
 
 impl OrganizationRepositoryError {
+    #[allow(unused)]
     pub fn kind(&self) -> OrganizationRepositoryErrorKind {
         self.kind
     }

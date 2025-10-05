@@ -26,6 +26,7 @@ pub struct WorkspaceRepositoryError {
 }
 
 impl WorkspaceRepositoryError {
+    #[allow(unused)]
     pub fn kind(&self) -> WorkspaceRepositoryErrorKind {
         self.kind
     }

@@ -8,7 +8,11 @@ use omni_remote_cache_storage::RemoteCacheStorageBackend;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-use crate::{routes::v1::artifacts::common::container, state::ServiceState};
+use crate::{
+    extractors::TenantCode,
+    routes::v1::artifacts::common::{container, get_validation_response},
+    state::ServiceState,
+};
 
 #[derive(TypedPath, Deserialize, Debug)]
 #[typed_path("/{digest}")]
@@ -35,6 +39,7 @@ pub struct DeleteArtifactQuery {
     responses(
         (status = NO_CONTENT, description = "Success"),
         (status = NOT_FOUND, description = "Not found"),
+        (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
@@ -43,7 +48,29 @@ pub async fn delete_artifact(
     DeleteArtifactPath { digest }: DeleteArtifactPath,
     Query(query): Query<DeleteArtifactQuery>,
     State(state): State<ServiceState>,
+    TenantCode(tenant_code): TenantCode,
 ) -> Response {
+    let validate_svc = state.provider.validation_service();
+
+    let result = validate_svc
+        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
+        .await
+        .map_err(InternalServerError);
+
+    match result {
+        Ok(r) => {
+            if let Some(response) = get_validation_response(
+                r.violations(),
+                &query.org,
+                &query.ws,
+                &query.env,
+            ) {
+                return response;
+            }
+        }
+        Err(e) => return e.into_response(),
+    }
+
     let container = container(&query.org, &query.ws, &query.env);
     let x = state
         .storage_backend

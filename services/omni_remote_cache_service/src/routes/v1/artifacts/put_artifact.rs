@@ -10,7 +10,11 @@ use serde::Deserialize;
 use tokio_stream::StreamExt;
 use utoipa::IntoParams;
 
-use crate::{routes::v1::artifacts::common::container, state::ServiceState};
+use crate::{
+    extractors::TenantCode,
+    routes::v1::artifacts::common::{container, get_validation_response},
+    state::ServiceState,
+};
 
 #[derive(TypedPath, Deserialize, Debug, IntoParams)]
 #[typed_path("/{digest}")]
@@ -45,6 +49,7 @@ pub struct PutArtifactQuery {
     request_body(content_type = "application/octet-stream", description = "Raw file streaming content", content = Vec<u8>),
     responses(
         (status = NO_CONTENT, description = "Success"),
+        (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
@@ -52,9 +57,31 @@ pub struct PutArtifactQuery {
 pub async fn put_artifact(
     PutArtifactPath { digest }: PutArtifactPath,
     Query(query): Query<PutArtifactQuery>,
+    TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
     body: Body,
 ) -> Response {
+    let validate_svc = state.provider.validation_service();
+
+    let result = validate_svc
+        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
+        .await
+        .map_err(InternalServerError);
+
+    match result {
+        Ok(r) => {
+            if let Some(response) = get_validation_response(
+                r.violations(),
+                &query.org,
+                &query.ws,
+                &query.env,
+            ) {
+                return response;
+            }
+        }
+        Err(e) => return e.into_response(),
+    }
+
     let container = container(&query.org, &query.ws, &query.env);
     let stream = body.into_data_stream().filter_map(|r| match r {
         Ok(b) => Some(b),
