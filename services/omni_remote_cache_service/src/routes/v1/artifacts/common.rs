@@ -43,8 +43,9 @@ pub fn get_validation_response(
     }
 
     let violations = violations
-        .into_iter()
-        .map(|v| translate_violation(*v, org, ws, env))
+        .iter()
+        .copied()
+        .map(|v| translate_violation(v, org, ws, env))
         .collect::<Vec<_>>();
 
     Some(

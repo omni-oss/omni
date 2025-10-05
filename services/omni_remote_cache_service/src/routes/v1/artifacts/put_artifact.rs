@@ -44,7 +44,8 @@ pub struct PutArtifactQuery {
     path = "/{digest}",
     params(
         PutArtifactPath,
-        PutArtifactQuery
+        PutArtifactQuery,
+        ("x-omni-tenant" = String, Header, description = "Tenant code"),
     ),
     request_body(content_type = "application/octet-stream", description = "Raw file streaming content", content = Vec<u8>),
     responses(
