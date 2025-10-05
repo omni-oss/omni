@@ -177,6 +177,15 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         mut value: BoxStream<Bytes>,
     ) -> Result<(), Error> {
         let path = self.path(key, container);
+
+        if !tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
+            tokio::fs::create_dir_all(
+                &path.parent().expect("should have parent"),
+            )
+            .await
+            .map_err(Error::custom)?;
+        }
+
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
