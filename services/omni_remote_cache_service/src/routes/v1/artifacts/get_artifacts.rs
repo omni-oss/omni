@@ -44,6 +44,7 @@ pub struct CacheItem {
     description = "List artifacts",
     path = "",
     params(
+        ("x-omni-tenant" = String, Header, description = "Tenant code"),
         GetArtifactsQuery
     ),
     responses(

@@ -34,6 +34,7 @@ pub struct DeleteArtifactQuery {
     path = "/{digest}",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
+        ("x-omni-tenant" = String, Header, description = "Tenant code"),
         DeleteArtifactQuery
     ),
     responses(

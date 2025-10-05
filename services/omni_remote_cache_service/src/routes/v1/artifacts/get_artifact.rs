@@ -39,6 +39,7 @@ pub struct GetArtifactQuery {
     description = "Download an artifact",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
+        ("x-omni-tenant" = String, Header, description = "Tenant code"),
         GetArtifactQuery
     ),
     responses(

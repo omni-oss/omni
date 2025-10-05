@@ -44,7 +44,7 @@ impl<S: Send + Sync> FromRequestParts<S> for TenantCode {
     ) -> Result<Self, Self::Rejection> {
         parts
             .headers
-            .get("x-omni-tenant-code")
+            .get("x-omni-tenant")
             .map(|code| match code.to_str() {
                 Ok(o) => Ok(TenantCode(o.to_string())),
                 Err(e) => {
