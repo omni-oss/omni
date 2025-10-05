@@ -3,9 +3,10 @@ use axum::{
     extract::{Query, State},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use omni_remote_cache_storage::{ListItem, RemoteCacheStorageBackend};
-use serde::Deserialize;
-use utoipa::IntoParams;
+use derive_new::new;
+use omni_remote_cache_storage::RemoteCacheStorageBackend;
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     response::data::Data, routes::v1::artifacts::common::container,
@@ -29,6 +30,12 @@ pub struct GetArtifactsQuery {
     pub env: String,
 }
 
+#[derive(Deserialize, Serialize, Debug, Default, new, ToSchema)]
+pub struct CacheItem {
+    pub digest: String,
+    pub size: u64,
+}
+
 #[utoipa::path(
     get,
     description = "List artifacts",
@@ -37,7 +44,7 @@ pub struct GetArtifactsQuery {
         GetArtifactsQuery
     ),
     responses(
-        (status = 200, description = "Success", body = Data<Vec<ListItem>>),
+        (status = 200, description = "Success", body = Data<Vec<CacheItem>>),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
@@ -47,7 +54,7 @@ pub async fn get_artifacts(
     Query(query): Query<GetArtifactsQuery>,
     State(state): State<ServiceState>,
 ) -> Result<
-    Json<Data<Vec<ListItem>>>,
+    Json<Data<Vec<CacheItem>>>,
     InternalServerError<omni_remote_cache_storage::error::Error>,
 > {
     let container = container(&query.org, &query.ws, &query.env);
@@ -55,7 +62,13 @@ pub async fn get_artifacts(
         .storage_backend
         .list(Some(container.as_str()))
         .await
-        .map_err(InternalServerError)?;
+        .map_err(InternalServerError)?
+        .iter()
+        .map(|item| CacheItem {
+            digest: item.key().to_string(),
+            size: item.size().as_u64(),
+        })
+        .collect::<Vec<_>>();
 
     Ok(Json(Data::new(all_artifacts)))
 }

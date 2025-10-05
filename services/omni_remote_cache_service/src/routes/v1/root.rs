@@ -17,7 +17,7 @@ pub fn build_router() -> Router<ServiceState> {
         description = "A service for caching remote artifacts",
     ),
     nest(
-        (path = "/api/v1/artifacts", api = ArtifactsApiDoc),
+        (path = "/artifacts", api = ArtifactsApiDoc),
     )
 )]
 pub struct V1RootApiDoc;

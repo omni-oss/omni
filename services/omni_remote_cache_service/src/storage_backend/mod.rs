@@ -23,7 +23,10 @@ pub enum StorageBackend {
 
 impl StorageBackend {
     pub async fn from_cli_args(args: &ServeArgs) -> Self {
-        if let Some(lru_cache_cap) = args.lru_cache_capacity {
+        if let Some(lru_cache_cap) = args.lru_cache_capacity
+            && lru_cache_cap > 0
+            && args.backend != crate::args::BackendType::InMemory
+        {
             match args.backend {
                 crate::args::BackendType::S3 => {
                     let s3 = args.s3.clone().expect("s3 config is required");
@@ -48,8 +51,11 @@ impl StorageBackend {
                         NonZeroUsize::new(lru_cache_cap).unwrap(),
                     ))
                 }
-                crate::args::BackendType::InMemory => {
-                    StorageBackend::InMemory(InMemoryBackend::new("default"))
+                _ => {
+                    panic!(
+                        "Lru Cache for backend '{}' is not supported",
+                        args.backend
+                    )
                 }
             }
         } else {
