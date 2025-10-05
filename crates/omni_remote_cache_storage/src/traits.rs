@@ -1,3 +1,5 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
@@ -12,6 +14,9 @@ pub struct PageOptions {
     pub per_page: Option<u32>,
 }
 
+pub type BoxStream<T> =
+    Pin<Box<dyn tokio_stream::Stream<Item = T> + 'static + Send>>;
+
 #[async_trait]
 pub trait RemoteCacheStorageBackend {
     fn default_container(&self) -> &str;
@@ -21,6 +26,12 @@ pub trait RemoteCacheStorageBackend {
         container: Option<&str>,
         key: &str,
     ) -> Result<Option<Bytes>, Error>;
+
+    async fn get_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<Option<BoxStream<Bytes>>, Error>;
 
     async fn list(
         &self,
@@ -38,6 +49,13 @@ pub trait RemoteCacheStorageBackend {
         container: Option<&str>,
         key: &str,
         value: Bytes,
+    ) -> Result<(), Error>;
+
+    async fn save_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+        value: BoxStream<Bytes>,
     ) -> Result<(), Error>;
 
     async fn delete(

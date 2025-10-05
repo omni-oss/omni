@@ -1,9 +1,10 @@
 use std::num::NonZeroUsize;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use derive_new::new;
 use omni_remote_cache_storage::{
-    ListItem, PageOptions, RemoteCacheStorageBackend,
+    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend,
     decorators::LruCached,
     error::{self, Error},
     impls::{InMemoryBackend, LocalDiskCacheBackend, S3CacheBackend},
@@ -98,7 +99,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-    ) -> Result<Option<bytes::Bytes>, error::Error> {
+    ) -> Result<Option<Bytes>, error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
                 inner.get(container, key).await
@@ -109,6 +110,28 @@ impl RemoteCacheStorageBackend for StorageBackend {
             }
             StorageBackend::S3(inner) => inner.get(container, key).await,
             StorageBackend::InMemory(inner) => inner.get(container, key).await,
+        }
+    }
+
+    async fn get_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.get_stream(container, key).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.get_stream(container, key).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.get_stream(container, key).await
+            }
+            StorageBackend::S3(inner) => inner.get_stream(container, key).await,
+            StorageBackend::InMemory(inner) => {
+                inner.get_stream(container, key).await
+            }
         }
     }
 
@@ -155,7 +178,7 @@ impl RemoteCacheStorageBackend for StorageBackend {
         &self,
         container: Option<&str>,
         key: &str,
-        value: bytes::Bytes,
+        value: Bytes,
     ) -> Result<(), error::Error> {
         match self {
             StorageBackend::LruCachedLocalDisk(inner) => {
@@ -172,6 +195,31 @@ impl RemoteCacheStorageBackend for StorageBackend {
             }
             StorageBackend::InMemory(inner) => {
                 inner.save(container, key, value).await
+            }
+        }
+    }
+
+    async fn save_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+        value: BoxStream<Bytes>,
+    ) -> Result<(), Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.save_stream(container, key, value).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.save_stream(container, key, value).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.save_stream(container, key, value).await
+            }
+            StorageBackend::S3(inner) => {
+                inner.save_stream(container, key, value).await
+            }
+            StorageBackend::InMemory(inner) => {
+                inner.save_stream(container, key, value).await
             }
         }
     }

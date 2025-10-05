@@ -4,9 +4,17 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use tokio::task::JoinSet;
+use tokio::{
+    fs::{File, OpenOptions},
+    io::AsyncWriteExt as _,
+    task::JoinSet,
+};
+use tokio_stream::StreamExt;
+use tokio_util::io::ReaderStream;
 
-use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
+use crate::{
+    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+};
 
 #[derive(Debug, new)]
 pub struct LocalDiskCacheBackend {
@@ -43,6 +51,31 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
             let bytes = tokio::fs::read(&path).await.map_err(Error::custom)?;
 
             Ok(Some(Bytes::from_owner(bytes)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+        let path = self.path(key, container);
+
+        if tokio::fs::try_exists(&path).await.map_err(Error::custom)? {
+            let stream = ReaderStream::new(
+                File::open(path).await.map_err(Error::custom)?,
+            )
+            .filter_map(|x| match x {
+                Ok(b) => Some(b),
+                Err(e) => {
+                    trace::error!("error reading file: {}", e);
+                    None
+                }
+            });
+
+            Ok(Some(Box::pin(stream) as BoxStream<Bytes>))
         } else {
             Ok(None)
         }
@@ -134,6 +167,27 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
             .await
             .map_err(Error::custom)?;
 
+        Ok(())
+    }
+
+    async fn save_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+        mut value: BoxStream<Bytes>,
+    ) -> Result<(), Error> {
+        let path = self.path(key, container);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .await
+            .map_err(Error::custom)?;
+
+        while let Some(chunk) = value.next().await {
+            file.write_all(&chunk).await.map_err(Error::custom)?;
+        }
         Ok(())
     }
 
