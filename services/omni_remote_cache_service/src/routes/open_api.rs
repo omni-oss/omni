@@ -1,8 +1,13 @@
-use axum::{Json, Router, response::IntoResponse};
+use std::collections::BTreeMap;
+
+use axum::{Json, Router, extract::State, response::IntoResponse};
 use axum_extra::routing::{RouterExt, TypedPath};
 use serde::{Deserialize, Serialize};
 use strum::Display;
-use utoipa::OpenApi;
+use utoipa::{
+    OpenApi as _,
+    openapi::{OpenApi, PathItem},
+};
 
 use crate::{
     response::yaml::Yaml, routes::v1::root::V1RootApiDoc,
@@ -62,15 +67,43 @@ pub enum Format {
     Yaml,
 }
 
+fn apply(api_prefix: &str, version: Version, mut openapi: OpenApi) -> OpenApi {
+    let base_path = format!("{api_prefix}/{version}");
+
+    openapi.paths.paths = openapi
+        .paths
+        .paths
+        .iter()
+        .map(|(k, v)| (format!("{base_path}{k}"), v.clone()))
+        .collect::<BTreeMap<String, PathItem>>();
+
+    openapi
+}
+
+#[tracing::instrument(skip(version, format))]
 pub async fn get_open_api_doc(
     GetOpenApiDocs { version, format }: GetOpenApiDocs,
+    State(state): State<ServiceState>,
 ) -> axum::response::Response {
+    let api_prefix = state
+        .config
+        .routes
+        .as_ref()
+        .and_then(|r| r.api_prefix.as_deref())
+        .unwrap_or("/api");
+
     match format {
         Format::Json => match version {
-            Version::V1 => Json(V1RootApiDoc::openapi()).into_response(),
+            Version::V1 => {
+                Json(apply(api_prefix, version, V1RootApiDoc::openapi()))
+                    .into_response()
+            }
         },
         Format::Yaml => match version {
-            Version::V1 => Yaml(V1RootApiDoc::openapi()).into_response(),
+            Version::V1 => {
+                Yaml(apply(api_prefix, version, V1RootApiDoc::openapi()))
+                    .into_response()
+            }
         },
     }
 }

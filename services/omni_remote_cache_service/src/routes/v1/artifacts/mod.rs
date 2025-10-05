@@ -11,7 +11,6 @@ pub use put_artifact::*;
 
 use axum::Router;
 use axum_extra::routing::RouterExt;
-use omni_remote_cache_storage::ListItem;
 use utoipa::OpenApi;
 
 use crate::{response::data::Data, state::ServiceState};
@@ -34,7 +33,7 @@ pub fn build_router() -> Router<ServiceState> {
     ),
     components(
         schemas(
-            Data<Vec<ListItem>>,
+            Data<Vec<CacheItem>>,
         )
     )
 )]

@@ -1,3 +1,5 @@
+use strum::Display;
+
 use crate::{
     local_disk_backend::LocalDiskBackendConfig, routes::root::RouterConfig,
     s3_backend::S3BackendConfig,
@@ -67,9 +69,23 @@ pub struct ServeArgs {
     pub routes: Option<RouterConfig>,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy)]
+#[derive(
+    clap::ValueEnum,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+)]
 pub enum BackendType {
+    #[strum(serialize = "s3")]
     S3,
+    #[strum(serialize = "local-disk")]
     LocalDisk,
+    #[strum(serialize = "memory")]
     InMemory,
 }
