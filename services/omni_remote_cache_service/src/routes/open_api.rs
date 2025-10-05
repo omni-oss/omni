@@ -80,13 +80,13 @@ fn apply(api_prefix: &str, version: Version, mut openapi: OpenApi) -> OpenApi {
     openapi
 }
 
-#[tracing::instrument(skip(version, format))]
+#[tracing::instrument(skip(version, format, state))]
 pub async fn get_open_api_doc(
     GetOpenApiDocs { version, format }: GetOpenApiDocs,
     State(state): State<ServiceState>,
 ) -> axum::response::Response {
     let api_prefix = state
-        .config
+        .args
         .routes
         .as_ref()
         .and_then(|r| r.api_prefix.as_deref())
