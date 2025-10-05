@@ -22,7 +22,7 @@ pub async fn get_scalar_ui(
 ) -> Result<Html<String>, InternalServerError<serde_json::Error>> {
     let doc_uri = format!("/openapi/{version}/{format}");
     let prefix_path = if let Some(prefix) = state
-        .config
+        .args
         .routes
         .as_ref()
         .map(|r| r.api_prefix.as_deref().unwrap_or("/api"))
