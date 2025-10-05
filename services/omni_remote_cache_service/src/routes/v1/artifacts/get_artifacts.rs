@@ -71,6 +71,7 @@ pub async fn get_artifacts(
         Ok(r) => {
             if let Some(response) = get_validation_response(
                 r.violations(),
+                &tenant_code,
                 &query.org,
                 &query.ws,
                 &query.env,
