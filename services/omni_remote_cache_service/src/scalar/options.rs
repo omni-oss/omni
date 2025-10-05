@@ -4,9 +4,9 @@ use std::collections::HashMap;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScalarOptions {
-    pub endpoint_path_prefix: String,
-
     pub openapi_document_route_template: String,
+
+    pub servers: Option<Vec<ScalarServer>>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -37,7 +37,7 @@ fn default_theme() -> String {
 impl Default for ScalarOptions {
     fn default() -> Self {
         Self {
-            endpoint_path_prefix: "/scalar".to_string(),
+            servers: None,
             openapi_document_route_template: "/openapi/{version}/{format}"
                 .to_string(),
             title: None,
@@ -75,4 +75,18 @@ pub struct ScalarAuthenticationApiKey {
 pub struct ScalarAuthenticationOauth2 {
     pub client_id: Option<String>,
     pub scopes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarServer {
+    pub url: String,
+    pub description: Option<String>,
+    pub variables: Option<HashMap<String, ScalarServerVariableValue>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarServerVariableValue {
+    pub default: String,
 }

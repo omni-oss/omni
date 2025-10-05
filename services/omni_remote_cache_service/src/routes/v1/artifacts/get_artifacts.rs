@@ -12,14 +12,19 @@ use crate::{
     state::ServiceState,
 };
 
-#[derive(TypedPath, Deserialize)]
+#[derive(TypedPath, Deserialize, Debug)]
 #[typed_path("/")]
 pub struct GetArtifactsPath {}
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize, IntoParams, Debug)]
+#[into_params(parameter_in = Query)]
 pub struct GetArtifactsQuery {
     #[param()]
+    pub org: String,
+
+    #[param()]
     pub ws: String,
+
     #[param()]
     pub env: String,
 }
@@ -33,8 +38,10 @@ pub struct GetArtifactsQuery {
     ),
     responses(
         (status = 200, description = "Success", body = Data<Vec<ListItem>>),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
+#[tracing::instrument(skip(state))]
 pub async fn get_artifacts(
     _: GetArtifactsPath,
     Query(query): Query<GetArtifactsQuery>,
@@ -43,7 +50,7 @@ pub async fn get_artifacts(
     Json<Data<Vec<ListItem>>>,
     InternalServerError<omni_remote_cache_storage::error::Error>,
 > {
-    let container = container(&query.ws, &query.env);
+    let container = container(&query.org, &query.ws, &query.env);
     let all_artifacts = state
         .storage_backend
         .list(Some(container.as_str()))

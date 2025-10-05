@@ -32,9 +32,9 @@ pub struct S3BackendConfig {
         long = "s3.bucket",
         default_value = "omni-remote-cache",
         env = "OMNI_REMOTE_CACHE_SERVICE_S3_BUCKET",
-        help = "The s3 bucket to use"
+        help = "The default s3 bucket to use"
     )]
-    pub bucket: String,
+    pub default_bucket: String,
 
     #[arg(
         long = "s3.region",
@@ -51,6 +51,15 @@ pub struct S3BackendConfig {
         env = "OMNI_REMOTE_CACHE_SERVICE_S3_FORCE_PATH_STYLE"
     )]
     pub force_path_style: bool,
+
+    #[arg(
+        long = "s3.multi-bucket",
+        action = ArgAction::SetTrue,
+        default_value = "false",
+        env = "OMNI_REMOTE_CACHE_SERVICE_S3_MULTI_BUCKET",
+        help = "If set, the bucket name will be the container name"
+    )]
+    pub multi_bucket: bool,
 }
 
 impl S3BackendConfig {
@@ -60,9 +69,11 @@ impl S3BackendConfig {
             endpoint: self.endpoint,
             access_key_id: self.access_key_id,
             secret_access_key: self.secret_access_key,
-            default_container: self.bucket,
+            default_bucket: self.default_bucket,
+            default_container: "default".to_string(),
             region: self.region,
             force_path_style: self.force_path_style,
+            multi_bucket: self.multi_bucket,
         }
     }
 

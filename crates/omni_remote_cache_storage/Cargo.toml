@@ -9,7 +9,7 @@ repository.workspace = true
 default = ["enable-tracing", "s3", "local-disk", "in-memory", "utoipa"]
 utoipa = ["dep:utoipa"]
 enable-tracing = ["trace/enabled"]
-s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:http", "dep:aws-credential-types", "dep:aws-types"]
+s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:http", "dep:http-body", "dep:aws-credential-types", "dep:aws-types"]
 local-disk = []
 in-memory = []
 
@@ -31,9 +31,14 @@ aws-sdk-s3 = { workspace = true, optional = true }
 aws-credential-types = { workspace = true, optional = true }
 aws-types = { workspace = true, optional = true }
 http = { workspace = true, optional = true }
+http-body = { workspace = true, optional = true }
 maps = { workspace = true }
 lru = { workspace = true }
 utoipa = { workspace = true, optional = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+async-stream = { workspace = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

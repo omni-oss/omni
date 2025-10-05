@@ -9,6 +9,7 @@ mod s3_backend;
 mod scalar;
 mod state;
 mod storage_backend;
+mod utils;
 
 use clap::Parser;
 use tokio::net::TcpListener;

@@ -1,11 +1,14 @@
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use bytesize::ByteSize;
 use derive_new::new;
 use maps::{Map, UnorderedMap};
 use tokio::sync::Mutex;
+use tokio_stream::StreamExt as _;
 
-use crate::{ListItem, PageOptions, RemoteCacheStorageBackend, error::Error};
+use crate::{
+    BoxStream, ListItem, PageOptions, RemoteCacheStorageBackend, error::Error,
+};
 
 #[derive(Debug, new)]
 pub struct InMemoryBackend {
@@ -41,6 +44,26 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
             .get(container)
             .and_then(|m| m.get(key))
             .map(|v| Bytes::copy_from_slice(v)))
+    }
+
+    async fn get_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<Option<BoxStream<Bytes>>, Error> {
+        let container = self.container(container);
+        let result = self
+            .containers
+            .lock()
+            .await
+            .get(container)
+            .and_then(|m| m.get(key))
+            .map(|v| {
+                Box::pin(tokio_stream::once(Bytes::copy_from_slice(v)))
+                    as BoxStream<Bytes>
+            });
+
+        Ok(result)
     }
 
     async fn list(
@@ -117,6 +140,29 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
             .entry(container.to_string())
             .or_default()
             .insert(key.to_string(), value.to_vec());
+        Ok(())
+    }
+
+    async fn save_stream(
+        &self,
+        container: Option<&str>,
+        key: &str,
+        mut value: BoxStream<Bytes>,
+    ) -> Result<(), Error> {
+        let container = self.container(container);
+        let mut combined = BytesMut::new();
+
+        while let Some(chunk) = value.next().await {
+            combined.extend_from_slice(&chunk);
+        }
+
+        self.containers
+            .lock()
+            .await
+            .entry(container.to_string())
+            .or_default()
+            .insert(key.to_string(), combined.to_vec());
+
         Ok(())
     }
 

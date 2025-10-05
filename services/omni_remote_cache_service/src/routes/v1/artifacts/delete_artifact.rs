@@ -10,14 +10,16 @@ use utoipa::IntoParams;
 
 use crate::{routes::v1::artifacts::common::container, state::ServiceState};
 
-#[derive(TypedPath, Deserialize)]
+#[derive(TypedPath, Deserialize, Debug)]
 #[typed_path("/{digest}")]
 pub struct DeleteArtifactPath {
     pub digest: String,
 }
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize, IntoParams, Debug)]
+#[into_params(parameter_in = Query)]
 pub struct DeleteArtifactQuery {
+    pub org: String,
     pub ws: String,
     pub env: String,
 }
@@ -31,26 +33,26 @@ pub struct DeleteArtifactQuery {
         DeleteArtifactQuery
     ),
     responses(
-        (status = 200, description = "Success"),
+        (status = NO_CONTENT, description = "Success"),
+        (status = NOT_FOUND, description = "Not found"),
+        (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
 )]
+#[tracing::instrument(skip(state))]
 pub async fn delete_artifact(
     DeleteArtifactPath { digest }: DeleteArtifactPath,
     Query(query): Query<DeleteArtifactQuery>,
     State(state): State<ServiceState>,
 ) -> Response {
-    let container = container(&query.ws, &query.env);
+    let container = container(&query.org, &query.ws, &query.env);
     let x = state
         .storage_backend
-        .get(Some(container.as_ref()), &digest)
+        .delete(Some(container.as_ref()), &digest)
         .await
         .map_err(|e| InternalServerError(e));
 
     match x {
-        Ok(o) => match o {
-            Some(_) => todo!(),
-            None => (StatusCode::NOT_FOUND, "Not found").into_response(),
-        },
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => e.into_response(),
     }
 }
