@@ -2,8 +2,9 @@
 macro_rules! decl_remote_cache_storage_backend_tests {
     ($default:expr) => {
         use crate::RemoteCacheStorageBackend;
-        use bytes::Bytes;
+        use bytes::{Bytes, BytesMut};
         use bytesize::ByteSize;
+        use tokio_stream::StreamExt;
 
         async fn backend() -> impl RemoteCacheStorageBackend + Send + Sync {
             let backend = $default;
@@ -18,7 +19,7 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                 .unwrap();
 
             backend
-                .save(Some("container1"), "key1", Bytes::from("value2"))
+                .save(Some("container1"), "key1", Bytes::from("value1"))
                 .await
                 .unwrap();
             backend
@@ -52,7 +53,43 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                 .expect("should have no error")
                 .expect("should have data");
 
-            assert_eq!(value, Bytes::from("value2"));
+            assert_eq!(value, Bytes::from("value1"));
+        }
+
+        #[tokio::test]
+        async fn test_get_stream() {
+            let backend = backend().await;
+
+            let mut stream = backend
+                .get_stream(None, "key1")
+                .await
+                .expect("should have no error")
+                .expect("should have data");
+
+            let mut value = BytesMut::new();
+            while let Some(chunk) = stream.next().await {
+                value.extend_from_slice(&chunk);
+            }
+
+            assert_eq!(value, Bytes::from("value1"));
+        }
+
+        #[tokio::test]
+        async fn test_get_stream_container() {
+            let backend = backend().await;
+
+            let mut stream = backend
+                .get_stream(Some("container1"), "key1")
+                .await
+                .expect("should have no error")
+                .expect("should have data");
+
+            let mut value = BytesMut::new();
+            while let Some(chunk) = stream.next().await {
+                value.extend_from_slice(&chunk);
+            }
+
+            assert_eq!(value, Bytes::from("value1"));
         }
 
         #[tokio::test]
@@ -95,6 +132,17 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                 .save(None, "key3", Bytes::from("value3"))
                 .await
                 .unwrap();
+
+            let mut list = backend.list(None).await.unwrap();
+            list.sort_by_key(|item| item.key.clone());
+
+            assert_eq!(list.len(), 3);
+            assert_eq!(list[0].key, "key1");
+            assert_eq!(list[0].size, ByteSize::b(6));
+            assert_eq!(list[1].key, "key2");
+            assert_eq!(list[1].size, ByteSize::b(6));
+            assert_eq!(list[2].key, "key3");
+            assert_eq!(list[2].size, ByteSize::b(6));
         }
 
         #[tokio::test]
@@ -106,7 +154,54 @@ macro_rules! decl_remote_cache_storage_backend_tests {
                 .await
                 .unwrap();
 
-            let list = backend.list(Some("container2")).await.unwrap();
+            let mut list = backend.list(Some("container2")).await.unwrap();
+            list.sort_by_key(|item| item.key.clone());
+
+            assert_eq!(list.len(), 1);
+            assert_eq!(list[0].key, "key1");
+            assert_eq!(list[0].size, ByteSize::b(6));
+        }
+
+        #[tokio::test]
+        async fn test_save_stream() {
+            let backend = backend().await;
+
+            let stream = tokio_stream::once(Bytes::from("value3"));
+
+            backend
+                .save_stream(None, "key3", Box::pin(stream))
+                .await
+                .unwrap();
+
+            let mut list = backend.list(None).await.unwrap();
+            list.sort_by_key(|item| item.key.clone());
+
+            assert_eq!(list.len(), 3);
+            assert_eq!(list[0].key, "key1");
+            assert_eq!(list[0].size, ByteSize::b(6));
+            assert_eq!(list[1].key, "key2");
+            assert_eq!(list[1].size, ByteSize::b(6));
+            assert_eq!(list[2].key, "key3");
+            assert_eq!(list[2].size, ByteSize::b(6));
+        }
+
+        #[tokio::test]
+        async fn test_save_stream_container() {
+            let backend = backend().await;
+
+            let stream = tokio_stream::once(Bytes::from("value3"));
+
+            backend
+                .save_stream(Some("container2"), "key1", Box::pin(stream))
+                .await
+                .expect("should have no error");
+
+            let mut list = backend
+                .list(Some("container2"))
+                .await
+                .expect("should have no error");
+            list.sort_by_key(|item| item.key.clone());
+
             assert_eq!(list.len(), 1);
             assert_eq!(list[0].key, "key1");
             assert_eq!(list[0].size, ByteSize::b(6));
