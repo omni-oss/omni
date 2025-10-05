@@ -12,6 +12,8 @@ use std::collections::HashSet;
 ///
 /// # Example
 /// ```
+/// use omni_path_utils::escape_path_component;
+///
 /// let safe = escape_path_component("file<name>.txt");
 /// assert_eq!(safe, "file%3Cname%3E.txt");
 /// ```
