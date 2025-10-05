@@ -1,0 +1,22 @@
+{
+    "tenants": {
+        "tenant1": {
+            "display_name": "Tenant 1",
+            "organizations": {
+                "org1": {
+                    "display_name": "Organization 1",
+                    "workspaces": {
+                        "ws1": {
+                            "display_name": "Workspace 1",
+                            "environments": {
+                                "env1": {
+                                    "display_name": "Environment 1"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

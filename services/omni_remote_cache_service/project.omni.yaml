@@ -24,3 +24,4 @@ dependencies:
   - omni_remote_cache_storage
   - omni_tracing_subscriber
   - omni_path_utils
+  - maps

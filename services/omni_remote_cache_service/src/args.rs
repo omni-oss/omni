@@ -36,6 +36,14 @@ pub struct ServeArgs {
     #[clap(
         long,
         short,
+        default_value = "orcs.config.json",
+        help = "Path to the configuration file"
+    )]
+    pub config: Option<String>,
+
+    #[clap(
+        long,
+        short,
         default_value = "false",
         env = "OMNI_REMOTE_CACHE_SERVICE_SECURE",
         help = "Whether to use TLS for the server"

@@ -4,6 +4,7 @@ use axum::{
 };
 use http::StatusCode;
 use serde::Deserialize;
+use serde_json::json;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{services::Violation, utils::path::escape_path_component};
@@ -34,6 +35,7 @@ pub fn container(org: &str, ws: &str, env: &str) -> String {
 #[inline(always)]
 pub fn get_validation_response(
     violations: &[Violation],
+    tenant: &str,
     org: &str,
     ws: &str,
     env: &str,
@@ -45,13 +47,13 @@ pub fn get_validation_response(
     let violations = violations
         .iter()
         .copied()
-        .map(|v| translate_violation(v, org, ws, env))
+        .map(|v| translate_violation(v, tenant, org, ws, env))
         .collect::<Vec<_>>();
 
     Some(
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
+            Json(json!({
                 "error": "Validation errors",
                 "code": StatusCode::BAD_REQUEST.as_u16(),
                 "violations": violations
@@ -63,13 +65,14 @@ pub fn get_validation_response(
 
 fn translate_violation(
     violation: Violation,
+    tenant: &str,
     org: &str,
     ws: &str,
     env: &str,
 ) -> String {
     match violation {
         Violation::TenantDoesNotExist => {
-            format!("tenant for code '{}' does not exist", org)
+            format!("tenant for code '{}' does not exist", tenant)
         }
         Violation::TenantDoesNotHaveOrganization => {
             format!(

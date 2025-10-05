@@ -39,6 +39,8 @@ bs58 = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 omni_path_utils = { workspace = true }
+schemars = { workspace = true }
+maps = { workspace = true }
 
 [build-dependencies]
 eyre = { workspace = true }
