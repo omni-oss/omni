@@ -1,5 +1,5 @@
-mod in_memory_impl;
+mod config;
 mod traits;
 
-pub use in_memory_impl::*;
+pub use config::*;
 pub use traits::*;

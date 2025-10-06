@@ -21,12 +21,12 @@ use crate::{
 };
 
 #[derive(Clone, new)]
-pub struct InMemoryDependencyProvider {
+pub struct ConfigBasedDependencyProvider {
     data: Arc<InMemoryDatabase>,
     api_keys: Arc<UnorderedMap<String, ApiKeyConfiguration>>,
 }
 
-impl DependencyProvider for InMemoryDependencyProvider {
+impl DependencyProvider for ConfigBasedDependencyProvider {
     fn workspace_repository(&self) -> DynWorkspaceRepository {
         Box::new(InMemoryWorkspaceRepository::new(self.data.clone()))
     }

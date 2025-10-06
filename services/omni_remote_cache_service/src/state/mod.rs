@@ -5,7 +5,7 @@ use derive_new::new;
 use crate::{
     args::{ConfigType, ServeArgs},
     config::Configuration,
-    providers::{DependencyProvider, InMemoryDependencyProvider},
+    providers::{ConfigBasedDependencyProvider, DependencyProvider},
     storage_backend::StorageBackend,
 };
 
@@ -31,7 +31,7 @@ impl ServiceState {
                 StorageBackend::from_cli_args(args).await,
             ),
             args: Arc::new(args.clone()),
-            provider: Arc::new(InMemoryDependencyProvider::new(
+            provider: Arc::new(ConfigBasedDependencyProvider::new(
                 Arc::new(config.to_in_memory_database()),
                 Arc::new(config.security.api_keys.clone()),
             )),
