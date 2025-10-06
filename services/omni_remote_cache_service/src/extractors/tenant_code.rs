@@ -19,12 +19,18 @@ impl IntoResponse for TenantCodeRejection {
             StatusCode::BAD_REQUEST,
             match self {
                 TenantCodeRejection::NoTenantCode => Json(json!({
-                    "error": "No tenant code provided",
-                    "code": StatusCode::BAD_REQUEST.as_u16()
+                    "type": "https://httpstatuses.com/400",
+                    "title": "No Tenant Code Provided",
+                    "detail": "No tenant code provided",
+                    "status": StatusCode::BAD_REQUEST.as_u16(),
+                    "instance": "",
                 })),
                 TenantCodeRejection::CantParseTenantCode(e) => Json(json!({
-                    "error": format!("Can't parse tenant code: {}", e),
-                    "code": StatusCode::BAD_REQUEST.as_u16()
+                    "type": "https://httpstatuses.com/400",
+                    "title": "Can't Parse Tenant Code",
+                    "detail": format!("Can't parse tenant code: {}", e),
+                    "status": StatusCode::BAD_REQUEST.as_u16(),
+                    "instance": "",
                 })),
             },
         )
@@ -44,7 +50,7 @@ impl<S: Send + Sync> FromRequestParts<S> for TenantCode {
     ) -> Result<Self, Self::Rejection> {
         parts
             .headers
-            .get("x-omni-tenant")
+            .get("X-OMNI-TENANT")
             .map(|code| match code.to_str() {
                 Ok(o) => Ok(TenantCode(o.to_string())),
                 Err(e) => {

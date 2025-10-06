@@ -23,8 +23,11 @@ pub struct DeleteArtifactPath {
 #[derive(Deserialize, IntoParams, Debug)]
 #[into_params(parameter_in = Query)]
 pub struct DeleteArtifactQuery {
+    /// The organization code
     pub org: String,
+    /// The workspace code
     pub ws: String,
+    /// The environment code
     pub env: String,
 }
 
@@ -34,7 +37,7 @@ pub struct DeleteArtifactQuery {
     path = "/{digest}",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
-        ("x-omni-tenant" = String, Header, description = "Tenant code"),
+        ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
         DeleteArtifactQuery
     ),
     responses(

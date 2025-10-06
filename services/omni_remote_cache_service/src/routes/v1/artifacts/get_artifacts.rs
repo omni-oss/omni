@@ -24,12 +24,15 @@ pub struct GetArtifactsPath {}
 #[into_params(parameter_in = Query)]
 pub struct GetArtifactsQuery {
     #[param()]
+    /// The organization code
     pub org: String,
 
     #[param()]
+    /// The workspace code
     pub ws: String,
 
     #[param()]
+    /// The environment code
     pub env: String,
 }
 
@@ -44,7 +47,7 @@ pub struct CacheItem {
     description = "List artifacts",
     path = "",
     params(
-        ("x-omni-tenant" = String, Header, description = "Tenant code"),
+        ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
         GetArtifactsQuery
     ),
     responses(

@@ -28,8 +28,11 @@ pub struct GetArtifactPath {
 #[derive(Deserialize, IntoParams, Debug)]
 #[into_params(parameter_in = Query)]
 pub struct GetArtifactQuery {
+    /// The organization code
     pub org: String,
+    /// The workspace code
     pub ws: String,
+    /// The environment code
     pub env: String,
 }
 
@@ -39,7 +42,7 @@ pub struct GetArtifactQuery {
     description = "Download an artifact",
     params(
         ("digest" = String, Path, description = "Artifact digest"),
-        ("x-omni-tenant" = String, Header, description = "Tenant code"),
+        ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
         GetArtifactQuery
     ),
     responses(
