@@ -12,9 +12,7 @@ use utoipa::IntoParams;
 
 use crate::{
     extractors::{ApiKey, TenantCode},
-    routes::v1::artifacts::common::{
-        container, get_validation_response, guard,
-    },
+    routes::v1::artifacts::common::{container, guard, validate_ownership},
     state::ServiceState,
 };
 
@@ -73,27 +71,7 @@ pub async fn put_artifact(
         &["write:artifacts"],
     );
 
-    let validate_svc = state.provider.validation_service();
-
-    let result = validate_svc
-        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
-        .await
-        .map_err(InternalServerError);
-
-    match result {
-        Ok(r) => {
-            if let Some(response) = get_validation_response(
-                r.violations(),
-                &tenant_code,
-                &query.org,
-                &query.ws,
-                &query.env,
-            ) {
-                return response;
-            }
-        }
-        Err(e) => return e.into_response(),
-    }
+    validate_ownership!(state.provider, &tenant_code, &query,);
 
     let container = container(&query.org, &query.ws, &query.env);
     let stream = body.into_data_stream().filter_map(|r| match r {
@@ -108,7 +86,7 @@ pub async fn put_artifact(
         .storage_backend
         .save_stream(Some(container.as_ref()), &digest, Box::pin(stream))
         .await
-        .map_err(|e| InternalServerError(e));
+        .map_err(InternalServerError);
 
     match x {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
