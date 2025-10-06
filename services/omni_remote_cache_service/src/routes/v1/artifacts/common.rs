@@ -54,8 +54,11 @@ pub fn get_validation_response(
         (
             StatusCode::BAD_REQUEST,
             Json(json!({
-                "error": "Validation errors",
-                "code": StatusCode::BAD_REQUEST.as_u16(),
+                "type": "https://httpstatuses.com/400",
+                "title": "Validation Errors",
+                "detail": violations.join(".\n"),
+                "instance": "",
+                "status": StatusCode::BAD_REQUEST.as_u16(),
                 "violations": violations
             })),
         )

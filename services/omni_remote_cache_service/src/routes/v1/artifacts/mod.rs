@@ -11,7 +11,13 @@ pub use put_artifact::*;
 
 use axum::Router;
 use axum_extra::routing::RouterExt;
-use utoipa::OpenApi;
+use utoipa::{
+    Modify, OpenApi,
+    openapi::{
+        self,
+        security::{ApiKey, ApiKeyValue, SecurityScheme},
+    },
+};
 
 use crate::{response::data::Data, state::ServiceState};
 
@@ -35,6 +41,27 @@ pub fn build_router() -> Router<ServiceState> {
         schemas(
             Data<Vec<CacheItem>>,
         )
-    )
+    ),
+    security(
+        ("api_key" = ["read:artifacts", "write:artifacts", "delete:artifacts"]),
+    ),
+    modifiers(&SecurityAddon),
 )]
 pub struct ArtifactsApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut openapi::OpenApi) {
+        openapi.components = Some(
+            openapi::ComponentsBuilder::new()
+                .security_scheme(
+                    "api_key",
+                    SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new(
+                        "X-API-KEY",
+                    ))),
+                )
+                .build(),
+        )
+    }
+}

@@ -28,13 +28,13 @@ pub struct PutArtifactPath {
 #[into_params(parameter_in = Query)]
 pub struct PutArtifactQuery {
     #[param()]
-    /// The organization name
+    /// The organization code
     pub org: String,
     #[param()]
-    /// The workspace name
+    /// The workspace code
     pub ws: String,
     #[param()]
-    /// The environment name
+    /// The environment code
     pub env: String,
 }
 
@@ -45,7 +45,7 @@ pub struct PutArtifactQuery {
     params(
         PutArtifactPath,
         PutArtifactQuery,
-        ("x-omni-tenant" = String, Header, description = "Tenant code"),
+        ("X-OMNI-TENANT" = String, Header, description = "Tenant code"),
     ),
     request_body(content_type = "application/octet-stream", description = "Raw file streaming content", content = Vec<u8>),
     responses(
