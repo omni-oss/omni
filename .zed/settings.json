@@ -8,27 +8,47 @@
     },
     "languages": {
         "JavaScript": {
+            "tab_size": 4,
             "formatter": { "language_server": { "name": "biome" } }
         },
         "TypeScript": {
+            "tab_size": 4,
             "formatter": { "language_server": { "name": "biome" } }
         },
         "HTML": {
+            "tab_size": 4,
             "formatter": { "language_server": { "name": "biome" } }
         },
         "JSDoc": {
+            "tab_size": 4,
             "formatter": {
                 "language_server": { "name": "biome" }
             }
         },
         "TOML": {
+            "tab_size": 4,
             "formatter": {
                 "language_server": { "name": "toml" }
             }
         },
-        "TSX": { "formatter": { "language_server": { "name": "biome" } } },
-        "JSON": { "formatter": { "language_server": { "name": "biome" } } },
-        "JSONC": { "formatter": { "language_server": { "name": "biome" } } },
-        "CSS": { "formatter": { "language_server": { "name": "biome" } } }
+        "Rust": {
+            "tab_size": 4
+        },
+        "TSX": {
+            "tab_size": 4,
+            "formatter": { "language_server": { "name": "biome" } }
+        },
+        "JSON": {
+            "tab_size": 4,
+            "formatter": { "language_server": { "name": "biome" } }
+        },
+        "JSONC": {
+            "tab_size": 4,
+            "formatter": { "language_server": { "name": "biome" } }
+        },
+        "CSS": {
+            "tab_size": 4,
+            "formatter": { "language_server": { "name": "biome" } }
+        }
     }
 }

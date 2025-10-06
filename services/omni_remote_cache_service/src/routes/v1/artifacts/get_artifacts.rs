@@ -82,14 +82,14 @@ pub async fn get_artifacts(
         .map_err(InternalServerError);
 
     match all_artifacts {
-        Ok(r) => Json(
+        Ok(r) => Json(Data::new(
             r.iter()
                 .map(|item| CacheItem {
                     digest: item.key().to_string(),
                     size: item.size().as_u64(),
                 })
                 .collect::<Vec<_>>(),
-        )
+        ))
         .into_response(),
         Err(e) => e.into_response(),
     }

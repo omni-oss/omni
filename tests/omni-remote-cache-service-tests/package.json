@@ -1,0 +1,13 @@
+{
+    "name": "@repo/omni-remote-cache-service-tests",
+    "version": "0.0.0-semantically-released",
+    "dependencies": {},
+    "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@repo/vite-config": "workspace:*",
+        "vite": "^7.1.5",
+        "vitest": "^3.2.4",
+        "typescript": "^5.9.2",
+        "@types/node": "24.4.0"
+    }
+}

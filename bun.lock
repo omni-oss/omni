@@ -106,6 +106,18 @@
         "typescript": "^5.9.2",
       },
     },
+    "tests/omnni-remote-cache-service-tests": {
+      "name": "@repo/omni-remote-cache-service-tests",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@repo/tsconfig": "workspace:*",
+        "@repo/vite-config": "workspace:*",
+        "@types/node": "24.4.0",
+        "typescript": "^5.9.2",
+        "vite": "^7.1.5",
+        "vitest": "^3.2.4",
+      },
+    },
   },
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
@@ -439,6 +451,8 @@
     "@repo/biome-config": ["@repo/biome-config@workspace:packages/biome-config"],
 
     "@repo/bridge-rpc": ["@repo/bridge-rpc@workspace:packages/bridge-rpc"],
+
+    "@repo/omni-remote-cache-service-tests": ["@repo/omni-remote-cache-service-tests@workspace:tests/omnni-remote-cache-service-tests"],
 
     "@repo/site": ["@repo/site@workspace:apps/site"],
 

@@ -1,0 +1,14 @@
+{
+	"extends": ["@repo/tsconfig/with-paths.json"],
+	"exclude": [
+    "coverage",
+		"dist",
+		"node_modules",
+		"output",
+		".output",
+		".vercel",
+		".solid",
+		"public",
+		"build"
+	]
+}
