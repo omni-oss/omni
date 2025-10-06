@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: "@repo/omni-remote-cache-service-tests"
+
+extends:
+  - "@workspace/omni/presets/ts-lib.omni.yaml"
+
+tasks:
+  build:
+    enabled: false
+
+  test:api:
+    command: bun x vitest --config ./vitest.config.api.ts run
+    dependencies:
+      - omni_remote_cache_service#build
+
+  test:
+    dependencies:
+      - test:api
+
+dependencies:
+  - omni_remote_cache_service
