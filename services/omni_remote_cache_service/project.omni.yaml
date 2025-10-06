@@ -8,7 +8,7 @@ tasks:
   build:
     output:
       files:
-        - "@workspace/target/release/omni_remote_cache_server"
+        - "@workspace/target/release/omni_remote_cache_service"
 
   dev:
     env:
