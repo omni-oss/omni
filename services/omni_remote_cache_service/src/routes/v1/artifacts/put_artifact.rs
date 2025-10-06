@@ -71,7 +71,7 @@ pub async fn put_artifact(
         &["write:artifacts"],
     );
 
-    validate_ownership!(state.provider, &tenant_code, &query,);
+    validate_ownership!(state.provider, &tenant_code, &query);
 
     let container = container(&query.org, &query.ws, &query.env);
     let stream = body.into_data_stream().filter_map(|r| match r {
