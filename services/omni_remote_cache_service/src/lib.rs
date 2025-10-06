@@ -1,3 +1,5 @@
+#![feature(decl_macro)]
+
 mod args;
 mod build;
 mod config;
@@ -12,6 +14,7 @@ mod response;
 mod routes;
 mod s3_backend;
 mod scalar;
+mod security;
 mod services;
 mod state;
 mod storage_backend;
@@ -32,7 +35,7 @@ pub async fn main() -> eyre::Result<()> {
 
     match cli.subcommand {
         args::CliSubcommands::Serve(serve) => {
-            let state = ServiceState::from_args(&serve.args).await;
+            let state = ServiceState::from_args(&serve.args).await?;
 
             let routing_config = serve.args.routes.unwrap_or_default();
             let router = routes::root::build_router(&routing_config)

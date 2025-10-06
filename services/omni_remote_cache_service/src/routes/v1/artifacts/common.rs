@@ -106,3 +106,53 @@ fn translate_violation(
         }
     }
 }
+
+pub fn forbidden_response(message: Option<&str>) -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(json!({
+            "type": "https://httpstatuses.com/403",
+            "title": "Forbidden",
+            "detail": message.unwrap_or("Forbidden"),
+            "instance": "",
+            "status": StatusCode::FORBIDDEN.as_u16(),
+        })),
+    )
+        .into_response()
+}
+
+pub macro guard(
+        $provider:expr,
+        $api_key:expr,
+        $tenant_code:expr,
+        $query:expr,
+        $scopes:expr$(,)?
+    ) {{
+    use crate::routes::v1::artifacts::common::forbidden_response;
+    use axum::response::IntoResponse as _;
+    use axum_extra::response::InternalServerError;
+
+    let security = $provider.security_service();
+
+    let security_result = security
+        .can_access(
+            $api_key,
+            $tenant_code,
+            &$query.org,
+            &$query.ws,
+            &$query.env,
+            $scopes,
+        )
+        .await
+        .map_err(InternalServerError);
+
+    match security_result {
+        Ok(true) => (),
+        Ok(false) => {
+            return forbidden_response(Some(
+                "You are not authorized to process this request",
+            ));
+        }
+        Err(e) => return e.into_response(),
+    }
+}}

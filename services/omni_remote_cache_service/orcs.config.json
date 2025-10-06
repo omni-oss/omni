@@ -18,5 +18,22 @@
                 }
             }
         }
+    },
+    "security": {
+        "api_keys": {
+            "key1": {
+                "description": "Key 1",
+                "tenants": ["tenant1"],
+                "organizations": ["org1"],
+                "workspaces": ["ws1"],
+                "environments": ["env1"],
+                "scopes": [
+                    "read:artifacts",
+                    "write:artifacts",
+                    "list:artifacts",
+                    "delete:artifacts"
+                ]
+            }
+        }
     }
 }

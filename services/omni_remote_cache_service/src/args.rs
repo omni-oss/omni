@@ -37,9 +37,19 @@ pub struct ServeArgs {
         long,
         short,
         default_value = "orcs.config.json",
-        help = "Path to the configuration file"
+        help = "Path to the configuration file",
+        env = "OMNI_REMOTE_CACHE_SERVICE_CONFIG"
     )]
     pub config: Option<String>,
+
+    #[clap(
+        long,
+        short = 't',
+        default_value = "file",
+        help = "How to interpret the configuration",
+        env = "OMNI_REMOTE_CACHE_SERVICE_CONFIG_TYPE"
+    )]
+    pub config_type: Option<ConfigType>,
 
     #[clap(
         long,
@@ -96,4 +106,23 @@ pub enum BackendType {
     LocalDisk,
     #[strum(serialize = "memory")]
     InMemory,
+}
+
+#[derive(
+    clap::ValueEnum,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+)]
+pub enum ConfigType {
+    #[strum(serialize = "inline")]
+    Inline,
+    #[strum(serialize = "file")]
+    File,
 }

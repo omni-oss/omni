@@ -14,8 +14,8 @@ use utoipa::IntoParams;
 
 use super::common::container;
 use crate::{
-    extractors::TenantCode,
-    routes::v1::artifacts::common::get_validation_response,
+    extractors::{ApiKey, TenantCode},
+    routes::v1::artifacts::common::{get_validation_response, guard},
     state::ServiceState,
 };
 
@@ -62,7 +62,16 @@ pub async fn get_artifact(
     Query(query): Query<GetArtifactQuery>,
     TenantCode(tenant_code): TenantCode,
     State(state): State<ServiceState>,
+    ApiKey(api_key): ApiKey,
 ) -> Response {
+    guard!(
+        state.provider,
+        &api_key,
+        &tenant_code,
+        &query,
+        &["read:artifacts"],
+    );
+
     let validate_svc = state.provider.validation_service();
 
     let result = validate_svc

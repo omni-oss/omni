@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use derive_new::new;
+use maps::UnorderedMap;
 
 use crate::{
+    config::ApiKeyConfiguration,
     data::{
         environments::DynEnvironmentRepository,
         organizations::DynOrganizationRepository, tenants::DynTenantRepository,
@@ -14,12 +16,14 @@ use crate::{
         InMemoryWorkspaceRepository,
     },
     providers::DependencyProvider,
+    security::{DynSecurityService, InMemorySecurityService},
     services::{DefaultValidationService, DynValidationService},
 };
 
 #[derive(Clone, new)]
 pub struct InMemoryDependencyProvider {
     data: Arc<InMemoryDatabase>,
+    api_keys: Arc<UnorderedMap<String, ApiKeyConfiguration>>,
 }
 
 impl DependencyProvider for InMemoryDependencyProvider {
@@ -46,5 +50,9 @@ impl DependencyProvider for InMemoryDependencyProvider {
             self.workspace_repository(),
             self.environment_repository(),
         ))
+    }
+
+    fn security_service(&self) -> DynSecurityService {
+        Box::new(InMemorySecurityService::new(self.api_keys.clone()))
     }
 }

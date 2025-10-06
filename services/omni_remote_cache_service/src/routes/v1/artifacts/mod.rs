@@ -43,7 +43,7 @@ pub fn build_router() -> Router<ServiceState> {
         )
     ),
     security(
-        ("api_key" = ["read:artifacts", "write:artifacts", "delete:artifacts"]),
+        ("api_key" = ["read:artifacts", "list:artifacts", "write:artifacts", "delete:artifacts"]),
     ),
     modifiers(&SecurityAddon),
 )]
