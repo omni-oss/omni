@@ -12,9 +12,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     extractors::{ApiKey, TenantCode},
     response::data::Data,
-    routes::v1::artifacts::common::{
-        container, get_validation_response, guard,
-    },
+    routes::v1::artifacts::common::{container, guard, validate_ownership},
     state::ServiceState,
 };
 
@@ -74,27 +72,7 @@ pub async fn get_artifacts(
         &["list:artifacts"],
     );
 
-    let validate_svc = state.provider.validation_service();
-
-    let result = validate_svc
-        .validate_ownership(&tenant_code, &query.org, &query.ws, &query.env)
-        .await
-        .map_err(InternalServerError);
-
-    match result {
-        Ok(r) => {
-            if let Some(response) = get_validation_response(
-                r.violations(),
-                &tenant_code,
-                &query.org,
-                &query.ws,
-                &query.env,
-            ) {
-                return response;
-            }
-        }
-        Err(e) => return e.into_response(),
-    }
+    validate_ownership!(state.provider, &tenant_code, &query);
 
     let container = container(&query.org, &query.ws, &query.env);
     let all_artifacts = state

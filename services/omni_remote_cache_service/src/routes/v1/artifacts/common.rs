@@ -156,3 +156,35 @@ pub macro guard(
         Err(e) => return e.into_response(),
     }
 }}
+
+pub macro validate_ownership(
+        $provider:expr,
+        $tenant_code:expr,
+        $query:expr$(,)?
+    ) {{
+    use crate::routes::v1::artifacts::common::get_validation_response;
+    use axum::response::IntoResponse as _;
+    use axum_extra::response::InternalServerError;
+
+    let validate_svc = $provider.validation_service();
+
+    let result = validate_svc
+        .validate_ownership($tenant_code, &$query.org, &$query.ws, &$query.env)
+        .await
+        .map_err(InternalServerError);
+
+    match result {
+        Ok(r) => {
+            if let Some(response) = get_validation_response(
+                r.violations(),
+                &$tenant_code,
+                &$query.org,
+                &$query.ws,
+                &$query.env,
+            ) {
+                return response;
+            }
+        }
+        Err(e) => return e.into_response(),
+    }
+}}
