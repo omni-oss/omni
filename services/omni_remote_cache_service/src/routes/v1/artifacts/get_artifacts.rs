@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
-    extractors::TenantCode,
+    extractors::{ApiKey, TenantCode},
     response::data::Data,
-    routes::v1::artifacts::common::{container, get_validation_response},
+    routes::v1::artifacts::common::{
+        container, get_validation_response, guard,
+    },
     state::ServiceState,
 };
 
@@ -62,7 +64,16 @@ pub async fn get_artifacts(
     Query(query): Query<GetArtifactsQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
+    ApiKey(api_key): ApiKey,
 ) -> Response {
+    guard!(
+        state.provider,
+        &api_key,
+        &tenant_code,
+        &query,
+        &["list:artifacts"],
+    );
+
     let validate_svc = state.provider.validation_service();
 
     let result = validate_svc

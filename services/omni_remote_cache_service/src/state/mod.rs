@@ -3,7 +3,7 @@ use std::sync::Arc;
 use derive_new::new;
 
 use crate::{
-    args::ServeArgs,
+    args::{ConfigType, ServeArgs},
     config::Configuration,
     providers::{DependencyProvider, InMemoryDependencyProvider},
     storage_backend::StorageBackend,
@@ -17,19 +17,24 @@ pub struct ServiceState {
 }
 
 impl ServiceState {
-    pub async fn from_args(args: &ServeArgs) -> Self {
-        let path = args.config.as_deref().unwrap_or("orcs.config.json");
+    pub async fn from_args(args: &ServeArgs) -> eyre::Result<Self> {
+        let config = args.config.as_deref().unwrap_or("orcs.config.json");
+        let cfg_type = args.config_type.unwrap_or(ConfigType::File);
 
-        let config = Configuration::from_file(path).unwrap();
+        let config = match cfg_type {
+            ConfigType::Inline => Configuration::from_inline(config)?,
+            ConfigType::File => Configuration::from_file(config)?,
+        };
 
-        Self {
+        Ok(Self {
             storage_backend: Arc::new(
                 StorageBackend::from_cli_args(args).await,
             ),
             args: Arc::new(args.clone()),
-            provider: Arc::new(InMemoryDependencyProvider::new(Arc::new(
-                config.to_in_memory_database(),
-            ))),
-        }
+            provider: Arc::new(InMemoryDependencyProvider::new(
+                Arc::new(config.to_in_memory_database()),
+                Arc::new(config.security.api_keys.clone()),
+            )),
+        })
     }
 }

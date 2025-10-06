@@ -1,4 +1,5 @@
 use axum::{
+    debug_handler,
     extract::{Query, State},
     response::{IntoResponse as _, Response},
 };
@@ -9,8 +10,10 @@ use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
-    extractors::TenantCode,
-    routes::v1::artifacts::common::{container, get_validation_response},
+    extractors::{ApiKey, TenantCode},
+    routes::v1::artifacts::common::{
+        container, get_validation_response, guard,
+    },
     state::ServiceState,
 };
 
@@ -48,12 +51,22 @@ pub struct DeleteArtifactQuery {
     )
 )]
 #[tracing::instrument(skip(state))]
+#[debug_handler]
 pub async fn delete_artifact(
     DeleteArtifactPath { digest }: DeleteArtifactPath,
     Query(query): Query<DeleteArtifactQuery>,
     State(state): State<ServiceState>,
     TenantCode(tenant_code): TenantCode,
+    ApiKey(api_key): ApiKey,
 ) -> Response {
+    guard!(
+        state.provider,
+        &api_key,
+        &tenant_code,
+        &query,
+        &["delete:artifacts"]
+    );
+
     let validate_svc = state.provider.validation_service();
 
     let result = validate_svc

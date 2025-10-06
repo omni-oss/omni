@@ -25,3 +25,4 @@ dependencies:
   - omni_tracing_subscriber
   - omni_path_utils
   - maps
+  - sets

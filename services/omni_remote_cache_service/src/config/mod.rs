@@ -1,8 +1,11 @@
-use std::path::Path;
+use std::{hash::Hash, path::Path};
 
 use maps::UnorderedMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use sets::UnorderedSet;
+use strum::{Display, EnumString, FromRepr};
+use time::OffsetDateTime;
 
 use crate::{
     data::{
@@ -19,12 +22,19 @@ use crate::{
 )]
 pub struct Configuration {
     pub tenants: UnorderedMap<String, TenantConfiguration>,
+    pub security: SecurityConfiguration,
 }
 
 impl Configuration {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, eyre::Report> {
         let config = std::fs::read_to_string(path)?;
         let config: Configuration = serde_json::from_str(&config)?;
+
+        Ok(config)
+    }
+
+    pub fn from_inline(config: impl AsRef<str>) -> Result<Self, eyre::Report> {
+        let config: Configuration = serde_json::from_str(config.as_ref())?;
 
         Ok(config)
     }
@@ -140,4 +150,111 @@ pub struct WorkspaceConfiguration {
 pub struct EnvironmentConfiguration {
     pub display_name: Option<String>,
     pub description: Option<String>,
+}
+
+#[derive(
+    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+)]
+pub struct SecurityConfiguration {
+    pub api_keys: UnorderedMap<String, ApiKeyConfiguration>,
+}
+
+#[derive(
+    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+)]
+pub struct ApiKeyConfiguration {
+    #[serde(default)]
+    pub description: Option<String>,
+
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+
+    #[serde(default)]
+    pub scopes: AllOrSpecificConfiguration<ScopesConfiguration>,
+
+    #[serde(default)]
+    pub organizations: AllOrSpecificConfiguration,
+
+    #[serde(default)]
+    pub workspaces: AllOrSpecificConfiguration,
+
+    #[serde(default)]
+    pub tenants: AllOrSpecificConfiguration,
+
+    #[serde(default)]
+    pub environments: AllOrSpecificConfiguration,
+
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[schemars(with = "String")]
+    #[serde(default)]
+    pub expires_at: Option<OffsetDateTime>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    Display,
+    Hash,
+    FromRepr,
+    EnumString,
+)]
+pub enum ScopesConfiguration {
+    #[serde(rename = "read:artifacts")]
+    #[strum(serialize = "read:artifacts")]
+    ReadArtifacts,
+
+    #[serde(rename = "write:artifacts")]
+    #[strum(serialize = "write:artifacts")]
+    WriteArtifacts,
+
+    #[serde(rename = "list:artifacts")]
+    #[strum(serialize = "list:artifacts")]
+    ListArtifacts,
+
+    #[serde(rename = "delete:artifacts")]
+    #[strum(serialize = "delete:artifacts")]
+    DeleteArtifacts,
+}
+
+#[derive(
+    Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema, Display,
+)]
+#[serde(untagged, rename_all = "kebab-case")]
+pub enum AllOrSpecificConfiguration<T: Hash + Eq = String> {
+    All(All),
+    Specific(UnorderedSet<T>),
+}
+
+impl<T: Hash + Eq> Default for AllOrSpecificConfiguration<T> {
+    fn default() -> Self {
+        Self::All(All::default())
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    Display,
+    Default,
+)]
+pub enum All {
+    #[default]
+    #[serde(rename = "all")]
+    #[strum(serialize = "all")]
+    All,
 }

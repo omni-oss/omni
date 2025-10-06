@@ -41,6 +41,8 @@ tokio-stream = { workspace = true }
 omni_path_utils = { workspace = true }
 schemars = { workspace = true }
 maps = { workspace = true }
+sets = { workspace = true }
+time = { workspace = true }
 
 [build-dependencies]
 eyre = { workspace = true }
