@@ -1,5 +1,6 @@
 use axum::Router;
 use clap::ArgAction;
+use derive_new::new;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -7,7 +8,7 @@ use crate::{
     state::ServiceState,
 };
 
-#[derive(Default, Serialize, Deserialize, clap::Args, Debug, Clone)]
+#[derive(Default, Serialize, Deserialize, clap::Args, Debug, Clone, new)]
 pub struct RouterConfig {
     #[clap(
         long = "routes.api-prefix",

@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use derive_new::new;
 use maps::UnorderedMap;
+use time::OffsetDateTime;
 
 use crate::{
     config::{
@@ -21,7 +22,13 @@ impl SecurityService for InMemorySecurityService {
         &self,
         api_key: &str,
     ) -> Result<bool, SecurityServiceError> {
-        Ok(self.api_keys.contains_key(api_key))
+        Ok(self.api_keys.contains_key(api_key)
+            && self.api_keys[api_key].enabled
+            && self.api_keys[api_key]
+                .expires_at
+                .map_or(true, |expires_at| {
+                    expires_at > OffsetDateTime::now_utc()
+                }))
     }
 
     async fn can_access_tenant(
