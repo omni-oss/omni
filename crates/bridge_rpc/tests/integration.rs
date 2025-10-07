@@ -2,9 +2,6 @@ use std::time::Duration;
 
 use bridge_rpc::{BridgeRpc, BridgeRpcBuilder, StreamTransport, Transport};
 use ntest::timeout;
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt as _,
-};
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
 struct RpcResponse<T> {
@@ -21,10 +18,8 @@ fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
     let (pipe1_in, pipe1_out) = tokio::io::duplex(2048);
     let (pipe2_in, pipe2_out) = tokio::io::duplex(2048);
 
-    let transport1 =
-        StreamTransport::new(pipe1_in.compat(), pipe2_out.compat_write());
-    let transport2 =
-        StreamTransport::new(pipe2_in.compat(), pipe1_out.compat_write());
+    let transport1 = StreamTransport::new(pipe1_in, pipe2_out);
+    let transport2 = StreamTransport::new(pipe2_in, pipe1_out);
 
     let rpc1 = BridgeRpcBuilder::new(transport1)
         .handler("rpc1test", |data: RpcRequest| async move {
