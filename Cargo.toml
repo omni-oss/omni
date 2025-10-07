@@ -58,6 +58,7 @@ reqwest = { version = "^0.12.23", features = [
     "blocking",
     "rustls-tls",
     "http2",
+    "json",
 ], default-features = false }
 # deno_core = { version = "^0.351.0" }
 # deno_core = { version = "^0.352.0" }
