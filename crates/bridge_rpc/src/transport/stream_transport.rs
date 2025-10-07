@@ -1,9 +1,11 @@
 use std::collections::VecDeque;
 
 use bytes::Bytes;
-use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use tokio::sync::Mutex;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    sync::Mutex,
+};
 
 use crate::{
     Transport, TransportReadFramer, TransportWriteFramer,
@@ -142,9 +144,6 @@ where
 mod tests {
     use bytes::Bytes;
     use tokio::io::{AsyncReadExt, AsyncWriteExt as _};
-    use tokio_util::compat::{
-        TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _,
-    };
 
     use crate::{
         StreamTransport, Transport as _,
@@ -157,8 +156,7 @@ mod tests {
         let (_input_in, input_out) = tokio::io::duplex(STREAM_BUFFER_SIZE * 2);
         let (output_in, mut output_out) =
             tokio::io::duplex(STREAM_BUFFER_SIZE * 2);
-        let transport =
-            StreamTransport::new(input_out.compat(), output_in.compat_write());
+        let transport = StreamTransport::new(input_out, output_in);
 
         let data = b"hello world";
 
@@ -187,8 +185,7 @@ mod tests {
             tokio::io::duplex(STREAM_BUFFER_SIZE * 2);
         let (_output_in, output_out) =
             tokio::io::duplex(STREAM_BUFFER_SIZE * 2);
-        let transport =
-            StreamTransport::new(input_in.compat(), output_out.compat_write());
+        let transport = StreamTransport::new(input_in, output_out);
 
         // Send a framed message
         let data = b"test frame data";

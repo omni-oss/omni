@@ -176,6 +176,7 @@ axum-extra = { version = "^0.10.1", features = [
     "file-stream",
     "error-response"
 ] }
+axum-test = { version = "^18.1.0", features = ["all"] }
 validator = { version = "^0.20.0" }
 aws-config = { version = "^1.8.6" }
 aws-sdk-s3 = { version = "^1.106.0" }
