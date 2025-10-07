@@ -1,5 +1,6 @@
 use std::{hash::Hash, path::Path};
 
+use derive_new::new;
 use maps::UnorderedMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,15 @@ use crate::{
 };
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct Configuration {
     pub tenants: UnorderedMap<String, TenantConfiguration>,
@@ -116,7 +125,15 @@ impl Configuration {
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct TenantConfiguration {
     pub display_name: Option<String>,
@@ -126,7 +143,15 @@ pub struct TenantConfiguration {
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct OrganizationConfiguration {
     pub display_name: Option<String>,
@@ -136,7 +161,15 @@ pub struct OrganizationConfiguration {
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct WorkspaceConfiguration {
     pub environments: UnorderedMap<String, EnvironmentConfiguration>,
@@ -145,7 +178,15 @@ pub struct WorkspaceConfiguration {
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct EnvironmentConfiguration {
     pub display_name: Option<String>,
@@ -153,14 +194,30 @@ pub struct EnvironmentConfiguration {
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct SecurityConfiguration {
     pub api_keys: UnorderedMap<String, ApiKeyConfiguration>,
 }
 
 #[derive(
-    Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema,
+    Clone,
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    new,
 )]
 pub struct ApiKeyConfiguration {
     #[serde(default)]
@@ -207,6 +264,7 @@ fn default_enabled() -> bool {
     Hash,
     FromRepr,
     EnumString,
+    new,
 )]
 pub enum ScopesConfiguration {
     #[serde(rename = "read:artifacts")]
@@ -227,7 +285,15 @@ pub enum ScopesConfiguration {
 }
 
 #[derive(
-    Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema, Display,
+    Clone,
+    Debug,
+    Deserialize,
+    Serialize,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    Display,
+    new,
 )]
 #[serde(untagged, rename_all = "kebab-case")]
 pub enum AllOrSpecificConfiguration<T: Hash + Eq = String> {
@@ -251,6 +317,7 @@ impl<T: Hash + Eq> Default for AllOrSpecificConfiguration<T> {
     JsonSchema,
     Display,
     Default,
+    new,
 )]
 pub enum All {
     #[default]

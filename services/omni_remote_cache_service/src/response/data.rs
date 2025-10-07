@@ -3,7 +3,18 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[allow(unused)]
-#[derive(Deserialize, Serialize, new, ToSchema)]
+#[derive(
+    Deserialize,
+    Serialize,
+    new,
+    ToSchema,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+)]
 pub struct Data<T> {
     data: T,
 }

@@ -1,3 +1,4 @@
+use derive_new::new;
 use strum::Display;
 
 use crate::{
@@ -22,7 +23,7 @@ pub struct ServeCommand {
     pub args: ServeArgs,
 }
 
-#[derive(clap::Args, Clone, Debug)]
+#[derive(clap::Args, Clone, Debug, new)]
 pub struct ServeArgs {
     #[clap(
         long,

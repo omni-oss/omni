@@ -36,7 +36,9 @@ pub struct GetArtifactsQuery {
     pub env: String,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, new, ToSchema)]
+#[derive(
+    Deserialize, Serialize, Debug, Default, new, ToSchema, PartialEq, Eq,
+)]
 pub struct CacheItem {
     pub digest: String,
     pub size: u64,
