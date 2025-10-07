@@ -7,12 +7,14 @@ use omni_remote_cache_service::{
     config::{
         All, AllOrSpecificConfiguration, ApiKeyConfiguration, Configuration,
         EnvironmentConfiguration, OrganizationConfiguration,
-        SecurityConfiguration, TenantConfiguration, WorkspaceConfiguration,
+        ScopesConfiguration, SecurityConfiguration, TenantConfiguration,
+        WorkspaceConfiguration,
     },
     response::data::Data,
     routes::{root::RouterConfig, v1::artifacts::CacheItem},
     state::ServiceState,
 };
+use sets::{UnorderedSet, unordered_set};
 
 fn default_config() -> Configuration {
     Configuration {
@@ -55,6 +57,20 @@ fn default_config() -> Configuration {
             ),
         },
     }
+}
+
+fn default_config_with_scopes(
+    scopes: UnorderedSet<ScopesConfiguration>,
+) -> Configuration {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .scopes = AllOrSpecificConfiguration::Specific(scopes);
+
+    cfg
 }
 
 fn default_body() -> Bytes {
@@ -340,4 +356,322 @@ async fn test_get_artifacts() {
         size: body.len() as u64,
     }]);
     get_resp.assert_json(&data);
+}
+
+#[tokio::test]
+async fn test_invalid_api_key() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+    let body = default_body();
+
+    put_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+        body.clone(),
+    )
+    .await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        "invalid-api-key",
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_invalid_tenant() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        "invalid-tenant",
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_bad_request();
+}
+
+#[tokio::test]
+async fn test_invalid_org() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        "invalid-org",
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_bad_request();
+}
+
+#[tokio::test]
+async fn test_invalid_workspace() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        "invalid-workspace",
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_bad_request();
+}
+
+#[tokio::test]
+async fn test_invalid_env() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        "invalid-env",
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_bad_request();
+}
+
+#[tokio::test]
+async fn test_invalid_digest() {
+    let cfg = default_config();
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        "invalid-digest",
+    )
+    .await;
+
+    get_resp.assert_status_not_found();
+}
+
+#[tokio::test]
+async fn test_get_artifact_without_read_artifacts_scope() {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .scopes = AllOrSpecificConfiguration::Specific(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_get_artifacts_without_list_artifacts_scope() {
+    let cfg = default_config_with_scopes(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifacts(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_put_artifact_without_write_artifacts_scope() {
+    let cfg = default_config_with_scopes(unordered_set!());
+
+    let server = create_server(&cfg).await;
+    let body = default_body();
+
+    let put_resp = put_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+        body.clone(),
+    )
+    .await;
+
+    put_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_delete_artifact_without_delete_artifacts_scope() {
+    let cfg = default_config_with_scopes(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let delete_resp = delete_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    delete_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_request_with_api_key_no_access_to_tenant() {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .tenants = AllOrSpecificConfiguration::Specific(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        "invalid-tenant",
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_request_with_api_key_no_access_to_org() {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .organizations = AllOrSpecificConfiguration::Specific(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_request_with_api_key_no_access_to_workspace() {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .workspaces = AllOrSpecificConfiguration::Specific(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        DEFAULT_ENV,
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
+}
+
+#[tokio::test]
+async fn test_request_with_api_key_no_access_to_env() {
+    let mut cfg = default_config();
+
+    cfg.security
+        .api_keys
+        .get_mut(DEFAULT_API_KEY)
+        .unwrap()
+        .environments = AllOrSpecificConfiguration::Specific(unordered_set!());
+
+    let server = create_server(&cfg).await;
+
+    let get_resp = get_artifact(
+        &server,
+        DEFAULT_TENANT,
+        DEFAULT_API_KEY,
+        DEFAULT_ORG,
+        DEFAULT_WORKSPACE,
+        "invalid-env",
+        DEFAULT_DIGEST,
+    )
+    .await;
+
+    get_resp.assert_status_forbidden();
 }
