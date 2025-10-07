@@ -50,6 +50,8 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         let response = self
             .client
             .get(url)
+            .header("X-API-KEY", remote.api_key)
+            .header("X-OMNI-TENANT", remote.tenant)
             .send()
             .await
             .map_err(RemoteCacheServiceClientError::custom)?;
@@ -85,6 +87,8 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         let response = self
             .client
             .put(url)
+            .header("X-API-KEY", remote.api_key)
+            .header("X-OMNI-TENANT", remote.tenant)
             .body(artifact)
             .send()
             .await
