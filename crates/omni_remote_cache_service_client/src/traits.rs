@@ -5,6 +5,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RemoteAccessArgs<'a> {
+    pub endpoint_base_url: &'a str,
     pub api_key: &'a str,
     pub tenant: &'a str,
     pub org: &'a str,
