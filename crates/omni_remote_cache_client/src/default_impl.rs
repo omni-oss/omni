@@ -164,4 +164,16 @@ mod tests {
         assert!(resp.is_ok(), "get_artifact failed: {:?}", resp);
         assert_eq!(resp.unwrap().unwrap(), DEFAULT_BODY);
     }
+
+    #[tokio::test]
+    async fn test_get_artifact_not_found() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let resp = client.get_artifact(&remote, DEFAULT_DIGEST).await;
+
+        assert!(resp.is_ok(), "get_artifact failed: {:?}", resp);
+        assert!(resp.unwrap().is_none());
+    }
 }
