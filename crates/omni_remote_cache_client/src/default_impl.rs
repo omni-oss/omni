@@ -104,3 +104,64 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use crate::{
+        DefaultRemoteCacheServiceClient, RemoteAccessArgs,
+        RemoteCacheServiceClient, test_utils::ChildProcessGuard,
+    };
+
+    const DEFAULT_DIGEST: &str =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const DEFAULT_TENANT: &str = "tenant1";
+    const DEFAULT_ORG: &str = "org1";
+    const DEFAULT_WS: &str = "ws1";
+    const DEFAULT_ENV: &str = "env1";
+    const DEFAULT_API_KEY: &str = "key1";
+    const DEFAULT_BODY: Bytes = Bytes::from_static(b"hello world");
+
+    fn def_remote_access_args<'a>(base_url: &'a str) -> RemoteAccessArgs<'a> {
+        RemoteAccessArgs {
+            api_key: DEFAULT_API_KEY,
+            endpoint_base_url: base_url,
+            env: DEFAULT_ENV,
+            org: DEFAULT_ORG,
+            tenant: DEFAULT_TENANT,
+            ws: DEFAULT_WS,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_put_artifact() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let resp = client
+            .put_artifact(&remote, DEFAULT_DIGEST, DEFAULT_BODY)
+            .await;
+
+        assert!(resp.is_ok(), "put_artifact failed: {:?}", resp);
+    }
+
+    #[tokio::test]
+    async fn test_get_artifact() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let resp = client
+            .put_artifact(&remote, DEFAULT_DIGEST, DEFAULT_BODY)
+            .await;
+
+        assert!(resp.is_ok(), "put_artifact failed: {:?}", resp);
+
+        let resp = client.get_artifact(&remote, DEFAULT_DIGEST).await;
+
+        assert!(resp.is_ok(), "get_artifact failed: {:?}", resp);
+        assert_eq!(resp.unwrap().unwrap(), DEFAULT_BODY);
+    }
+}

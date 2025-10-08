@@ -1,5 +1,5 @@
 [package]
-name = "omni_remote_cache_service_client"
+name = "omni_remote_cache_client"
 rust-version.workspace = true
 edition.workspace = true
 version.workspace = true
