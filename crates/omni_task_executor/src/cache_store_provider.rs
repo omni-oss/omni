@@ -1,7 +1,10 @@
 use derive_new::new;
 use omni_cache::{
     TaskExecutionCacheStore,
-    impls::{LocalTaskExecutionCacheStore, LocalTaskExecutionCacheStoreError},
+    impls::{
+        HybridTaskExecutionCacheStore, LocalTaskExecutionCacheStoreError,
+        RemoteConfig,
+    },
 };
 use omni_context::{ContextSys, LoadedContext};
 
@@ -21,10 +24,14 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
     for ContextCacheStoreProvider<'a, TSys>
 {
     type CacheStoreError = LocalTaskExecutionCacheStoreError;
-    type CacheStore = LocalTaskExecutionCacheStore;
+    type CacheStore = HybridTaskExecutionCacheStore;
 
     fn get_cache_store(&self) -> Self::CacheStore {
         let cache_dir = self.context.root_dir().join(".omni/cache");
-        LocalTaskExecutionCacheStore::new(cache_dir, self.context.root_dir())
+        HybridTaskExecutionCacheStore::new(
+            cache_dir,
+            self.context.root_dir(),
+            RemoteConfig::new_disabled(),
+        )
     }
 }

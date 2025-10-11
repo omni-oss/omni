@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) use crate::env_loader::EnvLoader;
 use env_loader::EnvLoaderError;
-use omni_cache::impls::LocalTaskExecutionCacheStore;
+use omni_cache::impls::{HybridTaskExecutionCacheStore, RemoteConfig};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
@@ -187,10 +187,11 @@ impl<TSys: ContextSys> Context<TSys> {
         env_loader
     }
 
-    pub fn create_cache_store(&self) -> LocalTaskExecutionCacheStore {
-        LocalTaskExecutionCacheStore::new(
+    pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
+        HybridTaskExecutionCacheStore::new(
             self.cache_dir(),
             self.root_dir.clone(),
+            RemoteConfig::new_disabled(),
         )
     }
 

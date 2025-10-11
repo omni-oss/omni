@@ -1,9 +1,11 @@
 use std::{
+    io::Cursor,
     path::{Path, PathBuf},
     sync::Arc,
     time::SystemTime,
 };
 
+use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
 use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
@@ -17,11 +19,16 @@ use omni_hasher::{
     Hasher,
     impls::{DefaultHash, DefaultHasher},
 };
+use omni_remote_cache_client::{
+    DefaultRemoteCacheServiceClient, RemoteAccessArgs,
+    RemoteCacheServiceClient, RemoteCacheServiceClientError,
+};
 use omni_task_context::{
     DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
     TaskHashProvider,
 };
-use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
     FsCreateDirAllAsync, FsHardLinkAsync as _, FsMetadataAsync,
     FsReadAsync as _, FsRemoveDirAllAsync as _, FsWriteAsync as _,
@@ -35,7 +42,10 @@ use crate::{
     Context, FileCacheStats, ProjectCacheStats, PruneCacheArgs, PruneStaleOnly,
     PrunedCacheEntry, StaleStatus, TaskCacheStats, TaskExecutionCacheStore,
     TaskExecutionInfo, TaskExecutionInfoExt,
-    impls::last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
+    impls::{
+        cache_archive::archive,
+        last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
+    },
 };
 
 pub use omni_utils::path::{
@@ -44,17 +54,41 @@ pub use omni_utils::path::{
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
+use super::cache_archive::unarchive;
+
 #[derive(Clone, Debug)]
-pub struct LocalTaskExecutionCacheStore {
+pub struct HybridTaskExecutionCacheStore {
     sys: RealSys,
     cache_dir: PathBuf,
     ws_root_dir: PathBuf,
+    remote_config: RemoteConfig,
+    client: Arc<DefaultRemoteCacheServiceClient>,
 }
 
-impl LocalTaskExecutionCacheStore {
+#[derive(
+    Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default, new, EnumIs,
+)]
+pub enum RemoteConfig {
+    #[default]
+    Disabled,
+    Enabled(EnabledRemoteConfig),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default, new)]
+pub struct EnabledRemoteConfig {
+    endpoint_base_url: String,
+    api_key: String,
+    tenant_code: String,
+    organization_code: String,
+    workspace_code: String,
+    environment_code: Option<String>,
+}
+
+impl HybridTaskExecutionCacheStore {
     pub fn new(
         cache_dir: impl Into<PathBuf>,
         ws_root_dir: impl Into<PathBuf>,
+        remote_config: impl Into<RemoteConfig>,
     ) -> Self {
         let dir = cache_dir.into();
         let ws_root_dir = ws_root_dir.into();
@@ -62,6 +96,8 @@ impl LocalTaskExecutionCacheStore {
             sys: RealSys,
             cache_dir: dir,
             ws_root_dir,
+            remote_config: remote_config.into(),
+            client: Arc::new(DefaultRemoteCacheServiceClient::default()),
         }
     }
 }
@@ -71,7 +107,7 @@ fn hashtext(text: &str) -> String {
     bs58::encode(x).into_string()
 }
 
-impl LocalTaskExecutionCacheStore {
+impl HybridTaskExecutionCacheStore {
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = "debug", skip(self, projects, config))
@@ -136,7 +172,7 @@ const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
 
 #[async_trait::async_trait]
-impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
+impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
     type Error = LocalTaskExecutionCacheStoreError;
 
     #[cfg_attr(
@@ -175,6 +211,12 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             .collect::<Map<_, _>>();
 
         let mut cache_exec_hashes = Vec::with_capacity(results.len());
+
+        let mut cached_results = if self.remote_config.is_enabled() {
+            Vec::with_capacity(results.len())
+        } else {
+            Vec::new()
+        };
 
         for result in results {
             let output_dir =
@@ -262,11 +304,51 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
 
             self.sys.fs_write_async(&metadata_path, &bytes).await?;
 
-            cache_exec_hashes.push(CachedTaskExecutionHash {
+            let execution_hash = CachedTaskExecutionHash {
                 project_name: result.task.project_name,
                 task_name: result.task.task_name,
-                execution_hash: result.digest.expect("should be some"),
-            });
+                digest: result.digest.expect("should be some"),
+            };
+
+            cache_exec_hashes.push(execution_hash);
+
+            if self.remote_config.is_enabled() {
+                cached_results.push((execution_hash, output_dir.to_path_buf()));
+            }
+        }
+
+        if !cached_results.is_empty()
+            && let RemoteConfig::Enabled(conf) = &self.remote_config
+        {
+            let mut tasks = JoinSet::new();
+            for (hash, output_dir) in cached_results {
+                let client = self.client.clone();
+                let conf = conf.clone();
+                let digest = bs58::encode(hash.digest).into_string();
+
+                tasks.spawn(async move {
+                    let config = RemoteAccessArgs {
+                        api_key: &conf.api_key,
+                        endpoint_base_url: &conf.endpoint_base_url,
+                        env: conf
+                            .environment_code
+                            .as_deref()
+                            .unwrap_or("default"),
+                        org: &conf.organization_code,
+                        tenant: &conf.tenant_code,
+                        ws: &conf.workspace_code,
+                    };
+
+                    let mut artifact = Vec::new();
+                    archive(&output_dir, Cursor::new(&mut artifact))?;
+
+                    client
+                        .put_artifact(&config, &digest, Bytes::from(artifact))
+                        .await?;
+
+                    Ok::<_, LocalTaskExecutionCacheStoreError>(())
+                });
+            }
         }
 
         Ok(cache_exec_hashes)
@@ -286,8 +368,66 @@ impl TaskExecutionCacheStore for LocalTaskExecutionCacheStore {
             cache_output_dirs: true,
             ..Default::default()
         };
-        'outer_loop: for project in self.collect(projects, &config).await? {
-            let output_dir = project.cache_output_dir.expect("should be some");
+
+        let collected = self.collect(projects, &config).await?;
+
+        if let RemoteConfig::Enabled(conf) = &self.remote_config {
+            let mut tasks = JoinSet::new();
+            for project in &collected {
+                let output_dir = project
+                    .cache_output_dir
+                    .as_deref()
+                    .expect("should be some");
+
+                // skip if the output dir already exists/downloaded
+                if tokio::fs::try_exists(output_dir).await? {
+                    continue;
+                }
+
+                let digest =
+                    bs58::encode(project.digest.unwrap()).into_string();
+
+                let client = self.client.clone();
+                let conf = conf.clone();
+                let output_dir = output_dir.to_path_buf();
+
+                tasks.spawn(async move {
+                    let response = client
+                        .get_artifact(
+                            &RemoteAccessArgs {
+                                api_key: &conf.api_key,
+                                endpoint_base_url: &conf.endpoint_base_url,
+                                env: conf
+                                    .environment_code
+                                    .as_deref()
+                                    .unwrap_or("default"),
+                                org: &conf.organization_code,
+                                tenant: &conf.tenant_code,
+                                ws: &conf.workspace_code,
+                            },
+                            &digest,
+                        )
+                        .await?;
+
+                    if let Some(bytes) = response {
+                        trace::debug!("fetched remote cache for {}", digest);
+                        unarchive(&output_dir, Cursor::new(bytes))?;
+                    }
+
+                    Ok::<_, LocalTaskExecutionCacheStoreError>(())
+                });
+            }
+
+            let results = tasks.join_all().await;
+
+            for result in results {
+                result?;
+            }
+        }
+
+        'outer_loop: for project in &collected {
+            let output_dir =
+                project.cache_output_dir.as_deref().expect("should be some");
             let file = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
             let cache_abs = |p: &Path| std::path::absolute(output_dir.join(p));
@@ -814,12 +954,15 @@ enum LocalTaskExecutionCacheStoreErrorInner {
 
     #[error(transparent)]
     TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
+
+    #[error(transparent)]
+    RemoteCacheServiceClient(#[from] RemoteCacheServiceClientError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{NewCacheInfo, cache::impls::LocalTaskExecutionCacheStore};
+    use crate::{NewCacheInfo, cache::impls::HybridTaskExecutionCacheStore};
     use bytes::Bytes;
     use derive_new::new;
     use omni_types::OmniPath;
@@ -973,8 +1116,12 @@ mod tests {
         task_with_mut(task_name, project_name, root_dir, |_| {})
     }
 
-    fn cache_store(root: &Path) -> LocalTaskExecutionCacheStore {
-        LocalTaskExecutionCacheStore::new(root.join(".omni/cache"), root)
+    fn cache_store(root: &Path) -> HybridTaskExecutionCacheStore {
+        HybridTaskExecutionCacheStore::new(
+            root.join(".omni/cache"),
+            root,
+            RemoteConfig::new_disabled(),
+        )
     }
 
     async fn read_string(path: &Path) -> String {

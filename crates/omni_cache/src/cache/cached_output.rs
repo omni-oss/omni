@@ -75,7 +75,7 @@ pub struct CachedTaskExecutionHash<'a> {
     pub task_name: &'a str,
 
     #[new(into)]
-    pub execution_hash: DefaultHash,
+    pub digest: DefaultHash,
 }
 
 #[derive(

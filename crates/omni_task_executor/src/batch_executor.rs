@@ -290,7 +290,7 @@ where
         for fut_result in &fut_results {
             let fname =
                 fut_result.task_context().node.full_task_name().to_string();
-            let hash = hashes.get(&fname).map(|h| h.execution_hash);
+            let hash = hashes.get(&fname).map(|h| h.digest);
 
             let result = match fut_result {
                 TaskResultContext::Completed {

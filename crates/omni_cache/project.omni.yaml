@@ -11,4 +11,5 @@ dependencies:
   - omni_execution_plan
   - omni_configurations
   - omni_core
+  - omni_remote_cache_client
   - dir_walker
