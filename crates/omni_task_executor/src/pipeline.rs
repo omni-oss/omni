@@ -1,6 +1,6 @@
 use derive_new::new;
 use maps::unordered_map;
-use omni_cache::impls::LocalTaskExecutionCacheStore;
+use omni_cache::impls::HybridTaskExecutionCacheStore;
 use omni_context::LoadedContext;
 use omni_core::BatchedExecutionPlan;
 use omni_term_ui::mux_output_presenter::{
@@ -34,7 +34,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             ContextCacheStoreProvider::new(self.context).get_cache_store();
 
         let cache_manager =
-            CacheManagerBuilder::<LocalTaskExecutionCacheStore>::default()
+            CacheManagerBuilder::<HybridTaskExecutionCacheStore>::default()
                 .store(cache_store)
                 .dry_run(self.config.dry_run())
                 .force(self.config.force())
