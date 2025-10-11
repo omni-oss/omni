@@ -70,8 +70,8 @@ impl ChildProcessGuard {
         ])
         .envs(env::vars())
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("failed to spawn child process");
 
