@@ -4,5 +4,11 @@ name: omni_remote_cache_client
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
+tasks:
+  test:
+    dependencies:
+      - omni_remote_cache_service#build
+
 dependencies:
   - maps
+  - omni_remote_cache_service
