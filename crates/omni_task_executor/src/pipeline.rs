@@ -44,6 +44,10 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
 
         let mut results_accumulator = unordered_map!(cap: task_count);
 
+        if self.context.remote_cache_configuration().is_some() {
+            trace::info!("Remote caching enabled");
+        }
+
         let presenter = match self.config.ui() {
             omni_configurations::Ui::Stream => {
                 MuxOutputPresenterStatic::new_stream()

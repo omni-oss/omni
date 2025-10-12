@@ -4,6 +4,7 @@ pub const REMOTE_CACHE_OMNI: &str = "remote-cache.omni.{ext}";
 pub const PROJECT_OMNI: &str = "project.omni.{ext}";
 pub const OMNI_IGNORE: &str = ".omniignore";
 pub const CACHE_DIR: &str = ".omni/cache";
+pub const OMNI_DIR: &str = ".omni";
 pub const TRACE_DIR: &str = ".omni/trace";
 // pub const WORKSPACE_DIR_VAR: &str = "WORKSPACE_DIR";
 // pub const PROJECT_DIR_VAR: &str = "PROJECT_DIR";
