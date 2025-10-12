@@ -50,6 +50,12 @@ pub async fn setup_remote_caching<TClient: RemoteCacheClient>(
         environment_code: environment_code.map(|s| s.to_string()),
     };
 
+    let parent = remote_config_path.parent().expect("should have parent");
+
+    if !parent.exists() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)

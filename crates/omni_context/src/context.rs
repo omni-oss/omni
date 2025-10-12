@@ -13,7 +13,7 @@ use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
-    constants::{self, CACHE_DIR, TRACE_DIR},
+    constants::{self, CACHE_DIR, OMNI_DIR, TRACE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
@@ -40,6 +40,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     workspace: WorkspaceConfiguration,
     remote_cache: Option<RemoteCacheConfiguration>,
     root_dir: PathBuf,
+    omni_dir: PathBuf,
     tracing_config: TracingConfig,
     sys: TSys,
 }
@@ -58,7 +59,8 @@ impl<TSys: ContextSys> Context<TSys> {
     ) -> Result<Self, ContextError> {
         let env = env.into();
         let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
-        let remote_cache = get_remote_cache_configuration(&root_dir, &sys)?;
+        let omni_dir = root_dir.join(OMNI_DIR);
+        let remote_cache = get_remote_cache_configuration(&omni_dir, &sys)?;
 
         Ok(Self {
             env,
@@ -67,6 +69,7 @@ impl<TSys: ContextSys> Context<TSys> {
             workspace,
             remote_cache,
             root_dir: root_dir.to_path_buf(),
+            omni_dir,
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
@@ -97,24 +100,21 @@ impl<TSys: ContextSys> Context<TSys> {
         self.sys.env_current_dir()
     }
 
+    pub fn omni_dir(&self) -> &Path {
+        &self.omni_dir
+    }
+
     pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
-        let cache_dir = self.root_dir().join(CACHE_DIR);
-        constants::SUPPORTED_EXTENSIONS
-            .iter()
-            .map(|ext| {
-                cache_dir
-                    .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
-            })
-            .collect()
+        get_remote_cache_configuration_paths(&self.omni_dir())
     }
 
     pub fn remote_cache_configuration_path(&self) -> PathBuf {
-        let cache_dir = self.root_dir().join(CACHE_DIR);
         let ext = constants::SUPPORTED_EXTENSIONS
             .first()
             .expect("should have atleast 1");
 
-        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
+        self.omni_dir()
+            .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
     }
 
     pub fn root_dir(&self) -> &Path {
@@ -314,20 +314,24 @@ fn get_workspace_configuration(
     Ok(w)
 }
 
+fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
+    constants::SUPPORTED_EXTENSIONS
+        .iter()
+        .map(|ext| {
+            omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
+        })
+        .collect()
+}
+
 fn get_remote_cache_configuration(
-    root_dir: &Path,
+    omni_dir: &Path,
     sys: &impl ContextSys,
 ) -> Result<Option<RemoteCacheConfiguration>, ContextError> {
-    let remote_cache_files = constants::SUPPORTED_EXTENSIONS
-        .iter()
-        .map(|ext| constants::REMOTE_CACHE_OMNI.replace("{ext}", ext));
-
     let mut rc_path = None;
 
-    let cache_dir = root_dir.join(CACHE_DIR);
+    let files = get_remote_cache_configuration_paths(omni_dir);
 
-    for remote_cache_file in remote_cache_files {
-        let f = cache_dir.join(remote_cache_file);
+    for f in &files {
         if sys.fs_exists(&f)? && sys.fs_is_file(&f)? {
             rc_path = Some(f);
             break;
