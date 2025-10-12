@@ -1,9 +1,9 @@
 use axum::{
     extract::{Query, State},
-    response::{AppendHeaders, IntoResponse, Response},
+    response::{IntoResponse, Response},
 };
 use axum_extra::{response::InternalServerError, routing::TypedPath};
-use http::{StatusCode, header};
+use http::StatusCode;
 use omni_remote_cache_storage::RemoteCacheStorageBackend;
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -43,9 +43,8 @@ pub struct HeadArtifactQuery {
     ),
     responses(
         (
-            status = OK,
+            status = NO_CONTENT,
             description = "Success",
-            content_type = "application/octet-stream",
         ),
         (status = NOT_FOUND, description = "Not found"),
         (status = BAD_REQUEST, description = "Bad request"),
@@ -80,16 +79,9 @@ pub async fn head_artifact(
     match exists {
         Ok(o) => {
             if o {
-                (
-                    StatusCode::OK,
-                    AppendHeaders([(
-                        header::CONTENT_TYPE,
-                        "application/octet-stream",
-                    )]),
-                )
-                    .into_response()
+                StatusCode::NO_CONTENT.into_response()
             } else {
-                (StatusCode::NOT_FOUND).into_response()
+                StatusCode::NOT_FOUND.into_response()
             }
         }
         Err(e) => e.into_response(),

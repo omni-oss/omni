@@ -31,7 +31,7 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
         let remote_config =
             if let Some(rc) = &self.context.remote_cache_configuration() {
                 RemoteConfig::new_enabled(EnabledRemoteConfig::new(
-                    rc.endpoint_base_url.as_str(),
+                    rc.api_base_url.as_str(),
                     rc.api_key.as_str(),
                     rc.tenant_code.as_str(),
                     rc.organization_code.as_str(),

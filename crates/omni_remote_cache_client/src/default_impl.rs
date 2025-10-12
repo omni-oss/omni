@@ -3,20 +3,20 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
-use http::StatusCode;
+use http::{StatusCode, header};
 use reqwest::{Client, redirect::Policy};
 
 use crate::{
-    RemoteAccessArgs, RemoteCacheServiceClient, RemoteCacheServiceClientError,
+    RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
     ValidateAccessResult,
 };
 
 #[derive(Debug, Clone, new)]
-pub struct DefaultRemoteCacheServiceClient {
+pub struct DefaultRemoteCacheClient {
     client: Client,
 }
 
-impl Default for DefaultRemoteCacheServiceClient {
+impl Default for DefaultRemoteCacheClient {
     fn default() -> Self {
         Self {
             client: Client::builder()
@@ -31,7 +31,7 @@ impl Default for DefaultRemoteCacheServiceClient {
 fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
     format!(
         "{base_url}/v1/artifacts/{digest}?org={org}&ws={ws}&env={env}",
-        base_url = remote.endpoint_base_url,
+        base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
         env = remote.env,
@@ -42,7 +42,7 @@ fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
 fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
     format!(
         "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}",
-        base_url = remote.endpoint_base_url,
+        base_url = remote.api_base_url,
         org = remote.org,
         ws = remote.ws,
         env = remote.env,
@@ -50,12 +50,12 @@ fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
 }
 
 #[async_trait]
-impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
+impl RemoteCacheClient for DefaultRemoteCacheClient {
     async fn get_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheServiceClientError> {
+    ) -> Result<Option<Bytes>, RemoteCacheClientError> {
         let url = create_url(remote, digest);
 
         let response = self
@@ -65,7 +65,10 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
             .header("X-OMNI-TENANT", remote.tenant)
             .send()
             .await
-            .map_err(RemoteCacheServiceClientError::custom)?;
+            .map_err(RemoteCacheClientError::custom)
+            .inspect_err(|e| {
+                trace::error!("get_artifact failed: {:?}", e);
+            })?;
 
         let status = response.status();
 
@@ -73,13 +76,13 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
             let bytes = response
                 .bytes()
                 .await
-                .map_err(RemoteCacheServiceClientError::custom)?;
+                .map_err(RemoteCacheClientError::custom)?;
 
             Ok(Some(bytes))
         } else {
             match status {
                 StatusCode::NOT_FOUND => Ok(None),
-                _ => Err(RemoteCacheServiceClientError::custom(eyre::eyre!(
+                _ => Err(RemoteCacheClientError::custom(eyre::eyre!(
                     "get artifact failed: status code {}",
                     status
                 ))),
@@ -90,7 +93,7 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
     async fn validate_access(
         &self,
         remote: &RemoteAccessArgs,
-    ) -> Result<ValidateAccessResult, RemoteCacheServiceClientError> {
+    ) -> Result<ValidateAccessResult, RemoteCacheClientError> {
         let url = create_url_no_digest(remote);
 
         let response = self
@@ -100,13 +103,28 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
             .header("X-OMNI-TENANT", remote.tenant)
             .send()
             .await
-            .map_err(RemoteCacheServiceClientError::custom)?;
+            .map_err(RemoteCacheClientError::custom)
+            .inspect_err(|e| {
+                trace::error!("validate_access failed: {:?}", e);
+            })?;
 
         let status = response.status();
 
+        let is_json = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .map(|h| {
+                h.to_str().unwrap_or_default().contains("application/json")
+            })
+            .unwrap_or_default();
+
         Ok(ValidateAccessResult::new(
             status.is_success(),
-            Some(response.text().await.unwrap_or_default()),
+            Some(if is_json {
+                response.json().await.unwrap_or_default()
+            } else {
+                response.text().await.unwrap_or_default()
+            }),
         ))
     }
 
@@ -114,7 +132,7 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<bool, RemoteCacheServiceClientError> {
+    ) -> Result<bool, RemoteCacheClientError> {
         let url = create_url(remote, digest);
 
         let response = self
@@ -124,14 +142,17 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
             .header("X-OMNI-TENANT", remote.tenant)
             .send()
             .await
-            .map_err(RemoteCacheServiceClientError::custom)?;
+            .map_err(RemoteCacheClientError::custom)
+            .inspect_err(|e| {
+                trace::error!("artifact_exists failed: {:?}", e);
+            })?;
 
         if response.status().is_success() {
             Ok(true)
         } else {
             match response.status() {
                 StatusCode::NOT_FOUND => Ok(false),
-                _ => Err(RemoteCacheServiceClientError::custom(eyre::eyre!(
+                _ => Err(RemoteCacheClientError::custom(eyre::eyre!(
                     "artifact exists failed: status code {}",
                     response.status()
                 ))),
@@ -144,7 +165,7 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheServiceClientError> {
+    ) -> Result<(), RemoteCacheClientError> {
         let url = create_url(remote, digest);
 
         let response = self
@@ -155,12 +176,15 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
             .body(artifact)
             .send()
             .await
-            .map_err(RemoteCacheServiceClientError::custom)?;
+            .map_err(RemoteCacheClientError::custom)
+            .inspect_err(|e| {
+                trace::error!("put_artifact failed: {:?}", e);
+            })?;
 
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(RemoteCacheServiceClientError::custom(eyre::eyre!(
+            Err(RemoteCacheClientError::custom(eyre::eyre!(
                 "put artifact failed: status code {}",
                 response.status()
             )))
@@ -173,8 +197,8 @@ mod tests {
     use bytes::Bytes;
 
     use crate::{
-        DefaultRemoteCacheServiceClient, RemoteAccessArgs,
-        RemoteCacheServiceClient, test_utils::ChildProcessGuard,
+        DefaultRemoteCacheClient, RemoteAccessArgs, RemoteCacheClient,
+        test_utils::ChildProcessGuard,
     };
 
     const DEFAULT_DIGEST: &str =
@@ -189,7 +213,7 @@ mod tests {
     fn def_remote_access_args<'a>(base_url: &'a str) -> RemoteAccessArgs<'a> {
         RemoteAccessArgs {
             api_key: DEFAULT_API_KEY,
-            endpoint_base_url: base_url,
+            api_base_url: base_url,
             env: DEFAULT_ENV,
             org: DEFAULT_ORG,
             tenant: DEFAULT_TENANT,
@@ -200,7 +224,7 @@ mod tests {
     #[tokio::test]
     async fn test_put_artifact() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let resp = client
@@ -213,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_artifact() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let resp = client
@@ -231,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_artifact_not_found() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let resp = client.get_artifact(&remote, DEFAULT_DIGEST).await;
@@ -243,7 +267,7 @@ mod tests {
     #[tokio::test]
     async fn test_artifact_exists() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let put_resp = client
@@ -260,7 +284,7 @@ mod tests {
     #[tokio::test]
     async fn test_artifact_exists_not_found() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let resp = client.artifact_exists(&remote, DEFAULT_DIGEST).await;
@@ -272,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn test_validate_access() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
         let resp = client.validate_access(&remote).await;
@@ -284,7 +308,8 @@ mod tests {
     #[tokio::test]
     async fn test_validate_access_invalid_api_key() {
         let guard = ChildProcessGuard::new();
-        let client = DefaultRemoteCacheServiceClient::default();
+        let client = DefaultRemoteCacheClient::default();
+
         let mut remote = def_remote_access_args(&guard.api_base_url);
         remote.api_key = "invalid";
 

@@ -20,8 +20,8 @@ use omni_hasher::{
     impls::{DefaultHash, DefaultHasher},
 };
 use omni_remote_cache_client::{
-    DefaultRemoteCacheServiceClient, RemoteAccessArgs,
-    RemoteCacheServiceClient, RemoteCacheServiceClientError,
+    DefaultRemoteCacheClient, RemoteAccessArgs, RemoteCacheClient,
+    RemoteCacheClientError,
 };
 use omni_task_context::{
     DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
@@ -62,7 +62,7 @@ pub struct HybridTaskExecutionCacheStore {
     cache_dir: PathBuf,
     ws_root_dir: PathBuf,
     remote_config: RemoteConfig,
-    client: Arc<DefaultRemoteCacheServiceClient>,
+    client: Arc<DefaultRemoteCacheClient>,
 }
 
 #[derive(
@@ -77,7 +77,7 @@ pub enum RemoteConfig {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default, new)]
 pub struct EnabledRemoteConfig {
     #[new(into)]
-    pub endpoint_base_url: String,
+    pub api_base_url: String,
 
     #[new(into)]
     pub api_key: String,
@@ -108,7 +108,7 @@ impl HybridTaskExecutionCacheStore {
             cache_dir: dir,
             ws_root_dir,
             remote_config: remote_config.into(),
-            client: Arc::new(DefaultRemoteCacheServiceClient::default()),
+            client: Arc::new(DefaultRemoteCacheClient::default()),
         }
     }
 }
@@ -341,7 +341,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 tasks.spawn(async move {
                     let config = RemoteAccessArgs {
                         api_key: &conf.api_key,
-                        endpoint_base_url: &conf.endpoint_base_url,
+                        api_base_url: &conf.api_base_url,
                         env: conf
                             .environment_code
                             .as_deref()
@@ -350,6 +350,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         tenant: &conf.tenant_code,
                         ws: &conf.workspace_code,
                     };
+
+                    if client.artifact_exists(&config, &digest).await? {
+                        return Ok::<_, LocalTaskExecutionCacheStoreError>(());
+                    }
 
                     let mut artifact = Vec::new();
                     archive(&output_dir, Cursor::new(&mut artifact))?;
@@ -416,7 +420,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .get_artifact(
                             &RemoteAccessArgs {
                                 api_key: &conf.api_key,
-                                endpoint_base_url: &conf.endpoint_base_url,
+                                api_base_url: &conf.api_base_url,
                                 env: conf
                                     .environment_code
                                     .as_deref()
@@ -976,7 +980,7 @@ enum LocalTaskExecutionCacheStoreErrorInner {
     TaskContextProvider(#[from] omni_task_context::TaskContextProviderError),
 
     #[error(transparent)]
-    RemoteCacheServiceClient(#[from] RemoteCacheServiceClientError),
+    RemoteCacheServiceClient(#[from] RemoteCacheClientError),
 }
 
 #[cfg(test)]

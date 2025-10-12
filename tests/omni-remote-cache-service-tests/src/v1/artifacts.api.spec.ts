@@ -55,7 +55,7 @@ describe("v1.artifacts.api", () => {
 
         const response = await headArtifact(apiBaseUrl);
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBeOneOf([200, 204]);
     });
 
     test("artifact exists not found", async ({ apiBaseUrl }) => {
@@ -68,7 +68,7 @@ describe("v1.artifacts.api", () => {
         await putArtifact(apiBaseUrl);
         const response = await headArtifacts(apiBaseUrl);
 
-        expect(response.status).toBe(200);
+        expect(response.status).toBeOneOf([200, 204]);
     });
 
     test("head artifacts invalid api key", async ({ apiBaseUrl }) => {

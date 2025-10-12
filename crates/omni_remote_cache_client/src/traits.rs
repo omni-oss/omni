@@ -5,7 +5,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct RemoteAccessArgs<'a> {
-    pub endpoint_base_url: &'a str,
+    pub api_base_url: &'a str,
     pub api_key: &'a str,
     pub tenant: &'a str,
     pub org: &'a str,
@@ -20,59 +20,57 @@ pub struct ValidateAccessResult {
 }
 
 #[async_trait]
-pub trait RemoteCacheServiceClient: Send + Sync + 'static {
+pub trait RemoteCacheClient: Send + Sync + 'static {
     async fn validate_access(
         &self,
         remote: &RemoteAccessArgs,
-    ) -> Result<ValidateAccessResult, RemoteCacheServiceClientError>;
+    ) -> Result<ValidateAccessResult, RemoteCacheClientError>;
 
     async fn get_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<Option<Bytes>, RemoteCacheServiceClientError>;
+    ) -> Result<Option<Bytes>, RemoteCacheClientError>;
 
     async fn artifact_exists(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
-    ) -> Result<bool, RemoteCacheServiceClientError>;
+    ) -> Result<bool, RemoteCacheClientError>;
 
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,
         digest: &str,
         artifact: Bytes,
-    ) -> Result<(), RemoteCacheServiceClientError>;
+    ) -> Result<(), RemoteCacheClientError>;
 }
 
 #[derive(Debug, thiserror::Error, new)]
 #[error("RemoteCacheServiceClientError: {inner:?}")]
-pub struct RemoteCacheServiceClientError {
-    inner: RemoteCacheServiceClientErrorInner,
-    kind: RemoteCacheServiceClientErrorKind,
+pub struct RemoteCacheClientError {
+    inner: RemoteCacheClientErrorInner,
+    kind: RemoteCacheClientErrorKind,
 }
 
-impl RemoteCacheServiceClientError {
+impl RemoteCacheClientError {
     pub fn custom<T: Into<eyre::Report>>(inner: T) -> Self {
         let inner = inner.into();
         Self {
-            inner: RemoteCacheServiceClientErrorInner::Custom(inner),
-            kind: RemoteCacheServiceClientErrorKind::Custom,
+            inner: RemoteCacheClientErrorInner::Custom(inner),
+            kind: RemoteCacheClientErrorKind::Custom,
         }
     }
 }
 
-impl RemoteCacheServiceClientError {
+impl RemoteCacheClientError {
     #[allow(unused)]
-    pub fn kind(&self) -> RemoteCacheServiceClientErrorKind {
+    pub fn kind(&self) -> RemoteCacheClientErrorKind {
         self.kind
     }
 }
 
-impl<T: Into<RemoteCacheServiceClientErrorInner>> From<T>
-    for RemoteCacheServiceClientError
-{
+impl<T: Into<RemoteCacheClientErrorInner>> From<T> for RemoteCacheClientError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
         Self {
@@ -83,8 +81,8 @@ impl<T: Into<RemoteCacheServiceClientErrorInner>> From<T>
 }
 
 #[derive(Debug, EnumDiscriminants, thiserror::Error, new)]
-#[strum_discriminants(vis(pub), name(RemoteCacheServiceClientErrorKind))]
-enum RemoteCacheServiceClientErrorInner {
+#[strum_discriminants(vis(pub), name(RemoteCacheClientErrorKind))]
+enum RemoteCacheClientErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 }

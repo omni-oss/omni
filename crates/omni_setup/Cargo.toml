@@ -21,3 +21,4 @@ serde_norway = { workspace = true }
 omni_configurations = { workspace = true }
 omni_remote_cache_client = { workspace = true }
 derive_builder = { workspace = true }
+derive-new = { workspace = true }

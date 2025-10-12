@@ -33,6 +33,11 @@ pub enum CacheSubcommands {
         #[command(flatten)]
         args: PruneArgs,
     },
+    #[command(about = "Prune the cache")]
+    Remote {
+        #[command(flatten)]
+        args: RemoteArgs,
+    },
 }
 
 #[derive(clap::Args)]
@@ -111,6 +116,53 @@ pub struct PruneArgs {
     dry_run: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct RemoteArgs {
+    #[clap(subcommand)]
+    subcommand: RemoteSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RemoteSubcommands {
+    Setup {
+        #[command(flatten)]
+        args: SetupArgs,
+    },
+}
+
+#[derive(clap::Args, Debug)]
+pub struct SetupArgs {
+    #[arg(
+        long,
+        short = 'b',
+        help = "The endpoint base URL of the remote cache server"
+    )]
+    pub api_base_url: String,
+
+    #[arg(long, short, help = "The API key of the remote cache server")]
+    pub api_key: String,
+
+    #[arg(long, short, help = "The tenant code of the remote cache server")]
+    pub tenant: String,
+
+    #[arg(
+        long,
+        short,
+        help = "The organization code of the remote cache server"
+    )]
+    pub org: String,
+
+    #[arg(long, short, help = "The workspace code of the remote cache server")]
+    pub ws: String,
+
+    #[arg(
+        long,
+        short,
+        help = "The environment code of the remote cache server"
+    )]
+    pub env: Option<String>,
+}
+
 pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
     match &command.subcommand {
         CacheSubcommands::Dir => {
@@ -121,6 +173,9 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
         }
         CacheSubcommands::Prune { args } => {
             prune(ctx, args).await?;
+        }
+        CacheSubcommands::Remote { args } => {
+            remote(ctx, args).await?;
         }
     }
 
@@ -312,6 +367,36 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+async fn remote(ctx: &Context, cli_args: &RemoteArgs) -> eyre::Result<()> {
+    match cli_args.subcommand {
+        RemoteSubcommands::Setup { ref args } => {
+            remote_setup(ctx, args).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
+    let client = ctx.create_remote_cache_client();
+    let config_path = ctx.remote_cache_configuration_path();
+
+    omni_setup::setup_remote_caching(
+        &client,
+        config_path.as_path(),
+        &cli_args.api_base_url,
+        &cli_args.api_key,
+        &cli_args.tenant,
+        &cli_args.org,
+        &cli_args.ws,
+        cli_args.env.as_deref(),
+    )
+    .await.inspect_err(|_| {
+        trace::error!("Failed to setup remote caching. Please check your credentials and try again.");
+    })?;
     Ok(())
 }
 

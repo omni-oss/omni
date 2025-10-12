@@ -19,7 +19,7 @@ pub struct PortGuard {
 impl PortGuard {
     pub fn new() -> Self {
         let mut ports = PORTS.lock().unwrap();
-        let mut port = 3000;
+        let mut port = 3010;
         while ports.contains(&port) {
             port += 1;
         }
