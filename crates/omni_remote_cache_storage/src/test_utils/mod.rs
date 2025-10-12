@@ -57,6 +57,24 @@ macro_rules! decl_remote_cache_storage_backend_tests {
         }
 
         #[tokio::test]
+        async fn test_exists() {
+            let backend = backend().await;
+
+            assert!(backend.exists(None, "key1").await.unwrap());
+            assert!(backend.exists(None, "key2").await.unwrap());
+            assert!(!backend.exists(None, "key3").await.unwrap());
+        }
+
+        #[tokio::test]
+        async fn test_exists_container() {
+            let backend = backend().await;
+
+            assert!(backend.exists(Some("container1"), "key1").await.unwrap());
+            assert!(backend.exists(Some("container1"), "key2").await.unwrap());
+            assert!(!backend.exists(Some("container1"), "key3").await.unwrap());
+        }
+
+        #[tokio::test]
         async fn test_get_stream() {
             let backend = backend().await;
 

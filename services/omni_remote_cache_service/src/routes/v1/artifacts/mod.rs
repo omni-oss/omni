@@ -2,11 +2,13 @@ mod common;
 mod delete_artifact;
 mod get_artifact;
 mod get_artifacts;
+mod head_artifact;
 mod put_artifact;
 
 pub use delete_artifact::*;
 pub use get_artifact::*;
 pub use get_artifacts::*;
+pub use head_artifact::*;
 pub use put_artifact::*;
 
 use axum::Router;
@@ -27,6 +29,7 @@ pub fn build_router() -> Router<ServiceState> {
         .typed_get(get_artifact)
         .typed_put(put_artifact)
         .typed_delete(delete_artifact)
+        .typed_head(head_artifact)
 }
 
 #[derive(OpenApi)]
@@ -36,6 +39,7 @@ pub fn build_router() -> Router<ServiceState> {
         get_artifact,
         put_artifact,
         delete_artifact,
+        head_artifact,
     ),
     components(
         schemas(

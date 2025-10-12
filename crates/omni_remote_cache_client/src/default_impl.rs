@@ -76,6 +76,35 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
         }
     }
 
+    async fn artifact_exists(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+    ) -> Result<bool, RemoteCacheServiceClientError> {
+        let url = create_url(remote, digest);
+
+        let response = self
+            .client
+            .head(url)
+            .header("X-API-KEY", remote.api_key)
+            .header("X-OMNI-TENANT", remote.tenant)
+            .send()
+            .await
+            .map_err(RemoteCacheServiceClientError::custom)?;
+
+        if response.status().is_success() {
+            Ok(true)
+        } else {
+            match response.status() {
+                StatusCode::NOT_FOUND => Ok(false),
+                _ => Err(RemoteCacheServiceClientError::custom(eyre::eyre!(
+                    "artifact exists failed: status code {}",
+                    response.status()
+                ))),
+            }
+        }
+    }
+
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,
@@ -175,5 +204,34 @@ mod tests {
 
         assert!(resp.is_ok(), "get_artifact failed: {:?}", resp);
         assert!(resp.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_artifact_exists() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let put_resp = client
+            .put_artifact(&remote, DEFAULT_DIGEST, DEFAULT_BODY)
+            .await;
+
+        let resp = client.artifact_exists(&remote, DEFAULT_DIGEST).await;
+
+        assert!(put_resp.is_ok());
+        assert!(resp.is_ok(), "artifact_exists failed: {:?}", resp);
+        assert!(resp.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_artifact_exists_not_found() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let resp = client.artifact_exists(&remote, DEFAULT_DIGEST).await;
+
+        assert!(resp.is_ok(), "artifact_exists failed: {:?}", resp);
+        assert!(!resp.unwrap());
     }
 }

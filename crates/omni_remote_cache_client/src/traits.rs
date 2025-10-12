@@ -21,6 +21,12 @@ pub trait RemoteCacheServiceClient: Send + Sync + 'static {
         digest: &str,
     ) -> Result<Option<Bytes>, RemoteCacheServiceClientError>;
 
+    async fn artifact_exists(
+        &self,
+        remote: &RemoteAccessArgs,
+        digest: &str,
+    ) -> Result<bool, RemoteCacheServiceClientError>;
+
     async fn put_artifact(
         &self,
         remote: &RemoteAccessArgs,

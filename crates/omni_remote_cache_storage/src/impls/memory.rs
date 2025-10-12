@@ -46,6 +46,22 @@ impl RemoteCacheStorageBackend for InMemoryBackend {
             .map(|v| Bytes::copy_from_slice(v)))
     }
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, Error> {
+        let container = self.container(container);
+
+        Ok(self
+            .containers
+            .lock()
+            .await
+            .get(container)
+            .and_then(|m| m.get(key))
+            .is_some())
+    }
+
     async fn get_stream(
         &self,
         container: Option<&str>,

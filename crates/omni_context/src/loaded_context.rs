@@ -8,7 +8,9 @@ use env::{
     CommandExpansionConfig, ExpansionError, expand_into_with_command_config,
 };
 use env_loader::EnvLoaderError;
-use omni_configurations::{MetaConfiguration, WorkspaceConfiguration};
+use omni_configurations::{
+    MetaConfiguration, RemoteCacheConfiguration, WorkspaceConfiguration,
+};
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
@@ -66,6 +68,16 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
 
     pub fn workspace_configuration(&self) -> &WorkspaceConfiguration {
         self.unloaded_context.workspace_configuration()
+    }
+
+    pub fn remote_cache_configuration(
+        &self,
+    ) -> Option<&RemoteCacheConfiguration> {
+        self.unloaded_context.remote_cache_configuration()
+    }
+
+    pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
+        self.unloaded_context.remote_cache_configuration_paths()
     }
 
     pub fn projects(&self) -> &[Project] {

@@ -44,6 +44,26 @@ describe("v1.artifacts.api", () => {
         expect(await response.text()).toEqual(BODY);
     });
 
+    test("get artifact not found", async ({ apiBaseUrl }) => {
+        const response = await getArtifact(apiBaseUrl);
+
+        expect(response.status).toBe(404);
+    });
+
+    test("artifact exists", async ({ apiBaseUrl }) => {
+        await putArtifact(apiBaseUrl);
+
+        const response = await headArtifact(apiBaseUrl);
+
+        expect(response.status).toBe(200);
+    });
+
+    test("artifact exists not found", async ({ apiBaseUrl }) => {
+        const response = await headArtifact(apiBaseUrl);
+
+        expect(response.status).toBe(404);
+    });
+
     test("delete artifact", async ({ apiBaseUrl }) => {
         await putArtifact(apiBaseUrl);
 
@@ -92,6 +112,28 @@ async function getArtifact(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "GET",
+            headers: {
+                "Content-Type": "application/octet-stream",
+                "X-OMNI-TENANT": tenant,
+                "X-API-KEY": apiKey,
+            },
+        },
+    );
+}
+
+async function headArtifact(
+    apiBaseUrl: string,
+    digest: string = DIGEST,
+    tenant: string = TENANT,
+    org: string = ORG,
+    ws: string = WS,
+    env: string = ENV,
+    apiKey: string = API_KEY,
+) {
+    return await fetch(
+        `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
+        {
+            method: "HEAD",
             headers: {
                 "Content-Type": "application/octet-stream",
                 "X-OMNI-TENANT": tenant,

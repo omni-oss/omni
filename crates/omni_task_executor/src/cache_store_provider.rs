@@ -2,8 +2,8 @@ use derive_new::new;
 use omni_cache::{
     TaskExecutionCacheStore,
     impls::{
-        HybridTaskExecutionCacheStore, LocalTaskExecutionCacheStoreError,
-        RemoteConfig,
+        EnabledRemoteConfig, HybridTaskExecutionCacheStore,
+        LocalTaskExecutionCacheStoreError, RemoteConfig,
     },
 };
 use omni_context::{ContextSys, LoadedContext};
@@ -28,10 +28,24 @@ impl<'a, TSys: ContextSys> CacheStoreProvider
 
     fn get_cache_store(&self) -> Self::CacheStore {
         let cache_dir = self.context.root_dir().join(".omni/cache");
+        let remote_config =
+            if let Some(rc) = &self.context.remote_cache_configuration() {
+                RemoteConfig::new_enabled(EnabledRemoteConfig::new(
+                    rc.endpoint_base_url.as_str(),
+                    rc.api_key.as_str(),
+                    rc.tenant_code.as_str(),
+                    rc.organization_code.as_str(),
+                    rc.workspace_code.as_str(),
+                    rc.environment_code.clone(),
+                ))
+            } else {
+                RemoteConfig::new_disabled()
+            };
+
         HybridTaskExecutionCacheStore::new(
             cache_dir,
             self.context.root_dir(),
-            RemoteConfig::new_disabled(),
+            remote_config,
         )
     }
 }
