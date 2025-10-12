@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: omni_setup
+
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - omni_configurations
+  - omni_remote_cache_client

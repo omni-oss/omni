@@ -64,6 +64,27 @@ describe("v1.artifacts.api", () => {
         expect(response.status).toBe(404);
     });
 
+    test("head artifacts", async ({ apiBaseUrl }) => {
+        await putArtifact(apiBaseUrl);
+        const response = await headArtifacts(apiBaseUrl);
+
+        expect(response.status).toBe(200);
+    });
+
+    test("head artifacts invalid api key", async ({ apiBaseUrl }) => {
+        await putArtifact(apiBaseUrl);
+        const response = await headArtifacts(
+            apiBaseUrl,
+            TENANT,
+            ORG,
+            WS,
+            ENV,
+            "invalid",
+        );
+
+        expect(response.status).toBe(403);
+    });
+
     test("delete artifact", async ({ apiBaseUrl }) => {
         await putArtifact(apiBaseUrl);
 
@@ -177,6 +198,26 @@ async function listArtifacts(
         `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "GET",
+            headers: {
+                "X-OMNI-TENANT": tenant,
+                "X-API-KEY": apiKey,
+            },
+        },
+    );
+}
+
+async function headArtifacts(
+    apiBaseUrl: string,
+    tenant: string = TENANT,
+    org: string = ORG,
+    ws: string = WS,
+    env: string = ENV,
+    apiKey: string = API_KEY,
+) {
+    return await fetch(
+        `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
+        {
+            method: "HEAD",
             headers: {
                 "X-OMNI-TENANT": tenant,
                 "X-API-KEY": apiKey,

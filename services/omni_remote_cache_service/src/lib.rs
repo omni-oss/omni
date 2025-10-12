@@ -25,7 +25,11 @@ use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
 
-use crate::{args::Cli, init_tracing::init_tracing, state::ServiceState};
+use crate::{
+    args::{Cli, CliSubcommands},
+    init_tracing::init_tracing,
+    state::ServiceState,
+};
 
 #[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> eyre::Result<()> {
@@ -34,7 +38,7 @@ pub async fn main() -> eyre::Result<()> {
     let cli = Cli::parse();
 
     match cli.subcommand {
-        args::CliSubcommands::Serve(serve) => {
+        CliSubcommands::Serve(serve) => {
             let state = ServiceState::from_args(&serve.args).await?;
 
             let routing_config = serve.args.routes.unwrap_or_default();
