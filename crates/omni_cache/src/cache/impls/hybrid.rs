@@ -76,12 +76,23 @@ pub enum RemoteConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default, new)]
 pub struct EnabledRemoteConfig {
-    endpoint_base_url: String,
-    api_key: String,
-    tenant_code: String,
-    organization_code: String,
-    workspace_code: String,
-    environment_code: Option<String>,
+    #[new(into)]
+    pub endpoint_base_url: String,
+
+    #[new(into)]
+    pub api_key: String,
+
+    #[new(into)]
+    pub tenant_code: String,
+
+    #[new(into)]
+    pub organization_code: String,
+
+    #[new(into)]
+    pub workspace_code: String,
+
+    #[new(into)]
+    pub environment_code: Option<String>,
 }
 
 impl HybridTaskExecutionCacheStore {
@@ -320,6 +331,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         if !cached_results.is_empty()
             && let RemoteConfig::Enabled(conf) = &self.remote_config
         {
+            trace::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
             for (hash, output_dir) in cached_results {
                 let client = self.client.clone();
@@ -346,8 +358,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .put_artifact(&config, &digest, Bytes::from(artifact))
                         .await?;
 
+                    trace::debug!("Uploaded cache for {}", digest);
+
                     Ok::<_, LocalTaskExecutionCacheStoreError>(())
                 });
+            }
+
+            let results = tasks.join_all().await;
+
+            for result in results {
+                result?;
             }
         }
 

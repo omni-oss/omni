@@ -196,6 +196,35 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
         }
     }
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, Error> {
+        let (bucket, prefix) = self.get_bucket_and_prefix(container);
+
+        let head = self
+            .client
+            .head_object()
+            .bucket(bucket)
+            .key(self.key(prefix, key))
+            .send()
+            .await;
+
+        match head {
+            Ok(_) => Ok(true),
+            // Check for the specific error that means "Not Found" (HTTP 404)
+            Err(SdkError::ServiceError(err))
+                if StatusCode::from_u16(err.raw().status().as_u16())
+                    .expect("should a valid status code")
+                    == StatusCode::NOT_FOUND =>
+            {
+                Ok(false)
+            }
+            Err(e) => Err(Error::custom(e)),
+        }
+    }
+
     async fn get_stream(
         &self,
         container: Option<&str>,

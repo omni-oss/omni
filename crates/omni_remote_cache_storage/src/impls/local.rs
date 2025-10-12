@@ -56,6 +56,15 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         }
     }
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, Error> {
+        let path = self.path(key, container);
+        Ok(tokio::fs::try_exists(&path).await.map_err(Error::custom)?)
+    }
+
     async fn get_stream(
         &self,
         container: Option<&str>,
@@ -86,6 +95,10 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
         container: Option<&str>,
     ) -> Result<Vec<ListItem>, Error> {
         let dir = self.path("", container);
+
+        if !tokio::fs::try_exists(&dir).await.map_err(Error::custom)? {
+            return Ok(Vec::new());
+        }
 
         let mut read_dir =
             tokio::fs::read_dir(&dir).await.map_err(Error::custom)?;

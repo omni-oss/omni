@@ -119,6 +119,28 @@ impl RemoteCacheStorageBackend for StorageBackend {
         }
     }
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, error::Error> {
+        match self {
+            StorageBackend::LruCachedLocalDisk(inner) => {
+                inner.exists(container, key).await
+            }
+            StorageBackend::LocalDisk(inner) => {
+                inner.exists(container, key).await
+            }
+            StorageBackend::LruCachedS3(inner) => {
+                inner.exists(container, key).await
+            }
+            StorageBackend::S3(inner) => inner.exists(container, key).await,
+            StorageBackend::InMemory(inner) => {
+                inner.exists(container, key).await
+            }
+        }
+    }
+
     async fn get_stream(
         &self,
         container: Option<&str>,

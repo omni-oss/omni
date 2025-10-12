@@ -27,6 +27,12 @@ pub trait RemoteCacheStorageBackend {
         key: &str,
     ) -> Result<Option<Bytes>, Error>;
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, Error>;
+
     async fn get_stream(
         &self,
         container: Option<&str>,

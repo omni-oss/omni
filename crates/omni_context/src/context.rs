@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 pub(crate) use crate::env_loader::EnvLoader;
 use env_loader::EnvLoaderError;
-use omni_cache::impls::{HybridTaskExecutionCacheStore, RemoteConfig};
+use omni_cache::impls::{
+    EnabledRemoteConfig, HybridTaskExecutionCacheStore, RemoteConfig,
+};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
@@ -24,7 +26,9 @@ use dir_walker::DirWalker;
 use omni_core::{ExtensionGraph, ExtensionGraphError};
 use system_traits::impls::RealSys as RealSysSync;
 
-use omni_configurations::{LoadConfigError, WorkspaceConfiguration};
+use omni_configurations::{
+    LoadConfigError, RemoteCacheConfiguration, WorkspaceConfiguration,
+};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context<TSys: ContextSys = RealSysSync> {
@@ -33,6 +37,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
     override_env_files: Option<Vec<PathBuf>>,
     inherit_env_vars: bool,
     workspace: WorkspaceConfiguration,
+    remote_cache: Option<RemoteCacheConfiguration>,
     root_dir: PathBuf,
     tracing_config: TracingConfig,
     sys: TSys,
@@ -52,12 +57,14 @@ impl<TSys: ContextSys> Context<TSys> {
     ) -> Result<Self, ContextError> {
         let env = env.into();
         let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
+        let remote_cache = get_remote_cache_configuration(&root_dir, &sys)?;
 
         Ok(Self {
             env,
             inherit_env_vars,
             override_env_files,
             workspace,
+            remote_cache,
             root_dir: root_dir.to_path_buf(),
             env_root_dir_marker: root_marker.to_string(),
             sys,
@@ -89,12 +96,28 @@ impl<TSys: ContextSys> Context<TSys> {
         self.sys.env_current_dir()
     }
 
+    pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
+        constants::SUPPORTED_EXTENSIONS
+            .iter()
+            .map(|ext| {
+                self.root_dir()
+                    .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
+            })
+            .collect()
+    }
+
     pub fn root_dir(&self) -> &Path {
         &self.root_dir
     }
 
     pub fn workspace_configuration(&self) -> &WorkspaceConfiguration {
         &self.workspace
+    }
+
+    pub fn remote_cache_configuration(
+        &self,
+    ) -> Option<&RemoteCacheConfiguration> {
+        self.remote_cache.as_ref()
     }
 
     #[tracing::instrument(level = Level::DEBUG, skip_all)]
@@ -188,10 +211,23 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
+        let remote_config = if let Some(rc) = &self.remote_cache {
+            RemoteConfig::new_enabled(EnabledRemoteConfig::new(
+                rc.endpoint_base_url.as_str(),
+                rc.api_key.as_str(),
+                rc.tenant_code.as_str(),
+                rc.organization_code.as_str(),
+                rc.workspace_code.as_str(),
+                rc.environment_code.clone(),
+            ))
+        } else {
+            RemoteConfig::new_disabled()
+        };
+
         HybridTaskExecutionCacheStore::new(
             self.cache_dir(),
             self.root_dir.clone(),
-            RemoteConfig::new_disabled(),
+            remote_config,
         )
     }
 
@@ -263,6 +299,45 @@ fn get_workspace_configuration(
     Ok(w)
 }
 
+fn get_remote_cache_configuration(
+    root_dir: &Path,
+    sys: &impl ContextSys,
+) -> Result<Option<RemoteCacheConfiguration>, ContextError> {
+    let remote_cache_files = constants::SUPPORTED_EXTENSIONS
+        .iter()
+        .map(|ext| constants::REMOTE_CACHE_OMNI.replace("{ext}", ext));
+
+    let mut rc_path = None;
+
+    let cache_dir = root_dir.join(CACHE_DIR);
+
+    for remote_cache_file in remote_cache_files {
+        let f = cache_dir.join(remote_cache_file);
+        if sys.fs_exists(&f)? && sys.fs_is_file(&f)? {
+            rc_path = Some(f);
+            break;
+        }
+    }
+
+    if rc_path.is_none() {
+        return Ok(None);
+    }
+
+    let rc_path =
+        rc_path.expect("RemoteConfiguration should exist at this point");
+
+    let rc = RemoteCacheConfiguration::load(rc_path.as_path(), sys).map_err(
+        |e| {
+            ContextErrorInner::FailedToLoadRemoteCacheConfiguration(
+                rc_path.clone(),
+                e,
+            )
+        },
+    )?;
+
+    Ok(Some(rc))
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{inner}")]
 pub struct ContextError {
@@ -300,6 +375,9 @@ pub(crate) enum ContextErrorInner {
 
     #[error("failed to load workspace configuration: '{0}'")]
     FailedToLoadWorkspaceConfiguration(PathBuf, #[source] LoadConfigError),
+
+    #[error("failed to load remote cache configuration: '{0}'")]
+    FailedToLoadRemoteCacheConfiguration(PathBuf, #[source] LoadConfigError),
 
     #[error(transparent)]
     ProjectLoader(#[from] ProjectConfigLoaderError),

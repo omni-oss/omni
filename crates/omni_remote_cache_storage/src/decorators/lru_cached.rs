@@ -58,6 +58,25 @@ where
         self.inner.get(container, key).await
     }
 
+    async fn exists(
+        &self,
+        container: Option<&str>,
+        key: &str,
+    ) -> Result<bool, Error> {
+        let container_name = self.container(container);
+        if self
+            .cached
+            .lock()
+            .await
+            .get(&(container_name.to_string(), key.to_string()))
+            .is_some()
+        {
+            return Ok(true);
+        }
+
+        self.inner.exists(container, key).await
+    }
+
     async fn get_stream(
         &self,
         container: Option<&str>,

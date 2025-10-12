@@ -16,6 +16,22 @@ tasks:
         ADDITIONAL_ARGS: >
           -- serve -b in-memory --routes.enable-openapi
 
+  prod:
+    command: >
+      ${WORKSPACE_DIR}/target/release/omni_remote_cache_service
+      serve
+      -b
+      local-disk
+      --routes.enable-openapi
+      --local-disk.root-dir
+      ${PROJECT_DIR}/.omni/remote_cache/data
+
+    dependencies:
+      - build
+
+    cache:
+      enabled: false
+
   profile:
     dependencies:
       - ^passthrough
