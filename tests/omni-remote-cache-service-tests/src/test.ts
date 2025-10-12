@@ -13,10 +13,10 @@ export const test = baseTest.extend<{
         async ({}, use) => {
             const maxPort = ports
                 .entries()
-                .reduce((acc, cur) => Math.max(acc, cur[1]), 2999);
+                .reduce((acc, cur) => Math.max(acc, cur[1]), 3499);
             const minPort = ports
                 .entries()
-                .reduce((acc, cur) => Math.min(acc, cur[1]), 3000);
+                .reduce((acc, cur) => Math.min(acc, cur[1]), 3500);
 
             let port: number | null = null;
             for (let i = minPort; i <= maxPort; i++) {
@@ -25,6 +25,7 @@ export const test = baseTest.extend<{
                     break;
                 }
             }
+
             const newPort = port ?? maxPort + 1;
 
             ports.add(newPort);

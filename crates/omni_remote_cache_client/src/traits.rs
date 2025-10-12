@@ -3,7 +3,7 @@ use bytes::Bytes;
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct RemoteAccessArgs<'a> {
     pub endpoint_base_url: &'a str,
     pub api_key: &'a str,
@@ -13,8 +13,19 @@ pub struct RemoteAccessArgs<'a> {
     pub env: &'a str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct ValidateAccessResult {
+    pub is_valid: bool,
+    pub message: Option<String>,
+}
+
 #[async_trait]
 pub trait RemoteCacheServiceClient: Send + Sync + 'static {
+    async fn validate_access(
+        &self,
+        remote: &RemoteAccessArgs,
+    ) -> Result<ValidateAccessResult, RemoteCacheServiceClientError>;
+
     async fn get_artifact(
         &self,
         remote: &RemoteAccessArgs,

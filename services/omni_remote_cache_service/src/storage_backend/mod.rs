@@ -10,7 +10,7 @@ use omni_remote_cache_storage::{
     impls::{InMemoryBackend, LocalDiskCacheBackend, S3CacheBackend},
 };
 
-use crate::args::ServeArgs;
+use crate::args::{BackendType, ServeArgs};
 
 #[derive(Debug, new)]
 pub enum StorageBackend {
@@ -25,10 +25,10 @@ impl StorageBackend {
     pub async fn from_cli_args(args: &ServeArgs) -> Self {
         if let Some(lru_cache_cap) = args.lru_cache_capacity
             && lru_cache_cap > 0
-            && args.backend != crate::args::BackendType::InMemory
+            && args.backend != BackendType::InMemory
         {
             match args.backend {
-                crate::args::BackendType::S3 => {
+                BackendType::S3 => {
                     let s3 = args.s3.clone().expect("s3 config is required");
                     StorageBackend::LruCachedS3(LruCached::new(
                         S3CacheBackend::from_basic_config(
@@ -38,7 +38,7 @@ impl StorageBackend {
                         NonZeroUsize::new(lru_cache_cap).unwrap(),
                     ))
                 }
-                crate::args::BackendType::LocalDisk => {
+                BackendType::LocalDisk => {
                     let local_disk = args
                         .local_disk
                         .clone()
@@ -60,7 +60,7 @@ impl StorageBackend {
             }
         } else {
             match args.backend {
-                crate::args::BackendType::S3 => {
+                BackendType::S3 => {
                     let s3 = args.s3.clone().expect("s3 config is required");
                     StorageBackend::S3(
                         S3CacheBackend::from_basic_config(
@@ -69,7 +69,7 @@ impl StorageBackend {
                         .await,
                     )
                 }
-                crate::args::BackendType::LocalDisk => {
+                BackendType::LocalDisk => {
                     let local_disk = args
                         .local_disk
                         .clone()
@@ -79,7 +79,7 @@ impl StorageBackend {
                         local_disk.default_subdir,
                     ))
                 }
-                crate::args::BackendType::InMemory => {
+                BackendType::InMemory => {
                     StorageBackend::InMemory(InMemoryBackend::new("default"))
                 }
             }

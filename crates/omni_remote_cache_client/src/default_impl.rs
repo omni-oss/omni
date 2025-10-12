@@ -8,6 +8,7 @@ use reqwest::{Client, redirect::Policy};
 
 use crate::{
     RemoteAccessArgs, RemoteCacheServiceClient, RemoteCacheServiceClientError,
+    ValidateAccessResult,
 };
 
 #[derive(Debug, Clone, new)]
@@ -35,6 +36,16 @@ fn create_url(remote: &RemoteAccessArgs, digest: &str) -> String {
         ws = remote.ws,
         env = remote.env,
         digest = digest,
+    )
+}
+
+fn create_url_no_digest(remote: &RemoteAccessArgs) -> String {
+    format!(
+        "{base_url}/v1/artifacts?org={org}&ws={ws}&env={env}",
+        base_url = remote.endpoint_base_url,
+        org = remote.org,
+        ws = remote.ws,
+        env = remote.env,
     )
 }
 
@@ -74,6 +85,29 @@ impl RemoteCacheServiceClient for DefaultRemoteCacheServiceClient {
                 ))),
             }
         }
+    }
+
+    async fn validate_access(
+        &self,
+        remote: &RemoteAccessArgs,
+    ) -> Result<ValidateAccessResult, RemoteCacheServiceClientError> {
+        let url = create_url_no_digest(remote);
+
+        let response = self
+            .client
+            .head(url)
+            .header("X-API-KEY", remote.api_key)
+            .header("X-OMNI-TENANT", remote.tenant)
+            .send()
+            .await
+            .map_err(RemoteCacheServiceClientError::custom)?;
+
+        let status = response.status();
+
+        Ok(ValidateAccessResult::new(
+            status.is_success(),
+            Some(response.text().await.unwrap_or_default()),
+        ))
     }
 
     async fn artifact_exists(
@@ -233,5 +267,30 @@ mod tests {
 
         assert!(resp.is_ok(), "artifact_exists failed: {:?}", resp);
         assert!(!resp.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_validate_access() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let remote = def_remote_access_args(&guard.api_base_url);
+
+        let resp = client.validate_access(&remote).await;
+
+        assert!(resp.is_ok(), "validate_access failed: {:?}", resp);
+        assert!(resp.unwrap().is_valid);
+    }
+
+    #[tokio::test]
+    async fn test_validate_access_invalid_api_key() {
+        let guard = ChildProcessGuard::new();
+        let client = DefaultRemoteCacheServiceClient::default();
+        let mut remote = def_remote_access_args(&guard.api_base_url);
+        remote.api_key = "invalid";
+
+        let resp = client.validate_access(&remote).await;
+
+        assert!(resp.is_ok(), "validate_access failed: {:?}", resp);
+        assert!(!resp.unwrap().is_valid);
     }
 }

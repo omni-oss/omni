@@ -4488,6 +4488,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_setup"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "derive_builder",
+ "eyre",
+ "omni_configurations",
+ "omni_remote_cache_client",
+ "serde",
+ "serde_norway",
+ "strum 0.27.2",
+ "thiserror 2.0.16",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_task_context"
 version = "0.0.0-semantically-released"
 dependencies = [
