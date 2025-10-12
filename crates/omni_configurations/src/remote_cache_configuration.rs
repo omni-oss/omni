@@ -17,7 +17,7 @@ pub struct RemoteCacheConfiguration {
     pub api_key: String,
 
     #[merge(strategy = config_utils::replace)]
-    pub endpoint_base_url: String,
+    pub api_base_url: String,
 
     #[merge(strategy = config_utils::replace)]
     pub tenant_code: String,

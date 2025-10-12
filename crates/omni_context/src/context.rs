@@ -5,6 +5,7 @@ use env_loader::EnvLoaderError;
 use omni_cache::impls::{
     EnabledRemoteConfig, HybridTaskExecutionCacheStore, RemoteConfig,
 };
+use omni_remote_cache_client::{DefaultRemoteCacheClient, RemoteCacheClient};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
@@ -97,13 +98,23 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
+        let cache_dir = self.root_dir().join(CACHE_DIR);
         constants::SUPPORTED_EXTENSIONS
             .iter()
             .map(|ext| {
-                self.root_dir()
+                cache_dir
                     .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
             })
             .collect()
+    }
+
+    pub fn remote_cache_configuration_path(&self) -> PathBuf {
+        let cache_dir = self.root_dir().join(CACHE_DIR);
+        let ext = constants::SUPPORTED_EXTENSIONS
+            .first()
+            .expect("should have atleast 1");
+
+        cache_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
     }
 
     pub fn root_dir(&self) -> &Path {
@@ -213,7 +224,7 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn create_cache_store(&self) -> HybridTaskExecutionCacheStore {
         let remote_config = if let Some(rc) = &self.remote_cache {
             RemoteConfig::new_enabled(EnabledRemoteConfig::new(
-                rc.endpoint_base_url.as_str(),
+                rc.api_base_url.as_str(),
                 rc.api_key.as_str(),
                 rc.tenant_code.as_str(),
                 rc.organization_code.as_str(),
@@ -229,6 +240,10 @@ impl<TSys: ContextSys> Context<TSys> {
             self.root_dir.clone(),
             remote_config,
         )
+    }
+
+    pub fn create_remote_cache_client(&self) -> impl RemoteCacheClient {
+        DefaultRemoteCacheClient::default()
     }
 
     pub fn cache_dir(&self) -> PathBuf {

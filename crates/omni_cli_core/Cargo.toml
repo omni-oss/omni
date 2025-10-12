@@ -90,6 +90,7 @@ bytesize = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace=true }
 omni_task_context = { workspace = true }
+omni_setup = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

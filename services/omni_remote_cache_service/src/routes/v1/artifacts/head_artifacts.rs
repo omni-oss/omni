@@ -1,19 +1,15 @@
 use axum::{
     extract::{Query, State},
-    response::{AppendHeaders, IntoResponse as _, Response},
+    response::{IntoResponse as _, Response},
 };
 use axum_extra::routing::TypedPath;
-use http::{StatusCode, header};
+use http::StatusCode;
 use serde::Deserialize;
 use utoipa::IntoParams;
 
 use crate::{
     extractors::{ApiKey, TenantCode},
-    response::data::Data,
-    routes::v1::artifacts::{
-        CacheItem,
-        common::{guard, validate_ownership},
-    },
+    routes::v1::artifacts::common::{guard, validate_ownership},
     state::ServiceState,
 };
 
@@ -46,7 +42,7 @@ pub struct HeadArtifactsQuery {
         HeadArtifactsQuery
     ),
     responses(
-        (status = OK, description = "Success", body = Data<Vec<CacheItem>>),
+        (status = NO_CONTENT, description = "Success"),
         (status = BAD_REQUEST, description = "Bad request"),
         (status = INTERNAL_SERVER_ERROR, description = "Internal server error")
     )
@@ -69,9 +65,5 @@ pub async fn head_artifacts(
 
     validate_ownership!(state.provider, &tenant_code, &query);
 
-    (
-        StatusCode::OK,
-        AppendHeaders([(header::CONTENT_TYPE, "application/json")]),
-    )
-        .into_response()
+    StatusCode::NO_CONTENT.into_response()
 }
