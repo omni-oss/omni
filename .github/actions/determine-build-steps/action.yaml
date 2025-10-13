@@ -42,6 +42,10 @@ runs:
       shell: ${{ inputs.shell }}
       run: omni run -dL --result result.json ${{ inputs.omni-run }}
 
+    - name: Show result.json
+      shell: bash
+      run: cat result.json
+
     - name: Summarize Dry Run Result
       shell: ${{ inputs.shell }}
       run: bun run ./scripts/summarize-results/bin/index.js result.json -o result-summary.json
@@ -57,7 +61,7 @@ runs:
         cat result-summary.json >> $GITHUB_OUTPUT
         # 4. End the multiline variable setting with the delimiter
         echo -e "\nEOF" >> $GITHUB_OUTPUT
-        cat $GITHUB_OUTPUT
+        cat result.json
 
     - name: Install JS Actions NPM Dependencies
       shell: bash
