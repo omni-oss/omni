@@ -78,7 +78,7 @@ jobs:
         uses: ./.github/actions/setup-tools
         with:
           install-all: false
-          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS || github.ref_type == 'tag' }}
+          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS == 'true' || github.ref_type == 'tag' }}
           install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
