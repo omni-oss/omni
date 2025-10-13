@@ -28,21 +28,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: test
 
-      - name: Determine Build Steps
-        id: determine
-        uses: ./.github/actions/determine-build-steps
-        with:
-          omni-run: test
+      # - name: Determine Build Steps
+      #   id: determine
+      #   uses: ./.github/actions/determine-build-steps
+      #   with:
+      #     omni-run: test
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
-          install-all: false
-          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-all: true
+          # install-all: false
+          # install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          # install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          # install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          # install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          # install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test
@@ -68,21 +69,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: build
 
-      - name: Determine Build Steps
-        id: determine
-        uses: ./.github/actions/determine-build-steps
-        with:
-          omni-run: build
+      # - name: Determine Build Steps
+      #   id: determine
+      #   uses: ./.github/actions/determine-build-steps
+      #   with:
+      #     omni-run: build
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
-          install-all: false
-          install-bun: true
-          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-all: true
+          # install-all: false
+          # install-bun: true
+          # install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          # install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          # install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          # install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Apply version

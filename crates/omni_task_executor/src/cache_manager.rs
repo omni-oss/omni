@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use bytes::Bytes;
 use derive_builder::Builder;
@@ -8,13 +8,18 @@ use omni_cache::{
     CachedTaskExecution, CachedTaskExecutionHash, NewCacheInfo,
     TaskExecutionCacheStore, TaskExecutionInfoExt as _,
 };
+use omni_collector::{CollectConfig, Collector, CollectorSys, ProjectTaskInfo};
 use omni_process::{ChildProcessError, ChildProcessResult};
 use omni_task_context::TaskContext;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, Builder, new)]
 #[builder(setter(into, strip_option))]
-pub struct CacheManager<TCacheStore: TaskExecutionCacheStore> {
+pub struct CacheManager<TCacheStore, TSys>
+where
+    TCacheStore: TaskExecutionCacheStore,
+    TSys: CollectorSys,
+{
     store: TCacheStore,
 
     #[builder(default = false)]
@@ -25,6 +30,12 @@ pub struct CacheManager<TCacheStore: TaskExecutionCacheStore> {
 
     #[builder(default = false)]
     no_cache: bool,
+
+    sys: TSys,
+
+    root_dir: PathBuf,
+
+    cache_dir: PathBuf,
 }
 
 #[derive(Debug, new)]
@@ -69,21 +80,17 @@ impl<'a> TaskResultContext<'a> {
     }
 }
 
-impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
-    fn should_use_cache(&self) -> bool {
-        !self.force
-    }
-
-    fn should_save_cache(&self) -> bool {
-        !self.dry_run && !self.no_cache
-    }
-
+impl<TCacheStore, TSys> CacheManager<TCacheStore, TSys>
+where
+    TCacheStore: TaskExecutionCacheStore,
+    TSys: CollectorSys,
+{
     pub async fn get_cached_results(
         &self,
         inputs: &[TaskContext<'_>],
     ) -> Result<UnorderedMap<String, CachedTaskExecution>, CacheManagerError>
     {
-        if !self.should_use_cache() {
+        if self.force {
             return Ok(unordered_map!());
         }
 
@@ -116,17 +123,16 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
         UnorderedMap<String, CachedTaskExecutionHash<'a>>,
         CacheManagerError,
     > {
-        if !self.should_save_cache() || cache_contexts.is_empty() {
+        if self.no_cache || cache_contexts.is_empty() {
             return Ok(unordered_map!());
         }
 
         let to_cache = cache_contexts
             .iter()
             .filter_map(|r| {
-                if !self.dry_run
-                    && r.task_context()
-                        .cache_info
-                        .is_some_and(|ci| ci.cache_execution)
+                if r.task_context()
+                    .cache_info
+                    .is_some_and(|ci| ci.cache_execution)
                     && !r.task_context().node.persistent()
                     && let Some(exec_info) = r.task_context().execution_info()
                 {
@@ -142,15 +148,64 @@ impl<TCacheStore: TaskExecutionCacheStore> CacheManager<TCacheStore> {
             })
             .collect::<Vec<_>>();
 
-        let cached_items =
-            self.store.cache_many(&to_cache).await.map_err(|e| {
-                CacheManagerErrorInner::CacheFailed { source: e.into() }
-            })?;
+        if self.dry_run {
+            let collect_task_infos = to_cache
+                .iter()
+                .map(|info| ProjectTaskInfo {
+                    input_files: info.task.input_files,
+                    output_files: info.task.output_files,
+                    project_dir: info.task.project_dir,
+                    project_name: info.task.project_name,
+                    task_command: info.task.task_command,
+                    task_name: info.task.task_name,
+                    dependency_digests: info.task.dependency_digests,
+                    env_vars: info.task.env_vars,
+                    input_env_keys: info.task.input_env_keys,
+                })
+                .collect::<Vec<_>>();
 
-        Ok(cached_items
-            .into_iter()
-            .map(|c| (format!("{}#{}", c.project_name, c.task_name), c))
-            .collect())
+            let collector = Collector::new(
+                &self.root_dir,
+                &self.cache_dir,
+                self.sys.clone(),
+            );
+
+            let results = collector
+                .collect(
+                    &collect_task_infos,
+                    &CollectConfig {
+                        digests: true,
+                        ..Default::default()
+                    },
+                )
+                .await?;
+
+            Ok(results
+                .into_iter()
+                .map(|c| {
+                    (
+                        format!("{}#{}", c.task.project_name, c.task.task_name),
+                        CachedTaskExecutionHash {
+                            digest: c
+                                .digest
+                                .expect("should have digest at this point"),
+                            project_name: c.task.project_name,
+                            task_name: c.task.task_name,
+                        },
+                    )
+                })
+                .collect())
+        } else {
+            let cached_items =
+                self.store.cache_many(&to_cache).await.map_err(|e| {
+                    CacheManagerErrorInner::CacheFailed { source: e.into() }
+                })?;
+
+            Ok(cached_items
+                .into_iter()
+                .map(|c| (format!("{}#{}", c.project_name, c.task_name), c))
+                .collect())
+        }
     }
 }
 
@@ -191,4 +246,7 @@ enum CacheManagerErrorInner {
         #[source]
         source: eyre::Report,
     },
+
+    #[error(transparent)]
+    Collector(#[from] omni_collector::error::Error),
 }

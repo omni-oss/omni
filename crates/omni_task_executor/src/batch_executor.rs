@@ -28,7 +28,7 @@ where
     TSys: TaskExecutorSys,
 {
     context: &'s LoadedContext<TSys>,
-    cache_manager: CacheManager<TCacheStore>,
+    cache_manager: CacheManager<TCacheStore, TSys>,
     sys: TSys,
     presenter: &'s MuxOutputPresenterStatic,
     max_concurrent_tasks: usize,
@@ -240,7 +240,7 @@ where
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_completed(
-                        Some(cached_result.digest),
+                        cached_result.digest,
                         task_ctx.node.clone(),
                         cached_result.exit_code,
                         cached_result.execution_duration,
@@ -290,7 +290,17 @@ where
         for fut_result in &fut_results {
             let fname =
                 fut_result.task_context().node.full_task_name().to_string();
-            let hash = hashes.get(&fname).map(|h| h.digest);
+            let hash =
+                hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
+                    trace::error!(
+                        "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
+                        fname
+                    );
+
+                    BatchExecutorErrorInner::new_cant_get_task_hash(
+                        fname.clone(),
+                    )
+                })?;
 
             let result = match fut_result {
                 TaskResultContext::Completed {
@@ -430,6 +440,9 @@ enum BatchExecutorErrorInner {
         #[source]
         source: eyre::Report,
     },
+
+    #[error("can't get task hash: {task_full_name}")]
+    CantGetTaskHash { task_full_name: String },
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

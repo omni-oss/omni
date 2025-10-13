@@ -67,6 +67,7 @@ const CompletedTaskSchema = z.object({
     status: z.literal("completed"),
     hash: z
         .string()
+        .nullish()
         .describe("The task's content hash (Base64 encoded string)."),
     task: TaskSchema,
     exit_code: z
