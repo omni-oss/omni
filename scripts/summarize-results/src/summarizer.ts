@@ -16,6 +16,12 @@ export type Summary = SummaryData & {
     aggregated_by_metadata: {
         [key: string]: SummaryData;
     };
+    aggregated_by_project: {
+        [key: string]: SummaryData;
+    };
+    aggregated_by_task: {
+        [key: string]: SummaryData;
+    };
 };
 
 function initSummaryData(total: number): SummaryData {
@@ -36,6 +42,8 @@ export function summarize(results: TaskResultArray): Summary {
     const summary: Summary = {
         ...initSummaryData(results.length),
         aggregated_by_metadata: {},
+        aggregated_by_project: {},
+        aggregated_by_task: {},
     };
 
     for (const result of results) {
@@ -53,10 +61,46 @@ export function summarize(results: TaskResultArray): Summary {
                 summary.aggregated_by_metadata[metadata],
             );
         }
+
+        if (!summary.aggregated_by_project[result.task.project_name]) {
+            summary.aggregated_by_project[result.task.project_name] =
+                initSummaryData(0);
+        }
+
+        applyResultToSummary(
+            result,
+            // biome-ignore lint/style/noNonNullAssertion: should be assigned at this point
+            summary.aggregated_by_project[result.task.project_name]!,
+        );
+
+        if (!summary.aggregated_by_task[result.task.task_name]) {
+            summary.aggregated_by_task[result.task.task_name] =
+                initSummaryData(0);
+        }
+
+        applyResultToSummary(
+            result,
+            // biome-ignore lint/style/noNonNullAssertion: should be assigned at this point
+            summary.aggregated_by_task[result.task.task_name]!,
+        );
     }
 
     for (const k in summary.aggregated_by_metadata) {
         const value = summary.aggregated_by_metadata[k];
+        if (value) {
+            value.total = value.skipped + value.errored + value.completed;
+        }
+    }
+
+    for (const k in summary.aggregated_by_project) {
+        const value = summary.aggregated_by_project[k];
+        if (value) {
+            value.total = value.skipped + value.errored + value.completed;
+        }
+    }
+
+    for (const k in summary.aggregated_by_task) {
+        const value = summary.aggregated_by_task[k];
         if (value) {
             value.total = value.skipped + value.errored + value.completed;
         }
