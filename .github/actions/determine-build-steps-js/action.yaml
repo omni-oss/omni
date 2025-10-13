@@ -1,0 +1,18 @@
+name: "Determine Build Steps JS"
+description: "Processes build aggregation data to determine required installation and build steps."
+inputs:
+  build_data_json:
+    description: "The JSON string of the aggregated build results."
+    required: true
+outputs:
+  INSTALL_RUST_TOOLS:
+    description: 'Output "true" if any Rust task did NOT complete with a cache hit.'
+  INSTALL_JS_TOOLS:
+    description: 'Output "true" if any TypeScript task did NOT complete with a cache hit.'
+  BUILD_ORCS:
+    description: 'Output "true" if the "omni_remote_cache_service" project did NOT complete with a cache hit.'
+  BUILD_OMNI:
+    description: 'Output "true" if the "omni" project did NOT complete with a cache hit.'
+runs:
+  using: "node20"
+  main: "index.js"

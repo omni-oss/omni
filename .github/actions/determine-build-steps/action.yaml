@@ -1,0 +1,61 @@
+name: "Determine Build Steps"
+description: "Checks out the repo and then runs the JS action to determine build steps. Assumes omni is installed and code is checked out."
+
+inputs:
+  omni-run:
+    description: "To be passed to omni run subcommand"
+    required: true
+  shell:
+    description: "Shell to use"
+    required: false
+    default: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+
+outputs:
+  INSTALL_RUST_TOOLS:
+    description: "Output of the JS action."
+    value: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+  INSTALL_JS_TOOLS:
+    description: "Output of the JS action."
+    value: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+  BUILD_ORCS:
+    description: "Output of the JS action."
+    value: ${{ steps.determine.outputs.BUILD_ORCS }}
+  BUILD_OMNI:
+    description: "Output of the JS action."
+    value: ${{ steps.determine.outputs.BUILD_OMNI }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Tools
+      uses: ./.github/actions/setup-tools
+      with:
+        install-all: false
+        install-bun: true
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get Dry Run Result
+      shell: ${{ inputs.shell }}
+      run: omni run -dL --result result.json ${{ inputs.omni-run }}
+
+    - name: Summarize Dry Run Result
+      shell: ${{ inputs.shell }}
+      run: bun run ./scripts/summarize-result/bin/index.js result.json -o result-summary.json
+
+    - name: Load Dry Run Result Into Variable
+      id: load_result
+      shell: bash
+      run: |
+        # 1. Define a unique delimiter (e.g., EOF)
+        # 2. Start the multiline variable setting with the delimiter
+        echo "build_data_json<<EOF" >> $GITHUB_OUTPUT
+        # 3. Output the multiline content
+        cat result-summary.json >> $GITHUB_OUTPUT
+        # 4. End the multiline variable setting with the delimiter
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Run Core JS Logic
+      id: determine
+      uses: ./.github/actions/determine-build-steps-js
+      with:
+        build_data_json: ${{ steps.load_result.outputs.build_data_json }}
