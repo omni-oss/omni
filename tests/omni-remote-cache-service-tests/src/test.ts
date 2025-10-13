@@ -70,7 +70,7 @@ export const test = baseTest.extend<{
                 },
             );
             // add a small delay to ensure the server is ready
-            await new Promise((resolve) => setTimeout(resolve, 25));
+            await new Promise((resolve) => setTimeout(resolve, 100));
             await use(childProcess);
             if (!childProcess.kill("SIGTERM")) {
                 throw new Error(
