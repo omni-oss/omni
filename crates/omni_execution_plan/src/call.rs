@@ -9,6 +9,7 @@ pub enum Call {
     Command {
         #[new(into)]
         command: String,
+        #[new(into)]
         args: Vec<String>,
     },
 

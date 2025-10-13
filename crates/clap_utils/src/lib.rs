@@ -37,7 +37,7 @@ impl<T: EnumValueAdapterContract> ValueEnum for EnumValueAdapter<T> {
         Self::variants()
     }
 
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
         let text = self.0.to_string();
         Some(PossibleValue::new(text))
     }
