@@ -26,24 +26,24 @@ export interface FileSystem {
 
 // Virtual file system implementation
 export class VirtualFileSystem implements FileSystem {
-    private files: Map<string, string> = new Map();
+    private files: Record<string, string> = {};
 
     async writeFile(path: string, content: string) {
-        this.files.set(path, content);
+        this.files[path] = content;
     }
 
     async readFile(path: string) {
-        return this.files.get(path);
+        return this.files[path];
     }
 
     async listFiles() {
-        return Array.from(this.files.keys()).sort();
+        return Object.keys(this.files);
     }
 
     async getFileTree() {
         const tree: FileTree = {};
 
-        for (const [path, content] of this.files.entries()) {
+        for (const [path, content] of Object.entries(this.files)) {
             const parts = path.split("/");
             let current: Record<string, VirtualNode> = tree;
 
@@ -74,7 +74,9 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     async clear() {
-        this.files.clear();
+        for (const key of Object.keys(this.files)) {
+            delete this.files[key];
+        }
     }
 
     async writeFilesToDisk(basePath: string) {
@@ -84,9 +86,15 @@ export class VirtualFileSystem implements FileSystem {
 
 // Function to write files to disk from a VirtualFileSystem
 async function writeFilesToDisk(vfs: VirtualFileSystem, basePath: string) {
-    for (const path of await vfs.listFiles()) {
+    const files = await vfs.listFiles();
+
+    console.log(`Writing files ${files.length} to disk...`);
+
+    for (const path of files) {
         const content = await vfs.readFile(path);
-        if (!content) continue;
+        if (!content) {
+            console.error(`File not found: ${path}`);
+        }
 
         const filePath = nodePath.join(basePath, path);
         console.log(`Writing file: ${filePath}`);

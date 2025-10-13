@@ -18,15 +18,25 @@ program
 
         const vfs = new VirtualFileSystem();
         if (opts.delete) {
-            copyToVfsIfExists(vfs, "index.mdx", out);
-            copyToVfsIfExists(vfs, "meta.json", out);
-            copyToVfsIfExists(vfs, nodePath.join("commands", "index.mdx"), out);
-            copyToVfsIfExists(vfs, nodePath.join("commands", "meta.json"), out);
+            await copyToVfsIfExists(vfs, "index.mdx", out);
+            await copyToVfsIfExists(vfs, "meta.json", out);
+            await copyToVfsIfExists(
+                vfs,
+                nodePath.join("commands", "index.mdx"),
+                out,
+            );
+            await copyToVfsIfExists(
+                vfs,
+                nodePath.join("commands", "meta.json"),
+                out,
+            );
 
             await fs.rm(out, { recursive: true, force: true });
         }
 
+        console.log("Generating docs...");
         await generateRefDocsFromSpec(content, vfs, "commands");
         await vfs.writeFilesToDisk(out);
+        console.log("Done!");
     })
     .parse();

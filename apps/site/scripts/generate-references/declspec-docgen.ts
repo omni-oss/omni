@@ -73,7 +73,7 @@ class DeclspecMdxDocGenerator {
 
             // Generate docs for each subcommand
             for (const subcommand of command.subcommands) {
-                this.generateCommandDocs(p, subcommand, commandPath);
+                await this.generateCommandDocs(p, subcommand, commandPath);
             }
         } else {
             // Leaf command - create individual mdx file
@@ -212,7 +212,7 @@ class DeclspecMdxDocGenerator {
 
             mdx.push(`### ${flagsStr}`);
         }
-        
+
         const help = arg.long_help || arg.help;
 
         if (help) {
