@@ -16,27 +16,22 @@ use crate::{
 };
 
 #[derive(Args, Debug)]
-pub struct ExecArgs {
-    #[arg(required = true)]
-    command: String,
-    #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
-
-    #[command(flatten)]
-    run: RunArgs,
-}
-
-#[derive(Args)]
 pub struct ExecCommand {
+    #[arg(required = true)]
+    pub command: String,
+
     #[command(flatten)]
-    args: ExecArgs,
+    pub run: RunArgs,
+
+    #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
+    pub args: Vec<String>,
 }
 
 pub async fn run(
     command: &ExecCommand,
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
-    let output_settings = get_results_settings(&command.args.run)?;
+    let output_settings = get_results_settings(&command.run)?;
 
     let mut builder = ExecutionConfigBuilder::default();
 
@@ -45,12 +40,11 @@ pub async fn run(
     }
 
     builder.call(Call::new_command(
-        command.args.command.clone(),
-        command.args.args.clone(),
+        command.command.clone(),
+        command.args.clone(),
     ));
 
     command
-        .args
         .run
         .apply_to(&mut builder, ctx.workspace_configuration());
 
