@@ -33,14 +33,19 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         let cache_store =
             ContextCacheStoreProvider::new(self.context).get_cache_store();
 
-        let cache_manager =
-            CacheManagerBuilder::<HybridTaskExecutionCacheStore>::default()
-                .store(cache_store)
-                .dry_run(self.config.dry_run())
-                .force(self.config.force())
-                .no_cache(self.config.no_cache())
-                .build()
-                .expect("should be able to create cache manager");
+        let cache_manager = CacheManagerBuilder::<
+            HybridTaskExecutionCacheStore,
+            TSys,
+        >::default()
+        .store(cache_store)
+        .dry_run(self.config.dry_run())
+        .force(self.config.force())
+        .no_cache(self.config.no_cache())
+        .root_dir(self.context.root_dir().to_path_buf())
+        .cache_dir(self.context.cache_dir())
+        .sys(self.context.sys().clone())
+        .build()
+        .expect("should be able to create cache manager");
 
         let mut results_accumulator = unordered_map!(cap: task_count);
 

@@ -46,6 +46,7 @@ pub mod default_hash_option_to_string {
     use omni_hasher::impls::DefaultHash;
     use serde::{Deserialize as _, de::IntoDeserializer as _};
 
+    #[allow(unused)]
     pub fn deserialize<'de, D>(
         deserializer: D,
     ) -> Result<Option<DefaultHash>, D::Error>
@@ -61,6 +62,7 @@ pub mod default_hash_option_to_string {
         }
     }
 
+    #[allow(unused)]
     pub fn serialize<S>(
         h: &Option<DefaultHash>,
         serializer: S,

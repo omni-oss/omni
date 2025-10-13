@@ -61,7 +61,6 @@ runs:
         cat result-summary.json >> $GITHUB_OUTPUT
         # 4. End the multiline variable setting with the delimiter
         echo -e "\nEOF" >> $GITHUB_OUTPUT
-        cat result.json
 
     - name: Install JS Actions NPM Dependencies
       shell: bash

@@ -10,8 +10,8 @@ use strum::{Display, EnumIs};
 #[serde(rename_all = "kebab-case")]
 pub enum TaskExecutionResult {
     Completed {
-        #[serde(with = "crate::serde_impls::default_hash_option_to_string")]
-        hash: Option<DefaultHash>,
+        #[serde(with = "crate::serde_impls::default_hash_to_string")]
+        hash: DefaultHash,
         task: TaskExecutionNode,
         exit_code: u32,
         elapsed: std::time::Duration,
@@ -42,7 +42,7 @@ impl TaskExecutionResult {
 
     pub fn hash(&self) -> Option<DefaultHash> {
         match self {
-            TaskExecutionResult::Completed { hash, .. } => *hash,
+            TaskExecutionResult::Completed { hash, .. } => Some(*hash),
             TaskExecutionResult::Errored { .. } => None,
             TaskExecutionResult::Skipped { .. } => None,
         }
