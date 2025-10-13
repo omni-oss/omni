@@ -56,8 +56,7 @@ runs:
         # 3. Output the multiline content
         cat result-summary.json >> $GITHUB_OUTPUT
         # 4. End the multiline variable setting with the delimiter
-        echo "EOF" >> $GITHUB_OUTPUT
-        cat $GITHUB_OUTPUT
+        echo "\nEOF" >> $GITHUB_OUTPUT
 
     - name: Run Core JS Logic
       id: determine
