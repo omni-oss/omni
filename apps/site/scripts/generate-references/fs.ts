@@ -2,19 +2,19 @@ import fs from "node:fs/promises";
 import nodePath from "node:path";
 
 // File system types using discriminated union
-export type VirtualFile = {
+export type FsFile = {
     type: "file";
     content: string;
 };
 
-export type VirtualDirectory = {
+export type FsDirectory = {
     type: "directory";
-    children: Record<string, VirtualNode>;
+    children: Record<string, FsNode>;
 };
 
-export type VirtualNode = VirtualFile | VirtualDirectory;
+export type FsNode = FsFile | FsDirectory;
 
-export type FileTree = Record<string, VirtualNode>;
+export type FileTree = Record<string, FsNode>;
 
 export interface FileSystem {
     writeFile(path: string, content: string): Promise<void>;
@@ -45,7 +45,7 @@ export class VirtualFileSystem implements FileSystem {
 
         for (const [path, content] of Object.entries(this.files)) {
             const parts = path.split("/");
-            let current: Record<string, VirtualNode> = tree;
+            let current: Record<string, FsNode> = tree;
 
             for (let i = 0; i < parts.length; i++) {
                 const part = parts[i];
