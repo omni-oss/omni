@@ -72,7 +72,7 @@ jobs:
         id: determine
         uses: ./.github/actions/determine-build-steps
         with:
-          omni-run: build
+          omni-run: -p "{omni,omni_remote_cache_service}" build
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -89,27 +89,41 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         run: bun run ./scripts/apply-version/bin/index.js
 
-      - name: Build
+      - name: Build Omni
         run: omni run -p=omni -L build
         # run: cargo build --release -p omni
 
-      - name: Compress binary on Linux/macOS
-        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
-        run: zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
+      - name: Build Orcs
+        run: omni run -p=omni_remote_cache_service -L build
+        # run: cargo build --release -p omni
 
-      - name: Compress binary on Windows
+      - name: Compress Binaries on Linux/macOS
+        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
+        run: |
+          zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
+          zip -j omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni_remote_cache_service
+
+      - name: Compress Binaries on Windows
         if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
         run: |
           cd target/release
           7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
+          7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
         shell: pwsh
 
-      - name: Upload compressed binary
+      - name: Upload Omni Compressed Binary
         uses: actions/upload-artifact@v4
         if: github.ref_type == 'tag'
         with:
           name: omni-${{ github.ref_name }}-${{ matrix.os }}
           path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
+
+      - name: Upload Omni Remote Cache Service Compressed Binary
+        uses: actions/upload-artifact@v4
+        if: github.ref_type == 'tag'
+        with:
+          name: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}
+          path: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
