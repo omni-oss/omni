@@ -12,5 +12,7 @@ result.json
 result.yaml
 result.yml
 result.toml
+summary.json
+result-summary.json
 .vercel
 .turbo

@@ -1,0 +1,111 @@
+import type { Meta, TaskResult, TaskResultArray } from "./schemas";
+
+export type SummaryData = {
+    total: number;
+    skipped: number;
+    errored: number;
+    completed: number;
+    completed_with_error: number;
+    completed_with_success: number;
+    completed_with_cache_hit: number;
+    completed_with_cache_hit_error: number;
+    completed_with_cache_hit_success: number;
+};
+
+export type Summary = SummaryData & {
+    aggregated_by_metadata: {
+        [key: string]: SummaryData;
+    };
+};
+
+function initSummaryData(total: number): SummaryData {
+    return {
+        total,
+        skipped: 0,
+        errored: 0,
+        completed: 0,
+        completed_with_error: 0,
+        completed_with_success: 0,
+        completed_with_cache_hit: 0,
+        completed_with_cache_hit_error: 0,
+        completed_with_cache_hit_success: 0,
+    };
+}
+
+export function summarize(results: TaskResultArray): Summary {
+    const summary: Summary = {
+        ...initSummaryData(results.length),
+        aggregated_by_metadata: {},
+    };
+
+    for (const result of results) {
+        applyResultToSummary(result, summary);
+
+        const metas = flattenMetadata(result.details.meta);
+
+        for (const metadata of metas) {
+            if (!summary.aggregated_by_metadata[metadata]) {
+                summary.aggregated_by_metadata[metadata] = initSummaryData(0);
+            }
+
+            applyResultToSummary(
+                result,
+                summary.aggregated_by_metadata[metadata],
+            );
+        }
+    }
+
+    for (const k in summary.aggregated_by_metadata) {
+        const value = summary.aggregated_by_metadata[k];
+        if (value) {
+            value.total = value.skipped + value.errored + value.completed;
+        }
+    }
+
+    return summary;
+}
+
+function flattenMetadata(meta: Meta): string[] {
+    const metadatas: string[] = [];
+
+    if (meta.type) {
+        metadatas.push(`type:${meta.type}`);
+    }
+
+    if (meta.language) {
+        metadatas.push(`language:${meta.language}`);
+    }
+
+    return metadatas;
+}
+
+function applyResultToSummary(result: TaskResult, summaryData: SummaryData) {
+    switch (result.status) {
+        case "skipped":
+            summaryData.skipped++;
+            break;
+        case "errored":
+            summaryData.errored++;
+            break;
+        case "completed":
+            summaryData.completed++;
+
+            if (result.exit_code === 0) {
+                summaryData.completed_with_success++;
+            } else {
+                summaryData.completed_with_error++;
+            }
+
+            if (result.cache_hit) {
+                summaryData.completed_with_cache_hit++;
+
+                if (result.exit_code === 0) {
+                    summaryData.completed_with_cache_hit_success++;
+                } else {
+                    summaryData.completed_with_cache_hit_error++;
+                }
+            }
+
+            break;
+    }
+}
