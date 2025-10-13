@@ -59,6 +59,12 @@ runs:
         echo -e "\nEOF" >> $GITHUB_OUTPUT
         cat $GITHUB_OUTPUT
 
+    - name: Install JS Actions NPM Dependencies
+      shell: bash
+      run: |
+        cd .github/actions/determine-build-steps-js
+        bun install
+
     - name: Run Core JS Logic
       id: determine
       uses: ./.github/actions/determine-build-steps-js
