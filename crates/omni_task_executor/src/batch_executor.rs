@@ -306,7 +306,7 @@ where
                 TaskResultContext::Error {
                     task_context,
                     error,
-                } => TaskExecutionResult::new_error(
+                } => TaskExecutionResult::new_errored(
                     task_context.node.clone(),
                     error.to_string(),
                 ),
