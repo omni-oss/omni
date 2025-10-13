@@ -12,16 +12,17 @@ pub struct RunArgs {
         long,
         help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
     )]
-    meta: Option<String>,
+    pub meta: Option<String>,
+
     #[arg(
         long,
         short,
         help = "Run the command based on the project name matching the filter"
     )]
-    project: Option<String>,
+    pub project: Option<String>,
 
     #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
-    max_concurrency: Option<usize>,
+    pub max_concurrency: Option<usize>,
 
     #[arg(
         long,
@@ -30,20 +31,20 @@ pub struct RunArgs {
         default_value_t = false,
         help = "Don't execute the task, just print the command to be executed"
     )]
-    dry_run: bool,
+    pub dry_run: bool,
 
     #[arg(
         long,
         help = "Output the results of the execution to the specified file"
     )]
-    pub(crate) result: Option<PathBuf>,
+    pub result: Option<PathBuf>,
 
     #[arg(
         long,
         help = "Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension",
         value_enum
     )]
-    pub(crate) result_format: Option<ResultFormat>,
+    pub result_format: Option<ResultFormat>,
 
     #[arg(
         long,

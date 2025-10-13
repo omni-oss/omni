@@ -1,5 +1,6 @@
 use std::process::ExitCode;
 
+use clap::Args;
 use clap_utils::EnumValueAdapter;
 use omni_task_executor::ExecutionConfigBuilder;
 
@@ -15,13 +16,13 @@ use crate::{
     executor::{Call, OnFailure, TaskExecutor},
 };
 
-#[derive(clap::Args)]
+#[derive(Args)]
 pub struct RunCommand {
     #[arg(required = true, help = "The task to run")]
-    task: String,
+    pub task: String,
 
     #[arg(num_args(0..), help = "The arguments to pass to the task")]
-    args: Vec<String>,
+    pub args: Vec<String>,
 
     #[arg(
         long,
@@ -30,7 +31,7 @@ pub struct RunCommand {
         help = "Run the command without dependencies",
         default_value_t = false
     )]
-    ignore_dependencies: bool,
+    pub ignore_dependencies: bool,
 
     #[arg(
         long,
@@ -39,21 +40,21 @@ pub struct RunCommand {
         default_value_t = EnumValueAdapter::new(OnFailure::SkipDependents),
         value_enum
     )]
-    on_failure: EnumValueAdapter<OnFailure>,
+    pub on_failure: EnumValueAdapter<OnFailure>,
 
     #[arg(
         long,
         help = "Don't save the execution result to the cache",
         default_value_t = false
     )]
-    no_cache: bool,
+    pub no_cache: bool,
 
     #[arg(
         long,
         short = 'L',
         help = "Don't replay the logs of cached task executions"
     )]
-    no_replay_logs: bool,
+    pub no_replay_logs: bool,
 
     #[arg(
         long,
@@ -61,10 +62,10 @@ pub struct RunCommand {
         help = "Force execution of the task, even if it's already cached",
         default_value_t = false
     )]
-    force: bool,
+    pub force: bool,
 
     #[command(flatten)]
-    run: RunArgs,
+    pub run: RunArgs,
 }
 
 pub async fn run(
