@@ -275,7 +275,7 @@ struct InputEvent {
 
 #[derive(Debug, Copy, Clone)]
 struct ScrollState {
-    pub scroll_y: u16,
+    pub scroll_y: usize,
     pub follow: bool,
 }
 
@@ -356,11 +356,11 @@ fn run_tui(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
                                 |scroll_state| {
-                                    scroll_state.scroll_y = line_count as u16;
+                                    scroll_state.scroll_y = line_count;
                                     scroll_state.follow = !scroll_state.follow;
                                 },
                                 || ScrollState {
-                                    scroll_y: line_count as u16,
+                                    scroll_y: line_count,
                                     follow: false,
                                 },
                             );
@@ -392,7 +392,7 @@ fn run_tui(
                                     scroll_state.follow = false;
                                 },
                                 || ScrollState {
-                                    scroll_y: line_count as u16 - 1,
+                                    scroll_y: line_count.saturating_sub(1),
                                     follow: false,
                                 },
                             );
@@ -619,9 +619,9 @@ fn get_frame_data<'a>(
 
 #[derive(Debug, Clone, Copy)]
 struct DrawState {
-    paragraph_scroll_y: u16,
+    paragraph_scroll_y: usize,
     #[allow(unused)]
-    paragraph_vp_height: u16,
+    paragraph_vp_height: usize,
 }
 
 /// Draw UI frame: left vertical tab list + right content for selected stream
@@ -667,7 +667,7 @@ fn draw_ui<'a>(
     // terminal output
     let vp_height = right_pane_chunks[0].height.saturating_sub(2); // remove the borders
 
-    let max_scroll_y = (line_count as u16).saturating_sub(vp_height);
+    let max_scroll_y = line_count.saturating_sub(vp_height as usize);
     let scroll_y = if scroll_state.follow {
         max_scroll_y
     } else {
@@ -687,7 +687,10 @@ fn draw_ui<'a>(
                 [Constraint::Length(vp_height), Constraint::Min(0)].as_ref(),
             )
             .split(right_pane_chunks[0]);
-        f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
+        f.render_widget(
+            paragraph.scroll((scroll_y as u16, 0)),
+            right_pane_chunks[0],
+        );
         f.render_stateful_widget(
             scroll_bar,
             output_chunks[1].inner(Margin {
@@ -697,7 +700,10 @@ fn draw_ui<'a>(
             scroll_bar_state,
         );
     } else {
-        f.render_widget(paragraph.scroll((scroll_y, 0)), right_pane_chunks[0]);
+        f.render_widget(
+            paragraph.scroll((scroll_y as u16, 0)),
+            right_pane_chunks[0],
+        );
     }
 
     // controls
@@ -734,7 +740,7 @@ fn draw_ui<'a>(
 
     DrawState {
         paragraph_scroll_y: scroll_y,
-        paragraph_vp_height: vp_height,
+        paragraph_vp_height: vp_height as usize,
     }
 }
 
