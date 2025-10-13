@@ -10,7 +10,7 @@ inputs:
     required: false
     default: "false"
   install-rust-target:
-    description: "Install Rust target director"
+    description: "Install Rust target directory"
     required: false
     default: "false"
   install-bun:
