@@ -14,7 +14,7 @@
         "@orama/orama": "^3.1.16",
         "@tanstack/react-router": "^1.132.47",
         "@tanstack/react-router-devtools": "^1.132.51",
-        "@tanstack/react-start": "^1.132.56",
+        "@tanstack/react-start": "=1.131.50",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "commander": "^14.0.1",
