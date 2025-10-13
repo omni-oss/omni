@@ -19,7 +19,7 @@ pub enum TaskExecutionResult {
         #[new(default)]
         details: Option<TaskDetails>,
     },
-    Error {
+    Errored {
         task: TaskExecutionNode,
         error: String,
         #[new(default)]
@@ -43,7 +43,7 @@ impl TaskExecutionResult {
     pub fn hash(&self) -> Option<DefaultHash> {
         match self {
             TaskExecutionResult::Completed { hash, .. } => *hash,
-            TaskExecutionResult::Error { .. } => None,
+            TaskExecutionResult::Errored { .. } => None,
             TaskExecutionResult::Skipped { .. } => None,
         }
     }
@@ -61,14 +61,14 @@ impl TaskExecutionResult {
 
     pub fn is_failure(&self) -> bool {
         self.is_skipped_due_to_error()
-            || self.is_error()
+            || self.is_errored()
             || (self.is_completed() && !self.success())
     }
 
     pub fn task(&self) -> &TaskExecutionNode {
         match self {
             TaskExecutionResult::Completed { task, .. } => task,
-            TaskExecutionResult::Error { task, .. } => task,
+            TaskExecutionResult::Errored { task, .. } => task,
             TaskExecutionResult::Skipped { task, .. } => task,
         }
     }
@@ -76,7 +76,7 @@ impl TaskExecutionResult {
     pub fn details(&self) -> Option<&TaskDetails> {
         match self {
             TaskExecutionResult::Completed { details, .. }
-            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Errored { details, .. }
             | TaskExecutionResult::Skipped { details, .. } => details.as_ref(),
         }
     }
@@ -84,7 +84,7 @@ impl TaskExecutionResult {
     pub fn details_mut(&mut self) -> Option<&mut TaskDetails> {
         match self {
             TaskExecutionResult::Completed { details, .. }
-            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Errored { details, .. }
             | TaskExecutionResult::Skipped { details, .. } => details.as_mut(),
         }
     }
@@ -92,7 +92,7 @@ impl TaskExecutionResult {
     pub fn set_details(&mut self, td: TaskDetails) {
         match self {
             TaskExecutionResult::Completed { details, .. }
-            | TaskExecutionResult::Error { details, .. }
+            | TaskExecutionResult::Errored { details, .. }
             | TaskExecutionResult::Skipped { details, .. } => {
                 *details = Some(td);
             }
