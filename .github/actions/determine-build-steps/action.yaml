@@ -9,6 +9,10 @@ inputs:
     description: "Shell to use"
     required: false
     default: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+  github-token:
+    description: "GitHub token for higher rate limit"
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   INSTALL_RUST_TOOLS:
@@ -32,7 +36,7 @@ runs:
       with:
         install-all: false
         install-bun: true
-        github-token: ${{ secrets.GITHUB_TOKEN }}
+        github-token: ${{ inputs.github-token }}
 
     - name: Get Dry Run Result
       shell: ${{ inputs.shell }}
