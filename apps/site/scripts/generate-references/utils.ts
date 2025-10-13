@@ -10,6 +10,6 @@ export async function copyToVfsIfExists(
 ) {
     const filePath = nodePath.join(basePath, path);
     if (fsSync.existsSync(filePath)) {
-        vfs.writeFile(path, await fs.readFile(filePath, "utf-8"));
+        await vfs.writeFile(path, await fs.readFile(filePath, "utf-8"));
     }
 }
