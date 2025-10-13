@@ -44,7 +44,7 @@ runs:
 
     - name: Summarize Dry Run Result
       shell: ${{ inputs.shell }}
-      run: bun run ./scripts/summarize-result/bin/index.js result.json -o result-summary.json
+      run: bun run ./scripts/summarize-results/bin/index.js result.json -o result-summary.json
 
     - name: Load Dry Run Result Into Variable
       id: load_result
