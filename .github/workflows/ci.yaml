@@ -89,12 +89,8 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         run: bun run ./scripts/apply-version/bin/index.js
 
-      - name: Build Omni
-        run: omni run -p=omni -L build
-        # run: cargo build --release -p omni
-
-      - name: Build Orcs
-        run: omni run -p=omni_remote_cache_service -L build
+      - name: Build Projects
+        run: omni run -p "{omni,omni_remote_cache_service}" -L build
         # run: cargo build --release -p omni
 
       - name: Compress Binaries on Linux/macOS
