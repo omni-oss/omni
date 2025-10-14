@@ -50,7 +50,6 @@ runs:
       id: load_result
       shell: bash
       run: |
-        cat result-summary.json
         echo "build_data_json<<EOF" >> $GITHUB_OUTPUT
         cat result-summary.json >> $GITHUB_OUTPUT
         echo -e "\nEOF" >> $GITHUB_OUTPUT
