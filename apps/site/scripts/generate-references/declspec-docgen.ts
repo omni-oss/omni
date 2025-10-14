@@ -2,7 +2,6 @@ import nodePath from "node:path";
 import { z } from "zod";
 import type { FileSystem } from "./fs";
 
-// Zod schemas based on the JSON schema
 const CliArgSchema = z.object({
     id: z.string(),
     aliases: z.array(z.string()),
@@ -34,11 +33,9 @@ const CliCommandSchema = z.object({
     long_flag: z.string().nullable().optional(),
 });
 
-// Type inference from Zod schemas
 type CliArg = z.infer<typeof CliArgSchema>;
 type CliCommand = z.infer<typeof CliCommandSchema>;
 
-// MDX documentation generator
 class DeclspecMdxDocGenerator {
     constructor(
         private fs: FileSystem,
@@ -61,7 +58,6 @@ class DeclspecMdxDocGenerator {
         const p = parents.concat(command.name);
 
         if (command.subcommands.length > 0) {
-            // Command has subcommands - create folder with index.mdx
             const indexPath = `${commandPath}/index.mdx`;
 
             const indexContent = this.generateCommandMdx(
@@ -281,7 +277,6 @@ class DeclspecMdxDocGenerator {
     }
 }
 
-// Parse and validate CLI command with detailed error reporting
 function parseCliCommand(command: unknown): CliCommand {
     const json = typeof command === "string" ? JSON.parse(command) : command;
     const pased = CliCommandSchema.safeParse(json);
@@ -293,7 +288,6 @@ function parseCliCommand(command: unknown): CliCommand {
     }
 }
 
-// Example usage function with Zod validation
 export async function generateRefDocsFromSpec(
     cliSpec: unknown,
     fs: FileSystem,

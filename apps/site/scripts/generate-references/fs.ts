@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import nodePath from "node:path";
 
-// File system types using discriminated union
 export type FsFile = {
     type: "file";
     content: string;
@@ -24,7 +23,6 @@ export interface FileSystem {
     clear(): Promise<void>;
 }
 
-// Virtual file system implementation
 export class VirtualFileSystem implements FileSystem {
     private files: Record<string, string> = {};
 
@@ -50,13 +48,11 @@ export class VirtualFileSystem implements FileSystem {
             for (let i = 0; i < parts.length; i++) {
                 const part = parts[i];
                 if (i === parts.length - 1) {
-                    // File
                     current[part] = {
                         type: "file",
                         content: content,
                     };
                 } else {
-                    // Directory
                     if (!current[part]) {
                         current[part] = {
                             type: "directory",
@@ -84,7 +80,6 @@ export class VirtualFileSystem implements FileSystem {
     }
 }
 
-// Function to write files to disk from a VirtualFileSystem
 async function writeFilesToDisk(vfs: VirtualFileSystem, basePath: string) {
     const files = await vfs.listFiles();
 
