@@ -33,7 +33,7 @@ pub enum CacheSubcommands {
         #[command(flatten)]
         args: PruneArgs,
     },
-    #[command(about = "Prune the cache")]
+    #[command(about = "Remote cache related commands")]
     Remote {
         #[command(flatten)]
         args: RemoteArgs,
@@ -124,6 +124,7 @@ pub struct RemoteArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum RemoteSubcommands {
+    #[command(about = "Setup remote caching")]
     Setup {
         #[command(flatten)]
         args: SetupArgs,
