@@ -279,7 +279,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         trace::warn!("No cache entries matched the given filters");
     } else {
         if !cli_args.dry_run {
-            trace::info!("--- Cache Entries ---");
+            println!("--- Cache Entries ---");
         }
 
         let pruned_count = pruned.len();
