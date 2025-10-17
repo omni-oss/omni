@@ -7,6 +7,7 @@ mod loaded_context;
 mod project_config_loader;
 mod project_data_extractor;
 mod project_discovery;
+mod project_hasher;
 mod project_query;
 mod sys;
 #[cfg(test)]

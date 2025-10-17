@@ -12,6 +12,7 @@ use omni_configurations::{
     MetaConfiguration, RemoteCacheConfiguration, WorkspaceConfiguration,
 };
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
+use omni_execution_plan::DefaultExecutionPlanProvider;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
 use omni_tracing_subscriber::TracingConfig;
@@ -21,6 +22,7 @@ use system_traits::impls::RealSys;
 use crate::{
     Context, ContextSys, EnvLoader, GetVarsArgs,
     project_data_extractor::ProjectDataExtractions,
+    project_hasher::{ProjectHasher, ProjectHasherError},
     project_query::ProjectQuery,
     utils::{EnvVarsMap, vars_os},
     workspace_hasher::{WorkspaceHasher, WorkspaceHasherError},
@@ -135,6 +137,52 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
             .await?)
     }
 
+    fn get_execution_plan_provider<'a>(
+        &'a self,
+    ) -> DefaultExecutionPlanProvider<'a, ContextWrapper<'a, TSys>> {
+        DefaultExecutionPlanProvider::new(ContextWrapper(self))
+    }
+
+    pub async fn get_project_hash(
+        &self,
+        project_name: &str,
+        task_name: Option<&str>,
+    ) -> Result<DefaultHash, LoadedContextError> {
+        let cache_dir = self.cache_dir();
+        let hasher = self.get_project_hasher(&cache_dir)?;
+        let execution_plan_provider = self.get_execution_plan_provider();
+
+        Ok(hasher
+            .hash(
+                project_name,
+                task_name,
+                None,
+                self,
+                &execution_plan_provider,
+            )
+            .await?)
+    }
+
+    pub async fn get_project_hash_string(
+        &self,
+        project_name: &str,
+        task_name: Option<&str>,
+    ) -> Result<String, LoadedContextError> {
+        let cache_dir = self.cache_dir();
+        let hasher = self.get_project_hasher(&cache_dir)?;
+        let execution_plan_provider = self.get_execution_plan_provider();
+
+        Ok(hasher
+            .hash_string(
+                project_name,
+                task_name,
+                None,
+                self,
+                &execution_plan_provider,
+            )
+            .await?)
+    }
+
     pub fn get_project_graph(
         &self,
     ) -> Result<ProjectGraph, LoadedContextError> {
@@ -209,6 +257,19 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
 
         Ok(hasher)
     }
+
+    fn get_project_hasher<'a>(
+        &'a self,
+        cache_dir: &'a Path,
+    ) -> Result<ProjectHasher<'a, TSys>, LoadedContextError> {
+        let hasher = ProjectHasher::new(
+            self.root_dir(),
+            cache_dir,
+            self.unloaded_context.sys(),
+        );
+
+        Ok(hasher)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -256,5 +317,40 @@ enum LoadedContextErrorInner {
     WorkspaceHasher(#[from] WorkspaceHasherError),
 
     #[error(transparent)]
+    ProjectHasher(#[from] ProjectHasherError),
+
+    #[error(transparent)]
     Expansion(#[from] ExpansionError),
+}
+
+// Private impls
+pub struct ContextWrapper<'a, TSys: ContextSys>(&'a LoadedContext<TSys>);
+
+impl<'a, TSys: ContextSys> omni_execution_plan::Context
+    for ContextWrapper<'a, TSys>
+{
+    type Error = LoadedContextError;
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&MetaConfiguration> {
+        self.0.get_project_meta_config(project_name)
+    }
+
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&MetaConfiguration> {
+        self.0.get_task_meta_config(project_name, task_name)
+    }
+
+    fn get_project_graph(&self) -> Result<ProjectGraph, Self::Error> {
+        self.0.get_project_graph()
+    }
+
+    fn projects(&self) -> &[Project] {
+        self.0.projects()
+    }
 }

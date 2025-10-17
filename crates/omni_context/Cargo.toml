@@ -48,6 +48,7 @@ owo-colors = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 omni_task_context = { workspace = true }
 omni_remote_cache_client = { workspace = true }
+omni_execution_plan = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1,4 +1,4 @@
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use omni_tracing_subscriber::noop_subscriber;
 use tracing_futures::WithSubscriber;
 
@@ -30,6 +30,21 @@ pub struct HashArgs {
 pub enum HashSubcommands {
     #[command(about = "Get the hash for the workspace")]
     Workspace,
+
+    #[command(about = "Get the hash for a project")]
+    Project {
+        #[command(flatten)]
+        command: HashProjectCommand,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct HashProjectCommand {
+    #[arg(required = true, help = "Project name")]
+    project: String,
+
+    #[arg(long, short = 't', help = "Hash a specific task")]
+    task: Option<String>,
 }
 
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
@@ -44,6 +59,22 @@ pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
     match command.subcommand {
         HashSubcommands::Workspace => {
             let hashstring = ctx.get_workspace_hash_string().await?;
+
+            if command.args.raw_value {
+                print!("{hashstring}");
+            } else {
+                println!("{hashstring}");
+            }
+        }
+        HashSubcommands::Project {
+            command: ref project_cmd,
+        } => {
+            let hashstring = ctx
+                .get_project_hash_string(
+                    &project_cmd.project,
+                    project_cmd.task.as_deref(),
+                )
+                .await?;
 
             if command.args.raw_value {
                 print!("{hashstring}");

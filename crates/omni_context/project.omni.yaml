@@ -13,6 +13,7 @@ dependencies:
   - omni_tracing_subscriber
   - omni_task_context
   - omni_remote_cache_client
+  - omni_execution_plan
   - trace
   - system_traits
   - env
