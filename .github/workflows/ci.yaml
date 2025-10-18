@@ -85,7 +85,7 @@ jobs:
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apply version
+      - name: Apply Version
         if: ${{ github.ref_type == 'tag' }}
         run: bun run ./scripts/apply-version/bin/index.js
 
@@ -130,7 +130,7 @@ jobs:
     if: github.ref_type == 'tag'
 
     steps:
-      - name: Download all binaries
+      - name: Download All Binaries
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
