@@ -13,6 +13,8 @@ use omni_process::{ChildProcessError, ChildProcessResult};
 use omni_task_context::TaskContext;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
+use crate::Force;
+
 #[derive(Debug, Builder, new)]
 #[builder(setter(into, strip_option))]
 pub struct CacheManager<TCacheStore, TSys>
@@ -25,8 +27,8 @@ where
     #[builder(default = false)]
     dry_run: bool,
 
-    #[builder(default = false)]
-    force: bool,
+    #[builder(default = Force::None)]
+    force: Force,
 
     #[builder(default = false)]
     no_cache: bool,
@@ -90,7 +92,7 @@ where
         inputs: &[TaskContext<'_>],
     ) -> Result<UnorderedMap<String, CachedTaskExecution>, CacheManagerError>
     {
-        if self.force {
+        if self.force.is_all() {
             return Ok(unordered_map!());
         }
 
@@ -111,6 +113,11 @@ where
             .into_iter()
             .filter_map(|c| {
                 let c = c?;
+
+                if c.exit_code != 0 && self.force.is_failed() {
+                    return None;
+                }
+
                 Some((format!("{}#{}", c.project_name, c.task_name), c))
             })
             .collect())
