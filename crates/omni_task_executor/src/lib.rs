@@ -4,6 +4,7 @@ mod cache_store_provider;
 mod config;
 mod execution_plan_provider;
 mod executor;
+mod force;
 mod in_memory_tracer;
 mod on_failure;
 mod pipeline;
@@ -14,6 +15,7 @@ mod task_context_provider;
 
 pub use config::*;
 pub use executor::*;
+pub use force::*;
 pub use omni_execution_plan::Call;
 pub use on_failure::*;
 pub use result::*;

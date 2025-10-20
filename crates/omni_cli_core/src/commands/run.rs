@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use clap::Args;
 use clap_utils::EnumValueAdapter;
-use omni_task_executor::ExecutionConfigBuilder;
+use omni_task_executor::{ExecutionConfigBuilder, Force};
 
 use crate::{
     commands::{
@@ -60,9 +60,11 @@ pub struct RunCommand {
         long,
         short,
         help = "Force execution of the task, even if it's already cached",
-        default_value_t = false
+        default_value_t = EnumValueAdapter::new(Force::None),
+        default_missing_value = "all",
+        value_enum
     )]
-    pub force: bool,
+    pub force: EnumValueAdapter<Force>,
 
     #[command(flatten)]
     pub run: RunArgs,
@@ -84,7 +86,7 @@ pub async fn run(
         .ignore_dependencies(command.ignore_dependencies)
         .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
-        .force(command.force)
+        .force(command.force.value())
         .replay_cached_logs(!command.no_replay_logs)
         .call(Call::new_task(&command.task));
 

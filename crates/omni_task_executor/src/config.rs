@@ -3,7 +3,7 @@ use getset::{CloneGetters, CopyGetters, Getters};
 use omni_configurations::Ui;
 use omni_execution_plan::Call;
 
-use crate::OnFailure;
+use crate::{Force, OnFailure};
 
 #[derive(
     Debug,
@@ -34,9 +34,9 @@ pub struct ExecutionConfig {
     meta_filter: Option<String>,
 
     /// if true, it will not consider the cache and will always execute the task
-    #[builder(default = false)]
+    #[builder(default = Force::All)]
     #[getset(get_copy = "pub")]
-    force: bool,
+    force: Force,
 
     /// if true, it will not cache the execution result, future runs will not see the cached result
     #[builder(default = false)]
@@ -84,7 +84,7 @@ impl ExecutionConfigBuilder {
             }
 
             if self.force.is_none() {
-                self.force = Some(true);
+                self.force = Some(Force::All);
             }
 
             if self.no_cache.is_none() {

@@ -2,7 +2,7 @@ use clap::{ValueEnum, builder::PossibleValue};
 use strum::VariantArray;
 
 pub trait EnumValueAdapterContract:
-    ToString + Clone + Copy + strum::VariantArray + 'static
+    ToString + Clone + Copy + VariantArray + 'static
 {
 }
 
@@ -40,5 +40,11 @@ impl<T: EnumValueAdapterContract> ValueEnum for EnumValueAdapter<T> {
     fn to_possible_value(&self) -> Option<PossibleValue> {
         let text = self.0.to_string();
         Some(PossibleValue::new(text))
+    }
+}
+
+impl<T: EnumValueAdapterContract> ToString for EnumValueAdapter<T> {
+    fn to_string(&self) -> String {
+        self.0.to_string()
     }
 }
