@@ -9,11 +9,21 @@
     "languages": {
         "JavaScript": {
             "tab_size": 4,
-            "formatter": { "language_server": { "name": "biome" } }
+            "formatter": { "language_server": { "name": "biome" } },
+            "code_actions_on_format": {
+                "source.fixAll.biome": true,
+                "source.organizeImports.biome": true,
+                "source.removeUnusedImports.ts": true
+            }
         },
         "TypeScript": {
             "tab_size": 4,
-            "formatter": { "language_server": { "name": "biome" } }
+            "formatter": { "language_server": { "name": "biome" } },
+            "code_actions_on_format": {
+                "source.fixAll.biome": true,
+                "source.organizeImports.biome": true,
+                "source.removeUnusedImports.ts": true
+            }
         },
         "HTML": {
             "tab_size": 4,
@@ -23,6 +33,11 @@
             "tab_size": 4,
             "formatter": {
                 "language_server": { "name": "biome" }
+            },
+            "code_actions_on_format": {
+                "source.fixAll.biome": true,
+                "source.organizeImports.biome": true,
+                "source.removeUnusedImports.ts": true
             }
         },
         "TOML": {
@@ -36,7 +51,12 @@
         },
         "TSX": {
             "tab_size": 4,
-            "formatter": { "language_server": { "name": "biome" } }
+            "formatter": { "language_server": { "name": "biome" } },
+            "code_actions_on_format": {
+                "source.fixAll.biome": true,
+                "source.organizeImports.biome": true,
+                "source.removeUnusedImports.ts": true
+            }
         },
         "JSON": {
             "tab_size": 4,

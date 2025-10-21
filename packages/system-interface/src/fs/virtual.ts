@@ -1,43 +1,56 @@
 import { Dirent } from "node:fs";
+import { join } from "node:path";
 import type { IFs, Volume } from "memfs";
-import type { FileStat, FileSystem } from "./interfaces";
+import type { Process } from "@/proc";
 import { promisify, promisifyNoErr } from "./helper";
+import type { FileStat, FileSystem } from "./interfaces";
 
 export class VirtualFileSystem implements FileSystem {
     private fs: ReturnType<typeof promisifyMemFs>;
 
-    constructor(mem: {
-        fs: IFs;
-        vol: Volume;
-    }) {
+    constructor(
+        mem: {
+            fs: IFs;
+            vol: Volume;
+        },
+        private proc: Process,
+    ) {
         this.fs = promisifyMemFs(mem);
     }
 
+    private resolve(path: string): string {
+        return join(this.proc.currentDir(), path);
+    }
+
     async readFileAsString(path: string): Promise<string> {
-        const data = await this.fs.readFile(path, { encoding: "utf-8" });
+        const data = await this.fs.readFile(this.resolve(path), {
+            encoding: "utf-8",
+        });
         return data.toString();
     }
 
     writeStringToFile(path: string, content: string): Promise<void> {
         const data = Buffer.from(content, "utf-8");
-        return this.fs.writeFile(path, data, { encoding: "utf-8" });
+        return this.fs.writeFile(this.resolve(path), data, {
+            encoding: "utf-8",
+        });
     }
 
     pathExists(path: string): Promise<boolean> {
-        return this.fs.exists(path);
+        return this.fs.exists(this.resolve(path));
     }
 
     async createDirectory(
         path: string,
         options?: { recursive?: boolean },
     ): Promise<void> {
-        await this.fs.mkdir(path, {
+        await this.fs.mkdir(this.resolve(path), {
             recursive: options?.recursive ?? false,
         });
     }
 
     async readDirectory(path: string): Promise<string[]> {
-        const files = await this.fs.readdir(path, {});
+        const files = await this.fs.readdir(this.resolve(path), {});
 
         return files.map((file) => {
             if (file instanceof Dirent) {
@@ -49,7 +62,7 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     remove(path: string, options?: { recursive?: boolean }): Promise<void> {
-        return this.fs.rm(path, {
+        return this.fs.rm(this.resolve(path), {
             recursive: options?.recursive ?? false,
         });
     }
@@ -59,7 +72,7 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     async stat(path: string): Promise<FileStat> {
-        const stat = await this.fs.stat(path, {
+        const stat = await this.fs.stat(this.resolve(path), {
             throwIfNoEntry: true,
             bigint: false,
         });
@@ -74,17 +87,17 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     async isFile(path: string): Promise<boolean> {
-        const stat = await this.stat(path);
+        const stat = await this.stat(this.resolve(path));
         return stat.isFile();
     }
 
     async isDirectory(path: string): Promise<boolean> {
-        const stat = await this.stat(path);
+        const stat = await this.stat(this.resolve(path));
         return stat.isDirectory();
     }
 
     async isSymbolicLink(path: string): Promise<boolean> {
-        const stat = await this.stat(path);
+        const stat = await this.stat(this.resolve(path));
         return stat.isSymbolicLink();
     }
 
@@ -93,14 +106,14 @@ export class VirtualFileSystem implements FileSystem {
         dest: string,
         options?: { overwrite?: boolean; recursive?: boolean },
     ): Promise<void> {
-        return this.fs.cp(src, dest, {
+        return this.fs.cp(this.resolve(src), this.resolve(dest), {
             recursive: options?.recursive ?? false,
             force: options?.overwrite ?? false,
         });
     }
 
     appendStringToFile(path: string, content: string): Promise<void> {
-        return this.fs.appendFile(path, content, {
+        return this.fs.appendFile(this.resolve(path), content, {
             encoding: "utf-8",
         });
     }
