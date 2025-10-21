@@ -1,5 +1,5 @@
 {
-    "name": "@omni/system-interface",
+    "name": "@omni-oss/system-interface",
     "version": "0.0.0-semantically-released",
     "exports": {
         ".": "./src/index.ts"
