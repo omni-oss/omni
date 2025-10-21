@@ -11,5 +11,6 @@ export default mergeConfig(baseConfig, {
                 `system-interface.${format === "cjs" ? "cjs" : "mjs"}`,
             name: "SystemInterface",
         },
+        target: ["node16"],
     },
 } satisfies UserConfig);
