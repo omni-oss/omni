@@ -1,6 +1,7 @@
 import { Dirent } from "node:fs";
 import type { IFs, Volume } from "memfs";
 import type { FileStat, FileSystem } from "./interfaces";
+import { promisify, promisifyNoErr } from "./helper";
 
 export class VirtualFileSystem implements FileSystem {
     private fs: ReturnType<typeof promisifyMemFs>;
@@ -103,33 +104,6 @@ export class VirtualFileSystem implements FileSystem {
             encoding: "utf-8",
         });
     }
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: generic
-function promisify<TArgs extends any[], TError, TResult>(
-    fn: (...args: [...TArgs, (error: TError, res?: TResult) => void]) => void,
-) {
-    return (...args: TArgs): Promise<TResult> => {
-        return new Promise((resolve, reject) => {
-            fn(...args, (err, result) => {
-                if (err) reject(err);
-                else resolve(result as TResult);
-            });
-        });
-    };
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: generic
-function promisifyNoErr<TArgs extends any[], TResult>(
-    fn: (...args: [...TArgs, (res: TResult) => void]) => void,
-) {
-    return (...args: TArgs): Promise<TResult> => {
-        return new Promise((resolve, _reject) => {
-            fn(...args, (result) => {
-                return resolve(result as TResult);
-            });
-        });
-    };
 }
 
 function promisifyMemFs(mem: { fs: IFs; vol: Volume }) {
