@@ -1,4 +1,4 @@
-import baseConfig from "@repo/vite-config/library";
+import baseConfig from "@omni-oss/vite-config/library";
 import { mergeConfig, type UserConfig } from "vite";
 
 export default mergeConfig(baseConfig, {

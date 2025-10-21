@@ -1,5 +1,5 @@
 {
-    "name": "@repo/bridge-rpc",
+    "name": "@omni-oss/bridge-rpc",
     "version": "0.0.0-semantically-released",
     "exports": {
         ".": "./src/index.ts"
@@ -9,8 +9,8 @@
         "zod": "^4.1.12"
     },
     "devDependencies": {
-        "@repo/tsconfig": "workspace:*",
-        "@repo/vite-config": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:*",
+        "@omni-oss/vite-config": "workspace:*",
         "vite": "^7.1.9",
         "vitest": "^3.2.4",
         "typescript": "^5.9.3",

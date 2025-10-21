@@ -1,5 +1,5 @@
 {
-    "name": "@repo/tsconfig",
+    "name": "@omni-oss/tsconfig",
     "version": "0.0.0-semantically-released",
     "description": "",
     "main": "base.json",

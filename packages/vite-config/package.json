@@ -1,5 +1,5 @@
 {
-    "name": "@repo/vite-config",
+    "name": "@omni-oss/vite-config",
     "type": "module",
     "version": "0.0.0-semantically-released",
     "exports": {
@@ -14,6 +14,6 @@
     "devDependencies": {
         "unplugin-dts": "^1.0.0-beta.6",
         "vite-tsconfig-paths": "^5.1.4",
-        "@repo/tsconfig": "workspace:*"
+        "@omni-oss/tsconfig": "workspace:*"
     }
 }

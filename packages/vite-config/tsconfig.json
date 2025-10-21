@@ -1,5 +1,5 @@
 {
-	"extends": ["@repo/tsconfig/base.json"],
+	"extends": ["@omni-oss/tsconfig/base.json"],
     "compilerOptions": {
         "moduleResolution": "bundler",
         "noEmit": true,

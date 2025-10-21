@@ -1,12 +1,12 @@
 {
-    "name": "@repo/root",
+    "name": "@omni-oss/root",
     "version": "0.0.0-semantically-released",
     "dependencies": {
-        "@repo/biome-config": "workspace:*",
-        "@repo/tsconfig": "workspace:*",
+        "@omni-oss/biome-config": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:*",
         "@biomejs/biome": "^2.2.5",
-        "@repo/apply-version": "workspace:*",
-        "@repo/summarize-results": "workspace:*",
+        "@omni-oss/apply-version": "workspace:*",
+        "@omni-oss/summarize-results": "workspace:*",
         "vite": "^7.1.9",
         "vitest": "^3.2.4",
         "typescript": "^5.9.3"

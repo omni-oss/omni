@@ -1,8 +1,8 @@
 {
-    "name": "@repo/biome-config",
+    "name": "@omni-oss/biome-config",
     "version": "0.0.0-semantically-released",
     "description": "",
     "keywords": [],
     "author": "",
-    "license": "ISC"
+    "license": "MIT"
 }
