@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: ts-vite-lib
+
+extends:
+  - "./ts-vite.omni.yaml"
+  - "./ts-lib.omni.yaml"

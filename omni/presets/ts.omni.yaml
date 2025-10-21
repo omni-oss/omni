@@ -12,10 +12,10 @@ extends:
 
 tasks:
   test:unit:
-    command: bun x vitest --config ./vitest.config.unit.ts run
+    command: bun run test:unit
 
   test:integration:
-    command: bun x vitest --config ./vitest.config.integration.ts run
+    command: bun run test:integration
     dependencies:
       - test:unit
 
