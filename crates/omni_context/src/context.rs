@@ -192,6 +192,7 @@ impl<TSys: ContextSys> Context<TSys> {
             ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
                 .load_project_configs(&project_paths)
                 .await?;
+
         let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
         let project_configs = xt_graph.get_or_process_all_nodes()?;
 

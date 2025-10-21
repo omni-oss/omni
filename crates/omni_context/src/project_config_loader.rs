@@ -31,6 +31,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
         let mut project_configs = vec![];
         let mut loaded = HashSet::new();
         let mut to_process = project_paths.to_vec();
+        to_process.sort();
         let root_dir = &self.root_dir;
 
         while let Some(conf) = to_process.pop() {
