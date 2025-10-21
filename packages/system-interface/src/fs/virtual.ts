@@ -1,5 +1,5 @@
-import { Dirent } from "node:fs";
-import { resolve } from "node:path";
+import nodeFs from "node:fs";
+import nodePath from "node:path";
 import type { IFs, Volume } from "memfs";
 import type { Process } from "@/proc";
 import { promisify, promisifyNoErr } from "./helper";
@@ -19,7 +19,7 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     private resolve(path: string): string {
-        return resolve(this.proc.currentDir(), path);
+        return nodePath.resolve(this.proc.currentDir(), path);
     }
 
     async readFileAsString(path: string): Promise<string> {
@@ -53,7 +53,7 @@ export class VirtualFileSystem implements FileSystem {
         const files = await this.fs.readdir(this.resolve(path), {});
 
         return files.map((file) => {
-            if (file instanceof Dirent) {
+            if (file instanceof nodeFs.Dirent) {
                 return file.name;
             } else {
                 return file;

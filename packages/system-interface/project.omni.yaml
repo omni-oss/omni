@@ -2,21 +2,4 @@
 name: "@omni-oss/system-interface"
 
 extends:
-  - "@workspace/omni/presets/ts-lib.omni.yaml"
-
-tasks:
-  build:
-    command: bun x vite build
-
-  test:unit:
-    command: bun x vitest --config ./vitest.config.unit.ts run
-
-  test:integration:
-    command: bun x vitest --config ./vitest.config.integration.ts run
-    dependencies:
-      - test:unit
-
-  test:
-    dependencies:
-      - test:unit
-      - test:integration
+  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
