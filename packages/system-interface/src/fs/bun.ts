@@ -43,20 +43,28 @@ export class BunFileSystem implements FileSystem {
     }
 
     stat(path: string): Promise<FileStat> {
+        throwIfBunNotAvailable();
+
         return Bun.file(path).stat();
     }
 
     async isFile(path: string): Promise<boolean> {
+        throwIfBunNotAvailable();
+
         const stat = await Bun.file(path).stat();
         return stat.isFile();
     }
 
     async isDirectory(path: string): Promise<boolean> {
+        throwIfBunNotAvailable();
+
         const stat = await Bun.file(path).stat();
         return stat.isDirectory();
     }
 
     async isSymbolicLink(path: string): Promise<boolean> {
+        throwIfBunNotAvailable();
+
         const stat = await Bun.file(path).stat();
         return stat.isSymbolicLink();
     }
