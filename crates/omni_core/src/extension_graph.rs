@@ -8,7 +8,7 @@ use merge::Merge;
 use petgraph::{
     algo::is_cyclic_directed,
     graph::{DiGraph, EdgeIndex, NodeIndex},
-    visit::{Dfs, IntoNodeReferences as _, Reversed},
+    visit::{Bfs, IntoNodeReferences as _, Reversed},
 };
 use sets::unordered_set;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -202,10 +202,10 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         })?;
 
         let graph = Reversed(&self.di_graph);
-        let mut dfs = Dfs::new(graph, node);
+        let mut bfs = Bfs::new(graph, node);
 
         let mut node_indices = vec![];
-        while let Some(node) = dfs.next(graph) {
+        while let Some(node) = bfs.next(graph) {
             node_indices.push(node);
         }
 
@@ -310,7 +310,7 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
         let mut ids = unordered_set![];
 
         let graph = Reversed(&self.di_graph);
-        let mut dfs = Dfs::new(
+        let mut dfs = Bfs::new(
             graph,
             self.get_node_index(id).ok_or_else(|| {
                 ExtensionGraphErrorInner::NodeNotFound {
