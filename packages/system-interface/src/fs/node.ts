@@ -24,7 +24,7 @@ export class NodeFileSystem implements FileSystem {
     ): Promise<void> {
         const fs = await loadNodeFs();
 
-        await fs.mkdir(path, { recursive: options?.recursive });
+        await fs.mkdir(path, { recursive: options?.recursive ?? false });
     }
 
     async readDirectory(path: string): Promise<string[]> {
@@ -39,7 +39,7 @@ export class NodeFileSystem implements FileSystem {
     ): Promise<void> {
         const fs = await loadNodeFs();
 
-        return fs.rm(path, { recursive: options?.recursive });
+        return fs.rm(path, { recursive: options?.recursive ?? false });
     }
 
     async rename(oldPath: string, newPath: string): Promise<void> {
@@ -77,8 +77,8 @@ export class NodeFileSystem implements FileSystem {
         const fs = await loadNodeFs();
 
         return fs.cp(src, dest, {
-            recursive: options?.recursive,
-            force: options?.overwrite,
+            recursive: options?.recursive ?? false,
+            force: options?.overwrite ?? false,
         });
     }
 
