@@ -1,4 +1,5 @@
-import type { Process } from ".";
+import { throwIfBunNotAvailable } from "@/platform-helpers";
+import type { Process, ProcessEnv } from ".";
 import { NodeProcess } from "./proc-node";
 
 export class BunProcess implements Process {
@@ -10,5 +11,17 @@ export class BunProcess implements Process {
 
     setCurrentDir(dir: string): void {
         this.fallbackProc.setCurrentDir(dir);
+    }
+
+    args(): string[] {
+        throwIfBunNotAvailable();
+
+        return Bun.argv;
+    }
+
+    env(): ProcessEnv {
+        throwIfBunNotAvailable();
+
+        return Bun.env;
     }
 }
