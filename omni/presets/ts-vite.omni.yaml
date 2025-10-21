@@ -1,14 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: ts
-
-cache:
-  key:
-    files:
-      - "package.json"
-      - "./src/**/*.{ts,tsx,js,jsx,cjs,mjs,mts,cts}"
+name: ts-vite
 
 extends:
-  - "./base.omni.yaml"
+  - "./ts.omni.yaml"
 
 tasks:
   test:unit:
