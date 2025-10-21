@@ -1,6 +1,6 @@
 import { throwIfDenoNotAvailable } from "@/platform-helpers";
-import type { FileStat, FileSystem } from ".";
-import { NodeFileSystem } from "./fs-node";
+import type { FileStat, FileSystem } from "./interfaces";
+import { NodeFileSystem } from "./node";
 
 export class DenoFileSystem implements FileSystem {
     private fallbackFs: NodeFileSystem = new NodeFileSystem();

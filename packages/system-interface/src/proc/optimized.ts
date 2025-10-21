@@ -1,15 +1,15 @@
-import type { Process, ProcessEnv } from "./proc-interfaces";
+import type { Process, ProcessEnv } from "./interfaces";
 
 async function getProc(): Promise<Process> {
     if (typeof Deno !== "undefined") {
-        return new (await import("./proc-deno")).DenoProcess();
+        return new (await import("./deno")).DenoProcess();
     }
 
     if (typeof Bun !== "undefined") {
-        return new (await import("./proc-bun")).BunProcess();
+        return new (await import("./bun")).BunProcess();
     }
 
-    return new (await import("./proc-node")).NodeProcess();
+    return new (await import("./node")).NodeProcess();
 }
 
 export class OptimizedProcess implements Process {

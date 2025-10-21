@@ -1,6 +1,6 @@
 import os from "node:os";
-import { NodeProcess } from "./proc-node";
-import { declareProcTests } from "./proc-test-declarations";
+import { NodeProcess } from "./node";
+import { declareProcTests } from "./test-declarations";
 
 declareProcTests({
     name: "Node",

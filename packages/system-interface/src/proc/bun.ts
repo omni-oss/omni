@@ -1,6 +1,6 @@
 import { throwIfBunNotAvailable } from "@/platform-helpers";
 import type { Process, ProcessEnv } from ".";
-import { NodeProcess } from "./proc-node";
+import { NodeProcess } from "./node";
 
 export class BunProcess implements Process {
     private fallbackProc: NodeProcess = new NodeProcess();
