@@ -1,5 +1,5 @@
 {
-    "name": "@repo/summarize-results",
+    "name": "@omni-oss/summarize-results",
     "version": "0.0.0-semantically-released",
     "scripts": {
         "build": "bun run ./build.ts"
@@ -9,7 +9,7 @@
         ".": "./src/lib.ts"
     },
     "devDependencies": {
-        "@repo/tsconfig": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:*",
         "typescript": "^5.9.3",
         "@types/node": "24.7.2",
         "@types/bun": "^1.3.0",

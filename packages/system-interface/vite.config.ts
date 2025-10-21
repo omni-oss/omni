@@ -8,8 +8,8 @@ export default mergeConfig(baseConfig, {
             entry: "src/index.ts",
             formats: ["es", "cjs"],
             fileName: (format) =>
-                `bridge-rpc.${format === "cjs" ? "cjs" : "mjs"}`,
-            name: "BridgeRpc",
+                `system-interface.${format === "cjs" ? "cjs" : "mjs"}`,
+            name: "SystemInterface",
         },
     },
 } satisfies UserConfig);

@@ -1,5 +1,5 @@
 {
-    "name": "@repo/site",
+    "name": "@omni-oss/site",
     "private": true,
     "sideEffects": false,
     "type": "module",

@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: "@repo/omni-remote-cache-service-tests"
+name: "@omni-oss/omni-remote-cache-service-tests"
 
 extends:
   - "@workspace/omni/presets/ts-lib.omni.yaml"

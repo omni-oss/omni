@@ -1,11 +1,11 @@
 {
-    "$schema": "https://biomejs.dev/schemas/2.2.2/schema.json",
+    "$schema": "https://biomejs.dev/schemas/2.2.6/schema.json",
     "extends": [
-        "./node_modules/@repo/biome-config/formatter.json",
-        "./node_modules/@repo/biome-config/linter.json",
-        "./node_modules/@repo/biome-config/import-sorter.json",
-        "./node_modules/@repo/biome-config/javascript.json",
-        "./node_modules/@repo/biome-config/vcs.json"
+        "./node_modules/@omni-oss/biome-config/formatter.json",
+        "./node_modules/@omni-oss/biome-config/linter.json",
+        "./node_modules/@omni-oss/biome-config/import-sorter.json",
+        "./node_modules/@omni-oss/biome-config/javascript.json",
+        "./node_modules/@omni-oss/biome-config/vcs.json"
     ],
     "files": {
         "includes": [

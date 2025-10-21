@@ -1,5 +1,5 @@
 {
-	"extends": ["@repo/tsconfig/with-paths.json"],
+	"extends": ["@omni-oss/tsconfig/with-paths.json"],
 	"exclude": [
     "coverage",
 		"dist",
