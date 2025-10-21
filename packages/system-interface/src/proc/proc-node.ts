@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { Process } from ".";
+import type { Process, ProcessEnv } from ".";
 
 export class NodeProcess implements Process {
     currentDir(): string {
@@ -8,5 +8,13 @@ export class NodeProcess implements Process {
 
     setCurrentDir(dir: string): void {
         process.chdir(dir);
+    }
+
+    args(): string[] {
+        return process.argv;
+    }
+
+    env(): ProcessEnv {
+        return process.env;
     }
 }

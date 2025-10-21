@@ -1,5 +1,5 @@
 import { throwIfDenoNotAvailable } from "@/platform-helpers";
-import type { Process } from ".";
+import type { Process, ProcessEnv } from ".";
 
 export class DenoProcess implements Process {
     currentDir(): string {
@@ -12,5 +12,17 @@ export class DenoProcess implements Process {
         throwIfDenoNotAvailable();
 
         Deno.chdir(dir);
+    }
+
+    args(): string[] {
+        throwIfDenoNotAvailable();
+
+        return Deno.args;
+    }
+
+    env(): ProcessEnv {
+        throwIfDenoNotAvailable();
+
+        return Deno.env.toObject();
     }
 }
