@@ -1,5 +1,5 @@
 import { Dirent } from "node:fs";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import type { IFs, Volume } from "memfs";
 import type { Process } from "@/proc";
 import { promisify, promisifyNoErr } from "./helper";
@@ -19,7 +19,7 @@ export class VirtualFileSystem implements FileSystem {
     }
 
     private resolve(path: string): string {
-        return join(this.proc.currentDir(), path);
+        return resolve(this.proc.currentDir(), path);
     }
 
     async readFileAsString(path: string): Promise<string> {

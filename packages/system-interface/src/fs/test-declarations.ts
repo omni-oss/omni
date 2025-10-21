@@ -285,6 +285,12 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             it("should be able to stat a directory", async ({ realDir }) => {
                 await expectAbleToStatDirectory(realDir);
             });
+        } else {
+            it("should be able to stat a directory", async ({ tempDir }) => {
+                await withFixture(tempDir, () =>
+                    expectAbleToStatDirectory(tempDir),
+                );
+            });
         }
     });
 }
