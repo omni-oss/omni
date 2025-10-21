@@ -24,7 +24,7 @@ pub struct TaskConfigurationLongForm {
     #[serde(
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
     )]
-    pub siblings: ListConfig<TaskDependencyConfiguration>,
+    pub with: ListConfig<TaskDependencyConfiguration>,
 
     #[serde(default)]
     pub description: Option<Replace<String>>,
@@ -79,7 +79,7 @@ impl Default for TaskConfigurationLongForm {
             enabled: default_enabled(),
             interactive: default_interactive(),
             persistent: default_persistent(),
-            siblings: ListConfig::append(vec![]),
+            with: ListConfig::append(vec![]),
         }
     }
 }
@@ -141,7 +141,7 @@ impl TaskConfiguration {
                 enabled,
                 interactive,
                 persistent,
-                siblings: with,
+                with,
                 ..
             }) => Task::new(
                 command.clone(),
@@ -212,7 +212,7 @@ impl Merge for TaskConfiguration {
                     enabled: a_enabled,
                     interactive: a_interactive,
                     persistent: a_persistent,
-                    siblings: a_with,
+                    with: a_with,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -225,7 +225,7 @@ impl Merge for TaskConfiguration {
                     enabled: b_enabled,
                     interactive: b_interactive,
                     persistent: b_persistent,
-                    siblings: b_with,
+                    with: b_with,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -280,7 +280,7 @@ mod tests {
             interactive: Some(Replace::new(false)),
             persistent: Some(Replace::new(true)),
             enabled: Some(Replace::new(true)),
-            siblings: ListConfig::append(vec![]),
+            with: ListConfig::append(vec![]),
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -299,7 +299,7 @@ mod tests {
             interactive: Some(Replace::new(true)),
             persistent: Some(Replace::new(false)),
             enabled: None,
-            siblings: ListConfig::append(vec![]),
+            with: ListConfig::append(vec![]),
         });
 
         a.merge(b);
@@ -317,7 +317,7 @@ mod tests {
                 interactive: Some(Replace::new(true)),
                 persistent: Some(Replace::new(false)),
                 enabled: Some(Replace::new(true)),
-                siblings: ListConfig::append(vec![]),
+                with: ListConfig::append(vec![]),
             })
         );
     }
