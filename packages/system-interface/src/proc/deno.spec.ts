@@ -1,6 +1,6 @@
 import os from "node:os";
-import { DenoProcess } from "./proc-deno";
-import { declareProcTests } from "./proc-test-declarations";
+import { DenoProcess } from "./deno";
+import { declareProcTests } from "./test-declarations";
 
 declareProcTests({
     name: "Deno",

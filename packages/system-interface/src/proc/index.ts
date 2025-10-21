@@ -1,2 +1,2 @@
-export * from "./proc-interfaces";
-export * from "./proc-optimized";
+export * from "./interfaces";
+export * from "./optimized";

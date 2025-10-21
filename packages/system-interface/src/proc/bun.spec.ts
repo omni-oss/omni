@@ -1,6 +1,6 @@
 import os from "node:os";
-import { BunProcess } from "./proc-bun";
-import { declareProcTests } from "./proc-test-declarations";
+import { BunProcess } from "./bun";
+import { declareProcTests } from "./test-declarations";
 
 declareProcTests({
     name: "Bun",

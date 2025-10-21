@@ -1,5 +1,5 @@
-import type { FileStat, FileSystem } from ".";
-import { loadNodeFs } from "./fs-helper";
+import { loadNodeFs } from "./helper";
+import type { FileStat, FileSystem } from "./interfaces";
 
 export class NodeFileSystem implements FileSystem {
     async readFileAsString(path: string): Promise<string> {

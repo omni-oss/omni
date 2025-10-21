@@ -1,6 +1,6 @@
 import { Dirent } from "node:fs";
 import type { IFs, Volume } from "memfs";
-import type { FileStat, FileSystem } from "./fs-interfaces";
+import type { FileStat, FileSystem } from "./interfaces";
 
 export class VirtualFileSystem implements FileSystem {
     private fs: ReturnType<typeof promisifyMemFs>;

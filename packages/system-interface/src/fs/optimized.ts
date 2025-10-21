@@ -1,15 +1,15 @@
-import type { FileStat, FileSystem } from ".";
+import type { FileStat, FileSystem } from "./interfaces";
 
 async function getFs(): Promise<FileSystem> {
     if (typeof Deno !== "undefined") {
-        return new (await import("./fs-deno")).DenoFileSystem();
+        return new (await import("./deno")).DenoFileSystem();
     }
 
     if (typeof Bun !== "undefined") {
-        return new (await import("./fs-bun")).BunFileSystem();
+        return new (await import("./bun")).BunFileSystem();
     }
 
-    return new (await import("./fs-node")).NodeFileSystem();
+    return new (await import("./node")).NodeFileSystem();
 }
 
 /**

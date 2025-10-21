@@ -1,7 +1,7 @@
 import { type FileSystem, OptimizedFileSystem } from "@/fs";
 import type { Process } from "@/proc";
 import { OptimizedProcess } from "@/proc";
-import type { System } from "./sys-interfaces";
+import type { System } from "./interfaces";
 
 export class OptimizedSystem implements System {
     private constructor(
