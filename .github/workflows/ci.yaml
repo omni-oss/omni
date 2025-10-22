@@ -46,7 +46,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Test
-        run: omni run -L test
+        run: omni run -L -f=failed test
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
@@ -90,7 +90,7 @@ jobs:
         run: bun run ./scripts/apply-version/bin/index.js
 
       - name: Build Projects
-        run: omni run -p "{omni,omni_remote_cache_service}" -L build
+        run: omni run -p "{omni,omni_remote_cache_service}" -L -f=failed build
         # run: cargo build --release -p omni
 
       - name: Compress Binaries on Linux/macOS
