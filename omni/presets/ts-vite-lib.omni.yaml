@@ -2,5 +2,5 @@
 name: ts-vite-lib
 
 extends:
-  - "./ts-vite.omni.yaml"
   - "./ts-lib.omni.yaml"
+  - "./ts-vite.omni.yaml"
