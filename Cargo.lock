@@ -4128,6 +4128,7 @@ dependencies = [
  "omni_context",
  "omni_core",
  "omni_expressions",
+ "omni_generator_configurations",
  "omni_hasher",
  "omni_process",
  "omni_setup",
@@ -4320,6 +4321,34 @@ dependencies = [
  "strum 0.27.2",
  "tera",
  "thiserror 2.0.17",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_generator_configurations"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "config_utils",
+ "derive-new",
+ "derive_more",
+ "eyre",
+ "garde",
+ "js_runtime",
+ "lazy-regex",
+ "maps",
+ "merge",
+ "omni_core",
+ "omni_expressions",
+ "omni_types",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "strum 0.27.2",
+ "system_traits",
+ "thiserror 2.0.17",
+ "toml 0.9.8",
  "trace",
  "tracing",
 ]
