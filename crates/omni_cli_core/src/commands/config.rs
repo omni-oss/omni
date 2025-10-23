@@ -1,9 +1,8 @@
 use clap::ValueEnum;
+use omni_generator_configurations::GeneratorConfiguration;
 use schemars::{Schema as SchemarsSchema, schema_for};
 
-use crate::configurations::{
-    GeneratorConfiguration, ProjectConfiguration, WorkspaceConfiguration,
-};
+use crate::configurations::{ProjectConfiguration, WorkspaceConfiguration};
 
 #[derive(clap::Args)]
 pub struct ConfigCommand {

@@ -1,0 +1,34 @@
+[package]
+name = "omni_generator_configurations"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_norway = { workspace = true }
+toml = { workspace = true }
+schemars = { workspace = true }
+derive_more = { workspace = true }
+thiserror = { workspace = true }
+eyre = { workspace = true }
+trace = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+strum = { workspace = true }
+derive-new = { workspace = true }
+maps = { workspace = true }
+merge = { workspace = true }
+omni_core = { workspace = true }
+omni_expressions = { workspace = true }
+config_utils = { workspace = true }
+omni_types = { workspace = true }
+js_runtime = { workspace = true }
+garde = { workspace = true }
+system_traits = { workspace = true }
+lazy-regex = { workspace = true }

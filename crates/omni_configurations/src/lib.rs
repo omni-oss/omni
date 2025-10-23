@@ -3,7 +3,6 @@
 mod cache_configuration;
 mod constants;
 mod executors_configuration;
-mod generator_configuration;
 mod meta_configuration;
 mod project_configuration;
 mod remote_cache_configuration;
@@ -16,7 +15,6 @@ mod workspace_configuration;
 
 pub use cache_configuration::*;
 pub use executors_configuration::*;
-pub use generator_configuration::*;
 pub use meta_configuration::*;
 pub use project_configuration::*;
 pub use remote_cache_configuration::*;
