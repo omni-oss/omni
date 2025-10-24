@@ -29,13 +29,13 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filter: Option<&str>,
+        project_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<Vec<Vec<omni_core::TaskExecutionNode>>, Self::Error> {
         self.inner.get_execution_plan(
             call,
-            project_filter,
+            project_filters,
             meta_filter,
             ignore_deps,
         )

@@ -43,8 +43,8 @@ pub struct HashProjectCommand {
     #[arg(required = true, help = "Project name")]
     project: String,
 
-    #[arg(long, short = 't', help = "Hash a specific task")]
-    task: Option<String>,
+    #[arg(long, short = 't', help = "Hash specific task")]
+    task: Vec<String>,
 }
 
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
@@ -72,7 +72,12 @@ pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
             let hashstring = ctx
                 .get_project_hash_string(
                     &project_cmd.project,
-                    project_cmd.task.as_deref(),
+                    project_cmd
+                        .task
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
                 )
                 .await?;
 

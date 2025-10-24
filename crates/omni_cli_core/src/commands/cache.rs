@@ -47,14 +47,14 @@ pub struct StatsArgs {
         short,
         help = "Filter the cache entries by project name, accepts glob patterns"
     )]
-    project: Option<String>,
+    project: Vec<String>,
 
     #[arg(
         long,
         short,
         help = "Filter the cache entries by task name, accepts glob patterns"
     )]
-    task: Option<String>,
+    task: Vec<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -88,14 +88,14 @@ pub struct PruneArgs {
         short,
         help = "Add filter to clear only cache entries belonging to a project that matches the given project name, accepts glob patterns"
     )]
-    project: Option<String>,
+    project: Vec<String>,
 
     #[arg(
         long,
         short,
         help = "Add filter to clear only cache entries belonging to a task that matches the given task name, accepts glob patterns"
     )]
-    task: Option<String>,
+    task: Vec<String>,
 
     #[arg(
         long,
@@ -186,7 +186,18 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
 async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
     let cache_store = ctx.create_cache_store();
     let stats = cache_store
-        .get_stats(args.project.as_deref(), args.task.as_deref())
+        .get_stats(
+            args.project
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            args.task
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
         .await?;
 
     for (i, project) in stats.projects.iter().enumerate() {
@@ -249,6 +260,14 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
     let cache_store = ctx.create_cache_store();
 
     let loaded_context;
+
+    let projects = cli_args
+        .project
+        .iter()
+        .map(|s| s.as_str())
+        .collect::<Vec<_>>();
+    let tasks = cli_args.task.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+
     let args = PruneCacheArgs::new(
         if cli_args.dry_run {
             true
@@ -263,8 +282,8 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
             PruneStaleOnly::new_off()
         },
         cli_args.older_than,
-        cli_args.project.as_deref(),
-        cli_args.task.as_deref(),
+        projects.as_slice(),
+        tasks.as_slice(),
         cli_args.larger_than,
     );
 

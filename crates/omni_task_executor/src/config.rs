@@ -26,7 +26,7 @@ pub struct ExecutionConfig {
     /// Glob pattern to filter the projects
     #[builder(default)]
     #[getset(get = "pub")]
-    project_filter: Option<String>,
+    project_filters: Vec<String>,
 
     // Filter the projects/tasks based on the meta configuration
     #[builder(default)]

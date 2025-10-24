@@ -146,7 +146,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     pub async fn get_project_hash(
         &self,
         project_name: &str,
-        task_name: Option<&str>,
+        task_names: &[&str],
     ) -> Result<DefaultHash, LoadedContextError> {
         let cache_dir = self.cache_dir();
         let hasher = self.get_project_hasher(&cache_dir)?;
@@ -155,7 +155,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         Ok(hasher
             .hash(
                 project_name,
-                task_name,
+                task_names,
                 None,
                 self,
                 &execution_plan_provider,
@@ -166,7 +166,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     pub async fn get_project_hash_string(
         &self,
         project_name: &str,
-        task_name: Option<&str>,
+        task_names: &[&str],
     ) -> Result<String, LoadedContextError> {
         let cache_dir = self.cache_dir();
         let hasher = self.get_project_hasher(&cache_dir)?;
@@ -175,7 +175,7 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         Ok(hasher
             .hash_string(
                 project_name,
-                task_name,
+                task_names,
                 None,
                 self,
                 &execution_plan_provider,

@@ -19,7 +19,7 @@ pub struct RunArgs {
         short,
         help = "Run the command based on the project name matching the filter"
     )]
-    pub project: Option<String>,
+    pub project: Vec<String>,
 
     #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
     pub max_concurrency: Option<usize>,
@@ -72,9 +72,7 @@ impl RunArgs {
             builder.meta_filter(meta);
         }
 
-        if let Some(project) = &self.project {
-            builder.project_filter(project);
-        }
+        builder.project_filters(self.project.clone());
 
         if let Some(max_concurrency) = self.max_concurrency {
             builder.max_concurrency(max_concurrency);
