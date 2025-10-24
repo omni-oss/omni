@@ -11,7 +11,7 @@ pub trait ExecutionPlanProvider {
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filter: Option<&str>,
+        project_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error>;

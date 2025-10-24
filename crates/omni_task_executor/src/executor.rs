@@ -44,7 +44,12 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         let plan = ContextExecutionPlanProvider::new(self.context)
             .get_execution_plan(
                 self.config.call(),
-                self.config.project_filter().as_deref(),
+                self.config
+                    .project_filters()
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 self.config.meta_filter().as_deref(),
                 self.config.ignore_dependencies(),
             )?;

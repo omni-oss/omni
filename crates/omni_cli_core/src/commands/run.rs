@@ -19,10 +19,7 @@ use crate::{
 #[derive(Args)]
 pub struct RunCommand {
     #[arg(required = true, help = "The task to run")]
-    pub task: String,
-
-    #[arg(num_args(0..), help = "The arguments to pass to the task")]
-    pub args: Vec<String>,
+    pub task: Vec<String>,
 
     #[arg(
         long,
@@ -88,7 +85,7 @@ pub async fn run(
         .no_cache(command.no_cache)
         .force(command.force.value())
         .replay_cached_logs(!command.no_replay_logs)
-        .call(Call::new_task(&command.task));
+        .call(Call::new_tasks(&command.task[..]));
 
     command
         .run

@@ -51,7 +51,7 @@ pub trait TaskExecutionCacheStore: Send + Sync {
 
     async fn get_stats(
         &self,
-        project_glob: Option<&str>,
-        task_glob: Option<&str>,
+        project_glob: &[&str],
+        task_glob: &[&str],
     ) -> Result<CacheStats, Self::Error>;
 }

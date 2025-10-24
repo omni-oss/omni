@@ -14,7 +14,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
     ExecutionPlanProvider, FilterError, ProjectFilter as _,
-    ProjectFilterExt as _, TaskFilter as _, TaskFilterExt as _,
+    ProjectFilterExt as _, TaskFilter as _,
 };
 
 #[derive(Debug, new)]
@@ -31,20 +31,20 @@ impl<'a, TContext: Context> ExecutionPlanProvider
     fn get_execution_plan(
         &self,
         call: &Call,
-        project_filter: Option<&str>,
+        project_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<BatchedExecutionPlan, Self::Error> {
         if ignore_deps {
             self.get_execution_plan_ignored_dependencies(
                 call,
-                project_filter,
+                project_filters,
                 meta_filter,
             )
         } else {
             self.get_execution_plan_with_dependencies(
                 call,
-                project_filter,
+                project_filters,
                 meta_filter,
             )
         }
@@ -55,33 +55,29 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_execution_plan_ignored_dependencies(
         &self,
         call: &Call,
-        project_filter: Option<&str>,
+        project_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
-        let pf = DefaultProjectFilter::new(project_filter)?;
+        let pf = DefaultProjectFilter::new(project_filters)?;
         // Simple case: just get all matching tasks in one batch
         let projects = pf.filter_projects(self.context.projects());
 
-        if let Some(filter) = project_filter
-            && projects.is_empty()
-        {
+        if !project_filters.is_empty() && projects.is_empty() {
             Err(ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
-                filter: filter.to_string(),
+                filter: project_filters.join(", "),
             })?;
         }
 
-        let task_name;
-
-        let all_tasks = match call {
+        let filtered = match call {
             Call::Command { command, args } => {
-                task_name = temp_task_name("exec", command, args);
+                let tfqn = temp_task_name("exec", command, args);
                 let full_cmd = format!("{command} {}", args.join(" "));
 
                 projects
                     .iter()
                     .map(|p| {
                         TaskExecutionNode::new(
-                            task_name.clone(),
+                            tfqn.clone(),
                             full_cmd.clone(),
                             p.name.clone(),
                             p.dir.clone(),
@@ -93,36 +89,41 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     })
                     .collect::<Vec<_>>()
             }
-            Call::Task(tname) => {
-                task_name = tname.clone();
-                projects
-                    .iter()
-                    .filter_map(|p| {
-                        p.tasks.get(&task_name).map(|task| {
-                            TaskExecutionNode::new(
-                                task_name.clone(),
-                                task.command.clone(),
-                                p.name.clone(),
-                                p.dir.clone(),
-                                vec![],
-                                task.enabled,
-                                task.interactive,
-                                task.persistent,
-                            )
-                        })
-                    })
-                    .collect()
+            Call::Tasks(tnames) => {
+                let task_names_str =
+                    tnames.iter().map(|t| t.as_str()).collect::<Vec<_>>();
+
+                let task_filter = self.get_task_filter(
+                    call.is_command(),
+                    &task_names_str,
+                    project_filters,
+                    meta_filter,
+                )?;
+
+                let mut nodes = vec![];
+
+                for project in projects {
+                    for (task_name, task) in project.tasks.iter() {
+                        let node = TaskExecutionNode::new(
+                            task_name.clone(),
+                            task.command.clone(),
+                            project.name.clone(),
+                            project.dir.clone(),
+                            vec![],
+                            task.enabled,
+                            task.interactive,
+                            task.persistent,
+                        );
+
+                        if task_filter.should_include_task(&node)? {
+                            nodes.push(node);
+                        }
+                    }
+                }
+
+                nodes
             }
         };
-
-        let tf = self.get_task_filter(
-            call.is_command(),
-            &task_name,
-            project_filter,
-            meta_filter,
-        )?;
-
-        let filtered = tf.filter_tasks_cloned(&all_tasks);
 
         Ok(vec![filtered])
     }
@@ -130,8 +131,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_task_filter(
         &'a self,
         use_project_meta: bool,
-        task_name: &str,
-        project_filter: Option<&str>,
+        task_names: &[&str],
+        project_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<
         DefaultTaskFilter<
@@ -141,8 +142,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         ExecutionPlanProviderError,
     > {
         let tf = DefaultTaskFilter::new(
-            task_name,
-            project_filter,
+            task_names,
+            project_filters,
             meta_filter,
             move |n| {
                 if use_project_meta {
@@ -159,12 +160,12 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     fn get_execution_plan_with_dependencies(
         &self,
         call: &Call,
-        project_filter: Option<&str>,
+        project_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
-        let pf = DefaultProjectFilter::new(project_filter)?;
+        let pf = DefaultProjectFilter::new(project_filters)?;
 
-        if let Some(filter) = project_filter
+        if !project_filters.is_empty()
             && !self
                 .context
                 .projects()
@@ -173,7 +174,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         {
             return Err(
                 ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
-                    filter: filter.to_string(),
+                    filter: project_filters.join(", "),
                 },
             )?;
         }
@@ -183,7 +184,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             .get_project_graph()
             .map_err(|e| ExecutionPlanProviderErrorInner::Context(e.into()))?;
 
-        let task_name = match call {
+        let task_names = match call {
             Call::Command { command, args } => {
                 let task_name = temp_task_name("exec", command, args);
                 let full_cmd = format!("{command} {}", args.join(" "));
@@ -205,15 +206,18 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     );
                 });
 
-                task_name
+                vec![task_name]
             }
-            Call::Task(task_name) => task_name.clone(),
+            Call::Tasks(task_names) => task_names.clone(),
         };
+
+        let task_names =
+            task_names.iter().map(|t| t.as_str()).collect::<Vec<_>>();
 
         let tf = self.get_task_filter(
             call.is_command(),
-            &task_name,
-            project_filter,
+            &task_names,
+            project_filters,
             meta_filter,
         )?;
 

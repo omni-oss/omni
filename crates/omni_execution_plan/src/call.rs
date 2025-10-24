@@ -13,6 +13,6 @@ pub enum Call {
         args: Vec<String>,
     },
 
-    #[strum(to_string = "task '{0}'")]
-    Task(#[new(into)] String),
+    #[strum(to_string = "tasks '{0:?}'")]
+    Tasks(#[new(into)] Vec<String>),
 }

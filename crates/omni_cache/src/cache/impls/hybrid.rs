@@ -9,7 +9,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
 use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
-use globset::Glob;
+use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_collector::{CollectConfig, CollectResult, Collector};
 use omni_execution_plan::{
@@ -504,14 +504,35 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
     async fn get_stats(
         &self,
-        project_glob: Option<&str>,
-        task_glob: Option<&str>,
+        project_name_globs: &[&str],
+        task_name_globs: &[&str],
     ) -> Result<CacheStats, Self::Error> {
         let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
 
-        let project_glob =
-            Glob::new(project_glob.unwrap_or("**"))?.compile_matcher();
-        let task_glob = Glob::new(task_glob.unwrap_or("**"))?.compile_matcher();
+        let project_glob = {
+            let project_name_globs = if project_name_globs.is_empty() {
+                &["*"]
+            } else {
+                project_name_globs
+            };
+            let mut glob_set = GlobSetBuilder::new();
+            for project_name_glob in project_name_globs {
+                glob_set.add(Glob::new(project_name_glob)?);
+            }
+            glob_set.build()?
+        };
+        let task_glob = {
+            let task_name_globs = if task_name_globs.is_empty() {
+                &["*"]
+            } else {
+                task_name_globs
+            };
+            let mut glob_set = GlobSetBuilder::new();
+            for task_name_glob in task_name_globs {
+                glob_set.add(Glob::new(task_name_glob)?);
+            }
+            glob_set.build()?
+        };
 
         let mut futs = JoinSet::new();
 
@@ -682,7 +703,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
         let stats = self
-            .get_stats(args.project_name_glob, args.task_name_glob)
+            .get_stats(args.project_name_globs, args.task_name_globs)
             .await?;
         let time_upper_limit = if let Some(older_than) = args.older_than {
             Some(OffsetDateTime::now_utc() - older_than)
@@ -697,12 +718,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         {
             let time_now = SystemTime::now();
 
-            let call = Call::new_task(args.task_name_glob.unwrap_or("**"));
+            let call = Call::new_tasks(if args.task_name_globs.is_empty() {
+                vec!["*".to_string()]
+            } else {
+                args.task_name_globs.iter().map(|s| s.to_string()).collect()
+            });
             let plan =
                 DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
                     .get_execution_plan(
                         &call,
-                        args.project_name_glob,
+                        args.project_name_globs,
                         None,
                         false,
                     )?;
@@ -1685,7 +1710,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_prune() {
+    async fn test_prune_with_project_name_globs() {
         let temp = fixture(&["project1"]).await;
         let dir = temp.path();
         let cache = cache_store(dir);
@@ -1698,7 +1723,156 @@ mod tests {
 
         cache
             .prune_caches::<()>(&PruneCacheArgs {
-                project_name_glob: Some("project1"),
+                project_name_globs: &["project1"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("failed to prune caches");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_prune_should_prune_if_larger_than() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                larger_than: Some(ByteSize::b(1)),
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("failed to prune caches");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_prune_should_not_prune_if_not_larger_than() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                project_name_globs: &["project1"],
+                larger_than: Some(ByteSize::b(1000)),
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("failed to prune caches");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_some(), "cached output should exist");
+    }
+
+    #[tokio::test]
+    async fn test_prune_with_task_name_globs() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                project_name_globs: &[],
+                task_name_globs: &["task"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("failed to prune caches");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_prune_with_project_and_task_name_globs() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                project_name_globs: &["project1"],
+                task_name_globs: &["task"],
+                dry_run: false,
+                ..Default::default()
+            })
+            .await
+            .expect("failed to prune caches");
+
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output");
+
+        assert!(cached_output.is_none(), "cached output should not exist");
+    }
+
+    #[tokio::test]
+    async fn test_prune_with_no_project_name_globs() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        cache
+            .prune_caches::<()>(&PruneCacheArgs {
+                project_name_globs: &[],
+                task_name_globs: &[],
                 dry_run: false,
                 ..Default::default()
             })

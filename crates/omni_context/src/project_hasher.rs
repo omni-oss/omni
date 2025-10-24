@@ -1,6 +1,7 @@
 use std::{collections::HashSet, path::Path, sync::Arc};
 
 use derive_new::new;
+use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_execution_plan::{Call, ExecutionPlanProvider};
@@ -25,7 +26,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
     pub async fn hash<T: ExecutionPlanProvider>(
         &self,
         project_name: &str,
-        task_name: Option<&str>,
+        task_names: &[&str],
         seed: Option<&str>,
         context: &LoadedContext<TSys>,
         execution_plan_provider: &T,
@@ -34,10 +35,14 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let seed =
             DefaultHasher::hash(seed.unwrap_or("DEFAULT_SEED").as_bytes());
-        let call = Call::new_task(task_name.unwrap_or("*"));
+        let call = Call::new_tasks(if task_names.is_empty() {
+            vec!["**".to_string()]
+        } else {
+            task_names.iter().map(|s| s.to_string()).collect()
+        });
 
         let plan = execution_plan_provider
-            .get_execution_plan(&call, Some(project_name), None, false)
+            .get_execution_plan(&call, &[project_name], None, false)
             .map_err(|e| {
                 ProjectHasherErrorInner::ExecutionPlanProvider(
                     eyre::Report::new(e),
@@ -171,12 +176,22 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
+        let task_matcher = {
+            let mut builder = GlobSetBuilder::new();
+
+            for task_name in task_names {
+                builder.add(Glob::new(task_name)?);
+            }
+
+            builder.build()?
+        };
+
         let mut digests = task_result_digests
             .values()
             .filter(|d| {
                 d.project_name == project_name
-                    && if let Some(task_name) = task_name {
-                        d.task_name == task_name
+                    && if !task_matcher.is_empty() {
+                        task_matcher.is_match(&d.task_name)
                     } else {
                         true
                     }
@@ -195,7 +210,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
     pub async fn hash_string<T: ExecutionPlanProvider>(
         &self,
         project_name: &str,
-        task_name: Option<&str>,
+        task_names: &[&str],
         seed: Option<&str>,
         context: &LoadedContext<TSys>,
         execution_plan_provider: &T,
@@ -203,7 +218,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
         Ok(bs58::encode(
             self.hash(
                 project_name,
-                task_name,
+                task_names,
                 seed,
                 context,
                 execution_plan_provider,
@@ -262,4 +277,7 @@ enum ProjectHasherErrorInner {
 
     #[error(transparent)]
     LoadedContext(#[from] Box<LoadedContextError>),
+
+    #[error(transparent)]
+    Glob(#[from] globset::Error),
 }

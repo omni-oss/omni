@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 use derive_new::new;
@@ -13,9 +13,11 @@ type EnvVars = maps::Map<String, String>;
 pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub dry_run: bool,
     pub stale_only: PruneStaleOnly<'a, TContext>,
-    pub older_than: Option<std::time::Duration>,
-    pub project_name_glob: Option<&'a str>,
-    pub task_name_glob: Option<&'a str>,
+    pub older_than: Option<Duration>,
+    /// If not empty, only prune cache for these projects. Otherwise, prune all projects.
+    pub project_name_globs: &'a [&'a str],
+    /// If not empty, only prune cache for these tasks. Otherwise, prune all tasks.
+    pub task_name_globs: &'a [&'a str],
     pub larger_than: Option<ByteSize>,
 }
 
