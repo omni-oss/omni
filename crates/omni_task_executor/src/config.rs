@@ -28,10 +28,15 @@ pub struct ExecutionConfig {
     #[getset(get = "pub")]
     project_filters: Vec<String>,
 
-    // Filter the projects/tasks based on the meta configuration
+    /// Filter the projects/tasks based on the meta configuration
     #[builder(default)]
     #[getset(get = "pub")]
     meta_filter: Option<String>,
+
+    /// Glob pattern to filter the directories
+    #[builder(default)]
+    #[getset(get = "pub")]
+    dir_filters: Vec<String>,
 
     /// if true, it will not consider the cache and will always execute the task
     #[builder(default = Force::All)]

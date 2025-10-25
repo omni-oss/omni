@@ -100,6 +100,13 @@ pub struct PruneArgs {
     #[arg(
         long,
         short,
+        help = "Add filter to clear only cache entries of projects residing in the given directory, accepts glob patterns"
+    )]
+    dir: Vec<String>,
+
+    #[arg(
+        long,
+        short,
         action = clap::ArgAction::SetTrue,
         help = "Prune the cache without prompting for confirmation"
     )]
@@ -275,6 +282,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         .map(|s| s.as_str())
         .collect::<Vec<_>>();
     let tasks = cli_args.task.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+    let dirs = cli_args.dir.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
     let args = PruneCacheArgs::new(
         if cli_args.dry_run {
@@ -291,6 +299,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         },
         cli_args.older_than,
         projects.as_slice(),
+        dirs.as_slice(),
         tasks.as_slice(),
         cli_args.larger_than,
     );
@@ -477,5 +486,9 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
         task_name: &str,
     ) -> Option<&omni_task_context::CacheInfo> {
         self.context.get_cache_info(project_name, task_name)
+    }
+
+    fn root_dir(&self) -> &std::path::Path {
+        self.context.root_dir()
     }
 }

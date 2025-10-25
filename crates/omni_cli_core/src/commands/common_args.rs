@@ -10,16 +10,22 @@ pub struct RunArgs {
     #[arg(
         short,
         long,
-        help = "Filter the task/projects based on the meta configuration. Use the syntax of the CEL expression language"
+        help = "Filter the task/projects based on the meta configuration, accepts CEL syntax"
     )]
     pub meta: Option<String>,
 
     #[arg(
         long,
         short,
-        help = "Run the command based on the project name matching the filter"
+        help = "Filter based on the project name matching the passed argument, accepts glob patterns"
     )]
     pub project: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Filter based on projects residing in the specified directories, accepts glob patterns"
+    )]
+    pub dir: Vec<String>,
 
     #[arg(long, short = 'c', help = "How many concurrent tasks to run")]
     pub max_concurrency: Option<usize>,
@@ -73,6 +79,7 @@ impl RunArgs {
         }
 
         builder.project_filters(self.project.clone());
+        builder.dir_filters(self.dir.clone());
 
         if let Some(max_concurrency) = self.max_concurrency {
             builder.max_concurrency(max_concurrency);

@@ -50,6 +50,12 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
                     .map(|s| s.as_str())
                     .collect::<Vec<_>>()
                     .as_slice(),
+                self.config
+                    .dir_filters()
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 self.config.meta_filter().as_deref(),
                 self.config.ignore_dependencies(),
             )?;
@@ -57,8 +63,19 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         let empty = plan.is_empty() || plan.iter().all(|b| b.is_empty());
 
         if empty {
-            Err(TaskExecutorErrorInner::NothingToExecute(
+            Err(TaskExecutorErrorInner::new_nothing_to_execute(
                 self.config.call().clone(),
+                self.config
+                    .project_filters()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
+                self.config
+                    .dir_filters()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
+                self.config.meta_filter().clone(),
             ))?;
         }
 
@@ -183,7 +200,7 @@ impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(name(TaskExecutorErrorKind), vis(pub))]
 enum TaskExecutorErrorInner {
     #[error(transparent)]
@@ -210,8 +227,15 @@ enum TaskExecutorErrorInner {
     #[error(transparent)]
     MetaFilter(#[from] omni_expressions::Error),
 
-    #[error("no task to execute, nothing matches the call: {0}")]
-    NothingToExecute(Call),
+    #[error(
+        "no task to execute, nothing matches the call: {call} \nproject filters: {project_filters:?}, \ndir filters: {dir_filters:?}, \nmeta filter: {meta_filter:?}"
+    )]
+    NothingToExecute {
+        call: Call,
+        project_filters: Vec<String>,
+        dir_filters: Vec<String>,
+        meta_filter: Option<String>,
+    },
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),

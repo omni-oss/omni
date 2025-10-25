@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, path::Path};
 
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, ProjectGraph, TaskExecutionNode};
@@ -12,6 +12,7 @@ pub trait ExecutionPlanProvider {
         &self,
         call: &Call,
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error>;
@@ -51,4 +52,5 @@ pub trait Context {
 
     fn get_project_graph(&self) -> Result<ProjectGraph, Self::Error>;
     fn projects(&self) -> &[Project];
+    fn root_dir(&self) -> &Path;
 }
