@@ -2,7 +2,6 @@ use crate::util::env;
 use base64::Engine;
 use derive_new::new;
 use keyring::Entry;
-use machine_uid::machine_id;
 use rand::RngCore;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
@@ -25,7 +24,7 @@ pub fn get_secret_key() -> Result<String, SecretKeyError> {
         return Err(error.into());
     }
 
-    let machine_id = machine_id::get_machine_id().map_err(|e| {
+    let machine_id = machine_uid::get().map_err(|e| {
         SecretKeyErrorInner::MachineId(eyre::Report::msg(e.to_string()))
     })?;
 
