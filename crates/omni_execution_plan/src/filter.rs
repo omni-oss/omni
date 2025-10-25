@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, TaskExecutionNode};
@@ -66,6 +68,7 @@ where
 {
     task_matcher: Option<GlobSet>,
     meta_filter: Option<Evaluator>,
+    dir_matcher: Option<GlobSet>,
     project_matcher: Option<GlobSet>,
     get_task_meta: TGetTaskMetaFn,
 }
@@ -78,6 +81,8 @@ where
     pub fn new(
         task_filters: &[&str],
         project_filters: &[&str],
+        dir_filters: &[&str],
+        workspace_root_dir: String,
         meta_filter: Option<&str>,
         get_task_meta: TGetTaskMetaFn,
     ) -> Result<Self, FilterError> {
@@ -116,10 +121,29 @@ where
             )
         };
 
+        let dir_matcher = if dir_filters.is_empty() {
+            None
+        } else {
+            let mut dir_matcher = GlobSetBuilder::new();
+            for filter in dir_filters {
+                let filter: Cow<str> = if filter.starts_with("/") {
+                    Cow::Borrowed(filter)
+                } else {
+                    Cow::Owned(format!("{}/{}", workspace_root_dir, filter))
+                };
+
+                dir_matcher.add(
+                    Glob::new(&filter).map_err(TaskFilterErrorInner::Glob)?,
+                );
+            }
+            Some(dir_matcher.build().map_err(TaskFilterErrorInner::Glob)?)
+        };
+
         Ok(Self {
             task_matcher,
             meta_filter,
             project_matcher,
+            dir_matcher,
             get_task_meta,
         })
     }
@@ -136,34 +160,14 @@ where
         &self,
         node: &TaskExecutionNode,
     ) -> Result<bool, Self::Error> {
-        // (None, None, None) => true,
-        // (None, Some(m)) => {
-        //     let meta = (self.get_task_meta)(node);
-        //     let meta = if let Some(meta) = meta {
-        //         meta.clone().into_expression_context()?
-        //     } else {
-        //         omni_expressions::Context::default()
-        //     };
+        if self.task_matcher.is_none()
+            && self.meta_filter.is_none()
+            && self.project_matcher.is_none()
+            && self.dir_matcher.is_none()
+        {
+            return Ok(true);
+        }
 
-        //     self.task_matcher.is_match(node.task_name())
-        //         && m.coerce_to_bool(&meta).unwrap_or(false)
-        // }
-        // (Some(p), None) => {
-        //     self.task_matcher.is_match(node.task_name())
-        //         && p.is_match(node.project_name())
-        // }
-        // (Some(p), Some(m)) => {
-        //     let meta = if let Some(meta) = (self.get_task_meta)(node) {
-        //         meta.clone().into_expression_context()?
-        //     } else {
-        //         omni_expressions::Context::default()
-        //     };
-
-        //     self.task_matcher.is_match(node.task_name())
-        //         && p.is_match(node.project_name())
-        //         && m.coerce_to_bool(&meta).unwrap_or(false)
-        // }
-        //
         let get_meta = |node: &TaskExecutionNode| {
             if let Some(meta) = (self.get_task_meta)(node) {
                 meta.clone().into_expression_context()
@@ -171,42 +175,32 @@ where
                 Ok(omni_expressions::Context::default())
             }
         };
-        Ok(
-            match (&self.project_matcher, &self.meta_filter, &self.task_matcher)
-            {
-                (None, None, None) => true,
-                (None, None, Some(tm)) => tm.is_match(node.task_name()),
-                (None, Some(mf), None) => {
-                    let meta = get_meta(node)?;
 
-                    mf.coerce_to_bool(&meta).unwrap_or(false)
-                }
-                (None, Some(mf), Some(tm)) => {
-                    let meta = get_meta(node)?;
+        if let Some(pm) = &self.project_matcher
+            && !pm.is_match(node.project_name())
+        {
+            return Ok(false);
+        }
 
-                    tm.is_match(node.task_name())
-                        && mf.coerce_to_bool(&meta).unwrap_or(false)
-                }
-                (Some(pm), None, None) => pm.is_match(node.project_name()),
-                (Some(pm), None, Some(tm)) => {
-                    pm.is_match(node.project_name())
-                        && tm.is_match(node.task_name())
-                }
-                (Some(pm), Some(mf), None) => {
-                    let meta = get_meta(node)?;
+        if let Some(tm) = &self.task_matcher
+            && !tm.is_match(node.task_name())
+        {
+            return Ok(false);
+        }
 
-                    pm.is_match(node.project_name())
-                        && mf.coerce_to_bool(&meta).unwrap_or(false)
-                }
-                (Some(pm), Some(mf), Some(tm)) => {
-                    let meta = get_meta(node)?;
+        if let Some(dm) = &self.dir_matcher
+            && !dm.is_match(node.project_dir().to_string_lossy().as_ref())
+        {
+            return Ok(false);
+        }
 
-                    pm.is_match(node.project_name())
-                        && tm.is_match(node.task_name())
-                        && mf.coerce_to_bool(&meta).unwrap_or(false)
-                }
-            },
-        )
+        if let Some(mf) = &self.meta_filter
+            && !mf.coerce_to_bool(&get_meta(node)?).unwrap_or(false)
+        {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }
 
@@ -305,6 +299,8 @@ mod tests {
         let filter = DefaultTaskFilter::new(
             &["test"],
             &["project1"],
+            &[],
+            Default::default(),
             Some("a == 1"),
             |_| Some(&meta),
         )
@@ -326,9 +322,15 @@ mod tests {
 
     #[test]
     fn test_default_task_filter_meta_filter_mo_meta_configuration() {
-        let filter =
-            DefaultTaskFilter::new(&["test"], &[], Some("a == 1"), |_| None)
-                .unwrap();
+        let filter = DefaultTaskFilter::new(
+            &["test"],
+            &[],
+            &[],
+            Default::default(),
+            Some("a == 1"),
+            |_| None,
+        )
+        .unwrap();
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
@@ -350,9 +352,15 @@ mod tests {
 
     #[test]
     fn test_default_task_filter_not_matching_project_name() {
-        let filter =
-            DefaultTaskFilter::new(&["test"], &["project1"], None, |_| None)
-                .unwrap();
+        let filter = DefaultTaskFilter::new(
+            &["test"],
+            &["project1"],
+            &[],
+            Default::default(),
+            None,
+            |_| None,
+        )
+        .unwrap();
 
         let node = TaskExecutionNode::new(
             "test".to_string(),

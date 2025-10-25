@@ -728,6 +728,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     .get_execution_plan(
                         &call,
                         args.project_name_globs,
+                        args.dir_globs,
                         None,
                         false,
                     )?;
@@ -894,6 +895,10 @@ impl<'a, T: Context> omni_execution_plan::Context for ContextWrapper<'a, T> {
 
     fn projects(&self) -> &[omni_core::Project] {
         self.inner.projects()
+    }
+
+    fn root_dir(&self) -> &Path {
+        self.inner.root_dir()
     }
 }
 

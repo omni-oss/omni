@@ -30,12 +30,14 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
         &self,
         call: &Call,
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<Vec<Vec<omni_core::TaskExecutionNode>>, Self::Error> {
         self.inner.get_execution_plan(
             call,
             project_filters,
+            dir_filters,
             meta_filter,
             ignore_deps,
         )
@@ -77,5 +79,10 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
     #[inline(always)]
     fn projects(&self) -> &[omni_core::Project] {
         self.inner.projects()
+    }
+
+    #[inline(always)]
+    fn root_dir(&self) -> &std::path::Path {
+        self.inner.root_dir()
     }
 }

@@ -32,6 +32,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
         &self,
         call: &Call,
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
         ignore_deps: bool,
     ) -> Result<BatchedExecutionPlan, Self::Error> {
@@ -39,12 +40,14 @@ impl<'a, TContext: Context> ExecutionPlanProvider
             self.get_execution_plan_ignored_dependencies(
                 call,
                 project_filters,
+                dir_filters,
                 meta_filter,
             )
         } else {
             self.get_execution_plan_with_dependencies(
                 call,
                 project_filters,
+                dir_filters,
                 meta_filter,
             )
         }
@@ -56,6 +59,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         &self,
         call: &Call,
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filters)?;
@@ -97,6 +101,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     call.is_command(),
                     &task_names_str,
                     project_filters,
+                    &dir_filters,
                     meta_filter,
                 )?;
 
@@ -133,6 +138,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         use_project_meta: bool,
         task_names: &[&str],
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<
         DefaultTaskFilter<
@@ -141,9 +147,19 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         >,
         ExecutionPlanProviderError,
     > {
+        let root_dir = self.context.root_dir();
+        let root_dir = root_dir.to_string_lossy();
+        let root_dir = if cfg!(windows) {
+            root_dir.replace("\\", "/")
+        } else {
+            root_dir.to_string()
+        };
+
         let tf = DefaultTaskFilter::new(
             task_names,
             project_filters,
+            dir_filters,
+            root_dir,
             meta_filter,
             move |n| {
                 if use_project_meta {
@@ -161,6 +177,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         &self,
         call: &Call,
         project_filters: &[&str],
+        dir_filters: &[&str],
         meta_filter: Option<&str>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filters)?;
@@ -218,6 +235,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             call.is_command(),
             &task_names,
             project_filters,
+            dir_filters,
             meta_filter,
         )?;
 

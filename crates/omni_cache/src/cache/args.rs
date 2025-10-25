@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, path::Path, sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 use derive_new::new;
@@ -18,6 +18,8 @@ pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub project_name_globs: &'a [&'a str],
     /// If not empty, only prune cache for these tasks. Otherwise, prune all tasks.
     pub task_name_globs: &'a [&'a str],
+    /// If not empty, only prune cache for projects residing in these directories. Otherwise, prune all directories.
+    pub dir_globs: &'a [&'a str],
     pub larger_than: Option<ByteSize>,
 }
 
@@ -58,6 +60,8 @@ pub trait Context: Send + Sync {
         project_name: &str,
         task_name: &str,
     ) -> Option<&omni_task_context::CacheInfo>;
+
+    fn root_dir(&self) -> &Path;
 }
 
 impl Context for () {
@@ -98,6 +102,10 @@ impl Context for () {
         _project_name: &str,
         _task_name: &str,
     ) -> Option<&omni_task_context::CacheInfo> {
+        panic!("should not be used")
+    }
+
+    fn root_dir(&self) -> &Path {
         panic!("should not be used")
     }
 }

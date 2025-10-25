@@ -353,4 +353,8 @@ impl<'a, TSys: ContextSys> omni_execution_plan::Context
     fn projects(&self) -> &[Project] {
         self.0.projects()
     }
+
+    fn root_dir(&self) -> &Path {
+        self.0.root_dir()
+    }
 }
