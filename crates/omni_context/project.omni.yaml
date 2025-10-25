@@ -14,6 +14,7 @@ dependencies:
   - omni_task_context
   - omni_remote_cache_client
   - omni_execution_plan
+  - omni_setup
   - trace
   - system_traits
   - env
