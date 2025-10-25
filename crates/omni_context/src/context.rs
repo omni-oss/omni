@@ -108,11 +108,7 @@ impl<TSys: ContextSys> Context<TSys> {
         get_remote_cache_configuration_paths(&self.omni_dir())
     }
 
-    pub fn remote_cache_configuration_path(&self) -> PathBuf {
-        let ext = constants::SUPPORTED_EXTENSIONS
-            .first()
-            .expect("should have atleast 1");
-
+    pub fn remote_cache_configuration_path(&self, ext: &str) -> PathBuf {
         self.omni_dir()
             .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
     }
@@ -316,12 +312,10 @@ fn get_workspace_configuration(
 }
 
 fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
-    constants::SUPPORTED_EXTENSIONS
-        .iter()
-        .map(|ext| {
-            omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
-        })
-        .collect()
+    vec![
+        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "enc")),
+        omni_dir.join(constants::REMOTE_CACHE_OMNI.replace("{ext}", "yaml")),
+    ]
 }
 
 fn get_remote_cache_configuration(
@@ -340,20 +334,19 @@ fn get_remote_cache_configuration(
     }
 
     if rc_path.is_none() {
+        trace::debug!("No remote cache configuration found");
         return Ok(None);
     }
 
     let rc_path =
         rc_path.expect("RemoteConfiguration should exist at this point");
 
-    let rc = RemoteCacheConfiguration::load(rc_path.as_path(), sys).map_err(
-        |e| {
-            ContextErrorInner::FailedToLoadRemoteCacheConfiguration(
-                rc_path.clone(),
-                e,
-            )
-        },
+    let rc = omni_setup::get_remote_caching_config_sync(
+        rc_path.as_path(),
+        rc_path.extension().is_some() && rc_path.extension().unwrap() == "enc",
     )?;
+
+    trace::info!("Remote caching is enabled");
 
     Ok(Some(rc))
 }
@@ -396,9 +389,6 @@ pub(crate) enum ContextErrorInner {
     #[error("failed to load workspace configuration: '{0}'")]
     FailedToLoadWorkspaceConfiguration(PathBuf, #[source] LoadConfigError),
 
-    #[error("failed to load remote cache configuration: '{0}'")]
-    FailedToLoadRemoteCacheConfiguration(PathBuf, #[source] LoadConfigError),
-
     #[error(transparent)]
     ProjectLoader(#[from] ProjectConfigLoaderError),
 
@@ -419,6 +409,9 @@ pub(crate) enum ContextErrorInner {
 
     #[error(transparent)]
     ValidationError(#[from] ExtractedDataValidationErrors),
+
+    #[error(transparent)]
+    OmniSetup(#[from] omni_setup::GetRemoteCachingConfigError),
 }
 
 #[cfg(test)]

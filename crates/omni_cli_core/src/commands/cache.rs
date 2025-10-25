@@ -162,6 +162,14 @@ pub struct SetupArgs {
         help = "The environment code of the remote cache server"
     )]
     pub env: Option<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Encrypt the remote cache configuration file",
+        default_value_t = false
+    )]
+    pub secure: bool,
 }
 
 pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
@@ -402,9 +410,10 @@ async fn remote(ctx: &Context, cli_args: &RemoteArgs) -> eyre::Result<()> {
 
 async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
     let client = ctx.create_remote_cache_client();
-    let config_path = ctx.remote_cache_configuration_path();
+    let ext = if cli_args.secure { "enc" } else { "yaml" };
+    let config_path = ctx.remote_cache_configuration_path(ext);
 
-    omni_setup::setup_remote_caching(
+    omni_setup::setup_remote_caching_config(
         &client,
         config_path.as_path(),
         &cli_args.api_base_url,
@@ -413,6 +422,7 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
         &cli_args.org,
         &cli_args.ws,
         cli_args.env.as_deref(),
+        cli_args.secure,
     )
     .await.inspect_err(|_| {
         trace::error!("Failed to setup remote caching. Please check your credentials and try again.");

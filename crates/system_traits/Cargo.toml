@@ -14,7 +14,6 @@ memory-async = ["async", "dep:sys_traits", "sys_traits/memory"]
 real-sync = ["dep:sys_traits", "sys_traits/real", "sync"]
 memory-sync = ["dep:sys_traits", "sys_traits/memory", "sync"]
 
-
 [dependencies]
 tokio = { workspace = true, optional = true }
 sys_traits = { workspace = true, optional = true, features = [] }
