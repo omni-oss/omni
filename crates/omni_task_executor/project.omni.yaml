@@ -15,6 +15,7 @@ dependencies:
   - omni_execution_plan
   - omni_task_context
   - omni_collector
+  - omni_types
   - system_traits
   - maps
   - config_utils

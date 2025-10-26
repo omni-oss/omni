@@ -27,6 +27,7 @@ use omni_task_context::{
     DefaultTaskContextProvider, EnvVars, TaskContextProviderExt,
     TaskHashProvider,
 };
+use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
@@ -730,6 +731,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         args.project_name_globs,
                         args.dir_globs,
                         None,
+                        None,
                         false,
                     )?;
 
@@ -895,6 +897,17 @@ impl<'a, T: Context> omni_execution_plan::Context for ContextWrapper<'a, T> {
 
     fn projects(&self) -> &[omni_core::Project] {
         self.inner.projects()
+    }
+
+    fn get_cache_input_files(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> &[OmniPath] {
+        self.inner
+            .get_cache_info(project_name, task_name)
+            .map(|c| &c.key_input_files[..])
+            .unwrap_or(&[])
     }
 
     fn root_dir(&self) -> &Path {

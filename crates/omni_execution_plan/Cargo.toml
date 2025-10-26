@@ -26,3 +26,6 @@ config_utils = { workspace = true }
 maps = { workspace = true }
 ahash = { workspace = true }
 bs58 = { workspace = true }
+omni_scm = { workspace = true }
+omni_types = { workspace = true }
+path-clean = { workspace = true }

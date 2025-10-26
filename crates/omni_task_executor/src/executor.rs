@@ -57,6 +57,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 self.config.meta_filter().as_deref(),
+                self.config.scm_affected_filter().as_ref(),
                 self.config.ignore_dependencies(),
             )?;
 
