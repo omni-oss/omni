@@ -1,9 +1,11 @@
 use derive_new::new;
 use omni_context::{ContextSys, LoadedContext, LoadedContextError};
+use omni_core::BatchedExecutionPlan;
 use omni_execution_plan::{
     Call, Context as ContextTrait, DefaultExecutionPlanProvider,
-    ExecutionPlanProvider, ExecutionPlanProviderError,
+    ExecutionPlanProvider, ExecutionPlanProviderError, ScmAffectedFilter,
 };
+use omni_types::OmniPath;
 
 #[derive(Debug)]
 pub struct ContextExecutionPlanProvider<'a, TSys: ContextSys> {
@@ -32,13 +34,15 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
-    ) -> Result<Vec<Vec<omni_core::TaskExecutionNode>>, Self::Error> {
+    ) -> Result<BatchedExecutionPlan, Self::Error> {
         self.inner.get_execution_plan(
             call,
             project_filters,
             dir_filters,
             meta_filter,
+            scm_affected_filter,
             ignore_deps,
         )
     }
@@ -84,5 +88,17 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
     #[inline(always)]
     fn root_dir(&self) -> &std::path::Path {
         self.inner.root_dir()
+    }
+
+    #[inline(always)]
+    fn get_cache_input_files(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> &[OmniPath] {
+        self.inner
+            .get_cache_info(project_name, task_name)
+            .map(|c| &c.key_input_files[..])
+            .unwrap_or(&[])
     }
 }

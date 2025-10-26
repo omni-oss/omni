@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::{Args, ValueEnum};
 use clap_utils::EnumValueAdapter;
 use omni_configurations::{Ui, WorkspaceConfiguration};
+use omni_execution_plan::ScmAffectedFilter;
+use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
 
 #[derive(Args, Debug)]
@@ -59,6 +61,34 @@ pub struct RunArgs {
         value_enum
     )]
     pub ui: Option<EnumValueAdapter<Ui>>,
+
+    #[arg(
+        long,
+        alias = "base",
+        short = 'b',
+        help = "The base commit to compare against. This will implicitly enable --scm-affected"
+    )]
+    pub scm_base: Option<String>,
+
+    #[arg(
+        long,
+        alias = "target",
+        short = 't',
+        help = "The target commit to compare against. This will implicitly enable --scm-affected"
+    )]
+    pub scm_target: Option<String>,
+
+    #[arg(
+        long,
+        alias = "affected",
+        short = 'a',
+        default_value_t = EnumValueAdapter::new(SelectScm::None),
+        default_missing_value = "auto",
+        value_enum,
+        num_args = 0..=1,
+        help = "Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks",
+    )]
+    pub scm_affected: EnumValueAdapter<SelectScm>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -97,5 +127,14 @@ impl RunArgs {
         }
 
         builder.dry_run(self.dry_run);
+
+        let scm = self.scm_affected.value();
+        if !scm.is_none() {
+            let base = self.scm_base.as_ref().map(|s| s.to_string());
+            let target = self.scm_target.as_ref().map(|s| s.to_string());
+            let filter = ScmAffectedFilter { base, scm, target };
+
+            builder.scm_affected_filter(filter);
+        }
     }
 }

@@ -16,6 +16,7 @@ use omni_execution_plan::DefaultExecutionPlanProvider;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
 use omni_tracing_subscriber::TracingConfig;
+use omni_types::OmniPath;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::impls::RealSys;
 
@@ -356,5 +357,16 @@ impl<'a, TSys: ContextSys> omni_execution_plan::Context
 
     fn root_dir(&self) -> &Path {
         self.0.root_dir()
+    }
+
+    fn get_cache_input_files(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> &[OmniPath] {
+        self.0
+            .get_cache_info(project_name, task_name)
+            .map(|c| &c.key_input_files[..])
+            .unwrap_or(&[])
     }
 }

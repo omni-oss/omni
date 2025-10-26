@@ -14,6 +14,8 @@ dependencies:
   - omni_generator_configurations
   - env_loader
   - omni_expressions
+  - omni_scm
+  - omni_execution_plan
   - config_utils
   - omni_types
   - omni_process

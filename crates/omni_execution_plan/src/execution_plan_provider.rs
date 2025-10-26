@@ -9,12 +9,13 @@ use omni_core::{
     BatchedExecutionPlan, Task, TaskDependency, TaskExecutionGraphError,
     TaskExecutionNode,
 };
+use omni_types::OmniPath;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
     Call, Context, DefaultProjectFilter, DefaultTaskFilter,
     ExecutionPlanProvider, FilterError, ProjectFilter as _,
-    ProjectFilterExt as _, TaskFilter as _,
+    ProjectFilterExt as _, ScmAffectedFilter, TaskFilter as _,
 };
 
 #[derive(Debug, new)]
@@ -34,6 +35,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        affected_scm_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
     ) -> Result<BatchedExecutionPlan, Self::Error> {
         if ignore_deps {
@@ -42,6 +44,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
                 project_filters,
                 dir_filters,
                 meta_filter,
+                affected_scm_filter,
             )
         } else {
             self.get_execution_plan_with_dependencies(
@@ -49,6 +52,7 @@ impl<'a, TContext: Context> ExecutionPlanProvider
                 project_filters,
                 dir_filters,
                 meta_filter,
+                affected_scm_filter,
             )
         }
     }
@@ -61,6 +65,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        affected_scm_filter: Option<&ScmAffectedFilter>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filters)?;
         // Simple case: just get all matching tasks in one batch
@@ -103,6 +108,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     project_filters,
                     &dir_filters,
                     meta_filter,
+                    affected_scm_filter,
                 )?;
 
                 let mut nodes = vec![];
@@ -140,20 +146,16 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        affected_scm_filter: Option<&ScmAffectedFilter>,
     ) -> Result<
         DefaultTaskFilter<
             'a,
             impl Fn(&TaskExecutionNode) -> Option<&'a MetaConfiguration>,
+            impl Fn(&TaskExecutionNode) -> &'a [OmniPath],
         >,
         ExecutionPlanProviderError,
     > {
         let root_dir = self.context.root_dir();
-        let root_dir = root_dir.to_string_lossy();
-        let root_dir = if cfg!(windows) {
-            root_dir.replace("\\", "/")
-        } else {
-            root_dir.to_string()
-        };
 
         let tf = DefaultTaskFilter::new(
             task_names,
@@ -161,6 +163,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             dir_filters,
             root_dir,
             meta_filter,
+            affected_scm_filter,
             move |n| {
                 if use_project_meta {
                     self.context.get_project_meta_config(n.project_name())
@@ -168,6 +171,10 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     self.context
                         .get_task_meta_config(n.project_name(), n.task_name())
                 }
+            },
+            move |n: &TaskExecutionNode| -> &[OmniPath] {
+                self.context
+                    .get_cache_input_files(n.project_name(), n.task_name())
             },
         )?;
         Ok(tf)
@@ -179,6 +186,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        affected_scm_filter: Option<&ScmAffectedFilter>,
     ) -> Result<BatchedExecutionPlan, ExecutionPlanProviderError> {
         let pf = DefaultProjectFilter::new(project_filters)?;
 
@@ -237,6 +245,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
             project_filters,
             dir_filters,
             meta_filter,
+            affected_scm_filter,
         )?;
 
         let x_graph = project_graph.get_task_execution_graph()?;

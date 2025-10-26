@@ -2,8 +2,9 @@ use std::{error::Error, path::Path};
 
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, ProjectGraph, TaskExecutionNode};
+use omni_types::OmniPath;
 
-use crate::Call;
+use crate::{Call, ScmAffectedFilter};
 
 pub trait ExecutionPlanProvider {
     type Error: Error + Send + Sync + 'static;
@@ -14,6 +15,7 @@ pub trait ExecutionPlanProvider {
         project_filters: &[&str],
         dir_filters: &[&str],
         meta_filter: Option<&str>,
+        scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
     ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error>;
 }
@@ -49,6 +51,12 @@ pub trait Context {
         project_name: &str,
         task_name: &str,
     ) -> Option<&MetaConfiguration>;
+
+    fn get_cache_input_files(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> &[OmniPath];
 
     fn get_project_graph(&self) -> Result<ProjectGraph, Self::Error>;
     fn projects(&self) -> &[Project];

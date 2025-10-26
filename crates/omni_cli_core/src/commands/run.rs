@@ -56,7 +56,8 @@ pub struct RunCommand {
     #[arg(
         long,
         short,
-        help = "Force execution of the task, even if it's already cached",
+        num_args = 0..=1,
+        help = "Force execution of tasks, even if it's already cached",
         default_value_t = EnumValueAdapter::new(Force::None),
         default_missing_value = "all",
         value_enum

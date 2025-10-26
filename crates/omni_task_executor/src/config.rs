@@ -1,7 +1,7 @@
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use omni_configurations::Ui;
-use omni_execution_plan::Call;
+use omni_execution_plan::{Call, ScmAffectedFilter};
 
 use crate::{Force, OnFailure};
 
@@ -76,6 +76,10 @@ pub struct ExecutionConfig {
     #[builder(default)]
     #[getset(get_copy = "pub")]
     ui: Ui,
+
+    #[builder(default)]
+    #[getset(get = "pub")]
+    scm_affected_filter: Option<ScmAffectedFilter>,
 }
 
 impl ExecutionConfigBuilder {

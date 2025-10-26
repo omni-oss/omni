@@ -48,3 +48,4 @@ crossbeam-channel = { workspace = true }
 omni_execution_plan = { workspace = true }
 omni_task_context = { workspace = true }
 omni_collector = { workspace = true }
+omni_types = { workspace = true }
