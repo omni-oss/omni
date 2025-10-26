@@ -169,6 +169,7 @@ omni_remote_cache_client = { path = "./crates/omni_remote_cache_client" }
 omni_file_data_serde = { path = "./crates/omni_file_data_serde" }
 omni_setup = { path = "./crates/omni_setup" }
 omni_generator_configurations = { path = "./crates/omni_generator_configurations" }
+omni_scm = { path = "./crates/omni_scm" }
 axum = { version = "^0.8.6", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.2" }
 tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }
@@ -208,6 +209,8 @@ keyring = { version = "^3.6.3", features = ["apple-native", "linux-native", "win
 machine-uid = { version = "^0.5.3" }
 rand = { version = "^0.9.2" }
 ring = { version = "^0.17.14" }
+git2 = { version = "^0.20.2" }
+# nom = { version = "^8.0.0" }
 
 [profile.release]
 incremental = true
