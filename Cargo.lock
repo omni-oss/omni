@@ -2635,6 +2635,8 @@ dependencies = [
  "libc",
  "libgit2-sys",
  "log",
+ "openssl-probe",
+ "openssl-sys",
  "url",
 ]
 
@@ -3463,7 +3465,9 @@ checksum = "1c42fe03df2bd3c53a3a9c7317ad91d80c81cd1fb0caec8d7cc4cd2bfa10c222"
 dependencies = [
  "cc",
  "libc",
+ "libssh2-sys",
  "libz-sys",
+ "openssl-sys",
  "pkg-config",
 ]
 
@@ -3492,6 +3496,20 @@ dependencies = [
  "bitflags 2.9.3",
  "libc",
  "redox_syscall 0.5.18",
+]
+
+[[package]]
+name = "libssh2-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "220e4f05ad4a218192533b300327f5150e809b54c4ec83b5a1d91833601811b9"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -4162,10 +4180,12 @@ dependencies = [
  "omni_configurations",
  "omni_context",
  "omni_core",
+ "omni_execution_plan",
  "omni_expressions",
  "omni_generator_configurations",
  "omni_hasher",
  "omni_process",
+ "omni_scm",
  "omni_setup",
  "omni_task_context",
  "omni_task_executor",
@@ -4327,6 +4347,9 @@ dependencies = [
  "omni_configurations",
  "omni_core",
  "omni_expressions",
+ "omni_scm",
+ "omni_types",
+ "path-clean",
  "serde",
  "strum 0.27.2",
  "thiserror 2.0.17",
@@ -4567,6 +4590,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_scm"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "git2",
+ "serde",
+ "strum 0.27.2",
+ "thiserror 2.0.17",
+ "tokio 1.48.0",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_setup"
 version = "0.0.0-semantically-released"
 dependencies = [
@@ -4642,6 +4681,7 @@ dependencies = [
  "omni_task_context",
  "omni_term_ui",
  "omni_tracing_subscriber",
+ "omni_types",
  "owo-colors",
  "serde",
  "shlex",
