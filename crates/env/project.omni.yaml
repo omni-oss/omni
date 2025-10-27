@@ -6,6 +6,7 @@ extends:
 
 tasks:
   profile:
+    description: profile the library
     env:
       vars:
         bench: env_benchmarks
