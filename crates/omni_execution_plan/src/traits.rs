@@ -17,6 +17,7 @@ pub trait ExecutionPlanProvider {
         meta_filter: Option<&str>,
         scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
+        with_dependents: bool,
     ) -> Result<Vec<Vec<TaskExecutionNode>>, Self::Error>;
 }
 

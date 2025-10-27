@@ -36,6 +36,7 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
         meta_filter: Option<&str>,
         scm_affected_filter: Option<&ScmAffectedFilter>,
         ignore_deps: bool,
+        with_dependents: bool,
     ) -> Result<BatchedExecutionPlan, Self::Error> {
         self.inner.get_execution_plan(
             call,
@@ -44,6 +45,7 @@ impl<'a, TSys: ContextSys> ExecutionPlanProvider
             meta_filter,
             scm_affected_filter,
             ignore_deps,
+            with_dependents,
         )
     }
 }

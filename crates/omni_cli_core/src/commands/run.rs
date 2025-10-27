@@ -25,10 +25,19 @@ pub struct RunCommand {
         long,
         alias = "ignore-deps",
         short,
-        help = "Run the command without dependencies",
+        help = "Run the command without dependencies. Not compatible with --with-dependents",
+        conflicts_with = "with_dependents",
         default_value_t = false
     )]
     pub ignore_dependencies: bool,
+
+    #[arg(
+        long,
+        short,
+        help = "Run the task along with its dependents. Useful for combining with filters. Not compatible with --ignore-deps",
+        default_value_t = false
+    )]
+    pub with_dependents: bool,
 
     #[arg(
         long,
@@ -82,6 +91,7 @@ pub async fn run(
 
     builder
         .ignore_dependencies(command.ignore_dependencies)
+        .with_dependents(command.with_dependents)
         .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
         .force(command.force.value())

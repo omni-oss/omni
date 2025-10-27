@@ -625,13 +625,13 @@ impl TaskExecutionGraph {
         )
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = "trace", skip_all)
-    )]
-    pub fn get_batched_execution_plan(
+    pub fn get_batched_execution_plan_impl(
         &self,
         filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        with_dependents: bool,
+        with_dependents_filter: impl Fn(
+            &TaskExecutionNode,
+        ) -> Result<bool, eyre::Report>,
     ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
         // Determine the root nodes. A root node is a node that is not a dependency of any other node
         // Root nodes should always be in the last batch, persistent root nodes should be sorted to the end of the last batch
@@ -644,9 +644,31 @@ impl TaskExecutionGraph {
             }
         }
 
+        let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
+
+        if with_dependents {
+            // Step 1.5 - Include dependents (direct and indirect) of possible roots
+            let mut dependents = HashSet::new();
+            let mut stack =
+                possible_roots.clone().into_iter().collect::<Vec<_>>();
+            while let Some(i) = stack.pop() {
+                if dependents.insert(i) {
+                    for n in
+                        dep_graph.neighbors_directed(i, Direction::Outgoing)
+                    {
+                        if with_dependents_filter(&self.di_graph[n])? {
+                            stack.push(n);
+                        }
+                    }
+                }
+            }
+
+            // Replace reachable with the union of both sets
+            possible_roots.extend(dependents);
+        }
+
         let mut actual_roots = vec![];
 
-        let dep_graph = filtered_graph!(&self.di_graph, EdgeType::Dependency);
         // Step 2: Filter out root nodes that are direct or indirect dependencies of other root nodes
         for i in possible_roots.iter() {
             let other_roots = possible_roots
@@ -746,6 +768,35 @@ impl TaskExecutionGraph {
                     .collect()
             })
             .collect())
+    }
+
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "trace", skip_all)
+    )]
+    pub fn get_batched_execution_plan(
+        &self,
+        filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+    ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
+        self.get_batched_execution_plan_impl(filter, false, |_| Ok(false))
+    }
+
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "trace", skip_all)
+    )]
+    pub fn get_batched_execution_plan_with_dependents(
+        &self,
+        filter: impl Fn(&TaskExecutionNode) -> Result<bool, eyre::Report>,
+        with_dependents_filter: impl Fn(
+            &TaskExecutionNode,
+        ) -> Result<bool, eyre::Report>,
+    ) -> TaskExecutionGraphResult<BatchedExecutionPlan> {
+        self.get_batched_execution_plan_impl(
+            filter,
+            true,
+            with_dependents_filter,
+        )
     }
 }
 
