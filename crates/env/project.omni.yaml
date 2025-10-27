@@ -10,3 +10,6 @@ tasks:
     env:
       vars:
         bench: env_benchmarks
+
+dependencies:
+  - maps
