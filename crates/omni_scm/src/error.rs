@@ -14,6 +14,22 @@ impl Error {
     }
 }
 
+impl Error {
+    pub fn no_repository_found() -> Self {
+        Self {
+            inner: ErrorInner::NoRepositoryFound,
+            kind: ErrorKind::NoRepositoryFound,
+        }
+    }
+
+    pub fn unsupported_scm() -> Self {
+        Self {
+            inner: ErrorInner::UnsupportedScm,
+            kind: ErrorKind::UnsupportedScm,
+        }
+    }
+}
+
 impl<T: Into<ErrorInner>> From<T> for Error {
     #[inline(always)]
     fn from(inner: T) -> Self {
@@ -31,4 +47,10 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     Git2(#[from] git2::Error),
+
+    #[error("unsupported scm")]
+    UnsupportedScm,
+
+    #[error("no repository found")]
+    NoRepositoryFound,
 }

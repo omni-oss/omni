@@ -21,7 +21,13 @@ use crate::{Force, OnFailure};
 pub struct ExecutionConfig {
     /// if true, it will run all tasks ignoring the dependency graph
     #[getset(get_copy = "pub")]
+    #[builder(default)]
     ignore_dependencies: bool,
+
+    /// if true, it will run all tasks that has dependency on matching tasks
+    #[getset(get_copy = "pub")]
+    #[builder(default)]
+    with_dependents: bool,
 
     /// Glob pattern to filter the projects
     #[builder(default)]

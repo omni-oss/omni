@@ -733,6 +733,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         None,
                         None,
                         false,
+                        false,
                     )?;
 
             let total_task = plan.iter().map(|b| b.len()).sum();

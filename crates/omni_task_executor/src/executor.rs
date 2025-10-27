@@ -59,6 +59,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
                 self.config.meta_filter().as_deref(),
                 self.config.scm_affected_filter().as_ref(),
                 self.config.ignore_dependencies(),
+                self.config.with_dependents(),
             )?;
 
         let empty = plan.is_empty() || plan.iter().all(|b| b.is_empty());

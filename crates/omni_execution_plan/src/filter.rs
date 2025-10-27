@@ -25,15 +25,10 @@ impl DefaultProjectFilter {
         } else {
             let mut project_matcher = GlobSetBuilder::new();
             for filter in project_filters {
-                project_matcher.add(
-                    Glob::new(filter).map_err(TaskFilterErrorInner::Glob)?,
-                );
-            }
-            Some(
                 project_matcher
-                    .build()
-                    .map_err(TaskFilterErrorInner::Glob)?,
-            )
+                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
+            }
+            Some(project_matcher.build().map_err(FilterErrorInner::Glob)?)
         };
 
         Ok(Self {
@@ -66,28 +61,22 @@ impl ProjectFilter for DefaultProjectFilter {
     }
 }
 
-pub struct DefaultTaskFilter<'b, TGetTaskMetaFn, TGetCacheInputFilesFn>
+pub struct DefaultTaskFilter<'b, TGetTaskMetaFn>
 where
     TGetTaskMetaFn:
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
 {
     task_matcher: Option<GlobSet>,
     meta_filter: Option<Evaluator>,
     dir_matcher: Option<GlobSet>,
     project_matcher: Option<GlobSet>,
-    changed_files: Option<Vec<PathBuf>>,
     get_task_meta: TGetTaskMetaFn,
-    get_cache_input_files: TGetCacheInputFilesFn,
-    workspace_root_dir: PathBuf,
 }
 
-impl<'b, TGetTaskMetaFn, TGetCacheInputFilesFn>
-    DefaultTaskFilter<'b, TGetTaskMetaFn, TGetCacheInputFilesFn>
+impl<'b, TGetTaskMetaFn> DefaultTaskFilter<'b, TGetTaskMetaFn>
 where
     TGetTaskMetaFn:
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
 {
     pub fn new(
         task_filters: &[&str],
@@ -95,26 +84,23 @@ where
         dir_filters: &[&str],
         workspace_root_dir: &Path,
         meta_filter: Option<&str>,
-        scm_affected_filter: Option<&ScmAffectedFilter>,
         get_task_meta: TGetTaskMetaFn,
-        get_cache_input_files: TGetCacheInputFilesFn,
     ) -> Result<Self, FilterError> {
         let task_matcher = if task_filters.is_empty() {
             None
         } else {
             let mut task_matcher = GlobSetBuilder::new();
             for filter in task_filters {
-                task_matcher.add(
-                    Glob::new(filter).map_err(TaskFilterErrorInner::Glob)?,
-                );
+                task_matcher
+                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
             }
-            Some(task_matcher.build().map_err(TaskFilterErrorInner::Glob)?)
+            Some(task_matcher.build().map_err(FilterErrorInner::Glob)?)
         };
 
         let meta_filter = meta_filter
             .map(|filter| {
                 omni_expressions::parse(filter)
-                    .map_err(TaskFilterErrorInner::Expression)
+                    .map_err(FilterErrorInner::Expression)
             })
             .transpose()?;
 
@@ -123,15 +109,10 @@ where
         } else {
             let mut project_matcher = GlobSetBuilder::new();
             for filter in project_filters {
-                project_matcher.add(
-                    Glob::new(filter).map_err(TaskFilterErrorInner::Glob)?,
-                );
-            }
-            Some(
                 project_matcher
-                    .build()
-                    .map_err(TaskFilterErrorInner::Glob)?,
-            )
+                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
+            }
+            Some(project_matcher.build().map_err(FilterErrorInner::Glob)?)
         };
 
         let string = workspace_root_dir.to_string_lossy();
@@ -154,29 +135,10 @@ where
                     Cow::Owned(format!("{}/{}", workspace_root_dir_str, filter))
                 };
 
-                dir_matcher.add(
-                    Glob::new(&filter).map_err(TaskFilterErrorInner::Glob)?,
-                );
+                dir_matcher
+                    .add(Glob::new(&filter).map_err(FilterErrorInner::Glob)?);
             }
-            Some(dir_matcher.build().map_err(TaskFilterErrorInner::Glob)?)
-        };
-
-        let changed_files = if let Some(scm_f) = scm_affected_filter
-            && let Some(scm) =
-                get_scm_implementation(&workspace_root_dir_str, scm_f.scm)
-        {
-            let changed = scm
-                .changed_files(
-                    scm_f.base.as_deref().unwrap_or(scm.default_base()),
-                    scm_f.target.as_deref().unwrap_or(scm.default_target()),
-                )?
-                .iter()
-                .map(|p| workspace_root_dir.join(p))
-                .collect::<Vec<_>>();
-
-            Some(changed)
-        } else {
-            None
+            Some(dir_matcher.build().map_err(FilterErrorInner::Glob)?)
         };
 
         Ok(Self {
@@ -185,19 +147,14 @@ where
             project_matcher,
             dir_matcher,
             get_task_meta,
-            changed_files,
-            get_cache_input_files,
-            workspace_root_dir: workspace_root_dir.to_path_buf(),
         })
     }
 }
 
-impl<'b, TGetTaskMetaFn, TGetCacheInputFilesFn> TaskFilter
-    for DefaultTaskFilter<'b, TGetTaskMetaFn, TGetCacheInputFilesFn>
+impl<'b, TGetTaskMetaFn> TaskFilter for DefaultTaskFilter<'b, TGetTaskMetaFn>
 where
     TGetTaskMetaFn:
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
 {
     type Error = FilterError;
 
@@ -209,7 +166,6 @@ where
             && self.meta_filter.is_none()
             && self.project_matcher.is_none()
             && self.dir_matcher.is_none()
-            && self.changed_files.is_none()
         {
             return Ok(true);
         }
@@ -246,43 +202,123 @@ where
             return Ok(false);
         }
 
-        if let Some(changed_files) = &self.changed_files {
-            let cache_input_files = (self.get_cache_input_files)(node);
-            let root_map = enum_map! {
-                Root::Project => node.project_dir(),
-                Root::Workspace => self.workspace_root_dir.as_path(),
-            };
-            let mut builder = GlobSetBuilder::new();
-
-            for file in cache_input_files {
-                let resolved = file.resolve(&root_map);
-                let resolved = if !resolved.is_absolute() {
-                    node.project_dir().join(path_clean::clean(resolved))
-                } else {
-                    resolved.to_path_buf()
-                };
-                let resolved = resolved.to_string_lossy();
-                let pattern: Cow<str> = if cfg!(windows) {
-                    Cow::Owned(resolved.replace("\\", "/"))
-                } else {
-                    Cow::Borrowed(&resolved)
-                };
-
-                builder.add(Glob::new(&pattern)?);
-            }
-
-            let globset = builder.build()?;
-
-            for file in changed_files {
-                if globset.is_match(file.to_string_lossy().as_ref()) {
-                    return Ok(true);
-                }
-            }
-
-            return Ok(false);
-        }
+        // if let Some(changed_files) = &self.changed_files {
+        // }
 
         Ok(true)
+    }
+}
+
+pub struct DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
+where
+    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+{
+    get_cache_input_files: TGetCacheInputFilesFn,
+    changed_files: Vec<PathBuf>,
+    workspace_root_dir: PathBuf,
+}
+
+impl<'b, TGetCacheInputFilesFn>
+    DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
+where
+    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+{
+    pub fn new(
+        workspace_root_dir: &Path,
+        scm_affected_filter: &ScmAffectedFilter,
+        get_cache_input_files: TGetCacheInputFilesFn,
+    ) -> Result<Self, FilterError> {
+        let str = workspace_root_dir.to_string_lossy();
+        let workspace_root_dir_str: Cow<str> = if cfg!(windows)
+            && str.contains("\\")
+        {
+            Cow::Owned(workspace_root_dir.to_string_lossy().replace("\\", "/"))
+        } else {
+            str
+        };
+
+        let scm = get_scm_implementation(
+            &workspace_root_dir_str,
+            scm_affected_filter.scm,
+        )
+        .ok_or_else(|| {
+            FilterErrorInner::Scm(omni_scm::error::Error::no_repository_found())
+        })?;
+
+        let changed = scm.changed_files(
+            &scm_affected_filter
+                .base
+                .as_deref()
+                .unwrap_or(scm.default_base()),
+            &scm_affected_filter
+                .target
+                .as_deref()
+                .unwrap_or(scm.default_target()),
+        )?;
+
+        let changed = changed
+            .into_iter()
+            .map(|path| {
+                if path.is_absolute() {
+                    path
+                } else {
+                    workspace_root_dir.join(path)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(Self {
+            get_cache_input_files,
+            changed_files: changed,
+            workspace_root_dir: workspace_root_dir.to_path_buf(),
+        })
+    }
+}
+
+impl<'b, TGetCacheInputFilesFn> TaskFilter
+    for DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
+where
+    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+{
+    type Error = FilterError;
+
+    fn should_include_task(
+        &self,
+        node: &TaskExecutionNode,
+    ) -> Result<bool, Self::Error> {
+        let cache_input_files = (self.get_cache_input_files)(node);
+        let root_map = enum_map! {
+            Root::Project => node.project_dir(),
+            Root::Workspace => self.workspace_root_dir.as_path(),
+        };
+        let mut builder = GlobSetBuilder::new();
+
+        for file in cache_input_files {
+            let resolved = file.resolve(&root_map);
+            let resolved = if !resolved.is_absolute() {
+                node.project_dir().join(path_clean::clean(resolved))
+            } else {
+                resolved.to_path_buf()
+            };
+            let resolved = resolved.to_string_lossy();
+            let pattern: Cow<str> = if cfg!(windows) {
+                Cow::Owned(resolved.replace("\\", "/"))
+            } else {
+                Cow::Borrowed(&resolved)
+            };
+
+            builder.add(Glob::new(&pattern)?);
+        }
+
+        let globset = builder.build()?;
+
+        for file in &self.changed_files {
+            if globset.is_match(file.to_string_lossy().as_ref()) {
+                return Ok(true);
+            }
+        }
+
+        return Ok(false);
     }
 }
 
@@ -290,18 +326,18 @@ where
 #[error("{inner}")]
 pub struct FilterError {
     #[source]
-    inner: TaskFilterErrorInner,
-    kind: TaskFilterErrorKind,
+    inner: FilterErrorInner,
+    kind: FilterErrorKind,
 }
 
 impl FilterError {
     #[allow(unused)]
-    pub fn kind(&self) -> TaskFilterErrorKind {
+    pub fn kind(&self) -> FilterErrorKind {
         self.kind
     }
 }
 
-impl<T: Into<TaskFilterErrorInner>> From<T> for FilterError {
+impl<T: Into<FilterErrorInner>> From<T> for FilterError {
     fn from(value: T) -> Self {
         let repr = value.into();
         let kind = repr.discriminant();
@@ -356,8 +392,8 @@ pub trait TaskFilterExt: TaskFilter {
 impl<T: TaskFilter> TaskFilterExt for T {}
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(TaskFilterErrorKind), vis(pub))]
-enum TaskFilterErrorInner {
+#[strum_discriminants(name(FilterErrorKind), vis(pub))]
+enum FilterErrorInner {
     #[error(transparent)]
     Glob(#[from] globset::Error),
 
@@ -387,9 +423,7 @@ mod tests {
             &[],
             Path::new(""),
             Some("a == 1"),
-            None,
             |_| Some(&meta),
-            |_| &[],
         )
         .unwrap();
 
@@ -415,9 +449,7 @@ mod tests {
             &[],
             Path::new(""),
             Some("a == 1"),
-            None,
             |_| None,
-            |_| &[],
         )
         .unwrap();
 
@@ -434,7 +466,7 @@ mod tests {
 
         assert!(
             !filter
-                .should_include_task(&node,)
+                .should_include_task(&node)
                 .expect("should have value")
         );
     }
@@ -447,9 +479,7 @@ mod tests {
             &[],
             Path::new(""),
             None,
-            None,
             |_| None,
-            |_| &[],
         )
         .unwrap();
 

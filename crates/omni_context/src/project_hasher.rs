@@ -42,7 +42,15 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
         });
 
         let plan = execution_plan_provider
-            .get_execution_plan(&call, &[project_name], &[], None, None, false)
+            .get_execution_plan(
+                &call,
+                &[project_name],
+                &[],
+                None,
+                None,
+                false,
+                false,
+            )
             .map_err(|e| {
                 ProjectHasherErrorInner::ExecutionPlanProvider(
                     eyre::Report::new(e),
