@@ -5,7 +5,7 @@ extends:
 
 dependencies:
   - omni_types
-  - omni_generator_configurations
+  - omni_generator
   - config_utils
   - omni_core
   - maps
