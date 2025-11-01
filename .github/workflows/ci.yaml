@@ -8,7 +8,9 @@ on:
       - "!./apps/site/**"
       - "!bun.lock"
     tags:
-      - "v*.*.*" # Trigger release on version tags like v1.0.0
+      - "v*.*.*"
+      - "omni-v*.*.*"
+      - "omni-remote-cache-service-v*.*.*"
   pull_request:
     branches: [main]
 
@@ -72,7 +74,7 @@ jobs:
         id: determine
         uses: ./.github/actions/determine-build-steps
         with:
-          omni-run: -p "{omni,omni_remote_cache_service}" build
+          omni-run: -p omni -p omni_remote_cache_service build
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -90,33 +92,45 @@ jobs:
         run: bun run ./scripts/apply-version/bin/index.js
 
       - name: Build Projects
-        run: omni run -p "{omni,omni_remote_cache_service}" -L -f=failed build
-        # run: cargo build --release -p omni
+        if: ${{ steps.determine.outputs.BUILD_OMNI == 'true' || steps.determine.outputs.BUILD_ORCS == 'true' }}
+        run: <
+          omni run
+          ${{ steps.determine.outputs.BUILD_OMNI == 'true' && '-p omni' || '' }}
+          ${{ steps.determine.outputs.BUILD_ORCS == 'true' && '-p omni_remote_cache_service' || '' }}
+          -L -f=failed build
 
       - name: Compress Binaries on Linux/macOS
         if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
         run: |
-          zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
-          zip -j omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni_remote_cache_service
+          if [[ "${{ steps.determine.outputs.BUILD_OMNI }}" == "true" ]]; then
+            zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
+          fi
+          if [[ "${{ steps.determine.outputs.BUILD_ORCS }}" == "true" ]]; then
+            zip -j omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni_remote_cache_service
+          fi
 
       - name: Compress Binaries on Windows
         if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
         run: |
           cd target/release
-          7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
-          7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
+          if (${{ steps.determine.outputs.BUILD_OMNI }} -eq "true") {
+            7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
+          }
+          if (${{ steps.determine.outputs.BUILD_ORCS }} -eq "true") {
+            7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
+          }
         shell: pwsh
 
       - name: Upload Omni Compressed Binary
         uses: actions/upload-artifact@v4
-        if: github.ref_type == 'tag'
+        if: ${{ github.ref_type == 'tag' && steps..determine.outputs.BUILD_OMNI == 'true' }}
         with:
           name: omni-${{ github.ref_name }}-${{ matrix.os }}
           path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
 
       - name: Upload Omni Remote Cache Service Compressed Binary
         uses: actions/upload-artifact@v4
-        if: github.ref_type == 'tag'
+        if: ${{ github.ref_type == 'tag' && steps.determine.outputs.BUILD_ORCS == 'true' }}
         with:
           name: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}
           path: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip
