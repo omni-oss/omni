@@ -123,7 +123,7 @@ jobs:
 
       - name: Upload Omni Compressed Binary
         uses: actions/upload-artifact@v4
-        if: ${{ github.ref_type == 'tag' && steps..determine.outputs.BUILD_OMNI == 'true' }}
+        if: ${{ github.ref_type == 'tag' && steps.determine.outputs.BUILD_OMNI == 'true' }}
         with:
           name: omni-${{ github.ref_name }}-${{ matrix.os }}
           path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
