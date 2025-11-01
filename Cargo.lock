@@ -4417,6 +4417,7 @@ dependencies = [
  "merge",
  "omni_core",
  "omni_expressions",
+ "omni_generator",
  "omni_types",
  "schemars",
  "serde",
