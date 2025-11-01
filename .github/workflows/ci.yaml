@@ -93,7 +93,7 @@ jobs:
 
       - name: Build Projects
         if: ${{ steps.determine.outputs.BUILD_OMNI == 'true' || steps.determine.outputs.BUILD_ORCS == 'true' }}
-        run: <
+        run: >
           omni run
           ${{ steps.determine.outputs.BUILD_OMNI == 'true' && '-p omni' || '' }}
           ${{ steps.determine.outputs.BUILD_ORCS == 'true' && '-p omni_remote_cache_service' || '' }}
