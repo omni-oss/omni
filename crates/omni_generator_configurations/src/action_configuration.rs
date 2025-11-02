@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -36,18 +38,20 @@ pub struct BaseAddActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
 )]
 #[garde(allow_unvalidated)]
-#[serde(untagged)]
-pub enum AddActionConfiguration {
-    InlineTemplate {
-        #[serde(flatten)]
-        base: BaseAddActionConfiguration,
-        template: String,
-    },
-    FileTemplate {
-        #[serde(flatten)]
-        base: BaseAddActionConfiguration,
-        template_file: String,
-    },
+pub struct AddActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseAddActionConfiguration,
+    pub template_file: PathBuf,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+)]
+#[garde(allow_unvalidated)]
+pub struct AddInlineActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseAddActionConfiguration,
+    pub template: String,
 }
 
 #[derive(
@@ -57,6 +61,7 @@ pub enum AddActionConfiguration {
 pub struct AddManyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
+    pub template_files: Vec<PathBuf>,
 }
 
 #[derive(
@@ -77,6 +82,10 @@ pub enum ActionConfiguration {
     Add {
         #[serde(flatten)]
         action: AddActionConfiguration,
+    },
+    AddInline {
+        #[serde(flatten)]
+        action: AddInlineActionConfiguration,
     },
     AddMany {
         #[serde(flatten)]
