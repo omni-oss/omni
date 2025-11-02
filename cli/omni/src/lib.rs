@@ -54,6 +54,8 @@ pub async fn run(
     tracing: &TracingConfig,
     ws_root_dir: Option<&Path>,
 ) -> eyre::Result<()> {
+    let create_ctx = || ctx(args, tracing, ws_root_dir);
+
     match sc {
         CliSubcommands::Config(config) => {
             commands::config::run(config).await?;
@@ -62,29 +64,33 @@ pub async fn run(
             commands::completion::run(completion).await?;
         }
         CliSubcommands::Exec(exec) => {
-            let context = ctx(args, tracing, ws_root_dir)?;
+            let context = create_ctx()?;
             let res = commands::exec::run(exec, &context).await?;
             exit(res);
         }
         CliSubcommands::Env(env) => {
-            let mut context = ctx(args, tracing, ws_root_dir)?;
+            let mut context = create_ctx()?;
             commands::env::run(env, &mut context).await?;
         }
         CliSubcommands::Run(run) => {
-            let context = ctx(args, tracing, ws_root_dir)?;
+            let context = create_ctx()?;
             let res = commands::run::run(run, &context).await?;
             exit(res);
         }
         CliSubcommands::Hash(hash_command) => {
-            let context = ctx(args, tracing, ws_root_dir)?;
+            let context = create_ctx()?;
             commands::hash::run(hash_command, &context).await?;
         }
         CliSubcommands::Declspec(declspec_command) => {
             commands::declspec::run(declspec_command).await?;
         }
         CliSubcommands::Cache(cache_command) => {
-            let context = ctx(args, tracing, ws_root_dir)?;
+            let context = create_ctx()?;
             commands::cache::run(cache_command, &context).await?;
+        }
+        CliSubcommands::Generate(command) => {
+            let context = create_ctx()?;
+            commands::generate::run(command, &context).await?;
         }
     }
 

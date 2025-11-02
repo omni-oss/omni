@@ -14,7 +14,8 @@ mod utils;
 use crate::{
     build,
     commands::{
-        cache::CacheCommand, declspec::DeclspecCommand, hash::HashCommand,
+        cache::CacheCommand, declspec::DeclspecCommand,
+        generate::GenerateCommand, hash::HashCommand,
     },
 };
 
@@ -24,6 +25,7 @@ pub mod config;
 pub mod declspec;
 pub mod env;
 pub mod exec;
+pub mod generate;
 pub mod hash;
 pub mod run;
 
@@ -158,4 +160,7 @@ pub enum CliSubcommands {
 
     #[command(about = "Cache related subcommands")]
     Cache(CacheCommand),
+
+    #[command(about = "Code generation related subcommands", alias = "gen")]
+    Generate(GenerateCommand),
 }
