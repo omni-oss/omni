@@ -33,3 +33,4 @@ garde = { workspace = true }
 system_traits = { workspace = true }
 lazy-regex = { workspace = true }
 omni_prompt = { workspace = true }
+omni_serde_validators = { workspace = true }
