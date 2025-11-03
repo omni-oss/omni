@@ -19,19 +19,13 @@ use serde::{Deserialize, Serialize};
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct BasePromptConfiguration<TDefault> {
+pub struct BasePromptConfiguration {
     #[new(into)]
     #[serde(deserialize_with = "validate_name")]
     pub name: String,
 
     #[new(into)]
     pub message: String,
-
-    #[new(into)]
-    pub default: Option<TDefault>,
-
-    #[new(into)]
-    pub hint: Option<String>,
 
     #[new(into)]
     #[serde(rename = "if", deserialize_with = "option_validate_tera_expr")]
@@ -71,10 +65,10 @@ pub struct ValidateConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct ValidatedPromptConfiguration<TDefault> {
+pub struct ValidatedPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration<TDefault>,
+    pub base: BasePromptConfiguration,
 
     #[new(into)]
     #[serde(default)]
@@ -96,7 +90,10 @@ pub struct ValidatedPromptConfiguration<TDefault> {
 pub struct CheckboxPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration<bool>,
+    pub base: BasePromptConfiguration,
+
+    #[new(into)]
+    pub default: Option<bool>,
 }
 
 #[derive(
@@ -114,10 +111,13 @@ pub struct CheckboxPromptConfiguration {
 pub struct SelectPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration<String>,
+    pub base: BasePromptConfiguration,
 
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
+
+    #[new(into)]
+    pub default: Option<String>,
 }
 
 #[derive(
@@ -135,10 +135,13 @@ pub struct SelectPromptConfiguration {
 pub struct MultiSelectPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration<Vec<String>>,
+    pub base: BasePromptConfiguration,
 
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
+
+    #[new(into)]
+    pub default: Option<Vec<String>>,
 }
 
 #[derive(
@@ -156,7 +159,10 @@ pub struct MultiSelectPromptConfiguration {
 pub struct TextPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration<String>,
+    pub base: ValidatedPromptConfiguration,
+
+    #[new(into)]
+    pub default: Option<String>,
 }
 
 #[derive(
@@ -174,7 +180,7 @@ pub struct TextPromptConfiguration {
 pub struct PasswordPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration<String>,
+    pub base: ValidatedPromptConfiguration,
 }
 
 #[derive(
@@ -192,7 +198,10 @@ pub struct PasswordPromptConfiguration {
 pub struct FloatNumberPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration<f64>,
+    pub base: ValidatedPromptConfiguration,
+
+    #[new(into)]
+    pub default: Option<f64>,
 }
 
 #[derive(
@@ -210,7 +219,10 @@ pub struct FloatNumberPromptConfiguration {
 pub struct IntegerNumberPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration<f64>,
+    pub base: ValidatedPromptConfiguration,
+
+    #[new(into)]
+    pub default: Option<i64>,
 }
 
 #[derive(

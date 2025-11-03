@@ -1,3 +1,4 @@
+use maps::unordered_map;
 use omni_context::Context;
 use omni_generator::prompt::{
     self, PromptingConfiguration,
@@ -20,21 +21,18 @@ pub async fn run(
     _generate: &GenerateCommand,
     _ctx: &Context,
 ) -> eyre::Result<()> {
-    let configs = [PromptConfiguration::new_text(
-        TextPromptConfiguration::new(ValidatedPromptConfiguration::new(
-            BasePromptConfiguration::new(
-                "test",
-                "test text?",
-                None,
-                None,
-                None,
+    let configs =
+        [PromptConfiguration::new_text(TextPromptConfiguration::new(
+            ValidatedPromptConfiguration::new(
+                BasePromptConfiguration::new("test", "test text?", None),
+                vec![],
             ),
-            vec![],
-        )),
-    )];
+            None,
+        ))];
 
     let prompting_config = PromptingConfiguration::default();
-    let values = prompt::prompt(&configs, &prompting_config)?;
+    let pre_exec = unordered_map!();
+    let values = prompt::prompt(&configs, &pre_exec, &prompting_config)?;
 
     trace::info!("values: {:?}", values);
 

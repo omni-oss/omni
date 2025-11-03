@@ -28,25 +28,14 @@ impl<'a> Default for PromptingConfiguration<'a> {
 
 pub fn prompt(
     prompts: &[PromptConfiguration],
+    pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, PromptError> {
     validate_prompt_configurations(prompts)?;
     let mut values = UnorderedMap::default();
 
     for prompt in prompts {
-        let if_expr = match prompt {
-            PromptConfiguration::Checkbox { prompt } => &prompt.base.r#if,
-            PromptConfiguration::Select { prompt } => &prompt.base.r#if,
-            PromptConfiguration::MultiSelect { prompt } => &prompt.base.r#if,
-            PromptConfiguration::Text { prompt } => &prompt.base.base.r#if,
-            PromptConfiguration::Password { prompt } => &prompt.base.base.r#if,
-            PromptConfiguration::FloatNumber { prompt } => {
-                &prompt.base.base.r#if
-            }
-            PromptConfiguration::IntegerNumber { prompt } => {
-                &prompt.base.base.r#if
-            }
-        };
+        let if_expr = get_if_expression(prompt);
 
         if let Some(if_expr) = if_expr
             && skip(if_expr, &values, config.if_expressions_root_property)?
@@ -54,44 +43,9 @@ pub fn prompt(
             continue;
         }
 
-        let (value, validators) = match prompt {
-            PromptConfiguration::Checkbox { prompt } => {
-                let value = prompt_checkbox(prompt)?;
-
-                (value, &[] as &[ValidateConfiguration])
-            }
-            PromptConfiguration::Select { prompt } => {
-                let value = prompt_select(prompt)?;
-
-                (value, &[] as &[ValidateConfiguration])
-            }
-            PromptConfiguration::MultiSelect { prompt } => {
-                let value = prompt_multi_select(prompt)?;
-
-                (value, &[] as &[ValidateConfiguration])
-            }
-            PromptConfiguration::Text { prompt } => {
-                let value = prompt_text(prompt)?;
-
-                (value, prompt.base.validate.as_slice())
-            }
-            PromptConfiguration::Password { prompt } => {
-                let value = prompt_password(prompt)?;
-
-                (value, prompt.base.validate.as_slice())
-            }
-            PromptConfiguration::FloatNumber { prompt } => {
-                let value = prompt_float_number(prompt)?;
-
-                (value, prompt.base.validate.as_slice())
-            }
-            PromptConfiguration::IntegerNumber { prompt } => {
-                let value = prompt_integer_number(prompt)?;
-
-                (value, prompt.base.validate.as_slice())
-            }
-        };
+        let validators = get_validators(prompt);
         let key = get_prompt_name(prompt).to_string();
+        let value = get_prompt_value(pre_exec_values, config, prompt)?;
 
         validate_value(
             &key,
@@ -104,6 +58,62 @@ pub fn prompt(
     }
 
     Ok(values)
+}
+
+fn get_prompt_value(
+    pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    config: &PromptingConfiguration<'_>,
+    prompt: &PromptConfiguration,
+) -> Result<OwnedValueBag, PromptError> {
+    let value = match prompt {
+        PromptConfiguration::Checkbox { prompt } => {
+            prompt_checkbox(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::Select { prompt } => {
+            prompt_select(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::MultiSelect { prompt } => {
+            prompt_multi_select(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::Text { prompt } => {
+            prompt_text(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::Password { prompt } => {
+            prompt_password(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::FloatNumber { prompt } => {
+            prompt_float_number(prompt, pre_exec_values, config)?
+        }
+        PromptConfiguration::IntegerNumber { prompt } => {
+            prompt_integer_number(prompt, pre_exec_values, config)?
+        }
+    };
+    Ok(value)
+}
+
+fn get_validators(prompt: &PromptConfiguration) -> &[ValidateConfiguration] {
+    match prompt {
+        PromptConfiguration::Checkbox { .. } => &[],
+        PromptConfiguration::Select { .. } => &[],
+        PromptConfiguration::MultiSelect { .. } => &[],
+        PromptConfiguration::Text { prompt } => &prompt.base.validate,
+        PromptConfiguration::Password { prompt } => &prompt.base.validate,
+        PromptConfiguration::FloatNumber { prompt } => &prompt.base.validate,
+        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.validate,
+    }
+}
+
+fn get_if_expression(prompt: &PromptConfiguration) -> Option<&str> {
+    let if_expr = match prompt {
+        PromptConfiguration::Checkbox { prompt } => &prompt.base.r#if,
+        PromptConfiguration::Select { prompt } => &prompt.base.r#if,
+        PromptConfiguration::MultiSelect { prompt } => &prompt.base.r#if,
+        PromptConfiguration::Text { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::Password { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::FloatNumber { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.base.r#if,
+    };
+    if_expr.as_deref()
 }
 
 fn skip(
@@ -193,13 +203,26 @@ fn validate_value(
     Ok(())
 }
 
+// TODO: utilize hint, default, and pre_exec_values
+
 fn prompt_checkbox(
     prompt: &CheckboxPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
+    let name = prompt.base.name.as_str();
+    let default_value = prompt.default;
+
+    let question =
+        Question::confirm(name).message(prompt.base.message.as_str());
+
     let prompt_value = requestty::prompt_one(
-        Question::confirm(prompt.base.name.as_str())
-            .message(prompt.base.message.as_str())
-            .build(),
+        if let Some(default_value) = default_value {
+            question.default(default_value)
+        } else {
+            question
+        }
+        .build(),
     )?;
 
     let value = prompt_value.as_bool().ok_or_else(|| {
@@ -211,12 +234,15 @@ fn prompt_checkbox(
 
 fn prompt_password(
     prompt: &PasswordPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let prompt_value = requestty::prompt_one(
-        Question::password(prompt.base.base.name.as_str())
-            .message(prompt.base.base.message.as_str())
-            .build(),
-    )?;
+    let name = prompt.base.base.name.as_str();
+
+    let question =
+        Question::password(name).message(prompt.base.base.message.as_str());
+
+    let prompt_value = requestty::prompt_one(question.build())?;
 
     let value = prompt_value
         .as_string()
@@ -230,11 +256,21 @@ fn prompt_password(
 
 fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
+    let name = prompt.base.base.name.as_str();
+    let question =
+        Question::input(name).message(prompt.base.base.message.as_str());
+    let default_value = prompt.default;
+
     let prompt_value = requestty::prompt_one(
-        Question::input(prompt.base.base.name.as_str())
-            .message(prompt.base.base.message.as_str())
-            .build(),
+        if let Some(default_value) = default_value {
+            question.default(default_value.to_string())
+        } else {
+            question
+        }
+        .build(),
     )?;
 
     let value = prompt_value.as_float().ok_or_else(|| {
@@ -246,11 +282,21 @@ fn prompt_float_number(
 
 fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
+    let name = prompt.base.base.name.as_str();
+    let question =
+        Question::input(name).message(prompt.base.base.message.as_str());
+    let default_value = prompt.default;
+
     let prompt_value = requestty::prompt_one(
-        Question::input(prompt.base.base.name.as_str())
-            .message(prompt.base.base.message.as_str())
-            .build(),
+        if let Some(default_value) = default_value {
+            question.default(default_value.to_string())
+        } else {
+            question
+        }
+        .build(),
     )?;
 
     let value = prompt_value.as_int().ok_or_else(|| {
@@ -262,11 +308,21 @@ fn prompt_integer_number(
 
 fn prompt_text(
     prompt: &TextPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
+    let name = prompt.base.base.name.as_str();
+    let question =
+        Question::input(name).message(prompt.base.base.message.as_str());
+    let default_value = prompt.default.as_deref();
+
     let prompt_value = requestty::prompt_one(
-        Question::input(prompt.base.base.name.as_str())
-            .message(prompt.base.base.message.as_str())
-            .build(),
+        if let Some(default_value) = default_value {
+            question.default(default_value)
+        } else {
+            question
+        }
+        .build(),
     )?;
 
     let value = prompt_value
@@ -281,6 +337,8 @@ fn prompt_text(
 
 fn prompt_select(
     prompt: &SelectPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let options = prompt
         .options
@@ -288,11 +346,21 @@ fn prompt_select(
         .map(|choice| choice.name.as_str())
         .collect::<Vec<_>>();
 
+    let default_value = prompt.default.as_deref();
+    let question = Question::select(prompt.base.name.as_str())
+        .message(prompt.base.message.as_str())
+        .choices(options);
+
     let prompt_value = requestty::prompt_one(
-        Question::select(prompt.base.name.as_str())
-            .message(prompt.base.message.as_str())
-            .choices(options)
-            .build(),
+        if let Some(default) = default_value
+            && let Some(index) =
+                prompt.options.iter().position(|o| o.value == default)
+        {
+            question.default(index)
+        } else {
+            question
+        }
+        .build(),
     )?;
 
     let value = prompt_value
@@ -307,18 +375,38 @@ fn prompt_select(
 
 fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
+    _pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let options = prompt
-        .options
-        .iter()
-        .map(|choice| choice.name.as_str())
-        .collect::<Vec<_>>();
+    let name = prompt.base.name.as_str();
+    let default_values = prompt
+        .default
+        .as_deref()
+        .map(|def| def.iter().collect::<UnorderedSet<_>>());
+
+    let question =
+        Question::multi_select(name).message(prompt.base.message.as_str());
 
     let prompt_value = requestty::prompt_one(
-        Question::multi_select(prompt.base.name.as_str())
-            .message(prompt.base.message.as_str())
-            .choices(options)
-            .build(),
+        if let Some(defaults) = default_values {
+            let options = prompt
+                .options
+                .iter()
+                .map(|choice| {
+                    (choice.name.as_str(), defaults.contains(&choice.value))
+                })
+                .collect::<Vec<_>>();
+
+            question.choices_with_default(options)
+        } else {
+            let options = prompt
+                .options
+                .iter()
+                .map(|choice| choice.name.as_str())
+                .collect::<Vec<_>>();
+            question.choices(options)
+        }
+        .build(),
     )?;
 
     let value = prompt_value
@@ -482,6 +570,7 @@ mod test {
                         r#if: None,
                         ..Default::default()
                     },
+                    default: None,
                 },
             },
             PromptConfiguration::Checkbox {
@@ -492,6 +581,7 @@ mod test {
                         r#if: None,
                         ..Default::default()
                     },
+                    default: None,
                 },
             },
         ];
