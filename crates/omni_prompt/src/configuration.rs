@@ -1,89 +1,136 @@
+use crate::validators::validate_name;
+use derive_new::new;
 use garde::Validate;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct BasePromptConfiguration<TDefault> {
+    #[new(into)]
+    #[serde(deserialize_with = "validate_name")]
     pub name: String,
+
+    #[new(into)]
     pub message: String,
+
+    #[new(into)]
     pub default: Option<TDefault>,
+
+    #[new(into)]
     pub hint: Option<String>,
-    pub validate: Option<String>,
+
+    #[new(into)]
     #[serde(rename = "if")]
     pub r#if: Option<String>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct ValidateConfiguration {
+    #[new(into)]
+    pub condition: String,
+
+    #[new(into)]
+    pub error_message: Option<String>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidatedPromptConfiguration<TDefault> {
     #[serde(flatten)]
+    #[new(into)]
     pub base: BasePromptConfiguration<TDefault>,
-    pub validate: Option<String>,
+
+    #[new(into)]
+    #[serde(default)]
+    pub validate: Vec<ValidateConfiguration>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct CheckboxPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: BasePromptConfiguration<bool>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct SelectPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: BasePromptConfiguration<String>,
+
+    #[new(into)]
     pub options: Vec<OptionConfiguration>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct MultiSelectPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: BasePromptConfiguration<Vec<String>>,
+
+    #[new(into)]
     pub options: Vec<OptionConfiguration>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct TextPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: ValidatedPromptConfiguration<String>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct PasswordPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: ValidatedPromptConfiguration<String>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
-pub struct NumberPromptConfiguration {
+pub struct FloatNumberPromptConfiguration {
     #[serde(flatten)]
+    #[new(into)]
     pub base: ValidatedPromptConfiguration<f64>,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct IntegerNumberPromptConfiguration {
+    #[serde(flatten)]
+    #[new(into)]
+    pub base: ValidatedPromptConfiguration<f64>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
@@ -91,35 +138,49 @@ pub struct NumberPromptConfiguration {
 pub enum PromptConfiguration {
     Checkbox {
         #[serde(flatten)]
+        #[new(into)]
         prompt: CheckboxPromptConfiguration,
     },
     Select {
         #[serde(flatten)]
+        #[new(into)]
         prompt: SelectPromptConfiguration,
     },
     MultiSelect {
         #[serde(flatten)]
+        #[new(into)]
         prompt: MultiSelectPromptConfiguration,
     },
     Text {
         #[serde(flatten)]
+        #[new(into)]
         prompt: TextPromptConfiguration,
     },
     Password {
         #[serde(flatten)]
+        #[new(into)]
         prompt: PasswordPromptConfiguration,
     },
-    Number {
+    FloatNumber {
         #[serde(flatten)]
-        prompt: NumberPromptConfiguration,
+        #[new(into)]
+        prompt: FloatNumberPromptConfiguration,
+    },
+    IntegerNumber {
+        #[serde(flatten)]
+        #[new(into)]
+        prompt: IntegerNumberPromptConfiguration,
     },
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct OptionConfiguration {
+    #[new(into)]
     pub name: String,
+
+    #[new(into)]
     pub value: String,
 }

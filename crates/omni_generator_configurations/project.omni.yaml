@@ -5,9 +5,9 @@ extends:
 
 dependencies:
   - omni_types
-  - omni_generator
   - config_utils
   - omni_core
+  - omni_prompt
   - maps
   - sets
   - js_runtime

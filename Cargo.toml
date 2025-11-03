@@ -170,6 +170,7 @@ omni_file_data_serde = { path = "./crates/omni_file_data_serde" }
 omni_setup = { path = "./crates/omni_setup" }
 omni_generator_configurations = { path = "./crates/omni_generator_configurations" }
 omni_scm = { path = "./crates/omni_scm" }
+omni_prompt = { path = "./crates/omni_prompt" }
 axum = { version = "^0.8.6", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.2" }
 tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }
@@ -210,6 +211,9 @@ machine-uid = { version = "^0.5.3" }
 rand = { version = "^0.9.2" }
 ring = { version = "^0.17.14" }
 git2 = { version = "^0.20.2" }
+requestty = { version = "^0.6.1", features = ["crossterm", "smallvec", "macros"] }
+value-bag = { version = "^1.11.1", features = ["serde", "error", "seq", "owned"] }
+serde_validate = { path = "./crates/serde_validate" }
 # nom = { version = "^8.0.0" }
 
 [profile.release]

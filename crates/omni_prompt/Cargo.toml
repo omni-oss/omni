@@ -1,5 +1,5 @@
 [package]
-name = "omni_generator"
+name = "omni_prompt"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -23,11 +23,14 @@ eyre = { workspace = true }
 strum = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
-tera = { workspace = true }
 derive-new = { workspace = true }
-omni_generator_configurations = { workspace = true }
-omni_prompt = { workspace = true }
+tera = { workspace = true }
 system_traits = { workspace = true }
 requestty = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
+sets = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
+garde = { workspace = true }
+serde_validate = { workspace = true }
