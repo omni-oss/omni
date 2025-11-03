@@ -54,71 +54,44 @@ pub fn prompt(
             continue;
         }
 
-        let (key, value, validators) = match prompt {
+        let (value, validators) = match prompt {
             PromptConfiguration::Checkbox { prompt } => {
                 let value = prompt_checkbox(prompt)?;
 
-                (
-                    prompt.base.name.clone(),
-                    value,
-                    &[] as &[ValidateConfiguration],
-                )
+                (value, &[] as &[ValidateConfiguration])
             }
             PromptConfiguration::Select { prompt } => {
                 let value = prompt_select(prompt)?;
 
-                (
-                    prompt.base.name.clone(),
-                    value,
-                    &[] as &[ValidateConfiguration],
-                )
+                (value, &[] as &[ValidateConfiguration])
             }
             PromptConfiguration::MultiSelect { prompt } => {
                 let value = prompt_multi_select(prompt)?;
 
-                (
-                    prompt.base.name.clone(),
-                    value,
-                    &[] as &[ValidateConfiguration],
-                )
+                (value, &[] as &[ValidateConfiguration])
             }
             PromptConfiguration::Text { prompt } => {
                 let value = prompt_text(prompt)?;
 
-                (
-                    prompt.base.base.name.clone(),
-                    value,
-                    prompt.base.validate.as_slice(),
-                )
+                (value, prompt.base.validate.as_slice())
             }
             PromptConfiguration::Password { prompt } => {
                 let value = prompt_password(prompt)?;
 
-                (
-                    prompt.base.base.name.clone(),
-                    value,
-                    prompt.base.validate.as_slice(),
-                )
+                (value, prompt.base.validate.as_slice())
             }
             PromptConfiguration::FloatNumber { prompt } => {
                 let value = prompt_float_number(prompt)?;
 
-                (
-                    prompt.base.base.name.clone(),
-                    value,
-                    prompt.base.validate.as_slice(),
-                )
+                (value, prompt.base.validate.as_slice())
             }
             PromptConfiguration::IntegerNumber { prompt } => {
                 let value = prompt_integer_number(prompt)?;
 
-                (
-                    prompt.base.base.name.clone(),
-                    value,
-                    prompt.base.validate.as_slice(),
-                )
+                (value, prompt.base.validate.as_slice())
             }
         };
+        let key = get_prompt_name(prompt).to_string();
 
         validate_value(
             &key,
@@ -159,28 +132,31 @@ fn validate_prompt_configurations(
     let mut seen_names = UnorderedSet::default();
 
     for prompt in prompts {
-        let name = match prompt {
-            PromptConfiguration::Checkbox { prompt } => &prompt.base.name,
-            PromptConfiguration::Select { prompt } => &prompt.base.name,
-            PromptConfiguration::MultiSelect { prompt } => &prompt.base.name,
-            PromptConfiguration::Text { prompt } => &prompt.base.base.name,
-            PromptConfiguration::Password { prompt } => &prompt.base.base.name,
-            PromptConfiguration::FloatNumber { prompt } => {
-                &prompt.base.base.name
-            }
-            PromptConfiguration::IntegerNumber { prompt } => {
-                &prompt.base.base.name
-            }
-        };
+        let name = get_prompt_name(prompt);
 
         if seen_names.contains(&name) {
-            return Err(PromptErrrorInner::DuplicatePromptName(name.clone()))?;
+            return Err(PromptErrrorInner::DuplicatePromptName(
+                name.to_string(),
+            ))?;
         }
 
         seen_names.insert(name);
     }
 
     Ok(())
+}
+
+fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
+    let name = match prompt {
+        PromptConfiguration::Checkbox { prompt } => &prompt.base.name,
+        PromptConfiguration::Select { prompt } => &prompt.base.name,
+        PromptConfiguration::MultiSelect { prompt } => &prompt.base.name,
+        PromptConfiguration::Text { prompt } => &prompt.base.base.name,
+        PromptConfiguration::Password { prompt } => &prompt.base.base.name,
+        PromptConfiguration::FloatNumber { prompt } => &prompt.base.base.name,
+        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.base.name,
+    };
+    name
 }
 
 fn validate_value(
