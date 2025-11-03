@@ -21,6 +21,8 @@ pub struct BaseActionConfiguration {
 #[garde(allow_unvalidated)]
 pub struct CommonAddConfiguration {
     pub overwrite: Option<OverwriteConfiguration>,
+    /// Target directory to add the file(s) to. If it does not exist, it will be created.
+    pub target: Option<String>,
 }
 
 #[derive(
@@ -30,8 +32,8 @@ pub struct CommonAddConfiguration {
 pub struct BaseAddActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
-    #[serde(flatten)]
-    pub common: Option<CommonAddConfiguration>,
+    #[serde(flatten, default)]
+    pub common: CommonAddConfiguration,
 }
 
 #[derive(
@@ -62,6 +64,7 @@ pub struct AddManyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
     pub template_files: Vec<PathBuf>,
+    pub flatten: Option<bool>,
 }
 
 #[derive(

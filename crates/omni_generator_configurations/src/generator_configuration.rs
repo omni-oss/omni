@@ -1,8 +1,9 @@
 use garde::Validate;
+use omni_prompt::configuration::PromptConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ActionConfiguration, PromptConfiguration};
+use crate::ActionConfiguration;
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,

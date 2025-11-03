@@ -32,4 +32,4 @@ js_runtime = { workspace = true }
 garde = { workspace = true }
 system_traits = { workspace = true }
 lazy-regex = { workspace = true }
-omni_generator = { workspace = true }
+omni_prompt = { workspace = true }
