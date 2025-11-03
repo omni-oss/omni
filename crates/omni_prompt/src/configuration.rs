@@ -1,6 +1,9 @@
-use crate::validators::validate_name;
 use derive_new::new;
 use garde::Validate;
+use omni_serde_validators::{
+    name::validate_name,
+    tera_expr::{option_validate_tera_expr, validate_tera_expr},
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +26,7 @@ pub struct BasePromptConfiguration<TDefault> {
     pub hint: Option<String>,
 
     #[new(into)]
-    #[serde(rename = "if")]
+    #[serde(rename = "if", deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
 }
 
@@ -33,6 +36,7 @@ pub struct BasePromptConfiguration<TDefault> {
 #[garde(allow_unvalidated)]
 pub struct ValidateConfiguration {
     #[new(into)]
+    #[serde(deserialize_with = "validate_tera_expr")]
     pub condition: String,
 
     #[new(into)]

@@ -4511,6 +4511,7 @@ dependencies = [
  "eyre",
  "garde",
  "maps",
+ "omni_serde_validators",
  "requestty",
  "schemars",
  "serde",
@@ -4632,6 +4633,21 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.17",
  "tokio 1.48.0",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_serde_validators"
+version = "0.0.0"
+dependencies = [
+ "derive-new",
+ "eyre",
+ "serde",
+ "serde_validate",
+ "strum 0.27.2",
+ "tera",
+ "thiserror 2.0.17",
  "trace",
  "tracing",
 ]
