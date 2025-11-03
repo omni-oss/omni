@@ -171,6 +171,7 @@ omni_setup = { path = "./crates/omni_setup" }
 omni_generator_configurations = { path = "./crates/omni_generator_configurations" }
 omni_scm = { path = "./crates/omni_scm" }
 omni_prompt = { path = "./crates/omni_prompt" }
+omni_serde_validators = { path = "./crates/omni_serde_validators" }
 axum = { version = "^0.8.6", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.2" }
 tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }

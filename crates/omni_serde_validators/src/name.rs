@@ -1,6 +1,6 @@
-use serde_validate::{StaticValidator, declare_static_validator};
+use serde_validate::{StaticValidator, Validator, declare_static_validator};
 
-#[derive(Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct NameValidator;
 
 impl StaticValidator<String> for NameValidator {
@@ -26,7 +26,18 @@ impl StaticValidator<String> for NameValidator {
     }
 }
 
-declare_static_validator!(NameValidator, String, validate_name);
+impl Validator<String> for NameValidator {
+    fn validate(&self, value: &String) -> Result<(), String> {
+        Self::validate_static(value)
+    }
+}
+
+declare_static_validator!(
+    NameValidator,
+    String,
+    validate_name,
+    option_validate_name
+);
 
 #[cfg(test)]
 mod tests {

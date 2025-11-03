@@ -1,5 +1,5 @@
 [package]
-name = "omni_prompt"
+name = "omni_serde_validators"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,14 +24,6 @@ strum = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 derive-new = { workspace = true }
-tera = { workspace = true }
-system_traits = { workspace = true }
-requestty = { workspace = true }
-value-bag = { workspace = true }
-maps = { workspace = true }
-sets = { workspace = true }
 serde = { workspace = true }
-schemars = { workspace = true }
-garde = { workspace = true }
+tera = { workspace = true }
 serde_validate = { workspace = true }
-omni_serde_validators = { workspace = true }
