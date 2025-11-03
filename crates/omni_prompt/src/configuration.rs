@@ -8,7 +8,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct BasePromptConfiguration<TDefault> {
@@ -31,7 +39,15 @@ pub struct BasePromptConfiguration<TDefault> {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidateConfiguration {
@@ -44,7 +60,15 @@ pub struct ValidateConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidatedPromptConfiguration<TDefault> {
@@ -58,7 +82,15 @@ pub struct ValidatedPromptConfiguration<TDefault> {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct CheckboxPromptConfiguration {
@@ -68,7 +100,15 @@ pub struct CheckboxPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct SelectPromptConfiguration {
@@ -81,7 +121,15 @@ pub struct SelectPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct MultiSelectPromptConfiguration {
@@ -94,7 +142,15 @@ pub struct MultiSelectPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct TextPromptConfiguration {
@@ -104,7 +160,15 @@ pub struct TextPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct PasswordPromptConfiguration {
@@ -114,7 +178,15 @@ pub struct PasswordPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct FloatNumberPromptConfiguration {
@@ -124,7 +196,15 @@ pub struct FloatNumberPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
 )]
 #[garde(allow_unvalidated)]
 pub struct IntegerNumberPromptConfiguration {
