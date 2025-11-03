@@ -5,4 +5,4 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - omni_serde_validate
+  - serde_validate
