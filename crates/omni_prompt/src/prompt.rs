@@ -46,14 +46,28 @@ pub fn prompt(
         let validators = get_validators(prompt);
         let key = get_prompt_name(prompt).to_string();
         let pre_exec_value = pre_exec_values.get(&key);
-        let value = get_prompt_value(prompt, pre_exec_value, config)?;
+        let value = if let Some(pre_exec_value) = pre_exec_value {
+            let value = pre_exec_value;
+            let result = validate_value(
+                &key,
+                &value,
+                validators,
+                config.validation_expressions_value_name,
+            );
 
-        validate_value(
-            &key,
-            &value,
-            validators,
-            config.validation_expressions_value_name,
-        )?;
+            if let Err(err) = result {
+                if err.kind() == PromptErrorKind::InvalidValue {
+                    trace::error!("reprompting due to error: {err}");
+                    get_prompt_value(prompt, config)?
+                } else {
+                    return Err(err);
+                }
+            } else {
+                value.clone()
+            }
+        } else {
+            get_prompt_value(prompt, config)?
+        };
 
         values.insert(key, value);
     }
@@ -63,30 +77,27 @@ pub fn prompt(
 
 fn get_prompt_value(
     prompt: &PromptConfiguration,
-    pre_exec_value: Option<&OwnedValueBag>,
     config: &PromptingConfiguration<'_>,
 ) -> Result<OwnedValueBag, PromptError> {
     let value = match prompt {
         PromptConfiguration::Checkbox { prompt } => {
-            prompt_checkbox(prompt, pre_exec_value, config)?
+            prompt_checkbox(prompt, config)?
         }
         PromptConfiguration::Select { prompt } => {
-            prompt_select(prompt, pre_exec_value, config)?
+            prompt_select(prompt, config)?
         }
         PromptConfiguration::MultiSelect { prompt } => {
-            prompt_multi_select(prompt, pre_exec_value, config)?
+            prompt_multi_select(prompt, config)?
         }
-        PromptConfiguration::Text { prompt } => {
-            prompt_text(prompt, pre_exec_value, config)?
-        }
+        PromptConfiguration::Text { prompt } => prompt_text(prompt, config)?,
         PromptConfiguration::Password { prompt } => {
-            prompt_password(prompt, pre_exec_value, config)?
+            prompt_password(prompt, config)?
         }
         PromptConfiguration::FloatNumber { prompt } => {
-            prompt_float_number(prompt, pre_exec_value, config)?
+            prompt_float_number(prompt, config)?
         }
         PromptConfiguration::IntegerNumber { prompt } => {
-            prompt_integer_number(prompt, pre_exec_value, config)?
+            prompt_integer_number(prompt, config)?
         }
     };
     Ok(value)
@@ -204,11 +215,10 @@ fn validate_value(
     Ok(())
 }
 
-// TODO: utilize pre_exec_value
+// TODO: utilize requestty's validate feature
 
 fn prompt_checkbox(
     prompt: &CheckboxPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.name.as_str();
@@ -235,7 +245,6 @@ fn prompt_checkbox(
 
 fn prompt_password(
     prompt: &PasswordPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -257,7 +266,6 @@ fn prompt_password(
 
 fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -283,7 +291,6 @@ fn prompt_float_number(
 
 fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -309,7 +316,6 @@ fn prompt_integer_number(
 
 fn prompt_text(
     prompt: &TextPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -338,7 +344,6 @@ fn prompt_text(
 
 fn prompt_select(
     prompt: &SelectPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let options = prompt
@@ -376,7 +381,6 @@ fn prompt_select(
 
 fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
-    _pre_exec_value: Option<&OwnedValueBag>,
     _config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
     let name = prompt.base.name.as_str();
