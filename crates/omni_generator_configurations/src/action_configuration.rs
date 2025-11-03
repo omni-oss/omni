@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use garde::Validate;
+use omni_serde_validators::tera_expr::option_validate_tera_expr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -10,7 +11,7 @@ use strum::EnumDiscriminants;
 )]
 #[garde(allow_unvalidated)]
 pub struct BaseActionConfiguration {
-    #[serde(flatten)]
+    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
     pub progress_message: Option<String>,
 }

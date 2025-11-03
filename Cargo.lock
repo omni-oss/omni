@@ -4426,6 +4426,7 @@ dependencies = [
  "omni_core",
  "omni_expressions",
  "omni_prompt",
+ "omni_serde_validators",
  "omni_types",
  "schemars",
  "serde",

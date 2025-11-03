@@ -5,6 +5,7 @@ extends:
 
 dependencies:
   - omni_types
+  - omni_serde_validators
   - config_utils
   - omni_core
   - omni_prompt
