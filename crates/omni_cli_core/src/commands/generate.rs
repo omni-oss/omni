@@ -1,6 +1,6 @@
 use omni_context::Context;
 use omni_generator::prompt::{
-    self,
+    self, PromptingConfiguration,
     configuration::{
         BasePromptConfiguration, PromptConfiguration, TextPromptConfiguration,
         ValidatedPromptConfiguration,
@@ -20,8 +20,8 @@ pub async fn run(
     _generate: &GenerateCommand,
     _ctx: &Context,
 ) -> eyre::Result<()> {
-    let config = PromptConfiguration::new_text(TextPromptConfiguration::new(
-        ValidatedPromptConfiguration::new(
+    let configs = [PromptConfiguration::new_text(
+        TextPromptConfiguration::new(ValidatedPromptConfiguration::new(
             BasePromptConfiguration::new(
                 "test",
                 "test text?",
@@ -30,10 +30,11 @@ pub async fn run(
                 None,
             ),
             vec![],
-        ),
-    ));
+        )),
+    )];
 
-    let values = prompt::prompt(&[config])?;
+    let prompting_config = PromptingConfiguration::default();
+    let values = prompt::prompt(&configs, &prompting_config)?;
 
     trace::info!("values: {:?}", values);
 

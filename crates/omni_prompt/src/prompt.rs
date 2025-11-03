@@ -11,12 +11,26 @@ use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use value_bag::{OwnedValueBag, ValueBag};
 
+#[derive(Debug, new)]
+pub struct PromptingConfiguration<'a> {
+    pub if_expressions_root_property: Option<&'a str>,
+    pub validation_expressions_value_name: Option<&'a str>,
+}
+
+impl<'a> Default for PromptingConfiguration<'a> {
+    fn default() -> Self {
+        Self {
+            if_expressions_root_property: Some("prompts"),
+            validation_expressions_value_name: Some("value"),
+        }
+    }
+}
+
 pub fn prompt(
     prompts: &[PromptConfiguration],
+    config: &PromptingConfiguration,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, PromptError> {
     validate_prompt_configurations(prompts)?;
-    // TODO: conditional execution of prompts using r#if and validation of value
-
     let mut values = UnorderedMap::default();
 
     for prompt in prompts {
@@ -35,7 +49,7 @@ pub fn prompt(
         };
 
         if let Some(if_expr) = if_expr
-            && skip(if_expr, &values)?
+            && skip(if_expr, &values, config.if_expressions_root_property)?
         {
             continue;
         }
@@ -106,7 +120,12 @@ pub fn prompt(
             }
         };
 
-        validate_value(&key, &value, validators)?;
+        validate_value(
+            &key,
+            &value,
+            validators,
+            config.validation_expressions_value_name,
+        )?;
 
         values.insert(key, value);
     }
@@ -117,9 +136,10 @@ pub fn prompt(
 fn skip(
     if_expr: &str,
     values: &UnorderedMap<String, OwnedValueBag>,
+    if_expressions_root_property: Option<&str>,
 ) -> Result<bool, PromptError> {
     let mut ctx = tera::Context::new();
-    ctx.insert("prompts", values);
+    ctx.insert(if_expressions_root_property.unwrap_or("prompts"), values);
 
     let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
 
@@ -167,10 +187,11 @@ fn validate_value(
     prompt_name: &str,
     value: &OwnedValueBag,
     validators: &[ValidateConfiguration],
+    value_name: Option<&str>,
 ) -> Result<(), PromptError> {
     for validator in validators {
         let mut ctx = tera::Context::new();
-        ctx.insert("value", value);
+        ctx.insert(value_name.unwrap_or("value"), value);
 
         let tera_result =
             tera::Tera::one_off(&validator.condition, &ctx, true)?;
@@ -426,7 +447,7 @@ mod test {
         )]);
 
         assert_eq!(
-            skip(if_expr, &values).unwrap(),
+            skip(if_expr, &values, None).unwrap(),
             false,
             "skip should return false"
         );
@@ -442,7 +463,7 @@ mod test {
         )]);
 
         assert_eq!(
-            skip(if_expr, &values).unwrap(),
+            skip(if_expr, &values, None).unwrap(),
             true,
             "skip should return true"
         );
@@ -457,7 +478,7 @@ mod test {
             ValueBag::capture_serde1(&"other_value").to_owned(),
         )]);
 
-        let result = skip(if_expr, &values);
+        let result = skip(if_expr, &values, None);
 
         assert!(
             result.is_err(),
@@ -524,7 +545,7 @@ mod test {
             error_message: Some("error message".to_string()),
         }];
 
-        let result = validate_value(&prompt_name, &value, &validators);
+        let result = validate_value(&prompt_name, &value, &validators, None);
 
         assert!(
             result.is_ok(),
@@ -541,7 +562,7 @@ mod test {
             error_message: Some("error message".to_string()),
         }];
 
-        let result = validate_value(&prompt_name, &value, &validators);
+        let result = validate_value(&prompt_name, &value, &validators, None);
 
         assert!(
             result.is_err(),
@@ -566,7 +587,7 @@ mod test {
             error_message: Some("error message".to_string()),
         }];
 
-        let result = validate_value(&prompt_name, &value, &validators);
+        let result = validate_value(&prompt_name, &value, &validators, None);
 
         assert!(
             result.is_err(),
