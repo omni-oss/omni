@@ -15,7 +15,7 @@ use crate::{
     build,
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
-        generate::GenerateCommand, hash::HashCommand,
+        generator::GeneratorCommand, hash::HashCommand,
     },
 };
 
@@ -25,7 +25,7 @@ pub mod config;
 pub mod declspec;
 pub mod env;
 pub mod exec;
-pub mod generate;
+pub mod generator;
 pub mod hash;
 pub mod run;
 
@@ -162,5 +162,5 @@ pub enum CliSubcommands {
     Cache(CacheCommand),
 
     #[command(about = "Code generation related subcommands", alias = "gen")]
-    Generate(GenerateCommand),
+    Generator(GeneratorCommand),
 }
