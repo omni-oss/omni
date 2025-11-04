@@ -88,9 +88,9 @@ pub async fn run(
             let context = create_ctx()?;
             commands::cache::run(cache_command, &context).await?;
         }
-        CliSubcommands::Generate(command) => {
+        CliSubcommands::Generator(command) => {
             let context = create_ctx()?;
-            commands::generate::run(command, &context).await?;
+            commands::generator::run(command, &context).await?;
         }
     }
 
