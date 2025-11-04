@@ -135,7 +135,7 @@ pub struct SelectPromptConfiguration {
 pub struct MultiSelectPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration,
+    pub base: ValidatedPromptConfiguration,
 
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
@@ -257,12 +257,12 @@ pub enum PromptConfiguration {
         #[new(into)]
         prompt: PasswordPromptConfiguration,
     },
-    FloatNumber {
+    Float {
         #[serde(flatten)]
         #[new(into)]
         prompt: FloatNumberPromptConfiguration,
     },
-    IntegerNumber {
+    Integer {
         #[serde(flatten)]
         #[new(into)]
         prompt: IntegerNumberPromptConfiguration,
@@ -279,4 +279,23 @@ pub struct OptionConfiguration {
 
     #[new(into)]
     pub value: String,
+
+    #[new(into)]
+    #[serde(default)]
+    pub separator: bool,
+}
+
+#[derive(Debug, new)]
+pub struct PromptingConfiguration<'a> {
+    pub if_expressions_root_property: Option<&'a str>,
+    pub validation_expressions_value_name: Option<&'a str>,
+}
+
+impl<'a> Default for PromptingConfiguration<'a> {
+    fn default() -> Self {
+        Self {
+            if_expressions_root_property: Some("prompts"),
+            validation_expressions_value_name: Some("value"),
+        }
+    }
 }
