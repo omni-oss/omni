@@ -1,30 +1,18 @@
-use crate::configuration::{
-    CheckboxPromptConfiguration, FloatNumberPromptConfiguration,
-    IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
-    PasswordPromptConfiguration, PromptConfiguration,
-    SelectPromptConfiguration, TextPromptConfiguration, ValidateConfiguration,
+use crate::{
+    configuration::{
+        CheckboxPromptConfiguration, FloatNumberPromptConfiguration,
+        IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
+        PasswordPromptConfiguration, PromptConfiguration,
+        PromptingConfiguration, SelectPromptConfiguration,
+        TextPromptConfiguration, ValidateConfiguration,
+    },
+    error::{PromptError, PromptErrorKind, PromptErrrorInner},
+    make,
+    utils::{validate_boolean_expression_result, validate_value},
 };
-use derive_new::new;
 use maps::UnorderedMap;
-use requestty::Question;
 use sets::UnorderedSet;
-use strum::{EnumDiscriminants, IntoDiscriminant};
 use value_bag::{OwnedValueBag, ValueBag};
-
-#[derive(Debug, new)]
-pub struct PromptingConfiguration<'a> {
-    pub if_expressions_root_property: Option<&'a str>,
-    pub validation_expressions_value_name: Option<&'a str>,
-}
-
-impl<'a> Default for PromptingConfiguration<'a> {
-    fn default() -> Self {
-        Self {
-            if_expressions_root_property: Some("prompts"),
-            validation_expressions_value_name: Some("value"),
-        }
-    }
-}
 
 pub fn prompt(
     prompts: &[PromptConfiguration],
@@ -93,10 +81,10 @@ fn get_prompt_value(
         PromptConfiguration::Password { prompt } => {
             prompt_password(prompt, config)?
         }
-        PromptConfiguration::FloatNumber { prompt } => {
+        PromptConfiguration::Float { prompt } => {
             prompt_float_number(prompt, config)?
         }
-        PromptConfiguration::IntegerNumber { prompt } => {
+        PromptConfiguration::Integer { prompt } => {
             prompt_integer_number(prompt, config)?
         }
     };
@@ -110,8 +98,8 @@ fn get_validators(prompt: &PromptConfiguration) -> &[ValidateConfiguration] {
         PromptConfiguration::MultiSelect { .. } => &[],
         PromptConfiguration::Text { prompt } => &prompt.base.validate,
         PromptConfiguration::Password { prompt } => &prompt.base.validate,
-        PromptConfiguration::FloatNumber { prompt } => &prompt.base.validate,
-        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.validate,
+        PromptConfiguration::Float { prompt } => &prompt.base.validate,
+        PromptConfiguration::Integer { prompt } => &prompt.base.validate,
     }
 }
 
@@ -119,11 +107,11 @@ fn get_if_expression(prompt: &PromptConfiguration) -> Option<&str> {
     let if_expr = match prompt {
         PromptConfiguration::Checkbox { prompt } => &prompt.base.r#if,
         PromptConfiguration::Select { prompt } => &prompt.base.r#if,
-        PromptConfiguration::MultiSelect { prompt } => &prompt.base.r#if,
+        PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.r#if,
         PromptConfiguration::Text { prompt } => &prompt.base.base.r#if,
         PromptConfiguration::Password { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::FloatNumber { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::Float { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::Integer { prompt } => &prompt.base.base.r#if,
     };
     if_expr.as_deref()
 }
@@ -172,69 +160,22 @@ fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
     let name = match prompt {
         PromptConfiguration::Checkbox { prompt } => &prompt.base.name,
         PromptConfiguration::Select { prompt } => &prompt.base.name,
-        PromptConfiguration::MultiSelect { prompt } => &prompt.base.name,
+        PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.name,
         PromptConfiguration::Text { prompt } => &prompt.base.base.name,
         PromptConfiguration::Password { prompt } => &prompt.base.base.name,
-        PromptConfiguration::FloatNumber { prompt } => &prompt.base.base.name,
-        PromptConfiguration::IntegerNumber { prompt } => &prompt.base.base.name,
+        PromptConfiguration::Float { prompt } => &prompt.base.base.name,
+        PromptConfiguration::Integer { prompt } => &prompt.base.base.name,
     };
     name
 }
 
-fn validate_value(
-    prompt_name: &str,
-    value: &OwnedValueBag,
-    validators: &[ValidateConfiguration],
-    value_name: Option<&str>,
-) -> Result<(), PromptError> {
-    for validator in validators {
-        let mut ctx = tera::Context::new();
-        ctx.insert(value_name.unwrap_or("value"), value);
-
-        let tera_result =
-            tera::Tera::one_off(&validator.condition, &ctx, true)?;
-
-        validate_boolean_expression_result(&tera_result, &validator.condition)?;
-
-        if tera_result != "true" {
-            return Err(PromptErrrorInner::InvalidValue {
-                prompt_name: prompt_name.to_string(),
-                value: value.clone(),
-                error_message: validator.error_message.clone().unwrap_or_else(
-                    || {
-                        format!(
-                            "condition '{}' evaluated to false",
-                            validator.condition
-                        )
-                    },
-                ),
-            })?;
-        }
-    }
-
-    Ok(())
-}
-
-// TODO: utilize requestty's validate feature
-
 fn prompt_checkbox(
     prompt: &CheckboxPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.name.as_str();
-    let default_value = prompt.default;
+    let prompt = make::checkbox(prompt, config)?;
 
-    let question =
-        Question::confirm(name).message(prompt.base.message.as_str());
-
-    let prompt_value = requestty::prompt_one(
-        if let Some(default_value) = default_value {
-            question.default(default_value)
-        } else {
-            question
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(prompt)?;
 
     let value = prompt_value.as_bool().ok_or_else(|| {
         PromptError::from(eyre::eyre!("prompt value is not a boolean"))
@@ -245,14 +186,11 @@ fn prompt_checkbox(
 
 fn prompt_password(
     prompt: &PasswordPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.base.name.as_str();
+    let question = make::password(prompt, config)?;
 
-    let question =
-        Question::password(name).message(prompt.base.base.message.as_str());
-
-    let prompt_value = requestty::prompt_one(question.build())?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value
         .as_string()
@@ -266,21 +204,11 @@ fn prompt_password(
 
 fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.base.name.as_str();
-    let question =
-        Question::input(name).message(prompt.base.base.message.as_str());
-    let default_value = prompt.default;
+    let question = make::float_number(prompt, config)?;
 
-    let prompt_value = requestty::prompt_one(
-        if let Some(default_value) = default_value {
-            question.default(default_value.to_string())
-        } else {
-            question
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value.as_float().ok_or_else(|| {
         PromptError::from(eyre::eyre!("prompt value is not a float"))
@@ -291,21 +219,11 @@ fn prompt_float_number(
 
 fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.base.name.as_str();
-    let question =
-        Question::input(name).message(prompt.base.base.message.as_str());
-    let default_value = prompt.default;
+    let question = make::integer_number(prompt, config)?;
 
-    let prompt_value = requestty::prompt_one(
-        if let Some(default_value) = default_value {
-            question.default(default_value.to_string())
-        } else {
-            question
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value.as_int().ok_or_else(|| {
         PromptError::from(eyre::eyre!("prompt value is not an integer"))
@@ -316,21 +234,11 @@ fn prompt_integer_number(
 
 fn prompt_text(
     prompt: &TextPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.base.name.as_str();
-    let question =
-        Question::input(name).message(prompt.base.base.message.as_str());
-    let default_value = prompt.default.as_deref();
+    let question = make::text(prompt, config)?;
 
-    let prompt_value = requestty::prompt_one(
-        if let Some(default_value) = default_value {
-            question.default(default_value)
-        } else {
-            question
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value
         .as_string()
@@ -344,30 +252,11 @@ fn prompt_text(
 
 fn prompt_select(
     prompt: &SelectPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let options = prompt
-        .options
-        .iter()
-        .map(|choice| choice.name.as_str())
-        .collect::<Vec<_>>();
+    let question = make::select(prompt, config)?;
 
-    let default_value = prompt.default.as_deref();
-    let question = Question::select(prompt.base.name.as_str())
-        .message(prompt.base.message.as_str())
-        .choices(options);
-
-    let prompt_value = requestty::prompt_one(
-        if let Some(default) = default_value
-            && let Some(index) =
-                prompt.options.iter().position(|o| o.value == default)
-        {
-            question.default(index)
-        } else {
-            question
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value
         .as_list_item()
@@ -381,38 +270,11 @@ fn prompt_select(
 
 fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
-    _config: &PromptingConfiguration,
+    config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let name = prompt.base.name.as_str();
-    let default_values = prompt
-        .default
-        .as_deref()
-        .map(|def| def.iter().collect::<UnorderedSet<_>>());
+    let question = make::multi_select(prompt, config)?;
 
-    let question =
-        Question::multi_select(name).message(prompt.base.message.as_str());
-
-    let prompt_value = requestty::prompt_one(
-        if let Some(defaults) = default_values {
-            let options = prompt
-                .options
-                .iter()
-                .map(|choice| {
-                    (choice.name.as_str(), defaults.contains(&choice.value))
-                })
-                .collect::<Vec<_>>();
-
-            question.choices_with_default(options)
-        } else {
-            let options = prompt
-                .options
-                .iter()
-                .map(|choice| choice.name.as_str())
-                .collect::<Vec<_>>();
-            question.choices(options)
-        }
-        .build(),
-    )?;
+    let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value
         .as_list_items()
@@ -426,78 +288,6 @@ fn prompt_multi_select(
         .collect::<Vec<_>>();
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
-}
-
-fn validate_boolean_expression_result(
-    result: &str,
-    expression: &str,
-) -> Result<(), PromptError> {
-    if result != "true" && result != "false" {
-        return Err(PromptErrrorInner::InvalidBooleanExpressionResult {
-            result: result.to_string(),
-            expression: expression.to_string(),
-        })?;
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, thiserror::Error, new)]
-#[error("prompt error: {inner:?}")]
-pub struct PromptError {
-    #[source]
-    inner: PromptErrrorInner,
-    kind: PromptErrorKind,
-}
-
-impl PromptError {
-    #[allow(unused)]
-    pub fn kind(&self) -> PromptErrorKind {
-        self.kind
-    }
-}
-
-impl<T: Into<PromptErrrorInner>> From<T> for PromptError {
-    fn from(inner: T) -> Self {
-        let inner = inner.into();
-
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
-#[strum_discriminants(vis(pub), name(PromptErrorKind))]
-enum PromptErrrorInner {
-    #[error(transparent)]
-    Custom(#[from] eyre::Report),
-
-    #[error(transparent)]
-    Requestty(#[from] requestty::ErrorKind),
-
-    #[error(
-        "duplicate prompt name: {0}, please ensure that all prompt names are unique"
-    )]
-    DuplicatePromptName(String),
-
-    #[error(transparent)]
-    Tera(#[from] tera::Error),
-
-    #[error(
-        "value '{value}' is invalid for prompt {prompt_name}: {error_message}"
-    )]
-    InvalidValue {
-        prompt_name: String,
-        value: OwnedValueBag,
-        error_message: String,
-    },
-
-    #[error(
-        "invalid boolean expression result: \"{result}\" for expression: \"{expression}\", expected true or false"
-    )]
-    InvalidBooleanExpressionResult { result: String, expression: String },
 }
 
 #[cfg(test)]
@@ -604,73 +394,6 @@ mod test {
             err.kind(),
             PromptErrorKind::DuplicatePromptName,
             "validate_prompt_configurations should return an error if duplicate prompt names are present"
-        );
-    }
-
-    #[test]
-    fn test_validate_value_returns_ok_if_validation_succeeds() {
-        let prompt_name = "name".to_string();
-        let value = ValueBag::capture_serde1(&"value").to_owned();
-        let validators = [ValidateConfiguration {
-            condition: "{{ value == 'value' }}".to_string(),
-            error_message: Some("error message".to_string()),
-        }];
-
-        let result = validate_value(&prompt_name, &value, &validators, None);
-
-        assert!(
-            result.is_ok(),
-            "validate_value should return ok if validation succeeds"
-        );
-    }
-
-    #[test]
-    fn test_validate_value_returns_error_if_validation_fails() {
-        let prompt_name = "name".to_string();
-        let value = ValueBag::capture_serde1(&"wrong value").to_owned();
-        let validators = [ValidateConfiguration {
-            condition: "{{ value == 'value' }}".to_string(),
-            error_message: Some("error message".to_string()),
-        }];
-
-        let result = validate_value(&prompt_name, &value, &validators, None);
-
-        assert!(
-            result.is_err(),
-            "validate_value should return an error if validation fails"
-        );
-
-        let err = result.unwrap_err();
-
-        assert_eq!(
-            err.kind(),
-            PromptErrorKind::InvalidValue,
-            "validate_value should return an error if validation fails"
-        );
-    }
-
-    #[test]
-    fn test_validate_value_returns_error_if_prompt_value_is_not_a_boolean() {
-        let prompt_name = "name".to_string();
-        let value = ValueBag::capture_serde1(&"wrong value").to_owned();
-        let validators = [ValidateConfiguration {
-            condition: "{{ value }}".to_string(),
-            error_message: Some("error message".to_string()),
-        }];
-
-        let result = validate_value(&prompt_name, &value, &validators, None);
-
-        assert!(
-            result.is_err(),
-            "validate_value should return an error if prompt value is not a boolean"
-        );
-
-        let err = result.unwrap_err();
-
-        assert_eq!(
-            err.kind(),
-            PromptErrorKind::InvalidBooleanExpressionResult,
-            "validate_value should return an error if prompt value is not a boolean"
         );
     }
 }

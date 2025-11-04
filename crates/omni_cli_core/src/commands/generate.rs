@@ -1,9 +1,10 @@
 use maps::unordered_map;
 use omni_context::Context;
 use omni_generator::prompt::{
-    self, PromptingConfiguration,
+    self,
     configuration::{
-        BasePromptConfiguration, PromptConfiguration, TextPromptConfiguration,
+        BasePromptConfiguration, PromptConfiguration, PromptingConfiguration,
+        TextPromptConfiguration, ValidateConfiguration,
         ValidatedPromptConfiguration,
     },
 };
@@ -25,7 +26,10 @@ pub async fn run(
         [PromptConfiguration::new_text(TextPromptConfiguration::new(
             ValidatedPromptConfiguration::new(
                 BasePromptConfiguration::new("test", "test text?", None),
-                vec![],
+                vec![ValidateConfiguration {
+                    condition: "{{ value == 'test' }}".to_string(),
+                    error_message: Some("value should be 'test'".to_string()),
+                }],
             ),
             None,
         ))];
