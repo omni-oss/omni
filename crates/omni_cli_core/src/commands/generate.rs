@@ -27,7 +27,7 @@ pub async fn run(
             ValidatedPromptConfiguration::new(
                 BasePromptConfiguration::new("test", "test text?", None),
                 vec![ValidateConfiguration {
-                    condition: "{{ value == 'test' }}".to_string(),
+                    condition: "{{ prompts.test == 'test' }}".to_string(),
                     error_message: Some("value should be 'test'".to_string()),
                 }],
             ),

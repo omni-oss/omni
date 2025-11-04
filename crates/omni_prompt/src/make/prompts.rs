@@ -1,5 +1,3 @@
-use std::process::exit;
-
 use requestty::Question;
 use serde::Serialize;
 use sets::UnorderedSet;
@@ -223,8 +221,9 @@ fn validate<T: Serialize + 'static>(
         {
             Err(error_message.to_string())
         } else {
-            trace::error!("{err}");
-            exit(1)
+            // TODO: find a better way to show errors, currently this is badly displayed due to prompt formatting in the terminal
+            trace::error!("{:?}", err);
+            std::process::exit(1);
         }
     } else {
         Ok(())

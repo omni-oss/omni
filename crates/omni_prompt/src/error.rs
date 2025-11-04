@@ -3,7 +3,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use value_bag::OwnedValueBag;
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("prompt error: {inner:?}")]
+#[error("prompt error: {inner}")]
 pub struct PromptError {
     #[source]
     pub(crate) inner: PromptErrrorInner,
