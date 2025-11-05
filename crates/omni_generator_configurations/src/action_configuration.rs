@@ -21,9 +21,11 @@ pub struct BaseActionConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct CommonAddConfiguration {
+    /// How to handle overwriting existing files.
     pub overwrite: Option<OverwriteConfiguration>,
+
     /// Target directory to add the file(s) to. If it does not exist, it will be created.
-    pub target: Option<String>,
+    pub target: Option<PathBuf>,
 }
 
 #[derive(
@@ -44,13 +46,20 @@ pub struct BaseAddActionConfiguration {
 pub struct AddActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
+
+    /// Provide a single template file to add, does not support glob patterns.
     pub template_file: PathBuf,
+
+    /// If provided, it will be stripped from the file names of the template files.
+    #[serde(default)]
+    pub base_path: Option<PathBuf>,
 }
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
 )]
 #[garde(allow_unvalidated)]
+/// Use an single inline template and write it to a file.
 pub struct AddInlineActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
@@ -64,8 +73,17 @@ pub struct AddInlineActionConfiguration {
 pub struct AddManyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
+
+    /// Provide a list of template files to add, accepts glob patterns.
     pub template_files: Vec<PathBuf>,
+
+    /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
+    #[serde(default)]
     pub flatten: Option<bool>,
+
+    /// If provided, it will be stripped from the file names of the template files.
+    #[serde(default)]
+    pub base_path: Option<PathBuf>,
 }
 
 #[derive(
@@ -109,8 +127,13 @@ pub enum ActionConfiguration {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OverwriteConfiguration {
+    /// Prompt the user to confirm overwriting existing files.
     #[default]
     Prompt,
+
+    /// Always overwrite existing files.
     Always,
+
+    /// Never overwrite existing files.
     Never,
 }
