@@ -18,6 +18,7 @@ pub fn validate_value(
 
         let tera_result =
             tera::Tera::one_off(&validator.condition, &ctx, true)?;
+        let tera_result = tera_result.trim();
 
         validate_boolean_expression_result(&tera_result, &validator.condition)?;
 

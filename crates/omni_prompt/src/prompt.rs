@@ -204,6 +204,7 @@ fn skip(
     ctx.insert(if_expressions_root_property.unwrap_or("prompts"), values);
 
     let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
+    let tera_result = tera_result.trim();
 
     validate_boolean_expression_result(&tera_result, if_expr)?;
 
