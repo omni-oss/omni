@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use requestty::Question;
 use serde::Serialize;
 use sets::UnorderedSet;
@@ -7,11 +9,11 @@ use crate::{
     configuration::{
         CheckboxPromptConfiguration, FloatNumberPromptConfiguration,
         IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
-        PasswordPromptConfiguration, PromptingConfiguration,
-        SelectPromptConfiguration, TextPromptConfiguration,
-        ValidateConfiguration,
+        OptionConfiguration, PasswordPromptConfiguration,
+        PromptingConfiguration, SelectPromptConfiguration,
+        TextPromptConfiguration, ValidateConfiguration,
     },
-    error::{PromptError, PromptErrrorInner},
+    error::{Error, ErrorInner},
     utils::validate_value,
 };
 
@@ -19,7 +21,7 @@ pub fn checkbox<'a>(
     prompt: &'a CheckboxPromptConfiguration,
     _context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.name.as_str();
     let default_value = prompt.default;
 
@@ -38,7 +40,7 @@ pub fn password<'a>(
     prompt: &'a PasswordPromptConfiguration,
     context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
     let validators = prompt.base.validate.as_slice();
 
@@ -61,7 +63,7 @@ pub fn text<'a>(
     prompt: &'a TextPromptConfiguration,
     context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
     let validators = prompt.base.validate.as_slice();
     let question = Question::input(name)
@@ -89,16 +91,17 @@ pub fn select<'a>(
     prompt: &'a SelectPromptConfiguration,
     _context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let default_value = prompt.default.as_deref();
     let mut question = Question::select(prompt.base.name.as_str())
         .message(prompt.base.message.as_str());
 
     for option in prompt.options.iter() {
+        let text = get_option_text(option);
         if option.separator {
-            question = question.separator(option.name.as_str());
+            question = question.separator(text);
         } else {
-            question = question.choice(option.name.as_str());
+            question = question.choice(text);
         }
     }
 
@@ -117,7 +120,7 @@ pub fn multi_select<'a>(
     prompt: &'a MultiSelectPromptConfiguration,
     context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
     let default_values = prompt
         .default
@@ -145,21 +148,23 @@ pub fn multi_select<'a>(
 
     if let Some(defaults) = default_values {
         for option in prompt.options.iter() {
+            let text = get_option_text(option);
             if option.separator {
-                question = question.separator(option.name.as_str());
+                question = question.separator(text);
             } else {
                 question = question.choice_with_default(
-                    option.name.as_str(),
+                    text,
                     defaults.contains(&option.value),
                 );
             }
         }
     } else {
         for option in prompt.options.iter() {
+            let text = get_option_text(option);
             if option.separator {
-                question = question.separator(option.name.as_str());
+                question = question.separator(text);
             } else {
-                question = question.choice(option.name.as_str());
+                question = question.choice(text);
             }
         }
     };
@@ -167,11 +172,28 @@ pub fn multi_select<'a>(
     Ok(question.build())
 }
 
+fn get_option_text<'a>(option: &'a OptionConfiguration) -> Cow<'a, str> {
+    if option.separator {
+        return Cow::Borrowed(&option.name);
+    }
+
+    if let Some(description) = &option.description {
+        Cow::Owned(format!(
+            "{} - {} ({})",
+            option.name, description, option.value
+        ))
+    } else if option.name != option.value {
+        Cow::Owned(format!("{} ({})", option.name, option.value))
+    } else {
+        Cow::Borrowed(&option.name)
+    }
+}
+
 pub fn float_number<'a>(
     prompt: &'a FloatNumberPromptConfiguration,
     context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
     let validators = prompt.base.validate.as_slice();
     let question = Question::input(name)
@@ -197,7 +219,7 @@ pub fn integer_number<'a>(
     prompt: &'a IntegerNumberPromptConfiguration,
     context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
-) -> Result<requestty::Question<'a>, PromptError> {
+) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
     let validators = prompt.base.validate.as_slice();
     let question = Question::input(name)
@@ -237,9 +259,7 @@ fn validate<T: Serialize + 'static>(
     );
 
     if let Err(err) = result {
-        if let PromptErrrorInner::InvalidValue { error_message, .. } =
-            &err.inner
-        {
+        if let ErrorInner::InvalidValue { error_message, .. } = &err.inner {
             Err(error_message.to_string())
         } else {
             // TODO: find a better way to show errors,

@@ -1,9 +1,10 @@
 # yaml-language-server: $schema=../../.artifacts/generator.json
 name: crate
+description: Generate a new rust crate
 
 prompts:
   - type: checkbox
-    name: use-tracing
+    name: use_tracing
     message: Use tracing
     default: true
   - type: select
@@ -17,7 +18,3 @@ prompts:
   - type: text
     name: crate_name
     message: Crate name
-    hint: Must start with a letter and contain only letters, numbers and underscores
-    validate:
-      - condition: "{{ !(value | is_empty) }}"
-        error_message: Cannot be empty

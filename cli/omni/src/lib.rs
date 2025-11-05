@@ -98,61 +98,55 @@ pub async fn run(
 }
 
 #[tokio::main(flavor = "multi_thread")]
+#[cfg_attr(feature = "enable-tracing", tracing::instrument(err))]
 pub async fn main() -> eyre::Result<()> {
+    color_eyre::config::HookBuilder::default()
+        .display_location_section(cfg!(debug_assertions))
+        .install()?;
+
     let cli = Cli::parse();
 
-    let result: eyre::Result<()> = try {
-        let ws_root_dir = get_root_dir(&RealSys).ok();
-        let trace_file_path = cli
-            .args
-            .file_trace_output
-            .clone()
-            .or_else(|| Some(PathBuf::from("./omni/trace/logs")));
+    let ws_root_dir = get_root_dir(&RealSys).ok();
+    let trace_file_path = cli
+        .args
+        .file_trace_output
+        .clone()
+        .or_else(|| Some(PathBuf::from("./omni/trace/logs")));
 
-        let trace_file_path = if let Some(path) = trace_file_path {
-            Some(
-                if !path.has_root()
-                    && let Some(ref root) = ws_root_dir
-                {
-                    root.join(path)
-                } else {
-                    path
-                },
-            )
-        } else {
-            None
-        };
-
-        let tracing_config = TracingConfig {
-            stderr_trace_enabled: cli.args.stderr_trace,
-            file_path: trace_file_path,
-            file_trace_level: cli.args.file_trace_level.value(),
-            stdout_trace_level: cli.args.stdout_trace_level.value(),
-        };
-
-        #[cfg(feature = "enable-tracing")]
-        {
-            init_tracing(&tracing_config)?;
-            trace::trace!("Tracing config: {:?}", tracing_config);
-        }
-
-        run(
-            &cli.subcommand,
-            &cli.args,
-            &tracing_config,
-            ws_root_dir.as_deref(),
+    let trace_file_path = if let Some(path) = trace_file_path {
+        Some(
+            if !path.has_root()
+                && let Some(ref root) = ws_root_dir
+            {
+                root.join(path)
+            } else {
+                path
+            },
         )
-        .await?
+    } else {
+        None
     };
 
-    if cfg!(debug_assertions) {
-        result
-    } else {
-        if let Err(err) = result {
-            eprintln!("{err}");
-            exit(ExitCode::FAILURE);
-        } else {
-            exit(ExitCode::SUCCESS);
-        }
+    let tracing_config = TracingConfig {
+        stderr_trace_enabled: cli.args.stderr_trace,
+        file_path: trace_file_path,
+        file_trace_level: cli.args.file_trace_level.value(),
+        stdout_trace_level: cli.args.stdout_trace_level.value(),
+    };
+
+    #[cfg(feature = "enable-tracing")]
+    {
+        init_tracing(&tracing_config)?;
+        trace::trace!("Tracing config: {:?}", tracing_config);
     }
+
+    run(
+        &cli.subcommand,
+        &cli.args,
+        &tracing_config,
+        ws_root_dir.as_deref(),
+    )
+    .await?;
+
+    Ok(())
 }

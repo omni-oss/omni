@@ -31,6 +31,7 @@ tracing-serde = { version = "^0.2.0" }
 futures = { version = "^0.3.31" }
 thiserror = "^2.0.17"
 eyre = "^0.6.12"
+color-eyre = "^0.6.5"
 time = { version = "^0.3.44", features = ["serde", "serde-human-readable"] }
 derive_more = { version = "^2.0.1", features = ["full"] }
 derive-new = { version = "^0.7.0" }
@@ -172,6 +173,7 @@ omni_generator_configurations = { path = "./crates/omni_generator_configurations
 omni_scm = { path = "./crates/omni_scm" }
 omni_prompt = { path = "./crates/omni_prompt" }
 omni_serde_validators = { path = "./crates/omni_serde_validators" }
+omni_configuration_discovery = { path = "./crates/omni_configuration_discovery" }
 axum = { version = "^0.8.6", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.2" }
 tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }

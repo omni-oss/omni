@@ -28,7 +28,11 @@ pub struct BasePromptConfiguration {
     pub message: String,
 
     #[new(into)]
-    #[serde(rename = "if", deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        rename = "if",
+        deserialize_with = "option_validate_tera_expr",
+        default
+    )]
     pub r#if: Option<String>,
 }
 
@@ -117,6 +121,7 @@ pub struct SelectPromptConfiguration {
     pub options: Vec<OptionConfiguration>,
 
     #[new(into)]
+    #[serde(default)]
     pub default: Option<String>,
 }
 
@@ -141,6 +146,7 @@ pub struct MultiSelectPromptConfiguration {
     pub options: Vec<OptionConfiguration>,
 
     #[new(into)]
+    #[serde(default)]
     pub default: Option<Vec<String>>,
 }
 
@@ -162,6 +168,7 @@ pub struct TextPromptConfiguration {
     pub base: ValidatedPromptConfiguration,
 
     #[new(into)]
+    #[serde(default)]
     pub default: Option<String>,
 }
 
@@ -201,6 +208,7 @@ pub struct FloatNumberPromptConfiguration {
     pub base: ValidatedPromptConfiguration,
 
     #[new(into)]
+    #[serde(default)]
     pub default: Option<f64>,
 }
 
@@ -222,6 +230,7 @@ pub struct IntegerNumberPromptConfiguration {
     pub base: ValidatedPromptConfiguration,
 
     #[new(into)]
+    #[serde(default)]
     pub default: Option<i64>,
 }
 
@@ -276,6 +285,10 @@ pub enum PromptConfiguration {
 pub struct OptionConfiguration {
     #[new(into)]
     pub name: String,
+
+    #[new(into)]
+    #[serde(default)]
+    pub description: Option<String>,
 
     #[new(into)]
     pub value: String,
