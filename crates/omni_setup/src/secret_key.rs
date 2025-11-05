@@ -42,32 +42,26 @@ pub fn get_secret_key() -> Result<String, SecretKeyError> {
 }
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("failed to setup remote caching: {inner}")]
-pub struct SecretKeyError {
-    kind: SecretKeyErrorKind,
-    inner: SecretKeyErrorInner,
-}
+#[error("error when trying to get secret key: {0}")]
+pub struct SecretKeyError(pub(crate) SecretKeyErrorInner);
 
 impl SecretKeyError {
     #[allow(unused)]
     pub fn kind(&self) -> SecretKeyErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<SecretKeyErrorInner>> From<T> for SecretKeyError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner: inner.into(),
-        }
+        Self(inner.into())
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
 #[strum_discriminants(vis(pub), name(SecretKeyErrorKind))]
-enum SecretKeyErrorInner {
+pub(crate) enum SecretKeyErrorInner {
     #[error(transparent)]
     Keyring(#[from] keyring::Error),
 

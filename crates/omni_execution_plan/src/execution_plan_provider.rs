@@ -339,17 +339,15 @@ fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("{inner}")]
-pub struct ExecutionPlanProviderError {
-    #[source]
-    inner: ExecutionPlanProviderErrorInner,
-    kind: ExecutionPlanProviderErrorKind,
-}
+#[error(transparent)]
+pub struct ExecutionPlanProviderError(
+    pub(crate) ExecutionPlanProviderErrorInner,
+);
 
 impl ExecutionPlanProviderError {
     #[allow(unused)]
     pub fn kind(&self) -> ExecutionPlanProviderErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -358,14 +356,13 @@ impl<T: Into<ExecutionPlanProviderErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(thiserror::Error, Debug, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ExecutionPlanProviderErrorKind))]
-enum ExecutionPlanProviderErrorInner {
+pub(crate) enum ExecutionPlanProviderErrorInner {
     #[error(transparent)]
     Glob(#[from] globset::Error),
 

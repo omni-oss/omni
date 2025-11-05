@@ -102,32 +102,26 @@ pub fn decrypt<RInput: Read, RKey: Read>(
 }
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("crypto error: {inner}")]
-pub struct CryptoError {
-    kind: CryptoErrorKind,
-    inner: CryptoErrorInner,
-}
+#[error(transparent)]
+pub struct CryptoError(pub(crate) CryptoErrorInner);
 
 impl CryptoError {
     #[allow(unused)]
     pub fn kind(&self) -> CryptoErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<CryptoErrorInner>> From<T> for CryptoError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner: inner.into(),
-        }
+        Self(inner.into())
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, EnumIs, new)]
 #[strum_discriminants(vis(pub), name(CryptoErrorKind))]
-enum CryptoErrorInner {
+pub(crate) enum CryptoErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

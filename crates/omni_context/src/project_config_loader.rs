@@ -113,17 +113,13 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
 }
 
 #[derive(Error, Debug)]
-#[error("{inner}")]
-pub struct ProjectConfigLoaderError {
-    #[source]
-    inner: ProjectConfigLoaderErrorInner,
-    kind: ProjectConfigLoaderErrorKind,
-}
+#[error(transparent)]
+pub struct ProjectConfigLoaderError(pub(crate) ProjectConfigLoaderErrorInner);
 
 impl ProjectConfigLoaderError {
     #[allow(unused)]
     pub fn kind(&self) -> ProjectConfigLoaderErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -132,14 +128,13 @@ impl<T: Into<ProjectConfigLoaderErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Error, Debug, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ProjectConfigLoaderErrorKind))]
-enum ProjectConfigLoaderErrorInner {
+pub(crate) enum ProjectConfigLoaderErrorInner {
     #[error(transparent)]
     LoadConfig(#[from] LoadConfigError),
 

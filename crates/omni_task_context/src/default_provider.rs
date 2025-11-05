@@ -59,17 +59,13 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct TaskContextProviderError {
-    #[source]
-    inner: TaskContextProviderErrorInner,
-    kind: TaskContextProviderErrorKind,
-}
+#[error(transparent)]
+pub struct TaskContextProviderError(pub(crate) TaskContextProviderErrorInner);
 
 impl TaskContextProviderError {
     #[allow(unused)]
     pub fn kind(&self) -> TaskContextProviderErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -78,14 +74,13 @@ impl<T: Into<TaskContextProviderErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(TaskContextProviderErrorKind), vis(pub))]
-enum TaskContextProviderErrorInner {
+pub(crate) enum TaskContextProviderErrorInner {
     #[error("no env vars for task: {full_task_name}")]
     NoEnvVarsForTask { full_task_name: String },
 

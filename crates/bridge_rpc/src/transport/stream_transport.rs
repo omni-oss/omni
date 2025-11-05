@@ -41,16 +41,12 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct StreamTransportError {
-    #[source]
-    inner: StreamTransportErrorInner,
-    kind: StreamTransportErrorKind,
-}
+#[error(transparent)]
+pub struct StreamTransportError(pub(crate) StreamTransportErrorInner);
 
 impl StreamTransportError {
     pub fn kind(&self) -> StreamTransportErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -60,14 +56,13 @@ where
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(StreamTransportErrorKind), vis(pub))]
-enum StreamTransportErrorInner {
+pub(crate) enum StreamTransportErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

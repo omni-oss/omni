@@ -243,17 +243,13 @@ pub struct ProjectDataExtractions {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ProjectDataExtractorError {
-    #[source]
-    inner: ProjectDataExtractorErrorInner,
-    kind: ProjectDataExtractorErrorKind,
-}
+#[error(transparent)]
+pub struct ProjectDataExtractorError(pub(crate) ProjectDataExtractorErrorInner);
 
 impl ProjectDataExtractorError {
     #[allow(unused)]
     pub fn kind(&self) -> ProjectDataExtractorErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -262,14 +258,13 @@ impl<T: Into<ProjectDataExtractorErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ProjectDataExtractorErrorKind))]
-enum ProjectDataExtractorErrorInner {
+pub(crate) enum ProjectDataExtractorErrorInner {
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
 

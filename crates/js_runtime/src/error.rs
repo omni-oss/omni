@@ -10,23 +10,19 @@ pub macro error {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("JsRuntimeError: {repr}")]
-pub struct JsRuntimeError {
-    repr: JsRuntimeErrorRepr,
-    kind: JsRuntimeErrorKind,
-}
+#[error(transparent)]
+pub struct JsRuntimeError(pub(crate) JsRuntimeErrorRepr);
 
 impl JsRuntimeError {
     pub fn kind(&self) -> JsRuntimeErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<JsRuntimeErrorRepr>> From<T> for JsRuntimeError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { repr, kind }
+        Self(repr)
     }
 }
 

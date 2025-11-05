@@ -47,36 +47,27 @@ pub trait RemoteCacheClient: Send + Sync + 'static {
 }
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("RemoteCacheServiceClientError: {inner:?}")]
-pub struct RemoteCacheClientError {
-    inner: RemoteCacheClientErrorInner,
-    kind: RemoteCacheClientErrorKind,
-}
+#[error(transparent)]
+pub struct RemoteCacheClientError(RemoteCacheClientErrorInner);
 
 impl RemoteCacheClientError {
     pub fn custom<T: Into<eyre::Report>>(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            inner: RemoteCacheClientErrorInner::Custom(inner),
-            kind: RemoteCacheClientErrorKind::Custom,
-        }
+        Self(RemoteCacheClientErrorInner::Custom(inner))
     }
 }
 
 impl RemoteCacheClientError {
     #[allow(unused)]
     pub fn kind(&self) -> RemoteCacheClientErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<RemoteCacheClientErrorInner>> From<T> for RemoteCacheClientError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 

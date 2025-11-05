@@ -1,23 +1,26 @@
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct HasherError {
-    inner: HasherErrorInner,
-    kind: HasherErrorKind,
+#[error(transparent)]
+pub struct HasherError(pub(crate) HasherErrorInner);
+
+impl HasherError {
+    #[allow(unused)]
+    pub fn kind(&self) -> HasherErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<HasherErrorInner>> From<T> for HasherError {
     fn from(inner: T) -> Self {
         let error = inner.into();
-        let kind = error.discriminant();
-        Self { inner: error, kind }
+        Self(error)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(HasherErrorKind))]
-enum HasherErrorInner {
+pub(crate) enum HasherErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

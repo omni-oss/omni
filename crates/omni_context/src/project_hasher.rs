@@ -239,25 +239,20 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ProjectHasherError {
-    #[source]
-    inner: ProjectHasherErrorInner,
-    kind: ProjectHasherErrorKind,
-}
+#[error(transparent)]
+pub struct ProjectHasherError(pub(crate) ProjectHasherErrorInner);
 
 impl ProjectHasherError {
     #[allow(unused)]
     pub fn kind(&self) -> ProjectHasherErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ProjectHasherErrorInner>> From<T> for ProjectHasherError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
@@ -267,7 +262,7 @@ impl<T: Into<ProjectHasherErrorInner>> From<T> for ProjectHasherError {
     vis(pub),
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
-enum ProjectHasherErrorInner {
+pub(crate) enum ProjectHasherErrorInner {
     #[error(transparent)]
     Collector(#[from] omni_collector::Error),
 

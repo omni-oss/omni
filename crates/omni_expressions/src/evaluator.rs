@@ -41,23 +41,20 @@ impl Evaluator {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("cel expression error: {inner:?}")]
-pub struct Error {
-    inner: ErrorInner,
-    kind: ErrorKind,
-}
+#[error(transparent)]
+pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
+    #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 

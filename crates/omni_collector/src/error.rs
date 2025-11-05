@@ -4,17 +4,20 @@ use dir_walker::impls::{
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct Error {
-    inner: ErrorInner,
-    kind: ErrorKind,
+#[error(transparent)]
+pub struct Error(pub(crate) ErrorInner);
+
+impl Error {
+    #[allow(unused)]
+    pub fn kind(&self) -> ErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
         let error = inner.into();
-        let kind = error.discriminant();
-        Self { inner: error, kind }
+        Self(error)
     }
 }
 

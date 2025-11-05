@@ -13,71 +13,51 @@ use strum::{EnumDiscriminants, IntoDiscriminant};
 use crate::{Project, TaskExecutionGraph, TaskExecutionGraphResult};
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ProjectGraphError {
-    kind: ProjectGraphErrorKind,
-    #[source]
-    inner: ProjectGraphErrorInner,
-}
+#[error(transparent)]
+pub struct ProjectGraphError(pub(crate) ProjectGraphErrorInner);
 
 impl ProjectGraphError {
     pub fn already_exists(project_name: &str) -> Self {
-        Self {
-            kind: ProjectGraphErrorKind::ProjectAlreadyExists,
-            inner: ProjectGraphErrorInner::ProjectAlreadyExists(
-                project_name.to_string(),
-            ),
-        }
+        Self(ProjectGraphErrorInner::ProjectAlreadyExists(
+            project_name.to_string(),
+        ))
     }
 
     pub fn not_found(project_name: &str) -> Self {
-        Self {
-            kind: ProjectGraphErrorKind::ProjectNotFound,
-            inner: ProjectGraphErrorInner::ProjectNotFound(
-                project_name.to_string(),
-            ),
-        }
+        Self(ProjectGraphErrorInner::ProjectNotFound(
+            project_name.to_string(),
+        ))
     }
 
     pub fn cyclic_dependency(from: String, to: String) -> Self {
-        Self {
-            kind: ProjectGraphErrorKind::CyclicDependency,
-            inner: ProjectGraphErrorInner::CyclicDependency { from, to },
-        }
+        Self(ProjectGraphErrorInner::CyclicDependency { from, to })
     }
 
     pub fn cycle_detected(project: String) -> Self {
-        Self {
-            kind: ProjectGraphErrorKind::CycleDetected,
-            inner: ProjectGraphErrorInner::CycleDetected { project },
-        }
+        Self(ProjectGraphErrorInner::CycleDetected { project })
     }
 
     pub fn unknown(source: eyre::Report) -> Self {
-        Self {
-            kind: ProjectGraphErrorKind::Unknown,
-            inner: ProjectGraphErrorInner::Unknown(source),
-        }
+        Self(ProjectGraphErrorInner::Unknown(source))
     }
 }
 
 impl ProjectGraphError {
     pub fn kind(&self) -> ProjectGraphErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ProjectGraphErrorInner>> From<T> for ProjectGraphError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ProjectGraphErrorKind), vis(pub))]
-enum ProjectGraphErrorInner {
+pub(crate) enum ProjectGraphErrorInner {
     #[error("project with name '{0}' already exists")]
     ProjectAlreadyExists(String),
 

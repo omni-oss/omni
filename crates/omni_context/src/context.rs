@@ -352,24 +352,19 @@ fn get_remote_cache_configuration(
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ContextError {
-    #[source]
-    inner: ContextErrorInner,
-    kind: ContextErrorKind,
-}
+#[error(transparent)]
+pub struct ContextError(pub(crate) ContextErrorInner);
 
 impl ContextError {
     pub fn kind(&self) -> ContextErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ContextErrorInner>> From<T> for ContextError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 

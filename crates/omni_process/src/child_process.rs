@@ -261,24 +261,20 @@ impl ChildProcess {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ChildProcessError {
-    kind: ChildProcessErrorKind,
-    #[source]
-    inner: ChildProcessErrorInner,
-}
+#[error(transparent)]
+pub struct ChildProcessError(pub(crate) ChildProcessErrorInner);
 
 impl ChildProcessError {
+    #[allow(unused)]
     pub fn kind(&self) -> ChildProcessErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
@@ -291,7 +287,7 @@ fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ChildProcessErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
-enum ChildProcessErrorInner {
+pub(crate) enum ChildProcessErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

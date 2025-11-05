@@ -53,16 +53,13 @@ pub fn get_remote_caching_config_sync(
 }
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("failed to Get remote caching: {inner}")]
-pub struct GetRemoteCachingConfigError {
-    kind: GetRemoteCachingConfigErrorKind,
-    inner: GetRemoteCachingConfigErrorInner,
-}
+#[error(transparent)]
+pub struct GetRemoteCachingConfigError(GetRemoteCachingConfigErrorInner);
 
 impl GetRemoteCachingConfigError {
     #[allow(unused)]
     pub fn kind(&self) -> GetRemoteCachingConfigErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -71,10 +68,7 @@ impl<T: Into<GetRemoteCachingConfigErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner: inner.into(),
-        }
+        Self(inner.into())
     }
 }
 

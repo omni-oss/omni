@@ -832,24 +832,26 @@ fn key_event_to_bytes(ev: KeyEvent) -> Vec<u8> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("tui presenter error: {inner}")]
-pub struct TuiPresenterError {
-    kind: TuiPresenterErrorKind,
-    #[source]
-    inner: TuiPresenterErrorInner,
+#[error(transparent)]
+pub struct TuiPresenterError(pub(crate) TuiPresenterErrorInner);
+
+impl TuiPresenterError {
+    #[allow(unused)]
+    pub fn kind(&self) -> TuiPresenterErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<TuiPresenterErrorInner>> From<T> for TuiPresenterError {
     fn from(e: T) -> Self {
         let inner = e.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(vis(pub), name(TuiPresenterErrorKind))]
-enum TuiPresenterErrorInner {
+pub(crate) enum TuiPresenterErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 
