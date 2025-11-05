@@ -7,7 +7,8 @@ extends:
 dependencies:
   - omni_generator_configurations
   - omni_file_data_serde
-  - omni_prompt
+  - omni_prompts
+  - omni_configuration_discovery
   - dir_walker
   - system_traits
   - maps

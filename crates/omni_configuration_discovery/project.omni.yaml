@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omnis_configuration_discovery
+name: omni_configuration_discovery
 
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
