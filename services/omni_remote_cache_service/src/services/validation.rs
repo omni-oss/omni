@@ -56,7 +56,7 @@ pub type DynValidationService = Box<dyn ValidationService + Send + Sync>;
 impl ValidationServiceError {
     #[allow(unused)]
     pub fn kind(&self) -> ValidationServiceErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 

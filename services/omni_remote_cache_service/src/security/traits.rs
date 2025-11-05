@@ -57,14 +57,14 @@ pub struct SecurityServiceError(pub(crate) SecurityServiceErrorInner);
 impl SecurityServiceError {
     pub fn custom(inner: impl Into<eyre::Report>) -> Self {
         let inner = inner.into();
-        Self(inner)
+        Self(inner.into())
     }
 }
 
 impl SecurityServiceError {
     #[allow(unused)]
-    pub fn kind(&self) -> &SecurityServiceErrorKind {
-        &self.kind
+    pub fn kind(&self) -> SecurityServiceErrorKind {
+        self.0.discriminant()
     }
 }
 
