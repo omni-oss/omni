@@ -1,3 +1,4 @@
+use super::parser::parse_key_value;
 use maps::unordered_map;
 use omni_context::Context;
 use omni_generator::prompt::{
@@ -45,8 +46,13 @@ pub struct GeneratorRunArgs {
     #[arg(long, short, help = "Output directory")]
     pub out_dir: Option<String>,
 
-    #[arg(long, short, help = "Prefill answers to prompts")]
-    pub answer: Vec<String>,
+    #[arg(
+        long,
+        short,
+        help = "Prefill answers to prompts",
+        value_parser = parse_key_value::<String, String>
+    )]
+    pub answer: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -59,7 +65,7 @@ pub struct GeneratorListCommand {
 pub struct GeneratorListArgs {}
 
 pub async fn run(
-    _generate: &GeneratorCommand,
+    generate: &GeneratorCommand,
     _ctx: &Context,
 ) -> eyre::Result<()> {
     let configs =
@@ -67,7 +73,7 @@ pub async fn run(
             ValidatedPromptConfiguration::new(
                 BasePromptConfiguration::new("test", "test text?", None),
                 vec![ValidateConfiguration {
-                    condition: "{{ prompts.test == 'test' }}".to_string(),
+                    condition: "{{ value == 'test' }}".to_string(),
                     error_message: Some("value should be 'test'".to_string()),
                 }],
             ),
@@ -79,6 +85,7 @@ pub async fn run(
     let values = prompt::prompt(&configs, &pre_exec, &prompting_config)?;
 
     trace::info!("values: {:?}", values);
+    trace::info!("args: {:?}", generate);
 
     Ok(())
 }

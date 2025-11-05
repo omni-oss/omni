@@ -9,6 +9,7 @@ use exec::ExecCommand;
 use omni_tracing_subscriber::TraceLevel;
 use run::RunCommand;
 mod common_args;
+mod parser;
 mod utils;
 
 use crate::{
