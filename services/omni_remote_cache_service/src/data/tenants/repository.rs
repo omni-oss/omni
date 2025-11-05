@@ -13,26 +13,20 @@ pub trait TenantRepository: Send + Sync + 'static {
 pub type DynTenantRepository = Box<dyn TenantRepository + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("tenant repository error: {inner:?}")]
-pub struct TenantRepositoryError {
-    inner: TenantRepositoryErrorInner,
-    kind: TenantRepositoryErrorKind,
-}
+#[error(transparent)]
+pub struct TenantRepositoryError(pub(crate) TenantRepositoryErrorInner);
 
 impl TenantRepositoryError {
     #[allow(unused)]
     pub fn kind(&self) -> TenantRepositoryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<TenantRepositoryErrorInner>> From<T> for TenantRepositoryError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 
