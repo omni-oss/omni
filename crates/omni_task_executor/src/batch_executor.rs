@@ -395,31 +395,26 @@ async fn run_process<'a>(
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct BatchExecutorError {
-    kind: BatchExecutorErrorKind,
-    #[source]
-    inner: BatchExecutorErrorInner,
-}
+#[error(transparent)]
+pub struct BatchExecutorError(pub(crate) BatchExecutorErrorInner);
 
 impl BatchExecutorError {
     #[allow(unused)]
     pub fn kind(&self) -> BatchExecutorErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<BatchExecutorErrorInner>> From<T> for BatchExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(name(BatchExecutorErrorKind), vis(pub))]
-enum BatchExecutorErrorInner {
+pub(crate) enum BatchExecutorErrorInner {
     #[error("can't get task contexts")]
     CantGetTaskContexts {
         #[new(into)]

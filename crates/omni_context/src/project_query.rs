@@ -41,31 +41,27 @@ impl<'a> ProjectQuery<'a> {
 }
 
 #[derive(thiserror::Error, Debug, new)]
-#[error("{inner}")]
-pub struct ProjectQueryError {
-    inner: ProjectQueryErrorInner,
-    kind: ProjectQueryErrorKind,
-}
+#[error(transparent)]
+pub struct ProjectQueryError(pub(crate) ProjectQueryErrorInner);
 
 impl ProjectQueryError {
     #[allow(unused)]
     pub fn kind(&self) -> ProjectQueryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ProjectQueryErrorInner>> From<T> for ProjectQueryError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
 
-        Self::new(inner, kind)
+        Self::new(inner)
     }
 }
 
 #[derive(thiserror::Error, EnumDiscriminants, Debug)]
 #[strum_discriminants(vis(pub), name(ProjectQueryErrorKind))]
-enum ProjectQueryErrorInner {
+pub(crate) enum ProjectQueryErrorInner {
     #[error(transparent)]
     Globset(#[from] globset::Error),
     #[error(transparent)]

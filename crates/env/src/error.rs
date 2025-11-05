@@ -2,36 +2,38 @@ use derive_more::Constructor;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, Constructor)]
-#[error("ParseError: {inner}")]
-pub struct ParseError {
-    #[source]
-    inner: ParseErrorInner,
-    kind: ParseErrorKind,
+#[error(transparent)]
+pub struct ParseError(pub(crate) ParseErrorInner);
+
+impl ParseError {
+    #[allow(unused)]
+    pub fn kind(&self) -> ParseErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<ParseErrorInner>> From<T> for ParseError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
 impl ParseError {
     pub fn long_message(&self) -> Option<&str> {
-        self.inner.long_message()
+        self.0.long_message()
     }
 
     pub fn message(&self) -> &str {
-        self.inner.message()
+        self.0.message()
     }
 
     pub fn line(&self) -> usize {
-        self.inner.line()
+        self.0.line()
     }
 
     pub fn column(&self) -> usize {
-        self.inner.column()
+        self.0.column()
     }
 }
 
@@ -42,10 +44,7 @@ impl ParseError {
         message: String,
         long_message: Option<String>,
     ) -> Self {
-        Self {
-            kind: ParseErrorKind::Syntax,
-            inner: ParseErrorInner::syntax(line, column, message, long_message),
-        }
+        Self(ParseErrorInner::syntax(line, column, message, long_message))
     }
 }
 

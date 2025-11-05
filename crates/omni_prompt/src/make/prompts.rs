@@ -259,7 +259,7 @@ fn validate<T: Serialize + 'static>(
     );
 
     if let Err(err) = result {
-        if let ErrorInner::InvalidValue { error_message, .. } = &err.inner {
+        if let ErrorInner::InvalidValue { error_message, .. } = &err.0 {
             Err(error_message.to_string())
         } else {
             // TODO: find a better way to show errors,

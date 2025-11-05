@@ -801,39 +801,26 @@ impl TaskExecutionGraph {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct TaskExecutionGraphError {
-    kind: TaskExecutionGraphErrorKind,
-    #[source]
-    inner: TaskExecutionGraphErrorInner,
-}
+#[error(transparent)]
+pub struct TaskExecutionGraphError(TaskExecutionGraphErrorInner);
 
 impl TaskExecutionGraphError {
     #[doc(hidden)]
     pub fn project_graph(source: ProjectGraphError) -> Self {
-        Self {
-            kind: TaskExecutionGraphErrorKind::ProjectGraph,
-            inner: TaskExecutionGraphErrorInner::ProjectGraph(source),
-        }
+        Self(TaskExecutionGraphErrorInner::ProjectGraph(source))
     }
 
     #[doc(hidden)]
     pub fn task_not_found(project: &str, task: &str) -> Self {
-        Self {
-            kind: TaskExecutionGraphErrorKind::TaskNotFound,
-            inner: TaskExecutionGraphErrorInner::TaskNotFound {
-                project: project.to_string(),
-                task: task.to_string(),
-            },
-        }
+        Self(TaskExecutionGraphErrorInner::TaskNotFound {
+            project: project.to_string(),
+            task: task.to_string(),
+        })
     }
 
     #[doc(hidden)]
     pub fn task_not_found_by_key(key: TaskKey) -> Self {
-        Self {
-            kind: TaskExecutionGraphErrorKind::TaskNotFoundByKey,
-            inner: TaskExecutionGraphErrorInner::TaskNotFoundByKey { key },
-        }
+        Self(TaskExecutionGraphErrorInner::TaskNotFoundByKey { key })
     }
 
     #[doc(hidden)]
@@ -843,15 +830,12 @@ impl TaskExecutionGraphError {
         to_project: &str,
         to_task: &str,
     ) -> Self {
-        Self {
-            kind: TaskExecutionGraphErrorKind::CycleDetected,
-            inner: TaskExecutionGraphErrorInner::CycleDetected {
-                from_project: from_project.to_string(),
-                from_task: from_task.to_string(),
-                to_project: to_project.to_string(),
-                to_task: to_task.to_string(),
-            },
-        }
+        Self(TaskExecutionGraphErrorInner::CycleDetected {
+            from_project: from_project.to_string(),
+            from_task: from_task.to_string(),
+            to_project: to_project.to_string(),
+            to_task: to_task.to_string(),
+        })
     }
 
     #[doc(hidden)]
@@ -861,15 +845,12 @@ impl TaskExecutionGraphError {
         to_project: &str,
         to_task: &str,
     ) -> Self {
-        Self {
-            kind: TaskExecutionGraphErrorKind::CantDependOnPersistentTask,
-            inner: TaskExecutionGraphErrorInner::CantDependOnPersistentTask {
-                from_project: from_project.to_string(),
-                from_task: from_task.to_string(),
-                to_project: to_project.to_string(),
-                to_task: to_task.to_string(),
-            },
-        }
+        Self(TaskExecutionGraphErrorInner::CantDependOnPersistentTask {
+            from_project: from_project.to_string(),
+            from_task: from_task.to_string(),
+            to_project: to_project.to_string(),
+            to_task: to_task.to_string(),
+        })
     }
 }
 
@@ -878,20 +859,19 @@ impl<T: Into<TaskExecutionGraphErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
 impl TaskExecutionGraphError {
     pub fn kind(&self) -> TaskExecutionGraphErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(TaskExecutionGraphErrorKind), vis(pub))]
-enum TaskExecutionGraphErrorInner {
+pub(crate) enum TaskExecutionGraphErrorInner {
     #[error(transparent)]
     ProjectGraph(#[from] ProjectGraphError),
 

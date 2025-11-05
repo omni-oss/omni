@@ -1,13 +1,29 @@
 use std::fmt::Display;
 
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::error::RecvError;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct JsBridgeError(#[from] JsBridgeErrorInner);
+pub struct JsBridgeError(pub(crate) JsBridgeErrorInner);
 
-#[derive(Debug, thiserror::Error)]
-pub enum JsBridgeErrorInner {
+impl JsBridgeError {
+    #[allow(unused)]
+    pub fn kind(&self) -> JsBridgeErrorKind {
+        self.0.discriminant()
+    }
+}
+
+impl<T: Into<JsBridgeErrorInner>> From<T> for JsBridgeError {
+    fn from(value: T) -> Self {
+        let inner = value.into();
+        Self(inner)
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[strum_discriminants(name(JsBridgeErrorKind), vis(pub))]
+pub(crate) enum JsBridgeErrorInner {
     #[error("transport error: {message}")]
     Transport { message: String },
 

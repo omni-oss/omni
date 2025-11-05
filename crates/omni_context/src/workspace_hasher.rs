@@ -127,25 +127,20 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct WorkspaceHasherError {
-    #[source]
-    inner: WorkspaceHasherErrorInner,
-    kind: WorkspaceHasherErrorKind,
-}
+#[error(transparent)]
+pub struct WorkspaceHasherError(pub(crate) WorkspaceHasherErrorInner);
 
 impl WorkspaceHasherError {
     #[allow(unused)]
     pub fn kind(&self) -> WorkspaceHasherErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<WorkspaceHasherErrorInner>> From<T> for WorkspaceHasherError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
@@ -155,7 +150,7 @@ impl<T: Into<WorkspaceHasherErrorInner>> From<T> for WorkspaceHasherError {
     vis(pub),
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
-enum WorkspaceHasherErrorInner {
+pub(crate) enum WorkspaceHasherErrorInner {
     #[error(transparent)]
     Collector(#[from] omni_collector::Error),
 }

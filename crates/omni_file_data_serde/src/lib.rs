@@ -118,24 +118,20 @@ where
 }
 
 #[derive(Error, Debug)]
-#[error("{inner}")]
-pub struct Error {
-    #[source]
-    inner: ErrorInner,
-    kind: ErrorKind,
-}
+#[error(transparent)]
+pub struct Error(ErrorInner);
 
 impl Error {
+    #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 

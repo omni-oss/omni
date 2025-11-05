@@ -215,11 +215,14 @@ impl Iterator for IgnoreRealWalkDirIntoIter {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct IgnoreRealDirWalkerError {
-    kind: IgnoreRealDirWalkerErrorKind,
-    #[source]
-    inner: IgnoreRealDirWalkerErrorInner,
+#[error(transparent)]
+pub struct IgnoreRealDirWalkerError(pub(crate) IgnoreRealDirWalkerErrorInner);
+
+impl IgnoreRealDirWalkerError {
+    #[allow(unused)]
+    pub fn kind(&self) -> IgnoreRealDirWalkerErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<IgnoreRealDirWalkerErrorInner>> From<T>
@@ -227,14 +230,13 @@ impl<T: Into<IgnoreRealDirWalkerErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(IgnoreRealDirWalkerErrorKind), vis(pub))]
-enum IgnoreRealDirWalkerErrorInner {
+pub(crate) enum IgnoreRealDirWalkerErrorInner {
     #[error("path can't be empty")]
     PathCantBeEmpty,
 

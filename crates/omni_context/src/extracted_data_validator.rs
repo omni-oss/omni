@@ -99,7 +99,7 @@ fn format_multi_errors(errors: &[ExtractedDataValidationError]) -> String {
 
 #[derive(Debug, thiserror::Error)]
 #[error(
-    "validation errors: \n{errors}", 
+    "validation errors: \n{errors}",
     errors = format_multi_errors(errors)
 )]
 pub struct ExtractedDataValidationErrors {
@@ -113,17 +113,15 @@ impl From<Vec<ExtractedDataValidationError>> for ExtractedDataValidationErrors {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ExtractedDataValidationError {
-    #[source]
-    inner: ExtractedDataValidationErrorInner,
-    kind: ExtractedDataValidationErrorKind,
-}
+#[error(transparent)]
+pub struct ExtractedDataValidationError(
+    pub(crate) ExtractedDataValidationErrorInner,
+);
 
 impl ExtractedDataValidationError {
     #[allow(unused)]
     pub fn kind(&self) -> ExtractedDataValidationErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -132,8 +130,7 @@ impl<T: Into<ExtractedDataValidationErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 

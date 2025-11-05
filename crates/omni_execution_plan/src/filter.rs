@@ -330,25 +330,20 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct FilterError {
-    #[source]
-    inner: FilterErrorInner,
-    kind: FilterErrorKind,
-}
+#[error(transparent)]
+pub struct FilterError(pub(crate) FilterErrorInner);
 
 impl FilterError {
     #[allow(unused)]
     pub fn kind(&self) -> FilterErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<FilterErrorInner>> From<T> for FilterError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
@@ -400,7 +395,7 @@ impl<T: TaskFilter> TaskFilterExt for T {}
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(FilterErrorKind), vis(pub))]
-enum FilterErrorInner {
+pub(crate) enum FilterErrorInner {
     #[error(transparent)]
     Glob(#[from] globset::Error),
 

@@ -1,32 +1,23 @@
 use strum::{EnumDiscriminants, IntoDiscriminant};
 
 #[derive(Debug, thiserror::Error)]
-#[error("ScmError: {inner}")]
-pub struct Error {
-    inner: ErrorInner,
-    kind: ErrorKind,
-}
+#[error(transparent)]
+pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
     #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl Error {
     pub fn no_repository_found() -> Self {
-        Self {
-            inner: ErrorInner::NoRepositoryFound,
-            kind: ErrorKind::NoRepositoryFound,
-        }
+        Self(ErrorInner::NoRepositoryFound)
     }
 
     pub fn unsupported_scm() -> Self {
-        Self {
-            inner: ErrorInner::UnsupportedScm,
-            kind: ErrorKind::UnsupportedScm,
-        }
+        Self(ErrorInner::UnsupportedScm)
     }
 }
 
@@ -34,8 +25,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     #[inline(always)]
     fn from(inner: T) -> Self {
         let error = inner.into();
-        let kind = error.discriminant();
-        Self { inner: error, kind }
+        Self(error)
     }
 }
 

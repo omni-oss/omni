@@ -96,24 +96,26 @@ impl MuxOutputPresenter for StreamPresenter {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("stream presenter error: {inner}")]
-pub struct StreamPresenterError {
-    kind: StreamPresenterErrorKind,
-    #[source]
-    inner: StreamPresenterErrorInner,
+#[error(transparent)]
+pub struct StreamPresenterError(pub(crate) StreamPresenterErrorInner);
+
+impl StreamPresenterError {
+    #[allow(unused)]
+    pub fn kind(&self) -> StreamPresenterErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl<T: Into<StreamPresenterErrorInner>> From<T> for StreamPresenterError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(StreamPresenterErrorKind))]
-enum StreamPresenterErrorInner {
+pub(crate) enum StreamPresenterErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

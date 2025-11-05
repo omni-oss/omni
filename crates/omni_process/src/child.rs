@@ -290,31 +290,27 @@ impl Child {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ChildError {
-    kind: ChildErrorKind,
-    #[source]
-    inner: ChildErrorInner,
-}
+#[error(transparent)]
+pub struct ChildError(pub(crate) ChildErrorInner);
 
 impl ChildError {
+    #[allow(unused)]
     pub fn kind(&self) -> ChildErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ChildErrorInner>> From<T> for ChildError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ChildErrorKind), vis(pub), repr(u8))]
 #[allow(clippy::enum_variant_names)]
-enum ChildErrorInner {
+pub(crate) enum ChildErrorInner {
     #[error("can't spawn command: {0}")]
     CantSpawnCommand(String),
 

@@ -274,24 +274,19 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct LoadedContextError {
-    #[source]
-    inner: LoadedContextErrorInner,
-    kind: LoadedContextErrorKind,
-}
+#[error(transparent)]
+pub struct LoadedContextError(pub(crate) LoadedContextErrorInner);
 
 impl LoadedContextError {
     pub fn kind(&self) -> LoadedContextErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<LoadedContextErrorInner>> From<T> for LoadedContextError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
@@ -301,7 +296,7 @@ impl<T: Into<LoadedContextErrorInner>> From<T> for LoadedContextError {
     vis(pub),
     derive(strum::IntoStaticStr, strum::Display, strum::EnumIs)
 )]
-enum LoadedContextErrorInner {
+pub(crate) enum LoadedContextErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

@@ -92,16 +92,13 @@ pub async fn setup_remote_caching_config<TClient: RemoteCacheClient>(
 }
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("failed to setup remote caching: {inner}")]
-pub struct SetupRemoteCachingConfigError {
-    kind: SetupRemoteCachingConfigErrorKind,
-    inner: SetupRemoteCachingConfigErrorInner,
-}
+#[error("failed to setup remote caching: {0}")]
+pub struct SetupRemoteCachingConfigError(SetupRemoteCachingConfigErrorInner);
 
 impl SetupRemoteCachingConfigError {
     #[allow(unused)]
     pub fn kind(&self) -> SetupRemoteCachingConfigErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -110,10 +107,7 @@ impl<T: Into<SetupRemoteCachingConfigErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner: inner.into(),
-        }
+        Self(inner)
     }
 }
 

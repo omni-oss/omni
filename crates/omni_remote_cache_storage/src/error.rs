@@ -5,18 +5,19 @@ use strum::{
 };
 
 #[derive(Debug, thiserror::Error)]
-#[error("Error: {inner:?}")]
-pub struct Error {
-    inner: ErrorInner,
-    kind: ErrorKind,
+#[error(transparent)]
+pub struct Error(pub(crate) ErrorInner);
+
+impl Error {
+    #[allow(unused)]
+    pub fn kind(&self) -> ErrorKind {
+        self.0.discriminant()
+    }
 }
 
 impl Error {
     pub fn custom(error: impl Into<eyre::Report>) -> Self {
-        Self {
-            inner: ErrorInner::Custom(error.into()),
-            kind: ErrorKind::Custom,
-        }
+        Self(ErrorInner::Custom(error.into()))
     }
 }
 
@@ -25,10 +26,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     #[inline(always)]
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 
@@ -38,7 +36,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     name(ErrorKind),
     derive(EnumIter, VariantArray, VariantNames)
 )]
-enum ErrorInner {
+pub(crate) enum ErrorInner {
     #[error(transparent)]
     Custom(eyre::Report),
 }

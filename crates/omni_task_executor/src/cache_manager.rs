@@ -217,31 +217,26 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct CacheManagerError {
-    #[source]
-    inner: CacheManagerErrorInner,
-    kind: CacheManagerErrorKind,
-}
+#[error(transparent)]
+pub struct CacheManagerError(pub(crate) CacheManagerErrorInner);
 
 impl CacheManagerError {
     #[allow(unused)]
     pub fn kind(&self) -> CacheManagerErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<CacheManagerErrorInner>> From<T> for CacheManagerError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(CacheManagerErrorKind), vis(pub))]
-enum CacheManagerErrorInner {
+pub(crate) enum CacheManagerErrorInner {
     #[error("failed to get cached results")]
     GetCacheFailed {
         #[source]

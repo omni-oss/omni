@@ -342,24 +342,19 @@ impl PathTraversalKey {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{kind:?}Error: {inner}")]
-pub struct ExtensionGraphError {
-    kind: ExtensionGraphErrorKind,
-    #[source]
-    inner: ExtensionGraphErrorInner,
-}
+#[error(transparent)]
+pub struct ExtensionGraphError(pub(crate) ExtensionGraphErrorInner);
 
 impl<T: Into<ExtensionGraphErrorInner>> From<T> for ExtensionGraphError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
 
 impl ExtensionGraphError {
     pub fn kind(&self) -> ExtensionGraphErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -367,7 +362,7 @@ pub type ExtensionGraphResult<T> = Result<T, ExtensionGraphError>;
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(ExtensionGraphErrorKind), vis(pub))]
-enum ExtensionGraphErrorInner {
+pub(crate) enum ExtensionGraphErrorInner {
     #[error("cyclic dependency detected: {message}")]
     CyclicDependency { message: String },
 

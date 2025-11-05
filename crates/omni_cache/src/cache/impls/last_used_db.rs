@@ -85,31 +85,26 @@ impl<'a> LocalLastUsedDb<'a> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct LocalLastUsedDbError {
-    kind: LocalLastUsedDbErrorKind,
-    #[source]
-    inner: LocalLastUsedDbErrorInner,
-}
+#[error(transparent)]
+pub struct LocalLastUsedDbError(pub(crate) LocalLastUsedDbErrorInner);
 
 impl LocalLastUsedDbError {
     #[allow(unused)]
     pub fn kind(&self) -> LocalLastUsedDbErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<LocalLastUsedDbErrorInner>> From<T> for LocalLastUsedDbError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(name(LocalLastUsedDbErrorKind), vis(pub), repr(u8))]
-enum LocalLastUsedDbErrorInner {
+pub(crate) enum LocalLastUsedDbErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

@@ -153,31 +153,26 @@ pub enum DiscoveredPath {
 }
 
 #[derive(Error, Debug)]
-#[error("{inner}")]
-pub struct ProjectDiscoveryError {
-    #[source]
-    inner: ProjectDiscoveryErrorInner,
-    kind: ProjectDiscoveryErrorKind,
-}
+#[error(transparent)]
+pub struct ProjectDiscoveryError(pub(crate) ProjectDiscoveryErrorInner);
 
 impl ProjectDiscoveryError {
     #[allow(unused)]
     pub fn kind(&self) -> ProjectDiscoveryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ProjectDiscoveryErrorInner>> From<T> for ProjectDiscoveryError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
 #[derive(Error, Debug, EnumDiscriminants, new)]
 #[strum_discriminants(vis(pub), name(ProjectDiscoveryErrorKind))]
-enum ProjectDiscoveryErrorInner {
+pub(crate) enum ProjectDiscoveryErrorInner {
     #[error(transparent)]
     Glob(#[from] globset::Error),
 

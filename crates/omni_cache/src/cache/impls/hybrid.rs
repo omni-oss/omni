@@ -954,16 +954,14 @@ async fn load_stats<P: AsRef<Path> + Clone>(
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct LocalTaskExecutionCacheStoreError {
-    kind: LocalTaskExecutionCacheStoreErrorKind,
-    #[source]
-    inner: LocalTaskExecutionCacheStoreErrorInner,
-}
+#[error(transparent)]
+pub struct LocalTaskExecutionCacheStoreError(
+    pub(crate) LocalTaskExecutionCacheStoreErrorInner,
+);
 
 impl LocalTaskExecutionCacheStoreError {
     pub fn kind(&self) -> LocalTaskExecutionCacheStoreErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -972,8 +970,7 @@ impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
 {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
@@ -983,7 +980,7 @@ impl<T: Into<LocalTaskExecutionCacheStoreErrorInner>> From<T>
     vis(pub),
     repr(u8)
 )]
-enum LocalTaskExecutionCacheStoreErrorInner {
+pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 

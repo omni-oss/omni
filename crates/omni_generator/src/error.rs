@@ -2,17 +2,13 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("generator error: {inner}")]
-pub struct Error {
-    #[source]
-    pub(crate) inner: ErrorInner,
-    pub(crate) kind: ErrorKind,
-}
+#[error(transparent)]
+pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
     #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -20,10 +16,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
         let inner = inner.into();
 
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 

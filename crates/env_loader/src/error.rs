@@ -2,16 +2,12 @@ use env::{EnvParseError, ExpansionError};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 
 #[derive(Debug, thiserror::Error)]
-#[error("{kind:?}Error: {inner}")]
-pub struct EnvLoaderError {
-    #[source]
-    inner: EnvLoaderErrorInner,
-    kind: EnvLoaderErrorKind,
-}
+#[error(transparent)]
+pub struct EnvLoaderError(pub(crate) EnvLoaderErrorInner);
 
 impl EnvLoaderError {
     pub fn kind(&self) -> EnvLoaderErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -40,7 +36,6 @@ pub(crate) enum EnvLoaderErrorInner {
 impl<T: Into<EnvLoaderErrorInner>> From<T> for EnvLoaderError {
     fn from(value: T) -> Self {
         let repr = value.into();
-        let kind = repr.discriminant();
-        Self { inner: repr, kind }
+        Self(repr)
     }
 }
