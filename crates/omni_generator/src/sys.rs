@@ -1,4 +1,7 @@
-use system_traits::{FsWriteAsync, auto_impl};
+use system_traits::{FsReadAsync, FsWriteAsync, auto_impl};
 
 #[auto_impl]
-pub trait GeneratorSys: Clone + FsWriteAsync {}
+pub trait GeneratorSys:
+    Clone + FsWriteAsync + FsReadAsync + Send + Sync + 'static
+{
+}

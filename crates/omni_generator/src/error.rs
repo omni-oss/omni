@@ -1,9 +1,8 @@
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use value_bag::OwnedValueBag;
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("prompt error: {inner}")]
+#[error("generator error: {inner}")]
 pub struct Error {
     #[source]
     pub(crate) inner: ErrorInner,
@@ -35,27 +34,11 @@ pub(crate) enum ErrorInner {
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
-    Requestty(#[from] requestty::ErrorKind),
-
-    #[error(
-        "duplicate prompt name: {0}, please ensure that all prompt names are unique"
-    )]
-    DuplicatePromptName(String),
+    LoadConfig(#[from] omni_file_data_serde::Error),
 
     #[error(transparent)]
-    Tera(#[from] tera::Error),
+    Prompt(#[from] omni_prompt::error::Error),
 
-    #[error(
-        "value '{value}' is invalid for prompt {prompt_name}: {error_message}"
-    )]
-    InvalidValue {
-        prompt_name: String,
-        value: OwnedValueBag,
-        error_message: String,
-    },
-
-    #[error(
-        "invalid boolean expression result: \"{result}\" for expression: \"{expression}\", expected true or false"
-    )]
-    InvalidBooleanExpressionResult { result: String, expression: String },
+    #[error(transparent)]
+    GeneratorDiscovery(#[from] omni_configuration_discovery::error::Error),
 }

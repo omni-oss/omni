@@ -6,7 +6,7 @@ use crate::{
         PromptingConfiguration, SelectPromptConfiguration,
         TextPromptConfiguration, ValidateConfiguration,
     },
-    error::{PromptError, PromptErrorKind, PromptErrrorInner},
+    error::{Error, ErrorInner, ErrorKind},
     make,
     utils::{validate_boolean_expression_result, validate_value},
 };
@@ -19,7 +19,7 @@ pub fn prompt(
     pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
-) -> Result<UnorderedMap<String, OwnedValueBag>, PromptError> {
+) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
     validate_prompt_configurations(prompts)?;
     let mut values = UnorderedMap::default();
 
@@ -57,7 +57,7 @@ pub fn prompt(
             );
 
             if let Err(err) = result {
-                if err.kind() == PromptErrorKind::InvalidValue {
+                if err.kind() == ErrorKind::InvalidValue {
                     trace::error!("reprompting due to error: {err}");
                     get_prompt_value(prompt, &ctx_vals, config)?
                 } else {
@@ -81,7 +81,7 @@ pub fn prompt_one(
     pre_exec_value: Option<&OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
-) -> Result<Option<OwnedValueBag>, PromptError> {
+) -> Result<Option<OwnedValueBag>, Error> {
     let mut ctx_vals = tera::Context::new();
 
     for (key, value) in context_values {
@@ -122,7 +122,7 @@ pub fn prompt_one(
         );
 
         if let Err(err) = result {
-            if err.kind() == PromptErrorKind::InvalidValue {
+            if err.kind() == ErrorKind::InvalidValue {
                 trace::error!("reprompting due to error: {err}");
                 get_prompt_value(prompt, &ctx_vals, config)?
             } else {
@@ -142,7 +142,7 @@ fn get_prompt_value(
     prompt: &PromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration<'_>,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let value = match prompt {
         PromptConfiguration::Checkbox { prompt } => {
             prompt_checkbox(prompt, context_values, config)?
@@ -199,7 +199,7 @@ fn skip(
     values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &tera::Context,
     if_expressions_root_property: Option<&str>,
-) -> Result<bool, PromptError> {
+) -> Result<bool, Error> {
     let mut ctx = context_values.clone();
     ctx.insert(if_expressions_root_property.unwrap_or("prompts"), values);
 
@@ -218,16 +218,14 @@ fn skip(
 
 fn validate_prompt_configurations(
     prompts: &[PromptConfiguration],
-) -> Result<(), PromptError> {
+) -> Result<(), Error> {
     let mut seen_names = UnorderedSet::default();
 
     for prompt in prompts {
         let name = get_prompt_name(prompt);
 
         if seen_names.contains(&name) {
-            return Err(PromptErrrorInner::DuplicatePromptName(
-                name.to_string(),
-            ))?;
+            return Err(ErrorInner::DuplicatePromptName(name.to_string()))?;
         }
 
         seen_names.insert(name);
@@ -253,13 +251,13 @@ fn prompt_checkbox(
     prompt: &CheckboxPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let prompt = make::checkbox(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(prompt)?;
 
     let value = prompt_value.as_bool().ok_or_else(|| {
-        PromptError::from(eyre::eyre!("prompt value is not a boolean"))
+        Error::from(eyre::eyre!("prompt value is not a boolean"))
     })?;
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
@@ -269,7 +267,7 @@ fn prompt_password(
     prompt: &PasswordPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::password(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
@@ -277,7 +275,7 @@ fn prompt_password(
     let value = prompt_value
         .as_string()
         .ok_or_else(|| {
-            PromptError::from(eyre::eyre!("prompt value is not a string"))
+            Error::from(eyre::eyre!("prompt value is not a string"))
         })?
         .to_string();
 
@@ -288,13 +286,13 @@ fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::float_number(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value.as_float().ok_or_else(|| {
-        PromptError::from(eyre::eyre!("prompt value is not a float"))
+        Error::from(eyre::eyre!("prompt value is not a float"))
     })?;
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
@@ -304,13 +302,13 @@ fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::integer_number(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
     let value = prompt_value.as_int().ok_or_else(|| {
-        PromptError::from(eyre::eyre!("prompt value is not an integer"))
+        Error::from(eyre::eyre!("prompt value is not an integer"))
     })?;
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
@@ -320,7 +318,7 @@ fn prompt_text(
     prompt: &TextPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::text(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
@@ -328,7 +326,7 @@ fn prompt_text(
     let value = prompt_value
         .as_string()
         .ok_or_else(|| {
-            PromptError::from(eyre::eyre!("prompt value is not a string"))
+            Error::from(eyre::eyre!("prompt value is not a string"))
         })?
         .to_string();
 
@@ -339,7 +337,7 @@ fn prompt_select(
     prompt: &SelectPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::select(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
@@ -348,7 +346,7 @@ fn prompt_select(
         .as_list_item()
         .map(|i| prompt.options[i.index].value.clone())
         .ok_or_else(|| {
-            PromptError::from(eyre::eyre!("prompt value is not a list item"))
+            Error::from(eyre::eyre!("prompt value is not a list item"))
         })?;
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
@@ -358,7 +356,7 @@ fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
-) -> Result<OwnedValueBag, PromptError> {
+) -> Result<OwnedValueBag, Error> {
     let question = make::multi_select(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
@@ -366,9 +364,7 @@ fn prompt_multi_select(
     let value = prompt_value
         .as_list_items()
         .ok_or_else(|| {
-            PromptError::from(eyre::eyre!(
-                "prompt value is not a list of items"
-            ))
+            Error::from(eyre::eyre!("prompt value is not a list of items"))
         })?
         .iter()
         .map(|i| prompt.options[i.index].value.clone())
@@ -438,7 +434,7 @@ mod test {
 
         assert_eq!(
             err.kind(),
-            PromptErrorKind::InvalidBooleanExpressionResult,
+            ErrorKind::InvalidBooleanExpressionResult,
             "skip should return an error if the expression returns a non-boolean result"
         );
     }
@@ -482,7 +478,7 @@ mod test {
 
         assert_eq!(
             err.kind(),
-            PromptErrorKind::DuplicatePromptName,
+            ErrorKind::DuplicatePromptName,
             "validate_prompt_configurations should return an error if duplicate prompt names are present"
         );
     }

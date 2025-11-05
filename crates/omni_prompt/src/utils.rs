@@ -2,7 +2,7 @@ use value_bag::OwnedValueBag;
 
 use crate::{
     configuration::ValidateConfiguration,
-    error::{PromptError, PromptErrrorInner},
+    error::{Error, ErrorInner},
 };
 
 pub fn validate_value(
@@ -11,7 +11,7 @@ pub fn validate_value(
     context_values: &tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
-) -> Result<(), PromptError> {
+) -> Result<(), Error> {
     for validator in validators {
         let mut ctx = context_values.clone();
         ctx.insert(value_name.unwrap_or("value"), value);
@@ -23,7 +23,7 @@ pub fn validate_value(
         validate_boolean_expression_result(&tera_result, &validator.condition)?;
 
         if tera_result != "true" {
-            return Err(PromptErrrorInner::InvalidValue {
+            return Err(ErrorInner::InvalidValue {
                 prompt_name: prompt_name.to_string(),
                 value: value.clone(),
                 error_message: validator.error_message.clone().unwrap_or_else(
@@ -44,9 +44,9 @@ pub fn validate_value(
 pub fn validate_boolean_expression_result(
     result: &str,
     expression: &str,
-) -> Result<(), PromptError> {
+) -> Result<(), Error> {
     if result != "true" && result != "false" {
-        return Err(PromptErrrorInner::InvalidBooleanExpressionResult {
+        return Err(ErrorInner::InvalidBooleanExpressionResult {
             result: result.to_string(),
             expression: expression.to_string(),
         })?;
@@ -59,7 +59,7 @@ pub fn validate_boolean_expression_result(
 mod tests {
     use value_bag::ValueBag;
 
-    use crate::error::PromptErrorKind;
+    use crate::error::ErrorKind;
 
     use super::*;
 
@@ -104,7 +104,7 @@ mod tests {
 
         assert_eq!(
             err.kind(),
-            PromptErrorKind::InvalidValue,
+            ErrorKind::InvalidValue,
             "validate_value should return an error if validation fails"
         );
     }
@@ -131,7 +131,7 @@ mod tests {
 
         assert_eq!(
             err.kind(),
-            PromptErrorKind::InvalidBooleanExpressionResult,
+            ErrorKind::InvalidBooleanExpressionResult,
             "validate_value should return an error if prompt value is not a boolean"
         );
     }

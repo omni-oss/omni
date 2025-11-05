@@ -16,7 +16,9 @@ dhat = { workspace = true, optional = true }
 omni_cli_core = { workspace = true }
 trace = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
 eyre = { workspace = true }
+color-eyre = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
 system_traits = { workspace = true }

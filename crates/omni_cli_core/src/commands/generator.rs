@@ -1,14 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use super::parser::parse_key_value;
-use maps::unordered_map;
+use maps::{UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
+use omni_generator::RunConfig;
+use omni_generator_configurations::GeneratorConfiguration;
 use omni_prompt::configuration::{
     BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
     PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
     ValidatedPromptConfiguration,
 };
+use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct GeneratorCommand {
@@ -53,6 +56,15 @@ pub struct GeneratorRunArgs {
         value_parser = parse_key_value::<String, String>
     )]
     pub answer: Vec<(String, String)>,
+
+    #[arg(
+        long,
+        short,
+        help = "Dry run",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue
+    )]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -84,11 +96,34 @@ async fn run_generator_run(
     command: &GeneratorRunCommand,
     ctx: &Context,
 ) -> eyre::Result<()> {
+    let generators = omni_generator::discover(
+        ctx.root_dir(),
+        &ctx.workspace_configuration().generators,
+        ctx.sys(),
+    )
+    .await?;
+
+    let generator_name = if let Some(name) = command.args.name.clone() {
+        name
+    } else {
+        prompt_generator_name(&generators)?
+    };
+
+    let generator = generators
+        .iter()
+        .find(|g| g.name == generator_name)
+        .ok_or_else(|| {
+            eyre::eyre!("generator '{}' not found", generator_name)
+        })?;
+
+    trace::trace!("Generator: {:#?}", generator);
+
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
 
-    let path = match (command.args.out_dir.clone(), &command.args.project) {
+    let output_dir = match (command.args.out_dir.clone(), &command.args.project)
+    {
         (None, None) => prompt_output_dir(projects, &current_dir)?,
         (None, Some(project)) => {
             let p = projects.iter().find(|p| p.name == *project);
@@ -107,9 +142,27 @@ async fn run_generator_run(
         }
     };
 
-    trace::info!("Output directory: {}", path.display());
+    trace::trace!("Generator output directory: {}", output_dir.display());
+
+    let run = RunConfig {
+        dry_run: command.args.dry_run,
+        output_dir: output_dir.as_path(),
+    };
+    let pre_exec_values = get_pre_exec_values(&command.args.answer);
+
+    omni_generator::run(&generator, &pre_exec_values, &run).await?;
 
     Ok(())
+}
+
+fn get_pre_exec_values(
+    values: &[(String, String)],
+) -> UnorderedMap<String, OwnedValueBag> {
+    UnorderedMap::from_iter(
+        values.iter().map(|(k, v)| {
+            (k.to_string(), ValueBag::capture_serde1(v).to_owned())
+        }),
+    )
 }
 
 fn prompt_output_dir(
@@ -129,10 +182,16 @@ fn prompt_output_dir(
             [
                 OptionConfiguration::new(
                     "Output directory",
+                    None,
                     "output_dir",
                     false,
                 ),
-                OptionConfiguration::new("Project directory", "project", false),
+                OptionConfiguration::new(
+                    "Project directory",
+                    None,
+                    "project",
+                    false,
+                ),
             ],
             Some("output_dir".to_string()),
         ));
@@ -183,6 +242,7 @@ fn prompt_output_dir(
             .map(|p| {
                 OptionConfiguration::new(
                     p.name.as_str(),
+                    None,
                     p.dir.to_string_lossy(),
                     false,
                 )
@@ -215,6 +275,49 @@ fn prompt_output_dir(
             "invalid value for output_dir_or_project: {value}"
         ))
     }
+}
+
+fn prompt_generator_name(
+    generators: &[GeneratorConfiguration],
+) -> eyre::Result<String> {
+    let context_values = unordered_map!();
+    let prompting_config = PromptingConfiguration::default();
+
+    let prompt =
+        PromptConfiguration::new_select(SelectPromptConfiguration::new(
+            BasePromptConfiguration::new(
+                "generator_name",
+                "Select generator",
+                None,
+            ),
+            generators
+                .iter()
+                .map(|g| {
+                    OptionConfiguration::new(
+                        g.name.as_str(),
+                        g.description.clone(),
+                        g.name.clone(),
+                        false,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            Some("generator_name".to_string()),
+        ));
+
+    let value = omni_prompt::prompt_one(
+        &prompt,
+        None,
+        &context_values,
+        &prompting_config,
+    )?
+    .expect("should have value at this point");
+
+    let value = value
+        .by_ref()
+        .to_str()
+        .ok_or_else(|| eyre::eyre!("value is not a string"))?;
+
+    Ok(value.to_string())
 }
 
 async fn run_generator_list(
