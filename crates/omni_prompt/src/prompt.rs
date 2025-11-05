@@ -10,23 +10,35 @@ use crate::{
     make,
     utils::{validate_boolean_expression_result, validate_value},
 };
-use maps::UnorderedMap;
+use maps::{UnorderedMap, unordered_map};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub fn prompt(
     prompts: &[PromptConfiguration],
     pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, PromptError> {
     validate_prompt_configurations(prompts)?;
     let mut values = UnorderedMap::default();
 
+    let mut ctx_vals = tera::Context::new();
+
+    for (key, value) in context_values {
+        ctx_vals.insert(key, value);
+    }
+
     for prompt in prompts {
         let if_expr = get_if_expression(prompt);
 
         if let Some(if_expr) = if_expr
-            && skip(if_expr, &values, config.if_expressions_root_property)?
+            && skip(
+                if_expr,
+                &values,
+                &ctx_vals,
+                config.if_expressions_root_property,
+            )?
         {
             continue;
         }
@@ -39,6 +51,7 @@ pub fn prompt(
             let result = validate_value(
                 &key,
                 &value,
+                &ctx_vals,
                 validators,
                 config.validation_expressions_value_name,
             );
@@ -46,7 +59,7 @@ pub fn prompt(
             if let Err(err) = result {
                 if err.kind() == PromptErrorKind::InvalidValue {
                     trace::error!("reprompting due to error: {err}");
-                    get_prompt_value(prompt, config)?
+                    get_prompt_value(prompt, &ctx_vals, config)?
                 } else {
                     return Err(err);
                 }
@@ -54,7 +67,7 @@ pub fn prompt(
                 value.clone()
             }
         } else {
-            get_prompt_value(prompt, config)?
+            get_prompt_value(prompt, &ctx_vals, config)?
         };
 
         values.insert(key, value);
@@ -63,29 +76,94 @@ pub fn prompt(
     Ok(values)
 }
 
+pub fn prompt_one(
+    prompt: &PromptConfiguration,
+    pre_exec_value: Option<&OwnedValueBag>,
+    context_values: &UnorderedMap<String, OwnedValueBag>,
+    config: &PromptingConfiguration,
+) -> Result<Option<OwnedValueBag>, PromptError> {
+    let mut ctx_vals = tera::Context::new();
+
+    for (key, value) in context_values {
+        ctx_vals.insert(key, value);
+    }
+
+    let if_expr = get_if_expression(prompt);
+
+    let mut pre_exec_values = unordered_map!();
+
+    if let Some(pre_exec_value) = pre_exec_value {
+        pre_exec_values.insert(
+            get_prompt_name(prompt).to_string(),
+            pre_exec_value.clone(),
+        );
+    }
+
+    if let Some(if_expr) = if_expr
+        && skip(
+            if_expr,
+            &pre_exec_values,
+            &ctx_vals,
+            config.if_expressions_root_property,
+        )?
+    {
+        return Ok(None);
+    }
+
+    let validators = get_validators(prompt);
+    let key = get_prompt_name(prompt).to_string();
+    let value = if let Some(value) = pre_exec_value {
+        let result = validate_value(
+            &key,
+            &value,
+            &ctx_vals,
+            validators,
+            config.validation_expressions_value_name,
+        );
+
+        if let Err(err) = result {
+            if err.kind() == PromptErrorKind::InvalidValue {
+                trace::error!("reprompting due to error: {err}");
+                get_prompt_value(prompt, &ctx_vals, config)?
+            } else {
+                return Err(err);
+            }
+        } else {
+            value.clone()
+        }
+    } else {
+        get_prompt_value(prompt, &ctx_vals, config)?
+    };
+
+    Ok(Some(value))
+}
+
 fn get_prompt_value(
     prompt: &PromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration<'_>,
 ) -> Result<OwnedValueBag, PromptError> {
     let value = match prompt {
         PromptConfiguration::Checkbox { prompt } => {
-            prompt_checkbox(prompt, config)?
+            prompt_checkbox(prompt, context_values, config)?
         }
         PromptConfiguration::Select { prompt } => {
-            prompt_select(prompt, config)?
+            prompt_select(prompt, context_values, config)?
         }
         PromptConfiguration::MultiSelect { prompt } => {
-            prompt_multi_select(prompt, config)?
+            prompt_multi_select(prompt, context_values, config)?
         }
-        PromptConfiguration::Text { prompt } => prompt_text(prompt, config)?,
+        PromptConfiguration::Text { prompt } => {
+            prompt_text(prompt, context_values, config)?
+        }
         PromptConfiguration::Password { prompt } => {
-            prompt_password(prompt, config)?
+            prompt_password(prompt, context_values, config)?
         }
         PromptConfiguration::Float { prompt } => {
-            prompt_float_number(prompt, config)?
+            prompt_float_number(prompt, context_values, config)?
         }
         PromptConfiguration::Integer { prompt } => {
-            prompt_integer_number(prompt, config)?
+            prompt_integer_number(prompt, context_values, config)?
         }
     };
     Ok(value)
@@ -119,9 +197,10 @@ fn get_if_expression(prompt: &PromptConfiguration) -> Option<&str> {
 fn skip(
     if_expr: &str,
     values: &UnorderedMap<String, OwnedValueBag>,
+    context_values: &tera::Context,
     if_expressions_root_property: Option<&str>,
 ) -> Result<bool, PromptError> {
-    let mut ctx = tera::Context::new();
+    let mut ctx = context_values.clone();
     ctx.insert(if_expressions_root_property.unwrap_or("prompts"), values);
 
     let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
@@ -171,9 +250,10 @@ fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
 
 fn prompt_checkbox(
     prompt: &CheckboxPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let prompt = make::checkbox(prompt, config)?;
+    let prompt = make::checkbox(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(prompt)?;
 
@@ -186,9 +266,10 @@ fn prompt_checkbox(
 
 fn prompt_password(
     prompt: &PasswordPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::password(prompt, config)?;
+    let question = make::password(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -204,9 +285,10 @@ fn prompt_password(
 
 fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::float_number(prompt, config)?;
+    let question = make::float_number(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -219,9 +301,10 @@ fn prompt_float_number(
 
 fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::integer_number(prompt, config)?;
+    let question = make::integer_number(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -234,9 +317,10 @@ fn prompt_integer_number(
 
 fn prompt_text(
     prompt: &TextPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::text(prompt, config)?;
+    let question = make::text(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -252,9 +336,10 @@ fn prompt_text(
 
 fn prompt_select(
     prompt: &SelectPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::select(prompt, config)?;
+    let question = make::select(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -270,9 +355,10 @@ fn prompt_select(
 
 fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
+    context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, PromptError> {
-    let question = make::multi_select(prompt, config)?;
+    let question = make::multi_select(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(question)?;
 
@@ -304,9 +390,10 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"value").to_owned(),
         )]);
+        let ctx_vals = tera::Context::new();
 
         assert_eq!(
-            skip(if_expr, &values, None).unwrap(),
+            skip(if_expr, &values, &ctx_vals, None).unwrap(),
             false,
             "skip should return false"
         );
@@ -320,9 +407,10 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"other_value").to_owned(),
         )]);
+        let ctx_vals = tera::Context::new();
 
         assert_eq!(
-            skip(if_expr, &values, None).unwrap(),
+            skip(if_expr, &values, &ctx_vals, None).unwrap(),
             true,
             "skip should return true"
         );
@@ -336,8 +424,9 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"other_value").to_owned(),
         )]);
+        let ctx_vals = tera::Context::new();
 
-        let result = skip(if_expr, &values, None);
+        let result = skip(if_expr, &values, &ctx_vals, None);
 
         assert!(
             result.is_err(),
