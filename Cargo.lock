@@ -4186,6 +4186,7 @@ dependencies = [
  "omni_generator_configurations",
  "omni_hasher",
  "omni_process",
+ "omni_prompt",
  "omni_scm",
  "omni_setup",
  "omni_task_context",

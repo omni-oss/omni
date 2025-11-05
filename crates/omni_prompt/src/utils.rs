@@ -8,11 +8,12 @@ use crate::{
 pub fn validate_value(
     prompt_name: &str,
     value: &OwnedValueBag,
+    context_values: &tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
 ) -> Result<(), PromptError> {
     for validator in validators {
-        let mut ctx = tera::Context::new();
+        let mut ctx = context_values.clone();
         ctx.insert(value_name.unwrap_or("value"), value);
 
         let tera_result =
@@ -69,8 +70,10 @@ mod tests {
             condition: "{{ value == 'value' }}".to_string(),
             error_message: Some("error message".to_string()),
         }];
+        let ctx_vals = tera::Context::new();
 
-        let result = validate_value(&prompt_name, &value, &validators, None);
+        let result =
+            validate_value(&prompt_name, &value, &ctx_vals, &validators, None);
 
         assert!(
             result.is_ok(),
@@ -86,8 +89,10 @@ mod tests {
             condition: "{{ value == 'value' }}".to_string(),
             error_message: Some("error message".to_string()),
         }];
+        let ctx_vals = tera::Context::new();
 
-        let result = validate_value(&prompt_name, &value, &validators, None);
+        let result =
+            validate_value(&prompt_name, &value, &ctx_vals, &validators, None);
 
         assert!(
             result.is_err(),
@@ -111,8 +116,10 @@ mod tests {
             condition: "{{ value }}".to_string(),
             error_message: Some("error message".to_string()),
         }];
+        let ctx_vals = tera::Context::new();
 
-        let result = validate_value(&prompt_name, &value, &validators, None);
+        let result =
+            validate_value(&prompt_name, &value, &ctx_vals, &validators, None);
 
         assert!(
             result.is_err(),

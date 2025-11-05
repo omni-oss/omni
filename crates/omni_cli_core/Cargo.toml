@@ -95,6 +95,7 @@ omni_task_context = { workspace = true }
 omni_setup = { workspace = true }
 omni_scm = { workspace = true }
 omni_execution_plan = { workspace = true }
+omni_prompt = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -17,6 +17,7 @@ use crate::{
 
 pub fn checkbox<'a>(
     prompt: &'a CheckboxPromptConfiguration,
+    _context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.name.as_str();
@@ -35,6 +36,7 @@ pub fn checkbox<'a>(
 
 pub fn password<'a>(
     prompt: &'a PasswordPromptConfiguration,
+    context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -43,7 +45,13 @@ pub fn password<'a>(
     let question = Question::password(name)
         .message(prompt.base.base.message.as_str())
         .validate(|answer, _| {
-            validate(&answer.to_string(), name, validators, config)
+            validate(
+                &answer.to_string(),
+                name,
+                context_values,
+                validators,
+                config,
+            )
         });
 
     Ok(question.build())
@@ -51,6 +59,7 @@ pub fn password<'a>(
 
 pub fn text<'a>(
     prompt: &'a TextPromptConfiguration,
+    context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -58,7 +67,13 @@ pub fn text<'a>(
     let question = Question::input(name)
         .message(prompt.base.base.message.as_str())
         .validate(|answer, _| {
-            validate(&answer.to_string(), name, validators, config)
+            validate(
+                &answer.to_string(),
+                name,
+                context_values,
+                validators,
+                config,
+            )
         });
     let default_value = prompt.default.as_deref();
 
@@ -72,6 +87,7 @@ pub fn text<'a>(
 
 pub fn select<'a>(
     prompt: &'a SelectPromptConfiguration,
+    _context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let default_value = prompt.default.as_deref();
@@ -99,6 +115,7 @@ pub fn select<'a>(
 
 pub fn multi_select<'a>(
     prompt: &'a MultiSelectPromptConfiguration,
+    context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -123,7 +140,7 @@ pub fn multi_select<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            validate(&values, name, validators, config)
+            validate(&values, name, context_values, validators, config)
         });
 
     if let Some(defaults) = default_values {
@@ -152,6 +169,7 @@ pub fn multi_select<'a>(
 
 pub fn float_number<'a>(
     prompt: &'a FloatNumberPromptConfiguration,
+    context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -160,7 +178,7 @@ pub fn float_number<'a>(
         .message(prompt.base.base.message.as_str())
         .validate(|answer, _| {
             if let Ok(value) = answer.parse::<f64>() {
-                validate(&value, name, validators, config)
+                validate(&value, name, context_values, validators, config)
             } else {
                 Err("value is not an integer".to_string())
             }
@@ -177,6 +195,7 @@ pub fn float_number<'a>(
 
 pub fn integer_number<'a>(
     prompt: &'a IntegerNumberPromptConfiguration,
+    context_values: &'a tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, PromptError> {
     let name = prompt.base.base.name.as_str();
@@ -185,7 +204,7 @@ pub fn integer_number<'a>(
         .message(prompt.base.base.message.as_str())
         .validate(|answer, _| {
             if let Ok(value) = answer.parse::<i64>() {
-                validate(&value, name, validators, config)
+                validate(&value, name, context_values, validators, config)
             } else {
                 Err("value is not an integer".to_string())
             }
@@ -203,6 +222,7 @@ pub fn integer_number<'a>(
 fn validate<T: Serialize + 'static>(
     value: &T,
     name: &str,
+    context_values: &tera::Context,
     validators: &[ValidateConfiguration],
     config: &PromptingConfiguration,
 ) -> Result<(), String> {
@@ -211,6 +231,7 @@ fn validate<T: Serialize + 'static>(
     let result = validate_value(
         name,
         &value,
+        context_values,
         validators,
         config.validation_expressions_value_name,
     );

@@ -13,6 +13,7 @@ dependencies:
   - omni_configurations
   - omni_generator_configurations
   - omni_generator
+  - omni_prompt
   - env_loader
   - omni_expressions
   - omni_scm
