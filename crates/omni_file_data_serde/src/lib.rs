@@ -20,7 +20,7 @@ where
     let ext = path.extension().unwrap_or_default();
     let content = sys.fs_read_async(path).await?;
 
-    deseralize(ext, content)
+    deserialize(ext, content)
 }
 
 pub fn read<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
@@ -35,10 +35,10 @@ where
     let ext = path.extension().unwrap_or_default();
     let content = sys.fs_read(path)?;
 
-    deseralize(ext, content)
+    deserialize(ext, content)
 }
 
-fn deseralize<TConfig>(
+fn deserialize<TConfig>(
     ext: &std::ffi::OsStr,
     content: std::borrow::Cow<'_, [u8]>,
 ) -> Result<TConfig, Error>
