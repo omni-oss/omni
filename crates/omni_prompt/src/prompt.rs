@@ -46,29 +46,14 @@ pub fn prompt(
         let validators = get_validators(prompt);
         let key = get_prompt_name(prompt).to_string();
         let pre_exec_value = pre_exec_values.get(&key);
-        let value = if let Some(pre_exec_value) = pre_exec_value {
-            let value = pre_exec_value;
-            let result = validate_value(
-                &key,
-                &value,
-                &ctx_vals,
-                validators,
-                config.validation_expressions_value_name,
-            );
-
-            if let Err(err) = result {
-                if err.kind() == ErrorKind::InvalidValue {
-                    trace::error!("reprompting due to error: {err}");
-                    get_prompt_value(prompt, &ctx_vals, config)?
-                } else {
-                    return Err(err);
-                }
-            } else {
-                value.clone()
-            }
-        } else {
-            get_prompt_value(prompt, &ctx_vals, config)?
-        };
+        let value = get_value(
+            config,
+            &ctx_vals,
+            prompt,
+            validators,
+            &key,
+            pre_exec_value,
+        )?;
 
         values.insert(key, value);
     }
@@ -112,19 +97,34 @@ pub fn prompt_one(
 
     let validators = get_validators(prompt);
     let key = get_prompt_name(prompt).to_string();
-    let value = if let Some(value) = pre_exec_value {
+    let value =
+        get_value(config, &ctx_vals, prompt, validators, &key, pre_exec_value)?;
+
+    Ok(Some(value))
+}
+
+fn get_value(
+    config: &PromptingConfiguration<'_>,
+    ctx_vals: &tera::Context,
+    prompt: &PromptConfiguration,
+    validators: &[ValidateConfiguration],
+    key: &String,
+    pre_exec_value: Option<&OwnedValueBag>,
+) -> Result<OwnedValueBag, Error> {
+    let value = if let Some(pre_exec_value) = pre_exec_value {
+        let value = pre_exec_value;
         let result = validate_value(
-            &key,
+            key,
             &value,
-            &ctx_vals,
+            ctx_vals,
             validators,
             config.validation_expressions_value_name,
         );
 
         if let Err(err) = result {
             if err.kind() == ErrorKind::InvalidValue {
-                trace::error!("reprompting due to error: {err}");
-                get_prompt_value(prompt, &ctx_vals, config)?
+                trace::error!("reprompting due to validation error: {err}");
+                get_prompt_value(prompt, ctx_vals, config)?
             } else {
                 return Err(err);
             }
@@ -132,10 +132,9 @@ pub fn prompt_one(
             value.clone()
         }
     } else {
-        get_prompt_value(prompt, &ctx_vals, config)?
+        get_prompt_value(prompt, ctx_vals, config)?
     };
-
-    Ok(Some(value))
+    Ok(value)
 }
 
 fn get_prompt_value(

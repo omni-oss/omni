@@ -19,9 +19,13 @@ prompts:
     name: crate_name
     message: Crate name
     validate:
-      - condition: "{{ (value | length) != 0 }}"
+      - condition: "{{ value | length > 0 }}"
         error_message: Crate name must not be empty
-      - condition: "{{ value is matching('[a-zA-Z_]{1}[a-zA-Z0-9_-]+') }}"
-        error_message: Crate name must start with a letter or underscore
-      - condition: "{{ value is matching('[a-zA-Z0-9_-]+') }}"
-        error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens
+      - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
+        error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens, and must start with a letter
+
+actions:
+  - type: add-many
+    template_files:
+      - files/src/**/*
+      - files/Cargo.toml.tpl
