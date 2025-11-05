@@ -20,16 +20,15 @@ pub type DynEnvironmentRepository =
     Box<dyn EnvironmentRepository + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("environment repository error: {inner:?}")]
-pub struct EnvironmentRepositoryError {
-    inner: EnvironmentRepositoryErrorInner,
-    kind: EnvironmentRepositoryErrorKind,
-}
+#[error(transparent)]
+pub struct EnvironmentRepositoryError(
+    pub(crate) EnvironmentRepositoryErrorInner,
+);
 
 impl EnvironmentRepositoryError {
     #[allow(unused)]
     pub fn kind(&self) -> EnvironmentRepositoryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -38,16 +37,13 @@ impl<T: Into<EnvironmentRepositoryErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 
 #[derive(Debug, EnumDiscriminants, thiserror::Error, new)]
 #[strum_discriminants(vis(pub), name(EnvironmentRepositoryErrorKind))]
-pub enum EnvironmentRepositoryErrorInner {
+pub(crate) enum EnvironmentRepositoryErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 

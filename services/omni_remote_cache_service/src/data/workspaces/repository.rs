@@ -19,16 +19,13 @@ pub trait WorkspaceRepository: Send + Sync + 'static {
 pub type DynWorkspaceRepository = Box<dyn WorkspaceRepository>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("workspace repository error: {inner:?}")]
-pub struct WorkspaceRepositoryError {
-    inner: WorkspaceRepositoryErrorInner,
-    kind: WorkspaceRepositoryErrorKind,
-}
+#[error(transparent)]
+pub struct WorkspaceRepositoryError(pub(crate) WorkspaceRepositoryErrorInner);
 
 impl WorkspaceRepositoryError {
     #[allow(unused)]
     pub fn kind(&self) -> WorkspaceRepositoryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -37,10 +34,7 @@ impl<T: Into<WorkspaceRepositoryErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 

@@ -51,19 +51,13 @@ pub trait SecurityService: Send + Sync + 'static {
 pub type DynSecurityService = Box<dyn SecurityService>;
 
 #[derive(Debug, thiserror::Error, new)]
-#[error("Security Service Error: {inner:?}")]
-pub struct SecurityServiceError {
-    kind: SecurityServiceErrorKind,
-    inner: SecurityServiceErrorInner,
-}
+#[error(transparent)]
+pub struct SecurityServiceError(pub(crate) SecurityServiceErrorInner);
 
 impl SecurityServiceError {
     pub fn custom(inner: impl Into<eyre::Report>) -> Self {
         let inner = inner.into();
-        Self {
-            kind: SecurityServiceErrorKind::Custom,
-            inner: inner.into(),
-        }
+        Self(inner)
     }
 }
 
@@ -77,10 +71,7 @@ impl SecurityServiceError {
 impl<T: Into<SecurityServiceErrorInner>> From<T> for SecurityServiceError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner: inner.into(),
-        }
+        Self(inner)
     }
 }
 

@@ -48,11 +48,8 @@ pub enum Violation {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("validation service error: {inner:?}")]
-pub struct ValidationServiceError {
-    inner: ValidationServiceErrorInner,
-    kind: ValidationServiceErrorKind,
-}
+#[error(transparent)]
+pub struct ValidationServiceError(pub(crate) ValidationServiceErrorInner);
 
 pub type DynValidationService = Box<dyn ValidationService + Send + Sync>;
 
@@ -66,10 +63,7 @@ impl ValidationServiceError {
 impl<T: Into<ValidationServiceErrorInner>> From<T> for ValidationServiceError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 

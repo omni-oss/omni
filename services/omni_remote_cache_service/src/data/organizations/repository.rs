@@ -20,16 +20,15 @@ pub type DynOrganizationRepository =
     Box<dyn OrganizationRepository + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
-#[error("organization repository error: {inner:?}")]
-pub struct OrganizationRepositoryError {
-    inner: OrganizationRepositoryErrorInner,
-    kind: OrganizationRepositoryErrorKind,
-}
+#[error(transparent)]
+pub struct OrganizationRepositoryError(
+    pub(crate) OrganizationRepositoryErrorInner,
+);
 
 impl OrganizationRepositoryError {
     #[allow(unused)]
     pub fn kind(&self) -> OrganizationRepositoryErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
@@ -38,16 +37,13 @@ impl<T: Into<OrganizationRepositoryErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self {
-            kind: inner.discriminant(),
-            inner,
-        }
+        Self(inner)
     }
 }
 
 #[derive(Debug, EnumDiscriminants, thiserror::Error, new)]
 #[strum_discriminants(vis(pub), name(OrganizationRepositoryErrorKind))]
-pub enum OrganizationRepositoryErrorInner {
+pub(crate) enum OrganizationRepositoryErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 
