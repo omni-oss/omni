@@ -27,6 +27,7 @@ prompts:
 
 actions:
   - type: add-many
+    base_path: files
     template_files:
       - files/src/**/*
       - files/Cargo.toml.tpl
