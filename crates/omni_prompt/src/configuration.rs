@@ -97,7 +97,7 @@ pub struct CheckboxPromptConfiguration {
     pub base: BasePromptConfiguration,
 
     #[new(into)]
-    pub default: Option<bool>,
+    pub default: Option<String>,
 }
 
 #[derive(
@@ -209,7 +209,7 @@ pub struct FloatNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    pub default: Option<f64>,
+    pub default: Option<String>,
 }
 
 #[derive(
@@ -231,7 +231,7 @@ pub struct IntegerNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    pub default: Option<i64>,
+    pub default: Option<String>,
 }
 
 #[derive(

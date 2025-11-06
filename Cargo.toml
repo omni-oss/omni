@@ -149,7 +149,7 @@ nix = { version = "^0.30.1" }
 base64 = { version = "^0.22.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.6" }
-either = { version = "^1.15.0" }
+either = { version = "^1.15.0", features = ["serde"] }
 ratatui = { version = "^0.29.0" }
 crossterm = { version = "^0.29.0" }
 omni_term_ui = { path = "./crates/omni_term_ui" }
