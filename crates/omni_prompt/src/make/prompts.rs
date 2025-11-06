@@ -1,5 +1,6 @@
 use std::{borrow::Cow, str::FromStr};
 
+use either::Either;
 use requestty::Question;
 use serde::Serialize;
 use sets::unordered_set;
@@ -227,7 +228,7 @@ pub fn float_number<'a>(
         });
     let default_value = prompt
         .default
-        .as_deref()
+        .as_ref()
         .map(|v| try_parse_or_expand::<f64>(name, "float", v, context_values))
         .transpose()?;
 
@@ -257,7 +258,7 @@ pub fn integer_number<'a>(
         });
     let default_value = prompt
         .default
-        .as_deref()
+        .as_ref()
         .map(|v| try_parse_or_expand::<i64>(name, "integer", v, context_values))
         .transpose()?;
 
@@ -269,29 +270,35 @@ pub fn integer_number<'a>(
     .build())
 }
 
-fn try_parse_or_expand<T: FromStr>(
+fn try_parse_or_expand<T: FromStr + Clone>(
     prompt_name: &str,
     expected_type: &str,
-    value: &str,
+    value: &Either<T, String>,
     context_values: &tera::Context,
 ) -> Result<T, Error> {
-    if let Ok(value) = value.parse::<T>() {
-        Ok(value)
-    } else {
-        let expanded = tera::Tera::one_off(&value, context_values, false)?;
-        let parsed = expanded.as_str().parse::<T>();
+    match value {
+        Either::Left(value) => Ok(value.clone()),
+        Either::Right(value) => {
+            if let Ok(value) = value.parse::<T>() {
+                Ok(value)
+            } else {
+                let expanded =
+                    tera::Tera::one_off(&value, context_values, false)?;
+                let parsed = expanded.as_str().parse::<T>();
 
-        if let Ok(value) = parsed {
-            Ok(value)
-        } else {
-            Err(Error::new(ErrorInner::InvalidValue {
-                prompt_name: prompt_name.to_string(),
-                value: ValueBag::capture_serde1(&expanded).to_owned(),
-                error_message: format!(
-                    "Value '{}' is not a valid {} value",
-                    value, expected_type
-                ),
-            }))
+                if let Ok(value) = parsed {
+                    Ok(value)
+                } else {
+                    Err(Error::new(ErrorInner::InvalidValue {
+                        prompt_name: prompt_name.to_string(),
+                        value: ValueBag::capture_serde1(&expanded).to_owned(),
+                        error_message: format!(
+                            "Value '{}' is not a valid {} value",
+                            value, expected_type
+                        ),
+                    }))
+                }
+            }
         }
     }
 }

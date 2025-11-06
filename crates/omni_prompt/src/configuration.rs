@@ -1,4 +1,6 @@
+use crate::parsers::either_value_or_tera_expr_optional;
 use derive_new::new;
+use either::Either;
 use garde::Validate;
 use omni_serde_validators::{
     name::validate_name,
@@ -97,7 +99,12 @@ pub struct CheckboxPromptConfiguration {
     pub base: BasePromptConfiguration,
 
     #[new(into)]
-    pub default: Option<String>,
+    #[serde(default)]
+    #[serde(
+        serialize_with = "either_value_or_tera_expr_optional::serialize",
+        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
+    )]
+    pub default: Option<Either<bool, String>>,
 }
 
 #[derive(
@@ -209,7 +216,11 @@ pub struct FloatNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    pub default: Option<String>,
+    #[serde(
+        serialize_with = "either_value_or_tera_expr_optional::serialize",
+        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
+    )]
+    pub default: Option<Either<f64, String>>,
 }
 
 #[derive(
@@ -231,7 +242,11 @@ pub struct IntegerNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    pub default: Option<String>,
+    #[serde(
+        serialize_with = "either_value_or_tera_expr_optional::serialize",
+        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
+    )]
+    pub default: Option<Either<i64, String>>,
 }
 
 #[derive(
