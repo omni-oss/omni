@@ -1,8 +1,8 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
 use requestty::Question;
 use serde::Serialize;
-use sets::UnorderedSet;
+use sets::unordered_set;
 use value_bag::ValueBag;
 
 use crate::{
@@ -19,17 +19,22 @@ use crate::{
 
 pub fn checkbox<'a>(
     prompt: &'a CheckboxPromptConfiguration,
-    _context_values: &'a tera::Context,
+    context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.name.as_str();
-    let default_value = prompt.default;
+    let default_value = &prompt.default;
 
     let question =
         Question::confirm(name).message(prompt.base.message.as_str());
 
     Ok(if let Some(default_value) = default_value {
-        question.default(default_value)
+        question.default(try_parse_or_expand(
+            name,
+            "bool",
+            &default_value,
+            context_values,
+        )?)
     } else {
         question
     }
@@ -77,7 +82,11 @@ pub fn text<'a>(
                 config,
             )
         });
-    let default_value = prompt.default.as_deref();
+    let default_value = prompt
+        .default
+        .as_deref()
+        .map(|v| expand(v, context_values))
+        .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
         question.default(default_value)
@@ -89,10 +98,15 @@ pub fn text<'a>(
 
 pub fn select<'a>(
     prompt: &'a SelectPromptConfiguration,
-    _context_values: &'a tera::Context,
+    context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
-    let default_value = prompt.default.as_deref();
+    let default_value = prompt
+        .default
+        .as_deref()
+        .map(|v| expand(v, context_values))
+        .transpose()?;
+
     let mut question = Question::select(prompt.base.name.as_str())
         .message(prompt.base.message.as_str());
 
@@ -122,10 +136,16 @@ pub fn multi_select<'a>(
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
-    let default_values = prompt
-        .default
-        .as_deref()
-        .map(|def| def.iter().collect::<UnorderedSet<_>>());
+    let default_values = if let Some(default_values) = &prompt.default {
+        let mut values = unordered_set!();
+        for option in default_values {
+            values.insert(expand(option, context_values)?);
+        }
+        Some(values)
+    } else {
+        None
+    };
+
     let validators = prompt.base.validate.as_slice();
 
     let mut question = Question::multi_select(name)
@@ -205,7 +225,11 @@ pub fn float_number<'a>(
                 Err("value is not an integer".to_string())
             }
         });
-    let default_value = prompt.default;
+    let default_value = prompt
+        .default
+        .as_deref()
+        .map(|v| try_parse_or_expand::<f64>(name, "float", v, context_values))
+        .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
         question.default(default_value.to_string())
@@ -231,7 +255,11 @@ pub fn integer_number<'a>(
                 Err("value is not an integer".to_string())
             }
         });
-    let default_value = prompt.default;
+    let default_value = prompt
+        .default
+        .as_deref()
+        .map(|v| try_parse_or_expand::<i64>(name, "integer", v, context_values))
+        .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
         question.default(default_value.to_string())
@@ -239,6 +267,41 @@ pub fn integer_number<'a>(
         question
     }
     .build())
+}
+
+fn try_parse_or_expand<T: FromStr>(
+    prompt_name: &str,
+    expected_type: &str,
+    value: &str,
+    context_values: &tera::Context,
+) -> Result<T, Error> {
+    if let Ok(value) = value.parse::<T>() {
+        Ok(value)
+    } else {
+        let expanded = tera::Tera::one_off(&value, context_values, false)?;
+        let parsed = expanded.as_str().parse::<T>();
+
+        if let Ok(value) = parsed {
+            Ok(value)
+        } else {
+            Err(Error::new(ErrorInner::InvalidValue {
+                prompt_name: prompt_name.to_string(),
+                value: ValueBag::capture_serde1(&expanded).to_owned(),
+                error_message: format!(
+                    "Value '{}' is not a valid {} value",
+                    value, expected_type
+                ),
+            }))
+        }
+    }
+}
+
+fn expand(
+    template: &str,
+    context_values: &tera::Context,
+) -> Result<String, Error> {
+    let expanded = tera::Tera::one_off(template, context_values, false)?;
+    Ok(expanded)
 }
 
 fn validate<T: Serialize + 'static>(
