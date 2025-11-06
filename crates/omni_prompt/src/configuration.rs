@@ -100,10 +100,8 @@ pub struct CheckboxPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    #[serde(
-        serialize_with = "either_value_or_tera_expr_optional::serialize",
-        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
-    )]
+    #[schemars(with = "Option<EitherUntaggedDef<bool, String>>")]
+    #[serde(with = "either_value_or_tera_expr_optional")]
     pub default: Option<Either<bool, String>>,
 }
 
@@ -216,10 +214,8 @@ pub struct FloatNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    #[serde(
-        serialize_with = "either_value_or_tera_expr_optional::serialize",
-        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
-    )]
+    #[schemars(with = "Option<EitherUntaggedDef<f64, String>>")]
+    #[serde(with = "either_value_or_tera_expr_optional")]
     pub default: Option<Either<f64, String>>,
 }
 
@@ -242,10 +238,8 @@ pub struct IntegerNumberPromptConfiguration {
 
     #[new(into)]
     #[serde(default)]
-    #[serde(
-        serialize_with = "either_value_or_tera_expr_optional::serialize",
-        deserialize_with = "either_value_or_tera_expr_optional::deserialize"
-    )]
+    #[schemars(with = "Option<EitherUntaggedDef<i64, String>>")]
+    #[serde(with = "either_value_or_tera_expr_optional")]
     pub default: Option<Either<i64, String>>,
 }
 
@@ -326,4 +320,15 @@ impl<'a> Default for PromptingConfiguration<'a> {
             validation_expressions_value_name: Some("value"),
         }
     }
+}
+
+#[derive(
+    Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+)]
+#[schemars(untagged)]
+#[serde(untagged)]
+#[garde(allow_unvalidated)]
+enum EitherUntaggedDef<L, R> {
+    Left(L),
+    Right(R),
 }

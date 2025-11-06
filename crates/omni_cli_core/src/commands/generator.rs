@@ -103,6 +103,8 @@ async fn run_generator_run(
     )
     .await?;
 
+    omni_generator::validate(&generators)?;
+
     let generator_name = if let Some(name) = command.args.name.clone() {
         name
     } else {
@@ -294,7 +296,7 @@ fn prompt_generator_name(
                 .iter()
                 .map(|g| {
                     OptionConfiguration::new(
-                        g.name.as_str(),
+                        g.display_name.as_deref().unwrap_or(&g.name.as_str()),
                         g.description.clone(),
                         g.name.clone(),
                         false,

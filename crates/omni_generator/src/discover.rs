@@ -35,11 +35,16 @@ pub async fn discover(
     for file in files {
         let sys = sys.clone();
         results.spawn(async move {
-            omni_file_data_serde::read_async::<GeneratorConfiguration, _, _>(
-                file.as_path(),
-                &sys,
-            )
-            .await
+            let mut conf = omni_file_data_serde::read_async::<
+                GeneratorConfiguration,
+                _,
+                _,
+            >(file.as_path(), &sys)
+            .await?;
+
+            conf.file = file;
+
+            Ok::<_, Error>(conf)
         });
     }
 

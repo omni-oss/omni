@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=../../.artifacts/generator.json
 name: crate
+display_name: Rust Crate
 description: Generate a new rust crate
 
 prompts:

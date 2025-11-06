@@ -12,3 +12,4 @@ dependencies:
   - dir_walker
   - system_traits
   - maps
+  - sets
