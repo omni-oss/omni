@@ -8,7 +8,7 @@ use value_bag::ValueBag;
 
 use crate::{
     configuration::{
-        CheckboxPromptConfiguration, FloatNumberPromptConfiguration,
+        ConfirmPromptConfiguration, FloatNumberPromptConfiguration,
         IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
         OptionConfiguration, PasswordPromptConfiguration,
         PromptingConfiguration, SelectPromptConfiguration,
@@ -18,8 +18,8 @@ use crate::{
     utils::validate_value,
 };
 
-pub fn checkbox<'a>(
-    prompt: &'a CheckboxPromptConfiguration,
+pub fn confirm<'a>(
+    prompt: &'a ConfirmPromptConfiguration,
     context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
