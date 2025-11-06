@@ -23,17 +23,21 @@ pub fn validate_value(
         validate_boolean_expression_result(&tera_result, &validator.condition)?;
 
         if tera_result != "true" {
+            let error_message = validator
+                .error_message
+                .as_ref()
+                .map(|e| tera::Tera::one_off(&e, &ctx, true))
+                .unwrap_or_else(|| {
+                    Ok(format!(
+                        "condition '{}' evaluated to false",
+                        validator.condition
+                    ))
+                })?;
+
             return Err(ErrorInner::InvalidValue {
                 prompt_name: prompt_name.to_string(),
                 value: value.clone(),
-                error_message: validator.error_message.clone().unwrap_or_else(
-                    || {
-                        format!(
-                            "condition '{}' evaluated to false",
-                            validator.condition
-                        )
-                    },
-                ),
+                error_message,
             })?;
         }
     }
