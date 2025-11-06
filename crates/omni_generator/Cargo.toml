@@ -31,6 +31,7 @@ system_traits = { workspace = true }
 requestty = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
+sets = { workspace = true }
 dir_walker = { workspace = true }
 omni_configuration_discovery = { workspace = true }
 omni_file_data_serde = { workspace = true }

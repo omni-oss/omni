@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -34,4 +36,9 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     GeneratorDiscovery(#[from] omni_configuration_discovery::error::Error),
+
+    #[error(
+        "there is already a generator with the name '{name}', generator names must be unique, config path: {path}"
+    )]
+    DuplicateGeneratorName { name: String, path: PathBuf },
 }
