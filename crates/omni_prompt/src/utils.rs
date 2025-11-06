@@ -1,3 +1,4 @@
+use either::Either::{Left, Right};
 use value_bag::OwnedValueBag;
 
 use crate::{
@@ -16,13 +17,19 @@ pub fn validate_value(
         let mut ctx = context_values.clone();
         ctx.insert(value_name.unwrap_or("value"), value);
 
-        let tera_result =
-            tera::Tera::one_off(&validator.condition, &ctx, true)?;
-        let tera_result = tera_result.trim();
+        let tera_result = match &validator.condition {
+            Left(l) => *l,
+            Right(r) => {
+                let tera_result = tera::Tera::one_off(&r, &ctx, true)?;
+                let tera_result = tera_result.trim();
 
-        validate_boolean_expression_result(&tera_result, &validator.condition)?;
+                validate_boolean_expression_result(&tera_result, &r)?;
 
-        if tera_result != "true" {
+                tera_result == "true"
+            }
+        };
+
+        if tera_result {
             let error_message = validator
                 .error_message
                 .as_ref()
@@ -72,7 +79,7 @@ mod tests {
         let prompt_name = "name".to_string();
         let value = ValueBag::capture_serde1(&"value").to_owned();
         let validators = [ValidateConfiguration {
-            condition: "{{ value == 'value' }}".to_string(),
+            condition: Right("{{ value == 'value' }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
         let ctx_vals = tera::Context::new();
@@ -91,7 +98,7 @@ mod tests {
         let prompt_name = "name".to_string();
         let value = ValueBag::capture_serde1(&"wrong value").to_owned();
         let validators = [ValidateConfiguration {
-            condition: "{{ value == 'value' }}".to_string(),
+            condition: Right("{{ value == 'value' }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
         let ctx_vals = tera::Context::new();
@@ -118,7 +125,7 @@ mod tests {
         let prompt_name = "name".to_string();
         let value = ValueBag::capture_serde1(&"wrong value").to_owned();
         let validators = [ValidateConfiguration {
-            condition: "{{ value }}".to_string(),
+            condition: Right("{{ value }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
         let ctx_vals = tera::Context::new();

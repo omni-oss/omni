@@ -10,6 +10,7 @@ use crate::{
     make,
     utils::{validate_boolean_expression_result, validate_value},
 };
+use either::Either;
 use maps::{UnorderedMap, unordered_map};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
@@ -180,7 +181,9 @@ fn get_validators(prompt: &PromptConfiguration) -> &[ValidateConfiguration] {
     }
 }
 
-fn get_if_expression(prompt: &PromptConfiguration) -> Option<&str> {
+fn get_if_expression(
+    prompt: &PromptConfiguration,
+) -> Option<&Either<bool, String>> {
     let if_expr = match prompt {
         PromptConfiguration::Checkbox { prompt } => &prompt.base.r#if,
         PromptConfiguration::Select { prompt } => &prompt.base.r#if,
@@ -190,29 +193,33 @@ fn get_if_expression(prompt: &PromptConfiguration) -> Option<&str> {
         PromptConfiguration::Float { prompt } => &prompt.base.base.r#if,
         PromptConfiguration::Integer { prompt } => &prompt.base.base.r#if,
     };
-    if_expr.as_deref()
+    if_expr.as_ref()
 }
 
 fn skip(
-    if_expr: &str,
+    if_expr: &Either<bool, String>,
     values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &tera::Context,
     if_expressions_root_property: Option<&str>,
 ) -> Result<bool, Error> {
-    let mut ctx = context_values.clone();
-    ctx.insert(if_expressions_root_property.unwrap_or("prompts"), values);
+    Ok(match if_expr {
+        Either::Left(left) => !*left,
+        Either::Right(if_expr) => {
+            let mut ctx = context_values.clone();
+            ctx.insert(
+                if_expressions_root_property.unwrap_or("prompts"),
+                values,
+            );
 
-    let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
-    let tera_result = tera_result.trim();
+            let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
+            let tera_result = tera_result.trim();
 
-    validate_boolean_expression_result(&tera_result, if_expr)?;
+            validate_boolean_expression_result(&tera_result, if_expr)?;
 
-    // if the result is not true, then we should skip the prompt
-    if tera_result != "true" {
-        return Ok(true);
-    }
-
-    Ok(false)
+            // if the result is not true, then we should skip the prompt
+            tera_result != "true"
+        }
+    })
 }
 
 fn validate_prompt_configurations(
@@ -374,6 +381,8 @@ fn prompt_multi_select(
 
 #[cfg(test)]
 mod test {
+    use either::Either::Right;
+
     use crate::configuration::BasePromptConfiguration;
 
     use super::*;
@@ -389,7 +398,8 @@ mod test {
         let ctx_vals = tera::Context::new();
 
         assert_eq!(
-            skip(if_expr, &values, &ctx_vals, None).unwrap(),
+            skip(&Right(if_expr.to_string()), &values, &ctx_vals, None)
+                .unwrap(),
             false,
             "skip should return false"
         );
@@ -406,7 +416,8 @@ mod test {
         let ctx_vals = tera::Context::new();
 
         assert_eq!(
-            skip(if_expr, &values, &ctx_vals, None).unwrap(),
+            skip(&Right(if_expr.to_string()), &values, &ctx_vals, None)
+                .unwrap(),
             true,
             "skip should return true"
         );
@@ -422,7 +433,8 @@ mod test {
         )]);
         let ctx_vals = tera::Context::new();
 
-        let result = skip(if_expr, &values, &ctx_vals, None);
+        let result =
+            skip(&Right(if_expr.to_string()), &values, &ctx_vals, None);
 
         assert!(
             result.is_err(),
