@@ -17,19 +17,19 @@ pub fn validate_value(
         let mut ctx = context_values.clone();
         ctx.insert(value_name.unwrap_or("value"), value);
 
-        let tera_result = match &validator.condition {
-            Left(l) => *l,
+        let is_error = match &validator.condition {
+            Left(l) => !*l,
             Right(r) => {
                 let tera_result = tera::Tera::one_off(&r, &ctx, true)?;
                 let tera_result = tera_result.trim();
 
                 validate_boolean_expression_result(&tera_result, &r)?;
 
-                tera_result == "true"
+                tera_result != "true"
             }
         };
 
-        if tera_result {
+        if is_error {
             let error_message = validator
                 .error_message
                 .as_ref()
