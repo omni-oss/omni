@@ -124,25 +124,27 @@ async fn run_generator_run(
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
 
-    let output_dir = match (command.args.out_dir.clone(), &command.args.project)
-    {
-        (None, None) => prompt_output_dir(projects, &current_dir)?,
-        (None, Some(project)) => {
-            let p = projects.iter().find(|p| p.name == *project);
-            if let Some(p) = p {
-                p.dir.clone()
-            } else {
-                return Err(eyre::eyre!("Project {} not found", project));
+    let (output_dir, project) =
+        match (command.args.out_dir.clone(), &command.args.project) {
+            (None, None) => (prompt_output_dir(projects, &current_dir)?, None),
+            (None, Some(project)) => {
+                let p = projects.iter().find(|p| p.name == *project);
+                if let Some(p) = p {
+                    (p.dir.clone(), Some(p))
+                } else {
+                    return Err(eyre::eyre!("Project {} not found", project));
+                }
             }
-        }
-        (Some(out), None) => path_clean::clean(current_dir.join(out)),
-        (Some(out), Some(_)) => {
-            trace::warn!(
-                "Both --out-dir and --project are provided, using --out-dir"
-            );
-            out
-        }
-    };
+            (Some(out), None) => {
+                (path_clean::clean(current_dir.join(out)), None)
+            }
+            (Some(out), Some(_)) => {
+                trace::warn!(
+                    "Both --out-dir and --project are provided, using --out-dir"
+                );
+                (out, None)
+            }
+        };
 
     trace::trace!("Generator output directory: {}", output_dir.display());
 
@@ -151,8 +153,12 @@ async fn run_generator_run(
         output_dir: output_dir.as_path(),
     };
     let pre_exec_values = get_pre_exec_values(&command.args.answer);
+    let env = loaded_context.get_cached_env_vars(output_dir.as_path());
+    let def_env = maps::map!();
+    let env = env.as_deref().unwrap_or(&def_env);
 
-    omni_generator::run(&generator, &pre_exec_values, &run).await?;
+    omni_generator::run(&generator, &pre_exec_values, project, env, &run)
+        .await?;
 
     Ok(())
 }

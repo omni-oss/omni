@@ -1,10 +1,11 @@
-use crate::parsers::either_value_or_tera_expr_optional;
+use crate::parsers::{
+    either_value_or_tera_expr, either_value_or_tera_expr_optional,
+};
 use derive_new::new;
 use either::Either;
 use garde::Validate;
 use omni_serde_validators::{
-    name::validate_name,
-    tera_expr::{option_validate_tera_expr, validate_tera_expr},
+    name::validate_name, tera_expr::option_validate_tera_expr,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,24 +31,17 @@ pub struct BasePromptConfiguration {
     pub message: String,
 
     #[new(into)]
+    #[schemars(with = "Option<EitherUntaggedDef<bool, String>>")]
     #[serde(
         rename = "if",
-        deserialize_with = "option_validate_tera_expr",
+        with = "either_value_or_tera_expr_optional",
         default
     )]
-    pub r#if: Option<String>,
+    pub r#if: Option<Either<bool, String>>,
 }
 
 #[derive(
-    Deserialize,
-    Serialize,
-    JsonSchema,
-    Clone,
-    Debug,
-    PartialEq,
-    Validate,
-    new,
-    Default,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidateConfiguration {
@@ -55,9 +49,10 @@ pub struct ValidateConfiguration {
     ///
     /// Available Context
     /// - `value`: The value of the prompt.
+    #[schemars(with = "EitherUntaggedDef<bool, String>")]
     #[new(into)]
-    #[serde(deserialize_with = "validate_tera_expr")]
-    pub condition: String,
+    #[serde(with = "either_value_or_tera_expr")]
+    pub condition: Either<bool, String>,
 
     /// Accepts a tera expression that will be evaluated to a string that will be used as an error message if the prompt is invalid.
     ///
