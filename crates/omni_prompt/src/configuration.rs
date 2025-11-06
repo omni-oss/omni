@@ -98,7 +98,7 @@ pub struct ValidatedPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct CheckboxPromptConfiguration {
+pub struct ConfirmPromptConfiguration {
     #[serde(flatten)]
     #[new(into)]
     pub base: BasePromptConfiguration,
@@ -290,10 +290,10 @@ pub struct IntegerNumberPromptConfiguration {
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
 pub enum PromptConfiguration {
-    Checkbox {
+    Confirm {
         #[serde(flatten)]
         #[new(into)]
-        prompt: CheckboxPromptConfiguration,
+        prompt: ConfirmPromptConfiguration,
     },
     Select {
         #[serde(flatten)]

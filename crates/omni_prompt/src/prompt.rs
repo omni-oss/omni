@@ -1,6 +1,6 @@
 use crate::{
     configuration::{
-        CheckboxPromptConfiguration, FloatNumberPromptConfiguration,
+        ConfirmPromptConfiguration, FloatNumberPromptConfiguration,
         IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
         PasswordPromptConfiguration, PromptConfiguration,
         PromptingConfiguration, SelectPromptConfiguration,
@@ -144,7 +144,7 @@ fn get_prompt_value(
     config: &PromptingConfiguration<'_>,
 ) -> Result<OwnedValueBag, Error> {
     let value = match prompt {
-        PromptConfiguration::Checkbox { prompt } => {
+        PromptConfiguration::Confirm { prompt } => {
             prompt_checkbox(prompt, context_values, config)?
         }
         PromptConfiguration::Select { prompt } => {
@@ -171,7 +171,7 @@ fn get_prompt_value(
 
 fn get_validators(prompt: &PromptConfiguration) -> &[ValidateConfiguration] {
     match prompt {
-        PromptConfiguration::Checkbox { .. } => &[],
+        PromptConfiguration::Confirm { .. } => &[],
         PromptConfiguration::Select { .. } => &[],
         PromptConfiguration::MultiSelect { .. } => &[],
         PromptConfiguration::Text { prompt } => &prompt.base.validate,
@@ -185,7 +185,7 @@ fn get_if_expression(
     prompt: &PromptConfiguration,
 ) -> Option<&Either<bool, String>> {
     let if_expr = match prompt {
-        PromptConfiguration::Checkbox { prompt } => &prompt.base.r#if,
+        PromptConfiguration::Confirm { prompt } => &prompt.base.r#if,
         PromptConfiguration::Select { prompt } => &prompt.base.r#if,
         PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.r#if,
         PromptConfiguration::Text { prompt } => &prompt.base.base.r#if,
@@ -242,7 +242,7 @@ fn validate_prompt_configurations(
 
 fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
     let name = match prompt {
-        PromptConfiguration::Checkbox { prompt } => &prompt.base.name,
+        PromptConfiguration::Confirm { prompt } => &prompt.base.name,
         PromptConfiguration::Select { prompt } => &prompt.base.name,
         PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.name,
         PromptConfiguration::Text { prompt } => &prompt.base.base.name,
@@ -254,11 +254,11 @@ fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
 }
 
 fn prompt_checkbox(
-    prompt: &CheckboxPromptConfiguration,
+    prompt: &ConfirmPromptConfiguration,
     context_values: &tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
-    let prompt = make::checkbox(prompt, context_values, config)?;
+    let prompt = make::confirm(prompt, context_values, config)?;
 
     let prompt_value = requestty::prompt_one(prompt)?;
 
@@ -454,8 +454,8 @@ mod test {
     fn test_validate_prompt_configurations_returns_error_if_duplicate_prompt_names()
      {
         let prompts = [
-            PromptConfiguration::Checkbox {
-                prompt: CheckboxPromptConfiguration {
+            PromptConfiguration::Confirm {
+                prompt: ConfirmPromptConfiguration {
                     base: BasePromptConfiguration {
                         name: "name".to_string(),
                         message: "message".to_string(),
@@ -465,8 +465,8 @@ mod test {
                     default: None,
                 },
             },
-            PromptConfiguration::Checkbox {
-                prompt: CheckboxPromptConfiguration {
+            PromptConfiguration::Confirm {
+                prompt: ConfirmPromptConfiguration {
                     base: BasePromptConfiguration {
                         name: "name".to_string(),
                         message: "message".to_string(),
