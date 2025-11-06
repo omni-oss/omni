@@ -4,7 +4,7 @@ display_name: Rust Crate
 description: Generate a new rust crate
 
 prompts:
-  - type: checkbox
+  - type: confirm
     name: use_tracing
     message: Use tracing
     default: true
