@@ -4451,7 +4451,6 @@ dependencies = [
  "eyre",
  "maps",
  "omni_configuration_discovery",
- "omni_core",
  "omni_file_data_serde",
  "omni_generator_configurations",
  "omni_prompt",
