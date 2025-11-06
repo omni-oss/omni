@@ -154,10 +154,24 @@ async fn run_generator_run(
     };
     let pre_exec_values = get_pre_exec_values(&command.args.answer);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
-    let def_env = maps::map!();
-    let env = env.as_deref().unwrap_or(&def_env);
 
-    omni_generator::run(&generator, &pre_exec_values, project, env, &run)
+    let mut context_values = unordered_map!();
+
+    if let Some(env) = env {
+        context_values.insert(
+            "env".to_string(),
+            ValueBag::capture_serde1(&env).to_owned(),
+        );
+    }
+
+    if let Some(project) = project {
+        context_values.insert(
+            "project".to_string(),
+            ValueBag::capture_serde1(project).to_owned(),
+        );
+    }
+
+    omni_generator::run(&generator, &pre_exec_values, &context_values, &run)
         .await?;
 
     Ok(())

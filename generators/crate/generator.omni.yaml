@@ -8,6 +8,7 @@ prompts:
     name: use_tracing
     message: Use tracing
     default: true
+
   - type: select
     name: crate_type
     message: Crate type
@@ -16,6 +17,7 @@ prompts:
         value: lib
       - name: Binary
         value: bin
+
   - type: text
     name: crate_name
     message: Crate name

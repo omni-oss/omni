@@ -35,5 +35,4 @@ sets = { workspace = true }
 dir_walker = { workspace = true }
 omni_configuration_discovery = { workspace = true }
 omni_file_data_serde = { workspace = true }
-omni_core = { workspace = true }
 tokio = { workspace = true }
