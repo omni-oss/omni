@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use garde::Validate;
-use omni_serde_validators::tera_expr::option_validate_tera_expr;
+use omni_serde_validators::tera_expr::{
+    option_validate_tera_expr, validate_tera_expr,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -11,8 +13,20 @@ use strum::EnumDiscriminants;
 )]
 #[garde(allow_unvalidated)]
 pub struct BaseActionConfiguration {
+    /// Accepts a tera expression that will be evaluated to boolean that determines if the action should be executed.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
+
+    /// Accepts a tera expression that will be evaluated to a string that will be used as a progress message.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
+    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
     pub progress_message: Option<String>,
 }
 
@@ -35,6 +49,7 @@ pub struct CommonAddConfiguration {
 pub struct BaseAddActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
+
     #[serde(flatten, default)]
     pub common: CommonAddConfiguration,
 }
@@ -63,6 +78,9 @@ pub struct AddActionConfiguration {
 pub struct AddInlineActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
+
+    /// Accepts an inline tera template that will be evaluated to a string that will be used to produce the file.
+    #[serde(deserialize_with = "validate_tera_expr")]
     pub template: String,
 }
 
@@ -82,6 +100,7 @@ pub struct AddManyActionConfiguration {
     pub flatten: Option<bool>,
 
     /// If provided, it will be stripped from the file names of the template files.
+    /// If absent, use the generator's directory as the base path.
     #[serde(default)]
     pub base_path: Option<PathBuf>,
 }

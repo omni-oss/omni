@@ -51,11 +51,20 @@ pub struct BasePromptConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidateConfiguration {
+    /// Accepts a tera expression that will be evaluated to a boolean that determines if the prompt is valid.
+    ///
+    /// Available Context
+    /// - `value`: The value of the prompt.
     #[new(into)]
     #[serde(deserialize_with = "validate_tera_expr")]
     pub condition: String,
 
+    /// Accepts a tera expression that will be evaluated to a string that will be used as an error message if the prompt is invalid.
+    ///
+    /// Available Context
+    /// - `value`: The value of the prompt.
     #[new(into)]
+    #[serde(deserialize_with = "option_validate_tera_expr")]
     pub error_message: Option<String>,
 }
 
@@ -76,6 +85,7 @@ pub struct ValidatedPromptConfiguration {
     #[new(into)]
     pub base: BasePromptConfiguration,
 
+    /// The validation rules for the prompt.
     #[new(into)]
     #[serde(default)]
     pub validate: Vec<ValidateConfiguration>,
@@ -98,6 +108,12 @@ pub struct CheckboxPromptConfiguration {
     #[new(into)]
     pub base: BasePromptConfiguration,
 
+    /// The default value of the checkbox.
+    /// Accepts a tera expression that will be evaluated to a boolean that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<bool, String>>")]
@@ -122,9 +138,16 @@ pub struct SelectPromptConfiguration {
     #[new(into)]
     pub base: BasePromptConfiguration,
 
+    /// The available options for the select.
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
 
+    /// The default value of the select.
+    /// Accepts a tera expression that will be evaluated to a string that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<String>,
@@ -147,9 +170,16 @@ pub struct MultiSelectPromptConfiguration {
     #[new(into)]
     pub base: ValidatedPromptConfiguration,
 
+    /// The available options for the multi-select.
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
 
+    /// The default value of the multi-select.
+    /// Accepts a list of tera expressions that will be evaluated to a list of strings that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<Vec<String>>,
@@ -172,6 +202,11 @@ pub struct TextPromptConfiguration {
     #[new(into)]
     pub base: ValidatedPromptConfiguration,
 
+    /// Accepts a tera expression that will be evaluated to a string that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<String>,
@@ -212,6 +247,11 @@ pub struct FloatNumberPromptConfiguration {
     #[new(into)]
     pub base: ValidatedPromptConfiguration,
 
+    /// Accepts a tera expression that will be evaluated to a float that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<f64, String>>")]
@@ -236,6 +276,11 @@ pub struct IntegerNumberPromptConfiguration {
     #[new(into)]
     pub base: ValidatedPromptConfiguration,
 
+    /// Accepts a tera expression that will be evaluated to an integer that will be used as the default value.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<i64, String>>")]
@@ -292,16 +337,20 @@ pub enum PromptConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct OptionConfiguration {
+    /// The name of the option.
     #[new(into)]
     pub name: String,
 
+    /// The description of the option.
     #[new(into)]
     #[serde(default)]
     pub description: Option<String>,
 
+    /// The value of the option.
     #[new(into)]
     pub value: String,
 
+    /// Whether to use this option as a separator.
     #[new(into)]
     #[serde(default)]
     pub separator: bool,
