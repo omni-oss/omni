@@ -27,9 +27,42 @@ prompts:
       - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
         error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens, and must start with a letter
 
+targets:
+  root: .
+
 actions:
-  - type: add-many
-    base_path: files
-    template_files:
-      - files/src/**/*
-      - files/Cargo.toml.tpl
+  - type: add-inline
+    output_path: Cargo.toml
+    target: root
+    template: |
+      [package]
+      name = "{{ prompts.crate_name }}"
+      version = "0.1.0"
+      edition = "2021"
+
+      [dependencies]
+      {% if prompts.use_tracing %}
+      trace = { workspace = true }
+      tracing = { workspace = true }
+      tracing-subscriber = { workspace = true }
+      {% endif %}
+
+      [features]
+      {% if prompts.use_tracing %}
+      default = ["enable-tracing"]
+      enable-tracing = ["trace/enabled"]
+      {% else %}
+      default = [""]
+      {% endif %}
+
+      [workspace]
+
+      [lib]
+      name = "{{ prompts.crate_name }}"
+      path = "src/lib.rs"
+
+      {% if prompts.crate_type == "bin" %}
+      [[bin]]
+      name = "{{ prompts.crate_name }}"
+      path = "src/main.rs"
+      {% endif %}

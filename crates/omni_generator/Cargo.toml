@@ -27,7 +27,12 @@ tera = { workspace = true }
 derive-new = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_prompt = { workspace = true }
-system_traits = { workspace = true }
+system_traits = { workspace = true, features = [
+    "real-sync",
+    "real-async-tokio",
+    "memory-sync",
+    "memory-async"
+] }
 requestty = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
@@ -36,3 +41,6 @@ dir_walker = { workspace = true }
 omni_configuration_discovery = { workspace = true }
 omni_file_data_serde = { workspace = true }
 tokio = { workspace = true }
+path-clean = { workspace = true }
+async-trait = { workspace = true }
+either = { workspace = true }

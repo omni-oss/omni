@@ -9,6 +9,7 @@ dependencies:
   - config_utils
   - omni_core
   - omni_prompt
+  - serde_validate
   - maps
   - sets
   - js_runtime

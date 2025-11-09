@@ -4446,14 +4446,17 @@ dependencies = [
 name = "omni_generator"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "derive-new",
  "dir_walker",
+ "either",
  "eyre",
  "maps",
  "omni_configuration_discovery",
  "omni_file_data_serde",
  "omni_generator_configurations",
  "omni_prompt",
+ "path-clean",
  "requestty",
  "sets",
  "strum 0.27.2",
@@ -4488,6 +4491,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_norway",
+ "serde_validate",
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.17",
