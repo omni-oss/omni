@@ -1,32 +1,24 @@
 use either::Left;
 use omni_generator_configurations::OverwriteConfiguration;
-use std::path::{self, Path, PathBuf};
+use std::{
+    borrow::Cow,
+    path::{self, Path, PathBuf},
+};
 
 use maps::{UnorderedMap, unordered_map};
 use omni_prompt::configuration::{
     BasePromptConfiguration, ConfirmPromptConfiguration, PromptConfiguration,
-    PromptingConfiguration,
+    PromptingConfiguration, TextPromptConfiguration,
+    ValidatedPromptConfiguration,
 };
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant};
-use value_bag::OwnedValueBag;
 
 use crate::{
     GeneratorSys,
+    action_handlers::HandlerContext,
     error::{Error, ErrorInner},
 };
-
-pub fn get_tera_context(
-    context_values: &UnorderedMap<String, OwnedValueBag>,
-) -> tera::Context {
-    let mut context = tera::Context::new();
-
-    for (key, value) in context_values.iter() {
-        context.insert(key, value);
-    }
-
-    context
-}
 
 pub fn resolve_output_path(
     output_dir: &Path,
@@ -35,21 +27,7 @@ pub fn resolve_output_path(
     template_path: &Path,
 ) -> Result<PathBuf, ResolveOutputPathError> {
     if let Some(target) = target {
-        if target.is_absolute() {
-            return Err(ResolveOutputPathErrorInner::TargetIsAbsolute {
-                target: target.to_path_buf(),
-            })?;
-        }
-
-        let target_absolute = path::absolute(output_dir.join(target))?;
-        if !target_absolute.starts_with(output_dir) {
-            return Err(
-                ResolveOutputPathErrorInner::TargetIsOutsideOutputDir {
-                    target: target_absolute,
-                    output_dir: output_dir.to_path_buf(),
-                },
-            )?;
-        }
+        validate_target(output_dir, target)?;
     }
 
     let output_dir = if let Some(target) = target {
@@ -195,6 +173,109 @@ pub async fn overwrite(
     }
 
     return Ok(None);
+}
+
+pub async fn get_target<'a>(
+    target_name: &str,
+    project_targets: &'a UnorderedMap<String, PathBuf>,
+    generator_targets: &'a UnorderedMap<String, PathBuf>,
+    output_dir: &Path,
+    _sys: &impl GeneratorSys,
+) -> Result<Cow<'a, Path>, Error> {
+    let target = project_targets
+        .get(target_name)
+        .or_else(|| generator_targets.get(target_name));
+
+    if let Some(target) = target {
+        validate_target(output_dir, target)?;
+        return Ok(Cow::Borrowed(target));
+    }
+
+    let prompt_cfg =
+        PromptConfiguration::new_text(TextPromptConfiguration::new(
+            ValidatedPromptConfiguration::new(
+                BasePromptConfiguration::new(
+                    target_name,
+                    format!("Directory for target {}:", target_name),
+                    None,
+                ),
+                [],
+            ),
+            None,
+        ));
+
+    let cfg = PromptingConfiguration::default();
+
+    loop {
+        let result = omni_prompt::prompt_one(
+            &prompt_cfg,
+            None,
+            &unordered_map!(),
+            &cfg,
+        )?
+        .expect("should have value");
+
+        let path_str = result.by_ref().to_str().expect("should be string");
+        let path = Path::new(&path_str as &str);
+
+        if let Err(err) = validate_target(output_dir, path) {
+            trace::error!("invalid target dir: {}", err);
+        }
+
+        break Ok(Cow::Owned(path.to_path_buf()));
+    }
+}
+
+pub fn validate_target(
+    output_dir: &Path,
+    target: &Path,
+) -> Result<(), ResolveOutputPathError> {
+    Ok({
+        if target.is_absolute() {
+            return Err(ResolveOutputPathErrorInner::TargetIsAbsolute {
+                target: target.to_path_buf(),
+            })?;
+        }
+
+        let target_absolute = path::absolute(output_dir.join(target))?;
+        if !target_absolute.starts_with(output_dir) {
+            return Err(
+                ResolveOutputPathErrorInner::TargetIsOutsideOutputDir {
+                    target: target_absolute,
+                    output_dir: output_dir.to_path_buf(),
+                },
+            )?;
+        }
+    })
+}
+
+pub async fn get_output_path<'a>(
+    target_name: Option<&'a str>,
+    expected_output_path: &'a Path,
+    ctx: &HandlerContext<'a>,
+    sys: &impl GeneratorSys,
+) -> Result<PathBuf, Error> {
+    let target = if let Some(target_name) = target_name {
+        Some(
+            get_target(
+                target_name,
+                &ctx.project_targets,
+                &ctx.generator_targets,
+                ctx.output_dir,
+                sys,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let output_path = resolve_output_path(
+        ctx.output_dir,
+        target.as_deref(),
+        ctx.generator_dir,
+        &expected_output_path,
+    )?;
+    Ok(output_path)
 }
 
 #[cfg(test)]

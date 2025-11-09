@@ -1,3 +1,4 @@
+use maps::UnorderedMap;
 use serde_validate::{StaticValidator, declare_static_validator};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -20,6 +21,28 @@ declare_static_validator!(
     String,
     validate_tera_expr,
     option_validate_tera_expr
+);
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UMapTeraExprValidator;
+
+impl StaticValidator<UnorderedMap<String, String>> for UMapTeraExprValidator {
+    fn validate_static(
+        value: &UnorderedMap<String, String>,
+    ) -> Result<(), String> {
+        for value in value.values() {
+            TeraExprValidator::validate_static(value)?;
+        }
+
+        Ok(())
+    }
+}
+
+declare_static_validator!(
+    UMapTeraExprValidator,
+    UnorderedMap<String, String>,
+    validate_umap_tera_expr,
+    option_validate_umap_tera_expr
 );
 
 #[cfg(test)]

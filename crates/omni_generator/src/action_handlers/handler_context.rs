@@ -11,5 +11,6 @@ pub struct HandlerContext<'a> {
     pub generator_dir: &'a Path,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub tera_context_values: &'a tera::Context,
-    pub targets: &'a UnorderedMap<String, PathBuf>,
+    pub generator_targets: &'a UnorderedMap<String, PathBuf>,
+    pub project_targets: &'a UnorderedMap<String, PathBuf>,
 }

@@ -6,3 +6,5 @@ extends:
 
 dependencies:
   - serde_validate
+  - maps
+  - sets

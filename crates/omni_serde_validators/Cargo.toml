@@ -27,3 +27,5 @@ derive-new = { workspace = true }
 serde = { workspace = true }
 tera = { workspace = true }
 serde_validate = { workspace = true }
+maps = { workspace = true }
+sets = { workspace = true }
