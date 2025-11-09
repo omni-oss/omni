@@ -4,6 +4,7 @@ use crate::validators::validate_umap_path_not_absolute;
 use garde::Validate;
 use maps::UnorderedMap;
 use omni_prompt::configuration::PromptConfiguration;
+use omni_serde_validators::tera_expr::validate_umap_tera_expr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +36,16 @@ pub struct GeneratorConfiguration {
     /// Actions to perform
     #[serde(default)]
     pub actions: Vec<ActionConfiguration>,
+
+    /// Variables to use in the generator, these are evaluated after the prompts
+    ///
+    /// The variables are available in the templates as `{{ vars.var_name }}`
+    ///
+    /// Available context variables:
+    /// - `prompts`: The values of the prompts
+    #[serde(default)]
+    #[serde(deserialize_with = "validate_umap_tera_expr")]
+    pub vars: UnorderedMap<String, String>,
 
     /// Target direectories to place the generated files
     /// Target directories to add the file(s) to. If it does not exist, it will be created.

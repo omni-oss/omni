@@ -8,10 +8,9 @@ use value_bag::OwnedValueBag;
 
 use crate::{
     GeneratorSys,
-    action_handlers::{
-        HandlerContext, add, add_inline, add_many, utils::get_tera_context,
-    },
+    action_handlers::{HandlerContext, add, add_inline, add_many},
     error::{Error, ErrorInner},
+    utils::get_tera_context,
 };
 
 #[derive(Debug, new)]
@@ -43,7 +42,8 @@ pub async fn execute_actions<'a>(
             tera_context_values: &tera_context,
             dry_run: args.dry_run,
             output_dir: args.output_dir,
-            targets: args.targets,
+            generator_targets: args.targets,
+            project_targets: args.targets,
             generator_dir: args.generator_dir,
         };
 

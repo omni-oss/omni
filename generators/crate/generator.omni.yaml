@@ -27,13 +27,9 @@ prompts:
       - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
         error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens, and must start with a letter
 
-targets:
-  root: .
-
 actions:
   - type: add-inline
     output_path: Cargo.toml
-    target: root
     template: |
       [package]
       name = "{{ prompts.crate_name }}"
