@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsCanonicalizeAsync, BaseFsCreateDirAsync,
     BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
-    BaseFsRemoveDirAllAsync, BaseFsRemoveFileAsync, BaseFsRenameAsync,
-    BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
+    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
+    BaseFsRenameAsync, BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
     impls::{RealFsMetadata, RealSys},
 };
 
@@ -137,6 +137,16 @@ impl BaseFsRemoveDirAllAsync for RealSys {
         path: &std::path::Path,
     ) -> io::Result<()> {
         tokio::fs::remove_dir_all(path).await
+    }
+}
+
+#[async_trait]
+impl BaseFsRemoveDirAsync for RealSys {
+    async fn base_fs_remove_dir_async(
+        &self,
+        path: &std::path::Path,
+    ) -> io::Result<()> {
+        tokio::fs::remove_dir(path).await
     }
 }
 

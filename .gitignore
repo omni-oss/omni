@@ -17,3 +17,4 @@ result-summary.json
 .vercel
 .turbo
 .artifacts
+.tests

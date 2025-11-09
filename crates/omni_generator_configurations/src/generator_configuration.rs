@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
+use crate::validators::validate_umap_path_not_absolute;
 use garde::Validate;
+use maps::UnorderedMap;
 use omni_prompt::configuration::PromptConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -33,4 +35,10 @@ pub struct GeneratorConfiguration {
     /// Actions to perform
     #[serde(default)]
     pub actions: Vec<ActionConfiguration>,
+
+    /// Target direectories to place the generated files
+    /// Target directories to add the file(s) to. If it does not exist, it will be created.
+    #[serde(deserialize_with = "validate_umap_path_not_absolute")]
+    #[serde(default)]
+    pub targets: UnorderedMap<String, PathBuf>,
 }

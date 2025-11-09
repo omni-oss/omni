@@ -6,14 +6,14 @@ use omni_serde_validators::tera_expr::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::EnumDiscriminants;
+use strum::{Display, EnumDiscriminants, EnumIs};
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
 )]
 #[garde(allow_unvalidated)]
 pub struct BaseActionConfiguration {
-    /// Accepts a tera expression that will be evaluated to boolean that determines if the action should be executed.
+    /// Accepts a tera template that should evaluate to boolean that determines if the action should be executed.
     ///
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
@@ -21,13 +21,39 @@ pub struct BaseActionConfiguration {
     #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
 
-    /// Accepts a tera expression that will be evaluated to a string that will be used as a progress message.
+    /// Accepts a tera template that should evaluate to a string that will be used as a name for the action.
+    /// Should be unique within the same action group.
     ///
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
-    pub progress_message: Option<String>,
+    pub name: Option<String>,
+
+    /// Accepts a tera template that should evaluate to a string that will be used as a progress message.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
+    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    pub in_progress_message: Option<String>,
+
+    /// Accepts a tera template that should evaluate to a string that will be used as a success message.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
+    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    pub success_message: Option<String>,
+
+    /// Accepts a tera template that should evaluate to a string that will be used as a failure message.
+    ///
+    /// Available Context
+    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `env`: A dictionary containing the environment variables available for the output directory.
+    /// - `error`: A string containing the error message that was returned by the action.
+    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    pub error_message: Option<String>,
 }
 
 #[derive(
@@ -38,8 +64,7 @@ pub struct CommonAddConfiguration {
     /// How to handle overwriting existing files.
     pub overwrite: Option<OverwriteConfiguration>,
 
-    /// Target directory to add the file(s) to. If it does not exist, it will be created.
-    pub target: Option<PathBuf>,
+    pub target: Option<String>,
 }
 
 #[derive(
@@ -66,6 +91,7 @@ pub struct AddActionConfiguration {
     pub template_file: PathBuf,
 
     /// If provided, it will be stripped from the file names of the template files.
+    /// If absent, use the generator's directory as the base path.
     #[serde(default)]
     pub base_path: Option<PathBuf>,
 }
@@ -82,6 +108,9 @@ pub struct AddInlineActionConfiguration {
     /// Accepts an inline tera template that will be evaluated to a string that will be used to produce the file.
     #[serde(deserialize_with = "validate_tera_expr")]
     pub template: String,
+
+    /// The path of the file to write to. Will be resolved relative to the output directory.
+    pub output_path: PathBuf,
 }
 
 #[derive(
@@ -118,16 +147,19 @@ pub struct AddManyActionConfiguration {
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
-#[strum_discriminants(vis(pub), name(ActionConfigurationType))]
+#[strum_discriminants(vis(pub), name(ActionConfigurationType), derive(Display))]
 pub enum ActionConfiguration {
+    #[strum_discriminants(strum(serialize = "add"))]
     Add {
         #[serde(flatten)]
         action: AddActionConfiguration,
     },
+    #[strum_discriminants(strum(serialize = "add-inline"))]
     AddInline {
         #[serde(flatten)]
         action: AddInlineActionConfiguration,
     },
+    #[strum_discriminants(strum(serialize = "add-many"))]
     AddMany {
         #[serde(flatten)]
         action: AddManyActionConfiguration,
@@ -143,6 +175,8 @@ pub enum ActionConfiguration {
     PartialEq,
     Validate,
     Default,
+    EnumIs,
+    Copy,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OverwriteConfiguration {

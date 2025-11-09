@@ -7,8 +7,10 @@ use omni_prompt::configuration::PromptingConfiguration;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
+    GeneratorSys,
     error::Error,
     execute_actions::{ExecuteActionsArgs, execute_actions},
+    sys_impl::DryRunSys,
 };
 
 #[derive(Debug, new)]
@@ -22,6 +24,7 @@ pub async fn run<'a>(
     pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
+    sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let prompting_config = PromptingConfiguration::default();
 
@@ -46,9 +49,18 @@ pub async fn run<'a>(
         context_values: &context_values,
         dry_run: config.dry_run,
         output_dir: config.output_dir,
+        generator_dir: &r#gen
+            .file
+            .parent()
+            .expect("generator should have a directory"),
+        targets: &r#gen.targets,
     };
 
-    execute_actions(&args).await?;
+    if config.dry_run {
+        execute_actions(&args, &DryRunSys::default()).await?;
+    } else {
+        execute_actions(&args, sys).await?;
+    }
 
     Ok(())
 }

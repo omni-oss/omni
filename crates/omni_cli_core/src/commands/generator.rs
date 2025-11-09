@@ -171,8 +171,14 @@ async fn run_generator_run(
         );
     }
 
-    omni_generator::run(&generator, &pre_exec_values, &context_values, &run)
-        .await?;
+    omni_generator::run(
+        &generator,
+        &pre_exec_values,
+        &context_values,
+        &run,
+        loaded_context.sys(),
+    )
+    .await?;
 
     Ok(())
 }
