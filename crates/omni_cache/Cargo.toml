@@ -16,7 +16,7 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 serde = { workspace = true }
-bincode = { workspace = true }
+rmp-serde = { workspace = true }
 dir_walker = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-async-tokio",

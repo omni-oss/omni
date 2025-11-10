@@ -4140,7 +4140,6 @@ name = "omni_cache"
 version = "0.0.0-semantically-released"
 dependencies = [
  "async-trait",
- "bincode 2.0.1",
  "bs58",
  "bytes 1.10.1",
  "bytesize",
@@ -4161,6 +4160,7 @@ dependencies = [
  "omni_task_context",
  "omni_types",
  "omni_utils",
+ "rmp-serde",
  "serde",
  "strum 0.27.2",
  "system_traits",
