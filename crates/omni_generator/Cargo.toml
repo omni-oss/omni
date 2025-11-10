@@ -27,6 +27,7 @@ tera = { workspace = true }
 derive-new = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_prompt = { workspace = true }
+omni_discovery = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",

@@ -9,6 +9,7 @@ dependencies:
   - omni_file_data_serde
   - omni_prompt
   - omni_configuration_discovery
+  - omni_discovery
   - dir_walker
   - system_traits
   - maps
