@@ -87,7 +87,7 @@ pub struct ExecutionConfig {
 
     #[builder(default)]
     #[getset(get_copy = "pub")]
-    max_retries: u8,
+    max_retries: Option<u8>,
 
     #[builder(default)]
     #[getset(get_copy = "pub")]

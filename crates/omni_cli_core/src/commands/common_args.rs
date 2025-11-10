@@ -81,13 +81,13 @@ pub struct RunArgs {
     #[arg(
         long,
         short,
-        help = "How many retries to do if the task fails before failing the whole execution"
+        help = "How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified"
     )]
     pub retry: Option<u8>,
 
     #[arg(
         long,
-        help = "How long to wait before retrying a failed task",
+        help = "How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified",
         value_parser = humantime::parse_duration
     )]
     retry_interval: Option<Duration>,
