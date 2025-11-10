@@ -73,15 +73,45 @@ impl<'a> ConfigurationDiscovery<'a> {
     ) -> Result<Vec<PathBuf>, Error> {
         let mut discovered = vec![];
 
-        let mut match_b = GlobSetBuilder::new();
+        let mut match_include = GlobSetBuilder::new();
 
-        for p in self.glob_patterns {
-            match_b.add(Glob::new(
-                format!("{}/{}", self.root_dir.display(), p).as_str(),
-            )?);
+        for p in self
+            .glob_patterns
+            .iter()
+            .filter(|p| count_starts_with(p, "!") % 2 == 0)
+        {
+            let pat = format!(
+                "{}/{}",
+                self.root_dir.display(),
+                strip_starts_with(p, "!")
+            );
+
+            trace::trace!("adding include pattern: {}", pat);
+
+            match_include.add(Glob::new(pat.as_str())?);
         }
 
-        let matcher = match_b.build()?;
+        let include_matcher = match_include.build()?;
+
+        let mut match_exclude = GlobSetBuilder::new();
+
+        for p in self
+            .glob_patterns
+            .iter()
+            .filter(|p| count_starts_with(p, "!") % 2 == 1)
+        {
+            let pat = format!(
+                "{}/{}",
+                self.root_dir.display(),
+                strip_starts_with(p, "!")
+            );
+
+            trace::trace!("adding exclude pattern: {}", pat);
+
+            match_exclude.add(Glob::new(pat.as_str())?);
+        }
+
+        let exclude_matcher = match_exclude.build()?;
 
         let start_walk_time = SystemTime::now();
 
@@ -105,7 +135,9 @@ impl<'a> ConfigurationDiscovery<'a> {
                 continue;
             }
 
-            if matcher.is_match(f.path()) {
+            if include_matcher.is_match(f.path())
+                && !exclude_matcher.is_match(f.path())
+            {
                 for file_name in self.config_files {
                     if *f.file_name().to_string_lossy() == *file_name {
                         trace::trace!(
@@ -129,5 +161,59 @@ impl<'a> ConfigurationDiscovery<'a> {
         );
 
         Ok(discovered)
+    }
+}
+
+fn count_starts_with(mut s: &str, prefix: &str) -> usize {
+    if prefix.is_empty() {
+        return s.len();
+    }
+
+    let mut count = 0;
+    let prefix_len = prefix.len();
+
+    while let Some(pos) = s.find(prefix) {
+        if pos == 0 {
+            count += 1;
+        }
+        s = &s[pos + prefix_len..];
+    }
+
+    count
+}
+
+fn strip_starts_with<'a>(mut s: &'a str, prefix: &str) -> &'a str {
+    if prefix.is_empty() {
+        return s;
+    }
+    while let Some(stripped) = s.strip_prefix(prefix) {
+        s = stripped;
+    }
+
+    s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_starts_with() {
+        assert_eq!(count_starts_with("abc", "a"), 1);
+        assert_eq!(count_starts_with("abc", "ab"), 1);
+        assert_eq!(count_starts_with("abc", "abc"), 1);
+        assert_eq!(count_starts_with("abc", "b"), 0);
+        assert_eq!(count_starts_with("abc", "c"), 0);
+        assert_eq!(count_starts_with("abc", ""), 3);
+    }
+
+    #[test]
+    fn test_strip_starts_with() {
+        assert_eq!(strip_starts_with("abc", "a"), "bc");
+        assert_eq!(strip_starts_with("abc", "ab"), "c");
+        assert_eq!(strip_starts_with("abc", "abc"), "");
+        assert_eq!(strip_starts_with("abc", "b"), "abc");
+        assert_eq!(strip_starts_with("abc", "c"), "abc");
+        assert_eq!(strip_starts_with("abc", ""), "abc");
     }
 }
