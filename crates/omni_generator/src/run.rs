@@ -2,7 +2,9 @@ use std::path::Path;
 
 use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
-use omni_generator_configurations::GeneratorConfiguration;
+use omni_generator_configurations::{
+    GeneratorConfiguration, OverwriteConfiguration,
+};
 use omni_prompt::configuration::PromptingConfiguration;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -18,6 +20,7 @@ use crate::{
 pub struct RunConfig<'a> {
     pub dry_run: bool,
     pub output_dir: &'a Path,
+    pub overwrite: Option<OverwriteConfiguration>,
 }
 
 pub async fn run<'a>(
@@ -62,6 +65,7 @@ pub async fn run<'a>(
             .parent()
             .expect("generator should have a directory"),
         targets: &r#gen.targets,
+        overwrite: config.overwrite,
     };
 
     if config.dry_run {

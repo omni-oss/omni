@@ -38,8 +38,12 @@ pub async fn add<'a>(
         false,
     )?;
     let output_path = Path::new(&expanded_output);
-    if let Some(did_overwrite) =
-        overwrite(&output_path, config.base.common.overwrite, sys).await?
+    if let Some(did_overwrite) = overwrite(
+        &output_path,
+        ctx.overwrite.or(config.base.common.overwrite),
+        sys,
+    )
+    .await?
         && !did_overwrite
     {
         trace::info!("Skipped writing to path {}", output_path.display());

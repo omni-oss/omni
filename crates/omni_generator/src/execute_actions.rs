@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 
 use derive_new::new;
 use maps::UnorderedMap;
-use omni_generator_configurations::ActionConfiguration;
+use omni_generator_configurations::{
+    ActionConfiguration, OverwriteConfiguration,
+};
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
@@ -21,6 +23,7 @@ pub struct ExecuteActionsArgs<'a> {
     pub actions: &'a [ActionConfiguration],
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub targets: &'a UnorderedMap<String, PathBuf>,
+    pub overwrite: Option<OverwriteConfiguration>,
 }
 
 pub async fn execute_actions<'a>(
@@ -45,6 +48,7 @@ pub async fn execute_actions<'a>(
             generator_targets: args.targets,
             project_targets: args.targets,
             generator_dir: args.generator_dir,
+            overwrite: args.overwrite,
         };
 
         let in_progress_message =

@@ -1,11 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use super::parser::parse_key_value;
+use clap_utils::EnumValueAdapter;
 use maps::{UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::RunConfig;
-use omni_generator_configurations::GeneratorConfiguration;
+use omni_generator_configurations::{
+    GeneratorConfiguration, OverwriteConfiguration,
+};
 use omni_prompt::configuration::{
     BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
     PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
@@ -65,6 +68,13 @@ pub struct GeneratorRunArgs {
         action = clap::ArgAction::SetTrue
     )]
     pub dry_run: bool,
+
+    #[arg(
+        long,
+        help = "How to handle overwriting existing files, takes precedence over the generator's configuration",
+        value_enum
+    )]
+    pub overwrite: Option<EnumValueAdapter<OverwriteConfiguration>>,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -151,6 +161,7 @@ async fn run_generator_run(
     let run = RunConfig {
         dry_run: command.args.dry_run,
         output_dir: output_dir.as_path(),
+        overwrite: command.args.overwrite.map(|o| o.value()),
     };
     let pre_exec_values = get_pre_exec_values(&command.args.answer);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());

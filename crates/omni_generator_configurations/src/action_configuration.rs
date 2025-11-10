@@ -7,7 +7,10 @@ use omni_serde_validators::tera_expr::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumDiscriminants, EnumIs};
+use strum::{
+    Display, EnumCount, EnumDiscriminants, EnumIs, EnumIter, EnumString,
+    VariantArray,
+};
 
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
@@ -190,16 +193,24 @@ pub enum ActionConfiguration {
     Default,
     EnumIs,
     Copy,
+    Display,
+    EnumIter,
+    EnumString,
+    EnumCount,
+    VariantArray,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum OverwriteConfiguration {
     /// Prompt the user to confirm overwriting existing files.
     #[default]
+    #[strum(serialize = "prompt")]
     Prompt,
 
     /// Always overwrite existing files.
+    #[strum(serialize = "always")]
     Always,
 
     /// Never overwrite existing files.
+    #[strum(serialize = "never")]
     Never,
 }
