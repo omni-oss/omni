@@ -9,6 +9,7 @@ use omni_serde_validators::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use strum::EnumDiscriminants;
 
 #[derive(
     Deserialize,
@@ -284,8 +285,17 @@ pub struct IntegerNumberPromptConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    EnumDiscriminants,
 )]
+#[strum_discriminants(name(PromptType), vis(pub))]
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
