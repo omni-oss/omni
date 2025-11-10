@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     configuration::{
         ConfirmPromptConfiguration, FloatNumberPromptConfiguration,
@@ -13,6 +15,7 @@ use crate::{
 use either::Either;
 use maps::{UnorderedMap, unordered_map};
 use sets::UnorderedSet;
+use strum::IntoDiscriminant;
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub fn prompt(
@@ -113,7 +116,52 @@ fn get_value(
     pre_exec_value: Option<&OwnedValueBag>,
 ) -> Result<OwnedValueBag, Error> {
     let value = if let Some(pre_exec_value) = pre_exec_value {
-        let value = pre_exec_value;
+        let value = match prompt.discriminant() {
+            crate::configuration::PromptType::Confirm => {
+                let bool = try_parse_value::<bool>(pre_exec_value.by_ref())
+                    .ok_or_else(|| {
+                        make_prompt_type_error(
+                            key,
+                            pre_exec_value.by_ref(),
+                            "boolean",
+                        )
+                    })?;
+
+                ValueBag::capture_serde1(&bool).to_owned()
+            }
+            crate::configuration::PromptType::Float => {
+                let float = try_parse_value::<f64>(pre_exec_value.by_ref())
+                    .ok_or_else(|| {
+                        make_prompt_type_error(
+                            key,
+                            pre_exec_value.by_ref(),
+                            "float",
+                        )
+                    })?;
+
+                ValueBag::capture_serde1(&float).to_owned()
+            }
+            crate::configuration::PromptType::Integer => {
+                let int = try_parse_value::<i64>(pre_exec_value.by_ref())
+                    .ok_or_else(|| {
+                        make_prompt_type_error(
+                            key,
+                            pre_exec_value.by_ref(),
+                            "integer",
+                        )
+                    })?;
+
+                ValueBag::capture_serde1(&int).to_owned()
+            }
+
+            // these types don't need to be transformed
+            crate::configuration::PromptType::Select
+            | crate::configuration::PromptType::MultiSelect
+            | crate::configuration::PromptType::Text
+            | crate::configuration::PromptType::Password => {
+                pre_exec_value.clone()
+            }
+        };
         let result = validate_value(
             key,
             &value,
@@ -136,6 +184,37 @@ fn get_value(
         get_prompt_value(prompt, ctx_vals, config)?
     };
     Ok(value)
+}
+
+fn try_parse_value<'a, T: FromStr + Clone + 'static>(
+    value: ValueBag<'a>,
+) -> Option<T> {
+    if value.is::<T>() {
+        return Some(
+            value
+                .downcast_ref::<T>()
+                .expect("should be downcasted")
+                .clone(),
+        );
+    }
+
+    if let Some(value) = value.to_str() {
+        return Some(T::from_str(&value).ok()?);
+    }
+
+    None
+}
+
+fn make_prompt_type_error<'a>(
+    prompt_name: &'a str,
+    value: ValueBag<'a>,
+    expected_type: &'a str,
+) -> Error {
+    Error::from(eyre::eyre!(
+        "{prompt_name}: value is not of type {expected_type}: value {value}",
+        value =
+            serde_json::to_string_pretty(&value).expect("should be converted"),
+    ))
 }
 
 fn get_prompt_value(

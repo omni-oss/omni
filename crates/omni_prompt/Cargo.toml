@@ -36,3 +36,4 @@ garde = { workspace = true }
 serde_validate = { workspace = true }
 omni_serde_validators = { workspace = true }
 either = { workspace = true }
+serde_json = { workspace = true }
