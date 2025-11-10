@@ -36,7 +36,7 @@ where
     on_failure: OnFailure,
     dry_run: bool,
     replay_cached_logs: bool,
-    max_retries: u8,
+    max_retries: Option<u8>,
     retry_interval: Option<Duration>,
 }
 
@@ -275,8 +275,9 @@ where
                     self.presenter,
                     task_ctx,
                     record_logs,
-                    task_ctx.node.max_retries().unwrap_or(self.max_retries),
-                    task_ctx.node.retry_interval().or(self.retry_interval),
+                    self.max_retries
+                        .unwrap_or(task_ctx.node.max_retries().unwrap_or(0)),
+                    self.retry_interval.or(task_ctx.node.retry_interval()),
                 ));
             }
 
