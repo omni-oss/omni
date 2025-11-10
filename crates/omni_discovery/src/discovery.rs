@@ -13,7 +13,7 @@ use omni_discovery_utils::glob::GlobMatcher;
 use crate::error::{Error, ErrorInner};
 
 #[derive(Debug, Clone, new)]
-pub struct ConfigurationDiscovery<'a> {
+pub struct Discovery<'a> {
     #[new(into)]
     root_dir: &'a Path,
 
@@ -21,16 +21,10 @@ pub struct ConfigurationDiscovery<'a> {
     glob_patterns: &'a [String],
 
     #[new(into)]
-    config_files: &'a [String],
-
-    #[new(into)]
     ignore_files: &'a [String],
-
-    #[new(into)]
-    config_name: &'a str,
 }
 
-impl<'a> ConfigurationDiscovery<'a> {
+impl<'a> Discovery<'a> {
     fn create_default_dir_walker(
         &self,
     ) -> Result<impl DirWalker + 'static, Error> {
@@ -80,24 +74,13 @@ impl<'a> ConfigurationDiscovery<'a> {
             }
 
             if matcher.is_match(f.path()) {
-                for file_name in self.config_files {
-                    if *f.file_name().to_string_lossy() == *file_name {
-                        trace::trace!(
-                            "Found {} config: {:?}",
-                            self.config_name,
-                            f.path()
-                        );
-                        discovered.push(f.path().to_path_buf());
-                        break;
-                    }
-                }
+                discovered.push(f.path().to_path_buf());
             }
         }
 
         trace::debug!(
-            "Found {} {} configs in {:?}, walked {} items",
+            "Found {} files in {:?}, walked {} items",
             discovered.len(),
-            self.config_name,
             start_walk_time.elapsed().unwrap_or_default(),
             num_iterations
         );
