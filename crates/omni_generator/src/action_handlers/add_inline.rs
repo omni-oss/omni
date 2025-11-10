@@ -21,6 +21,7 @@ pub async fn add_inline<'a>(
         &config.output_path,
         None,
         ctx,
+        &[],
         sys,
     )
     .await?;
