@@ -308,10 +308,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     .to_vec(),
                 tries: new_cache_info.tries,
             };
-            let bytes = bincode::serde::encode_to_vec(
-                &metadata,
-                bincode::config::standard(),
-            )?;
+            let bytes = rmp_serde::encode::to_vec(&metadata)?;
 
             let metadata_path = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
 
@@ -460,11 +457,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let output = if self.sys.fs_exists_async(&file).await? {
                 let bytes = self.sys.fs_read_async(&file).await?;
-                let (mut cached_output, _): (CachedTaskExecution, _) =
-                    bincode::serde::decode_from_slice(
-                        &bytes,
-                        bincode::config::standard(),
-                    )?;
+                let mut cached_output: CachedTaskExecution =
+                    rmp_serde::decode::from_slice(&bytes)?;
 
                 // canonicalize the paths
                 if let Some(logs_path) = cached_output.logs_path.as_mut() {
@@ -602,11 +596,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     let cache_meta_bytes =
                         tokio::fs::read(&cache_meta_path).await?;
 
-                    let (cache_meta, _): (CachedTaskExecution, _) =
-                        bincode::serde::decode_from_slice(
-                            &cache_meta_bytes,
-                            bincode::config::standard(),
-                        )?;
+                    let cache_meta: CachedTaskExecution =
+                        rmp_serde::decode::from_slice(&cache_meta_bytes)?;
 
                     if !t_task_glob.is_match(&cache_meta.task_name) {
                         continue;
@@ -1001,10 +992,10 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
     IgnoreBuild(#[from] dir_walker::impls::IgnoreRealDirWalkerError),
 
     #[error(transparent)]
-    BincodeEncode(#[from] bincode::error::EncodeError),
+    RmpSerdeEncode(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    RmpSerdeDecode(#[from] rmp_serde::decode::Error),
 
     #[error(transparent)]
     Bs58(#[from] bs58::decode::Error),

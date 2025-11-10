@@ -23,11 +23,8 @@ impl<'a> LocalLastUsedDb<'a> {
     ) -> Result<Self, LocalLastUsedDbError> {
         if tokio::fs::try_exists(path).await? {
             let bytes = tokio::fs::read(path).await?;
-            let (data, _): (LocalLastUsedData, usize) =
-                bincode::serde::decode_from_slice(
-                    &bytes,
-                    bincode::config::standard(),
-                )?;
+            let data: LocalLastUsedData =
+                rmp_serde::decode::from_slice(&bytes)?;
 
             Ok(Self { path, data })
         } else {
@@ -74,10 +71,7 @@ impl<'a> LocalLastUsedDb<'a> {
     }
 
     pub async fn save(&self) -> Result<(), LocalLastUsedDbError> {
-        let bytes = bincode::serde::encode_to_vec(
-            &self.data,
-            bincode::config::standard(),
-        )?;
+        let bytes = rmp_serde::encode::to_vec(&self.data)?;
         tokio::fs::write(self.path, &bytes).await?;
 
         Ok(())
@@ -109,8 +103,8 @@ pub(crate) enum LocalLastUsedDbErrorInner {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    BincodeDecode(#[from] bincode::error::DecodeError),
+    RmpSerdeEncode(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
-    BincodeEncode(#[from] bincode::error::EncodeError),
+    RmpSerdeDecode(#[from] rmp_serde::decode::Error),
 }

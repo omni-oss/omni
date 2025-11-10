@@ -387,6 +387,11 @@ async fn run_process<'a>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
+                trace::info!(
+                    "Wating for '{:?}' before retrying task '{}'",
+                    duration,
+                    task_ctx.node.full_task_name(),
+                );
                 tokio::time::sleep(duration).await;
             }
 
