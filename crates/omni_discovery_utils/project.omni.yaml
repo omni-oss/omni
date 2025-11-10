@@ -1,10 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omni_configuration_discovery
-
+name: omni_discovery_utils
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
-
 dependencies:
-  - omni_discovery_utils
-  - dir_walker
-  - system_traits
+  - trace

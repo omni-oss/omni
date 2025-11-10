@@ -40,3 +40,7 @@ actions:
     type: add
     template_file: files/src/main.rs.tpl
     base_path: files
+
+  - type: add
+    template_file: files/project.omni.yaml.tpl
+    base_path: files

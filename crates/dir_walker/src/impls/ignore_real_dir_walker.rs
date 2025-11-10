@@ -85,6 +85,11 @@ impl IgnoreRealDirWalkerConfig {
             builder.add_custom_ignore_filename(ignore_filename);
         }
 
+        if let Some(filter) = &self.filter_entry {
+            let filter = filter.clone();
+            builder.filter_entry(move |p| filter(p));
+        }
+
         Ok(builder)
     }
 }
