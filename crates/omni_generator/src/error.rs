@@ -68,6 +68,16 @@ pub(crate) enum ErrorInner {
         error: std::io::Error,
     },
 
+    #[error("failed to read from path '{path}', error: {error}")]
+    FailedToReadFile {
+        #[new(into)]
+        path: PathBuf,
+
+        #[source]
+        #[new(into)]
+        error: std::io::Error,
+    },
+
     #[error("path exists but it is not a directory: '{path}")]
     PathExistsButNotDir {
         #[new(into)]
@@ -79,4 +89,7 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     ResolveOutputPath(#[from] ResolveOutputPathError),
+
+    #[error(transparent)]
+    FromUtf8(#[from] std::string::FromUtf8Error),
 }

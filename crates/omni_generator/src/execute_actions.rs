@@ -54,13 +54,13 @@ pub async fn execute_actions<'a>(
 
         let result = match action {
             ActionConfiguration::Add { action } => {
-                add(action, &handler_context).await
+                add(action, &handler_context, sys).await
             }
             ActionConfiguration::AddInline { action } => {
                 add_inline(action, &handler_context, sys).await
             }
             ActionConfiguration::AddMany { action } => {
-                add_many(action, &handler_context).await
+                add_many(action, &handler_context, sys).await
             }
         };
 

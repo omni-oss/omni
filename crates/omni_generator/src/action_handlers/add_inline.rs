@@ -19,6 +19,7 @@ pub async fn add_inline<'a>(
     let output_path = get_output_path(
         config.base.common.target.as_deref(),
         &config.output_path,
+        None,
         ctx,
         sys,
     )
