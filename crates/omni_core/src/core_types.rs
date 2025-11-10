@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use derive_new::new;
 use maps::OrderedMap;
@@ -26,6 +26,7 @@ pub struct Task {
     pub persistent: bool,
     pub siblings: Vec<TaskDependency>,
     pub max_retries: Option<u8>,
+    pub retry_interval: Option<Duration>,
 }
 
 #[cfg(test)]
@@ -37,7 +38,8 @@ pub(crate) struct TaskBuilder {
     interactive: bool,
     persistent: bool,
     siblings: Vec<TaskDependency>,
-    retries: Option<u8>,
+    max_retries: Option<u8>,
+    retry_interval: Option<Duration>,
 }
 
 #[cfg(test)]
@@ -51,7 +53,8 @@ impl TaskBuilder {
             interactive: false,
             persistent: false,
             siblings: Default::default(),
-            retries: None,
+            max_retries: None,
+            retry_interval: None,
         }
     }
 
@@ -142,7 +145,8 @@ impl TaskBuilder {
             interactive: self.interactive,
             persistent: self.persistent,
             siblings: self.siblings,
-            max_retries: self.retries,
+            max_retries: self.max_retries,
+            retry_interval: self.retry_interval,
         }
     }
 }

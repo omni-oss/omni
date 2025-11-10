@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher as _},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use petgraph::{
@@ -29,6 +30,7 @@ pub struct TaskExecutionNode {
     interactive: bool,
     persistent: bool,
     max_retries: Option<u8>,
+    retry_interval: Option<Duration>,
 }
 
 impl TaskExecutionNode {
@@ -43,6 +45,7 @@ impl TaskExecutionNode {
         interactive: bool,
         persistent: bool,
         max_retries: Option<u8>,
+        retry_interval: Option<Duration>,
     ) -> Self {
         let project_name = project_name.into();
         let task_name = task_name.into();
@@ -57,6 +60,7 @@ impl TaskExecutionNode {
             interactive,
             persistent,
             max_retries,
+            retry_interval,
         }
     }
 }
@@ -102,7 +106,11 @@ impl TaskExecutionNode {
         self.max_retries
     }
 
-    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent)
+    pub fn retry_interval(&self) -> Option<Duration> {
+        self.retry_interval
+    }
+
+    /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent, max_retries, retry_interval)
     pub fn deconstruct(
         self,
     ) -> (
@@ -115,6 +123,8 @@ impl TaskExecutionNode {
         bool,
         bool,
         bool,
+        Option<u8>,
+        Option<Duration>,
     ) {
         (
             self.task_name,
@@ -126,6 +136,8 @@ impl TaskExecutionNode {
             self.enabled,
             self.interactive,
             self.persistent,
+            self.max_retries,
+            self.retry_interval,
         )
     }
 }
@@ -192,6 +204,7 @@ impl TaskExecutionGraph {
                     task.1.interactive,
                     task.1.persistent,
                     task.1.max_retries,
+                    task.1.retry_interval,
                 );
 
                 let dep_node_index =
@@ -1181,6 +1194,7 @@ mod tests {
             true,
             false,
             false,
+            None,
             None,
         );
     }

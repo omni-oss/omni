@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use clap::{Args, ValueEnum};
 use clap_utils::EnumValueAdapter;
@@ -87,6 +87,13 @@ pub struct RunArgs {
 
     #[arg(
         long,
+        help = "How long to wait before retrying a failed task",
+        value_parser = humantime::parse_duration
+    )]
+    retry_interval: Option<Duration>,
+
+    #[arg(
+        long,
         alias = "affected",
         short = 'a',
         default_value_t = EnumValueAdapter::new(SelectScm::None),
@@ -134,8 +141,11 @@ impl RunArgs {
         }
 
         builder.dry_run(self.dry_run);
-
         builder.max_retries(self.retry.unwrap_or(0));
+
+        if let Some(retry_interval) = self.retry_interval {
+            builder.retry_interval(retry_interval);
+        }
 
         let scm = self.scm_affected.value();
         if !scm.is_none() {
