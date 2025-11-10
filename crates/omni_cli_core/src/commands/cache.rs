@@ -304,12 +304,6 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         cli_args.larger_than,
     );
 
-    if cli_args.stale_only {
-        trace::warn!(
-            "--stale-only flag is functional but currently experimental"
-        );
-    }
-
     let pruned = cache_store.prune_caches(&args).await?;
     if pruned.is_empty() {
         trace::warn!("No cache entries matched the given filters");
