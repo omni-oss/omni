@@ -84,6 +84,10 @@ pub struct ExecutionConfig {
     ui: Ui,
 
     #[builder(default)]
+    #[getset(get_copy = "pub")]
+    max_retries: u8,
+
+    #[builder(default)]
     #[getset(get = "pub")]
     scm_affected_filter: Option<ScmAffectedFilter>,
 }

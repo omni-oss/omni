@@ -28,6 +28,7 @@ pub struct TaskExecutionNode {
     enabled: bool,
     interactive: bool,
     persistent: bool,
+    max_retries: Option<u8>,
 }
 
 impl TaskExecutionNode {
@@ -41,6 +42,7 @@ impl TaskExecutionNode {
         enabled: bool,
         interactive: bool,
         persistent: bool,
+        max_retries: Option<u8>,
     ) -> Self {
         let project_name = project_name.into();
         let task_name = task_name.into();
@@ -54,6 +56,7 @@ impl TaskExecutionNode {
             enabled,
             interactive,
             persistent,
+            max_retries,
         }
     }
 }
@@ -93,6 +96,10 @@ impl TaskExecutionNode {
 
     pub fn persistent(&self) -> bool {
         self.persistent
+    }
+
+    pub fn max_retries(&self) -> Option<u8> {
+        self.max_retries
     }
 
     /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent)
@@ -184,6 +191,7 @@ impl TaskExecutionGraph {
                     task.1.enabled,
                     task.1.interactive,
                     task.1.persistent,
+                    task.1.max_retries,
                 );
 
                 let dep_node_index =
@@ -1173,6 +1181,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
     }
 

@@ -438,6 +438,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
 
         assert!(filter.should_include_task(&node).expect("should be true"));
@@ -464,6 +465,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
 
         assert!(
@@ -494,6 +496,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
 
         assert!(

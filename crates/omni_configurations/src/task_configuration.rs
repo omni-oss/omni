@@ -49,6 +49,9 @@ pub struct TaskConfigurationLongForm {
 
     #[serde(default)]
     pub meta: MetaConfiguration,
+
+    #[serde(default)]
+    pub max_retries: Option<Replace<u8>>,
 }
 
 #[inline(always)]
@@ -80,6 +83,7 @@ impl Default for TaskConfigurationLongForm {
             interactive: default_interactive(),
             persistent: default_persistent(),
             with: ListConfig::append(vec![]),
+            max_retries: None,
         }
     }
 }
@@ -133,6 +137,7 @@ impl TaskConfiguration {
                 false,
                 false,
                 vec![],
+                None,
             ),
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
                 command,
@@ -142,6 +147,7 @@ impl TaskConfiguration {
                 interactive,
                 persistent,
                 with,
+                max_retries: retries,
                 ..
             }) => Task::new(
                 command.clone(),
@@ -151,6 +157,7 @@ impl TaskConfiguration {
                 interactive.map(|e| e.into_inner()).unwrap_or(false),
                 persistent.map(|e| e.into_inner()).unwrap_or(false),
                 with.iter().cloned().map(Into::into).collect(),
+                retries.map(|e| e.into_inner()),
             ),
         }
     }
@@ -213,6 +220,7 @@ impl Merge for TaskConfiguration {
                     interactive: a_interactive,
                     persistent: a_persistent,
                     with: a_with,
+                    max_retries: a_retries,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -226,6 +234,7 @@ impl Merge for TaskConfiguration {
                     interactive: b_interactive,
                     persistent: b_persistent,
                     with: b_with,
+                    max_retries: b_retries,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -241,6 +250,7 @@ impl Merge for TaskConfiguration {
                 merge::option::recurse(a_interactive, b_interactive);
                 merge::option::recurse(a_persistent, b_persistent);
                 a_with.merge(b_with);
+                merge::option::recurse(a_retries, b_retries);
             }
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
@@ -281,6 +291,7 @@ mod tests {
             persistent: Some(Replace::new(true)),
             enabled: Some(Replace::new(true)),
             with: ListConfig::append(vec![]),
+            max_retries: Some(Replace::new(1)),
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -300,6 +311,7 @@ mod tests {
             persistent: Some(Replace::new(false)),
             enabled: None,
             with: ListConfig::append(vec![]),
+            max_retries: Some(Replace::new(3)),
         });
 
         a.merge(b);
@@ -318,6 +330,7 @@ mod tests {
                 persistent: Some(Replace::new(false)),
                 enabled: Some(Replace::new(true)),
                 with: ListConfig::append(vec![]),
+                max_retries: Some(Replace::new(3)),
             })
         );
     }

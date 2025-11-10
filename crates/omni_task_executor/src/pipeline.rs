@@ -70,6 +70,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             self.config.on_failure(),
             self.config.dry_run(),
             self.config.replay_cached_logs(),
+            self.config.max_retries(),
         );
 
         for batch in &execution_plan {

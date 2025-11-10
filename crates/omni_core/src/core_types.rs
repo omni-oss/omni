@@ -25,6 +25,7 @@ pub struct Task {
     pub interactive: bool,
     pub persistent: bool,
     pub siblings: Vec<TaskDependency>,
+    pub max_retries: Option<u8>,
 }
 
 #[cfg(test)]
@@ -36,6 +37,7 @@ pub(crate) struct TaskBuilder {
     interactive: bool,
     persistent: bool,
     siblings: Vec<TaskDependency>,
+    retries: Option<u8>,
 }
 
 #[cfg(test)]
@@ -49,6 +51,7 @@ impl TaskBuilder {
             interactive: false,
             persistent: false,
             siblings: Default::default(),
+            retries: None,
         }
     }
 
@@ -139,6 +142,7 @@ impl TaskBuilder {
             interactive: self.interactive,
             persistent: self.persistent,
             siblings: self.siblings,
+            max_retries: self.retries,
         }
     }
 }
