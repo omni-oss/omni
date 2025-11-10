@@ -18,13 +18,13 @@ pub struct ConfigurationDiscovery<'a> {
     root_dir: &'a Path,
 
     #[new(into)]
-    project_patterns: &'a [String],
+    glob_patterns: &'a [String],
 
     #[new(into)]
-    config_file_names: &'a [String],
+    config_files: &'a [String],
 
     #[new(into)]
-    ignore_filenames: &'a [String],
+    ignore_files: &'a [String],
 
     #[new(into)]
     config_name: &'a str,
@@ -45,7 +45,7 @@ impl<'a> ConfigurationDiscovery<'a> {
             root
         };
 
-        for glob in self.project_patterns {
+        for glob in self.glob_patterns {
             globset.add(
                 Glob::new(&format!("{}/{}", root, glob))
                     .expect("can't create glob"),
@@ -56,7 +56,7 @@ impl<'a> ConfigurationDiscovery<'a> {
         let cfg = cfg_builder
             .standard_filters(true)
             .filter_entry(move |entry| matcher.is_match(entry.path()))
-            .custom_ignore_filenames(self.ignore_filenames.to_vec())
+            .custom_ignore_filenames(self.ignore_files.to_vec())
             .build()?;
 
         Ok(IgnoreRealDirWalker::new_with_config(cfg))
@@ -75,7 +75,7 @@ impl<'a> ConfigurationDiscovery<'a> {
 
         let mut match_b = GlobSetBuilder::new();
 
-        for p in self.project_patterns {
+        for p in self.glob_patterns {
             match_b.add(Glob::new(
                 format!("{}/{}", self.root_dir.display(), p).as_str(),
             )?);
@@ -106,7 +106,7 @@ impl<'a> ConfigurationDiscovery<'a> {
             }
 
             if matcher.is_match(f.path()) {
-                for file_name in self.config_file_names {
+                for file_name in self.config_files {
                     if *f.file_name().to_string_lossy() == *file_name {
                         trace::trace!(
                             "Found {} config: {:?}",
