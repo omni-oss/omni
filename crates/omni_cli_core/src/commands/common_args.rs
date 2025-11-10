@@ -80,6 +80,13 @@ pub struct RunArgs {
 
     #[arg(
         long,
+        short,
+        help = "How many retries to do if the task fails before failing the whole execution"
+    )]
+    pub retry: Option<u8>,
+
+    #[arg(
+        long,
         alias = "affected",
         short = 'a',
         default_value_t = EnumValueAdapter::new(SelectScm::None),
@@ -127,6 +134,8 @@ impl RunArgs {
         }
 
         builder.dry_run(self.dry_run);
+
+        builder.max_retries(self.retry.unwrap_or(0));
 
         let scm = self.scm_affected.value();
         if !scm.is_none() {

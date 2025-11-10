@@ -97,6 +97,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             true,
                             false,
                             false,
+                            None,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -145,6 +146,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             task.enabled,
                             task.interactive,
                             task.persistent,
+                            task.max_retries,
                         );
 
                         if passes_tf(&node)? {
@@ -264,6 +266,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             false,
                             false,
                             vec![],
+                            None,
                         ),
                     );
                 });

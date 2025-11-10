@@ -18,12 +18,14 @@ pub enum TaskExecutionResult {
         cache_hit: bool,
         #[new(default)]
         details: Option<TaskDetails>,
+        tries: u8,
     },
     Errored {
         task: TaskExecutionNode,
         error: String,
         #[new(default)]
         details: Option<TaskDetails>,
+        tries: u8,
     },
     Skipped {
         task: TaskExecutionNode,

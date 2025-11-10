@@ -45,10 +45,12 @@ pub enum TaskResultContext<'a> {
     Completed {
         task_context: &'a TaskContext<'a>,
         result: ChildProcessResult,
+        tries: u8,
     },
     Error {
         task_context: &'a TaskContext<'a>,
         error: ChildProcessError,
+        tries: u8,
     },
 }
 
@@ -64,6 +66,13 @@ impl<'a> TaskResultContext<'a> {
         match self {
             TaskResultContext::Completed { result, .. } => result.exit_code,
             TaskResultContext::Error { .. } => 1,
+        }
+    }
+
+    pub fn tries(&self) -> u8 {
+        match self {
+            TaskResultContext::Completed { tries: t, .. } => *t,
+            TaskResultContext::Error { tries: t, .. } => *t,
         }
     }
 
@@ -148,6 +157,7 @@ where
                         exit_code: r.exit_code(),
                         task: exec_info,
                         logs: r.logs(),
+                        tries: r.tries(),
                     })
                 } else {
                     None

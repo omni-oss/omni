@@ -306,6 +306,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     .task
                     .dependency_digests
                     .to_vec(),
+                tries: new_cache_info.tries,
             };
             let bytes = bincode::serde::encode_to_vec(
                 &metadata,
@@ -1222,6 +1223,7 @@ mod tests {
             task,
             exit_code: 0,
             execution_duration: std::time::Duration::from_millis(100),
+            tries: 1,
         }
     }
 

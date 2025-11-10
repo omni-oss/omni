@@ -36,6 +36,7 @@ where
     on_failure: OnFailure,
     dry_run: bool,
     replay_cached_logs: bool,
+    max_retries: u8,
 }
 
 impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
@@ -245,6 +246,7 @@ where
                         cached_result.exit_code,
                         cached_result.execution_duration,
                         true,
+                        cached_result.tries,
                     ),
                 );
 
@@ -265,9 +267,15 @@ where
                 fut_results.push(TaskResultContext::new_completed(
                     task_ctx,
                     ChildProcessResult::new(node, 0u32, Duration::ZERO, None),
+                    0,
                 ));
             } else {
-                futs.push(run_process(self.presenter, task_ctx, record_logs));
+                futs.push(run_process(
+                    self.presenter,
+                    task_ctx,
+                    record_logs,
+                    task_ctx.node.max_retries().unwrap_or(self.max_retries),
+                ));
             }
 
             if futs.len() >= self.max_concurrent_tasks {
@@ -306,19 +314,23 @@ where
                 TaskResultContext::Completed {
                     task_context,
                     result,
+                    tries,
                 } => TaskExecutionResult::new_completed(
                     hash,
                     task_context.node.clone(),
                     result.exit_code,
                     result.elapsed,
                     false,
+                    *tries,
                 ),
                 TaskResultContext::Error {
                     task_context,
                     error,
+                    tries,
                 } => TaskExecutionResult::new_errored(
                     task_context.node.clone(),
                     error.to_string(),
+                    *tries,
                 ),
             };
 
@@ -333,64 +345,90 @@ async fn run_process<'a>(
     presenter: &'a MuxOutputPresenterStatic,
     task_ctx: &'a TaskContext<'a>,
     record_logs: bool,
+    max_retries: u8,
 ) -> TaskResultContext<'a> {
-    let mut proc = ChildProcess::new(task_ctx.node.clone());
+    let mut tries = 0u8;
 
-    let handle = if presenter.accepts_input() {
-        let (out_writer, in_reader, handle) = presenter
-            .add_piped_stream_full(task_ctx.node.full_task_name())
-            .await
-            .expect("failed to add stream");
+    let result = loop {
+        tries += 1;
+        let mut proc = ChildProcess::new(task_ctx.node.clone());
+        let handle = if presenter.accepts_input() {
+            let (out_writer, in_reader, handle) = presenter
+                .add_piped_stream_full(task_ctx.node.full_task_name())
+                .await
+                .expect("failed to add stream");
 
-        proc.output_writer(out_writer).input_reader(in_reader);
-        handle
-    } else {
-        let (stream, handle) = presenter
-            .add_piped_stream_output(task_ctx.node.full_task_name())
-            .await
-            .expect("failed to add stream");
-
-        proc.output_writer(stream);
-        handle
-    };
-
-    proc.record_logs(record_logs)
-        .env_vars(&task_ctx.env_vars)
-        .keep_stdin_open(
-            task_ctx.node.persistent() || task_ctx.node.interactive(),
-        );
-
-    let result = proc.exec().await;
-    if let Err(e) = &result {
-        trace::error!(
-            "Failed to execute task '{}': {}",
-            task_ctx.node.full_task_name(),
-            e
-        );
-    }
-    if let Ok(t) = &result {
-        if t.success() {
-            trace::info!(
-                "{}",
-                format!("Executed task '{}'", task_ctx.node.full_task_name())
-            );
+            proc.output_writer(out_writer).input_reader(in_reader);
+            handle
         } else {
+            let (stream, handle) = presenter
+                .add_piped_stream_output(task_ctx.node.full_task_name())
+                .await
+                .expect("failed to add stream");
+
+            proc.output_writer(stream);
+            handle
+        };
+
+        proc.record_logs(record_logs)
+            .env_vars(&task_ctx.env_vars)
+            .keep_stdin_open(
+                task_ctx.node.persistent() || task_ctx.node.interactive(),
+            );
+
+        let result = proc.exec().await;
+
+        if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
+            && tries < max_retries
+        {
+            trace::warn!(
+                "Failed task '{}' due to {}, retrying...",
+                task_ctx.node.full_task_name(),
+                match &result {
+                    Ok(t) => format!("exit code '{}'", t.exit_code()),
+                    Err(e) => format!("{}", e),
+                }
+            );
+            continue;
+        }
+
+        if let Ok(t) = &result {
+            if t.success() {
+                trace::info!(
+                    "{}",
+                    format!(
+                        "Executed task '{}'",
+                        task_ctx.node.full_task_name()
+                    )
+                );
+            } else {
+                trace::error!(
+                    "{}",
+                    format!(
+                        "Executed task '{}' but errored with exit code '{}'",
+                        task_ctx.node.full_task_name(),
+                        t.exit_code()
+                    )
+                );
+            }
+        }
+
+        if let Err(e) = &result {
             trace::error!(
-                "{}",
-                format!(
-                    "Executed task '{}' but errored with exit code '{}'",
-                    task_ctx.node.full_task_name(),
-                    t.exit_code()
-                )
+                "Failed to execute task '{}': {}",
+                task_ctx.node.full_task_name(),
+                e
             );
         }
-    }
 
-    handle.wait().await.expect("failed to wait for stream");
+        handle.wait().await.expect("failed to wait for stream");
+
+        break result;
+    };
 
     match result {
-        Ok(t) => TaskResultContext::new_completed(task_ctx, t),
-        Err(e) => TaskResultContext::new_error(task_ctx, e),
+        Ok(t) => TaskResultContext::new_completed(task_ctx, t, tries),
+        Err(e) => TaskResultContext::new_error(task_ctx, e, tries),
     }
 }
 

@@ -29,6 +29,7 @@ pub struct NewCacheInfo<'a> {
     pub logs: Option<&'a Bytes>,
     pub execution_duration: std::time::Duration,
     pub exit_code: u32,
+    pub tries: u8,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, new, Serialize, Deserialize)]

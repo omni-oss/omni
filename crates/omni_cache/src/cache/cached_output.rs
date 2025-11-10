@@ -52,6 +52,15 @@ pub struct CachedTaskExecution {
 
     #[new(into)]
     pub execution_time: OffsetDateTime,
+
+    #[new(into)]
+    #[serde(default = "default_tries")]
+    pub tries: u8,
+}
+
+#[inline(always)]
+fn default_tries() -> u8 {
+    1
 }
 
 #[derive(
