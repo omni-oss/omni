@@ -252,6 +252,7 @@ pub fn validate_target(
 pub async fn get_output_path<'a>(
     target_name: Option<&'a str>,
     expected_output_path: &'a Path,
+    base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
@@ -272,7 +273,7 @@ pub async fn get_output_path<'a>(
     let output_path = resolve_output_path(
         ctx.output_dir,
         target.as_deref(),
-        ctx.generator_dir,
+        base_path.unwrap_or(ctx.generator_dir),
         &expected_output_path,
     )?;
     Ok(output_path)

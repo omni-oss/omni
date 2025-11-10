@@ -28,37 +28,5 @@ prompts:
         error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens, and must start with a letter
 
 actions:
-  - type: add-inline
-    output_path: Cargo.toml
-    template: |
-      [package]
-      name = "{{ prompts.crate_name }}"
-      version = "0.1.0"
-      edition = "2021"
-
-      [dependencies]
-      {% if prompts.use_tracing %}
-      trace = { workspace = true }
-      tracing = { workspace = true }
-      tracing-subscriber = { workspace = true }
-      {% endif %}
-
-      [features]
-      {% if prompts.use_tracing %}
-      default = ["enable-tracing"]
-      enable-tracing = ["trace/enabled"]
-      {% else %}
-      default = [""]
-      {% endif %}
-
-      [workspace]
-
-      [lib]
-      name = "{{ prompts.crate_name }}"
-      path = "src/lib.rs"
-
-      {% if prompts.crate_type == "bin" %}
-      [[bin]]
-      name = "{{ prompts.crate_name }}"
-      path = "src/main.rs"
-      {% endif %}
+  - type: add
+    template_file: files/Cargo.toml.tpl

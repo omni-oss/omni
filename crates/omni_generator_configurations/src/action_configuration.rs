@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use derive_new::new;
 use garde::Validate;
 use omni_serde_validators::tera_expr::{
     option_validate_tera_expr, validate_tera_expr,
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumDiscriminants, EnumIs};
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct BaseActionConfiguration {
@@ -57,7 +58,7 @@ pub struct BaseActionConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct CommonAddConfiguration {
@@ -68,7 +69,7 @@ pub struct CommonAddConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct BaseAddActionConfiguration {
@@ -80,7 +81,7 @@ pub struct BaseAddActionConfiguration {
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct AddActionConfiguration {
@@ -88,16 +89,23 @@ pub struct AddActionConfiguration {
     pub base: BaseAddActionConfiguration,
 
     /// Provide a single template file to add, does not support glob patterns.
+    #[new(into)]
     pub template_file: PathBuf,
 
     /// If provided, it will be stripped from the file names of the template files.
     /// If absent, use the generator's directory as the base path.
+    #[new(into)]
     #[serde(default)]
     pub base_path: Option<PathBuf>,
+
+    /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
+    #[new(into)]
+    #[serde(default)]
+    pub flatten: bool,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 /// Use an single inline template and write it to a file.
@@ -106,15 +114,17 @@ pub struct AddInlineActionConfiguration {
     pub base: BaseAddActionConfiguration,
 
     /// Accepts an inline tera template that will be evaluated to a string that will be used to produce the file.
+    #[new(into)]
     #[serde(deserialize_with = "validate_tera_expr")]
     pub template: String,
 
     /// The path of the file to write to. Will be resolved relative to the output directory.
+    #[new(into)]
     pub output_path: PathBuf,
 }
 
 #[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
 pub struct AddManyActionConfiguration {
@@ -126,7 +136,7 @@ pub struct AddManyActionConfiguration {
 
     /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
     #[serde(default)]
-    pub flatten: Option<bool>,
+    pub flatten: bool,
 
     /// If provided, it will be stripped from the file names of the template files.
     /// If absent, use the generator's directory as the base path.
@@ -143,6 +153,7 @@ pub struct AddManyActionConfiguration {
     PartialEq,
     Validate,
     EnumDiscriminants,
+    new,
 )]
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
