@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use config_utils::{DictConfig, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
@@ -52,6 +54,9 @@ pub struct TaskConfigurationLongForm {
 
     #[serde(default)]
     pub max_retries: Option<Replace<u8>>,
+
+    #[serde(default)]
+    pub retry_interval: Option<Replace<Duration>>,
 }
 
 #[inline(always)]
@@ -84,6 +89,7 @@ impl Default for TaskConfigurationLongForm {
             persistent: default_persistent(),
             with: ListConfig::append(vec![]),
             max_retries: None,
+            retry_interval: None,
         }
     }
 }
@@ -138,6 +144,7 @@ impl TaskConfiguration {
                 false,
                 vec![],
                 None,
+                None,
             ),
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
                 command,
@@ -148,6 +155,7 @@ impl TaskConfiguration {
                 persistent,
                 with,
                 max_retries: retries,
+                retry_interval,
                 ..
             }) => Task::new(
                 command.clone(),
@@ -158,6 +166,7 @@ impl TaskConfiguration {
                 persistent.map(|e| e.into_inner()).unwrap_or(false),
                 with.iter().cloned().map(Into::into).collect(),
                 retries.map(|e| e.into_inner()),
+                retry_interval.map(|e| e.into_inner()),
             ),
         }
     }
@@ -221,6 +230,7 @@ impl Merge for TaskConfiguration {
                     persistent: a_persistent,
                     with: a_with,
                     max_retries: a_retries,
+                    retry_interval: a_retry_interval,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -235,6 +245,7 @@ impl Merge for TaskConfiguration {
                     persistent: b_persistent,
                     with: b_with,
                     max_retries: b_retries,
+                    retry_interval: b_retry_interval,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -251,6 +262,7 @@ impl Merge for TaskConfiguration {
                 merge::option::recurse(a_persistent, b_persistent);
                 a_with.merge(b_with);
                 merge::option::recurse(a_retries, b_retries);
+                merge::option::recurse(a_retry_interval, b_retry_interval);
             }
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
@@ -292,6 +304,7 @@ mod tests {
             enabled: Some(Replace::new(true)),
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(1)),
+            retry_interval: Some(Replace::new(Duration::from_secs(1))),
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -312,6 +325,7 @@ mod tests {
             enabled: None,
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(3)),
+            retry_interval: Some(Replace::new(Duration::from_secs(2))),
         });
 
         a.merge(b);
@@ -331,6 +345,7 @@ mod tests {
                 enabled: Some(Replace::new(true)),
                 with: ListConfig::append(vec![]),
                 max_retries: Some(Replace::new(3)),
+                retry_interval: Some(Replace::new(Duration::from_secs(2))),
             })
         );
     }

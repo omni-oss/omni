@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use omni_configurations::Ui;
@@ -86,6 +88,10 @@ pub struct ExecutionConfig {
     #[builder(default)]
     #[getset(get_copy = "pub")]
     max_retries: u8,
+
+    #[builder(default)]
+    #[getset(get_copy = "pub")]
+    retry_interval: Option<Duration>,
 
     #[builder(default)]
     #[getset(get = "pub")]

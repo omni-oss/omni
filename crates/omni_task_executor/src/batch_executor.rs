@@ -37,6 +37,7 @@ where
     dry_run: bool,
     replay_cached_logs: bool,
     max_retries: u8,
+    retry_interval: Option<Duration>,
 }
 
 impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
@@ -275,6 +276,7 @@ where
                     task_ctx,
                     record_logs,
                     task_ctx.node.max_retries().unwrap_or(self.max_retries),
+                    task_ctx.node.retry_interval().or(self.retry_interval),
                 ));
             }
 
@@ -346,6 +348,7 @@ async fn run_process<'a>(
     task_ctx: &'a TaskContext<'a>,
     record_logs: bool,
     max_retries: u8,
+    retry_duration: Option<Duration>,
 ) -> TaskResultContext<'a> {
     let mut tries = 0u8;
 
@@ -381,6 +384,12 @@ async fn run_process<'a>(
         if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
             && tries < max_retries
         {
+            if let Some(duration) = retry_duration
+                && !duration.is_zero()
+            {
+                tokio::time::sleep(duration).await;
+            }
+
             trace::warn!(
                 "Failed task '{}' due to {}, retrying...",
                 task_ctx.node.full_task_name(),
@@ -389,6 +398,7 @@ async fn run_process<'a>(
                     Err(e) => format!("{}", e),
                 }
             );
+
             continue;
         }
 
