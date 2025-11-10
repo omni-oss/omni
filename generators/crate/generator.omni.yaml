@@ -28,19 +28,13 @@ prompts:
         error_message: Crate name must only contain alphanumeric characters, underscores, and hyphens, and must start with a letter
 
 actions:
-  - type: add
-    template_file: files/Cargo.toml.tpl
+  - type: add-many
     base_path: files
-
-  - type: add
-    template_file: files/src/lib.rs.tpl
-    base_path: files
+    template_files:
+      - files/**
+      - "!files/src/main.rs.tpl"
 
   - if: "{{ prompts.crate_type == 'bin' }}"
     type: add
     template_file: files/src/main.rs.tpl
-    base_path: files
-
-  - type: add
-    template_file: files/project.omni.yaml.tpl
     base_path: files

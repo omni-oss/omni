@@ -54,6 +54,9 @@ pub(crate) enum ErrorInner {
     #[error(transparent)]
     GeneratorDiscovery(#[from] omni_configuration_discovery::error::Error),
 
+    #[error(transparent)]
+    FileDiscovery(#[from] omni_discovery::error::Error),
+
     #[error(
         "there is already a generator with the name '{name}', generator names must be unique, config path: {path}"
     )]
