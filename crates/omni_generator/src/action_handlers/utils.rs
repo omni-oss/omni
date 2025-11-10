@@ -287,10 +287,22 @@ mod tests {
     fn test_resolve_output_path() {
         use std::path::PathBuf;
 
-        let output_dir = PathBuf::from("/output");
+        let output_dir = PathBuf::from(if cfg!(windows) {
+            "D:\\output"
+        } else {
+            "/output"
+        });
         let target = Some(PathBuf::from("target"));
-        let base_path = PathBuf::from("/template/files");
-        let template_path = PathBuf::from("/template/files/file");
+        let base_path = PathBuf::from(if cfg!(windows) {
+            "D:\\template\\files"
+        } else {
+            "/template/files"
+        });
+        let template_path = PathBuf::from(if cfg!(windows) {
+            "D:\\template\\files\\file"
+        } else {
+            "/template/files/file"
+        });
 
         let resolved_path = resolve_output_path(
             &output_dir,
@@ -300,6 +312,13 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(resolved_path, PathBuf::from("/output/target/file"));
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(if cfg!(windows) {
+                "D:\\output\\target\\file"
+            } else {
+                "/output/target/file"
+            })
+        );
     }
 }
