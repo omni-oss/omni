@@ -28,7 +28,7 @@ pub enum CacheSubcommands {
         #[command(flatten)]
         args: StatsArgs,
     },
-    #[command(about = "Prune the cache")]
+    #[command(about = "Prune the local cache")]
     Prune {
         #[command(flatten)]
         args: PruneArgs,
