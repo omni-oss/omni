@@ -19,7 +19,7 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a name for the action.
@@ -28,7 +28,7 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub name: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a progress message.
@@ -36,7 +36,7 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub in_progress_message: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a success message.
@@ -44,7 +44,7 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub success_message: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a failure message.
@@ -53,7 +53,7 @@ pub struct BaseActionConfiguration {
     /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     /// - `error`: A string containing the error message that was returned by the action.
-    #[serde(flatten, deserialize_with = "option_validate_tera_expr")]
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub error_message: Option<String>,
 }
 
@@ -63,8 +63,10 @@ pub struct BaseActionConfiguration {
 #[garde(allow_unvalidated)]
 pub struct CommonAddConfiguration {
     /// How to handle overwriting existing files.
+    #[serde(default)]
     pub overwrite: Option<OverwriteConfiguration>,
 
+    #[serde(default)]
     pub target: Option<String>,
 }
 
