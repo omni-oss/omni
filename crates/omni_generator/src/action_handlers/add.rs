@@ -28,6 +28,7 @@ pub async fn add<'a>(
         &config.template_file,
         config.base_path.as_deref(),
         ctx,
+        &["tpl"],
         sys,
     )
     .await?;

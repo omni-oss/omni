@@ -249,11 +249,29 @@ pub fn validate_target(
     })
 }
 
+pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
+    path: &'a Path,
+    exts: &'a [TStr],
+) -> Cow<'a, Path> {
+    if !exts.is_empty() {
+        for check in exts {
+            if let Some(ext) = path.extension()
+                && *ext.to_string_lossy() == *check.as_ref()
+            {
+                return Cow::Owned(path.with_extension(""));
+            }
+        }
+    }
+
+    Cow::Borrowed(path)
+}
+
 pub async fn get_output_path<'a>(
     target_name: Option<&'a str>,
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a>,
+    strip_extensions: &'a [&'a str],
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
@@ -276,17 +294,21 @@ pub async fn get_output_path<'a>(
         base_path.unwrap_or(ctx.generator_dir),
         &expected_output_path,
     )?;
-    Ok(output_path)
+
+    Ok(if !strip_extensions.is_empty() {
+        self::strip_extensions(&output_path, strip_extensions).to_path_buf()
+    } else {
+        output_path
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_resolve_output_path() {
-        use std::path::PathBuf;
-
         let output_dir = PathBuf::from(if cfg!(windows) {
             "D:\\output"
         } else {
@@ -319,6 +341,26 @@ mod tests {
             } else {
                 "/output/target/file"
             })
+        );
+    }
+
+    #[test]
+    fn test_strip_extensions() {
+        assert_eq!(
+            strip_extensions(Path::new("file.txt"), &["txt"]),
+            PathBuf::from("file")
+        );
+        assert_eq!(
+            strip_extensions(Path::new("file.txt"), &["txt", "txt2"]),
+            PathBuf::from("file")
+        );
+        assert_eq!(
+            strip_extensions(Path::new("file.txt.txt2"), &["txt"]),
+            PathBuf::from("file.txt.txt2")
+        );
+        assert_eq!(
+            strip_extensions(Path::new("file.txt.txt2"), &["txt", "txt2"]),
+            PathBuf::from("file.txt")
         );
     }
 }
