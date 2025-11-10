@@ -30,3 +30,13 @@ prompts:
 actions:
   - type: add
     template_file: files/Cargo.toml.tpl
+    base_path: files
+
+  - type: add
+    template_file: files/src/lib.rs.tpl
+    base_path: files
+
+  - if: "{{ prompts.crate_type == 'bin' }}"
+    type: add
+    template_file: files/src/main.rs.tpl
+    base_path: files
