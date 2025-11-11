@@ -1,5 +1,7 @@
 # Omni
 
+[![CI](https://github.com/omni-oss/omni/actions/workflows/ci.yaml/badge.svg)](https://github.com/omni-oss/omni/actions/workflows/ci.yaml)
+
 Development workflow orchestration tool
 
 [Documentation](https://omni-oss.vercel.app/)

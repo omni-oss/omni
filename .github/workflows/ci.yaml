@@ -109,10 +109,10 @@ jobs:
         if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
         run: |
           cd target/release
-          if (${{ steps.determine.outputs.BUILD_OMNI }} -eq "true") {
+          if ("${{ steps.determine.outputs.BUILD_OMNI }}" -eq "true") {
             7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
           }
-          if (${{ steps.determine.outputs.BUILD_ORCS }} -eq "true") {
+          if ("${{ steps.determine.outputs.BUILD_ORCS }}" -eq "true") {
             7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
           }
         shell: pwsh
