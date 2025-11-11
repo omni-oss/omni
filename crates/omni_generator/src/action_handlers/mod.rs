@@ -1,4 +1,5 @@
 mod add;
+mod add_commons;
 mod add_inline;
 mod add_many;
 mod handler_context;
