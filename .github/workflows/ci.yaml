@@ -92,11 +92,10 @@ jobs:
         run: bun run ./scripts/apply-version/bin/index.js
 
       - name: Build Projects
-        if: ${{ steps.determine.outputs.BUILD_OMNI == 'true' || steps.determine.outputs.BUILD_ORCS == 'true' }}
         run: >
           omni run
-          ${{ steps.determine.outputs.BUILD_OMNI == 'true' && '-p omni' || '' }}
-          ${{ steps.determine.outputs.BUILD_ORCS == 'true' && '-p omni_remote_cache_service' || '' }}
+          omni
+          omni_remote_cache_service
           -L -f=failed build
 
       - name: Compress Binaries on Linux/macOS
