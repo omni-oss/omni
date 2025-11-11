@@ -4,7 +4,7 @@
     "dependencies": {
         "@omni-oss/biome-config": "workspace:*",
         "@omni-oss/tsconfig": "workspace:*",
-        "@biomejs/biome": "^2.3.4",
+        "@biomejs/biome": "^2.3.5",
         "@omni-oss/apply-version": "workspace:*",
         "@omni-oss/summarize-results": "workspace:*",
         "vite": "^7.2.2",
