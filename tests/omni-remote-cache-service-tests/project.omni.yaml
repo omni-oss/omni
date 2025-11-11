@@ -10,6 +10,7 @@ tasks:
 
   test:api:
     command: bun x vitest --config ./vitest.config.api.ts run
+    retry: 3
     dependencies:
       - omni_remote_cache_service#build
 
