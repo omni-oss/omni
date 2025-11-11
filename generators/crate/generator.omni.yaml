@@ -40,8 +40,3 @@ actions:
     type: add
     template_file: files/src/main.rs.tpl
     base_path: files
-
-  - type: add-inline
-    template: |
-      target
-    output_path: .gitignore

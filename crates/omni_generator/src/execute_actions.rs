@@ -66,6 +66,9 @@ pub async fn execute_actions<'a>(
             ActionConfiguration::AddMany { action } => {
                 add_many(action, &handler_context, sys).await
             }
+            ActionConfiguration::RunGenerator { action } => {
+                todo!("run generator {action:?}")
+            }
         };
 
         if let Err(e) = result {
@@ -110,6 +113,9 @@ fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
         ActionConfiguration::AddMany { action } => {
             action.base.base.r#if.as_deref()
         }
+        ActionConfiguration::RunGenerator { action } => {
+            action.base.r#if.as_deref()
+        }
     }
 }
 
@@ -153,6 +159,9 @@ fn get_error_message(
         ActionConfiguration::AddMany { action } => {
             action.base.base.error_message.as_deref()
         }
+        ActionConfiguration::RunGenerator { action } => {
+            action.base.error_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -182,6 +191,9 @@ fn get_in_progress_message(
         ActionConfiguration::AddMany { action } => {
             action.base.base.in_progress_message.as_deref()
         }
+        ActionConfiguration::RunGenerator { action } => {
+            action.base.in_progress_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -205,6 +217,9 @@ fn get_success_message(
         ActionConfiguration::AddMany { action } => {
             action.base.base.success_message.as_deref()
         }
+        ActionConfiguration::RunGenerator { action } => {
+            action.base.success_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -226,6 +241,9 @@ fn get_action_name(
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.name.as_deref()
+        }
+        ActionConfiguration::RunGenerator { action } => {
+            action.base.name.as_deref()
         }
     };
 
