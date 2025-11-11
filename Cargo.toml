@@ -159,8 +159,8 @@ unicode-width = "=0.2.0" # hard requirement for ratatui
 enumflags2 = { version = "^0.7.12" }
 omni_tracing_subscriber = { path = "./crates/omni_tracing_subscriber" }
 bytesize = { version = "^2.1.0", features = ["serde"] }
-humantime = {version = "^2.3.0"}
-humantime-serde = {version = "^1.1.1"}
+humantime = { version = "^2.3.0" }
+humantime-serde = { version = "^1.1.1" }
 itertools = { version = "^0.14.0" }
 omni_execution_plan = { path = "./crates/omni_execution_plan" }
 omni_task_context = { path = "./crates/omni_task_context" }
