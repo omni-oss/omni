@@ -93,10 +93,7 @@ jobs:
 
       - name: Build Projects
         run: >
-          omni run
-          omni
-          omni_remote_cache_service
-          -L -f=failed build
+          omni run -p omni -p omni_remote_cache_service -L -f=failed build
 
       - name: Compress Binaries on Linux/macOS
         if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
