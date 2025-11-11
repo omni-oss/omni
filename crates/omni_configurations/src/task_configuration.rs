@@ -55,8 +55,49 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     pub max_retries: Option<Replace<u8>>,
 
-    #[serde(default)]
+    #[serde(default, with = "retry_interval")]
+    #[schemars(with = "Option<Replace<String>>")]
     pub retry_interval: Option<Replace<Duration>>,
+}
+
+mod retry_interval {
+    use std::time::Duration;
+
+    use config_utils::{AsInner, Replace};
+    use serde::{Deserialize as _, Deserializer, Serializer};
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Option<Replace<Duration>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = Option::<Replace<String>>::deserialize(deserializer)?;
+
+        if let Some(string) = string {
+            let duration = humantime::parse_duration(string.as_inner())
+                .map_err(serde::de::Error::custom)?;
+            Ok(Some(Replace::new(duration)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn serialize<S>(
+        value: &Option<Replace<Duration>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Some(duration) = value {
+            serializer.serialize_str(
+                &humantime::format_duration(*duration.as_inner()).to_string(),
+            )
+        } else {
+            serializer.serialize_none()
+        }
+    }
 }
 
 #[inline(always)]
