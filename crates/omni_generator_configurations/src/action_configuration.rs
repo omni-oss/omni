@@ -150,6 +150,17 @@ pub struct AddManyActionConfiguration {
 }
 
 #[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct RunGenerator {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    pub generator: String,
+}
+
+#[derive(
     Deserialize,
     Serialize,
     JsonSchema,
@@ -165,20 +176,33 @@ pub struct AddManyActionConfiguration {
 #[serde(tag = "type")]
 #[strum_discriminants(vis(pub), name(ActionConfigurationType), derive(Display))]
 pub enum ActionConfiguration {
+    /// Add a single file specified by a template file
     #[strum_discriminants(strum(serialize = "add"))]
     Add {
         #[serde(flatten)]
         action: AddActionConfiguration,
     },
+
+    /// Add a single file specified by an inline template in the configuration
     #[strum_discriminants(strum(serialize = "add-inline"))]
     AddInline {
         #[serde(flatten)]
         action: AddInlineActionConfiguration,
     },
+
+    /// Add multiple files specified by a list of template files, accepts glob patterns
     #[strum_discriminants(strum(serialize = "add-many"))]
     AddMany {
         #[serde(flatten)]
         action: AddManyActionConfiguration,
+    },
+
+    /// Run a generator
+    #[serde(skip)]
+    #[strum_discriminants(strum(serialize = "run-generator"))]
+    RunGenerator {
+        #[serde(flatten)]
+        action: RunGenerator,
     },
 }
 
