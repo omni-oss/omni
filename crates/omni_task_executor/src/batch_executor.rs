@@ -6,6 +6,7 @@ use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
+use omni_hasher::impls::DefaultHash;
 use omni_process::{ChildProcess, ChildProcessResult};
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_term_ui::mux_output_presenter::{
@@ -38,6 +39,7 @@ where
     replay_cached_logs: bool,
     max_retries: Option<u8>,
     retry_interval: Option<Duration>,
+    no_cache: bool,
 }
 
 impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
@@ -301,7 +303,9 @@ where
         for fut_result in &fut_results {
             let fname =
                 fut_result.task_context().node.full_task_name().to_string();
-            let hash =
+            let hash = if self.no_cache {
+                DefaultHash::default()
+            } else {
                 hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
                     trace::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
@@ -311,7 +315,8 @@ where
                     BatchExecutorErrorInner::new_cant_get_task_hash(
                         fname.clone(),
                     )
-                })?;
+                })?
+            };
 
             let result = match fut_result {
                 TaskResultContext::Completed {
