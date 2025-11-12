@@ -14,6 +14,7 @@ use omni_prompt::configuration::{
     PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
     ValidatedPromptConfiguration,
 };
+use owo_colors::OwoColorize;
 use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(Debug, Clone, clap::Args)]
@@ -361,7 +362,33 @@ fn prompt_generator_name(
 
 async fn run_generator_list(
     _command: &GeneratorListCommand,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> eyre::Result<()> {
+    let generators = omni_generator::discover(
+        ctx.root_dir(),
+        &ctx.workspace_configuration().generators,
+        ctx.sys(),
+    )
+    .await?;
+
+    println!("{}", "Available Generators:".bold());
+    for generator in generators {
+        println!(
+            "- {}{}{} (id: {})",
+            generator
+                .display_name
+                .as_deref()
+                .unwrap_or(generator.name.as_str())
+                .bold(),
+            if generator.description.is_some() {
+                ": "
+            } else {
+                ":"
+            },
+            generator.description.as_deref().unwrap_or(""),
+            generator.name.italic()
+        );
+    }
+
     Ok(())
 }
