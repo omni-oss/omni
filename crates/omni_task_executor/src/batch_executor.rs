@@ -388,12 +388,12 @@ async fn run_process<'a>(
         let result = proc.exec().await;
 
         if (result.is_err() || result.as_ref().is_ok_and(|f| !f.success()))
-            && tries < max_retries
+            && tries <= max_retries
         {
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                trace::info!(
+                trace::warn!(
                     "Wating for '{:?}' before retrying task '{}'",
                     duration,
                     task_ctx.node.full_task_name(),

@@ -8,8 +8,8 @@ export default mergeConfig(baseConfig, {
             entry: "src/index.ts",
             formats: ["es", "cjs"],
             fileName: (format) =>
-                `bridge-rpc.${format === "cjs" ? "cjs" : "mjs"}`,
-            name: "BridgeRpc",
+                `orcs-api-test.${format === "cjs" ? "cjs" : "mjs"}`,
+            name: "OrcsApiTest",
         },
     },
 } satisfies UserConfig);
