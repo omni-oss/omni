@@ -33,7 +33,7 @@ pub async fn add_many<'a>(
             .expect("should have value");
 
         add_one(
-            &template_file,
+            &stripped_path,
             config.base_path.as_deref(),
             |ctx| tera.render(&stripped_path.to_string_lossy(), ctx),
             &config.base.common,
