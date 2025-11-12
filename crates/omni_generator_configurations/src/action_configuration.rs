@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use derive_new::new;
 use garde::Validate;
+use maps::UnorderedMap;
 use omni_serde_validators::tera_expr::{
     option_validate_tera_expr, validate_tera_expr,
 };
@@ -153,11 +154,84 @@ pub struct AddManyActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
-pub struct RunGenerator {
+pub struct RunGeneratorConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
 
+    #[serde(alias = "gen")]
     pub generator: String,
+
+    #[serde(default)]
+    pub prompt_values: PromptValuesConfiguration,
+}
+
+#[derive(
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
+)]
+#[garde(allow_unvalidated)]
+pub struct PromptValuesConfiguration {
+    #[serde(default)]
+    pub forward: ForwardPromptValuesConfiguration,
+    #[serde(default)]
+    pub values: UnorderedMap<String, PromptValue>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+#[serde(untagged)]
+pub enum PromptValue {
+    Integer(i64),
+    Float(f64),
+    Boolean(bool),
+    String(String),
+    List(Vec<PromptValue>),
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+#[serde(untagged)]
+pub enum ForwardPromptValuesConfiguration {
+    ForAll(ForAllPromptValuesConfiguration),
+    Selected(Vec<String>),
+}
+
+impl Default for ForwardPromptValuesConfiguration {
+    fn default() -> Self {
+        ForwardPromptValuesConfiguration::ForAll(
+            ForAllPromptValuesConfiguration::None,
+        )
+    }
+}
+
+#[derive(
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Validate,
+    new,
+    Default,
+)]
+#[serde(rename_all = "kebab-case")]
+#[garde(allow_unvalidated)]
+pub enum ForAllPromptValuesConfiguration {
+    All,
+    #[default]
+    None,
 }
 
 #[derive(
@@ -198,11 +272,10 @@ pub enum ActionConfiguration {
     },
 
     /// Run a generator
-    #[serde(skip)]
     #[strum_discriminants(strum(serialize = "run-generator"))]
     RunGenerator {
         #[serde(flatten)]
-        action: RunGenerator,
+        action: RunGeneratorConfiguration,
     },
 }
 

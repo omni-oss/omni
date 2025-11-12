@@ -1,7 +1,6 @@
 use super::add_commons::add_one;
 use omni_discovery::Discovery;
 use omni_generator_configurations::AddManyActionConfiguration;
-use tera::Tera;
 
 use crate::{GeneratorSys, action_handlers::HandlerContext, error::Error};
 
@@ -26,7 +25,7 @@ pub async fn add_many<'a>(
 
     let generator_dir = format!("{}/**", ctx.generator_dir.display());
 
-    let tera = Tera::new(&generator_dir)?;
+    let tera = omni_tera::new(&generator_dir)?;
 
     for template_file in templates.iter() {
         let stripped_path = template_file
@@ -35,7 +34,7 @@ pub async fn add_many<'a>(
 
         add_one(
             &template_file,
-            None,
+            config.base_path.as_deref(),
             |ctx| tera.render(&stripped_path.to_string_lossy(), ctx),
             &config.base.common,
             ctx,

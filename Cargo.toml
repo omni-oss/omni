@@ -176,6 +176,7 @@ omni_serde_validators = { path = "./crates/omni_serde_validators" }
 omni_configuration_discovery = { path = "./crates/omni_configuration_discovery" }
 omni_discovery = { path = "./crates/omni_discovery" }
 omni_discovery_utils = { path = "./crates/omni_discovery_utils" }
+omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.6", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.2" }
 tower-http = { version = "^0.6.6", features = ["trace", "catch-panic"] }
@@ -219,6 +220,7 @@ git2 = { version = "^0.20.2" }
 requestty = { version = "^0.6.1", features = ["crossterm", "smallvec", "macros"] }
 value-bag = { version = "^1.11.1", features = ["serde", "error", "seq", "owned"] }
 serde_validate = { path = "./crates/serde_validate" }
+heck = { version = "^0.5.0" }
 # nom = { version = "^8.0.0" }
 
 [profile.release]

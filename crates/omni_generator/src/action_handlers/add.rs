@@ -22,7 +22,13 @@ pub async fn add<'a>(
     add_one(
         &config.template_file,
         config.base_path.as_deref(),
-        |ctx| tera::Tera::one_off(&template_string, ctx, false),
+        |ctx| {
+            omni_tera::one_off(
+                &template_string,
+                config.template_file.to_string_lossy().as_ref(),
+                ctx,
+            )
+        },
         &config.base.common,
         ctx,
         sys,

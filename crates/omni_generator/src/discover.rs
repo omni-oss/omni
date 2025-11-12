@@ -6,9 +6,9 @@ use tokio::task::JoinSet;
 
 use crate::{GeneratorSys, error::Error};
 
-pub async fn discover(
+pub async fn discover<G: AsRef<str>>(
     root_dir: &Path,
-    glob_patterns: &[String],
+    glob_patterns: &[G],
     sys: &impl GeneratorSys,
 ) -> Result<Vec<GeneratorConfiguration>, Error> {
     let config_file_names = [

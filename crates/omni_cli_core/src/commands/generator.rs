@@ -6,9 +6,7 @@ use maps::{UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::RunConfig;
-use omni_generator_configurations::{
-    GeneratorConfiguration, OverwriteConfiguration,
-};
+use omni_generator_configurations::OverwriteConfiguration;
 use omni_prompt::configuration::{
     BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
     PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
@@ -56,10 +54,10 @@ pub struct GeneratorRunArgs {
     #[arg(
         long,
         short,
-        help = "Prefill answers to prompts",
+        help = "Prefill values to prompts",
         value_parser = parse_key_value::<String, String>
     )]
-    pub answer: Vec<(String, String)>,
+    pub value: Vec<(String, String)>,
 
     #[arg(
         long,
@@ -107,30 +105,6 @@ async fn run_generator_run(
     command: &GeneratorRunCommand,
     ctx: &Context,
 ) -> eyre::Result<()> {
-    let generators = omni_generator::discover(
-        ctx.root_dir(),
-        &ctx.workspace_configuration().generators,
-        ctx.sys(),
-    )
-    .await?;
-
-    omni_generator::validate(&generators)?;
-
-    let generator_name = if let Some(name) = command.args.name.clone() {
-        name
-    } else {
-        prompt_generator_name(&generators)?
-    };
-
-    let generator = generators
-        .iter()
-        .find(|g| g.name == generator_name)
-        .ok_or_else(|| {
-            eyre::eyre!("generator '{}' not found", generator_name)
-        })?;
-
-    trace::trace!("Generator: {:#?}", generator);
-
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
@@ -164,7 +138,7 @@ async fn run_generator_run(
         output_dir: output_dir.as_path(),
         overwrite: command.args.overwrite.map(|o| o.value()),
     };
-    let pre_exec_values = get_pre_exec_values(&command.args.answer);
+    let pre_exec_values = get_prompt_values(&command.args.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
 
     let mut context_values = unordered_map!();
@@ -184,7 +158,9 @@ async fn run_generator_run(
     }
 
     omni_generator::run(
-        &generator,
+        command.args.name.as_deref(),
+        ctx.root_dir(),
+        &ctx.workspace_configuration().generators,
         &pre_exec_values,
         &context_values,
         &run,
@@ -195,7 +171,7 @@ async fn run_generator_run(
     Ok(())
 }
 
-fn get_pre_exec_values(
+fn get_prompt_values(
     values: &[(String, String)],
 ) -> UnorderedMap<String, OwnedValueBag> {
     UnorderedMap::from_iter(
@@ -315,49 +291,6 @@ fn prompt_output_dir(
             "invalid value for output_dir_or_project: {value}"
         ))
     }
-}
-
-fn prompt_generator_name(
-    generators: &[GeneratorConfiguration],
-) -> eyre::Result<String> {
-    let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
-
-    let prompt =
-        PromptConfiguration::new_select(SelectPromptConfiguration::new(
-            BasePromptConfiguration::new(
-                "generator_name",
-                "Select generator",
-                None,
-            ),
-            generators
-                .iter()
-                .map(|g| {
-                    OptionConfiguration::new(
-                        g.display_name.as_deref().unwrap_or(&g.name.as_str()),
-                        g.description.clone(),
-                        g.name.clone(),
-                        false,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            Some("generator_name".to_string()),
-        ));
-
-    let value = omni_prompt::prompt_one(
-        &prompt,
-        None,
-        &context_values,
-        &prompting_config,
-    )?
-    .expect("should have value at this point");
-
-    let value = value
-        .by_ref()
-        .to_str()
-        .ok_or_else(|| eyre::eyre!("value is not a string"))?;
-
-    Ok(value.to_string())
 }
 
 async fn run_generator_list(

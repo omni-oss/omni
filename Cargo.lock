@@ -4500,8 +4500,10 @@ dependencies = [
  "omni_file_data_serde",
  "omni_generator_configurations",
  "omni_prompt",
+ "omni_tera",
  "path-clean",
  "requestty",
+ "serde_json",
  "sets",
  "strum 0.27.2",
  "system_traits",
@@ -4542,6 +4544,7 @@ dependencies = [
  "toml 0.9.8",
  "trace",
  "tracing",
+ "value-bag",
 ]
 
 [[package]]
@@ -4618,6 +4621,7 @@ dependencies = [
  "garde",
  "maps",
  "omni_serde_validators",
+ "omni_tera",
  "requestty",
  "schemars",
  "serde",
@@ -4846,6 +4850,21 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio 1.48.0",
  "tokio-util",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_tera"
+version = "0.0.0-semantically-released"
+dependencies = [
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "heck",
+ "strum 0.27.2",
+ "tera",
+ "thiserror 2.0.17",
  "trace",
  "tracing",
 ]

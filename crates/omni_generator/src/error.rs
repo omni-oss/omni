@@ -30,6 +30,9 @@ pub(crate) enum ErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 
+    #[error("generator '{name}' not found")]
+    GeneratorNotFound { name: String },
+
     #[error(transparent)]
     LoadConfig(#[from] omni_file_data_serde::Error),
 
@@ -95,4 +98,7 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     FromUtf8(#[from] std::string::FromUtf8Error),
+
+    #[error(transparent)]
+    SerdeJson(#[from] serde_json::Error),
 }
