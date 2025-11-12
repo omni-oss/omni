@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import type { PageTree } from "fumadocs-core/server";
+import type * as PageTree from "fumadocs-core/page-tree";
 import { createClientLoader } from "fumadocs-mdx/runtime/vite";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import defaultMdxComponents from "fumadocs-ui/mdx";
@@ -13,7 +13,7 @@ import {
 import { useMemo } from "react";
 import { baseOptions } from "@/lib/layout.shared";
 import { source } from "@/lib/source";
-import { docs } from "../../../source.generated";
+import { docs } from "../../../.source/index";
 
 export const Route = createFileRoute("/docs/$")({
     component: Page,
@@ -27,9 +27,9 @@ export const Route = createFileRoute("/docs/$")({
 // a wrapper because we don't want `loader` to be called on client-side
 const loader = createServerFn({
     method: "GET",
-    type: import.meta.hot ? "dynamic" : "static",
+    // type: import.meta.hot ? "dynamic" : "static",
 })
-    .validator((slugs: string[]) => slugs)
+    .inputValidator((slugs: string[]) => slugs)
     .handler(async ({ data: slugs }) => {
         const page = source.getPage(slugs);
         if (!page) throw notFound();

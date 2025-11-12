@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
 import mdx from "fumadocs-mdx/vite";
+import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 
@@ -16,8 +17,6 @@ export default defineConfig({
             projects: ["./tsconfig.json"],
         }),
         tanstackStart({
-            target: "vercel",
-            customViteReactPlugin: true,
             sitemap: {
                 host: "https://omni-oss.vercel.app",
                 enabled: true,
@@ -28,6 +27,7 @@ export default defineConfig({
                 autoSubfolderIndex: true,
             },
         }),
+        nitro({ preset: "vercel" }),
         react(),
     ],
 });
