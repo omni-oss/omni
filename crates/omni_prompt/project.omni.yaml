@@ -6,7 +6,7 @@ extends:
 
 dependencies:
   - omni_serde_validators
-  - omni_prompt
+  - omni_tera
   - maps
   - sets
   - system_traits
