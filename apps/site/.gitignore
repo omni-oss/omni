@@ -6,6 +6,7 @@ node_modules
 .output
 .nitro
 /build/
+.source
 
 content/docs/references/commands/omni
 
