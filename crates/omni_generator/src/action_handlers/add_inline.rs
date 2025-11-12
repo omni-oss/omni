@@ -14,7 +14,13 @@ pub async fn add_inline<'a>(
     add_one(
         &config.output_path,
         None,
-        |ctx| tera::Tera::one_off(&config.template, ctx, false),
+        |ctx| {
+            omni_tera::one_off(
+                &config.template,
+                config.output_path.to_string_lossy().as_ref(),
+                ctx,
+            )
+        },
         &config.base.common,
         ctx,
         sys,

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../.artifacts/generator.json
+name: rust-error
+display_name: Rust Error
+description: Generate a new error type
+
+prompts:
+  - type: text
+    name: error_name
+    message: Error Name
+
+actions:
+  - type: add
+    base_path: templates
+    template_file: templates/{{ prompts.error_name }}.rs.tpl

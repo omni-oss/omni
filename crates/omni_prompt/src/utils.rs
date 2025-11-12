@@ -13,14 +13,21 @@ pub fn validate_value(
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
 ) -> Result<(), Error> {
-    for validator in validators {
+    for (index, validator) in validators.iter().enumerate() {
         let mut ctx = context_values.clone();
         ctx.insert(value_name.unwrap_or("value"), value);
 
         let is_error = match &validator.condition {
             Left(l) => !*l,
             Right(r) => {
-                let tera_result = tera::Tera::one_off(&r, &ctx, true)?;
+                let tera_result = omni_tera::one_off(
+                    &r,
+                    &format!(
+                        "condition for prompt {} at index {}",
+                        prompt_name, index
+                    ),
+                    &ctx,
+                )?;
                 let tera_result = tera_result.trim();
 
                 validate_boolean_expression_result(&tera_result, &r)?;

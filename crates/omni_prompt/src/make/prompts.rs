@@ -30,7 +30,7 @@ pub fn confirm<'a>(
         Question::confirm(name).message(prompt.base.message.as_str());
 
     Ok(if let Some(default_value) = default_value {
-        question.default(try_parse_or_expand(
+        question.default(try_parse_or_expand_default_value(
             name,
             "bool",
             &default_value,
@@ -86,7 +86,7 @@ pub fn text<'a>(
     let default_value = prompt
         .default
         .as_deref()
-        .map(|v| expand(v, context_values))
+        .map(|v| expand_default_value(v, name, context_values))
         .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
@@ -102,14 +102,15 @@ pub fn select<'a>(
     context_values: &'a tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
+    let name = prompt.base.name.as_str();
     let default_value = prompt
         .default
         .as_deref()
-        .map(|v| expand(v, context_values))
+        .map(|v| expand_default_value(v, name, context_values))
         .transpose()?;
 
-    let mut question = Question::select(prompt.base.name.as_str())
-        .message(prompt.base.message.as_str());
+    let mut question =
+        Question::select(name).message(prompt.base.message.as_str());
 
     for option in prompt.options.iter() {
         let text = get_option_text(option);
@@ -140,7 +141,7 @@ pub fn multi_select<'a>(
     let default_values = if let Some(default_values) = &prompt.default {
         let mut values = unordered_set!();
         for option in default_values {
-            values.insert(expand(option, context_values)?);
+            values.insert(expand_default_value(option, name, context_values)?);
         }
         Some(values)
     } else {
@@ -229,7 +230,14 @@ pub fn float_number<'a>(
     let default_value = prompt
         .default
         .as_ref()
-        .map(|v| try_parse_or_expand::<f64>(name, "float", v, context_values))
+        .map(|v| {
+            try_parse_or_expand_default_value::<f64>(
+                name,
+                "float",
+                v,
+                context_values,
+            )
+        })
         .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
@@ -259,7 +267,14 @@ pub fn integer_number<'a>(
     let default_value = prompt
         .default
         .as_ref()
-        .map(|v| try_parse_or_expand::<i64>(name, "integer", v, context_values))
+        .map(|v| {
+            try_parse_or_expand_default_value::<i64>(
+                name,
+                "integer",
+                v,
+                context_values,
+            )
+        })
         .transpose()?;
 
     Ok(if let Some(default_value) = default_value {
@@ -270,7 +285,7 @@ pub fn integer_number<'a>(
     .build())
 }
 
-fn try_parse_or_expand<T: FromStr + Clone>(
+fn try_parse_or_expand_default_value<T: FromStr + Clone>(
     prompt_name: &str,
     expected_type: &str,
     value: &Either<T, String>,
@@ -282,8 +297,11 @@ fn try_parse_or_expand<T: FromStr + Clone>(
             if let Ok(value) = value.parse::<T>() {
                 Ok(value)
             } else {
-                let expanded =
-                    tera::Tera::one_off(&value, context_values, false)?;
+                let expanded = omni_tera::one_off(
+                    &value,
+                    &format!("default value for prompt {}", prompt_name),
+                    context_values,
+                )?;
                 let parsed = expanded.as_str().parse::<T>();
 
                 if let Ok(value) = parsed {
@@ -303,11 +321,16 @@ fn try_parse_or_expand<T: FromStr + Clone>(
     }
 }
 
-fn expand(
+fn expand_default_value(
     template: &str,
+    name: &str,
     context_values: &tera::Context,
 ) -> Result<String, Error> {
-    let expanded = tera::Tera::one_off(template, context_values, false)?;
+    let expanded = omni_tera::one_off(
+        template,
+        &format!("default value for prompt {}", name),
+        context_values,
+    )?;
     Ok(expanded)
 }
 

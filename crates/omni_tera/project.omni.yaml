@@ -1,12 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omni_prompt
-
+name: omni_tera
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
-
 dependencies:
-  - omni_serde_validators
-  - omni_prompt
-  - maps
-  - sets
-  - system_traits
+  - trace

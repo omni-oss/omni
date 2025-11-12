@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use maps::UnorderedMap;
-use omni_generator_configurations::OverwriteConfiguration;
+use omni_generator_configurations::{
+    GeneratorConfiguration, OverwriteConfiguration,
+};
 use value_bag::OwnedValueBag;
 
 #[derive(Debug, Clone, Copy)]
@@ -15,4 +17,5 @@ pub struct HandlerContext<'a> {
     pub generator_targets: &'a UnorderedMap<String, PathBuf>,
     pub project_targets: &'a UnorderedMap<String, PathBuf>,
     pub overwrite: Option<OverwriteConfiguration>,
+    pub available_generators: &'a [GeneratorConfiguration],
 }

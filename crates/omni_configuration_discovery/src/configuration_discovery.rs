@@ -13,12 +13,12 @@ use omni_discovery_utils::glob::GlobMatcher;
 use crate::error::{Error, ErrorInner};
 
 #[derive(Debug, Clone, new)]
-pub struct ConfigurationDiscovery<'a> {
+pub struct ConfigurationDiscovery<'a, G: AsRef<str>> {
     #[new(into)]
     root_dir: &'a Path,
 
     #[new(into)]
-    glob_patterns: &'a [String],
+    glob_patterns: &'a [G],
 
     #[new(into)]
     config_files: &'a [String],
@@ -30,7 +30,7 @@ pub struct ConfigurationDiscovery<'a> {
     config_name: &'a str,
 }
 
-impl<'a> ConfigurationDiscovery<'a> {
+impl<'a, G: AsRef<str>> ConfigurationDiscovery<'a, G> {
     fn create_default_dir_walker(
         &self,
     ) -> Result<impl DirWalker + 'static, Error> {

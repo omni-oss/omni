@@ -29,14 +29,26 @@ prompts:
           Crate name must only contain alphanumeric characters, underscores, and hyphens,
           and must start with a letter
 
+  - type: confirm
+    name: add_error_type
+    message: Add error type
+    default: true
+
 actions:
   - type: add-many
-    base_path: files
+    base_path: templates
     template_files:
-      - files/**
-      - "!files/src/main.rs.tpl"
+      - templates/**
+      - "!templates/src/main.rs.tpl"
 
   - if: "{{ prompts.crate_type == 'bin' }}"
     type: add
-    template_file: files/src/main.rs.tpl
-    base_path: files
+    template_file: templates/src/main.rs.tpl
+    base_path: templates
+
+  - if: "{{ prompts.add_error_type }}"
+    type: run-generator
+    generator: rust-error
+    prompt_values:
+      forward:
+        - crate_name

@@ -33,10 +33,10 @@ where
     )
     .await?;
 
-    let expanded_output = tera::Tera::one_off(
+    let expanded_output = omni_tera::one_off(
         &output_path.to_string_lossy(),
+        "output_path",
         ctx.tera_context_values,
-        false,
     )?;
 
     let output_path = Path::new(&expanded_output);

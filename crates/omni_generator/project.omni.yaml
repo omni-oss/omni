@@ -10,6 +10,7 @@ dependencies:
   - omni_prompt
   - omni_configuration_discovery
   - omni_discovery
+  - omni_tera
   - dir_walker
   - system_traits
   - maps

@@ -3,14 +3,16 @@ use std::path::{Path, PathBuf};
 use derive_new::new;
 use maps::UnorderedMap;
 use omni_generator_configurations::{
-    ActionConfiguration, OverwriteConfiguration,
+    ActionConfiguration, GeneratorConfiguration, OverwriteConfiguration,
 };
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
 use crate::{
     GeneratorSys,
-    action_handlers::{HandlerContext, add, add_inline, add_many},
+    action_handlers::{
+        HandlerContext, add, add_inline, add_many, run_generator,
+    },
     error::{Error, ErrorInner},
     utils::get_tera_context,
 };
@@ -24,6 +26,7 @@ pub struct ExecuteActionsArgs<'a> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub targets: &'a UnorderedMap<String, PathBuf>,
     pub overwrite: Option<OverwriteConfiguration>,
+    pub available_generators: &'a [GeneratorConfiguration],
 }
 
 pub async fn execute_actions<'a>(
@@ -35,7 +38,7 @@ pub async fn execute_actions<'a>(
     for (index, action) in args.actions.iter().enumerate() {
         let action_name = get_action_name(index, action, &tera_context)?;
 
-        if skip(action, &tera_context)? {
+        if skip(&action_name, action, &tera_context)? {
             trace::info!("Action {}: Skipped", &action_name);
             continue;
         }
@@ -49,10 +52,11 @@ pub async fn execute_actions<'a>(
             project_targets: args.targets,
             generator_dir: args.generator_dir,
             overwrite: args.overwrite,
+            available_generators: args.available_generators,
         };
 
         let in_progress_message =
-            get_in_progress_message(action, &tera_context)?;
+            get_in_progress_message(&action_name, action, &tera_context)?;
 
         trace::info!("Action {}: {}", &action_name, in_progress_message);
 
@@ -67,18 +71,20 @@ pub async fn execute_actions<'a>(
                 add_many(action, &handler_context, sys).await
             }
             ActionConfiguration::RunGenerator { action } => {
-                todo!("run generator {action:?}")
+                run_generator(action, &handler_context, sys).await
             }
         };
 
         if let Err(e) = result {
-            let error_message = get_error_message(&e, action, &tera_context)?;
+            let error_message =
+                get_error_message(&action_name, &e, action, &tera_context)?;
 
             trace::error!("Action {}: {}", &action_name, error_message);
 
             return Err(e);
         } else {
-            let success_message = get_success_message(action, &tera_context)?;
+            let success_message =
+                get_success_message(&action_name, action, &tera_context)?;
 
             trace::info!("Action {}: {}", &action_name, success_message);
         }
@@ -88,13 +94,18 @@ pub async fn execute_actions<'a>(
 }
 
 fn skip(
+    name: &str,
     action: &ActionConfiguration,
     tera_context: &tera::Context,
 ) -> Result<bool, Error> {
     let if_expr = get_if_expr(action);
 
     if let Some(if_expr) = if_expr {
-        let result = tera::Tera::one_off(if_expr, tera_context, false)?;
+        let result = omni_tera::one_off(
+            if_expr,
+            &format!("if condition for action {}: {}", name, if_expr),
+            tera_context,
+        )?;
         let result = result.trim();
         validate_bool_result(result, if_expr, "if")?;
 
@@ -137,14 +148,16 @@ fn validate_bool_result(
 
 fn render_text(
     message: &str,
+    name: &str,
     tera_context: &tera::Context,
 ) -> Result<String, Error> {
-    let result = tera::Tera::one_off(message, tera_context, false)?;
+    let result = omni_tera::one_off(message, name, tera_context)?;
 
     Ok(result)
 }
 
 fn get_error_message(
+    action_name: &str,
     error: &Error,
     action: &ActionConfiguration,
     tera_context: &tera::Context,
@@ -168,7 +181,11 @@ fn get_error_message(
         let mut error_ctx = tera_context.clone();
         error_ctx.insert("error", &error.to_string());
 
-        render_text(message, &error_ctx)
+        render_text(
+            message,
+            &format!("error_message for action {}", action_name),
+            &error_ctx,
+        )
     } else {
         Ok(format!(
             "Encountered an error while executing action: {}",
@@ -178,6 +195,7 @@ fn get_error_message(
 }
 
 fn get_in_progress_message(
+    action_name: &str,
     action: &ActionConfiguration,
     tera_context: &tera::Context,
 ) -> Result<String, Error> {
@@ -197,13 +215,18 @@ fn get_in_progress_message(
     };
 
     if let Some(message) = message {
-        render_text(message, tera_context)
+        render_text(
+            message,
+            &&format!("in_progress_message for action {}", action_name),
+            tera_context,
+        )
     } else {
         Ok("Executing action...".to_string())
     }
 }
 
 fn get_success_message(
+    action_name: &str,
     action: &ActionConfiguration,
     tera_context: &tera::Context,
 ) -> Result<String, Error> {
@@ -223,7 +246,11 @@ fn get_success_message(
     };
 
     if let Some(message) = message {
-        render_text(message, tera_context)
+        render_text(
+            message,
+            &format!("success_message for action {}", action_name),
+            tera_context,
+        )
     } else {
         Ok("Executed action successfully".to_string())
     }
@@ -248,7 +275,7 @@ fn get_action_name(
     };
 
     if let Some(name) = name {
-        render_text(name, tera_context)
+        render_text(name, &format!("name for action#{}", index), tera_context)
     } else {
         let action_type = action.discriminant();
         Ok(format!("#{}-{}", index + 1, action_type))
