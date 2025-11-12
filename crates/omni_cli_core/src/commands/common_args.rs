@@ -141,7 +141,10 @@ impl RunArgs {
         }
 
         builder.dry_run(self.dry_run);
-        builder.max_retries(self.retry.unwrap_or(0));
+
+        if let Some(retry) = self.retry {
+            builder.max_retries(retry);
+        }
 
         if let Some(retry_interval) = self.retry_interval {
             builder.retry_interval(retry_interval);
