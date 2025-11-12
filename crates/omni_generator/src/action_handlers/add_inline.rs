@@ -22,6 +22,7 @@ pub async fn add_inline<'a>(
             )
         },
         &config.base.common,
+        false,
         ctx,
         sys,
     )

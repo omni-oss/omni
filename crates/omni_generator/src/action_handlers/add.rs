@@ -30,6 +30,7 @@ pub async fn add<'a>(
             )
         },
         &config.base.common,
+        config.flatten,
         ctx,
         sys,
     )
