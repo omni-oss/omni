@@ -355,6 +355,44 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_output_path_with_flatten() {
+        let output_dir = PathBuf::from(if cfg!(windows) {
+            "D:\\output"
+        } else {
+            "/output"
+        });
+        let target = Some(PathBuf::from("target"));
+        let base_path = PathBuf::from(if cfg!(windows) {
+            "D:\\template\\files"
+        } else {
+            "/template/files"
+        });
+        let template_path = PathBuf::from(if cfg!(windows) {
+            "D:\\template\\files\\file\\file.txt"
+        } else {
+            "/template/files/file/file.txt"
+        });
+
+        let resolved_path = resolve_output_path(
+            &output_dir,
+            target.as_deref(),
+            &base_path,
+            &template_path,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolved_path,
+            PathBuf::from(if cfg!(windows) {
+                "D:\\output\\target\\file.txt"
+            } else {
+                "/output/target/file.txt"
+            })
+        );
+    }
+
+    #[test]
     fn test_strip_extensions() {
         assert_eq!(
             strip_extensions(Path::new("file.txt"), &["txt"]),
