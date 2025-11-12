@@ -25,6 +25,7 @@ pub fn resolve_output_path(
     target: Option<&Path>,
     base_path: &Path,
     template_path: &Path,
+    flatten: bool,
 ) -> Result<PathBuf, ResolveOutputPathError> {
     if let Some(target) = target {
         validate_target(output_dir, target)?;
@@ -37,6 +38,12 @@ pub fn resolve_output_path(
     };
     let base_path = clean(base_path);
     let template_path = clean(template_path);
+
+    let template_path = if flatten {
+        Path::new(template_path.file_name().expect("should have file name"))
+    } else {
+        &template_path
+    };
 
     Ok(if template_path.starts_with(&base_path) {
         output_dir.join(
@@ -272,6 +279,7 @@ pub async fn get_output_path<'a>(
     base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a>,
     strip_extensions: &'a [&'a str],
+    flatten: bool,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
@@ -293,6 +301,7 @@ pub async fn get_output_path<'a>(
         target.as_deref(),
         base_path.unwrap_or(ctx.generator_dir),
         &expected_output_path,
+        flatten,
     )?;
 
     Ok(if !strip_extensions.is_empty() {
@@ -331,6 +340,7 @@ mod tests {
             target.as_deref(),
             &base_path,
             &template_path,
+            false,
         )
         .unwrap();
 

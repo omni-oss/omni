@@ -16,6 +16,7 @@ pub async fn add_one<'a, TRender, TSys>(
     base_path: Option<&'a Path>,
     render: TRender,
     common: &CommonAddConfiguration,
+    flatten: bool,
     ctx: &HandlerContext<'a>,
     sys: &'a TSys,
 ) -> Result<(), Error>
@@ -29,6 +30,7 @@ where
         base_path,
         ctx,
         &["tpl"],
+        flatten,
         sys,
     )
     .await?;
