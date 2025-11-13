@@ -273,12 +273,12 @@ pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
     Cow::Borrowed(path)
 }
 
-pub async fn get_output_path<'a>(
+pub async fn get_output_path<'a, TExt: AsRef<str>>(
     target_name: Option<&'a str>,
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a>,
-    strip_extensions: &'a [&'a str],
+    strip_extensions: &'a [TExt],
     flatten: bool,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
