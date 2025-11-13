@@ -51,7 +51,7 @@ pub async fn discover<G: AsRef<str>>(
         });
     }
 
-    let mut configs = vec![];
+    let mut configs = Vec::with_capacity(results.len());
 
     for result in results.join_all().await {
         configs.push(result?);
