@@ -62,6 +62,14 @@ pub struct GeneratorRunArgs {
     #[arg(
         long,
         short,
+        help = "Override target paths",
+        value_parser = parse_key_value::<String, PathBuf>
+    )]
+    pub target: Vec<(String, PathBuf)>,
+
+    #[arg(
+        long,
+        short,
         help = "Dry run",
         default_value_t = false,
         action = clap::ArgAction::SetTrue
@@ -157,10 +165,13 @@ async fn run_generator_run(
         );
     }
 
+    let target_overrides = get_target_overrides(&command.args.target);
+
     omni_generator::run(
         command.args.name.as_deref(),
         ctx.root_dir(),
         &ctx.workspace_configuration().generators,
+        &target_overrides,
         &pre_exec_values,
         &context_values,
         &run,
@@ -178,6 +189,14 @@ fn get_prompt_values(
         values.iter().map(|(k, v)| {
             (k.to_string(), ValueBag::capture_serde1(v).to_owned())
         }),
+    )
+}
+
+fn get_target_overrides(
+    target: &[(String, PathBuf)],
+) -> UnorderedMap<String, PathBuf> {
+    UnorderedMap::from_iter(
+        target.iter().map(|(k, v)| (k.to_string(), v.clone())),
     )
 }
 

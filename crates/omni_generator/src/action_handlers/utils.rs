@@ -184,12 +184,12 @@ pub async fn overwrite(
 
 pub async fn get_target<'a>(
     target_name: &str,
-    project_targets: &'a UnorderedMap<String, PathBuf>,
+    target_overrides: &'a UnorderedMap<String, PathBuf>,
     generator_targets: &'a UnorderedMap<String, PathBuf>,
     output_dir: &Path,
     _sys: &impl GeneratorSys,
 ) -> Result<Cow<'a, Path>, Error> {
-    let target = project_targets
+    let target = target_overrides
         .get(target_name)
         .or_else(|| generator_targets.get(target_name));
 
@@ -286,7 +286,7 @@ pub async fn get_output_path<'a>(
         Some(
             get_target(
                 target_name,
-                &ctx.project_targets,
+                &ctx.target_overrides,
                 &ctx.generator_targets,
                 ctx.output_dir,
                 sys,

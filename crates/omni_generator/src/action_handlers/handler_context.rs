@@ -15,7 +15,7 @@ pub struct HandlerContext<'a> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub tera_context_values: &'a tera::Context,
     pub generator_targets: &'a UnorderedMap<String, PathBuf>,
-    pub project_targets: &'a UnorderedMap<String, PathBuf>,
+    pub target_overrides: &'a UnorderedMap<String, PathBuf>,
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [GeneratorConfiguration],
 }
