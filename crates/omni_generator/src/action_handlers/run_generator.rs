@@ -42,6 +42,7 @@ pub async fn run_generator<'a>(
     Box::pin(run_internal(
         generator,
         ctx.available_generators,
+        ctx.target_overrides,
         prompt_values.as_ref(),
         &ctx.context_values,
         &run_config,

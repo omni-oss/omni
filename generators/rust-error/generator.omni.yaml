@@ -8,7 +8,11 @@ prompts:
     name: error_name
     message: Error Name
 
+targets:
+  root: .
+
 actions:
   - type: add
     base_path: templates
+    target: root
     template_file: templates/{{ prompts.error_name }}.rs.tpl

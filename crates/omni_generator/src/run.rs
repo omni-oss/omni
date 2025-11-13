@@ -1,4 +1,7 @@
-use std::{borrow::Cow, path::Path};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
 
 use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
@@ -30,6 +33,7 @@ pub async fn run<'a>(
     generator_name: Option<&'a str>,
     root_dir: &'a Path,
     generator_patterns: &'a [String],
+    target_overrides: &UnorderedMap<String, PathBuf>,
     prompt_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
@@ -57,6 +61,7 @@ pub async fn run<'a>(
         run_internal(
             &generator,
             &generators,
+            target_overrides,
             prompt_values,
             context_values,
             config,
@@ -67,6 +72,7 @@ pub async fn run<'a>(
         run_internal(
             &generator,
             &generators,
+            target_overrides,
             prompt_values,
             context_values,
             config,
@@ -81,6 +87,7 @@ pub async fn run<'a>(
 pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     available_generators: &[GeneratorConfiguration],
+    target_overrides: &UnorderedMap<String, PathBuf>,
     prompt_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
@@ -130,6 +137,7 @@ pub(crate) async fn run_internal<'a>(
         targets: &r#gen.targets,
         overwrite: config.overwrite,
         available_generators,
+        target_overrides,
     };
 
     execute_actions(&args, sys).await?;

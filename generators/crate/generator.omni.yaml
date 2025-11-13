@@ -34,16 +34,21 @@ prompts:
     message: Add error type
     default: true
 
+targets:
+  root: .
+
 actions:
   - type: add-many
     base_path: templates
     flatten: true
+    target: root
     template_files:
       - templates/**
       - "!templates/src/main.rs.tpl"
 
   - if: "{{ prompts.crate_type == 'bin' }}"
     type: add
+    target: root
     template_file: templates/src/main.rs.tpl
     base_path: templates
 

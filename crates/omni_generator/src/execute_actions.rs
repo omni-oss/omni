@@ -25,6 +25,7 @@ pub struct ExecuteActionsArgs<'a> {
     pub actions: &'a [ActionConfiguration],
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub targets: &'a UnorderedMap<String, PathBuf>,
+    pub target_overrides: &'a UnorderedMap<String, PathBuf>,
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [GeneratorConfiguration],
 }
@@ -49,7 +50,7 @@ pub async fn execute_actions<'a>(
             dry_run: args.dry_run,
             output_dir: args.output_dir,
             generator_targets: args.targets,
-            project_targets: args.targets,
+            target_overrides: args.target_overrides,
             generator_dir: args.generator_dir,
             overwrite: args.overwrite,
             available_generators: args.available_generators,
