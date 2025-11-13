@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::LazyLock};
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_generator_configurations::GeneratorConfiguration;
@@ -6,25 +6,28 @@ use tokio::task::JoinSet;
 
 use crate::{GeneratorSys, error::Error};
 
+static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    vec![
+        "generator.omni.yaml".to_string(),
+        "generator.omni.yml".to_string(),
+        "generator.omni.json".to_string(),
+        "generator.omni.toml".to_string(),
+    ]
+});
+
+static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
+    LazyLock::new(|| vec![".omnignore".to_string()]);
+
 pub async fn discover<G: AsRef<str>>(
     root_dir: &Path,
     glob_patterns: &[G],
     sys: &impl GeneratorSys,
 ) -> Result<Vec<GeneratorConfiguration>, Error> {
-    let config_file_names = [
-        "generator.omni.yaml".to_string(),
-        "generator.omni.yml".to_string(),
-        "generator.omni.json".to_string(),
-        "generator.omni.toml".to_string(),
-    ];
-
-    let ignore_filenames = [".omniignore".to_string()];
-
     let discovery = ConfigurationDiscovery::new(
         root_dir,
         glob_patterns,
-        config_file_names.as_slice(),
-        ignore_filenames.as_slice(),
+        CONFIG_FILE_NAMES.as_slice(),
+        IGNORE_FILE_NAMES.as_slice(),
         "generator",
     );
 
