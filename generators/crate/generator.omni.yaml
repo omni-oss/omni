@@ -56,5 +56,4 @@ actions:
     type: run-generator
     generator: rust-error
     prompt_values:
-      forward:
-        - crate_name
+      forward: all

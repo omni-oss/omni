@@ -39,6 +39,8 @@ pub async fn run_generator<'a>(
 
     let prompt_values = resolve_prompt_values(parent_prompts, config, &ctx)?;
 
+    trace::trace!("resolved prompt values: {prompt_values:#?}",);
+
     Box::pin(run_internal(
         generator,
         ctx.available_generators,
