@@ -4,7 +4,7 @@ use std::{
     path::{Path as StdPath, PathBuf},
 };
 
-use enum_map::EnumMap;
+use enum_map::{Enum, EnumArray, EnumMap};
 use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(
@@ -18,6 +18,7 @@ use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
     Ord,
     enum_map::Enum,
     Display,
+    strum::VariantArray,
 )]
 #[strum(serialize_all = "kebab-case")]
 pub enum Root {
@@ -27,14 +28,43 @@ pub enum Root {
 
 pub type RootMap<'a> = EnumMap<Root, &'a StdPath>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
-pub struct OmniPath {
+pub trait OmniPathRoot:
+    Copy
+    + Clone
+    + Display
+    + Enum
+    + PartialEq
+    + strum::VariantArray
+    + for<'a> EnumArray<&'a StdPath>
+{
+}
+
+impl<
+    T: Copy
+        + Clone
+        + Display
+        + Enum
+        + PartialEq
+        + strum::VariantArray
+        + for<'a> EnumArray<&'a StdPath>,
+> OmniPathRoot for T
+{
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct OmniPath<TRoot: OmniPathRoot = Root> {
     path: PathBuf,
-    root: Option<Root>,
+    root: Option<TRoot>,
+}
+
+impl<TRoot: OmniPathRoot> Default for OmniPath<TRoot> {
+    fn default() -> Self {
+        Self::new("")
+    }
 }
 
 #[cfg(feature = "schemars")]
-impl schemars::JsonSchema for OmniPath {
+impl<T: OmniPathRoot> schemars::JsonSchema for OmniPath<T> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "OmniPath".into()
     }
@@ -56,14 +86,16 @@ impl Display for OmniPath {
     }
 }
 
-impl OmniPath {
-    pub fn new_rooted(path: impl Into<PathBuf>, root: Root) -> Self {
+impl<TRoot: OmniPathRoot> OmniPath<TRoot> {
+    #[inline(always)]
+    pub fn new_rooted(path: impl Into<PathBuf>, root: TRoot) -> Self {
         Self {
             path: path.into(),
             root: Some(root),
         }
     }
 
+    #[inline(always)]
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -71,30 +103,22 @@ impl OmniPath {
         }
     }
 
-    pub fn new_ws_rooted(path: impl Into<PathBuf>) -> Self {
-        Self::new_rooted(path, Root::Workspace)
-    }
-
-    pub fn new_project_rooted(path: impl Into<PathBuf>) -> Self {
-        Self::new_rooted(path, Root::Project)
-    }
-
-    pub fn root(&self) -> Option<Root> {
+    #[inline(always)]
+    pub fn root(&self) -> Option<TRoot> {
         self.root
     }
 
-    pub fn is_rooted(&self) -> bool {
+    #[inline(always)]
+    pub fn is_rooted(&self, root: TRoot) -> bool {
+        self.root.is_some() && self.root == Some(root)
+    }
+
+    #[inline(always)]
+    pub fn is_any_rooted(&self) -> bool {
         self.root.is_some()
     }
 
-    pub fn is_ws_rooted(&self) -> bool {
-        self.root.map(|r| r == Root::Workspace).unwrap_or(false)
-    }
-
-    pub fn is_project_rooted(&self) -> bool {
-        self.root.map(|r| r == Root::Project).unwrap_or(false)
-    }
-
+    #[inline(always)]
     pub fn path(&self) -> Result<&StdPath, OmniPathError> {
         if self.root.is_some() {
             Err(OmniPathErrorInner::NotResolved.into())
@@ -103,14 +127,16 @@ impl OmniPath {
         }
     }
 
+    #[inline(always)]
     pub fn unresolved_path(&self) -> &StdPath {
         &self.path
     }
 
     /// Resolves the path relative to the given base
+    #[inline(always)]
     pub fn resolve<'a>(
         &'a self,
-        base: &EnumMap<Root, &StdPath>,
+        base: &EnumMap<TRoot, &StdPath>,
     ) -> Cow<'a, StdPath> {
         if let Some(root) = self.root {
             Cow::Owned(
@@ -122,7 +148,8 @@ impl OmniPath {
         }
     }
 
-    pub fn resolve_in_place(&mut self, base: &EnumMap<Root, &StdPath>) {
+    #[inline(always)]
+    pub fn resolve_in_place(&mut self, base: &EnumMap<TRoot, &StdPath>) {
         if let Some(root) = self.root {
             *self = Self {
                 path: std::path::absolute(base[root].join(&self.path))
@@ -169,17 +196,18 @@ impl From<PathBuf> for OmniPath {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for OmniPath {
+impl<TRoot: OmniPathRoot> serde::Serialize for OmniPath<TRoot> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        if self.is_ws_rooted() {
-            format!("@workspace/{}", self.path.to_string_lossy())
-                .serialize(serializer)
-        } else if self.is_project_rooted() {
-            format!("@project/{}", self.path.to_string_lossy())
-                .serialize(serializer)
+        if self.is_any_rooted() {
+            format!(
+                "@{}/{}",
+                self.root().expect("root should be set"),
+                self.path.to_string_lossy()
+            )
+            .serialize(serializer)
         } else {
             self.path.serialize(serializer)
         }
@@ -187,23 +215,32 @@ impl serde::Serialize for OmniPath {
 }
 
 #[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for OmniPath {
+impl<'de, TRoot: OmniPathRoot> serde::Deserialize<'de> for OmniPath<TRoot> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        if s.starts_with("@workspace/") {
-            Ok(Self::new_ws_rooted(PathBuf::from(
-                s.strip_prefix("@workspace/").unwrap(),
-            )))
-        } else if s.starts_with("@project/") {
-            Ok(Self::new_project_rooted(PathBuf::from(
-                s.strip_prefix("@project/").unwrap(),
-            )))
-        } else {
-            Ok(Self::new(s))
+
+        for root in TRoot::VARIANTS.iter().copied() {
+            if s.starts_with(&format!("@{}/", root)) {
+                return Ok(Self::new_rooted(
+                    PathBuf::from(
+                        s.strip_prefix(&format!("@{}/", root)).unwrap(),
+                    ),
+                    root,
+                ));
+            }
         }
+
+        if s.starts_with("@") {
+            return Err(serde::de::Error::custom(format!(
+                "invalid root: {}",
+                s
+            )));
+        }
+
+        Ok(Self::new(s))
     }
 }
 
@@ -236,28 +273,28 @@ mod tests {
 
     #[test]
     fn test_serialize() {
-        let path = OmniPath::new_ws_rooted("foo");
+        let path = OmniPath::new_rooted("foo", Root::Workspace);
         assert_eq!(
             serde_json::to_string(&path).unwrap(),
             r#""@workspace/foo""#
         );
 
-        let path = OmniPath::new_project_rooted("foo");
+        let path = OmniPath::new_rooted("foo", Root::Project);
         assert_eq!(serde_json::to_string(&path).unwrap(), r#""@project/foo""#);
 
-        let path = OmniPath::new("foo");
+        let path = OmniPath::<Root>::new("foo");
         assert_eq!(serde_json::to_string(&path).unwrap(), r#""foo""#);
     }
 
     #[test]
     fn test_deserialize() {
-        let path = OmniPath::new_ws_rooted("foo");
+        let path = OmniPath::new_rooted("foo", Root::Workspace);
         assert_eq!(
             serde_json::from_str::<OmniPath>(r#""@workspace/foo""#).unwrap(),
             path
         );
 
-        let path = OmniPath::new_project_rooted("foo");
+        let path = OmniPath::new_rooted("foo", Root::Project);
         assert_eq!(
             serde_json::from_str::<OmniPath>(r#""@project/foo""#).unwrap(),
             path
@@ -269,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_resolve() {
-        let path = OmniPath::new_ws_rooted("foo");
+        let path = OmniPath::new_rooted("foo", Root::Workspace);
 
         let base = base();
 
@@ -282,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_resolve_in_place() {
-        let mut path = OmniPath::new_ws_rooted("foo");
+        let mut path = OmniPath::new_rooted("foo", Root::Workspace);
 
         let base = base();
         path.resolve_in_place(&base);

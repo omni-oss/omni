@@ -64,7 +64,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
 
             // resolve @project paths to the current project dir
             project.cache.key.files.iter_mut().for_each(|a| {
-                if a.is_project_rooted() {
+                if a.is_rooted(Root::Project) {
                     a.resolve_in_place(&bases);
                 }
             });
@@ -72,13 +72,13 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
             project.tasks.values_mut().for_each(|a| {
                 if let TaskConfiguration::LongForm(a) = a {
                     a.cache.key.files.iter_mut().for_each(|a| {
-                        if a.is_project_rooted() {
+                        if a.is_rooted(Root::Project) {
                             a.resolve_in_place(&bases);
                         }
                     });
 
                     a.output.files.iter_mut().for_each(|a| {
-                        if a.is_project_rooted() {
+                        if a.is_rooted(Root::Project) {
                             a.resolve_in_place(&bases);
                         }
                     });
@@ -86,7 +86,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
             });
 
             for dep in &mut project.extends {
-                if dep.is_rooted() {
+                if dep.is_any_rooted() {
                     dep.resolve_in_place(&bases);
                 }
 
