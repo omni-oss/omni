@@ -52,14 +52,23 @@ impl ProjectDirHasher for RealDirHasher {
         let mut paths = vec![];
 
         for p in files {
-            if p.is_rooted() {
+            if p.is_any_rooted() {
                 paths.push(p.clone());
             } else if p.unresolved_path().starts_with(&proj_dir) {
-                paths.push(OmniPath::new_project_rooted(p.unresolved_path()));
+                paths.push(OmniPath::new_rooted(
+                    p.unresolved_path(),
+                    Root::Project,
+                ));
             } else if p.unresolved_path().starts_with(&ws_dir) {
-                paths.push(OmniPath::new_ws_rooted(p.unresolved_path()));
+                paths.push(OmniPath::new_rooted(
+                    p.unresolved_path(),
+                    Root::Workspace,
+                ));
             } else {
-                paths.push(OmniPath::new_project_rooted(p.unresolved_path()));
+                paths.push(OmniPath::new_rooted(
+                    p.unresolved_path(),
+                    Root::Project,
+                ));
             }
         }
 

@@ -364,22 +364,23 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                 for project in &mut to_process {
                     let project_dir = project.roots[Root::Project];
-                    let rooted_path =
-                        if original_file_abs_path.starts_with(project_dir) {
-                            OmniPath::new_project_rooted(relpath(
-                                original_file_abs_path,
-                                project_dir,
-                            ))
-                        } else if original_file_abs_path
-                            .starts_with(self.ws_root_dir)
-                        {
-                            OmniPath::new_ws_rooted(relpath(
-                                original_file_abs_path,
-                                self.ws_root_dir,
-                            ))
-                        } else {
-                            OmniPath::new(original_file_abs_path)
-                        };
+                    let rooted_path = if original_file_abs_path
+                        .starts_with(project_dir)
+                    {
+                        OmniPath::new_rooted(
+                            relpath(original_file_abs_path, project_dir),
+                            Root::Project,
+                        )
+                    } else if original_file_abs_path
+                        .starts_with(self.ws_root_dir)
+                    {
+                        OmniPath::new_rooted(
+                            relpath(original_file_abs_path, self.ws_root_dir),
+                            Root::Workspace,
+                        )
+                    } else {
+                        OmniPath::new(original_file_abs_path)
+                    };
 
                     if let Some(input_files_globset) =
                         project.input_files_globset.as_ref()

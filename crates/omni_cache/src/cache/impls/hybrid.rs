@@ -1022,7 +1022,7 @@ mod tests {
     use crate::{NewCacheInfo, cache::impls::HybridTaskExecutionCacheStore};
     use bytes::Bytes;
     use derive_new::new;
-    use omni_types::OmniPath;
+    use omni_types::{OmniPath, Root};
     use std::path::Path;
     use system_traits::{FsRename, FsRenameAsync, impls::RealSys};
     use tokio::io::AsyncReadExt as _;
@@ -1511,8 +1511,8 @@ mod tests {
         let cache = cache_store(dir);
         let task = task_with_mut("task", "project1", dir, |p| {
             p.output_files = vec![
-                OmniPath::new_ws_rooted("rootfile.txt"),
-                OmniPath::new_project_rooted("dist/**/*.js"),
+                OmniPath::new_rooted("rootfile.txt", Root::Workspace),
+                OmniPath::new_rooted("dist/**/*.js", Root::Project),
             ];
         });
 
@@ -1941,7 +1941,7 @@ mod tests {
         let cache = cache_store(dir);
         let task = task_with_mut("task", "project1", dir, |t| {
             t.output_files
-                .push(OmniPath::new_ws_rooted("target/**/*.js"));
+                .push(OmniPath::new_rooted("target/**/*.js", Root::Workspace));
         });
 
         let sys = sys();
