@@ -54,5 +54,7 @@ actions:
   - if: "{{ prompts.add_error_type }}"
     type: run-generator
     generator: rust-error
+    targets:
+      root: ./src
     prompt_values:
       forward: all

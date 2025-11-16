@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::validators::validate_umap_serde_json;
+use crate::validators::{validate_umap_serde_json, validate_umap_target_path};
 use derive_new::new;
 use garde::Validate;
 use maps::UnorderedMap;
@@ -167,6 +167,12 @@ pub struct RunGeneratorConfiguration {
 
     #[serde(default)]
     pub prompt_values: PromptValuesConfiguration,
+
+    /// Target directories to place the generated files.
+    /// Overrides the targets in the generator configuration.
+    #[serde(deserialize_with = "validate_umap_target_path")]
+    #[serde(default)]
+    pub targets: UnorderedMap<String, PathBuf>,
 }
 
 #[derive(

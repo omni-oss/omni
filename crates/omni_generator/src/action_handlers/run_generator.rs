@@ -39,12 +39,28 @@ pub async fn run_generator<'a>(
 
     let prompt_values = resolve_prompt_values(parent_prompts, config, &ctx)?;
 
-    trace::trace!("resolved prompt values: {prompt_values:#?}",);
+    trace::trace!("resolved prompt values: {prompt_values:#?}");
+
+    let target_overrides = if config.targets.is_empty() {
+        Cow::Borrowed(ctx.target_overrides)
+    } else {
+        let mut map = ctx.target_overrides.clone();
+
+        for (key, value) in &config.targets {
+            if !map.contains_key(key) {
+                map.insert(key.clone(), value.clone());
+            }
+        }
+
+        Cow::Owned(map)
+    };
+
+    trace::trace!("resolved target overrides: {target_overrides:#?}");
 
     Box::pin(run_internal(
         generator,
         ctx.available_generators,
-        ctx.target_overrides,
+        &target_overrides,
         prompt_values.as_ref(),
         &ctx.context_values,
         &run_config,

@@ -4,13 +4,19 @@ use serde_validate::{StaticValidator, declare_static_validator};
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TeraExprValidator;
 
+pub fn validate_str(value: &str) -> Result<(), String> {
+    let result = tera::Template::new("__validate_template__", None, value);
+
+    if let Err(error) = result {
+        return Err(error.to_string());
+    }
+
+    Ok(())
+}
+
 impl StaticValidator<String> for TeraExprValidator {
     fn validate_static(value: &String) -> Result<(), String> {
-        let result = tera::Template::new("__validate_template__", None, value);
-
-        if let Err(error) = result {
-            return Err(error.to_string());
-        }
+        validate_str(value)?;
 
         Ok(())
     }
