@@ -146,25 +146,56 @@ pub(crate) async fn run_internal<'a>(
 }
 
 fn expand_vars(
-    values: &UnorderedMap<String, String>,
+    values: &UnorderedMap<String, serde_json::Value>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
     let tera_ctx = get_tera_context(context_values);
     let mut result = unordered_map!();
 
     for (key, value) in values.iter() {
-        let expanded = omni_tera::one_off(
-            &value,
-            &format!("value for var {}", key),
-            &tera_ctx,
-        )?;
-        result.insert(
-            key.to_string(),
-            ValueBag::capture_serde1(&expanded).to_owned(),
-        );
+        let value = expand_json_value(&tera_ctx, key, value)?;
+        result.insert(key.to_string(), value);
     }
 
     Ok(result)
+}
+
+fn expand_json_value(
+    tera_ctx: &tera::Context,
+    key: &String,
+    value: &tera::Value,
+) -> Result<OwnedValueBag, Error> {
+    Ok(match value {
+        tera::Value::Null => {
+            ValueBag::capture_serde1(&serde_json::Value::Null).to_owned()
+        }
+        tera::Value::Bool(b) => ValueBag::capture_serde1(b).to_owned(),
+        tera::Value::Number(n) => ValueBag::capture_serde1(n).to_owned(),
+        tera::Value::String(s) => {
+            let expanded = omni_tera::one_off(
+                &s,
+                &format!("value for var {}", key),
+                tera_ctx,
+            )?;
+            ValueBag::capture_serde1(&expanded).to_owned()
+        }
+        tera::Value::Array(values) => {
+            let mut result = Vec::new();
+            for value in values {
+                let value = expand_json_value(tera_ctx, key, value)?;
+                result.push(value);
+            }
+            ValueBag::capture_serde1(&result).to_owned()
+        }
+        tera::Value::Object(map) => {
+            let mut result = unordered_map!();
+            for (key, value) in map {
+                let value = expand_json_value(tera_ctx, key, value)?;
+                result.insert(key.to_string(), value);
+            }
+            ValueBag::capture_serde1(&result).to_owned()
+        }
+    })
 }
 
 fn prompt_generator_name(
