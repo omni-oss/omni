@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::validators::validate_umap_serde_json;
 use derive_new::new;
 use garde::Validate;
 use maps::UnorderedMap;
@@ -73,7 +74,7 @@ pub struct CommonAddConfiguration {
     #[serde(default)]
     pub target: Option<String>,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub data: UnorderedMap<String, serde_json::Value>,
 }
 

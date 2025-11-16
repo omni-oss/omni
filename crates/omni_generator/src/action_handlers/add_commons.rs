@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use maps::unordered_map;
 use omni_generator_configurations::CommonAddConfiguration;
 
 use crate::{
@@ -9,6 +10,7 @@ use crate::{
         utils::{ensure_dir_exists, get_output_path, overwrite},
     },
     error::{Error, ErrorInner},
+    utils::expand_json_value,
 };
 
 pub async fn add_one<'a, TRender, TSys>(
@@ -54,6 +56,15 @@ where
         .await?;
 
     let mut tera_ctx_with_data = ctx.tera_context_values.clone();
+
+    let mut data = unordered_map!(cap: common.data.len());
+
+    for (key, value) in &common.data {
+        data.insert(
+            key.clone(),
+            expand_json_value(ctx.tera_context_values, &key, value),
+        );
+    }
 
     tera_ctx_with_data.insert("data", &common.data);
 
