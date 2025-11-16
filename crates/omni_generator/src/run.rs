@@ -19,7 +19,7 @@ use crate::{
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     sys_impl::DryRunSys,
-    utils::get_tera_context,
+    utils::{expand_json_value, get_tera_context},
 };
 
 #[derive(Debug, new)]
@@ -154,48 +154,13 @@ fn expand_vars(
 
     for (key, value) in values.iter() {
         let value = expand_json_value(&tera_ctx, key, value)?;
-        result.insert(key.to_string(), value);
+        result.insert(
+            key.to_string(),
+            ValueBag::capture_serde1(value.as_ref()).to_owned(),
+        );
     }
 
     Ok(result)
-}
-
-fn expand_json_value(
-    tera_ctx: &tera::Context,
-    key: &String,
-    value: &tera::Value,
-) -> Result<OwnedValueBag, Error> {
-    Ok(match value {
-        tera::Value::Null => {
-            ValueBag::capture_serde1(&serde_json::Value::Null).to_owned()
-        }
-        tera::Value::Bool(b) => ValueBag::capture_serde1(b).to_owned(),
-        tera::Value::Number(n) => ValueBag::capture_serde1(n).to_owned(),
-        tera::Value::String(s) => {
-            let expanded = omni_tera::one_off(
-                &s,
-                &format!("value for var {}", key),
-                tera_ctx,
-            )?;
-            ValueBag::capture_serde1(&expanded).to_owned()
-        }
-        tera::Value::Array(values) => {
-            let mut result = Vec::new();
-            for value in values {
-                let value = expand_json_value(tera_ctx, key, value)?;
-                result.push(value);
-            }
-            ValueBag::capture_serde1(&result).to_owned()
-        }
-        tera::Value::Object(map) => {
-            let mut result = unordered_map!();
-            for (key, value) in map {
-                let value = expand_json_value(tera_ctx, key, value)?;
-                result.insert(key.to_string(), value);
-            }
-            ValueBag::capture_serde1(&result).to_owned()
-        }
-    })
 }
 
 fn prompt_generator_name(

@@ -53,7 +53,11 @@ where
     ensure_dir_exists(&output_path.parent().expect("should have parent"), sys)
         .await?;
 
-    let result = render(ctx.tera_context_values)?;
+    let mut tera_ctx_with_data = ctx.tera_context_values.clone();
+
+    tera_ctx_with_data.insert("data", &common.data);
+
+    let result = render(&tera_ctx_with_data)?;
 
     sys.fs_write_async(&output_path, &result)
         .await
