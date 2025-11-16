@@ -72,6 +72,9 @@ pub struct CommonAddConfiguration {
 
     #[serde(default)]
     pub target: Option<String>,
+
+    #[serde(default)]
+    pub data: UnorderedMap<String, serde_json::Value>,
 }
 
 #[derive(
