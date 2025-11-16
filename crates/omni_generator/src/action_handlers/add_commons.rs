@@ -62,11 +62,11 @@ where
     for (key, value) in &common.data {
         data.insert(
             key.clone(),
-            expand_json_value(ctx.tera_context_values, &key, value),
+            expand_json_value(ctx.tera_context_values, &key, value)?,
         );
     }
 
-    tera_ctx_with_data.insert("data", &common.data);
+    tera_ctx_with_data.insert("data", &data);
 
     let result = render(&tera_ctx_with_data)?;
 

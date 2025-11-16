@@ -16,5 +16,5 @@ actions:
     base_path: templates
     target: root
     data:
-      rust_error_name: "{{ prompts.rust_error_name | upper_camel_case }}"
+      rust_error_name: "{{ prompts.error_name | upper_camel_case }}"
     template_file: templates/{{ prompts.error_name }}.rs.tpl
