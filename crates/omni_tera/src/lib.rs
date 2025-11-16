@@ -12,18 +12,18 @@ pub fn new(dir: &str) -> Result<Tera> {
     Ok(tera)
 }
 
-pub fn one_off(
-    input: &str,
-    name: &str,
+pub fn one_off<I: AsRef<str>, N: AsRef<str>>(
+    input: I,
+    name: N,
     context: &tera::Context,
 ) -> Result<String> {
     let mut tera = Tera::default();
 
     tera.extend(&FULL)?;
 
-    tera.add_raw_template(name, input)?;
+    tera.add_raw_template(name.as_ref(), input.as_ref())?;
 
-    let rendered = tera.render(name, context)?;
+    let rendered = tera.render(name.as_ref(), context)?;
 
     Ok(rendered)
 }
