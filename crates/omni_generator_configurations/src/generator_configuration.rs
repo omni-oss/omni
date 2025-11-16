@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
-use crate::validators::validate_umap_path_not_absolute;
+use crate::validators::{
+    validate_umap_path_not_absolute, validate_umap_serde_json,
+};
 use garde::Validate;
 use maps::UnorderedMap;
 use omni_prompt::configuration::PromptConfiguration;
-use omni_serde_validators::tera_expr::validate_umap_tera_expr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -44,8 +45,8 @@ pub struct GeneratorConfiguration {
     /// Available context variables:
     /// - `prompts`: The values of the prompts
     #[serde(default)]
-    #[serde(deserialize_with = "validate_umap_tera_expr")]
-    pub vars: UnorderedMap<String, String>,
+    #[serde(deserialize_with = "validate_umap_serde_json")]
+    pub vars: UnorderedMap<String, serde_json::Value>,
 
     /// Target direectories to place the generated files
     /// Target directories to add the file(s) to. If it does not exist, it will be created.
