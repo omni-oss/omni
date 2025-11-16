@@ -40,7 +40,6 @@ targets:
 actions:
   - type: add-many
     base_path: templates
-    flatten: true
     target: root
     template_files:
       - templates/**
