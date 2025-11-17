@@ -227,7 +227,7 @@ pub struct ModifyContentActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
-pub struct CommonAppendConfiguration {
+pub struct CommonInsertConfiguration {
     #[serde(flatten)]
     pub common: CommonModifyConfiguration,
 
@@ -255,7 +255,7 @@ pub struct AppendActionConfiguration {
     pub base: BaseActionConfiguration,
 
     #[serde(flatten)]
-    pub common: CommonAppendConfiguration,
+    pub common: CommonInsertConfiguration,
 
     pub template_file: PathBuf,
 }
@@ -269,7 +269,36 @@ pub struct AppendContentActionConfiguration {
     pub base: BaseActionConfiguration,
 
     #[serde(flatten)]
-    pub common: CommonAppendConfiguration,
+    pub common: CommonInsertConfiguration,
+
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub template: String,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct PrependActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonInsertConfiguration,
+
+    pub template_file: PathBuf,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct PrependContentActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonInsertConfiguration,
 
     #[serde(deserialize_with = "validate_tera_expr")]
     pub template: String,
@@ -414,6 +443,20 @@ pub enum ActionConfiguration {
     AppendContent {
         #[serde(flatten)]
         action: AppendContentActionConfiguration,
+    },
+
+    /// Prepend a text rendered from a tera template after a line matching a regex
+    #[strum_discriminants(strum(serialize = "prepend"))]
+    Prepend {
+        #[serde(flatten)]
+        action: PrependActionConfiguration,
+    },
+
+    /// Prepend a text rendered from a tera template after a line matching a regex
+    #[strum_discriminants(strum(serialize = "prepend-content"))]
+    PrependContent {
+        #[serde(flatten)]
+        action: PrependContentActionConfiguration,
     },
 }
 
