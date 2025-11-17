@@ -13,7 +13,7 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext, add, add_content, add_many, append, append_content,
-        modify, modify_content, run_generator,
+        modify, modify_content, prepend, prepend_content, run_generator,
     },
     error::{Error, ErrorInner},
     utils::get_tera_context,
@@ -91,6 +91,12 @@ pub async fn execute_actions<'a>(
             ActionConfiguration::AppendContent { action } => {
                 append_content(action, &handler_context, sys).await
             }
+            ActionConfiguration::Prepend { action } => {
+                prepend(action, &handler_context, sys).await
+            }
+            ActionConfiguration::PrependContent { action } => {
+                prepend_content(action, &handler_context, sys).await
+            }
         };
 
         if let Err(e) = result {
@@ -153,6 +159,10 @@ fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
         ActionConfiguration::AppendContent { action } => {
             action.base.r#if.as_deref()
         }
+        ActionConfiguration::Prepend { action } => action.base.r#if.as_deref(),
+        ActionConfiguration::PrependContent { action } => {
+            action.base.r#if.as_deref()
+        }
     }
 }
 
@@ -213,6 +223,12 @@ fn get_error_message(
         ActionConfiguration::AppendContent { action } => {
             action.base.error_message.as_deref()
         }
+        ActionConfiguration::Prepend { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::PrependContent { action } => {
+            action.base.error_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -262,6 +278,12 @@ fn get_in_progress_message(
         ActionConfiguration::AppendContent { action } => {
             action.base.in_progress_message.as_deref()
         }
+        ActionConfiguration::Prepend { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::PrependContent { action } => {
+            action.base.in_progress_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -305,6 +327,12 @@ fn get_success_message(
         ActionConfiguration::AppendContent { action } => {
             action.base.success_message.as_deref()
         }
+        ActionConfiguration::Prepend { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::PrependContent { action } => {
+            action.base.success_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -340,6 +368,10 @@ fn get_action_name(
             action.base.name.as_deref()
         }
         ActionConfiguration::AppendContent { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::Prepend { action } => action.base.name.as_deref(),
+        ActionConfiguration::PrependContent { action } => {
             action.base.name.as_deref()
         }
     };

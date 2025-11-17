@@ -1,4 +1,4 @@
-use omni_generator_configurations::AppendActionConfiguration;
+use omni_generator_configurations::PrependActionConfiguration;
 
 use crate::{
     GeneratorSys,
@@ -6,8 +6,8 @@ use crate::{
     error::Error,
 };
 
-pub async fn append<'a>(
-    config: &AppendActionConfiguration,
+pub async fn prepend<'a>(
+    config: &PrependActionConfiguration,
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
@@ -15,7 +15,7 @@ pub async fn append<'a>(
         .fs_read_to_string_async(&ctx.generator_dir.join(&config.template_file))
         .await?;
 
-    insert_one(&template, false, &config.common, ctx, sys).await?;
+    insert_one(&template, true, &config.common, ctx, sys).await?;
 
     Ok(())
 }

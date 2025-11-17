@@ -233,6 +233,29 @@ pub async fn get_target_dir<'a>(
     }
 }
 
+pub async fn get_target_file<'a>(
+    target_name: &str,
+    ctx: &HandlerContext<'a>,
+    sys: &impl GeneratorSys,
+) -> Result<Cow<'a, Path>, Error> {
+    let base = enum_map::enum_map! {
+        Root::Workspace => ctx.workspace_dir,
+        Root::Output => ctx.output_dir,
+    };
+    let target = ctx
+        .generator_targets
+        .get(target_name)
+        .or_else(|| ctx.target_overrides.get(target_name))
+        .map(|p| p.resolve(&base));
+    let target = if let Some(target) = target {
+        target
+    } else {
+        Cow::Owned(prompt_target_file(target_name, ctx, sys).await?)
+    };
+
+    Ok(target)
+}
+
 pub async fn prompt_target_file(
     target_name: &str,
     ctx: &HandlerContext<'_>,
