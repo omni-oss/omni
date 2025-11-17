@@ -6,7 +6,7 @@ use maps::{UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::RunConfig;
-use omni_generator_configurations::OverwriteConfiguration;
+use omni_generator_configurations::{OmniPath, OverwriteConfiguration};
 use omni_prompt::configuration::{
     BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
     PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
@@ -63,9 +63,9 @@ pub struct GeneratorRunArgs {
         long,
         short,
         help = "Override target paths",
-        value_parser = parse_key_value::<String, PathBuf>
+        value_parser = parse_key_value::<String, OmniPath>
     )]
-    pub target: Vec<(String, PathBuf)>,
+    pub target: Vec<(String, OmniPath)>,
 
     #[arg(
         long,
@@ -116,6 +116,7 @@ async fn run_generator_run(
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
+    let workspace_dir = loaded_context.root_dir();
 
     let (output_dir, project) =
         match (command.args.out_dir.clone(), &command.args.project) {
@@ -145,6 +146,7 @@ async fn run_generator_run(
         dry_run: command.args.dry_run,
         output_dir: output_dir.as_path(),
         overwrite: command.args.overwrite.map(|o| o.value()),
+        workspace_dir: workspace_dir,
     };
     let pre_exec_values = get_prompt_values(&command.args.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
@@ -193,8 +195,8 @@ fn get_prompt_values(
 }
 
 fn get_target_overrides(
-    target: &[(String, PathBuf)],
-) -> UnorderedMap<String, PathBuf> {
+    target: &[(String, OmniPath)],
+) -> UnorderedMap<String, OmniPath> {
     UnorderedMap::from_iter(
         target.iter().map(|(k, v)| (k.to_string(), v.clone())),
     )

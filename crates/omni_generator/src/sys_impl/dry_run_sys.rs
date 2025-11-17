@@ -27,7 +27,14 @@ impl BaseFsReadAsync for DryRunSys {
             return Ok(data);
         }
 
-        self.real.base_fs_read_async(path).await
+        let content = self.real.base_fs_read_async(path).await?;
+
+        let dir = path.parent().expect("should have directory");
+        if !self.in_memory.fs_exists_async(dir).await? {
+            self.in_memory.fs_create_dir_all(path)?;
+        }
+
+        Ok(content)
     }
 }
 

@@ -47,3 +47,6 @@ async-trait = { workspace = true }
 either = { workspace = true }
 serde_json = { workspace = true }
 omni_tera = { workspace = true }
+enum-map = { workspace = true }
+omni_types = { workspace = true }
+regex = { workspace = true }

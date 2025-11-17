@@ -36,3 +36,5 @@ omni_prompt = { workspace = true }
 omni_serde_validators = { workspace = true }
 serde_validate = { workspace = true }
 value-bag = { workspace = true }
+enum-map = { workspace = true }
+regex = { workspace = true }

@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     fmt::{Debug as _, Display},
     path::{Path as StdPath, PathBuf},
+    str::FromStr,
 };
 
 use enum_map::{Enum, EnumArray, EnumMap};
@@ -19,10 +20,13 @@ use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
     enum_map::Enum,
     Display,
     strum::VariantArray,
+    strum::EnumString,
 )]
 #[strum(serialize_all = "kebab-case")]
 pub enum Root {
+    #[strum(serialize = "workspace")]
     Workspace,
+    #[strum(serialize = "project")]
     Project,
 }
 
@@ -34,6 +38,7 @@ pub trait OmniPathRoot:
     + Display
     + Enum
     + PartialEq
+    + FromStr
     + strum::VariantArray
     + for<'a> EnumArray<&'a StdPath>
 {
@@ -45,6 +50,7 @@ impl<
         + Display
         + Enum
         + PartialEq
+        + FromStr
         + strum::VariantArray
         + for<'a> EnumArray<&'a StdPath>,
 > OmniPathRoot for T
@@ -192,6 +198,22 @@ impl From<&StdPath> for OmniPath {
 impl From<PathBuf> for OmniPath {
     fn from(path: PathBuf) -> Self {
         Self::new(path)
+    }
+}
+
+impl<TRoot: OmniPathRoot> FromStr for OmniPath<TRoot> {
+    type Err = <TRoot as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with("@") {
+            let mut parts = s.splitn(2, '/');
+            let root = parts.next().unwrap().strip_prefix('@').unwrap();
+            let path = parts.next().unwrap();
+
+            Ok(Self::new_rooted(path, TRoot::from_str(root)?))
+        } else {
+            Ok(Self::new(s))
+        }
     }
 }
 

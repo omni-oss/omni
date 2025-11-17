@@ -1,12 +1,9 @@
-use std::{
-    borrow::Cow,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, path::Path};
 
 use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
-    GeneratorConfiguration, OverwriteConfiguration,
+    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use omni_prompt::configuration::{
     BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
@@ -27,13 +24,14 @@ pub struct RunConfig<'a> {
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub overwrite: Option<OverwriteConfiguration>,
+    pub workspace_dir: &'a Path,
 }
 
 pub async fn run<'a>(
     generator_name: Option<&'a str>,
     root_dir: &'a Path,
     generator_patterns: &'a [String],
-    target_overrides: &UnorderedMap<String, PathBuf>,
+    target_overrides: &UnorderedMap<String, OmniPath>,
     prompt_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
@@ -87,7 +85,7 @@ pub async fn run<'a>(
 pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     available_generators: &[GeneratorConfiguration],
-    target_overrides: &UnorderedMap<String, PathBuf>,
+    target_overrides: &UnorderedMap<String, OmniPath>,
     prompt_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
@@ -136,6 +134,7 @@ pub(crate) async fn run_internal<'a>(
             .expect("generator should have a directory"),
         targets: &r#gen.targets,
         overwrite: config.overwrite,
+        workspace_dir: config.workspace_dir,
         available_generators,
         target_overrides,
     };

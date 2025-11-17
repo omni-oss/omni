@@ -10,6 +10,12 @@ use crate::action_handlers::utils::ResolveOutputPathError;
 pub struct Error(pub(crate) ErrorInner);
 
 impl Error {
+    pub fn custom<T: Into<String>>(msg: T) -> Self {
+        Self(ErrorInner::Custom(eyre::Report::msg(msg.into())))
+    }
+}
+
+impl Error {
     #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
         self.0.discriminant()
@@ -101,4 +107,7 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Regex(#[from] regex::Error),
 }
