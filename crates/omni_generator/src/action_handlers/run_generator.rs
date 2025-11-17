@@ -27,13 +27,6 @@ pub async fn run_generator<'a>(
             name: config.generator.clone(),
         })?;
 
-    let run_config = RunConfig {
-        dry_run: ctx.dry_run,
-        output_dir: ctx.output_dir,
-        workspace_dir: ctx.workspace_dir,
-        overwrite: ctx.overwrite,
-    };
-
     let parent_prompts = ctx.context_values
         .get("prompts")
         .expect("should have prompt vaues, if you encountered this error, please report it to the maintainers");
@@ -58,12 +51,19 @@ pub async fn run_generator<'a>(
 
     trace::trace!("resolved target overrides: {target_overrides:#?}");
 
+    let run_config = RunConfig {
+        dry_run: ctx.dry_run,
+        output_dir: ctx.output_dir,
+        workspace_dir: ctx.workspace_dir,
+        overwrite: ctx.overwrite,
+        context_values: ctx.context_values,
+        prompt_values: prompt_values.as_ref(),
+        target_overrides: target_overrides.as_ref(),
+    };
+
     Box::pin(run_internal(
         generator,
         ctx.available_generators,
-        &target_overrides,
-        prompt_values.as_ref(),
-        &ctx.context_values,
         &run_config,
         sys,
     ))
