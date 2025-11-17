@@ -43,8 +43,8 @@ pub struct GeneratorRunArgs {
     #[arg(
         long,
         short,
-        help = "If provided, it will use the project's directory as output directory",
-        conflicts_with = "out_dir"
+        help = "If provided, it will use the project's directory as output path",
+        conflicts_with = "output"
     )]
     pub project: Option<String>,
 
