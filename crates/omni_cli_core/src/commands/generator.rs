@@ -171,6 +171,7 @@ async fn run_generator_run(
         target_overrides: &target_overrides,
         context_values: &context_values,
         prompt_values: &pre_exec_values,
+        current_dir: &current_dir,
     };
 
     omni_generator::run(

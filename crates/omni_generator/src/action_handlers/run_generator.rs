@@ -53,12 +53,13 @@ pub async fn run_generator<'a>(
 
     let run_config = RunConfig {
         dry_run: ctx.dry_run,
-        output_dir: ctx.output_dir,
+        output_dir: ctx.output_path,
         workspace_dir: ctx.workspace_dir,
         overwrite: ctx.overwrite,
         context_values: ctx.context_values,
         prompt_values: prompt_values.as_ref(),
         target_overrides: target_overrides.as_ref(),
+        current_dir: ctx.current_dir,
     };
 
     Box::pin(run_internal(

@@ -4,7 +4,7 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
-        utils::{add_data, get_target_file},
+        utils::{augment_tera_context, get_target_file},
     },
     error::Error,
 };
@@ -28,8 +28,11 @@ pub async fn insert_one<'a>(
         )));
     }
 
-    let tera_ctx_with_data =
-        add_data(ctx.tera_context_values, &common.common.data)?;
+    let tera_ctx_with_data = augment_tera_context(
+        ctx.tera_context_values,
+        Some(&common.common.data),
+        ctx,
+    )?;
 
     let rendered = omni_tera::one_off(
         &template,
