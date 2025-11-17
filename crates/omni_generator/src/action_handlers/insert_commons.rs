@@ -2,7 +2,10 @@ use omni_generator_configurations::CommonInsertConfiguration;
 
 use crate::{
     GeneratorSys,
-    action_handlers::{HandlerContext, utils::get_target_file},
+    action_handlers::{
+        HandlerContext,
+        utils::{add_data, get_target_file},
+    },
     error::Error,
 };
 
@@ -25,10 +28,13 @@ pub async fn insert_one<'a>(
         )));
     }
 
+    let tera_ctx_with_data =
+        add_data(ctx.tera_context_values, &common.common.data)?;
+
     let rendered = omni_tera::one_off(
         &template,
         format!("template for action {}", ctx.resolved_action_name),
-        ctx.tera_context_values,
+        &tera_ctx_with_data,
     )?;
 
     let mut file = vec![];

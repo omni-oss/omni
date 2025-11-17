@@ -18,6 +18,7 @@ use crate::{
     GeneratorSys,
     action_handlers::HandlerContext,
     error::{Error, ErrorInner},
+    utils::expand_json_value,
 };
 
 pub fn resolve_output_path(
@@ -403,6 +404,24 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     } else {
         output_path
     })
+}
+
+pub fn add_data(
+    tera_ctx: &tera::Context,
+    data: &UnorderedMap<String, serde_json::Value>,
+) -> Result<tera::Context, Error> {
+    let mut tera_ctx_with_data = tera_ctx.clone();
+
+    let mut expanded_data = unordered_map!(cap: data.len());
+
+    for (key, value) in data {
+        expanded_data
+            .insert(key.clone(), expand_json_value(tera_ctx, &key, value)?);
+    }
+
+    tera_ctx_with_data.insert("data", &expanded_data);
+
+    Ok(tera_ctx_with_data)
 }
 
 #[cfg(test)]
