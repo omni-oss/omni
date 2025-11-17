@@ -142,12 +142,6 @@ async fn run_generator_run(
 
     trace::trace!("Generator output directory: {}", output_dir.display());
 
-    let run = RunConfig {
-        dry_run: command.args.dry_run,
-        output_dir: output_dir.as_path(),
-        overwrite: command.args.overwrite.map(|o| o.value()),
-        workspace_dir: workspace_dir,
-    };
     let pre_exec_values = get_prompt_values(&command.args.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
 
@@ -169,13 +163,19 @@ async fn run_generator_run(
 
     let target_overrides = get_target_overrides(&command.args.target);
 
+    let run = RunConfig {
+        dry_run: command.args.dry_run,
+        output_dir: output_dir.as_path(),
+        overwrite: command.args.overwrite.map(|o| o.value()),
+        workspace_dir: workspace_dir,
+        target_overrides: &target_overrides,
+        context_values: &context_values,
+        prompt_values: &pre_exec_values,
+    };
+
     omni_generator::run(
         command.args.name.as_deref(),
-        ctx.root_dir(),
         &ctx.workspace_configuration().generators,
-        &target_overrides,
-        &pre_exec_values,
-        &context_values,
         &run,
         loaded_context.sys(),
     )

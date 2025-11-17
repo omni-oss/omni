@@ -25,19 +25,19 @@ pub struct RunConfig<'a> {
     pub output_dir: &'a Path,
     pub overwrite: Option<OverwriteConfiguration>,
     pub workspace_dir: &'a Path,
+    pub target_overrides: &'a UnorderedMap<String, OmniPath>,
+    pub prompt_values: &'a UnorderedMap<String, OwnedValueBag>,
+    pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
 }
 
 pub async fn run<'a>(
     generator_name: Option<&'a str>,
-    root_dir: &'a Path,
     generator_patterns: &'a [String],
-    target_overrides: &UnorderedMap<String, OmniPath>,
-    prompt_values: &UnorderedMap<String, OwnedValueBag>,
-    context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let generators = crate::discover(root_dir, generator_patterns, sys).await?;
+    let generators =
+        crate::discover(config.workspace_dir, generator_patterns, sys).await?;
 
     crate::validate(&generators)?;
 
@@ -56,27 +56,9 @@ pub async fn run<'a>(
 
     if config.dry_run {
         let sys = DryRunSys::default();
-        run_internal(
-            &generator,
-            &generators,
-            target_overrides,
-            prompt_values,
-            context_values,
-            config,
-            &sys,
-        )
-        .await?;
+        run_internal(&generator, &generators, config, &sys).await?;
     } else {
-        run_internal(
-            &generator,
-            &generators,
-            target_overrides,
-            prompt_values,
-            context_values,
-            config,
-            sys,
-        )
-        .await?;
+        run_internal(&generator, &generators, config, sys).await?;
     }
 
     Ok(())
@@ -85,9 +67,6 @@ pub async fn run<'a>(
 pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     available_generators: &[GeneratorConfiguration],
-    target_overrides: &UnorderedMap<String, OmniPath>,
-    prompt_values: &UnorderedMap<String, OwnedValueBag>,
-    context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
@@ -95,13 +74,13 @@ pub(crate) async fn run_internal<'a>(
 
     let mut values = omni_prompt::prompt(
         &r#gen.prompts,
-        &prompt_values,
-        context_values,
+        &config.prompt_values,
+        &config.context_values,
         &prompting_config,
     )?;
 
     // propagate prompt values to the context values
-    for (key, value) in prompt_values.iter() {
+    for (key, value) in config.prompt_values.iter() {
         if !values.contains_key(key) {
             values.insert(key.to_string(), value.clone());
         }
@@ -109,7 +88,7 @@ pub(crate) async fn run_internal<'a>(
 
     trace::trace!("prompt values: {:#?}", values);
 
-    let mut context_values = context_values.clone();
+    let mut context_values = config.context_values.clone();
 
     context_values.insert(
         "prompts".to_string(),
@@ -136,7 +115,7 @@ pub(crate) async fn run_internal<'a>(
         overwrite: config.overwrite,
         workspace_dir: config.workspace_dir,
         available_generators,
-        target_overrides,
+        target_overrides: config.target_overrides,
     };
 
     execute_actions(&args, sys).await?;
