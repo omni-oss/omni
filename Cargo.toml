@@ -140,6 +140,7 @@ omni_utils = { path = "./crates/omni_utils" }
 omni_configurations = { path = "./crates/omni_configurations" }
 omni_context = { path = "./crates/omni_context" }
 omni_task_executor = { path = "./crates/omni_task_executor" }
+# @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
 path-slash = { version = "^0.2.1" }

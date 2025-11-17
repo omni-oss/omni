@@ -36,6 +36,7 @@ prompts:
 
 targets:
   root: .
+  root_cargo_toml: "@workspace/Cargo.toml"
 
 actions:
   - type: add-many
@@ -58,3 +59,8 @@ actions:
       root: ./src
     prompt_values:
       forward: all
+
+  - type: prepend-content
+    target: root_cargo_toml
+    pattern: "@anchor:new-crate"
+    template: '{{ prompts.crate_name }} = { path = "./crates/{{ prompts.crate_name }}" }'
