@@ -241,7 +241,7 @@ pub async fn get_target_file<'a>(
 ) -> Result<Cow<'a, Path>, Error> {
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
-        Root::Output => ctx.output_dir,
+        Root::Output => ctx.output_path,
     };
     let target = ctx
         .generator_targets
@@ -279,7 +279,7 @@ pub async fn prompt_target_file(
 
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
-        Root::Output => ctx.output_dir,
+        Root::Output => ctx.output_path,
     };
 
     loop {
@@ -364,7 +364,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
                 target_name,
                 &ctx.target_overrides,
                 &ctx.generator_targets,
-                ctx.output_dir,
+                ctx.output_path,
                 sys,
             )
             .await?,
@@ -374,16 +374,16 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     };
 
     let bases = enum_map::enum_map! {
-        Root::Output => ctx.output_dir,
+        Root::Output => ctx.output_path,
         Root::Workspace => ctx.workspace_dir,
     };
 
     let target = target.map(|p| {
         let resolved = p.as_ref().resolve(&bases);
 
-        if resolved.starts_with(ctx.output_dir) {
+        if resolved.starts_with(ctx.output_path) {
             resolved
-                .strip_prefix(ctx.output_dir)
+                .strip_prefix(ctx.output_path)
                 .expect("should remove output dir prefix")
                 .to_path_buf()
         } else {
@@ -392,7 +392,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     });
 
     let output_path = resolve_output_path(
-        ctx.output_dir,
+        ctx.output_path,
         target.as_deref(),
         base_path.unwrap_or(ctx.generator_dir),
         &expected_output_path,
@@ -406,12 +406,36 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     })
 }
 
+pub fn augment_tera_context(
+    tera_ctx: &tera::Context,
+    data: Option<&UnorderedMap<String, serde_json::Value>>,
+    _ctx: &HandlerContext<'_>,
+) -> Result<tera::Context, Error> {
+    let mut new_ctx = tera_ctx.clone();
+
+    if let Some(data) = data {
+        add_data_internal(&mut new_ctx, data)?;
+    }
+
+    Ok(new_ctx)
+}
+
+#[allow(unused)]
 pub fn add_data(
     tera_ctx: &tera::Context,
     data: &UnorderedMap<String, serde_json::Value>,
 ) -> Result<tera::Context, Error> {
     let mut tera_ctx_with_data = tera_ctx.clone();
 
+    add_data_internal(&mut tera_ctx_with_data, data)?;
+
+    Ok(tera_ctx_with_data)
+}
+
+fn add_data_internal(
+    tera_ctx: &mut tera::Context,
+    data: &UnorderedMap<String, serde_json::Value>,
+) -> Result<(), Error> {
     let mut expanded_data = unordered_map!(cap: data.len());
 
     for (key, value) in data {
@@ -419,9 +443,9 @@ pub fn add_data(
             .insert(key.clone(), expand_json_value(tera_ctx, &key, value)?);
     }
 
-    tera_ctx_with_data.insert("data", &expanded_data);
+    tera_ctx.insert("data", &expanded_data);
 
-    Ok(tera_ctx_with_data)
+    Ok(())
 }
 
 #[cfg(test)]

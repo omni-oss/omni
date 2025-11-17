@@ -6,7 +6,9 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
-        utils::{add_data, ensure_dir_exists, get_output_path, overwrite},
+        utils::{
+            augment_tera_context, ensure_dir_exists, get_output_path, overwrite,
+        },
     },
     error::{Error, ErrorInner},
 };
@@ -53,7 +55,8 @@ where
     ensure_dir_exists(&output_path.parent().expect("should have parent"), sys)
         .await?;
 
-    let tera_ctx_with_data = add_data(ctx.tera_context_values, &common.data)?;
+    let tera_ctx_with_data =
+        augment_tera_context(ctx.tera_context_values, Some(&common.data), ctx)?;
 
     let result = render(&tera_ctx_with_data)?;
 

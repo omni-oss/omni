@@ -25,6 +25,7 @@ pub struct RunConfig<'a> {
     pub output_dir: &'a Path,
     pub overwrite: Option<OverwriteConfiguration>,
     pub workspace_dir: &'a Path,
+    pub current_dir: &'a Path,
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub prompt_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
@@ -106,7 +107,7 @@ pub(crate) async fn run_internal<'a>(
         actions: &r#gen.actions,
         context_values: &context_values,
         dry_run: config.dry_run,
-        output_dir: config.output_dir,
+        output_path: config.output_dir,
         generator_dir: &r#gen
             .file
             .parent()
@@ -116,6 +117,7 @@ pub(crate) async fn run_internal<'a>(
         workspace_dir: config.workspace_dir,
         available_generators,
         target_overrides: config.target_overrides,
+        current_dir: config.current_dir,
     };
 
     execute_actions(&args, sys).await?;

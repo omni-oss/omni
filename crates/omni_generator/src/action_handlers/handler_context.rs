@@ -10,8 +10,9 @@ use value_bag::OwnedValueBag;
 #[allow(unused)]
 pub struct HandlerContext<'a> {
     pub dry_run: bool,
-    pub output_dir: &'a Path,
+    pub output_path: &'a Path,
     pub generator_dir: &'a Path,
+    pub current_dir: &'a Path,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub tera_context_values: &'a tera::Context,
     pub generator_targets: &'a UnorderedMap<String, OmniPath>,

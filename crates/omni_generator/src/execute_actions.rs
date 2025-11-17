@@ -22,9 +22,10 @@ use crate::{
 #[derive(Debug, new)]
 pub struct ExecuteActionsArgs<'a> {
     pub dry_run: bool,
-    pub output_dir: &'a Path,
+    pub output_path: &'a Path,
     pub generator_dir: &'a Path,
     pub workspace_dir: &'a Path,
+    pub current_dir: &'a Path,
     pub actions: &'a [ActionConfiguration],
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub targets: &'a UnorderedMap<String, OmniPath>,
@@ -37,7 +38,24 @@ pub async fn execute_actions<'a>(
     args: &ExecuteActionsArgs<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let tera_context = get_tera_context(args.context_values);
+    let mut tera_context = get_tera_context(args.context_values);
+
+    let output_path = args.current_dir.join(args.output_path);
+    let expanded_output = omni_tera::one_off(
+        &output_path.to_string_lossy(),
+        "output_path",
+        &tera_context,
+    )?;
+    let output_path = Path::new(&expanded_output);
+
+    let output_path_rel = if output_path.starts_with(args.workspace_dir) {
+        output_path
+            .strip_prefix(args.workspace_dir)
+            .expect("should be within workspace dir")
+    } else {
+        &output_path
+    };
+    tera_context.insert("output_path", &output_path_rel);
 
     for (index, action) in args.actions.iter().enumerate() {
         let action_name = get_action_name(index, action, &tera_context)?;
@@ -51,7 +69,7 @@ pub async fn execute_actions<'a>(
             context_values: args.context_values,
             tera_context_values: &tera_context,
             dry_run: args.dry_run,
-            output_dir: args.output_dir,
+            output_path: output_path,
             generator_targets: args.targets,
             target_overrides: args.target_overrides,
             generator_dir: args.generator_dir,
@@ -59,6 +77,7 @@ pub async fn execute_actions<'a>(
             available_generators: args.available_generators,
             workspace_dir: args.workspace_dir,
             resolved_action_name: action_name.as_str(),
+            current_dir: args.current_dir,
         };
 
         let in_progress_message =

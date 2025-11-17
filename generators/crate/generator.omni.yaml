@@ -63,4 +63,4 @@ actions:
   - type: prepend-content
     target: root_cargo_toml
     pattern: "@anchor:new-crate"
-    template: '{{ prompts.crate_name }} = { path = "./crates/{{ prompts.crate_name }}" }'
+    template: '{{ prompts.crate_name }} = { path = "{{ output_path }}" }'
