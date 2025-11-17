@@ -48,8 +48,8 @@ pub struct GeneratorRunArgs {
     )]
     pub project: Option<String>,
 
-    #[arg(long, short, help = "Output directory")]
-    pub out_dir: Option<PathBuf>,
+    #[arg(long, short, help = "Output path")]
+    pub output: Option<PathBuf>,
 
     #[arg(
         long,
@@ -119,7 +119,7 @@ async fn run_generator_run(
     let workspace_dir = loaded_context.root_dir();
 
     let (output_dir, project) =
-        match (command.args.out_dir.clone(), &command.args.project) {
+        match (command.args.output.clone(), &command.args.project) {
             (None, None) => (prompt_output_dir(projects, &current_dir)?, None),
             (None, Some(project)) => {
                 let p = projects.iter().find(|p| p.name == *project);
