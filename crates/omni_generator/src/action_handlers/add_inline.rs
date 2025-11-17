@@ -1,4 +1,4 @@
-use omni_generator_configurations::AddInlineActionConfiguration;
+use omni_generator_configurations::AddContentActionConfiguration;
 
 use crate::{
     GeneratorSys,
@@ -6,8 +6,8 @@ use crate::{
     error::Error,
 };
 
-pub async fn add_inline<'a>(
-    config: &AddInlineActionConfiguration,
+pub async fn add_content<'a>(
+    config: &AddContentActionConfiguration,
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {

@@ -5,14 +5,16 @@ use omni_serde_validators::tera_expr::{TeraExprValidator, validate_str};
 use serde_validate::{StaticValidator, declare_static_validator};
 use std::path::PathBuf;
 
+use crate::OmniPath;
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TargetPathValidator;
 
-impl StaticValidator<PathBuf> for TargetPathValidator {
-    fn validate_static(value: &PathBuf) -> Result<(), String> {
-        validate_str(value.to_string_lossy().as_ref())?;
+impl StaticValidator<OmniPath> for TargetPathValidator {
+    fn validate_static(value: &OmniPath) -> Result<(), String> {
+        validate_str(value.unresolved_path().to_string_lossy().as_ref())?;
 
-        if value.is_absolute() {
+        if value.unresolved_path().is_absolute() {
             return Err("path should not be absolute".to_string());
         }
 
@@ -22,7 +24,7 @@ impl StaticValidator<PathBuf> for TargetPathValidator {
 
 declare_static_validator!(
     TargetPathValidator,
-    PathBuf,
+    OmniPath,
     validate_target_path,
     option_validate_target_path
 );
@@ -30,11 +32,11 @@ declare_static_validator!(
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UMapTargetPathValidator;
 
-impl StaticValidator<UnorderedMap<String, PathBuf>>
+impl StaticValidator<UnorderedMap<String, OmniPath>>
     for UMapTargetPathValidator
 {
     fn validate_static(
-        value: &UnorderedMap<String, PathBuf>,
+        value: &UnorderedMap<String, OmniPath>,
     ) -> Result<(), String> {
         for value in value.values() {
             TargetPathValidator::validate_static(value)?;
@@ -45,7 +47,7 @@ impl StaticValidator<UnorderedMap<String, PathBuf>>
 
 declare_static_validator!(
     UMapTargetPathValidator,
-    UnorderedMap<String, PathBuf>,
+    UnorderedMap<String, OmniPath>,
     validate_umap_target_path,
     option_umap_validate_target_path
 );

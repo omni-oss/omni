@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use crate::validators::{validate_umap_serde_json, validate_umap_target_path};
+use crate::{
+    OmniPath,
+    validators::{validate_umap_serde_json, validate_umap_target_path},
+};
 use garde::Validate;
 use maps::UnorderedMap;
 use omni_prompt::configuration::PromptConfiguration;
@@ -50,5 +53,5 @@ pub struct GeneratorConfiguration {
     /// Target directories to add the file(s) to. If it does not exist, it will be created.
     #[serde(deserialize_with = "validate_umap_target_path")]
     #[serde(default)]
-    pub targets: UnorderedMap<String, PathBuf>,
+    pub targets: UnorderedMap<String, OmniPath>,
 }

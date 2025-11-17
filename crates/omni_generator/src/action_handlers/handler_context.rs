@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use maps::UnorderedMap;
 use omni_generator_configurations::{
-    GeneratorConfiguration, OverwriteConfiguration,
+    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use value_bag::OwnedValueBag;
 
@@ -14,8 +14,10 @@ pub struct HandlerContext<'a> {
     pub generator_dir: &'a Path,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub tera_context_values: &'a tera::Context,
-    pub generator_targets: &'a UnorderedMap<String, PathBuf>,
-    pub target_overrides: &'a UnorderedMap<String, PathBuf>,
+    pub generator_targets: &'a UnorderedMap<String, OmniPath>,
+    pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [GeneratorConfiguration],
+    pub workspace_dir: &'a Path,
+    pub resolved_action_name: &'a str,
 }

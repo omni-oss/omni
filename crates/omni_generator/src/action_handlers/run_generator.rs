@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     ForAllPromptValuesConfiguration, ForwardPromptValuesConfiguration,
-    PromptValue, RunGeneratorConfiguration,
+    PromptValue, RunGeneratorActionConfiguration,
 };
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub async fn run_generator<'a>(
-    config: &RunGeneratorConfiguration,
+    config: &RunGeneratorActionConfiguration,
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
@@ -30,6 +30,7 @@ pub async fn run_generator<'a>(
     let run_config = RunConfig {
         dry_run: ctx.dry_run,
         output_dir: ctx.output_dir,
+        workspace_dir: ctx.workspace_dir,
         overwrite: ctx.overwrite,
     };
 
@@ -71,7 +72,7 @@ pub async fn run_generator<'a>(
 
 fn resolve_prompt_values<'a>(
     parent_prompts: &'a OwnedValueBag,
-    config: &RunGeneratorConfiguration,
+    config: &RunGeneratorActionConfiguration,
     ctx: &HandlerContext<'a>,
 ) -> Result<Cow<'a, UnorderedMap<String, OwnedValueBag>>, Error> {
     let parsed = serde_json::to_value(parent_prompts)?;

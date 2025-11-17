@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 
-use crate::validators::{validate_umap_serde_json, validate_umap_target_path};
+use crate::{
+    OmniPath,
+    validators::{
+        validate_regex, validate_umap_serde_json, validate_umap_target_path,
+    },
+};
 use derive_new::new;
 use garde::Validate;
 use maps::UnorderedMap;
@@ -119,7 +124,7 @@ pub struct AddActionConfiguration {
 )]
 #[garde(allow_unvalidated)]
 /// Use an single inline template and write it to a file.
-pub struct AddInlineActionConfiguration {
+pub struct AddContentActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
 
@@ -158,7 +163,7 @@ pub struct AddManyActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
-pub struct RunGeneratorConfiguration {
+pub struct RunGeneratorActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
 
@@ -172,7 +177,102 @@ pub struct RunGeneratorConfiguration {
     /// Overrides the targets in the generator configuration.
     #[serde(deserialize_with = "validate_umap_target_path")]
     #[serde(default)]
-    pub targets: UnorderedMap<String, PathBuf>,
+    pub targets: UnorderedMap<String, OmniPath>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct CommonModifyConfiguration {
+    pub target: String,
+
+    #[serde(deserialize_with = "validate_regex")]
+    pub pattern: String,
+
+    #[serde(default, deserialize_with = "validate_umap_serde_json")]
+    pub data: UnorderedMap<String, serde_json::Value>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct ModifyActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonModifyConfiguration,
+
+    pub template_file: PathBuf,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct ModifyContentActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonModifyConfiguration,
+
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub template: String,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct CommonAppendConfiguration {
+    #[serde(flatten)]
+    pub common: CommonModifyConfiguration,
+
+    #[serde(default = "default_separator")]
+    pub separator: String,
+
+    #[serde(default = "default_unique")]
+    pub unique: bool,
+}
+
+fn default_separator() -> String {
+    "\n".to_string()
+}
+
+fn default_unique() -> bool {
+    true
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct AppendActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonAppendConfiguration,
+
+    pub template_file: PathBuf,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct AppendContentActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    #[serde(flatten)]
+    pub common: CommonAppendConfiguration,
+
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub template: String,
 }
 
 #[derive(
@@ -268,10 +368,10 @@ pub enum ActionConfiguration {
     },
 
     /// Add a single file specified by an inline template in the configuration
-    #[strum_discriminants(strum(serialize = "add-inline"))]
-    AddInline {
+    #[strum_discriminants(strum(serialize = "add-content"))]
+    AddContent {
         #[serde(flatten)]
-        action: AddInlineActionConfiguration,
+        action: AddContentActionConfiguration,
     },
 
     /// Add multiple files specified by a list of template files, accepts glob patterns
@@ -285,7 +385,35 @@ pub enum ActionConfiguration {
     #[strum_discriminants(strum(serialize = "run-generator"))]
     RunGenerator {
         #[serde(flatten)]
-        action: RunGeneratorConfiguration,
+        action: RunGeneratorActionConfiguration,
+    },
+
+    /// Replace a text using a tera template
+    #[strum_discriminants(strum(serialize = "modify"))]
+    Modify {
+        #[serde(flatten)]
+        action: ModifyActionConfiguration,
+    },
+
+    /// Replace a text using a tera template
+    #[strum_discriminants(strum(serialize = "modify-content"))]
+    ModifyContent {
+        #[serde(flatten)]
+        action: ModifyContentActionConfiguration,
+    },
+
+    /// Append a text rendered from a tera template after a line matching a regex
+    #[strum_discriminants(strum(serialize = "append"))]
+    Append {
+        #[serde(flatten)]
+        action: AppendActionConfiguration,
+    },
+
+    /// Append a text rendered from a tera template after a line matching a regex
+    #[strum_discriminants(strum(serialize = "append-content"))]
+    AppendContent {
+        #[serde(flatten)]
+        action: AppendContentActionConfiguration,
     },
 }
 

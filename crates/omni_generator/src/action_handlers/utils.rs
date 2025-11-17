@@ -1,5 +1,5 @@
 use either::Left;
-use omni_generator_configurations::OverwriteConfiguration;
+use omni_generator_configurations::{OmniPath, OverwriteConfiguration, Root};
 use std::{
     borrow::Cow,
     path::{self, Path, PathBuf},
@@ -182,19 +182,19 @@ pub async fn overwrite(
     return Ok(None);
 }
 
-pub async fn get_target<'a>(
+pub async fn get_target_dir<'a>(
     target_name: &str,
-    target_overrides: &'a UnorderedMap<String, PathBuf>,
-    generator_targets: &'a UnorderedMap<String, PathBuf>,
+    target_overrides: &'a UnorderedMap<String, OmniPath>,
+    generator_targets: &'a UnorderedMap<String, OmniPath>,
     output_dir: &Path,
     _sys: &impl GeneratorSys,
-) -> Result<Cow<'a, Path>, Error> {
+) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
         .get(target_name)
         .or_else(|| generator_targets.get(target_name));
 
     if let Some(target) = target {
-        validate_target(output_dir, target)?;
+        validate_target(output_dir, target.unresolved_path())?;
         return Ok(Cow::Borrowed(target));
     }
 
@@ -229,7 +229,59 @@ pub async fn get_target<'a>(
             trace::error!("invalid target dir: {}", err);
         }
 
-        break Ok(Cow::Owned(path.to_path_buf()));
+        break Ok(Cow::Owned(OmniPath::new(path)));
+    }
+}
+
+pub async fn prompt_target_file(
+    target_name: &str,
+    ctx: &HandlerContext<'_>,
+    sys: &impl GeneratorSys,
+) -> Result<PathBuf, Error> {
+    let prompt_cfg =
+        PromptConfiguration::new_text(TextPromptConfiguration::new(
+            ValidatedPromptConfiguration::new(
+                BasePromptConfiguration::new(
+                    target_name,
+                    format!("Directory for target {}:", target_name),
+                    None,
+                ),
+                [],
+            ),
+            None,
+        ));
+
+    let cfg = PromptingConfiguration::default();
+
+    let base = enum_map::enum_map! {
+        Root::Workspace => ctx.workspace_dir,
+        Root::Output => ctx.output_dir,
+    };
+
+    loop {
+        let result = omni_prompt::prompt_one(
+            &prompt_cfg,
+            None,
+            &unordered_map!(),
+            &cfg,
+        )?
+        .expect("should have value");
+
+        let path_str = result.by_ref().to_str().expect("should be string");
+        let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
+            path
+        } else {
+            trace::warn!("invalid path: {}", path_str);
+            continue;
+        };
+
+        let resolved = path.resolve(&base);
+
+        if !sys.fs_exists_async(resolved.as_ref()).await? {
+            trace::warn!("file does not exist: {}", resolved.display());
+        }
+
+        break Ok(resolved.to_path_buf());
     }
 }
 
@@ -284,7 +336,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
         Some(
-            get_target(
+            get_target_dir(
                 target_name,
                 &ctx.target_overrides,
                 &ctx.generator_targets,
@@ -296,6 +348,25 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     } else {
         None
     };
+
+    let bases = enum_map::enum_map! {
+        Root::Output => ctx.output_dir,
+        Root::Workspace => ctx.workspace_dir,
+    };
+
+    let target = target.map(|p| {
+        let resolved = p.as_ref().resolve(&bases);
+
+        if resolved.starts_with(ctx.output_dir) {
+            resolved
+                .strip_prefix(ctx.output_dir)
+                .expect("should remove output dir prefix")
+                .to_path_buf()
+        } else {
+            resolved.to_path_buf()
+        }
+    });
+
     let output_path = resolve_output_path(
         ctx.output_dir,
         target.as_deref(),

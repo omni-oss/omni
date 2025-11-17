@@ -1,9 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use derive_new::new;
 use maps::UnorderedMap;
 use omni_generator_configurations::{
-    ActionConfiguration, GeneratorConfiguration, OverwriteConfiguration,
+    ActionConfiguration, GeneratorConfiguration, OmniPath,
+    OverwriteConfiguration,
 };
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
@@ -11,7 +12,8 @@ use value_bag::OwnedValueBag;
 use crate::{
     GeneratorSys,
     action_handlers::{
-        HandlerContext, add, add_inline, add_many, run_generator,
+        HandlerContext, add, add_content, add_many, append, append_content,
+        modify, modify_content, run_generator,
     },
     error::{Error, ErrorInner},
     utils::get_tera_context,
@@ -22,10 +24,11 @@ pub struct ExecuteActionsArgs<'a> {
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub generator_dir: &'a Path,
+    pub workspace_dir: &'a Path,
     pub actions: &'a [ActionConfiguration],
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
-    pub targets: &'a UnorderedMap<String, PathBuf>,
-    pub target_overrides: &'a UnorderedMap<String, PathBuf>,
+    pub targets: &'a UnorderedMap<String, OmniPath>,
+    pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [GeneratorConfiguration],
 }
@@ -54,6 +57,8 @@ pub async fn execute_actions<'a>(
             generator_dir: args.generator_dir,
             overwrite: args.overwrite,
             available_generators: args.available_generators,
+            workspace_dir: args.workspace_dir,
+            resolved_action_name: action_name.as_str(),
         };
 
         let in_progress_message =
@@ -65,14 +70,26 @@ pub async fn execute_actions<'a>(
             ActionConfiguration::Add { action } => {
                 add(action, &handler_context, sys).await
             }
-            ActionConfiguration::AddInline { action } => {
-                add_inline(action, &handler_context, sys).await
+            ActionConfiguration::AddContent { action } => {
+                add_content(action, &handler_context, sys).await
             }
             ActionConfiguration::AddMany { action } => {
                 add_many(action, &handler_context, sys).await
             }
             ActionConfiguration::RunGenerator { action } => {
                 run_generator(action, &handler_context, sys).await
+            }
+            ActionConfiguration::Modify { action } => {
+                modify(action, &handler_context, sys).await
+            }
+            ActionConfiguration::Append { action } => {
+                append(action, &handler_context, sys).await
+            }
+            ActionConfiguration::ModifyContent { action } => {
+                modify_content(action, &handler_context, sys).await
+            }
+            ActionConfiguration::AppendContent { action } => {
+                append_content(action, &handler_context, sys).await
             }
         };
 
@@ -119,13 +136,21 @@ fn skip(
 fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
     match action {
         ActionConfiguration::Add { action } => action.base.base.r#if.as_deref(),
-        ActionConfiguration::AddInline { action } => {
+        ActionConfiguration::AddContent { action } => {
             action.base.base.r#if.as_deref()
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.r#if.as_deref()
         }
         ActionConfiguration::RunGenerator { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::Modify { action } => action.base.r#if.as_deref(),
+        ActionConfiguration::Append { action } => action.base.r#if.as_deref(),
+        ActionConfiguration::ModifyContent { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::AppendContent { action } => {
             action.base.r#if.as_deref()
         }
     }
@@ -167,13 +192,25 @@ fn get_error_message(
         ActionConfiguration::Add { action } => {
             action.base.base.error_message.as_deref()
         }
-        ActionConfiguration::AddInline { action } => {
+        ActionConfiguration::AddContent { action } => {
             action.base.base.error_message.as_deref()
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.error_message.as_deref()
         }
         ActionConfiguration::RunGenerator { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::Modify { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::Append { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::ModifyContent { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::AppendContent { action } => {
             action.base.error_message.as_deref()
         }
     };
@@ -204,13 +241,25 @@ fn get_in_progress_message(
         ActionConfiguration::Add { action } => {
             action.base.base.in_progress_message.as_deref()
         }
-        ActionConfiguration::AddInline { action } => {
+        ActionConfiguration::AddContent { action } => {
             action.base.base.in_progress_message.as_deref()
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.in_progress_message.as_deref()
         }
         ActionConfiguration::RunGenerator { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::Modify { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::Append { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::ModifyContent { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::AppendContent { action } => {
             action.base.in_progress_message.as_deref()
         }
     };
@@ -235,13 +284,25 @@ fn get_success_message(
         ActionConfiguration::Add { action } => {
             action.base.base.success_message.as_deref()
         }
-        ActionConfiguration::AddInline { action } => {
+        ActionConfiguration::AddContent { action } => {
             action.base.base.success_message.as_deref()
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.success_message.as_deref()
         }
         ActionConfiguration::RunGenerator { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::Modify { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::Append { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::ModifyContent { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::AppendContent { action } => {
             action.base.success_message.as_deref()
         }
     };
@@ -264,13 +325,21 @@ fn get_action_name(
 ) -> Result<String, Error> {
     let name = match action {
         ActionConfiguration::Add { action } => action.base.base.name.as_deref(),
-        ActionConfiguration::AddInline { action } => {
+        ActionConfiguration::AddContent { action } => {
             action.base.base.name.as_deref()
         }
         ActionConfiguration::AddMany { action } => {
             action.base.base.name.as_deref()
         }
         ActionConfiguration::RunGenerator { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::Modify { action } => action.base.name.as_deref(),
+        ActionConfiguration::Append { action } => action.base.name.as_deref(),
+        ActionConfiguration::ModifyContent { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::AppendContent { action } => {
             action.base.name.as_deref()
         }
     };
