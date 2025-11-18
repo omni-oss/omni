@@ -308,7 +308,7 @@ fn get_in_progress_message(
     if let Some(message) = message {
         render_text(
             message,
-            &&format!("in_progress_message for action {}", action_name),
+            &format!("in_progress_message for action {}", action_name),
             tera_context,
         )
     } else {
