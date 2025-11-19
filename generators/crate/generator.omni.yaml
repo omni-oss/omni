@@ -67,5 +67,5 @@ actions:
     template: '{{ prompts.crate_name }} = { path = "{{ output_path }}" }'
 
   - type: run-command
-    command: cargo fmt
+    command: cargo fmt -p {{ prompts.crate_name }}
     target: root

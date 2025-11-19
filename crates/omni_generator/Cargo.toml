@@ -51,3 +51,5 @@ enum-map = { workspace = true }
 omni_types = { workspace = true }
 regex = { workspace = true }
 omni_process = { workspace = true }
+omni_utils = { workspace = true }
+env = { workspace = true }

@@ -4494,6 +4494,7 @@ dependencies = [
  "dir_walker",
  "either",
  "enum-map",
+ "env",
  "eyre",
  "maps",
  "omni_configuration_discovery",
@@ -4504,6 +4505,7 @@ dependencies = [
  "omni_prompt",
  "omni_tera",
  "omni_types",
+ "omni_utils",
  "path-clean",
  "regex",
  "requestty",
@@ -4957,6 +4959,7 @@ version = "0.0.0-semantically-released"
 dependencies = [
  "bs58",
  "eyre",
+ "maps",
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.17",

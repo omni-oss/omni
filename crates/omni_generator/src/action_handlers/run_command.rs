@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use env::CommandExpansionConfig;
 use omni_generator_configurations::RunCommandActionConfiguration;
 use omni_process::ChildProcess;
 
@@ -34,17 +35,49 @@ pub async fn run_command<'a>(
         ctx.output_path.to_path_buf()
     };
 
-    trace::info!("Running command: {}", config.command);
+    let command = omni_tera::one_off(
+        &config.command,
+        format!("command for {}", ctx.resolved_action_name),
+        &ctx.tera_context_values,
+    )?;
+
+    trace::info!("Running command: {}", command);
 
     if config.supports_dry_run || !ctx.dry_run {
-        let mut cp = ChildProcess::<String, PathBuf>::new(
-            config.command.clone(),
-            target,
-        );
+        let mut cp =
+            ChildProcess::<String, PathBuf>::new(command, target.clone());
 
-        cp.env_vars(ctx.env)
-            .keep_stdin_open(false)
-            .record_logs(false);
+        let mut expanded_env;
+        let env = if !config.env.is_empty() {
+            expanded_env = ctx.env.clone();
+
+            for (key, value) in config.env.iter() {
+                let expanded = omni_tera::one_off(
+                    value,
+                    format!("env value for {}", ctx.resolved_action_name),
+                    &ctx.tera_context_values,
+                )?;
+
+                expanded_env.insert(key.clone(), expanded);
+            }
+
+            let vars_os = omni_utils::env::to_vars_os(&ctx.env);
+
+            env::expand_into_with_command_config(
+                &mut expanded_env,
+                &ctx.env,
+                &CommandExpansionConfig::new_enabled(
+                    target.as_path(),
+                    &vars_os,
+                ),
+            )?;
+
+            &expanded_env
+        } else {
+            ctx.env
+        };
+
+        cp.env_vars(env).keep_stdin_open(false).record_logs(false);
 
         if config.show_output {
             cp.output_writer(tokio::io::stdout());

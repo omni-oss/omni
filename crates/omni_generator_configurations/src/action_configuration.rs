@@ -526,12 +526,14 @@ pub enum ActionConfiguration {
         action: PrependContentActionConfiguration,
     },
 
+    /// Run a custom command
     #[strum_discriminants(strum(serialize = "run-command"))]
     RunCommand {
         #[serde(flatten)]
         action: RunCommandActionConfiguration,
     },
 
+    /// Run a custom JavaScript program
     #[strum_discriminants(strum(serialize = "run-javascript"))]
     #[serde(rename = "run-javascript")]
     #[serde(skip)]
