@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use maps::UnorderedMap;
+use maps::{Map, UnorderedMap};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
@@ -21,4 +21,5 @@ pub struct HandlerContext<'a> {
     pub available_generators: &'a [GeneratorConfiguration],
     pub workspace_dir: &'a Path,
     pub resolved_action_name: &'a str,
+    pub env: &'a Map<String, String>,
 }

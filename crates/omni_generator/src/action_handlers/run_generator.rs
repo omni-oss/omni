@@ -60,6 +60,7 @@ pub async fn run_generator<'a>(
         prompt_values: prompt_values.as_ref(),
         target_overrides: target_overrides.as_ref(),
         current_dir: ctx.current_dir,
+        env: ctx.env,
     };
 
     Box::pin(run_internal(

@@ -11,7 +11,9 @@ mod modify_commons;
 mod modify_content;
 mod prepend;
 mod prepend_content;
+mod run_command;
 mod run_generator;
+mod run_javascript;
 pub(crate) mod utils;
 
 pub use add::*;
@@ -24,4 +26,6 @@ pub use modify::*;
 pub use modify_content::*;
 pub use prepend::*;
 pub use prepend_content::*;
+pub use run_command::*;
 pub use run_generator::*;
+pub use run_javascript::*;

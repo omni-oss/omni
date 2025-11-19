@@ -1,7 +1,7 @@
 use std::{borrow::Cow, path::Path};
 
 use derive_new::new;
-use maps::{UnorderedMap, unordered_map};
+use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
@@ -29,6 +29,7 @@ pub struct RunConfig<'a> {
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub prompt_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
+    pub env: &'a Map<String, String>,
 }
 
 pub async fn run<'a>(
@@ -118,6 +119,7 @@ pub(crate) async fn run_internal<'a>(
         available_generators,
         target_overrides: config.target_overrides,
         current_dir: config.current_dir,
+        env: config.env,
     };
 
     execute_actions(&args, sys).await?;

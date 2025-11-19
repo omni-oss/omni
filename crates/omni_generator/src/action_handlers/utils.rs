@@ -409,7 +409,6 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
 pub fn augment_tera_context(
     tera_ctx: &tera::Context,
     data: Option<&UnorderedMap<String, serde_json::Value>>,
-    _ctx: &HandlerContext<'_>,
 ) -> Result<tera::Context, Error> {
     let mut new_ctx = tera_ctx.clone();
 
@@ -418,6 +417,15 @@ pub fn augment_tera_context(
     }
 
     Ok(new_ctx)
+}
+
+pub fn get_bases<'a>(
+    ctx: &HandlerContext<'a>,
+) -> enum_map::EnumMap<Root, &'a Path> {
+    enum_map::enum_map! {
+        Root::Output => ctx.output_path,
+        Root::Workspace => ctx.workspace_dir,
+    }
 }
 
 #[allow(unused)]

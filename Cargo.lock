@@ -4500,6 +4500,7 @@ dependencies = [
  "omni_discovery",
  "omni_file_data_serde",
  "omni_generator_configurations",
+ "omni_process",
  "omni_prompt",
  "omni_tera",
  "omni_types",

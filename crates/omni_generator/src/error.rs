@@ -110,4 +110,14 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     Regex(#[from] regex::Error),
+
+    #[error(transparent)]
+    ChildProcess(#[from] omni_process::ChildProcessError),
+
+    #[error("command '{command}' failed with exit code {exit_code}")]
+    CommandFailed {
+        #[new(into)]
+        command: String,
+        exit_code: u32,
+    },
 }

@@ -36,6 +36,7 @@ prompts:
 
 targets:
   root: .
+  src: ./src
   root_cargo_toml: "@workspace/Cargo.toml"
 
 actions:
@@ -64,3 +65,7 @@ actions:
     target: root_cargo_toml
     pattern: "@anchor:new-crate"
     template: '{{ prompts.crate_name }} = { path = "{{ output_path }}" }'
+
+  - type: run-command
+    command: cargo fmt
+    target: root

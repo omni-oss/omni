@@ -56,7 +56,7 @@ where
         .await?;
 
     let tera_ctx_with_data =
-        augment_tera_context(ctx.tera_context_values, Some(&common.data), ctx)?;
+        augment_tera_context(ctx.tera_context_values, Some(&common.data))?;
 
     let result = render(&tera_ctx_with_data)?;
 

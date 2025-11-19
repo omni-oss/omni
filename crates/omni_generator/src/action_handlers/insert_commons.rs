@@ -31,7 +31,6 @@ pub async fn insert_one<'a>(
     let tera_ctx_with_data = augment_tera_context(
         ctx.tera_context_values,
         Some(&common.common.data),
-        ctx,
     )?;
 
     let rendered = omni_tera::one_off(

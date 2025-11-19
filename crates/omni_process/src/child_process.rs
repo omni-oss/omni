@@ -1,10 +1,12 @@
-use std::{collections::HashMap, ffi::OsString, pin::Pin};
+use std::{
+    borrow::Cow, collections::HashMap, ffi::OsString, path::PathBuf, pin::Pin,
+};
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{BufMut as _, Bytes, BytesMut};
 use derive_new::new;
 use futures::future::try_join_all;
 use maps::Map;
-use omni_core::TaskExecutionNode;
+use std::path::Path;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::auto_impl;
 use tokio::io::{
@@ -14,19 +16,50 @@ use tokio::io::{
 
 use crate::{Child, ChildError};
 
+#[auto_impl]
+pub trait ChildProcessWriter: AsyncWrite + Send {}
+
+#[auto_impl]
+pub trait ChildProcessReader: AsyncRead + Send {}
+
+pub trait CommandProvider<'a>: 'a {
+    fn command(&'a self) -> Cow<'a, str>;
+}
+
+pub trait CurrentDirProvider<'a>: 'a {
+    fn current_dir(&'a self) -> Cow<'a, Path>;
+}
+
+impl<'a> CommandProvider<'a> for String {
+    fn command(&'a self) -> Cow<'a, str> {
+        self.into()
+    }
+}
+impl<'a> CurrentDirProvider<'a> for PathBuf {
+    fn current_dir(&'a self) -> Cow<'a, Path> {
+        self.into()
+    }
+}
+
 #[derive(new)]
-pub struct ChildProcess {
+pub struct ChildProcess<
+    C: for<'a> CommandProvider<'a>,
+    D: for<'a> CurrentDirProvider<'a>,
+> {
     #[new(into)]
-    task: TaskExecutionNode,
+    command: C,
+
+    #[new(into)]
+    current_dir: D,
 
     #[new(default)]
     expanded_command: Option<String>,
 
     #[new(default)]
-    output_writer: Option<Pin<Box<dyn TaskExecutorWriter>>>,
+    output_writer: Option<Pin<Box<dyn ChildProcessWriter>>>,
 
     #[new(default)]
-    input_reader: Option<Pin<Box<dyn TaskExecutorReader>>>,
+    input_reader: Option<Pin<Box<dyn ChildProcessReader>>>,
 
     #[new(default)]
     env_vars: Option<HashMap<OsString, OsString>>,
@@ -38,16 +71,8 @@ pub struct ChildProcess {
     keep_stdin_open: bool,
 }
 
-#[auto_impl]
-pub trait TaskExecutorWriter: AsyncWrite + Send {}
-
-#[auto_impl]
-pub trait TaskExecutorReader: AsyncRead + Send {}
-
 #[derive(Debug, Clone, PartialEq, Eq, new)]
 pub struct ChildProcessResult {
-    #[new(into)]
-    pub node: TaskExecutionNode,
     #[new(into)]
     pub exit_code: u32,
     #[new(into)]
@@ -66,10 +91,12 @@ impl ChildProcessResult {
     }
 }
 
-impl ChildProcess {
+impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
+    ChildProcess<C, D>
+{
     pub fn output_writer(
         &mut self,
-        writer: impl TaskExecutorWriter + 'static,
+        writer: impl ChildProcessWriter + 'static,
     ) -> &mut Self {
         self.output_writer = Some(Box::pin(writer));
         self
@@ -77,7 +104,7 @@ impl ChildProcess {
 
     pub fn env_vars(&mut self, vars: &Map<String, String>) -> &mut Self {
         self.expanded_command =
-            Some(::env::expand(self.task.task_command(), vars));
+            Some(::env::expand(self.command.command().as_ref(), vars));
         self.env_vars = Some(vars_os(vars));
 
         self
@@ -90,7 +117,7 @@ impl ChildProcess {
 
     pub fn input_reader(
         &mut self,
-        reader: impl TaskExecutorReader + 'static,
+        reader: impl ChildProcessReader + 'static,
     ) -> &mut Self {
         self.input_reader = Some(Box::pin(reader));
 
@@ -102,13 +129,14 @@ impl ChildProcess {
         self
     }
 
-    #[tracing::instrument(skip_all, fields(task = self.task.full_task_name()))]
+    #[tracing::instrument(skip_all)]
     pub async fn exec(
         mut self,
     ) -> Result<ChildProcessResult, ChildProcessError> {
-        if self.task.task_command().is_empty() {
+        let unexpanded_comand = self.command.command();
+
+        if unexpanded_comand.as_ref().is_empty() {
             return Ok(ChildProcessResult {
-                node: self.task,
                 exit_code: 0,
                 elapsed: std::time::Duration::ZERO,
                 logs: None,
@@ -117,12 +145,10 @@ impl ChildProcess {
 
         let start_time = std::time::Instant::now();
 
-        let task = self.task;
-
         let command = if let Some(command) = self.expanded_command.as_ref() {
-            command
+            command.as_str()
         } else {
-            task.task_command()
+            unexpanded_comand.as_ref()
         };
 
         let parsed = shlex::split(command).ok_or_else(|| {
@@ -134,7 +160,7 @@ impl ChildProcess {
         let child = Child::spawn(
             parsed[0].clone(),
             parsed.iter().skip(1).cloned().collect::<Vec<_>>(),
-            task.project_dir(),
+            self.current_dir.current_dir().as_ref(),
             self.env_vars.unwrap_or_default(),
         )?;
 
@@ -252,7 +278,6 @@ impl ChildProcess {
         let elapsed = start_time.elapsed();
 
         Ok(ChildProcessResult {
-            node: task,
             exit_code,
             elapsed,
             logs,
@@ -260,16 +285,15 @@ impl ChildProcess {
     }
 }
 
+fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
+    vars.iter()
+        .map(|(k, v)| (k.into(), v.into()))
+        .collect::<HashMap<_, _>>()
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct ChildProcessError(pub(crate) ChildProcessErrorInner);
-
-impl ChildProcessError {
-    #[allow(unused)]
-    pub fn kind(&self) -> ChildProcessErrorKind {
-        self.0.discriminant()
-    }
-}
 
 impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
     fn from(value: T) -> Self {
@@ -278,10 +302,11 @@ impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
     }
 }
 
-fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
-    vars.iter()
-        .map(|(k, v)| (k.into(), v.into()))
-        .collect::<HashMap<_, _>>()
+impl ChildProcessError {
+    #[allow(unused)]
+    pub fn kind(&self) -> ChildProcessErrorKind {
+        self.0.discriminant()
+    }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
