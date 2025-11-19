@@ -1,12 +1,16 @@
-use std::{borrow::Cow, io, path::Path};
+use std::{
+    borrow::Cow,
+    io,
+    path::{Path, PathBuf},
+};
 
 use derive_new::new;
 use system_traits::{
     BaseFsCreateDir, BaseFsCreateDirAsync, BaseFsMetadataAsync,
     BaseFsReadAsync, BaseFsRemoveDir as _, BaseFsRemoveDirAll as _,
     BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
-    BaseFsWriteAsync, CreateDirOptions, FileType, FsCreateDirAll,
-    FsMetadataAsync as _, FsMetadataValue, FsRemoveFile,
+    BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync, FileType,
+    FsCreateDirAll, FsMetadataAsync as _, FsMetadataValue, FsRemoveFile,
     boxed::BoxedFsMetadataValue,
     impls::{InMemorySys, RealSys},
 };
@@ -138,5 +142,12 @@ impl BaseFsRemoveFileAsync for DryRunSys {
     async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()> {
         trace::info!("Dry run: removing file: {}", path.display());
         self.in_memory.fs_remove_file(path)
+    }
+}
+
+#[async_trait::async_trait]
+impl EnvCurrentDirAsync for DryRunSys {
+    async fn env_current_dir_async(&self) -> io::Result<PathBuf> {
+        self.real.env_current_dir_async().await
     }
 }

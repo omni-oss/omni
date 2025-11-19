@@ -1,6 +1,7 @@
 use system_traits::{
-    FsCreateDirAllAsync, FsMetadataAsync, FsReadAsync, FsRemoveDirAllAsync,
-    FsRemoveDirAsync, FsRemoveFileAsync, FsWriteAsync, auto_impl,
+    EnvCurrentDirAsync, FsCreateDirAllAsync, FsMetadataAsync, FsReadAsync,
+    FsRemoveDirAllAsync, FsRemoveDirAsync, FsRemoveFileAsync, FsWriteAsync,
+    auto_impl,
 };
 
 #[auto_impl]
@@ -15,6 +16,7 @@ pub trait GeneratorSys:
     + FsRemoveDirAllAsync
     + FsRemoveDirAsync
     + FsRemoveFileAsync
+    + EnvCurrentDirAsync
     + 'static
 {
 }

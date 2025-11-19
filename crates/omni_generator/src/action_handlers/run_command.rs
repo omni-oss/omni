@@ -11,5 +11,5 @@ pub async fn run_command<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    run_custom_commons(&config.command, &config.common, ctx, sys).await
+    run_custom_commons(&config.command, None, &config.common, ctx, sys).await
 }
