@@ -13,7 +13,12 @@ use omni_discovery_utils::glob::GlobMatcher;
 use crate::error::{Error, ErrorInner};
 
 #[derive(Debug, Clone, new)]
-pub struct ConfigurationDiscovery<'a, G: AsRef<str>> {
+pub struct ConfigurationDiscovery<'a, G, C, I>
+where
+    G: AsRef<str>,
+    C: AsRef<str>,
+    I: AsRef<str>,
+{
     #[new(into)]
     root_dir: &'a Path,
 
@@ -21,16 +26,21 @@ pub struct ConfigurationDiscovery<'a, G: AsRef<str>> {
     glob_patterns: &'a [G],
 
     #[new(into)]
-    config_files: &'a [String],
+    config_files: &'a [C],
 
     #[new(into)]
-    ignore_files: &'a [String],
+    ignore_files: &'a [I],
 
     #[new(into)]
     config_name: &'a str,
 }
 
-impl<'a, G: AsRef<str>> ConfigurationDiscovery<'a, G> {
+impl<'a, G, C, I> ConfigurationDiscovery<'a, G, C, I>
+where
+    G: AsRef<str>,
+    C: AsRef<str>,
+    I: AsRef<str>,
+{
     fn create_default_dir_walker(
         &self,
     ) -> Result<impl DirWalker + 'static, Error> {
@@ -38,7 +48,12 @@ impl<'a, G: AsRef<str>> ConfigurationDiscovery<'a, G> {
 
         let cfg = cfg_builder
             .standard_filters(true)
-            .custom_ignore_filenames(self.ignore_files.to_vec())
+            .custom_ignore_filenames(
+                self.ignore_files
+                    .iter()
+                    .map(|s| s.as_ref().to_string())
+                    .collect::<Vec<_>>(),
+            )
             .build()?;
 
         Ok(IgnoreRealDirWalker::new_with_config(cfg))
@@ -81,7 +96,7 @@ impl<'a, G: AsRef<str>> ConfigurationDiscovery<'a, G> {
 
             if matcher.is_match(f.path()) {
                 for file_name in self.config_files {
-                    if *f.file_name().to_string_lossy() == *file_name {
+                    if *f.file_name().to_string_lossy() == *file_name.as_ref() {
                         trace::trace!(
                             "Found {} config: {:?}",
                             self.config_name,

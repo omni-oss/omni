@@ -12,7 +12,7 @@ use crate::constants;
 
 #[derive(Debug, Clone)]
 pub struct ProjectDiscovery<'a> {
-    discovery: ConfigurationDiscovery<'a, String>,
+    discovery: ConfigurationDiscovery<'a, String, String, String>,
 }
 
 static IGNORE_FILES: LazyLock<[String; 1]> =
