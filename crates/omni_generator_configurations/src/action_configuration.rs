@@ -331,7 +331,7 @@ pub struct RunCommandActionConfiguration {
 
     /// Additional environment variables to set for the command.
     #[serde(default)]
-    pub env: UnorderedMap<String, String>,
+    pub env: Map<String, String>,
 
     /// Show stdout and stderr of from the command.
     #[serde(default = "default_true")]
