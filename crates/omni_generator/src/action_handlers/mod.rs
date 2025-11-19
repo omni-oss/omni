@@ -12,6 +12,7 @@ mod modify_content;
 mod prepend;
 mod prepend_content;
 mod run_command;
+mod run_custom_commons;
 mod run_generator;
 mod run_javascript;
 pub(crate) mod utils;
