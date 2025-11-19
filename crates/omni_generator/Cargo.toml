@@ -53,3 +53,5 @@ regex = { workspace = true }
 omni_process = { workspace = true }
 omni_utils = { workspace = true }
 env = { workspace = true }
+which = { workspace = true }
+pathdiff = { workspace = true }

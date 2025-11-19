@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    ExecutorsConfiguration, Ui,
+    Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
@@ -27,9 +27,6 @@ pub struct WorkspaceConfiguration {
 
     #[serde(default)]
     pub ui: Ui,
-
-    #[serde(default)]
-    pub executors: ExecutorsConfiguration,
 
     #[serde(default)]
     pub generators: Vec<String>,

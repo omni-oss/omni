@@ -17,11 +17,15 @@ pub trait DelegatingJsRuntimeTransport:
 {
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "kebab-case")]
 pub enum DelegatingJsRuntimeOption {
     Deno,
     Node,
     Bun,
+    #[default]
     Auto,
 }
 

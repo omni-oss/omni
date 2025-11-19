@@ -9,8 +9,10 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["enable-tracing"]
+default = ["enable-tracing", "serde", "schemars"]
 enable-tracing = ["trace/enabled"]
+serde = ["dep:serde"]
+schemars = ["dep:schemars"]
 
 [dependencies]
 system_traits = { workspace = true }
@@ -20,8 +22,9 @@ thiserror = { workspace = true }
 eyre = { workspace = true }
 url = { workspace = true }
 trace = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, optional = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
 which = { workspace = true }
 strum = { workspace = true }
+schemars = { workspace = true, optional = true }

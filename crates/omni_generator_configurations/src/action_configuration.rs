@@ -359,11 +359,34 @@ pub struct RunJavaScriptActionConfiguration {
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub args: UnorderedMap<String, serde_json::Value>,
 
+    #[serde(default)]
+    pub runtime: JsRuntimeOption,
+
     /// The path of the file to run.
     pub script: PathBuf,
 
     #[serde(flatten)]
     pub common: CommonRunCustomActionConfiguration,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Default,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum JsRuntimeOption {
+    Deno,
+    Node,
+    Bun,
+    #[default]
+    Auto,
 }
 
 #[derive(
@@ -531,7 +554,6 @@ pub enum ActionConfiguration {
     /// Run a custom JavaScript program
     #[strum_discriminants(strum(serialize = "run-javascript"))]
     #[serde(rename = "run-javascript")]
-    #[serde(skip)]
     RunJavaScript {
         #[serde(flatten)]
         action: RunJavaScriptActionConfiguration,

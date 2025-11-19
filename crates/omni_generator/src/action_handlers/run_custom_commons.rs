@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use env::CommandExpansionConfig;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
@@ -13,15 +13,13 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
-pub async fn run_custom_commons<'a>(
-    command: &str,
+pub async fn target_path(
     common: &CommonRunCustomActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'_>,
     sys: &impl GeneratorSys,
-) -> Result<(), Error> {
+) -> Result<PathBuf, Error> {
     let bases = get_bases(ctx);
-
-    let target = if let Some(target_name) = common.target.as_deref() {
+    let result = if let Some(target_name) = common.target.as_deref() {
         let target = get_target_dir(
             target_name,
             ctx.target_overrides,
@@ -36,6 +34,25 @@ pub async fn run_custom_commons<'a>(
         ctx.output_path.to_path_buf()
     };
 
+    Ok(result)
+}
+
+pub async fn run_custom_commons<'a>(
+    command: &str,
+    target_path: Option<&Path>,
+    common: &CommonRunCustomActionConfiguration,
+    ctx: &HandlerContext<'a>,
+    sys: &impl GeneratorSys,
+) -> Result<(), Error> {
+    let __s_target;
+    let target = if let Some(target_path) = target_path {
+        target_path
+    } else {
+        __s_target = self::target_path(common, ctx, sys).await?;
+
+        &__s_target
+    };
+
     let command = omni_tera::one_off(
         &command,
         format!("command for {}", ctx.resolved_action_name),
@@ -45,10 +62,8 @@ pub async fn run_custom_commons<'a>(
     trace::info!("Running command: {}", command);
 
     if common.supports_dry_run || !ctx.dry_run {
-        let mut cp = ChildProcess::<String, PathBuf>::new(
-            command.clone(),
-            target.clone(),
-        );
+        let mut cp =
+            ChildProcess::<String, PathBuf>::new(command.clone(), target);
 
         let mut expanded_env;
         let env = if !common.env.is_empty() {
@@ -69,10 +84,7 @@ pub async fn run_custom_commons<'a>(
             env::expand_into_with_command_config(
                 &mut expanded_env,
                 &ctx.env,
-                &CommandExpansionConfig::new_enabled(
-                    target.as_path(),
-                    &vars_os,
-                ),
+                &CommandExpansionConfig::new_enabled(target, &vars_os),
             )?;
 
             &expanded_env
