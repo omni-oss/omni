@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use env::CommandExpansionConfig;
-use maps::Map;
+use omni_generator_configurations::CommonRunCustomActionConfiguration;
 use omni_process::ChildProcess;
 
 use crate::{
@@ -15,16 +15,13 @@ use crate::{
 
 pub async fn run_custom_commons<'a>(
     command: &str,
-    target_name: Option<&str>,
-    supports_dry_run: bool,
-    override_envs: &Map<String, String>,
-    show_output: bool,
+    common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let bases = get_bases(ctx);
 
-    let target = if let Some(target_name) = target_name {
+    let target = if let Some(target_name) = common.target.as_deref() {
         let target = get_target_dir(
             target_name,
             ctx.target_overrides,
@@ -47,17 +44,17 @@ pub async fn run_custom_commons<'a>(
 
     trace::info!("Running command: {}", command);
 
-    if supports_dry_run || !ctx.dry_run {
+    if common.supports_dry_run || !ctx.dry_run {
         let mut cp = ChildProcess::<String, PathBuf>::new(
             command.clone(),
             target.clone(),
         );
 
         let mut expanded_env;
-        let env = if !override_envs.is_empty() {
+        let env = if !common.env.is_empty() {
             expanded_env = ctx.env.clone();
 
-            for (key, value) in override_envs.iter() {
+            for (key, value) in common.env.iter() {
                 let expanded = omni_tera::one_off(
                     value,
                     format!("env value for {}", ctx.resolved_action_name),
@@ -85,7 +82,7 @@ pub async fn run_custom_commons<'a>(
 
         cp.env_vars(env).keep_stdin_open(false).record_logs(false);
 
-        if show_output {
+        if common.show_output {
             cp.output_writer(tokio::io::stdout());
         }
 

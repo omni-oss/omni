@@ -312,30 +312,39 @@ fn default_true() -> bool {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
-pub struct RunCommandActionConfiguration {
-    #[serde(flatten)]
-    pub base: BaseActionConfiguration,
-
-    /// By default, commands are not supported in dry run mode.
+pub struct CommonRunCustomActionConfiguration {
+    /// By default, running this type of action is not supported in dry run mode.
     /// If set to true, this action will be run even in dry run mode.
     #[serde(default)]
     pub supports_dry_run: bool,
+
+    /// Will be used as the working directory for the action execution.
+    #[serde(default)]
+    pub target: Option<String>,
+
+    /// Additional environment variables to expose to the script/command.
+    #[serde(default)]
+    pub env: Map<String, String>,
+
+    /// Show stdout and stderr from the action.
+    #[serde(default = "default_true")]
+    pub show_output: bool,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct RunCommandActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
 
     /// The command to run.
     #[serde(deserialize_with = "validate_tera_expr")]
     pub command: String,
 
-    /// Will be used as the working directory for the command.
-    #[serde(default)]
-    pub target: Option<String>,
-
-    /// Additional environment variables to set for the command.
-    #[serde(default)]
-    pub env: Map<String, String>,
-
-    /// Show stdout and stderr of from the command.
-    #[serde(default = "default_true")]
-    pub show_output: bool,
+    #[serde(flatten)]
+    pub common: CommonRunCustomActionConfiguration,
 }
 
 #[derive(
@@ -346,11 +355,6 @@ pub struct RunJavaScriptActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
 
-    /// By default, running JavaScript is not supported in dry run mode.
-    /// If set to true, this action will be run even in dry run mode.
-    #[serde(default)]
-    pub supports_dry_run: bool,
-
     /// Arguments to pass to the script.
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub args: UnorderedMap<String, serde_json::Value>,
@@ -358,17 +362,8 @@ pub struct RunJavaScriptActionConfiguration {
     /// The path of the file to run.
     pub script: PathBuf,
 
-    /// Will be used as the working directory for the script execution.
-    #[serde(default)]
-    pub target: Option<String>,
-
-    /// Additional environment variables to expose to the script.
-    #[serde(default)]
-    pub env: Map<String, String>,
-
-    /// Show stdout and stderr of the script.
-    #[serde(default = "default_true")]
-    pub show_output: bool,
+    #[serde(flatten)]
+    pub common: CommonRunCustomActionConfiguration,
 }
 
 #[derive(
