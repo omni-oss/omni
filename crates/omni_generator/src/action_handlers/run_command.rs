@@ -11,14 +11,5 @@ pub async fn run_command<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    run_custom_commons(
-        &config.command,
-        config.target.as_deref(),
-        config.supports_dry_run,
-        &config.env,
-        config.show_output,
-        ctx,
-        sys,
-    )
-    .await
+    run_custom_commons(&config.command, &config.common, ctx, sys).await
 }
