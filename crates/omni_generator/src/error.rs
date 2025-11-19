@@ -120,4 +120,7 @@ pub(crate) enum ErrorInner {
         command: String,
         exit_code: u32,
     },
+
+    #[error(transparent)]
+    Expansion(#[from] env::ExpansionError),
 }
