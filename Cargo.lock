@@ -3402,6 +3402,7 @@ dependencies = [
  "async-trait",
  "eyre",
  "futures 0.3.31",
+ "schemars",
  "serde",
  "strum 0.27.2",
  "system_traits",
@@ -4507,6 +4508,7 @@ dependencies = [
  "omni_types",
  "omni_utils",
  "path-clean",
+ "pathdiff",
  "regex",
  "requestty",
  "serde_json",
@@ -4519,6 +4521,7 @@ dependencies = [
  "trace",
  "tracing",
  "value-bag",
+ "which",
 ]
 
 [[package]]
@@ -4531,7 +4534,6 @@ dependencies = [
  "enum-map",
  "eyre",
  "garde",
- "js_runtime",
  "lazy-regex",
  "maps",
  "merge",
@@ -5139,6 +5141,12 @@ name = "path-slash"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e91099d4268b0e11973f036e885d652fb0b21fedcf69738c627f94db6a44f42"
+
+[[package]]
+name = "pathdiff"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "percent-encoding"
