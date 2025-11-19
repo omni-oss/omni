@@ -12,6 +12,7 @@ dependencies:
   - omni_discovery
   - omni_tera
   - omni_types
+  - omni_process
   - dir_walker
   - system_traits
   - maps

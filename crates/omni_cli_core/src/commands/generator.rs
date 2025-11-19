@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
-use maps::{UnorderedMap, unordered_map};
+use maps::{Map, UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::RunConfig;
@@ -147,10 +147,10 @@ async fn run_generator_run(
 
     let mut context_values = unordered_map!();
 
-    if let Some(env) = env {
+    if let Some(env) = &env {
         context_values.insert(
             "env".to_string(),
-            ValueBag::capture_serde1(&env).to_owned(),
+            ValueBag::capture_serde1(env).to_owned(),
         );
     }
 
@@ -163,6 +163,8 @@ async fn run_generator_run(
 
     let target_overrides = get_target_overrides(&command.args.target);
 
+    let default_map = Map::default();
+
     let run = RunConfig {
         dry_run: command.args.dry_run,
         output_dir: output_dir.as_path(),
@@ -172,6 +174,7 @@ async fn run_generator_run(
         context_values: &context_values,
         prompt_values: &pre_exec_values,
         current_dir: &current_dir,
+        env: &env.as_deref().unwrap_or(&default_map),
     };
 
     omni_generator::run(

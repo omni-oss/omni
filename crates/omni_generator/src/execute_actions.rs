@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use derive_new::new;
-use maps::UnorderedMap;
+use maps::{Map, UnorderedMap};
 use omni_generator_configurations::{
     ActionConfiguration, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration,
@@ -13,7 +13,8 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext, add, add_content, add_many, append, append_content,
-        modify, modify_content, prepend, prepend_content, run_generator,
+        modify, modify_content, prepend, prepend_content, run_command,
+        run_generator, run_javascript,
     },
     error::{Error, ErrorInner},
     utils::get_tera_context,
@@ -32,6 +33,7 @@ pub struct ExecuteActionsArgs<'a> {
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [GeneratorConfiguration],
+    pub env: &'a Map<String, String>,
 }
 
 pub async fn execute_actions<'a>(
@@ -78,6 +80,7 @@ pub async fn execute_actions<'a>(
             workspace_dir: args.workspace_dir,
             resolved_action_name: action_name.as_str(),
             current_dir: args.current_dir,
+            env: args.env,
         };
 
         let in_progress_message =
@@ -115,6 +118,12 @@ pub async fn execute_actions<'a>(
             }
             ActionConfiguration::PrependContent { action } => {
                 prepend_content(action, &handler_context, sys).await
+            }
+            ActionConfiguration::RunCommand { action } => {
+                run_command(action, &handler_context, sys).await
+            }
+            ActionConfiguration::RunJavaScript { action } => {
+                run_javascript(action, &handler_context, sys).await
             }
         };
 
@@ -180,6 +189,12 @@ fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
         }
         ActionConfiguration::Prepend { action } => action.base.r#if.as_deref(),
         ActionConfiguration::PrependContent { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::RunCommand { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::RunJavaScript { action } => {
             action.base.r#if.as_deref()
         }
     }
@@ -248,6 +263,12 @@ fn get_error_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.error_message.as_deref()
         }
+        ActionConfiguration::RunCommand { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::RunJavaScript { action } => {
+            action.base.error_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -303,6 +324,12 @@ fn get_in_progress_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.in_progress_message.as_deref()
         }
+        ActionConfiguration::RunCommand { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::RunJavaScript { action } => {
+            action.base.in_progress_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -352,6 +379,12 @@ fn get_success_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.success_message.as_deref()
         }
+        ActionConfiguration::RunCommand { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::RunJavaScript { action } => {
+            action.base.success_message.as_deref()
+        }
     };
 
     if let Some(message) = message {
@@ -391,6 +424,12 @@ fn get_action_name(
         }
         ActionConfiguration::Prepend { action } => action.base.name.as_deref(),
         ActionConfiguration::PrependContent { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::RunCommand { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::RunJavaScript { action } => {
             action.base.name.as_deref()
         }
     };

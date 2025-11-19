@@ -9,7 +9,7 @@ use omni_cache::{
     TaskExecutionCacheStore, TaskExecutionInfoExt as _,
 };
 use omni_collector::{CollectConfig, Collector, CollectorSys, ProjectTaskInfo};
-use omni_process::{ChildProcessError, ChildProcessResult};
+use omni_process::{ChildProcessError, TaskChildProcessResult};
 use omni_task_context::TaskContext;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -44,7 +44,7 @@ where
 pub enum TaskResultContext<'a> {
     Completed {
         task_context: &'a TaskContext<'a>,
-        result: ChildProcessResult,
+        result: TaskChildProcessResult,
         tries: u8,
     },
     Error {

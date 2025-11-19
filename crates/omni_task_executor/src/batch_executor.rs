@@ -7,7 +7,7 @@ use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
-use omni_process::{ChildProcess, ChildProcessResult};
+use omni_process::{TaskChildProcess, TaskChildProcessResult};
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
@@ -269,7 +269,12 @@ where
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
                     task_ctx,
-                    ChildProcessResult::new(node, 0u32, Duration::ZERO, None),
+                    TaskChildProcessResult::new(
+                        node,
+                        0u32,
+                        Duration::ZERO,
+                        None,
+                    ),
                     0,
                 ));
             } else {
@@ -360,7 +365,7 @@ async fn run_process<'a>(
 
     let result = loop {
         tries += 1;
-        let mut proc = ChildProcess::new(task_ctx.node.clone());
+        let mut proc = TaskChildProcess::new(task_ctx.node.clone());
         let handle = if presenter.accepts_input() {
             let (out_writer, in_reader, handle) = presenter
                 .add_piped_stream_full(task_ctx.node.full_task_name())
