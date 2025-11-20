@@ -1,5 +1,4 @@
-use std::fmt::Display;
-
+use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::error::RecvError;
 
@@ -21,49 +20,67 @@ impl<T: Into<BridgeRpcErrorInner>> From<T> for BridgeRpcError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(name(BridgeRpcErrorKind), vis(pub))]
 pub(crate) enum BridgeRpcErrorInner {
-    #[error("transport error: {message}")]
-    Transport { message: String },
+    #[error("transport error")]
+    Transport {
+        #[new(into)]
+        #[source]
+        message: eyre::Report,
+    },
 
-    #[error("serialization error: {0}")]
-    Serialization(#[from] rmp_serde::encode::Error),
+    #[error("serialization error")]
+    Serialization(
+        #[from]
+        #[source]
+        rmp_serde::encode::Error,
+    ),
 
     #[error("deserialization error: {0}")]
-    Deserialization(#[from] rmp_serde::decode::Error),
+    Deserialization(
+        #[from]
+        #[source]
+        rmp_serde::decode::Error,
+    ),
 
-    #[error("value conversion error: {0}")]
-    ValueConversion(#[from] rmpv::ext::Error),
+    #[error("value conversion error")]
+    ValueConversion(
+        #[from]
+        #[source]
+        rmpv::ext::Error,
+    ),
 
-    #[error("receive error: {0}")]
-    Receive(#[from] RecvError),
+    #[error("receive error")]
+    Receive(
+        #[from]
+        #[source]
+        RecvError,
+    ),
 
-    #[error("send error: {message}")]
-    Send { message: String },
+    #[error("send error")]
+    Send {
+        #[new(into)]
+        #[source]
+        error: eyre::Report,
+    },
 
-    #[error("timeout: {0}")]
-    Timeout(String),
+    #[error("timeout")]
+    Timeout(
+        #[new(into)]
+        #[source]
+        eyre::Report,
+    ),
 
     #[error("probe in progress")]
     ProbeInProgress,
 
-    #[error("unknown error: {0}")]
-    Unknown(#[from] eyre::Report),
-}
-
-impl BridgeRpcErrorInner {
-    pub(crate) fn transport(error: impl Display) -> Self {
-        Self::Transport {
-            message: error.to_string(),
-        }
-    }
-
-    pub(crate) fn send(message: impl Into<String>) -> Self {
-        Self::Send {
-            message: message.into(),
-        }
-    }
+    #[error("unknown error")]
+    Unknown(
+        #[from]
+        #[source]
+        eyre::Report,
+    ),
 }
 
 pub type BridgeRpcResult<T> = Result<T, BridgeRpcError>;
