@@ -29,6 +29,7 @@ defer = { workspace = true }
 strum = { workspace = true }
 bytes = { workspace = true }
 byteorder = { workspace = true }
+derive-new = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

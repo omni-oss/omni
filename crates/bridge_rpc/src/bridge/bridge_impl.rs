@@ -107,10 +107,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let bytes = (self.get_response(request, r_id).await)
             .map_err(BridgeRpcErrorInner::Serialization)?;
 
-        self.transport
-            .send(bytes.into())
-            .await
-            .map_err(BridgeRpcErrorInner::transport)?;
+        self.transport.send(bytes.into()).await.map_err(|e| {
+            BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
+        })?;
 
         Ok(())
     }
@@ -142,11 +141,11 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     pub async fn run(&self) -> BridgeRpcResult<()> {
         loop {
-            let bytes = self
-                .transport
-                .receive()
-                .await
-                .map_err(BridgeRpcErrorInner::transport)?;
+            let bytes = self.transport.receive().await.map_err(|e| {
+                BridgeRpcErrorInner::new_transport(eyre::Report::msg(
+                    e.to_string(),
+                ))
+            })?;
 
             let response: BridgeFrame<rmpv::Value> =
                 rmp_serde::from_slice(&bytes)
@@ -170,7 +169,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         };
 
                         response_tx.send(response).map_err(|_| {
-                            BridgeRpcErrorInner::send("Failed to send response")
+                            BridgeRpcErrorInner::new_send(eyre::eyre!(
+                                "failed to send response"
+                            ))
                         })?;
                     } else {
                         trace::warn!(
@@ -197,9 +198,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         if let Some(rx) = self.pending_probe.lock().await.take()
                         {
                             rx.send(()).map_err(|_| {
-                                BridgeRpcErrorInner::send(
-                                    "Failed to send probe ack",
-                                )
+                                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                                    "failed to send probe ack"
+                                ))
                             })?;
                         }
                     }
@@ -214,10 +215,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     async fn send_bytes_as_frame(&self, bytes: Vec<u8>) -> BridgeRpcResult<()> {
-        self.transport
-            .send(bytes.into())
-            .await
-            .map_err(BridgeRpcErrorInner::transport)?;
+        self.transport.send(bytes.into()).await.map_err(|e| {
+            BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
+        })?;
         Ok(())
     }
 
@@ -300,11 +300,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
         let result = tokio::time::timeout(timeout, rx.map(|_| true))
             .await
-            .map_err(|_| {
-                BridgeRpcErrorInner::Timeout(format!(
-                    "Probe timed out after {}ms",
-                    timeout.as_millis()
-                ))
+            .map_err(|e| {
+                BridgeRpcErrorInner::new_timeout(eyre::Report::new(e))
             });
 
         // clear the pending probe if it exists
