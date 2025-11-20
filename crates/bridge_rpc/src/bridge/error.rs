@@ -5,16 +5,16 @@ use tokio::sync::oneshot::error::RecvError;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct JsBridgeError(pub(crate) JsBridgeErrorInner);
+pub struct BridgeRpcError(pub(crate) BridgeRpcErrorInner);
 
-impl JsBridgeError {
+impl BridgeRpcError {
     #[allow(unused)]
-    pub fn kind(&self) -> JsBridgeErrorKind {
+    pub fn kind(&self) -> BridgeRpcErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<JsBridgeErrorInner>> From<T> for JsBridgeError {
+impl<T: Into<BridgeRpcErrorInner>> From<T> for BridgeRpcError {
     fn from(value: T) -> Self {
         let inner = value.into();
         Self(inner)
@@ -22,8 +22,8 @@ impl<T: Into<JsBridgeErrorInner>> From<T> for JsBridgeError {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(JsBridgeErrorKind), vis(pub))]
-pub(crate) enum JsBridgeErrorInner {
+#[strum_discriminants(name(BridgeRpcErrorKind), vis(pub))]
+pub(crate) enum BridgeRpcErrorInner {
     #[error("transport error: {message}")]
     Transport { message: String },
 
@@ -52,7 +52,7 @@ pub(crate) enum JsBridgeErrorInner {
     Unknown(#[from] eyre::Report),
 }
 
-impl JsBridgeErrorInner {
+impl BridgeRpcErrorInner {
     pub(crate) fn transport(error: impl Display) -> Self {
         Self::Transport {
             message: error.to_string(),
@@ -66,4 +66,4 @@ impl JsBridgeErrorInner {
     }
 }
 
-pub type JsBridgeResult<T> = Result<T, JsBridgeError>;
+pub type BridgeRpcResult<T> = Result<T, BridgeRpcError>;
