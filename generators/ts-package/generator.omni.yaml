@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=../../.artifacts/generator.json
+name: ts-package
+display_name: TypeScript Package
+description: A TypeScript package generator
+
+prompts:
+  - name: package_name
+    type: text
+    message: What is the name of your package?
+    validate:
+      - condition: "{{ value | length > 0 }}"
+        error_message: Package name must not be empty
+      - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
+        error_message: >
+          Package name must only contain alphanumeric characters, underscores, and hyphens,
+          and must start with a letter
+
+  - name: unit_test
+    type: confirm
+    message: Do you want to add unit tests?
+    default: true
+
+  - name: integration_test
+    type: confirm
+    message: Do you want to add integration tests?
+    default: true
+
+  - name: package_version
+    type: text
+    message: What is the version of your package?
+    default: 0.0.0-semantically-released
+
+  - name: package_license
+    type: text
+    message: What is the license of your package?
+    default: MIT
+
+  - name: published
+    type: confirm
+    message: Will the package be published to a registry?
+    default: false
+
+actions:
+  - type: add-many
+    base_path: templates
+    template_files:
+      - templates/**/*
+      - "!templates/vitest.config.unit.ts.tpl"
+      - "!templates/vitest.config.integration.ts.tpl"
+      - "!templates/src/__tests__/integration.spec.ts.tpl"
+      - "!templates/src/add.spec.ts.tpl"
+
+  - if: "{{ prompts.integration_test }}"
+    type: add-many
+    base_path: templates
+    template_files:
+      - templates/vitest.config.integration.ts.tpl
+      - templates/src/__tests__/integration.spec.ts.tpl
+
+  - if: "{{ prompts.unit_test }}"
+    type: add-many
+    base_path: templates
+    template_files:
+      - templates/vitest.config.unit.ts.tpl
+      - templates/src/add.spec.ts.tpl

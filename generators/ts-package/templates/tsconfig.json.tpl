@@ -1,0 +1,17 @@
+{
+	"extends": ["@omni-oss/tsconfig/with-paths.json"],
+	"compilerOptions": {
+		"outDir": "./dist",
+	},
+	"exclude": [
+        "coverage",
+		"dist",
+		"node_modules",
+		"output",
+		".output",
+		".vercel",
+		".solid",
+		"public",
+		"build"
+	]
+}
