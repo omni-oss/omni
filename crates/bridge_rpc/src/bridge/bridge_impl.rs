@@ -12,8 +12,8 @@ use tokio::sync::{
     oneshot::{self},
 };
 
-use crate::JsBridgeErrorInner;
-use crate::JsBridgeResult;
+use crate::BridgeRpcErrorInner;
+use crate::BridgeRpcResult;
 use crate::Transport;
 
 type TxPipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
@@ -21,7 +21,7 @@ type TxPipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
 type TxPipeMaps = HashMap<RequestId, TxPipe>;
 
 pub type RequestHandlerFnFuture =
-    BoxFuture<'static, JsBridgeResult<rmpv::Value>>;
+    BoxFuture<'static, BridgeRpcResult<rmpv::Value>>;
 
 pub type RequestHandlerFn =
     Box<dyn FnMut(rmpv::Value) -> RequestHandlerFnFuture + Send>;
@@ -61,12 +61,12 @@ where
         let mut handler = handler.clone();
         Box::pin(async move {
             let request: TRequest = rmpv::ext::from_value(request)
-                .map_err(JsBridgeErrorInner::ValueConversion)?;
+                .map_err(BridgeRpcErrorInner::ValueConversion)?;
             let response = handler(request).await.map_err(|e| {
-                JsBridgeErrorInner::Unknown(eyre::eyre!(e.to_string()))
+                BridgeRpcErrorInner::Unknown(eyre::eyre!(e.to_string()))
             })?;
             Ok(rmpv::ext::to_value(response)
-                .map_err(JsBridgeErrorInner::ValueConversion)?)
+                .map_err(BridgeRpcErrorInner::ValueConversion)?)
         })
     })
 }
@@ -92,7 +92,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         self.request_handlers.lock().await.contains_key(path)
     }
 
-    pub async fn close(&self) -> JsBridgeResult<()> {
+    pub async fn close(&self) -> BridgeRpcResult<()> {
         self.send_frame(&FRAME_CLOSE).await?;
 
         Ok(())
@@ -101,16 +101,16 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     async fn handle_request(
         &self,
         request: BridgeRequest<rmpv::Value>,
-    ) -> JsBridgeResult<()> {
+    ) -> BridgeRpcResult<()> {
         let r_id = request.id;
 
         let bytes = (self.get_response(request, r_id).await)
-            .map_err(JsBridgeErrorInner::Serialization)?;
+            .map_err(BridgeRpcErrorInner::Serialization)?;
 
         self.transport
             .send(bytes.into())
             .await
-            .map_err(JsBridgeErrorInner::transport)?;
+            .map_err(BridgeRpcErrorInner::transport)?;
 
         Ok(())
     }
@@ -140,17 +140,17 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         }
     }
 
-    pub async fn run(&self) -> JsBridgeResult<()> {
+    pub async fn run(&self) -> BridgeRpcResult<()> {
         loop {
             let bytes = self
                 .transport
                 .receive()
                 .await
-                .map_err(JsBridgeErrorInner::transport)?;
+                .map_err(BridgeRpcErrorInner::transport)?;
 
             let response: BridgeFrame<rmpv::Value> =
                 rmp_serde::from_slice(&bytes)
-                    .map_err(JsBridgeErrorInner::Deserialization)?;
+                    .map_err(BridgeRpcErrorInner::Deserialization)?;
 
             match response {
                 BridgeFrame::Response(response) => {
@@ -170,7 +170,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         };
 
                         response_tx.send(response).map_err(|_| {
-                            JsBridgeErrorInner::send("Failed to send response")
+                            BridgeRpcErrorInner::send("Failed to send response")
                         })?;
                     } else {
                         trace::warn!(
@@ -197,7 +197,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         if let Some(rx) = self.pending_probe.lock().await.take()
                         {
                             rx.send(()).map_err(|_| {
-                                JsBridgeErrorInner::send(
+                                BridgeRpcErrorInner::send(
                                     "Failed to send probe ack",
                                 )
                             })?;
@@ -213,23 +213,23 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         }
     }
 
-    async fn send_bytes_as_frame(&self, bytes: Vec<u8>) -> JsBridgeResult<()> {
+    async fn send_bytes_as_frame(&self, bytes: Vec<u8>) -> BridgeRpcResult<()> {
         self.transport
             .send(bytes.into())
             .await
-            .map_err(JsBridgeErrorInner::transport)?;
+            .map_err(BridgeRpcErrorInner::transport)?;
         Ok(())
     }
 
     async fn send_frame<TData>(
         &self,
         frame: &BridgeFrame<TData>,
-    ) -> JsBridgeResult<()>
+    ) -> BridgeRpcResult<()>
     where
         TData: Serialize,
     {
         let bytes = rmp_serde::to_vec(&frame)
-            .map_err(JsBridgeErrorInner::Serialization)?;
+            .map_err(BridgeRpcErrorInner::Serialization)?;
 
         self.send_bytes_as_frame(bytes).await?;
         Ok(())
@@ -240,7 +240,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         request_id: RequestId,
         path: impl Into<String>,
         data: TRequestData,
-    ) -> JsBridgeResult<TResponseData>
+    ) -> BridgeRpcResult<TResponseData>
     where
         TRequestData: Serialize,
         TResponseData: for<'de> serde::Deserialize<'de>,
@@ -256,16 +256,16 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
         let response = response_rx
             .await
-            .map_err(JsBridgeErrorInner::Receive)?
+            .map_err(BridgeRpcErrorInner::Receive)?
             .map_err(|e| {
-                JsBridgeErrorInner::Unknown(eyre::eyre!(
+                BridgeRpcErrorInner::Unknown(eyre::eyre!(
                     "Error: {}",
                     e.error_message
                 ))
             })?;
 
         let response_data = rmpv::ext::from_value(response)
-            .map_err(JsBridgeErrorInner::ValueConversion)?;
+            .map_err(BridgeRpcErrorInner::ValueConversion)?;
 
         Ok(response_data)
     }
@@ -275,7 +275,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         &self,
         path: impl Into<String>,
         data: TRequestData,
-    ) -> JsBridgeResult<TResponseData>
+    ) -> BridgeRpcResult<TResponseData>
     where
         TRequestData: Serialize,
         TResponseData: for<'de> serde::Deserialize<'de>,
@@ -288,9 +288,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         .await
     }
 
-    pub async fn probe(&self, timeout: Duration) -> JsBridgeResult<bool> {
+    pub async fn probe(&self, timeout: Duration) -> BridgeRpcResult<bool> {
         if self.has_pending_probe().await {
-            Err(JsBridgeErrorInner::ProbeInProgress)?;
+            Err(BridgeRpcErrorInner::ProbeInProgress)?;
         }
 
         let (tx, rx) = oneshot::channel();
@@ -301,7 +301,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let result = tokio::time::timeout(timeout, rx.map(|_| true))
             .await
             .map_err(|_| {
-                JsBridgeErrorInner::Timeout(format!(
+                BridgeRpcErrorInner::Timeout(format!(
                     "Probe timed out after {}ms",
                     timeout.as_millis()
                 ))
