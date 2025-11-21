@@ -11,10 +11,13 @@ prompts:
 targets:
   root: .
 
+vars:
+  rust_file_name: "{{ prompts.error_name | snake_case }}"
+
 actions:
   - type: add
     base_path: templates
     target: root
     data:
       rust_error_name: "{{ prompts.error_name | upper_camel_case }}"
-    template_file: templates/{{ prompts.error_name }}.rs.tpl
+    template_file: templates/{{ vars.rust_file_name }}.rs.tpl
