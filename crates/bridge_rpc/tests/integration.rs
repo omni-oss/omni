@@ -22,7 +22,7 @@ fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
     let transport2 = StreamTransport::new(pipe2_in, pipe1_out);
 
     let rpc1 = BridgeRpcBuilder::new(transport1)
-        .handler("rpc1test", |data: RpcRequest| async move {
+        .request_handler("rpc1test", |data: RpcRequest| async move {
             Ok::<_, eyre::Report>(RpcResponse {
                 data,
                 message: "Received data from rpc1, returning it back"
@@ -32,7 +32,7 @@ fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
         .build();
 
     let rpc2 = BridgeRpcBuilder::new(transport2)
-        .handler("rpc2test", |data: RpcRequest| async move {
+        .request_handler("rpc2test", |data: RpcRequest| async move {
             Ok::<_, eyre::Report>(RpcResponse {
                 data,
                 message: "Received data from rpc2, returning it back"
