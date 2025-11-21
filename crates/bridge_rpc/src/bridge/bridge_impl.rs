@@ -15,6 +15,7 @@ use tokio::sync::{
 };
 use tokio_stream::Stream as TokioStream;
 
+use crate::BridgeRpcError;
 use crate::BridgeRpcErrorInner;
 use crate::BridgeRpcResult;
 use crate::StreamError;
@@ -38,9 +39,14 @@ pub type StreamHandlerFnFuture = BoxFuture<'static, BridgeRpcResult<()>>;
 pub type RequestHandlerFn =
     Box<dyn FnMut(rmpv::Value) -> RequestHandlerFnFuture + Send>;
 
+pub struct StreamContext<TStartData, TStreamData, TError = StreamError> {
+    pub start_data: Option<TStartData>,
+    pub stream: BoxStream<'static, Result<TStreamData, TError>>,
+}
+
 pub type StreamHandlerFn = Box<
     dyn FnMut(
-            BoxStream<'static, Result<rmpv::Value, eyre::Report>>,
+            StreamContext<rmpv::Value, rmpv::Value, eyre::Report>,
         ) -> StreamHandlerFnFuture
         + Send,
 >;
@@ -68,15 +74,15 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
     }
 }
 
-pub fn create_request_handler<TFn, TRequest, TResponse, TError, TFuture>(
+pub fn create_request_handler<TRequest, TResponse, TError, TFuture, TFn>(
     handler: TFn,
 ) -> RequestHandlerFn
 where
-    TFn: FnMut(TRequest) -> TFuture + Send + Clone + 'static,
     TRequest: for<'de> serde::Deserialize<'de>,
     TResponse: serde::Serialize,
     TError: Display,
     TFuture: Future<Output = Result<TResponse, TError>> + Send + 'static,
+    TFn: FnMut(TRequest) -> TFuture + Send + Clone + 'static,
 {
     Box::new(move |request: rmpv::Value| {
         let mut handler = handler.clone();
@@ -92,30 +98,52 @@ where
     })
 }
 
-pub fn create_stream_handler<TFn, TData, TFuture>(
+pub fn create_stream_handler<TStartData, TStreamData, TFuture, TFn>(
     handler: TFn,
 ) -> StreamHandlerFn
 where
-    TData: for<'de> serde::Deserialize<'de>,
-    TFn: FnMut(BoxStream<'static, Result<TData, StreamError>>) -> TFuture
+    TStartData: for<'de> serde::Deserialize<'de>,
+    TStreamData: for<'de> serde::Deserialize<'de>,
+    TFuture: Future<Output = ()> + Send + 'static,
+    TFn: FnMut(StreamContext<TStartData, TStreamData, StreamError>) -> TFuture
         + Send
         + Clone
         + 'static,
-    TFuture: Future<Output = ()> + Send + 'static,
 {
-    Box::new(move |stream| {
+    Box::new(move |context| {
         let mut handler = handler.clone();
         Box::pin(async move {
-            let stream = stream.map(|result| match result {
-                Ok(data) => {
-                    Ok(rmpv::ext::from_value::<TData>(data).map_err(|e| {
-                        StreamError(StreamErrorInner::ValueConversion(e))
-                    })?)
-                }
-                Err(e) => Err(StreamError(StreamErrorInner::Custom(e))),
-            });
+            let start_data = context
+                .start_data
+                .map(|data| {
+                    rmpv::ext::from_value::<TStartData>(data).map_err(|e| {
+                        BridgeRpcError(BridgeRpcErrorInner::ValueConversion(e))
+                    })
+                })
+                .transpose()?;
 
-            handler(Box::pin(stream)).await;
+            let stream = context.stream.map(
+                |result| -> Result<TStreamData, StreamError> {
+                    match result {
+                        Ok(data) => {
+                            Ok(rmpv::ext::from_value::<TStreamData>(data)
+                                .map_err(|e| {
+                                    StreamError(
+                                        StreamErrorInner::ValueConversion(e),
+                                    )
+                                })?)
+                        }
+                        Err(e) => Err(StreamError(StreamErrorInner::Custom(e))),
+                    }
+                },
+            );
+            let stream = Box::pin(stream);
+
+            let context =
+                StreamContext::<TStartData, TStreamData> { start_data, stream };
+
+            handler(context).await;
+
             Ok(())
         })
     })
