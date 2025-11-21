@@ -16,6 +16,7 @@ enable-tracing = ["trace/enabled"]
 system_traits = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 trace = { workspace = true }
