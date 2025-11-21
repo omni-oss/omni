@@ -45,9 +45,17 @@ pub type StreamHandlerFnFuture = BoxFuture<'static, BridgeRpcResult<()>>;
 pub type RequestHandlerFn =
     Box<dyn FnMut(rmpv::Value) -> RequestHandlerFnFuture + Send>;
 
-pub struct StreamContext<TStartData, TStreamData, TError = StreamError> {
+pub struct StreamContext<
+    TStartData = (),
+    TStreamData = (),
+    TError = StreamError,
+> {
     pub start_data: Option<TStartData>,
     pub stream: BoxStream<'static, Result<TStreamData, TError>>,
+}
+
+pub struct RequestContext<TData = ()> {
+    pub data: TData,
 }
 
 pub type StreamHandlerFn = Box<
@@ -86,37 +94,41 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
     }
 }
 
-pub fn create_request_handler<TRequest, TResponse, TError, TFuture, TFn>(
+pub fn create_request_handler<TRequestData, TResponse, TError, TFuture, TFn>(
     handler: TFn,
 ) -> RequestHandlerFn
 where
-    TRequest: for<'de> serde::Deserialize<'de>,
+    TRequestData: for<'de> serde::Deserialize<'de>,
     TResponse: serde::Serialize,
     TError: Display,
     TFuture: Future<Output = Result<TResponse, TError>> + Send + 'static,
-    TFn: FnMut(TRequest) -> TFuture + Send + Clone + 'static,
+    TFn:
+        FnMut(RequestContext<TRequestData>) -> TFuture + Send + Clone + 'static,
 {
     Box::new(move |request: rmpv::Value| {
         let mut handler = handler.clone();
         Box::pin(async move {
-            let request: TRequest = rmpv::ext::from_value(request)
+            let request: TRequestData = rmpv::ext::from_value(request)
                 .map_err(BridgeRpcErrorInner::ValueConversion)?;
-            let response = handler(request).await.map_err(|e| {
-                BridgeRpcErrorInner::Unknown(eyre::eyre!(e.to_string()))
-            })?;
+            let response = handler(RequestContext { data: request })
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::Unknown(eyre::eyre!(e.to_string()))
+                })?;
             Ok(rmpv::ext::to_value(response)
                 .map_err(BridgeRpcErrorInner::ValueConversion)?)
         })
     })
 }
 
-pub fn create_stream_handler<TStartData, TStreamData, TFuture, TFn>(
+pub fn create_stream_handler<TStartData, TStreamData, TError, TFuture, TFn>(
     handler: TFn,
 ) -> StreamHandlerFn
 where
     TStartData: for<'de> serde::Deserialize<'de>,
     TStreamData: for<'de> serde::Deserialize<'de>,
-    TFuture: Future<Output = ()> + Send + 'static,
+    TError: Display,
+    TFuture: Future<Output = Result<(), TError>> + Send + 'static,
     TFn: FnMut(StreamContext<TStartData, TStreamData, StreamError>) -> TFuture
         + Send
         + Clone
@@ -154,7 +166,9 @@ where
             let context =
                 StreamContext::<TStartData, TStreamData> { start_data, stream };
 
-            handler(context).await;
+            handler(context).await.map_err(|e| {
+                BridgeRpcErrorInner::Unknown(eyre::eyre!(e.to_string()))
+            })?;
 
             Ok(())
         })
@@ -838,9 +852,14 @@ mod tests {
         });
 
         let rpc = BridgeRpcBuilder::new(transport)
-            .request_handler("test_path", async |req: MockRequestData| {
-                Ok::<_, String>(MockResponseData { data: req.data })
-            })
+            .request_handler(
+                "test_path",
+                async |req: RequestContext<MockRequestData>| {
+                    Ok::<_, String>(MockResponseData {
+                        data: req.data.data,
+                    })
+                },
+            )
             .build();
 
         // run the RPC to populate response buffer
@@ -911,6 +930,67 @@ mod tests {
 
     #[tokio::test]
     #[timeout(1000)]
+    async fn test_respond_stream_start_existing_path() {
+        let mut transport = mock_transport();
+
+        let mut received_response = false;
+        transport.expect_send().returning(move |bytes| {
+            if received_response {
+                return Ok(());
+            }
+
+            let response: StreamStartResponseFrame =
+                rmp_serde::from_slice(&bytes)
+                    .expect("Failed to deserialize response");
+
+            assert_eq!(
+                response.r#type,
+                FrameType::StreamStartResponse,
+                "Expected response frame"
+            );
+
+            assert!(response.data.is_some(), "Expected response data");
+
+            received_response = true;
+
+            if let Some(response) = &response.data {
+                assert!(response.ok, "Expected success response");
+            }
+
+            Ok(())
+        });
+
+        let mut sent_success = false;
+        transport.expect_receive().returning(move || {
+            if sent_success {
+                return Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into());
+            }
+
+            sent_success = true;
+
+            Ok(serialize(&StreamStartFrame::<()>::stream_start(
+                Id::new(),
+                "test_path",
+                None,
+            ))
+            .expect("Failed to serialize response")
+            .into())
+        });
+
+        let rpc = BridgeRpcBuilder::new(transport)
+            .stream_handler("test_path", |_: StreamContext| async move {
+                Ok::<_, String>(())
+            })
+            .build();
+
+        // run the RPC to populate response buffer
+        rpc.run().await.expect("Failed to run RPC");
+    }
+
+    #[tokio::test]
+    #[timeout(1000)]
     async fn test_respond_stream_start_non_existing_path() {
         let mut transport = mock_transport();
 
@@ -955,10 +1035,10 @@ mod tests {
 
             sent_success = true;
 
-            Ok(serialize(&Frame::stream_start(
+            Ok(serialize(&StreamStartFrame::<()>::stream_start(
                 Id::new(),
                 "test_path_wrong",
-                None::<()>,
+                None,
             ))
             .expect("Failed to serialize response")
             .into())
