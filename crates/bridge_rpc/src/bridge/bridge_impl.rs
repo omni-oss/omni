@@ -27,12 +27,13 @@ use crate::bridge::utils::send_frame;
 use crate::bridge::utils::serialize;
 
 type ResponsePipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
-
 type ResponsePipeMaps = HashMap<Id, ResponsePipe>;
 
 type StreamPipe = mpsc::Sender<Result<rmpv::Value, eyre::Report>>;
-
 type StreamPipeMaps = HashMap<Id, StreamPipe>;
+
+type StreamStartResponsePipe = oneshot::Sender<StreamStartResponse>;
+type StreamStartResponsePipeMaps = HashMap<Id, StreamStartResponsePipe>;
 
 pub type BoxStream<'a, T> = Pin<Box<dyn TokioStream<Item = T> + Send + 'a>>;
 
@@ -58,8 +59,9 @@ pub type StreamHandlerFn = Box<
 
 pub struct BridgeRpc<TTransport: Transport> {
     transport: Arc<TTransport>,
-    response_pipes: Arc<Mutex<ResponsePipeMaps>>,
+    message_response_pipes: Arc<Mutex<ResponsePipeMaps>>,
     stream_pipes: Arc<Mutex<StreamPipeMaps>>,
+    stream_start_response_pipes: Arc<Mutex<StreamStartResponsePipeMaps>>,
     request_handlers: Arc<Mutex<HashMap<String, RequestHandlerFn>>>,
     stream_handlers: Arc<Mutex<HashMap<String, StreamHandlerFn>>>,
     pending_probe: Arc<Mutex<Option<oneshot::Sender<()>>>>,
@@ -72,11 +74,14 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
     fn clone(&self) -> Self {
         Self {
             transport: self.transport.clone(),
-            response_pipes: self.response_pipes.clone(),
+            message_response_pipes: self.message_response_pipes.clone(),
             request_handlers: self.request_handlers.clone(),
             pending_probe: self.pending_probe.clone(),
             stream_handlers: self.stream_handlers.clone(),
             stream_pipes: self.stream_pipes.clone(),
+            stream_start_response_pipes: self
+                .stream_start_response_pipes
+                .clone(),
         }
     }
 }
@@ -164,8 +169,9 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     ) -> Self {
         Self {
             transport: Arc::new(transport),
-            response_pipes: Arc::new(Mutex::new(HashMap::new())),
+            message_response_pipes: Arc::new(Mutex::new(HashMap::new())),
             stream_pipes: Arc::new(Mutex::new(HashMap::new())),
+            stream_start_response_pipes: Arc::new(Mutex::new(HashMap::new())),
             request_handlers: Arc::new(Mutex::new(request_handlers)),
             stream_handlers: Arc::new(Mutex::new(stream_handlers)),
             pending_probe: Arc::new(Mutex::new(None)),
@@ -186,21 +192,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     pub async fn close(&self) -> BridgeRpcResult<()> {
         send_frame(self.transport.as_ref(), &Frame::close()).await?;
-
-        Ok(())
-    }
-
-    async fn handle_request(
-        &self,
-        request: Request<rmpv::Value>,
-    ) -> BridgeRpcResult<()> {
-        let r_id = request.id;
-
-        let bytes = self.get_response(request, r_id).await?;
-
-        self.transport.send(bytes.into()).await.map_err(|e| {
-            BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
-        })?;
 
         Ok(())
     }
@@ -241,10 +232,11 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             let incoming: Frame<rmpv::Value> = rmp_serde::from_slice(&bytes)
                 .map_err(BridgeRpcErrorInner::Deserialization)?;
 
+            println!("incoming: {incoming:?}");
+
             match incoming.r#type {
                 FrameType::Close => {
-                    send_frame(self.transport.as_ref(), &Frame::close_ack())
-                        .await?;
+                    self.handle_close().await?;
                     return Ok(());
                 }
                 FrameType::CloseAck => {
@@ -252,106 +244,194 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                     return Ok(());
                 }
                 FrameType::Probe => {
-                    trace::debug!("Received probe, sending probe ack");
-                    send_frame(self.transport.as_ref(), &Frame::probe_ack())
-                        .await?;
+                    self.handle_probe().await?;
                 }
                 FrameType::ProbeAck => {
-                    trace::debug!("Received probe ack");
-                    if let Some(rx) = self.pending_probe.lock().await.take() {
-                        rx.send(()).map_err(|_| {
-                            BridgeRpcErrorInner::new_send(eyre::eyre!(
-                                "failed to send probe ack"
-                            ))
-                        })?;
-                    }
+                    self.handle_probe_ack().await?;
                 }
                 FrameType::StreamStart => {
-                    let stream: StreamStart<rmpv::Value> =
-                        extract_value(&incoming)?;
-
-                    let mut handlers = self.stream_handlers.lock().await;
-                    let mut handler = handlers.get_mut(&stream.path);
-
-                    if let Some(handler) = handler.as_mut() {
-                        let (tx, rx) = mpsc::channel(1);
-
-                        self.stream_pipes.lock().await.insert(stream.id, tx);
-
-                        let ctx = StreamContext::<
-                            rmpv::Value,
-                            rmpv::Value,
-                            eyre::Report,
-                        > {
-                            start_data: stream.data,
-                            stream: Box::pin(
-                                tokio_stream::wrappers::ReceiverStream::new(rx),
-                            ),
-                        };
-
-                        handler(ctx).await?;
-                    }
+                    self.handle_stream_start(&incoming).await?;
+                }
+                FrameType::StreamStartResponse => {
+                    self.handle_stream_start_response(&incoming).await?;
                 }
                 FrameType::StreamData => {
-                    let stream: StreamData<rmpv::Value> =
-                        extract_value(&incoming)?;
-
-                    let mut pipes = self.stream_pipes.lock().await;
-                    let sender = pipes.get_mut(&stream.id);
-
-                    if let Some(sender) = sender {
-                        sender
-                            .send(Ok(rmpv::ext::to_value(stream.data)?))
-                            .await
-                            .map_err(BridgeRpcErrorInner::new_send)?;
-                    }
+                    self.handle_stream_data(&incoming).await?;
                 }
                 FrameType::StreamEnd => {
-                    let tream: StreamEnd = extract_value(&incoming)?;
-
-                    let sender =
-                        self.stream_pipes.lock().await.remove(&tream.id);
-
-                    if let Some(sender) = sender {
-                        drop(sender);
-                    }
+                    self.handle_stream_end(&incoming).await?;
                 }
                 FrameType::MessageRequest => {
-                    let request: Request<rmpv::Value> =
-                        extract_value(&incoming)?;
-                    // request
-                    self.handle_request(request).await?;
+                    self.handle_message_request(&incoming).await?;
                 }
                 FrameType::MessageResponse => {
-                    let response: Response<rmpv::Value> =
-                        extract_value(&incoming)?;
-
-                    let req_id = response.id;
-
-                    let mut response_pipes = self.response_pipes.lock().await;
-                    if let Some(response_tx) = response_pipes.remove(&req_id) {
-                        let response = if let Some(error) = response.error {
-                            Err(error)
-                        } else if let Some(data) = response.data {
-                            Ok(data)
-                        } else {
-                            continue; // No data or error, skip
-                        };
-
-                        response_tx.send(response).map_err(|_| {
-                            BridgeRpcErrorInner::new_send(eyre::eyre!(
-                                "failed to send response"
-                            ))
-                        })?;
-                    } else {
-                        trace::warn!(
-                            "No response pipe found for request ID: {}",
-                            req_id
-                        );
-                    }
+                    self.handle_message_response(&incoming).await?;
                 }
             }
         }
+    }
+
+    async fn handle_probe(&self) -> Result<(), BridgeRpcError> {
+        trace::debug!("Received probe, sending probe ack");
+        send_frame(self.transport.as_ref(), &Frame::probe_ack()).await?;
+        Ok(())
+    }
+
+    async fn handle_close(&self) -> Result<(), BridgeRpcError> {
+        send_frame(self.transport.as_ref(), &Frame::close_ack()).await?;
+        Ok(())
+    }
+
+    async fn handle_probe_ack(&self) -> Result<(), BridgeRpcError> {
+        trace::debug!("Received probe ack");
+        Ok(if let Some(rx) = self.pending_probe.lock().await.take() {
+            rx.send(()).map_err(|_| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send probe ack"
+                ))
+            })?;
+        })
+    }
+
+    async fn handle_message_request(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let request: Request<rmpv::Value> = extract_value(incoming)?;
+        let r_id = request.id;
+        let bytes = self.get_response(request, r_id).await?;
+        self.transport.send(bytes.into()).await.map_err(|e| {
+            BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
+        })?;
+        Ok(())
+    }
+
+    async fn handle_message_response(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let response: Response<rmpv::Value> = extract_value(&incoming)?;
+
+        let req_id = response.id;
+
+        let mut response_pipes = self.message_response_pipes.lock().await;
+        if let Some(response_tx) = response_pipes.remove(&req_id) {
+            let response = if let Some(error) = response.error {
+                Err(error)
+            } else if let Some(data) = response.data {
+                Ok(data)
+            } else {
+                return Ok(());
+            };
+
+            response_tx.send(response).map_err(|_| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send response"
+                ))
+            })?;
+        } else {
+            trace::warn!("No response pipe found for request ID: {}", req_id);
+        }
+
+        Ok(())
+    }
+
+    async fn handle_stream_end(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let tream: StreamEnd = extract_value(incoming)?;
+        let sender = self.stream_pipes.lock().await.remove(&tream.id);
+        Ok(if let Some(sender) = sender {
+            drop(sender);
+        })
+    }
+
+    async fn handle_stream_data(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let stream: StreamData<rmpv::Value> = extract_value(incoming)?;
+
+        let mut pipes = self.stream_pipes.lock().await;
+        let sender = pipes.get_mut(&stream.id);
+        Ok(if let Some(sender) = sender {
+            sender
+                .send(Ok(rmpv::ext::to_value(stream.data)?))
+                .await
+                .map_err(BridgeRpcErrorInner::new_send)?;
+        } else {
+            trace::warn!("No stream pipe found for stream ID: {}", stream.id);
+        })
+    }
+
+    async fn handle_stream_start(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let stream: StreamStart<rmpv::Value> = extract_value(incoming)?;
+        let mut handlers = self.stream_handlers.lock().await;
+        let mut handler = handlers.get_mut(&stream.path);
+        Ok(if let Some(handler) = handler.as_mut() {
+            send_frame(
+                self.transport.as_ref(),
+                &StreamStartResponseFrame::stream_start_response_ok(stream.id),
+            )
+            .await?;
+
+            let (tx, rx) = mpsc::channel(1);
+
+            self.stream_pipes.lock().await.insert(stream.id, tx);
+
+            let ctx = StreamContext::<rmpv::Value, rmpv::Value, eyre::Report> {
+                start_data: stream.data,
+                stream: Box::pin(tokio_stream::wrappers::ReceiverStream::new(
+                    rx,
+                )),
+            };
+
+            handler(ctx).await?;
+        } else {
+            let error_message =
+                format!("no handler found for path: '{}'", stream.path);
+
+            send_frame(
+                self.transport.as_ref(),
+                &StreamStartResponseFrame::stream_start_response_error(
+                    stream.id,
+                    error_message,
+                ),
+            )
+            .await?;
+        })
+    }
+
+    async fn handle_stream_start_response(
+        &self,
+        incoming: &Frame<rmpv::Value>,
+    ) -> Result<(), BridgeRpcError> {
+        let value = extract_value::<StreamStartResponse>(incoming)?;
+        let id = value.id;
+
+        let mut stream_response_pipes =
+            self.stream_start_response_pipes.lock().await;
+
+        if let Some(stream_rejected_tx) =
+            stream_response_pipes.remove(&value.id)
+        {
+            stream_rejected_tx.send(value).map_err(|_| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send stream start response (id: {id})",
+                ))
+            })?;
+        } else {
+            trace::warn!(
+                "No stream start rejected pipe found for stream ID: {}",
+                value.id
+            );
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn request_with_id<TResponseData, TRequestData>(
@@ -372,7 +452,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
         let (response_tx, response_rx) = oneshot::channel();
 
-        self.response_pipes
+        self.message_response_pipes
             .lock()
             .await
             .insert(request_id, response_tx);
@@ -422,7 +502,25 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
         let start_frame = StreamStartFrame::stream_start(id, path, data);
 
+        let (response_tx, response_rx) = oneshot::channel();
+
+        self.stream_start_response_pipes
+            .lock()
+            .await
+            .insert(id, response_tx);
+
         send_frame(self.transport.as_ref(), &start_frame).await?;
+
+        let response =
+            response_rx.await.map_err(BridgeRpcErrorInner::Receive)?;
+
+        if !response.ok {
+            return Err(BridgeRpcErrorInner::StreamStartResponse {
+                id,
+                error: response.error,
+            }
+            .into());
+        }
 
         Ok(BridgeStream::new(id, transport))
     }
@@ -800,6 +898,67 @@ mod tests {
                 req_id,
                 "test_path_wrong",
                 req_data("test_data"),
+            ))
+            .expect("Failed to serialize response")
+            .into())
+        });
+
+        let rpc = empty_rpc(transport);
+
+        // run the RPC to populate response buffer
+        rpc.run().await.expect("Failed to run RPC");
+    }
+
+    #[tokio::test]
+    #[timeout(1000)]
+    async fn test_respond_stream_start_non_existing_path() {
+        let mut transport = mock_transport();
+
+        let mut received_response = false;
+        transport.expect_send().returning(move |bytes| {
+            if received_response {
+                return Ok(());
+            }
+
+            let response: StreamStartResponseFrame =
+                rmp_serde::from_slice(&bytes)
+                    .expect("Failed to deserialize response");
+
+            assert_eq!(
+                response.r#type,
+                FrameType::StreamStartResponse,
+                "Expected response frame"
+            );
+
+            assert!(response.data.is_some(), "Expected response data");
+
+            received_response = true;
+
+            if let Some(response) = &response.data {
+                assert!(!response.ok, "Expected error response");
+                assert_eq!(
+                    response.error.as_ref().expect("Should have error").message,
+                    "no handler found for path: 'test_path_wrong'"
+                );
+            }
+
+            Ok(())
+        });
+
+        let mut sent_success = false;
+        transport.expect_receive().returning(move || {
+            if sent_success {
+                return Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into());
+            }
+
+            sent_success = true;
+
+            Ok(serialize(&Frame::stream_start(
+                Id::new(),
+                "test_path_wrong",
+                None::<()>,
             ))
             .expect("Failed to serialize response")
             .into())
