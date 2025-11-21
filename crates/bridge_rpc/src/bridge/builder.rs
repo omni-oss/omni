@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use crate::{
-    StreamContext, StreamError, StreamHandlerFn, Transport,
+    RequestContext, StreamContext, StreamError, StreamHandlerFn, Transport,
     bridge::RequestHandlerFn,
 };
 
@@ -20,17 +20,21 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         }
     }
 
-    pub fn request_handler<TRequest, TResponse, TError, TFuture, TFn>(
+    pub fn request_handler<TRequestData, TResponseData, TError, TFuture, TFn>(
         mut self,
         path: impl Into<String>,
         handler: TFn,
     ) -> Self
     where
-        TFn: FnMut(TRequest) -> TFuture + Send + Clone + 'static,
-        TRequest: for<'de> serde::Deserialize<'de>,
-        TResponse: serde::Serialize,
+        TFn: FnMut(RequestContext<TRequestData>) -> TFuture
+            + Send
+            + Clone
+            + 'static,
+        TRequestData: for<'de> serde::Deserialize<'de>,
+        TResponseData: serde::Serialize,
         TError: Display,
-        TFuture: Future<Output = Result<TResponse, TError>> + Send + 'static,
+        TFuture:
+            Future<Output = Result<TResponseData, TError>> + Send + 'static,
     {
         self.request_handlers.insert(
             path.into(),
@@ -39,7 +43,7 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         self
     }
 
-    pub fn stream_handler<TStartData, TStreamData, TFuture, TFn>(
+    pub fn stream_handler<TStartData, TStreamData, TError, TFuture, TFn>(
         mut self,
         path: impl Into<String>,
         handler: TFn,
@@ -47,7 +51,8 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
     where
         TStartData: for<'de> serde::Deserialize<'de>,
         TStreamData: for<'de> serde::Deserialize<'de>,
-        TFuture: Future<Output = ()> + Send + 'static,
+        TError: Display,
+        TFuture: Future<Output = Result<(), TError>> + Send + 'static,
         TFn: FnMut(
                 StreamContext<TStartData, TStreamData, StreamError>,
             ) -> TFuture
@@ -79,9 +84,12 @@ mod tests {
     async fn test_builder_request_handler() {
         let transport = crate::MockTransport::new();
         let rpc = BridgeRpcBuilder::new(transport)
-            .request_handler("test_path", |req: String| async move {
-                Ok::<_, String>(req)
-            })
+            .request_handler(
+                "test_path",
+                |req: RequestContext<String>| async move {
+                    Ok::<_, String>(req.data)
+                },
+            )
             .build();
 
         assert!(
@@ -94,12 +102,11 @@ mod tests {
     async fn test_builder_stream_handler() {
         let transport = crate::MockTransport::new();
         let rpc = BridgeRpcBuilder::new(transport)
-            .stream_handler(
-                "test_path",
-                |mut s: StreamContext<(), (), _>| async move {
-                    while let Some(_) = s.stream.next().await {}
-                },
-            )
+            .stream_handler("test_path", |mut s: StreamContext| async move {
+                while let Some(_) = s.stream.next().await {}
+
+                Ok::<_, String>(())
+            })
             .build();
 
         assert!(

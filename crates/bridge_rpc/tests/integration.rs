@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use bridge_rpc::{BridgeRpc, BridgeRpcBuilder, StreamTransport, Transport};
+use bridge_rpc::{
+    BridgeRpc, BridgeRpcBuilder, RequestContext, StreamTransport, Transport,
+};
 use ntest::timeout;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
@@ -22,23 +24,29 @@ fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
     let transport2 = StreamTransport::new(pipe2_in, pipe1_out);
 
     let rpc1 = BridgeRpcBuilder::new(transport1)
-        .request_handler("rpc1test", |data: RpcRequest| async move {
-            Ok::<_, eyre::Report>(RpcResponse {
-                data,
-                message: "Received data from rpc1, returning it back"
-                    .to_string(),
-            })
-        })
+        .request_handler(
+            "rpc1test",
+            |request: RequestContext<RpcRequest>| async move {
+                Ok::<_, eyre::Report>(RpcResponse {
+                    data: request.data,
+                    message: "Received data from rpc1, returning it back"
+                        .to_string(),
+                })
+            },
+        )
         .build();
 
     let rpc2 = BridgeRpcBuilder::new(transport2)
-        .request_handler("rpc2test", |data: RpcRequest| async move {
-            Ok::<_, eyre::Report>(RpcResponse {
-                data,
-                message: "Received data from rpc2, returning it back"
-                    .to_string(),
-            })
-        })
+        .request_handler(
+            "rpc2test",
+            |request: RequestContext<RpcRequest>| async move {
+                Ok::<_, eyre::Report>(RpcResponse {
+                    data: request.data,
+                    message: "Received data from rpc2, returning it back"
+                        .to_string(),
+                })
+            },
+        )
         .build();
 
     (rpc1, rpc2)
