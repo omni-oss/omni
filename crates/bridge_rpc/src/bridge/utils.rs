@@ -4,6 +4,14 @@ use crate::{
     BridgeRpcErrorInner, BridgeRpcResult, Transport, bridge::frame::Frame,
 };
 
+pub fn serialize<T>(value: &T) -> BridgeRpcResult<Vec<u8>>
+where
+    T: Serialize,
+{
+    Ok(rmp_serde::to_vec_named(value)
+        .map_err(BridgeRpcErrorInner::Serialization)?)
+}
+
 #[inline(always)]
 async fn send_bytes_as_frame<TTransport: Transport>(
     transport: &TTransport,
@@ -23,8 +31,7 @@ pub async fn send_frame<TTransport: Transport, TData>(
 where
     TData: Serialize,
 {
-    let bytes = rmp_serde::to_vec(&frame)
-        .map_err(BridgeRpcErrorInner::Serialization)?;
+    let bytes = serialize(frame)?;
 
     send_bytes_as_frame(transport, bytes).await?;
     Ok(())

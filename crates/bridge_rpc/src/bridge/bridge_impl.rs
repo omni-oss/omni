@@ -22,6 +22,7 @@ use crate::StreamErrorInner;
 use crate::StreamHandle as BridgeStream;
 use crate::Transport;
 use crate::bridge::utils::send_frame;
+use crate::bridge::utils::serialize;
 
 type ResponsePipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
 
@@ -159,8 +160,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     ) -> BridgeRpcResult<()> {
         let r_id = request.id;
 
-        let bytes = (self.get_response(request, r_id).await)
-            .map_err(BridgeRpcErrorInner::Serialization)?;
+        let bytes = self.get_response(request, r_id).await?;
 
         self.transport.send(bytes.into()).await.map_err(|e| {
             BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
@@ -173,25 +173,24 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         &self,
         request: Request<rmpv::Value>,
         r_id: Id,
-    ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
+    ) -> BridgeRpcResult<Vec<u8>> {
         if let Some(handler) =
             self.request_handlers.lock().await.get_mut(&request.path)
         {
             let response = (*handler)(request.data).await;
             match response {
                 Ok(response) => {
-                    rmp_serde::to_vec(&Frame::success_response(r_id, response))
+                    serialize(&Frame::success_response(r_id, response))
                 }
-                Err(error) => rmp_serde::to_vec(&Frame::error_response(
-                    r_id,
-                    error.to_string(),
-                )),
+                Err(error) => {
+                    serialize(&Frame::error_response(r_id, error.to_string()))
+                }
             }
         } else {
             let error_message =
-                format!("No handler found for path: '{}'", request.path);
+                format!("no handler found for path: '{}'", request.path);
 
-            rmp_serde::to_vec(&Frame::error_response(r_id, error_message))
+            serialize(&Frame::error_response(r_id, error_message))
         }
     }
 
@@ -483,7 +482,7 @@ mod tests {
         transport.expect_receive().returning(move || {
             if !sent_start_ack {
                 sent_start_ack = true;
-                return Ok(rmp_serde::to_vec(&Frame::probe_ack())
+                return Ok(serialize(&Frame::probe_ack())
                     .expect("Failed to serialize start ack frame")
                     .into());
             }
@@ -491,7 +490,7 @@ mod tests {
             if !sent_success {
                 sent_success = true;
 
-                return Ok(rmp_serde::to_vec(&Frame::success_response(
+                return Ok(serialize(&Frame::success_response(
                     req_id,
                     res_data("test_data"),
                 ))
@@ -499,7 +498,7 @@ mod tests {
                 .into());
             }
 
-            Ok(rmp_serde::to_vec(&Frame::close())
+            Ok(serialize(&Frame::close())
                 .expect("Failed to serialize close frame")
                 .into())
         });
@@ -578,12 +577,12 @@ mod tests {
         transport.expect_receive().returning(move || {
             if !sent_probe_ack {
                 sent_probe_ack = true;
-                return Ok(rmp_serde::to_vec(&Frame::probe_ack())
+                return Ok(serialize(&Frame::probe_ack())
                     .expect("Failed to serialize probe ack frame")
                     .into());
             }
 
-            Ok(rmp_serde::to_vec(&Frame::close())
+            Ok(serialize(&Frame::close())
                 .expect("Failed to serialize close frame")
                 .into())
         });
@@ -641,14 +640,14 @@ mod tests {
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(rmp_serde::to_vec(&Frame::close())
+                return Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
                     .into());
             }
 
             sent_success = true;
 
-            Ok(rmp_serde::to_vec(&Frame::request(
+            Ok(serialize(&Frame::request(
                 req_id,
                 "test_path",
                 req_data("test_data"),
@@ -697,7 +696,7 @@ mod tests {
                 assert_eq!(response.id, req_id);
                 assert_eq!(
                     response.error.as_ref().expect("Should have error").message,
-                    "No handler found for path: 'test_path_wrong'"
+                    "no handler found for path: 'test_path_wrong'"
                 );
             }
 
@@ -707,14 +706,14 @@ mod tests {
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(rmp_serde::to_vec(&Frame::close())
+                return Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
                     .into());
             }
 
             sent_success = true;
 
-            Ok(rmp_serde::to_vec(&Frame::request(
+            Ok(serialize(&Frame::request(
                 req_id,
                 "test_path_wrong",
                 req_data("test_data"),
