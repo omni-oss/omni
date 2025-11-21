@@ -2,6 +2,8 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::error::RecvError;
 
+use crate::bridge::frame::FrameType;
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct BridgeRpcError(pub(crate) BridgeRpcErrorInner);
@@ -81,6 +83,9 @@ pub(crate) enum BridgeRpcErrorInner {
         #[source]
         eyre::Report,
     ),
+
+    #[error("missing data for frame type: {frame_type}")]
+    MissingData { frame_type: FrameType },
 }
 
 pub type BridgeRpcResult<T> = Result<T, BridgeRpcError>;

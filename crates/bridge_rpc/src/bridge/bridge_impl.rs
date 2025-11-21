@@ -1,5 +1,5 @@
 use super::frame::*;
-use super::request_id::*;
+use super::id::*;
 use futures::FutureExt as _;
 use futures::future::BoxFuture;
 
@@ -18,7 +18,7 @@ use crate::Transport;
 
 type TxPipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
 
-type TxPipeMaps = HashMap<RequestId, TxPipe>;
+type TxPipeMaps = HashMap<Id, TxPipe>;
 
 pub type RequestHandlerFnFuture =
     BoxFuture<'static, BridgeRpcResult<rmpv::Value>>;
@@ -93,14 +93,14 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     pub async fn close(&self) -> BridgeRpcResult<()> {
-        self.send_frame(&FRAME_CLOSE).await?;
+        self.send_frame(&Frame::close()).await?;
 
         Ok(())
     }
 
     async fn handle_request(
         &self,
-        request: BridgeRequest<rmpv::Value>,
+        request: Request<rmpv::Value>,
     ) -> BridgeRpcResult<()> {
         let r_id = request.id;
 
@@ -116,8 +116,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     async fn get_response(
         &self,
-        request: BridgeRequest<rmpv::Value>,
-        r_id: RequestId,
+        request: Request<rmpv::Value>,
+        r_id: Id,
     ) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         if let Some(handler) =
             self.request_handlers.lock().await.get_mut(&request.path)
@@ -125,17 +125,18 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             let response = (*handler)(request.data).await;
             match response {
                 Ok(response) => {
-                    rmp_serde::to_vec(&f_res_success(r_id, response))
+                    rmp_serde::to_vec(&Frame::success_response(r_id, response))
                 }
-                Err(error) => {
-                    rmp_serde::to_vec(&f_res_error(r_id, error.to_string()))
-                }
+                Err(error) => rmp_serde::to_vec(&Frame::error_response(
+                    r_id,
+                    error.to_string(),
+                )),
             }
         } else {
             let error_message =
                 format!("No handler found for path: '{}'", request.path);
 
-            rmp_serde::to_vec(&f_res_error(r_id, error_message))
+            rmp_serde::to_vec(&Frame::error_response(r_id, error_message))
         }
     }
 
@@ -147,14 +148,51 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ))
             })?;
 
-            let response: BridgeFrame<rmpv::Value> =
-                rmp_serde::from_slice(&bytes)
-                    .map_err(BridgeRpcErrorInner::Deserialization)?;
+            let incoming: Frame<rmpv::Value> = rmp_serde::from_slice(&bytes)
+                .map_err(BridgeRpcErrorInner::Deserialization)?;
 
-            match response {
-                BridgeFrame::Response(response) => {
-                    // if the RPC is not running, we don't need to handle the
-                    // response
+            // BridgeFrame::Response(response) => {
+            // }
+            // BridgeFrame::Request(request) => {
+            //     // if the RPC is not running, we don't need to handle the
+            //     // request
+            //     self.handle_request(request).await?;
+            // }
+            match incoming.r#type {
+                FrameType::Close => {
+                    self.send_frame(&Frame::close_ack()).await?;
+                    return Ok(());
+                }
+                FrameType::CloseAck => {
+                    trace::debug!("Received close ack, closing RPC");
+                    return Ok(());
+                }
+                FrameType::Probe => {
+                    trace::debug!("Received probe, sending probe ack");
+                    self.send_frame(&Frame::probe_ack()).await?;
+                }
+                FrameType::ProbeAck => {
+                    trace::debug!("Received probe ack");
+                    if let Some(rx) = self.pending_probe.lock().await.take() {
+                        rx.send(()).map_err(|_| {
+                            BridgeRpcErrorInner::new_send(eyre::eyre!(
+                                "failed to send probe ack"
+                            ))
+                        })?;
+                    }
+                }
+                FrameType::StreamStart => todo!(),
+                FrameType::StreamData => todo!(),
+                FrameType::StreamEnd => todo!(),
+                FrameType::MessageRequest => {
+                    let request: Request<rmpv::Value> =
+                        extract_value(&incoming)?;
+                    // request
+                    self.handle_request(request).await?;
+                }
+                FrameType::MessageResponse => {
+                    let response: Response<rmpv::Value> =
+                        extract_value(&incoming)?;
 
                     let req_id = response.id;
 
@@ -180,36 +218,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         );
                     }
                 }
-                BridgeFrame::InternalOp(op) => match op {
-                    InternalOp::Close => {
-                        self.send_frame(&FRAME_CLOSE_ACK).await?;
-                        return Ok(());
-                    }
-                    InternalOp::CloseAck => {
-                        trace::debug!("Received close ack, closing RPC");
-                        return Ok(());
-                    }
-                    InternalOp::Probe => {
-                        trace::debug!("Received probe, sending probe ack");
-                        self.send_frame(&FRAME_PROBE_ACK).await?;
-                    }
-                    InternalOp::ProbeAck => {
-                        trace::debug!("Received probe ack");
-                        if let Some(rx) = self.pending_probe.lock().await.take()
-                        {
-                            rx.send(()).map_err(|_| {
-                                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                                    "failed to send probe ack"
-                                ))
-                            })?;
-                        }
-                    }
-                },
-                BridgeFrame::Request(request) => {
-                    // if the RPC is not running, we don't need to handle the
-                    // request
-                    self.handle_request(request).await?;
-                }
             }
         }
     }
@@ -223,7 +231,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     async fn send_frame<TData>(
         &self,
-        frame: &BridgeFrame<TData>,
+        frame: &Frame<TData>,
     ) -> BridgeRpcResult<()>
     where
         TData: Serialize,
@@ -237,7 +245,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     pub(crate) async fn request_with_id<TResponseData, TRequestData>(
         &self,
-        request_id: RequestId,
+        request_id: Id,
         path: impl Into<String>,
         data: TRequestData,
     ) -> BridgeRpcResult<TResponseData>
@@ -245,7 +253,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         TRequestData: Serialize,
         TResponseData: for<'de> serde::Deserialize<'de>,
     {
-        self.send_frame(&f_req(request_id, path, data)).await?;
+        self.send_frame(&Frame::request(request_id, path, data))
+            .await?;
 
         let (response_tx, response_rx) = oneshot::channel();
 
@@ -260,7 +269,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             .map_err(|e| {
                 BridgeRpcErrorInner::Unknown(eyre::eyre!(
                     "Error: {}",
-                    e.error_message
+                    e.message
                 ))
             })?;
 
@@ -281,7 +290,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         TResponseData: for<'de> serde::Deserialize<'de>,
     {
         self.request_with_id::<TResponseData, TRequestData>(
-            RequestId::new(),
+            Id::new(),
             path,
             data,
         )
@@ -296,7 +305,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let (tx, rx) = oneshot::channel();
         *self.pending_probe.lock().await = Some(tx);
 
-        self.send_frame(&FRAME_PROBE).await?;
+        self.send_frame(&Frame::probe()).await?;
 
         let result = tokio::time::timeout(timeout, rx.map(|_| true))
             .await
@@ -313,6 +322,17 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     pub async fn has_pending_probe(&self) -> bool {
         self.pending_probe.lock().await.is_some()
     }
+}
+
+fn extract_value<T>(frame: &Frame<rmpv::Value>) -> BridgeRpcResult<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let value = frame
+        .data
+        .as_ref()
+        .ok_or_else(|| BridgeRpcErrorInner::new_missing_data(frame.r#type))?;
+    Ok(rmpv::ext::from_value(value.clone())?)
 }
 
 #[cfg(test)]
@@ -364,19 +384,22 @@ mod tests {
     async fn test_request() {
         let mut transport = mock_transport();
 
-        let req_id = RequestId::new();
+        let req_id = Id::new();
 
         transport.expect_send().returning(move |bytes| {
-            let request: BridgeFrame<MockRequestData> =
+            let request: RequestFrame<MockRequestData> =
                 rmp_serde::from_slice(&bytes)
                     .expect("Failed to deserialize request");
 
-            assert!(
-                matches!(request, BridgeFrame::Request(_)),
+            assert_eq!(
+                request.r#type,
+                FrameType::MessageRequest,
                 "Expected request frame"
             );
 
-            if let BridgeFrame::Request(request) = request {
+            assert!(request.data.is_some(), "Expected request data");
+
+            if let Some(request) = &request.data {
                 assert_eq!(request.path, "test_path");
                 assert_eq!(request.id, req_id);
             }
@@ -389,7 +412,7 @@ mod tests {
         transport.expect_receive().returning(move || {
             if !sent_start_ack {
                 sent_start_ack = true;
-                return Ok(rmp_serde::to_vec(&FRAME_PROBE_ACK)
+                return Ok(rmp_serde::to_vec(&Frame::probe_ack())
                     .expect("Failed to serialize start ack frame")
                     .into());
             }
@@ -397,7 +420,7 @@ mod tests {
             if !sent_success {
                 sent_success = true;
 
-                return Ok(rmp_serde::to_vec(&f_res_success(
+                return Ok(rmp_serde::to_vec(&Frame::success_response(
                     req_id,
                     res_data("test_data"),
                 ))
@@ -405,7 +428,7 @@ mod tests {
                 .into());
             }
 
-            Ok(rmp_serde::to_vec(&FRAME_CLOSE)
+            Ok(rmp_serde::to_vec(&Frame::close())
                 .expect("Failed to serialize close frame")
                 .into())
         });
@@ -446,13 +469,10 @@ mod tests {
         let mut transport = mock_transport();
 
         transport.expect_send().returning(move |bytes| {
-            let frame: BridgeFrame<()> = rmp_serde::from_slice(&bytes)
+            let frame: Frame<()> = rmp_serde::from_slice(&bytes)
                 .expect("Failed to deserialize frame");
 
-            assert!(
-                matches!(frame, BridgeFrame::InternalOp(InternalOp::Close)),
-                "Expected close frame"
-            );
+            assert_eq!(frame.r#type, FrameType::Close, "Expected close frame");
 
             Ok(())
         });
@@ -471,10 +491,12 @@ mod tests {
         transport.expect_send().returning(move |bytes| {
             if !received_probe {
                 received_probe = true;
-                let frame = rmp_serde::from_slice::<BridgeFrame<()>>(&bytes)
+                let frame = rmp_serde::from_slice::<Frame<()>>(&bytes)
                     .expect("Failed to deserialize frame");
-                assert!(
-                    matches!(frame, BridgeFrame::InternalOp(InternalOp::Probe)),
+
+                assert_eq!(
+                    frame.r#type,
+                    FrameType::Probe,
                     "Expected probe frame"
                 );
             }
@@ -485,12 +507,12 @@ mod tests {
         transport.expect_receive().returning(move || {
             if !sent_probe_ack {
                 sent_probe_ack = true;
-                return Ok(rmp_serde::to_vec(&FRAME_PROBE_ACK)
+                return Ok(rmp_serde::to_vec(&Frame::probe_ack())
                     .expect("Failed to serialize probe ack frame")
                     .into());
             }
 
-            Ok(rmp_serde::to_vec(&FRAME_CLOSE)
+            Ok(rmp_serde::to_vec(&Frame::close())
                 .expect("Failed to serialize close frame")
                 .into())
         });
@@ -512,7 +534,7 @@ mod tests {
     async fn test_respond_existing_path() {
         let mut transport = mock_transport();
 
-        let req_id = RequestId::new();
+        let req_id = Id::new();
 
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
@@ -520,21 +542,24 @@ mod tests {
                 return Ok(());
             }
 
-            let response: BridgeFrame<MockResponseData> =
+            let response: ResponseFrame<MockResponseData> =
                 rmp_serde::from_slice(&bytes)
                     .expect("Failed to deserialize response");
 
-            assert!(
-                matches!(response, BridgeFrame::Response(_)),
+            assert_eq!(
+                response.r#type,
+                FrameType::MessageResponse,
                 "Expected response frame"
             );
 
+            assert!(response.data.is_some(), "Expected response data");
+
             received_response = true;
 
-            if let BridgeFrame::Response(response) = response {
+            if let Some(response) = &response.data {
                 assert_eq!(response.id, req_id);
                 assert_eq!(
-                    response.data.expect("Should have data").data,
+                    response.data.as_ref().expect("Should have data").data,
                     "test_data"
                 );
             }
@@ -545,14 +570,14 @@ mod tests {
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(rmp_serde::to_vec(&FRAME_CLOSE)
+                return Ok(rmp_serde::to_vec(&Frame::close())
                     .expect("Failed to serialize close frame")
                     .into());
             }
 
             sent_success = true;
 
-            Ok(rmp_serde::to_vec(&f_req(
+            Ok(rmp_serde::to_vec(&Frame::request(
                 req_id,
                 "test_path",
                 req_data("test_data"),
@@ -576,7 +601,7 @@ mod tests {
     async fn test_respond_non_existing_path() {
         let mut transport = mock_transport();
 
-        let req_id = RequestId::new();
+        let req_id = Id::new();
 
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
@@ -584,20 +609,23 @@ mod tests {
                 return Ok(());
             }
 
-            let response: BridgeFrame<MockResponseData> =
+            let response: ResponseFrame<MockResponseData> =
                 rmp_serde::from_slice(&bytes)
                     .expect("Failed to deserialize response");
 
-            assert!(
-                matches!(response, BridgeFrame::Response(_)),
+            assert_eq!(
+                response.r#type,
+                FrameType::MessageResponse,
                 "Expected response frame"
             );
 
+            assert!(response.data.is_some(), "Expected response data");
+
             received_response = true;
-            if let BridgeFrame::Response(response) = response {
+            if let Some(response) = &response.data {
                 assert_eq!(response.id, req_id);
                 assert_eq!(
-                    response.error.expect("Should have error").error_message,
+                    response.error.as_ref().expect("Should have error").message,
                     "No handler found for path: 'test_path_wrong'"
                 );
             }
@@ -608,14 +636,14 @@ mod tests {
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(rmp_serde::to_vec(&FRAME_CLOSE)
+                return Ok(rmp_serde::to_vec(&Frame::close())
                     .expect("Failed to serialize close frame")
                     .into());
             }
 
             sent_success = true;
 
-            Ok(rmp_serde::to_vec(&f_req(
+            Ok(rmp_serde::to_vec(&Frame::request(
                 req_id,
                 "test_path_wrong",
                 req_data("test_data"),

@@ -20,6 +20,7 @@ thiserror = { workspace = true }
 eyre = { workspace = true }
 trace = { workspace = true }
 serde = { workspace = true }
+serde_repr = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true }
 futures = { workspace = true }
@@ -30,6 +31,7 @@ strum = { workspace = true }
 bytes = { workspace = true }
 byteorder = { workspace = true }
 derive-new = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
