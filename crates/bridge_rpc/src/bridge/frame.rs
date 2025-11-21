@@ -156,7 +156,7 @@ impl Frame<Response<()>> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct StreamStart<TData> {
     pub id: Id,
@@ -164,14 +164,14 @@ pub(crate) struct StreamStart<TData> {
     pub data: Option<TData>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct StreamData<TData> {
     pub id: Id,
     pub data: TData,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct StreamEnd {
     pub id: Id,

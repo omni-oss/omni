@@ -2,6 +2,7 @@ use super::frame::*;
 use super::id::*;
 use futures::FutureExt as _;
 use futures::future::BoxFuture;
+use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
 
 use std::pin::Pin;
@@ -29,6 +30,10 @@ type ResponsePipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
 
 type ResponsePipeMaps = HashMap<Id, ResponsePipe>;
 
+type StreamPipe = mpsc::Sender<Result<rmpv::Value, eyre::Report>>;
+
+type StreamPipeMaps = HashMap<Id, StreamPipe>;
+
 pub type BoxStream<'a, T> = Pin<Box<dyn TokioStream<Item = T> + Send + 'a>>;
 
 pub type RequestHandlerFnFuture =
@@ -54,6 +59,7 @@ pub type StreamHandlerFn = Box<
 pub struct BridgeRpc<TTransport: Transport> {
     transport: Arc<TTransport>,
     response_pipes: Arc<Mutex<ResponsePipeMaps>>,
+    stream_pipes: Arc<Mutex<StreamPipeMaps>>,
     request_handlers: Arc<Mutex<HashMap<String, RequestHandlerFn>>>,
     stream_handlers: Arc<Mutex<HashMap<String, StreamHandlerFn>>>,
     pending_probe: Arc<Mutex<Option<oneshot::Sender<()>>>>,
@@ -70,6 +76,7 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
             request_handlers: self.request_handlers.clone(),
             pending_probe: self.pending_probe.clone(),
             stream_handlers: self.stream_handlers.clone(),
+            stream_pipes: self.stream_pipes.clone(),
         }
     }
 }
@@ -158,6 +165,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         Self {
             transport: Arc::new(transport),
             response_pipes: Arc::new(Mutex::new(HashMap::new())),
+            stream_pipes: Arc::new(Mutex::new(HashMap::new())),
             request_handlers: Arc::new(Mutex::new(request_handlers)),
             stream_handlers: Arc::new(Mutex::new(stream_handlers)),
             pending_probe: Arc::new(Mutex::new(None)),
@@ -258,9 +266,56 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         })?;
                     }
                 }
-                FrameType::StreamStart => todo!(),
-                FrameType::StreamData => todo!(),
-                FrameType::StreamEnd => todo!(),
+                FrameType::StreamStart => {
+                    let stream: StreamStart<rmpv::Value> =
+                        extract_value(&incoming)?;
+
+                    let mut handlers = self.stream_handlers.lock().await;
+                    let mut handler = handlers.get_mut(&stream.path);
+
+                    if let Some(handler) = handler.as_mut() {
+                        let (tx, rx) = mpsc::channel(1);
+
+                        self.stream_pipes.lock().await.insert(stream.id, tx);
+
+                        let ctx = StreamContext::<
+                            rmpv::Value,
+                            rmpv::Value,
+                            eyre::Report,
+                        > {
+                            start_data: stream.data,
+                            stream: Box::pin(
+                                tokio_stream::wrappers::ReceiverStream::new(rx),
+                            ),
+                        };
+
+                        handler(ctx).await?;
+                    }
+                }
+                FrameType::StreamData => {
+                    let stream: StreamData<rmpv::Value> =
+                        extract_value(&incoming)?;
+
+                    let mut pipes = self.stream_pipes.lock().await;
+                    let sender = pipes.get_mut(&stream.id);
+
+                    if let Some(sender) = sender {
+                        sender
+                            .send(Ok(rmpv::ext::to_value(stream.data)?))
+                            .await
+                            .map_err(BridgeRpcErrorInner::new_send)?;
+                    }
+                }
+                FrameType::StreamEnd => {
+                    let tream: StreamEnd = extract_value(&incoming)?;
+
+                    let sender =
+                        self.stream_pipes.lock().await.remove(&tream.id);
+
+                    if let Some(sender) = sender {
+                        drop(sender);
+                    }
+                }
                 FrameType::MessageRequest => {
                     let request: Request<rmpv::Value> =
                         extract_value(&incoming)?;
