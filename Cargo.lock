@@ -1072,6 +1072,7 @@ dependencies = [
  "system_traits",
  "thiserror 2.0.17",
  "tokio 1.48.0",
+ "tokio-stream",
  "tokio-util",
  "trace",
  "uuid",
