@@ -27,10 +27,11 @@ pub(crate) enum FrameType {
     Probe = 2,
     ProbeAck = 3,
     StreamStart = 4,
-    StreamData = 5,
-    StreamEnd = 6,
+    StreamStartResponse = 5,
+    StreamData = 6,
+    StreamEnd = 7,
     MessageRequest = 8,
-    MessageResponse = 7,
+    MessageResponse = 9,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,6 +47,7 @@ pub(crate) struct Frame<D> {
 }
 
 pub type StreamStartFrame<D> = Frame<StreamStart<D>>;
+pub type StreamStartResponseFrame = Frame<StreamStartResponse>;
 pub type StreamDataFrame<D> = Frame<StreamData<D>>;
 pub type StreamEndFrame = Frame<StreamEnd>;
 pub type RequestFrame<D> = Frame<Request<D>>;
@@ -89,6 +91,34 @@ impl<TData> StreamStartFrame<TData> {
                 data,
             }),
         )
+    }
+}
+
+impl StreamStartResponseFrame {
+    pub fn stream_start_response(
+        id: Id,
+        ok: bool,
+        error: Option<String>,
+    ) -> Self {
+        Self::new(
+            FrameType::StreamStartResponse,
+            Some(StreamStartResponse {
+                id,
+                ok,
+                error: error.map(|e| ErrorData { message: e }),
+            }),
+        )
+    }
+
+    pub fn stream_start_response_ok(id: Id) -> Self {
+        Self::stream_start_response(id, true, None)
+    }
+
+    pub fn stream_start_response_error(
+        id: Id,
+        error: impl Into<String>,
+    ) -> Self {
+        Self::stream_start_response(id, false, Some(error.into()))
     }
 }
 
@@ -162,6 +192,14 @@ pub(crate) struct StreamStart<TData> {
     pub id: Id,
     pub path: String,
     pub data: Option<TData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct StreamStartResponse {
+    pub id: Id,
+    pub ok: bool,
+    pub error: Option<ErrorData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

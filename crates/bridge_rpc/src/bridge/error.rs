@@ -2,7 +2,10 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::error::RecvError;
 
-use crate::bridge::frame::FrameType;
+use crate::{
+    Id,
+    bridge::frame::{ErrorData, FrameType},
+};
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
@@ -86,6 +89,12 @@ pub(crate) enum BridgeRpcErrorInner {
 
     #[error("missing data for frame type: {frame_type}")]
     MissingData { frame_type: FrameType },
+
+    #[error(
+        "stream start response (id: {id}) rejected with error: {error}",
+        error = error.as_ref().map(|e| e.message.as_str()).unwrap_or("unknown")
+    )]
+    StreamStartResponse { id: Id, error: Option<ErrorData> },
 }
 
 pub type BridgeRpcResult<T> = Result<T, BridgeRpcError>;
