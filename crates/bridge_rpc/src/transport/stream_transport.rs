@@ -76,8 +76,8 @@ pub(crate) enum StreamTransportErrorInner {
 #[async_trait::async_trait]
 impl<TInput, TOutput> Transport for StreamTransport<TInput, TOutput>
 where
-    TInput: AsyncRead + Send + Sync + Unpin,
-    TOutput: AsyncWrite + Send + Sync + Unpin,
+    TInput: AsyncRead + Send + Sync + Unpin + 'static,
+    TOutput: AsyncWrite + Send + Sync + Unpin + 'static,
 {
     type Error = StreamTransportError;
 

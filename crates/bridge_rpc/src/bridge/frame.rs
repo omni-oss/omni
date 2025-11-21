@@ -45,7 +45,7 @@ pub(crate) struct Frame<D> {
     pub data: Option<D>,
 }
 
-pub type StreamStartFrame = Frame<StreamStart>;
+pub type StreamStartFrame<D> = Frame<StreamStart<D>>;
 pub type StreamDataFrame<D> = Frame<StreamData<D>>;
 pub type StreamEndFrame = Frame<StreamEnd>;
 pub type RequestFrame<D> = Frame<Request<D>>;
@@ -75,13 +75,18 @@ impl Frame<()> {
     }
 }
 
-impl StreamStartFrame {
-    pub fn stream_start(id: Id, path: impl Into<String>) -> Self {
+impl<TData> StreamStartFrame<TData> {
+    pub fn stream_start(
+        id: Id,
+        path: impl Into<String>,
+        data: Option<TData>,
+    ) -> Self {
         Self::new(
             FrameType::StreamStart,
             Some(StreamStart {
                 id,
                 path: path.into(),
+                data,
             }),
         )
     }
@@ -105,19 +110,11 @@ impl StreamEndFrame {
     }
 
     pub fn stream_end_success(id: Id) -> Self {
-        Self::new(FrameType::StreamEnd, None)
+        Self::stream_end(id, None)
     }
 
     pub fn stream_end_error(id: Id, error: impl Into<String>) -> Self {
-        Self::new(
-            FrameType::StreamEnd,
-            Some(StreamEnd {
-                id,
-                error: Some(ErrorData {
-                    message: error.into(),
-                }),
-            }),
-        )
+        Self::stream_end(id, Some(error.into()))
     }
 }
 
@@ -135,47 +132,36 @@ impl<D> RequestFrame<D> {
 }
 
 impl<D> ResponseFrame<D> {
-    pub fn response(id: Id, data: Option<D>, error: Option<ErrorData>) -> Self {
+    pub fn response(id: Id, data: Option<D>, error: Option<String>) -> Self {
         Self::new(
             FrameType::MessageResponse,
-            Some(Response { id, data, error }),
+            Some(Response {
+                id,
+                data,
+                error: error.map(|e| ErrorData { message: e }),
+            }),
         )
     }
 }
 
 impl<D> Frame<Response<D>> {
     pub fn success_response(id: Id, data: D) -> Self {
-        Self::new(
-            FrameType::MessageResponse,
-            Some(Response {
-                id,
-                data: Some(data),
-                error: None,
-            }),
-        )
+        Self::response(id, Some(data), None)
     }
 }
 
 impl Frame<Response<()>> {
     pub fn error_response(id: Id, error: impl Into<String>) -> Self {
-        Self::new(
-            FrameType::MessageResponse,
-            Some(Response {
-                id,
-                data: None,
-                error: Some(ErrorData {
-                    message: error.into(),
-                }),
-            }),
-        )
+        Self::response(id, None, Some(error.into()))
     }
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct StreamStart {
+pub(crate) struct StreamStart<TData> {
     pub id: Id,
     pub path: String,
+    pub data: Option<TData>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -189,6 +175,10 @@ pub(crate) struct StreamData<TData> {
 #[serde(rename_all = "snake_case")]
 pub(crate) struct StreamEnd {
     pub id: Id,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default = "Option::default"
+    )]
     pub error: Option<ErrorData>,
 }
 
@@ -210,6 +200,14 @@ pub(crate) struct ErrorData {
 #[serde(rename_all = "snake_case")]
 pub(crate) struct Response<TResponse> {
     pub id: Id,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default = "Option::default"
+    )]
     pub data: Option<TResponse>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default = "Option::default"
+    )]
     pub error: Option<ErrorData>,
 }
