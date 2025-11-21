@@ -406,17 +406,23 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     })
 }
 
-pub fn augment_tera_context(
-    tera_ctx: &tera::Context,
+pub fn augment_tera_context<'a>(
+    tera_ctx: &'a tera::Context,
     data: Option<&UnorderedMap<String, serde_json::Value>>,
-) -> Result<tera::Context, Error> {
+) -> Result<Cow<'a, tera::Context>, Error> {
+    if data.is_none() || data.is_some_and(|d| d.is_empty()) {
+        return Ok(Cow::Borrowed(tera_ctx));
+    }
+
     let mut new_ctx = tera_ctx.clone();
 
-    if let Some(data) = data {
+    if let Some(data) = data
+        && !data.is_empty()
+    {
         add_data_internal(&mut new_ctx, data)?;
     }
 
-    Ok(new_ctx)
+    Ok(Cow::Owned(new_ctx))
 }
 
 pub fn get_bases<'a>(
