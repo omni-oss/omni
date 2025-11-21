@@ -1,101 +1,215 @@
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::EnumIs;
 
-use crate::bridge::RequestId;
+use crate::bridge::Id;
 
-#[derive(Debug, Clone, Deserialize, Serialize, EnumIs)]
-#[serde(tag = "type", content = "content", rename_all = "snake_case")]
-pub(crate) enum BridgeFrame<TData> {
-    InternalOp(InternalOp),
-    Response(BridgeResponse<TData>),
-    Request(BridgeRequest<TData>),
+#[repr(u8)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Deserialize_repr,
+    Serialize_repr,
+    EnumIs,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    strum::FromRepr,
+    strum::Display,
+)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum FrameType {
+    Close = 0,
+    CloseAck = 1,
+    Probe = 2,
+    ProbeAck = 3,
+    StreamStart = 4,
+    StreamData = 5,
+    StreamEnd = 6,
+    MessageRequest = 8,
+    MessageResponse = 7,
 }
 
-pub(crate) const fn f_close() -> BridgeFrame<()> {
-    BridgeFrame::<()>::InternalOp(InternalOp::Close)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct Frame<D> {
+    #[serde(rename = "type")]
+    pub r#type: FrameType,
+
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default = "Option::default"
+    )]
+    pub data: Option<D>,
 }
 
-pub(crate) const FRAME_CLOSE: BridgeFrame<()> = f_close();
+pub type StreamStartFrame = Frame<StreamStart>;
+pub type StreamDataFrame<D> = Frame<StreamData<D>>;
+pub type StreamEndFrame = Frame<StreamEnd>;
+pub type RequestFrame<D> = Frame<Request<D>>;
+pub type ResponseFrame<D> = Frame<Response<D>>;
 
-pub(crate) const fn f_close_ack() -> BridgeFrame<()> {
-    BridgeFrame::<()>::InternalOp(InternalOp::CloseAck)
+impl<D> Frame<D> {
+    pub const fn new(r#type: FrameType, data: Option<D>) -> Self {
+        Self { r#type, data }
+    }
 }
 
-pub(crate) const FRAME_CLOSE_ACK: BridgeFrame<()> = f_close_ack();
+impl Frame<()> {
+    pub const fn close() -> Self {
+        Self::new(FrameType::Close, None)
+    }
 
-pub(crate) const fn f_probe() -> BridgeFrame<()> {
-    BridgeFrame::<()>::InternalOp(InternalOp::Probe)
+    pub const fn close_ack() -> Self {
+        Self::new(FrameType::CloseAck, None)
+    }
+
+    pub const fn probe() -> Self {
+        Self::new(FrameType::Probe, None)
+    }
+
+    pub const fn probe_ack() -> Self {
+        Self::new(FrameType::ProbeAck, None)
+    }
 }
 
-pub(crate) const FRAME_PROBE: BridgeFrame<()> = f_probe();
-
-pub(crate) const fn f_probe_ack() -> BridgeFrame<()> {
-    BridgeFrame::<()>::InternalOp(InternalOp::ProbeAck)
+impl StreamStartFrame {
+    pub fn stream_start(id: Id, path: impl Into<String>) -> Self {
+        Self::new(
+            FrameType::StreamStart,
+            Some(StreamStart {
+                id,
+                path: path.into(),
+            }),
+        )
+    }
 }
 
-pub(crate) const FRAME_PROBE_ACK: BridgeFrame<()> = f_probe_ack();
-
-pub(crate) fn f_req<TRequest>(
-    id: RequestId,
-    path: impl Into<String>,
-    data: TRequest,
-) -> BridgeFrame<TRequest> {
-    BridgeFrame::Request(BridgeRequest {
-        id,
-        path: path.into(),
-        data,
-    })
+impl<D> StreamDataFrame<D> {
+    pub fn stream_data(id: Id, data: D) -> Self {
+        Self::new(FrameType::StreamData, Some(StreamData { id, data }))
+    }
 }
 
-pub(crate) fn f_res<TResponse>(
-    id: RequestId,
-    data: Option<TResponse>,
-    error: Option<ErrorData>,
-) -> BridgeFrame<TResponse> {
-    BridgeFrame::Response(BridgeResponse { id, data, error })
+impl StreamEndFrame {
+    pub fn stream_end(id: Id, error: Option<String>) -> Self {
+        Self::new(
+            FrameType::StreamEnd,
+            Some(StreamEnd {
+                id,
+                error: error.map(|e| ErrorData { message: e }),
+            }),
+        )
+    }
+
+    pub fn stream_end_success(id: Id) -> Self {
+        Self::new(FrameType::StreamEnd, None)
+    }
+
+    pub fn stream_end_error(id: Id, error: impl Into<String>) -> Self {
+        Self::new(
+            FrameType::StreamEnd,
+            Some(StreamEnd {
+                id,
+                error: Some(ErrorData {
+                    message: error.into(),
+                }),
+            }),
+        )
+    }
 }
 
-pub(crate) fn f_res_success<TResponse>(
-    id: RequestId,
-    data: TResponse,
-) -> BridgeFrame<TResponse> {
-    f_res(id, Some(data), None)
+impl<D> RequestFrame<D> {
+    pub fn request(id: Id, path: impl Into<String>, data: D) -> Self {
+        Self::new(
+            FrameType::MessageRequest,
+            Some(Request {
+                id,
+                path: path.into(),
+                data,
+            }),
+        )
+    }
 }
 
-pub(crate) fn f_res_error(
-    id: RequestId,
-    error_message: String,
-) -> BridgeFrame<()> {
-    f_res(id, None, Some(ErrorData { error_message }))
+impl<D> ResponseFrame<D> {
+    pub fn response(id: Id, data: Option<D>, error: Option<ErrorData>) -> Self {
+        Self::new(
+            FrameType::MessageResponse,
+            Some(Response { id, data, error }),
+        )
+    }
+}
+
+impl<D> Frame<Response<D>> {
+    pub fn success_response(id: Id, data: D) -> Self {
+        Self::new(
+            FrameType::MessageResponse,
+            Some(Response {
+                id,
+                data: Some(data),
+                error: None,
+            }),
+        )
+    }
+}
+
+impl Frame<Response<()>> {
+    pub fn error_response(id: Id, error: impl Into<String>) -> Self {
+        Self::new(
+            FrameType::MessageResponse,
+            Some(Response {
+                id,
+                data: None,
+                error: Some(ErrorData {
+                    message: error.into(),
+                }),
+            }),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct StreamStart {
+    pub id: Id,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct StreamData<TData> {
+    pub id: Id,
+    pub data: TData,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct StreamEnd {
+    pub id: Id,
+    pub error: Option<ErrorData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct BridgeRequest<TRequest> {
-    pub id: RequestId,
+pub(crate) struct Request<TData> {
+    pub id: Id,
     pub path: String,
-    pub data: TRequest,
+    pub data: TData,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct ErrorData {
-    pub error_message: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct BridgeResponse<TResponse> {
-    pub id: RequestId,
+pub(crate) struct Response<TResponse> {
+    pub id: Id,
     pub data: Option<TResponse>,
     pub error: Option<ErrorData>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum InternalOp {
-    Close,
-    CloseAck,
-    Probe,
-    ProbeAck,
 }
