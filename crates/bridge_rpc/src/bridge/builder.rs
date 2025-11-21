@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
 use crate::{
-    BoxStream, StreamError, StreamHandlerFn, Transport,
+    StreamContext, StreamError, StreamHandlerFn, Transport,
     bridge::RequestHandlerFn,
 };
 
@@ -20,7 +20,7 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         }
     }
 
-    pub fn request_handler<TFn, TRequest, TResponse, TError, TFuture>(
+    pub fn request_handler<TRequest, TResponse, TError, TFuture, TFn>(
         mut self,
         path: impl Into<String>,
         handler: TFn,
@@ -39,18 +39,21 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         self
     }
 
-    pub fn stream_handler<TFn, TData, TFuture>(
+    pub fn stream_handler<TStartData, TStreamData, TFuture, TFn>(
         mut self,
         path: impl Into<String>,
         handler: TFn,
     ) -> Self
     where
-        TData: for<'de> serde::Deserialize<'de>,
-        TFn: FnMut(BoxStream<'static, Result<TData, StreamError>>) -> TFuture
+        TStartData: for<'de> serde::Deserialize<'de>,
+        TStreamData: for<'de> serde::Deserialize<'de>,
+        TFuture: Future<Output = ()> + Send + 'static,
+        TFn: FnMut(
+                StreamContext<TStartData, TStreamData, StreamError>,
+            ) -> TFuture
             + Send
             + Clone
             + 'static,
-        TFuture: Future<Output = ()> + Send + 'static,
     {
         self.stream_handlers
             .insert(path.into(), crate::bridge::create_stream_handler(handler));
@@ -93,8 +96,8 @@ mod tests {
         let rpc = BridgeRpcBuilder::new(transport)
             .stream_handler(
                 "test_path",
-                |mut s: BoxStream<Result<String, StreamError>>| async move {
-                    while let Some(_) = s.next().await {}
+                |mut s: StreamContext<(), (), _>| async move {
+                    while let Some(_) = s.stream.next().await {}
                 },
             )
             .build();
