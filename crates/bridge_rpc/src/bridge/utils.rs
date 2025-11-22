@@ -1,4 +1,5 @@
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 use crate::{
     BridgeRpcErrorInner, BridgeRpcResult, Transport, bridge::frame::Frame,
@@ -13,7 +14,7 @@ where
 }
 
 #[inline(always)]
-async fn send_bytes_as_frame<TTransport: Transport>(
+pub async fn send_bytes_to_transport<TTransport: Transport>(
     transport: &TTransport,
     bytes: Vec<u8>,
 ) -> BridgeRpcResult<()> {
@@ -24,8 +25,21 @@ async fn send_bytes_as_frame<TTransport: Transport>(
 }
 
 #[inline(always)]
-pub async fn send_frame<TTransport: Transport, TData>(
-    transport: &TTransport,
+pub async fn send_bytes_to_channel(
+    sender: &mpsc::UnboundedSender<Vec<u8>>,
+    bytes: Vec<u8>,
+) -> BridgeRpcResult<()> {
+    sender.send(bytes).map_err(|_| {
+        BridgeRpcErrorInner::new_send(eyre::eyre!(
+            "failed to send frame to channel"
+        ))
+    })?;
+    Ok(())
+}
+
+#[inline(always)]
+pub async fn send_frame_to_channel<TData>(
+    sender: &mpsc::UnboundedSender<Vec<u8>>,
     frame: &Frame<TData>,
 ) -> BridgeRpcResult<()>
 where
@@ -33,6 +47,7 @@ where
 {
     let bytes = serialize(frame)?;
 
-    send_bytes_as_frame(transport, bytes).await?;
+    send_bytes_to_channel(sender, bytes).await?;
+
     Ok(())
 }

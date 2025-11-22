@@ -35,6 +35,9 @@ pub(crate) enum BridgeRpcErrorInner {
         message: eyre::Report,
     },
 
+    #[error("rpc is not running")]
+    NotRunning,
+
     #[error("serialization error")]
     Serialization(
         #[from]
