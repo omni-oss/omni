@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::yield_now};
 
 use crate::{
     BridgeRpcErrorInner, BridgeRpcResult, Transport, bridge::frame::Frame,
@@ -34,6 +34,7 @@ pub async fn send_bytes_to_channel(
             "failed to send frame to channel"
         ))
     })?;
+    yield_now().await;
     Ok(())
 }
 

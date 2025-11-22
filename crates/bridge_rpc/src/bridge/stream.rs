@@ -39,6 +39,7 @@ impl StreamHandle {
 }
 
 impl StreamHandle {
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(stream_id = ?self.id)))]
     pub async fn send<TData: Serialize>(
         &self,
         data: TData,
@@ -50,6 +51,7 @@ impl StreamHandle {
         .await
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(stream_id = ?self.id)))]
     pub async fn end(&self) -> crate::BridgeRpcResult<()> {
         send_frame_to_channel(
             &self.tx,
@@ -58,6 +60,7 @@ impl StreamHandle {
         .await
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(stream_id = ?self.id)))]
     pub async fn end_with_error<TError: Display>(
         &self,
         error: TError,

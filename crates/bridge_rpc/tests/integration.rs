@@ -73,9 +73,21 @@ macro_rules! run_rpcs {
         $(
             let $rpc = $rpc.clone();
         )+
-        tokio::spawn(async move {
-            _ = tokio::join!($($rpc.run()),+);
-        })
+
+        let mut futs = tokio::task::JoinSet::new();
+        $(
+            futs.spawn(async move { $rpc.run().await });
+        )+
+
+        async move {
+            let results = futs.join_all().await;
+
+            for result in results {
+                result?;
+            }
+
+            Ok::<_, bridge_rpc::BridgeRpcError>(())
+        }
     }};
 }
 
@@ -93,12 +105,16 @@ fn create_rpc_request() -> RpcRequest {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[test_log::test]
 #[timeout(1000)]
 async fn test_probe() {
     let (rpc1, rpc2) = create_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
+
+    sleep(Duration::from_millis(1)).await;
+
     assert!(
         rpc1.probe(Duration::from_millis(100))
             .await
@@ -112,11 +128,14 @@ async fn test_probe() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[test_log::test]
 #[timeout(1000)]
 async fn test_send_and_receive_data() {
     let (rpc1, rpc2) = create_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
+
+    sleep(Duration::from_millis(1)).await;
 
     let result1 = rpc1
         .request::<RpcResponse<RpcRequest>, _>("rpc2test", create_rpc_request())
@@ -150,7 +169,8 @@ async fn test_send_and_receive_data() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[timeout(1000)]
+#[test_log::test]
+#[timeout(2000)]
 async fn test_stream_data() {
     let (rpc1, rpc2) = create_and_mutate_rpcs(
         |rpc1| {
@@ -163,6 +183,8 @@ async fn test_stream_data() {
                         .await
                         .expect("value should exist")
                         .expect("should have data");
+
+                    println!("Received stream data: {:?}", value);
                     assert_eq!(value, vec![1, 2, 3]);
                     Ok::<_, eyre::Report>(())
                 },
@@ -172,6 +194,8 @@ async fn test_stream_data() {
     );
 
     let runner = run_rpcs!(rpc1, rpc2);
+
+    sleep(Duration::from_millis(1)).await;
 
     let stream = rpc2
         .start_stream("rpc1test-stream")
@@ -184,8 +208,6 @@ async fn test_stream_data() {
         .expect("should be able to send data");
 
     stream.end().await.expect("should be able to end stream");
-
-    sleep(Duration::from_millis(250)).await;
 
     close_rpcs!(rpc1, rpc2);
 

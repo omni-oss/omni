@@ -4,7 +4,9 @@ use futures::FutureExt as _;
 use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
+use tokio::task::JoinSet;
 use tokio_stream::StreamExt as _;
+use tracing::Instrument;
 
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -47,7 +49,7 @@ pub type RequestHandlerFnFuture =
 pub type StreamHandlerFnFuture = BoxFuture<'static, BridgeRpcResult<()>>;
 
 pub type RequestHandlerFn =
-    Box<dyn FnMut(rmpv::Value) -> RequestHandlerFnFuture + Send>;
+    Box<dyn Fn(rmpv::Value) -> RequestHandlerFnFuture + Send + Sync>;
 
 pub struct StreamContext<
     TStartData = (),
@@ -62,14 +64,16 @@ pub struct RequestContext<TData = ()> {
     pub data: TData,
 }
 
-pub type StreamHandlerFn = Box<
-    dyn FnMut(
+pub type StreamHandlerFn = Arc<
+    dyn Fn(
             StreamContext<rmpv::Value, rmpv::Value, eyre::Report>,
         ) -> StreamHandlerFnFuture
-        + Send,
+        + Send
+        + Sync,
 >;
 
 pub struct BridgeRpc<TTransport: Transport> {
+    id: Id,
     transport: Arc<TTransport>,
     message_response_pipes: Arc<Mutex<ResponsePipeMaps>>,
     stream_pipes: Arc<Mutex<StreamPipeMaps>>,
@@ -78,6 +82,8 @@ pub struct BridgeRpc<TTransport: Transport> {
     stream_handlers: Arc<Mutex<HashMap<String, StreamHandlerFn>>>,
     pending_probe: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     bytes_worker: Arc<Mutex<Option<BytesWorker>>>,
+    stream_handler_tasks:
+        Arc<Mutex<Option<JoinSet<Result<(), BridgeRpcError>>>>>,
 }
 
 struct BytesWorker {
@@ -88,6 +94,7 @@ struct BytesWorker {
 impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
     fn clone(&self) -> Self {
         Self {
+            id: self.id,
             transport: self.transport.clone(),
             message_response_pipes: self.message_response_pipes.clone(),
             request_handlers: self.request_handlers.clone(),
@@ -98,7 +105,14 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
                 .stream_start_response_pipes
                 .clone(),
             bytes_worker: self.bytes_worker.clone(),
+            stream_handler_tasks: self.stream_handler_tasks.clone(),
         }
+    }
+}
+
+impl<TTransport: Transport> BridgeRpc<TTransport> {
+    pub fn id(&self) -> Id {
+        self.id
     }
 }
 
@@ -110,11 +124,14 @@ where
     TResponse: serde::Serialize,
     TError: Display,
     TFuture: Future<Output = Result<TResponse, TError>> + Send + 'static,
-    TFn:
-        FnMut(RequestContext<TRequestData>) -> TFuture + Send + Clone + 'static,
+    TFn: Fn(RequestContext<TRequestData>) -> TFuture
+        + Send
+        + Sync
+        + Clone
+        + 'static,
 {
     Box::new(move |request: rmpv::Value| {
-        let mut handler = handler.clone();
+        let handler = handler.clone();
         Box::pin(async move {
             let request: TRequestData = rmpv::ext::from_value(request)
                 .map_err(BridgeRpcErrorInner::ValueConversion)?;
@@ -137,13 +154,14 @@ where
     TStreamData: for<'de> serde::Deserialize<'de>,
     TError: Display,
     TFuture: Future<Output = Result<(), TError>> + Send + 'static,
-    TFn: FnMut(StreamContext<TStartData, TStreamData, StreamError>) -> TFuture
+    TFn: Fn(StreamContext<TStartData, TStreamData, StreamError>) -> TFuture
         + Send
+        + Sync
         + Clone
         + 'static,
 {
-    Box::new(move |context| {
-        let mut handler = handler.clone();
+    Arc::new(move |context| {
+        let handler = handler.clone();
         Box::pin(async move {
             let start_data = context
                 .start_data
@@ -190,6 +208,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         stream_handlers: HashMap<String, StreamHandlerFn>,
     ) -> Self {
         Self {
+            id: Id::new(),
             transport: Arc::new(transport),
             message_response_pipes: Arc::new(Mutex::new(HashMap::new())),
             stream_pipes: Arc::new(Mutex::new(HashMap::new())),
@@ -198,6 +217,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             stream_handlers: Arc::new(Mutex::new(stream_handlers)),
             pending_probe: Arc::new(Mutex::new(None)),
             bytes_worker: Arc::new(Mutex::new(None)),
+            stream_handler_tasks: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -207,7 +227,6 @@ macro_rules! do_work_with_bytes_worker {
         async move {
             let bytes_worker = $self.bytes_worker.lock().await;
             if let Some(bytes_worker) = bytes_worker.as_ref() {
-                println!("running work");
                 $work(bytes_worker).await
             } else {
                 println!("not running");
@@ -258,14 +277,29 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         }
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn run(&self) -> BridgeRpcResult<()> {
+        self.clear_stream_handler_tasks().await?;
+
         let (stream_data_tx, mut stream_data_rx) = mpsc::unbounded_channel();
         let task = {
             let transport = self.transport.clone();
+
+            trace::if_enabled! {
+                let id = self.id;
+            };
+
             tokio::spawn(async move {
                 while let Some(bytes) = stream_data_rx.recv().await {
-                    send_bytes_to_transport(transport.as_ref(), bytes)
-                        .await
+                    let fut =
+                        send_bytes_to_transport(transport.as_ref(), bytes);
+
+                    trace::if_enabled! {
+                        let span = tracing::info_span!("run_send_task", rpc_id = ?id);
+                        let fut = fut.instrument(span);
+                    };
+
+                    fut.await
                         .inspect_err(|e| {
                             trace::error!(
                                 "failed to send bytes to transport: {}",
@@ -274,6 +308,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                         })
                         .ok();
                 }
+
+                trace::trace!("stream data task stopped");
             })
         };
         let abort_handle = task.abort_handle();
@@ -283,7 +319,14 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             abort_handle,
         };
 
-        self.bytes_worker.lock().await.replace(bytes_worker);
+        let existing = self.bytes_worker.lock().await.replace(bytes_worker);
+
+        if let Some(existing) = existing {
+            drop(existing.sender);
+            existing.abort_handle.abort();
+        }
+
+        trace::trace!("running rpc");
 
         loop {
             let bytes = self.transport.receive().await;
@@ -293,6 +336,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
             let result = self.handle_receive(bytes, &stream_data_tx).await?;
             if result.is_break() {
+                trace::trace!("received stop signal, stopping rpc loop");
                 break;
             }
         }
@@ -302,6 +346,27 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         if let Some(bytes_worker) = bytes_worker {
             drop(bytes_worker.sender);
             bytes_worker.abort_handle.abort();
+        }
+
+        self.clear_stream_handler_tasks().await?;
+
+        trace::trace!("stopped rpc");
+
+        Ok(())
+    }
+
+    async fn clear_stream_handler_tasks(&self) -> BridgeRpcResult<()> {
+        let stream_handler_tasks =
+            self.stream_handler_tasks.lock().await.take();
+
+        if let Some(stream_handler_tasks) = stream_handler_tasks {
+            let results = stream_handler_tasks.join_all().await;
+
+            for result in results {
+                result.inspect_err(|e| {
+                    trace::error!("stream handler task failed: {}", e);
+                })?;
+            }
         }
 
         Ok(())
@@ -315,13 +380,18 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let incoming: Frame<rmpv::Value> = rmp_serde::from_slice(&bytes)
             .map_err(BridgeRpcErrorInner::Deserialization)?;
 
+        trace::trace!(
+            frame_type = ?incoming.r#type,
+            "received frame from rpc"
+        );
+
         match incoming.r#type {
             FrameType::Close => {
                 self.handle_close(data_tx).await?;
                 return Ok(ControlFlow::Break(()));
             }
             FrameType::CloseAck => {
-                trace::debug!("Received close ack, closing RPC");
+                trace::debug!("received close ack, closing RPC");
                 return Ok(ControlFlow::Break(()));
             }
             FrameType::Probe => {
@@ -357,7 +427,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         &self,
         data_tx: &mpsc::UnboundedSender<Vec<u8>>,
     ) -> Result<(), BridgeRpcError> {
-        trace::debug!("Received probe, sending probe ack");
+        trace::debug!("received probe, sending probe ack");
         send_frame_to_channel(data_tx, &Frame::probe_ack()).await?;
         Ok(())
     }
@@ -371,7 +441,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     async fn handle_probe_ack(&self) -> Result<(), BridgeRpcError> {
-        trace::debug!("Received probe ack");
+        trace::debug!("received probe ack");
         Ok(if let Some(rx) = self.pending_probe.lock().await.take() {
             rx.send(()).map_err(|_| {
                 BridgeRpcErrorInner::new_send(eyre::eyre!(
@@ -417,7 +487,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ))
             })?;
         } else {
-            trace::warn!("No response pipe found for request ID: {}", req_id);
+            trace::warn!("no response pipe found for request ID: {}", req_id);
         }
 
         Ok(())
@@ -440,14 +510,18 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     ) -> Result<(), BridgeRpcError> {
         let stream: StreamData<rmpv::Value> = extract_value(incoming)?;
 
+        trace::trace!(stream_id = ?stream.id, "received stream data");
+
         let mut pipes = self.stream_pipes.lock().await;
         let sender = pipes.get_mut(&stream.id);
         Ok(if let Some(sender) = sender {
+            trace::trace!("sending stream data");
             sender
                 .send(Ok(rmpv::ext::to_value(stream.data)?))
                 .map_err(BridgeRpcErrorInner::new_send)?;
+            trace::trace!("sent stream data");
         } else {
-            trace::warn!("No stream pipe found for stream ID: {}", stream.id);
+            trace::warn!("no stream pipe found for stream ID: {}", stream.id);
         })
     }
 
@@ -457,9 +531,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         data_sender: &mpsc::UnboundedSender<Vec<u8>>,
     ) -> Result<(), BridgeRpcError> {
         let stream: StreamStart<rmpv::Value> = extract_value(incoming)?;
-        let mut handlers = self.stream_handlers.lock().await;
-        let mut handler = handlers.get_mut(&stream.path);
-        Ok(if let Some(handler) = handler.as_mut() {
+
+        trace::trace!(stream_id = ?stream.id, path = ?stream.path, "received stream start");
+
+        let handlers = self.stream_handlers.lock().await;
+        let handler = handlers.get(&stream.path).cloned();
+        Ok(if let Some(handler) = handler {
             let (tx, rx) = mpsc::unbounded_channel();
 
             self.stream_pipes.lock().await.insert(stream.id, tx);
@@ -470,6 +547,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             )
             .await?;
 
+            trace::trace!("sent stream start response");
+
             let ctx = StreamContext::<rmpv::Value, rmpv::Value, eyre::Report> {
                 start_data: stream.data,
                 stream: Box::pin(
@@ -477,8 +556,17 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ),
             };
 
-            handler(ctx).await?;
+            let mut futs = self.stream_handler_tasks.lock().await;
+            let futs = futs.get_or_insert(JoinSet::new());
+            futs.spawn(async move {
+                trace::trace!("calling stream handler");
+                handler(ctx).await?;
+                trace::trace!("stream handler returned");
+
+                Ok::<_, BridgeRpcError>(())
+            });
         } else {
+            trace::warn!("no stream handler found for path: {}", stream.path);
             let error_message =
                 format!("no handler found for path: '{}'", stream.path);
 
@@ -490,6 +578,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ),
             )
             .await?;
+            trace::trace!("sent stream start response error");
         })
     }
 
@@ -500,20 +589,24 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let value = extract_value::<StreamStartResponse>(incoming)?;
         let id = value.id;
 
+        trace::trace!(stream_id = ?id, "received stream start response");
+
         let mut stream_response_pipes =
             self.stream_start_response_pipes.lock().await;
 
         if let Some(stream_response_pipe) =
             stream_response_pipes.remove(&value.id)
         {
+            trace::trace!("sending stream start response");
             stream_response_pipe.send(value).map_err(|_| {
                 BridgeRpcErrorInner::new_send(eyre::eyre!(
                     "failed to send stream start response (id: {id})",
                 ))
             })?;
+            trace::trace!("sent stream start response");
         } else {
             trace::warn!(
-                "No stream start rejected pipe found for stream ID: {}",
+                "no stream start rejected pipe found for stream ID: {}",
                 value.id
             );
         }
@@ -547,7 +640,11 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 &worker.sender,
                 &RequestFrame::request(request_id, path, data),
             )
-            .await
+            .await?;
+
+            trace::trace!("sent request frame");
+
+            Ok::<_, BridgeRpcError>(())
         })
         .await?;
 
@@ -557,6 +654,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             .lock()
             .await
             .insert(request_id, response_tx);
+
+        trace::trace!("inserted response pipe");
 
         let response = response_rx
             .await
@@ -568,13 +667,18 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ))
             })?;
 
+        trace::trace!("received response");
+
         let response_data = rmpv::ext::from_value(response)
             .map_err(BridgeRpcErrorInner::ValueConversion)?;
+
+        trace::trace!("converted response data");
 
         Ok(response_data)
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn request<TResponseData, TRequestData>(
         &self,
         path: impl Into<String>,
@@ -602,16 +706,23 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let id = Id::new();
 
         let (response_tx, response_rx) = oneshot::channel();
+
         self.stream_start_response_pipes
             .lock()
             .await
             .insert(id, response_tx);
 
+        trace::trace!("inserted stream start response pipe");
+
         let start_frame = StreamStartFrame::stream_start(id, path, data);
         send_frame_to_channel(&tx, &start_frame).await?;
 
+        trace::trace!("sent stream start frame");
+
         let response =
             response_rx.await.map_err(BridgeRpcErrorInner::Receive)?;
+
+        trace::trace!("received stream start response");
 
         if !response.ok {
             return Err(BridgeRpcErrorInner::StreamStartResponse {
@@ -625,6 +736,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn start_stream_with_data<TData: Serialize>(
         &self,
         path: impl Into<String>,
@@ -634,6 +746,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn start_stream(
         &self,
         path: impl Into<String>,
@@ -641,6 +754,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         self.start_stream_internal::<()>(path, None).await
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, ret, fields(rpc_id = ?self.id)))]
     pub async fn probe(&self, timeout: Duration) -> BridgeRpcResult<bool> {
         if self.has_pending_probe().await {
             Err(BridgeRpcErrorInner::ProbeInProgress)?;
@@ -666,6 +780,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         Ok(result?)
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, ret, fields(rpc_id = ?self.id)))]
     pub async fn has_pending_probe(&self) -> bool {
         self.pending_probe.lock().await.is_some()
     }

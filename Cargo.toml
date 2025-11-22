@@ -28,6 +28,7 @@ tracing = { version = "^0.1.41" }
 tracing-core = { version = "^0.1.34" }
 tracing-subscriber = { version = "=0.3.19", features = ["json"] } # Pin to 0.3.19 to avoid https://github.com/tokio-rs/tracing/issues/3369
 tracing-serde = { version = "^0.2.0" }
+test-log = { version = "^0.2.18", default-features = false, features = ["trace"] }
 futures = { version = "^0.3.31" }
 thiserror = "^2.0.17"
 eyre = "^0.6.12"

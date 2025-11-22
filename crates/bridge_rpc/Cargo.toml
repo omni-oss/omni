@@ -10,7 +10,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["enable-tracing"]
-enable-tracing = ["trace/enabled"]
+enable-tracing = ["trace/enabled", "dep:tracing"]
 
 [dependencies]
 system_traits = { workspace = true }
@@ -20,6 +20,8 @@ tokio-stream = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 trace = { workspace = true }
+tracing = { workspace = true, optional = true }
+test-log = { workspace = true }
 serde = { workspace = true }
 serde_repr = { workspace = true }
 rmp-serde = { workspace = true }
