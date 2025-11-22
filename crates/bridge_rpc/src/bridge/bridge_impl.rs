@@ -3,8 +3,10 @@ use super::id::*;
 use futures::FutureExt as _;
 use futures::future::BoxFuture;
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 use tokio_stream::StreamExt as _;
 
+use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::time::Duration;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
@@ -23,13 +25,15 @@ use crate::StreamError;
 use crate::StreamErrorInner;
 use crate::StreamHandle as BridgeStream;
 use crate::Transport;
-use crate::bridge::utils::send_frame;
+use crate::bridge::utils::send_bytes_to_channel;
+use crate::bridge::utils::send_bytes_to_transport;
+use crate::bridge::utils::send_frame_to_channel;
 use crate::bridge::utils::serialize;
 
 type ResponsePipe = oneshot::Sender<Result<rmpv::Value, ErrorData>>;
 type ResponsePipeMaps = HashMap<Id, ResponsePipe>;
 
-type StreamPipe = mpsc::Sender<Result<rmpv::Value, eyre::Report>>;
+type StreamPipe = mpsc::UnboundedSender<Result<rmpv::Value, eyre::Report>>;
 type StreamPipeMaps = HashMap<Id, StreamPipe>;
 
 type StreamStartResponsePipe = oneshot::Sender<StreamStartResponse>;
@@ -73,9 +77,12 @@ pub struct BridgeRpc<TTransport: Transport> {
     request_handlers: Arc<Mutex<HashMap<String, RequestHandlerFn>>>,
     stream_handlers: Arc<Mutex<HashMap<String, StreamHandlerFn>>>,
     pending_probe: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    // Response buffer for testing purposes only to make it easier to test
-    // #[cfg(test)]
-    // response_buffer: Arc<Mutex<HashMap<RequestId, rmpv::Value>>>,
+    bytes_worker: Arc<Mutex<Option<BytesWorker>>>,
+}
+
+struct BytesWorker {
+    pub(crate) sender: mpsc::UnboundedSender<Vec<u8>>,
+    pub(crate) abort_handle: AbortHandle,
 }
 
 impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
@@ -90,6 +97,7 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
             stream_start_response_pipes: self
                 .stream_start_response_pipes
                 .clone(),
+            bytes_worker: self.bytes_worker.clone(),
         }
     }
 }
@@ -189,10 +197,24 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             request_handlers: Arc::new(Mutex::new(request_handlers)),
             stream_handlers: Arc::new(Mutex::new(stream_handlers)),
             pending_probe: Arc::new(Mutex::new(None)),
-            // #[cfg(test)]
-            // response_buffer: Arc::new(Mutex::new(HashMap::new())),
+            bytes_worker: Arc::new(Mutex::new(None)),
         }
     }
+}
+
+macro_rules! do_work_with_bytes_worker {
+    ($self:expr, $work:expr) => {
+        async move {
+            let bytes_worker = $self.bytes_worker.lock().await;
+            if let Some(bytes_worker) = bytes_worker.as_ref() {
+                println!("running work");
+                $work(bytes_worker).await
+            } else {
+                println!("not running");
+                Err(BridgeRpcErrorInner::new_not_running().into())
+            }
+        }
+    };
 }
 
 impl<TTransport: Transport> BridgeRpc<TTransport> {
@@ -205,9 +227,10 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     pub async fn close(&self) -> BridgeRpcResult<()> {
-        send_frame(self.transport.as_ref(), &Frame::close()).await?;
-
-        Ok(())
+        do_work_with_bytes_worker!(self, async |worker: &BytesWorker| {
+            send_frame_to_channel(&worker.sender, &Frame::close()).await
+        })
+        .await
     }
 
     async fn get_response(
@@ -236,63 +259,114 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     }
 
     pub async fn run(&self) -> BridgeRpcResult<()> {
+        let (stream_data_tx, mut stream_data_rx) = mpsc::unbounded_channel();
+        let task = {
+            let transport = self.transport.clone();
+            tokio::spawn(async move {
+                while let Some(bytes) = stream_data_rx.recv().await {
+                    send_bytes_to_transport(transport.as_ref(), bytes)
+                        .await
+                        .inspect_err(|e| {
+                            trace::error!(
+                                "failed to send bytes to transport: {}",
+                                e
+                            )
+                        })
+                        .ok();
+                }
+            })
+        };
+        let abort_handle = task.abort_handle();
+
+        let bytes_worker = BytesWorker {
+            sender: stream_data_tx.clone(),
+            abort_handle,
+        };
+
+        self.bytes_worker.lock().await.replace(bytes_worker);
+
         loop {
-            let bytes = self.transport.receive().await.map_err(|e| {
-                BridgeRpcErrorInner::new_transport(eyre::Report::msg(
-                    e.to_string(),
-                ))
+            let bytes = self.transport.receive().await;
+            let bytes = bytes.map_err(|e| {
+                BridgeRpcErrorInner::new_transport(eyre::eyre!(e.to_string()))
             })?;
 
-            let incoming: Frame<rmpv::Value> = rmp_serde::from_slice(&bytes)
-                .map_err(BridgeRpcErrorInner::Deserialization)?;
-
-            println!("incoming: {incoming:?}");
-
-            match incoming.r#type {
-                FrameType::Close => {
-                    self.handle_close().await?;
-                    return Ok(());
-                }
-                FrameType::CloseAck => {
-                    trace::debug!("Received close ack, closing RPC");
-                    return Ok(());
-                }
-                FrameType::Probe => {
-                    self.handle_probe().await?;
-                }
-                FrameType::ProbeAck => {
-                    self.handle_probe_ack().await?;
-                }
-                FrameType::StreamStart => {
-                    self.handle_stream_start(&incoming).await?;
-                }
-                FrameType::StreamStartResponse => {
-                    self.handle_stream_start_response(&incoming).await?;
-                }
-                FrameType::StreamData => {
-                    self.handle_stream_data(&incoming).await?;
-                }
-                FrameType::StreamEnd => {
-                    self.handle_stream_end(&incoming).await?;
-                }
-                FrameType::MessageRequest => {
-                    self.handle_message_request(&incoming).await?;
-                }
-                FrameType::MessageResponse => {
-                    self.handle_message_response(&incoming).await?;
-                }
+            let result = self.handle_receive(bytes, &stream_data_tx).await?;
+            if result.is_break() {
+                break;
             }
         }
-    }
 
-    async fn handle_probe(&self) -> Result<(), BridgeRpcError> {
-        trace::debug!("Received probe, sending probe ack");
-        send_frame(self.transport.as_ref(), &Frame::probe_ack()).await?;
+        let bytes_worker = self.bytes_worker.lock().await.take();
+
+        if let Some(bytes_worker) = bytes_worker {
+            drop(bytes_worker.sender);
+            bytes_worker.abort_handle.abort();
+        }
+
         Ok(())
     }
 
-    async fn handle_close(&self) -> Result<(), BridgeRpcError> {
-        send_frame(self.transport.as_ref(), &Frame::close_ack()).await?;
+    async fn handle_receive(
+        &self,
+        bytes: bytes::Bytes,
+        data_tx: &mpsc::UnboundedSender<Vec<u8>>,
+    ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        let incoming: Frame<rmpv::Value> = rmp_serde::from_slice(&bytes)
+            .map_err(BridgeRpcErrorInner::Deserialization)?;
+
+        match incoming.r#type {
+            FrameType::Close => {
+                self.handle_close(data_tx).await?;
+                return Ok(ControlFlow::Break(()));
+            }
+            FrameType::CloseAck => {
+                trace::debug!("Received close ack, closing RPC");
+                return Ok(ControlFlow::Break(()));
+            }
+            FrameType::Probe => {
+                self.handle_probe(data_tx).await?;
+            }
+            FrameType::ProbeAck => {
+                self.handle_probe_ack().await?;
+            }
+            FrameType::StreamStart => {
+                self.handle_stream_start(&incoming, data_tx).await?;
+            }
+            FrameType::StreamStartResponse => {
+                self.handle_stream_start_response(&incoming).await?;
+            }
+            FrameType::StreamData => {
+                self.handle_stream_data(&incoming).await?;
+            }
+            FrameType::StreamEnd => {
+                self.handle_stream_end(&incoming).await?;
+            }
+            FrameType::MessageRequest => {
+                self.handle_message_request(&incoming, data_tx).await?;
+            }
+            FrameType::MessageResponse => {
+                self.handle_message_response(&incoming).await?;
+            }
+        };
+
+        Ok(ControlFlow::Continue(()))
+    }
+
+    async fn handle_probe(
+        &self,
+        data_tx: &mpsc::UnboundedSender<Vec<u8>>,
+    ) -> Result<(), BridgeRpcError> {
+        trace::debug!("Received probe, sending probe ack");
+        send_frame_to_channel(data_tx, &Frame::probe_ack()).await?;
+        Ok(())
+    }
+
+    async fn handle_close(
+        &self,
+        data_tx: &mpsc::UnboundedSender<Vec<u8>>,
+    ) -> Result<(), BridgeRpcError> {
+        send_frame_to_channel(data_tx, &Frame::close_ack()).await?;
         Ok(())
     }
 
@@ -310,13 +384,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     async fn handle_message_request(
         &self,
         incoming: &Frame<rmpv::Value>,
+        data_tx: &mpsc::UnboundedSender<Vec<u8>>,
     ) -> Result<(), BridgeRpcError> {
         let request: Request<rmpv::Value> = extract_value(incoming)?;
         let r_id = request.id;
         let bytes = self.get_response(request, r_id).await?;
-        self.transport.send(bytes.into()).await.map_err(|e| {
-            BridgeRpcErrorInner::new_transport(eyre::Report::msg(e.to_string()))
-        })?;
+        send_bytes_to_channel(&data_tx, bytes).await?;
         Ok(())
     }
 
@@ -372,7 +445,6 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         Ok(if let Some(sender) = sender {
             sender
                 .send(Ok(rmpv::ext::to_value(stream.data)?))
-                .await
                 .map_err(BridgeRpcErrorInner::new_send)?;
         } else {
             trace::warn!("No stream pipe found for stream ID: {}", stream.id);
@@ -382,26 +454,27 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     async fn handle_stream_start(
         &self,
         incoming: &Frame<rmpv::Value>,
+        data_sender: &mpsc::UnboundedSender<Vec<u8>>,
     ) -> Result<(), BridgeRpcError> {
         let stream: StreamStart<rmpv::Value> = extract_value(incoming)?;
         let mut handlers = self.stream_handlers.lock().await;
         let mut handler = handlers.get_mut(&stream.path);
         Ok(if let Some(handler) = handler.as_mut() {
-            send_frame(
-                self.transport.as_ref(),
+            let (tx, rx) = mpsc::unbounded_channel();
+
+            self.stream_pipes.lock().await.insert(stream.id, tx);
+
+            send_frame_to_channel(
+                data_sender,
                 &StreamStartResponseFrame::stream_start_response_ok(stream.id),
             )
             .await?;
 
-            let (tx, rx) = mpsc::channel(1);
-
-            self.stream_pipes.lock().await.insert(stream.id, tx);
-
             let ctx = StreamContext::<rmpv::Value, rmpv::Value, eyre::Report> {
                 start_data: stream.data,
-                stream: Box::pin(tokio_stream::wrappers::ReceiverStream::new(
-                    rx,
-                )),
+                stream: Box::pin(
+                    tokio_stream::wrappers::UnboundedReceiverStream::new(rx),
+                ),
             };
 
             handler(ctx).await?;
@@ -409,8 +482,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             let error_message =
                 format!("no handler found for path: '{}'", stream.path);
 
-            send_frame(
-                self.transport.as_ref(),
+            send_frame_to_channel(
+                data_sender,
                 &StreamStartResponseFrame::stream_start_response_error(
                     stream.id,
                     error_message,
@@ -430,10 +503,10 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         let mut stream_response_pipes =
             self.stream_start_response_pipes.lock().await;
 
-        if let Some(stream_rejected_tx) =
+        if let Some(stream_response_pipe) =
             stream_response_pipes.remove(&value.id)
         {
-            stream_rejected_tx.send(value).map_err(|_| {
+            stream_response_pipe.send(value).map_err(|_| {
                 BridgeRpcErrorInner::new_send(eyre::eyre!(
                     "failed to send stream start response (id: {id})",
                 ))
@@ -448,6 +521,17 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         Ok(())
     }
 
+    async fn clone_bytes_sender(
+        &self,
+    ) -> BridgeRpcResult<mpsc::UnboundedSender<Vec<u8>>> {
+        let bytes_worker = self.bytes_worker.lock().await;
+        if let Some(bytes_worker) = bytes_worker.as_ref() {
+            Ok(bytes_worker.sender.clone())
+        } else {
+            Err(BridgeRpcErrorInner::new_not_running().into())
+        }
+    }
+
     pub(crate) async fn request_with_id<TResponseData, TRequestData>(
         &self,
         request_id: Id,
@@ -458,10 +542,13 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         TRequestData: Serialize,
         TResponseData: for<'de> serde::Deserialize<'de>,
     {
-        send_frame(
-            self.transport.as_ref(),
-            &RequestFrame::request(request_id, path, data),
-        )
+        do_work_with_bytes_worker!(self, async |worker: &BytesWorker| {
+            send_frame_to_channel(
+                &worker.sender,
+                &RequestFrame::request(request_id, path, data),
+            )
+            .await
+        })
         .await?;
 
         let (response_tx, response_rx) = oneshot::channel();
@@ -505,25 +592,23 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         .await
     }
 
-    pub(crate) async fn begin_stream_internal<TData: Serialize>(
+    pub(crate) async fn start_stream_internal<TData: Serialize>(
         &self,
         path: impl Into<String>,
         data: Option<TData>,
-    ) -> BridgeRpcResult<BridgeStream<TTransport>> {
-        let transport = self.transport.clone();
+    ) -> BridgeRpcResult<BridgeStream> {
+        let tx = self.clone_bytes_sender().await?;
 
         let id = Id::new();
 
-        let start_frame = StreamStartFrame::stream_start(id, path, data);
-
         let (response_tx, response_rx) = oneshot::channel();
-
         self.stream_start_response_pipes
             .lock()
             .await
             .insert(id, response_tx);
 
-        send_frame(self.transport.as_ref(), &start_frame).await?;
+        let start_frame = StreamStartFrame::stream_start(id, path, data);
+        send_frame_to_channel(&tx, &start_frame).await?;
 
         let response =
             response_rx.await.map_err(BridgeRpcErrorInner::Receive)?;
@@ -536,24 +621,24 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             .into());
         }
 
-        Ok(BridgeStream::new(id, transport))
+        Ok(BridgeStream::new(id, tx))
     }
 
     #[inline(always)]
-    pub async fn begin_stream_with_data<TData: Serialize>(
+    pub async fn start_stream_with_data<TData: Serialize>(
         &self,
         path: impl Into<String>,
         data: TData,
-    ) -> BridgeRpcResult<BridgeStream<TTransport>> {
-        self.begin_stream_internal(path, Some(data)).await
+    ) -> BridgeRpcResult<BridgeStream> {
+        self.start_stream_internal(path, Some(data)).await
     }
 
     #[inline(always)]
-    pub async fn begin_stream(
+    pub async fn start_stream(
         &self,
         path: impl Into<String>,
-    ) -> BridgeRpcResult<BridgeStream<TTransport>> {
-        self.begin_stream_internal::<()>(path, None).await
+    ) -> BridgeRpcResult<BridgeStream> {
+        self.start_stream_internal::<()>(path, None).await
     }
 
     pub async fn probe(&self, timeout: Duration) -> BridgeRpcResult<bool> {
@@ -562,9 +647,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         }
 
         let (tx, rx) = oneshot::channel();
-        *self.pending_probe.lock().await = Some(tx);
+        self.pending_probe.lock().await.replace(tx);
 
-        send_frame(self.transport.as_ref(), &Frame::probe()).await?;
+        do_work_with_bytes_worker!(self, async |worker: &BytesWorker| {
+            send_frame_to_channel(&worker.sender, &Frame::probe()).await
+        })
+        .await?;
 
         let result = tokio::time::timeout(timeout, rx.map(|_| true))
             .await
@@ -596,14 +684,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{future, time::Duration};
 
     use super::*;
     use crate::{BridgeRpcBuilder, MockTransport};
     use ntest::timeout;
     use rmp_serde;
     use serde::{Deserialize, Serialize};
-    use tokio::time::sleep;
+    use tokio::{task::yield_now, time::sleep};
 
     #[derive(Serialize, Deserialize, Debug)]
     struct MockRequestData {
@@ -631,6 +719,47 @@ mod tests {
         t: TTransport,
     ) -> BridgeRpc<TTransport> {
         BridgeRpc::new(t, HashMap::new(), HashMap::new())
+    }
+
+    #[inline(always)]
+    fn ready<V>(value: V) -> Pin<Box<dyn Future<Output = V> + Send>>
+    where
+        V: Send + Sync + 'static,
+    {
+        fut(future::ready(value))
+    }
+
+    #[inline(always)]
+    fn fut<R, F>(f: F) -> Pin<Box<dyn Future<Output = R> + Send>>
+    where
+        F: Future<Output = R> + Send + Sync + 'static,
+    {
+        Box::pin(f)
+    }
+
+    #[inline(always)]
+    fn delayed_fut<R, F>(
+        f: F,
+        delay: Duration,
+    ) -> Pin<Box<dyn Future<Output = R> + Send>>
+    where
+        F: Future<Output = R> + Send + Sync + 'static,
+    {
+        fut(async move {
+            sleep(delay).await;
+            f.await
+        })
+    }
+
+    #[inline(always)]
+    fn delayed<V>(
+        value: V,
+        delay: Duration,
+    ) -> Pin<Box<dyn Future<Output = V> + Send>>
+    where
+        V: Send + Sync + 'static,
+    {
+        delayed_fut(future::ready(value), delay)
     }
 
     #[tokio::test]
@@ -669,7 +798,7 @@ mod tests {
                 assert_eq!(request.id, req_id);
             }
 
-            Ok(())
+            Box::pin(async move { Ok(()) })
         });
 
         let mut sent_success = false;
@@ -677,25 +806,25 @@ mod tests {
         transport.expect_receive().returning(move || {
             if !sent_start_ack {
                 sent_start_ack = true;
-                return Ok(serialize(&Frame::probe_ack())
+                return ready(Ok(serialize(&Frame::probe_ack())
                     .expect("Failed to serialize start ack frame")
-                    .into());
+                    .into()));
             }
 
             if !sent_success {
                 sent_success = true;
 
-                return Ok(serialize(&Frame::success_response(
+                return ready(Ok(serialize(&Frame::success_response(
                     req_id,
                     res_data("test_data"),
                 ))
                 .expect("Failed to serialize response")
-                .into());
+                .into()));
             }
 
-            Ok(serialize(&Frame::close())
+            ready(Ok(serialize(&Frame::close())
                 .expect("Failed to serialize close frame")
-                .into())
+                .into()))
         });
 
         let rpc = empty_rpc(transport);
@@ -739,12 +868,47 @@ mod tests {
 
             assert_eq!(frame.r#type, FrameType::Close, "Expected close frame");
 
-            Ok(())
+            ready(Ok(()))
+        });
+
+        let mut sent_close_ack = false;
+        transport.expect_receive().returning(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            if !sent_close_ack {
+                sent_close_ack = true;
+                return delayed(
+                    Ok(serialize(&Frame::close_ack())
+                        .expect("Failed to serialize close frame")
+                        .into()),
+                    Duration::from_millis(10),
+                );
+            }
+
+            delayed(
+                Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into()),
+                Duration::from_millis(10),
+            )
         });
 
         let rpc = empty_rpc(transport);
 
-        rpc.close().await.expect("Failed to close RPC");
+        let run = {
+            let rpc = rpc.clone();
+            tokio::spawn(async move {
+                rpc.run().await.expect("Failed to run RPC");
+            })
+        };
+
+        let close = async {
+            yield_now().await;
+            rpc.close().await
+        };
+
+        let (_, response) = tokio::join!(run, close);
+
+        response.expect("Close should return a valid result");
     }
 
     #[tokio::test]
@@ -766,31 +930,46 @@ mod tests {
                 );
             }
 
-            Ok(())
+            ready(Ok(()))
         });
+
         let mut sent_probe_ack = false;
         transport.expect_receive().returning(move || {
             if !sent_probe_ack {
                 sent_probe_ack = true;
-                return Ok(serialize(&Frame::probe_ack())
-                    .expect("Failed to serialize probe ack frame")
-                    .into());
+                return delayed(
+                    Ok(serialize(&Frame::probe_ack())
+                        .expect("Failed to serialize probe ack frame")
+                        .into()),
+                    Duration::from_millis(10),
+                );
             }
 
-            Ok(serialize(&Frame::close())
-                .expect("Failed to serialize close frame")
-                .into())
+            delayed(
+                Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into()),
+                Duration::from_millis(10),
+            )
         });
 
         let rpc = BridgeRpcBuilder::new(transport).build();
 
-        let response = rpc.probe(Duration::from_millis(100));
-        let run = rpc.run();
+        let run = {
+            let rpc = rpc.clone();
+            tokio::spawn(async move {
+                rpc.run().await.expect("Failed to run RPC");
+            })
+        };
 
-        let (response, ..) = tokio::join!(response, run);
+        let response = async {
+            yield_now().await;
+            rpc.probe(Duration::from_millis(100)).await
+        };
 
-        assert!(response.is_ok(), "Probe should return a valid result");
-        assert!(response.unwrap(), "Probe failed");
+        let (_, response) = tokio::join!(run, response);
+
+        response.expect("Probe should return a valid result");
         assert!(!rpc.has_pending_probe().await);
     }
 
@@ -804,7 +983,7 @@ mod tests {
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
             if received_response {
-                return Ok(());
+                return ready(Ok(()));
             }
 
             let response: ResponseFrame<MockResponseData> =
@@ -829,26 +1008,26 @@ mod tests {
                 );
             }
 
-            Ok(())
+            ready(Ok(()))
         });
 
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(serialize(&Frame::close())
+                return ready(Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
-                    .into());
+                    .into()));
             }
 
             sent_success = true;
 
-            Ok(serialize(&Frame::request(
+            ready(Ok(serialize(&Frame::request(
                 req_id,
                 "test_path",
                 req_data("test_data"),
             ))
             .expect("Failed to serialize response")
-            .into())
+            .into()))
         });
 
         let rpc = BridgeRpcBuilder::new(transport)
@@ -876,7 +1055,7 @@ mod tests {
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
             if received_response {
-                return Ok(());
+                return ready(Ok(()));
             }
 
             let response: ResponseFrame<MockResponseData> =
@@ -900,26 +1079,26 @@ mod tests {
                 );
             }
 
-            Ok(())
+            ready(Ok(()))
         });
 
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(serialize(&Frame::close())
+                return ready(Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
-                    .into());
+                    .into()));
             }
 
             sent_success = true;
 
-            Ok(serialize(&Frame::request(
+            ready(Ok(serialize(&Frame::request(
                 req_id,
                 "test_path_wrong",
                 req_data("test_data"),
             ))
             .expect("Failed to serialize response")
-            .into())
+            .into()))
         });
 
         let rpc = empty_rpc(transport);
@@ -936,7 +1115,7 @@ mod tests {
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
             if received_response {
-                return Ok(());
+                return ready(Ok(()));
             }
 
             let response: StreamStartResponseFrame =
@@ -957,26 +1136,26 @@ mod tests {
                 assert!(response.ok, "Expected success response");
             }
 
-            Ok(())
+            ready(Ok(()))
         });
 
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(serialize(&Frame::close())
+                return ready(Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
-                    .into());
+                    .into()));
             }
 
             sent_success = true;
 
-            Ok(serialize(&StreamStartFrame::<()>::stream_start(
+            ready(Ok(serialize(&StreamStartFrame::<()>::stream_start(
                 Id::new(),
                 "test_path",
                 None,
             ))
             .expect("Failed to serialize response")
-            .into())
+            .into()))
         });
 
         let rpc = BridgeRpcBuilder::new(transport)
@@ -997,7 +1176,7 @@ mod tests {
         let mut received_response = false;
         transport.expect_send().returning(move |bytes| {
             if received_response {
-                return Ok(());
+                return ready(Ok(()));
             }
 
             let response: StreamStartResponseFrame =
@@ -1022,26 +1201,26 @@ mod tests {
                 );
             }
 
-            Ok(())
+            ready(Ok(()))
         });
 
         let mut sent_success = false;
         transport.expect_receive().returning(move || {
             if sent_success {
-                return Ok(serialize(&Frame::close())
+                return ready(Ok(serialize(&Frame::close())
                     .expect("Failed to serialize close frame")
-                    .into());
+                    .into()));
             }
 
             sent_success = true;
 
-            Ok(serialize(&StreamStartFrame::<()>::stream_start(
+            ready(Ok(serialize(&StreamStartFrame::<()>::stream_start(
                 Id::new(),
                 "test_path_wrong",
                 None,
             ))
             .expect("Failed to serialize response")
-            .into())
+            .into()))
         });
 
         let rpc = empty_rpc(transport);

@@ -1,9 +1,12 @@
 use std::time::Duration;
 
 use bridge_rpc::{
-    BridgeRpc, BridgeRpcBuilder, RequestContext, StreamTransport, Transport,
+    BridgeRpc, BridgeRpcBuilder, RequestContext, StreamContext,
+    StreamTransport, Transport,
 };
 use ntest::timeout;
+use tokio::{io::DuplexStream, time::sleep};
+use tokio_stream::StreamExt;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
 struct RpcResponse<T> {
@@ -16,40 +19,53 @@ struct RpcRequest {
     message: String,
 }
 
-fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
+type TestTransport = StreamTransport<DuplexStream, DuplexStream>;
+
+fn create_and_mutate_rpcs<TFn1, TFn2>(
+    mut fn1: TFn1,
+    mut fn2: TFn2,
+) -> (BridgeRpc<TestTransport>, BridgeRpc<TestTransport>)
+where
+    TFn1: FnMut(
+        BridgeRpcBuilder<TestTransport>,
+    ) -> BridgeRpcBuilder<TestTransport>,
+    TFn2: FnMut(
+        BridgeRpcBuilder<TestTransport>,
+    ) -> BridgeRpcBuilder<TestTransport>,
+{
     let (pipe1_in, pipe1_out) = tokio::io::duplex(2048);
     let (pipe2_in, pipe2_out) = tokio::io::duplex(2048);
 
     let transport1 = StreamTransport::new(pipe1_in, pipe2_out);
     let transport2 = StreamTransport::new(pipe2_in, pipe1_out);
 
-    let rpc1 = BridgeRpcBuilder::new(transport1)
-        .request_handler(
-            "rpc1test",
-            |request: RequestContext<RpcRequest>| async move {
-                Ok::<_, eyre::Report>(RpcResponse {
-                    data: request.data,
-                    message: "Received data from rpc1, returning it back"
-                        .to_string(),
-                })
-            },
-        )
-        .build();
+    let rpc1 = BridgeRpcBuilder::new(transport1).request_handler(
+        "rpc1test",
+        async |request: RequestContext<RpcRequest>| {
+            Ok::<_, eyre::Report>(RpcResponse {
+                data: request.data,
+                message: "Received data from rpc1, returning it back"
+                    .to_string(),
+            })
+        },
+    );
 
-    let rpc2 = BridgeRpcBuilder::new(transport2)
-        .request_handler(
-            "rpc2test",
-            |request: RequestContext<RpcRequest>| async move {
-                Ok::<_, eyre::Report>(RpcResponse {
-                    data: request.data,
-                    message: "Received data from rpc2, returning it back"
-                        .to_string(),
-                })
-            },
-        )
-        .build();
+    let rpc2 = BridgeRpcBuilder::new(transport2).request_handler(
+        "rpc2test",
+        |request: RequestContext<RpcRequest>| async {
+            Ok::<_, eyre::Report>(RpcResponse {
+                data: request.data,
+                message: "Received data from rpc2, returning it back"
+                    .to_string(),
+            })
+        },
+    );
 
-    (rpc1, rpc2)
+    (fn1(rpc1).build(), fn2(rpc2).build())
+}
+
+fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
+    create_and_mutate_rpcs(|b| b, |b| b)
 }
 
 macro_rules! run_rpcs {
@@ -95,7 +111,8 @@ async fn test_probe() {
     runner.await.expect("Failed to run RPC");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[timeout(1000)]
 async fn test_send_and_receive_data() {
     let (rpc1, rpc2) = create_rpcs();
 
@@ -126,6 +143,49 @@ async fn test_send_and_receive_data() {
             message: "Received data from rpc1, returning it back".to_string()
         }
     );
+
+    close_rpcs!(rpc1, rpc2);
+
+    runner.await.expect("Failed to run RPC");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[timeout(1000)]
+async fn test_stream_data() {
+    let (rpc1, rpc2) = create_and_mutate_rpcs(
+        |rpc1| {
+            rpc1.stream_handler(
+                "rpc1test-stream",
+                async |mut r: StreamContext<RpcRequest, Vec<u8>>| {
+                    let value = r
+                        .stream
+                        .next()
+                        .await
+                        .expect("value should exist")
+                        .expect("should have data");
+                    assert_eq!(value, vec![1, 2, 3]);
+                    Ok::<_, eyre::Report>(())
+                },
+            )
+        },
+        |rpc2| rpc2,
+    );
+
+    let runner = run_rpcs!(rpc1, rpc2);
+
+    let stream = rpc2
+        .start_stream("rpc1test-stream")
+        .await
+        .expect("should be able to start stream");
+
+    stream
+        .send(vec![1, 2, 3])
+        .await
+        .expect("should be able to send data");
+
+    stream.end().await.expect("should be able to end stream");
+
+    sleep(Duration::from_millis(250)).await;
 
     close_rpcs!(rpc1, rpc2);
 

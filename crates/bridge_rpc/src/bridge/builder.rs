@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     RequestContext, StreamContext, StreamError, StreamHandlerFn, Transport,
-    bridge::RequestHandlerFn,
+    bridge::{self, BridgeRpc, RequestHandlerFn},
 };
 
 pub struct BridgeRpcBuilder<TTransport: Transport> {
@@ -36,10 +36,8 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         TFuture:
             Future<Output = Result<TResponseData, TError>> + Send + 'static,
     {
-        self.request_handlers.insert(
-            path.into(),
-            crate::bridge::create_request_handler(handler),
-        );
+        self.request_handlers
+            .insert(path.into(), bridge::create_request_handler(handler));
         self
     }
 
@@ -61,12 +59,12 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
             + 'static,
     {
         self.stream_handlers
-            .insert(path.into(), crate::bridge::create_stream_handler(handler));
+            .insert(path.into(), bridge::create_stream_handler(handler));
         self
     }
 
-    pub fn build(self) -> crate::bridge::BridgeRpc<TTransport> {
-        crate::bridge::BridgeRpc::new(
+    pub fn build(self) -> BridgeRpc<TTransport> {
+        BridgeRpc::new(
             self.transport,
             self.request_handlers,
             self.stream_handlers,
@@ -78,11 +76,13 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
 mod tests {
     use tokio_stream::StreamExt as _;
 
+    use crate::MockTransport;
+
     use super::*;
 
     #[tokio::test]
     async fn test_builder_request_handler() {
-        let transport = crate::MockTransport::new();
+        let transport = MockTransport::new();
         let rpc = BridgeRpcBuilder::new(transport)
             .request_handler(
                 "test_path",
@@ -100,7 +100,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_builder_stream_handler() {
-        let transport = crate::MockTransport::new();
+        let transport = MockTransport::new();
         let rpc = BridgeRpcBuilder::new(transport)
             .stream_handler("test_path", |mut s: StreamContext| async move {
                 while let Some(_) = s.stream.next().await {}

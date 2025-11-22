@@ -1,54 +1,58 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use derive_new::new;
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 use crate::{
-    Id, Transport,
+    Id,
     bridge::{
         frame::{StreamDataFrame, StreamEndFrame},
-        utils::send_frame,
+        utils::send_frame_to_channel,
     },
 };
 
 #[derive(new)]
-pub struct StreamHandle<TTransport: Transport> {
+pub struct StreamHandle {
     id: Id,
-    transport: Arc<TTransport>,
+    tx: mpsc::UnboundedSender<Vec<u8>>,
 }
 
-impl<T: Transport> Drop for StreamHandle<T> {
+impl Drop for StreamHandle {
     fn drop(&mut self) {
-        let end_frame = StreamEndFrame::stream_end_success(self.id);
-        let transport = self.transport.clone();
-
+        let tx = self.tx.clone();
+        let frame = StreamEndFrame::stream_end_success(self.id);
         tokio::spawn(async move {
-            send_frame(transport.as_ref(), &end_frame).await.ok();
+            let result = send_frame_to_channel(&tx, &frame).await;
+
+            if let Err(e) = result {
+                trace::error!("failed to send stream end frame: {}", e);
+            }
         });
     }
 }
 
-impl<TTransport: Transport> StreamHandle<TTransport> {
+impl StreamHandle {
     pub fn id(&self) -> Id {
         self.id
     }
 }
 
-impl<TTransport: Transport> StreamHandle<TTransport> {
+impl StreamHandle {
     pub async fn send<TData: Serialize>(
         &self,
         data: TData,
     ) -> crate::BridgeRpcResult<()> {
-        send_frame(
-            self.transport.as_ref(),
+        send_frame_to_channel(
+            &self.tx,
             &StreamDataFrame::stream_data(self.id, data),
         )
         .await
     }
 
     pub async fn end(&self) -> crate::BridgeRpcResult<()> {
-        send_frame(
-            self.transport.as_ref(),
+        send_frame_to_channel(
+            &self.tx,
             &StreamEndFrame::stream_end_success(self.id),
         )
         .await
@@ -58,8 +62,8 @@ impl<TTransport: Transport> StreamHandle<TTransport> {
         &self,
         error: TError,
     ) -> crate::BridgeRpcResult<()> {
-        send_frame(
-            self.transport.as_ref(),
+        send_frame_to_channel(
+            &self.tx,
             &StreamEndFrame::stream_end_error(self.id, error.to_string()),
         )
         .await
