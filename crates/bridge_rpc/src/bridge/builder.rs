@@ -26,8 +26,9 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         handler: TFn,
     ) -> Self
     where
-        TFn: FnMut(RequestContext<TRequestData>) -> TFuture
+        TFn: Fn(RequestContext<TRequestData>) -> TFuture
             + Send
+            + Sync
             + Clone
             + 'static,
         TRequestData: for<'de> serde::Deserialize<'de>,
@@ -51,10 +52,9 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         TStreamData: for<'de> serde::Deserialize<'de>,
         TError: Display,
         TFuture: Future<Output = Result<(), TError>> + Send + 'static,
-        TFn: FnMut(
-                StreamContext<TStartData, TStreamData, StreamError>,
-            ) -> TFuture
+        TFn: Fn(StreamContext<TStartData, TStreamData, StreamError>) -> TFuture
             + Send
+            + Sync
             + Clone
             + 'static,
     {

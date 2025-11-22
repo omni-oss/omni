@@ -8,7 +8,7 @@ use tokio::{
 };
 
 use crate::{
-    Transport, TransportReadFramer, TransportWriteFramer,
+    Id, Transport, TransportReadFramer, TransportWriteFramer,
     constants::STREAM_BUFFER_SIZE,
 };
 
@@ -17,6 +17,8 @@ where
     TInput: AsyncRead,
     TOutput: AsyncWrite,
 {
+    #[allow(unused)]
+    id: Id,
     input: Mutex<TInput>,
     output: Mutex<TOutput>,
     write_framer: TransportWriteFramer,
@@ -31,6 +33,7 @@ where
 {
     pub fn new(input: TInput, output: TOutput) -> Self {
         Self {
+            id: Id::new(),
             input: Mutex::new(input),
             output: Mutex::new(output),
             write_framer: TransportWriteFramer::new(),
@@ -81,23 +84,33 @@ where
 {
     type Error = StreamTransportError;
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(transport_id = ?self.id)))]
     async fn send(&self, data: Bytes) -> Result<(), Self::Error> {
         let frame = self.write_framer.frame(data);
         let mut output = self.output.lock().await;
         output.write_all(&frame.length).await?;
         output.write_all(&frame.data).await?;
+        trace::trace!(
+            bytes_sent = frame.length.len() + frame.data.len(),
+            "sent frame"
+        );
         Ok(())
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(transport_id = ?self.id)))]
     async fn receive(&self) -> Result<Bytes, Self::Error> {
+        trace::trace!("starting receive");
         // If we have a buffered frame, return it and remove it from the buffer
         if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
+            trace::trace!("got frame from buffer, returning");
             return Ok(frame);
         }
 
         let mut buf = [0; STREAM_BUFFER_SIZE];
         loop {
+            trace::trace!("reading from input");
             let n_bytes_read = self.input.lock().await.read(&mut buf).await?;
+            trace::trace!(bytes_read = n_bytes_read, "received bytes");
 
             if n_bytes_read == 0 {
                 let mut read_framer = self.read_framer.lock().await;
@@ -110,8 +123,10 @@ where
                 if let Some(frame) =
                     self.buffered_frames.lock().await.pop_front()
                 {
+                    trace::trace!("got frame from buffer, returning");
                     return Ok(frame);
                 } else {
+                    trace::error!("no frame found, returning end of stream");
                     return Err(StreamTransportErrorInner::EndOfStream.into());
                 }
             }
@@ -125,10 +140,12 @@ where
             if let Some(frame) = frame
                 && !frame.is_empty()
             {
+                trace::trace!("completed frame from framer, add to buffer");
                 self.buffered_frames.lock().await.extend(frame);
             }
 
             if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
+                trace::trace!("got frame from buffer, returning");
                 return Ok(frame);
             }
         }

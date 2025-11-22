@@ -37,7 +37,6 @@ pub macro error($($tt:tt)+) {
 
 #[cfg(feature = "enabled")]
 pub macro span($($tt:tt)+) {
-    #[cfg(feature = "enabled")]
     $crate::_trace_impl::span!($($tt)+);
 }
 
@@ -119,11 +118,49 @@ pub macro span_enabled{
 }
 
 #[cfg(not(feature = "enabled"))]
-pub macro span_enabled{
+pub macro span_enabled {
     ($lvl:expr, $($field:tt)*) {
         false
     },
     ($lvl:expr) => {
         $crate::_trace_impl::span_enabled!($lvl, {})
     }
+}
+
+/// Conditionally compiles a series of statements if tracing is enabled via feature gate
+///
+/// **Note that the statements are not scoped inside a block and are exposed to the subsequent
+/// code if variables are declared.**
+#[cfg(feature = "enabled")]
+pub macro if_enabled {
+    ($($s:stmt;)*) => {
+        $(
+            $s;
+        )*
+    },
+}
+
+#[cfg(feature = "enabled")]
+pub macro if_not_enabled {
+    ($($s:stmt)*) => {
+    },
+}
+
+#[cfg(not(feature = "enabled"))]
+pub macro if_not_enabled {
+    ($($s:stmt;)*) => {
+        $(
+            $s;
+        )*
+    },
+}
+
+/// Conditionally compiles a series of statements if tracing is enabled via feature gate
+///
+/// **Note that the statements are not scoped inside a block and are exposed to the subsequent
+/// code if variables are declared.**
+#[cfg(not(feature = "enabled"))]
+pub macro if_enabled {
+    ($($s:stmt)*) => {
+    },
 }

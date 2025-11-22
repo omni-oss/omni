@@ -15,6 +15,10 @@ tasks:
     command: cargo test -p ${PROJECT_NAME}
     dependencies:
       - ^test
+    env:
+      vars:
+        # RUST_LOG_SPAN_EVENTS: new,close
+        RUST_LOG: trace
     cache:
       key:
         files:
@@ -31,7 +35,13 @@ tasks:
           append: ["./benches/**/*.rs"]
 
   profile:
-    command: cargo flamegraph --profile=${profile:-bench-with-debug} --bench ${bench:-${PROJECT_NAME}_benchmarks} -p ${PROJECT_NAME} -- --bench --profile-time=${profile_time:-5}
+    command: >
+      cargo flamegraph
+        --profile=${profile:-bench-with-debug}
+        --bench ${bench:-${PROJECT_NAME}_benchmarks}
+        -p ${project:-${PROJECT_NAME}}
+        --
+        --bench --profile-time=${profile_time:-5}
 
 meta:
   language: rust
