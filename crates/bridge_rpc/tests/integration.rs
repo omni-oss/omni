@@ -61,7 +61,10 @@ where
         },
     );
 
-    (fn1(rpc1).build(), fn2(rpc2).build())
+    (
+        fn1(rpc1).build().expect("should be able to build"),
+        fn2(rpc2).build().expect("should be able to build"),
+    )
 }
 
 fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
