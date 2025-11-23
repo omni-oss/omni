@@ -1068,7 +1068,9 @@ mod tests {
             )
         });
 
-        let rpc = BridgeRpcBuilder::new(transport).build();
+        let rpc = BridgeRpcBuilder::new(transport)
+            .build()
+            .expect("should be able to build");
 
         let run = {
             let rpc = rpc.clone();
@@ -1154,7 +1156,8 @@ mod tests {
                     })
                 },
             )
-            .build();
+            .build()
+            .expect("should be able to build");
 
         // run the RPC to populate response buffer
         rpc.run().await.expect("Failed to run RPC");
@@ -1277,7 +1280,8 @@ mod tests {
             .stream_handler("test_path", |_: StreamContext| async move {
                 Ok::<_, String>(())
             })
-            .build();
+            .build()
+            .expect("should be able to build");
 
         // run the RPC to populate response buffer
         rpc.run().await.expect("Failed to run RPC");

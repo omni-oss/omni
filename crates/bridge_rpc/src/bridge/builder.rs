@@ -1,7 +1,11 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use crate::{
-    RequestContext, StreamContext, StreamError, StreamHandlerFn, Transport,
+    BridgeRpcBuilderError, BridgeRpcBuilderErrorInner, RequestContext,
+    StreamContext, StreamError, StreamHandlerFn, Transport,
     bridge::{self, BridgeRpc, RequestHandlerFn},
 };
 
@@ -63,12 +67,35 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         self
     }
 
-    pub fn build(self) -> BridgeRpc<TTransport> {
-        BridgeRpc::new(
+    fn validate_paths(&self) -> Result<(), BridgeRpcBuilderError> {
+        let paths = self
+            .request_handlers
+            .keys()
+            .chain(self.stream_handlers.keys())
+            .collect::<HashSet<_>>();
+
+        for path in paths {
+            if self.stream_handlers.contains_key(path)
+                && self.request_handlers.contains_key(path)
+            {
+                return Err(BridgeRpcBuilderErrorInner::DuplicatePath(
+                    path.clone(),
+                )
+                .into());
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn build(self) -> Result<BridgeRpc<TTransport>, BridgeRpcBuilderError> {
+        self.validate_paths()?;
+
+        Ok(BridgeRpc::new(
             self.transport,
             self.request_handlers,
             self.stream_handlers,
-        )
+        ))
     }
 }
 
@@ -90,7 +117,8 @@ mod tests {
                     Ok::<_, String>(req.data)
                 },
             )
-            .build();
+            .build()
+            .expect("should be able to build");
 
         assert!(
             rpc.has_request_handler("test_path").await,
@@ -107,7 +135,8 @@ mod tests {
 
                 Ok::<_, String>(())
             })
-            .build();
+            .build()
+            .expect("should be able to build");
 
         assert!(
             rpc.has_stream_handler("test_path").await,

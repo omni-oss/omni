@@ -224,6 +224,7 @@ value-bag = { version = "^1.11.1", features = ["serde", "error", "seq", "owned"]
 serde_validate = { path = "./crates/serde_validate" }
 serde_repr = { version = "^0.1.20" }
 heck = { version = "^0.5.0" }
+bridge_rpc = { path = "./crates/bridge_rpc" }
 # nom = { version = "^8.0.0" }
 
 [profile.release]
