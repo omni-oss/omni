@@ -1,225 +1,283 @@
-import { decode, encode } from "@msgpack/msgpack";
 import { createDeferred, type Deferred } from "@/deferred";
 import { TimeoutError, withTimeout } from "@/promise-utils";
 import type { Transport } from "@/transport";
 import {
-  fClose,
-  fProbe,
-  fProbeAck,
-  fReq,
-  fResError,
-  fResSuccess,
-  type InternalOp,
-  type UnknownBridgeFrame,
-  UnknownBridgeFrameSchema,
-  type UnknownBridgeRequest,
-  type UnknownBridgeResponse,
+    Frame,
+    FrameConstants,
+    FrameType,
+    type StreamEndFrame,
+    type StreamStartResponseFrame,
+    UnknownFrameSchema,
+    type UnknownMessageRequestFrame,
+    type UnknownMessageResponseFrame,
+    type UnknownStreamDataFrame,
+    type UnknownStreamStartFrame,
 } from "./frame";
+import { Id } from "./id";
+import { decode, encode } from "./utils";
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type BridgeRpcConfig = {
-  transport: Transport;
-  handlers?: Map<string, (arg: unknown) => MaybePromise<unknown>>;
+    transport: Transport;
+    requestHandlers?: Map<string, UnknownBridgeRequestHandler>;
+    streamHandlers?: Map<string, UnknownBridgeStreamHandler>;
 };
 
-function createId(): string {
-  return crypto.randomUUID();
-}
-
+export type RequestContext<TRequestData> = {
+    data: TRequestData;
+};
 export type UnknownBridgeRequestHandler = (
-  data: unknown,
+    context: RequestContext<unknown>,
 ) => MaybePromise<unknown>;
-export type BridgeRequestHandler<TRequest, TResponse> = (
-  data: TRequest,
-) => MaybePromise<TResponse>;
+export type BridgeRequestHandler<TRequestData, TResponseData> = (
+    data: RequestContext<TRequestData>,
+) => MaybePromise<TResponseData>;
 
-export class BridgeRpc<THandlers extends [...string[]] = []> {
-  private responses = new Map<string, Deferred<unknown>>();
-  private isStarted = false;
-  private pendingProbe: Deferred<boolean> | null = null;
+export type StreamContext<TStartData, TStreamData> = {
+    startData: TStartData;
+    stream: AsyncIterable<TStreamData>;
+};
+export type UnknownBridgeStreamHandler = (
+    context: StreamContext<unknown, unknown>,
+) => MaybePromise<void>;
+export type BridgeStreamHandler<TStartData, TStreamData> = (
+    data: StreamContext<TStartData, TStreamData>,
+) => MaybePromise<void>;
 
-  constructor(private readonly config: BridgeRpcConfig) {}
+export class BridgeRpc<
+    TRequestHandlers extends [...string[]] = [],
+    TStreamHandlers extends [...string[]] = [],
+> {
+    private responses = new Map<bigint, Deferred<unknown>>();
+    private isStarted = false;
+    private pendingProbe: Deferred<boolean> | null = null;
 
-  private async handle(frameBytes: Uint8Array) {
-    if (!this.isStarted) {
-      return;
+    constructor(private readonly config: BridgeRpcConfig) {}
+
+    private async handle(frameBytes: Uint8Array) {
+        if (!this.isStarted) {
+            return;
+        }
+
+        const frame = decode(frameBytes);
+        const parsed = UnknownFrameSchema.safeParse(frame);
+        if (parsed.success) {
+            await this.handleFrame(parsed.data);
+        } else {
+            await this.respondWithError(
+                // biome-ignore lint/suspicious/noExplicitAny: "Allow any for id extraction",
+                (frame as any)?.content?.id || Id.create(),
+                `invalid frame: ${parsed.error.message}`,
+            );
+        }
     }
 
-    const frame = decode(frameBytes);
-    const parsed = UnknownBridgeFrameSchema.safeParse(frame);
-    if (parsed.success) {
-      await this.handleFrame(parsed.data);
-    } else {
-      await this.respondWithError(
-        // biome-ignore lint/suspicious/noExplicitAny: "Allow any for id extraction",
-        (frame as any)?.content?.id || createId(),
-        `Invalid frame: ${parsed.error.message}`,
-      );
-    }
-  }
-
-  private async handleFrame(frame: UnknownBridgeFrame) {
-    switch (frame.type) {
-      case "internal_op":
-        await this.handleInternalOp(frame.content);
-        break;
-      case "response":
-        this.handleResponse(frame.content);
-        break;
-      case "request":
-        this.handleRequest(frame.content);
-        break;
-    }
-  }
-
-  private async handleInternalOp(op: InternalOp) {
-    switch (op) {
-      case "close":
-        await this.handleClose();
-        break;
-      case "close_ack":
-        await this.handleCloseAck();
-        break;
-      case "probe":
-        await this.handleProbe();
-        break;
-      case "probe_ack":
-        await this.handleProbeAck();
-        break;
-    }
-  }
-
-  private async handleProbe() {
-    await this.config.transport.send(encode(fProbeAck()));
-  }
-
-  private async handleProbeAck() {
-    this.pendingProbe?.resolve(true);
-    this.pendingProbe = null;
-  }
-
-  private async handleClose() {
-    await this.config.transport.send(encode(fClose()));
-    this.responses.clear();
-  }
-
-  private async handleCloseAck() {
-    this.isStarted = false;
-  }
-
-  private async respondWithError(id: string, errorMessage: string) {
-    await this.config.transport.send(encode(fResError(id, errorMessage)));
-  }
-
-  private async handleResponse(response: UnknownBridgeResponse) {
-    const { id, data, error } = response;
-
-    const deferred = this.responses.get(id);
-    if (!deferred) {
-      console.warn(`No response handler found for id: ${id}`);
-      return;
+    private async handleFrame(frame: Frame) {
+        switch (frame.type) {
+            case FrameType.CLOSE: {
+                await this.handleClose();
+                break;
+            }
+            case FrameType.CLOSE_ACK: {
+                await this.handleCloseAck();
+                break;
+            }
+            case FrameType.PROBE: {
+                await this.handleProbe();
+                break;
+            }
+            case FrameType.PROBE_ACK: {
+                await this.handleProbeAck();
+                break;
+            }
+            case FrameType.STREAM_START: {
+                await this.handleStreamStart(frame);
+                break;
+            }
+            case FrameType.STREAM_START_RESPONSE: {
+                await this.handleStreamStartResponse(frame);
+                break;
+            }
+            case FrameType.STREAM_DATA: {
+                await this.handleStreamData(frame);
+                break;
+            }
+            case FrameType.STREAM_END: {
+                await this.handleStreamEnd(frame);
+                break;
+            }
+            case FrameType.MESSAGE_REQUEST: {
+                await this.handleMessageRequest(frame);
+                break;
+            }
+            case FrameType.MESSAGE_RESPONSE: {
+                await this.handleMessageResponse(frame);
+                break;
+            }
+        }
     }
 
-    this.responses.delete(id);
-
-    if (error) {
-      deferred.reject(new Error(error.error_message));
-    } else {
-      deferred.resolve(data);
-    }
-  }
-
-  private async handleRequest(request: UnknownBridgeRequest) {
-    const { id, path, data } = request;
-
-    try {
-      const handler = this.config.handlers?.get(path);
-      if (!handler) {
-        await this.respondWithError(id, `No handler found for path: ${path}`);
-        return;
-      }
-
-      const result = await handler(data);
-
-      await this.config.transport.send(encode(fResSuccess(id, result)));
-    } catch (error) {
-      await this.respondWithError(
-        id,
-        `Error handling request for path "${path}": ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
-  async requestWithId<TResponse>(
-    id: string,
-    path: string,
-    data: unknown,
-  ): Promise<TResponse> {
-    const request = fReq(id, path, data);
-
-    const deferred = createDeferred<unknown>();
-
-    this.responses.set(id, deferred);
-
-    await this.config.transport.send(encode(request));
-
-    return deferred.promise as Promise<TResponse>;
-  }
-
-  async request<TResponse>(path: string, data: unknown): Promise<TResponse> {
-    const id = createId();
-    return await this.requestWithId<TResponse>(id, path, data);
-  }
-
-  async stop() {
-    this.isStarted = false;
-    await this.config.transport.send(encode(fClose()));
-    this.responses.clear();
-    return this;
-  }
-
-  hasHandler(path: THandlers[number]): boolean {
-    return this.config.handlers?.has(path) ?? false;
-  }
-
-  async probe(timeout?: number): Promise<boolean> {
-    if (this.hasPendingProbe()) {
-      throw new Error("Probe already in progress");
+    private async sendFrame(frame: Frame) {
+        await this.config.transport.send(encode(frame));
     }
 
-    if (!this.isStarted) {
-      throw new Error("RPC is not started");
-    }
-    const deferred = createDeferred<boolean>();
-    this.pendingProbe = deferred;
-    await this.config.transport.send(encode(fProbe()));
-
-    try {
-      return await withTimeout(deferred.promise, timeout ?? 1000);
-    } catch (error) {
-      if (error instanceof TimeoutError) {
-        return false;
-      }
-      throw error;
-    } finally {
-      this.pendingProbe = null;
-    }
-  }
-
-  async start() {
-    if (this.isStarted) {
-      return this;
+    private async handleProbe() {
+        await this.sendFrame(FrameConstants.PROBE_ACK);
     }
 
-    this.isStarted = true;
+    private async handleProbeAck() {
+        this.pendingProbe?.resolve(true);
+        this.pendingProbe = null;
+    }
 
-    this.config.transport.onReceive(this.handle.bind(this));
+    private async handleClose() {
+        await this.sendFrame(FrameConstants.CLOSE_ACK);
+        this.responses.clear();
+    }
 
-    return this;
-  }
+    private async handleCloseAck() {
+        this.isStarted = false;
+    }
 
-  hasPendingProbe(): boolean {
-    return this.pendingProbe !== null;
-  }
+    private async handleStreamStart(_frame: UnknownStreamStartFrame) {}
+
+    private async handleStreamStartResponse(_frame: StreamStartResponseFrame) {}
+
+    private async handleStreamData(_frame: UnknownStreamDataFrame) {}
+
+    private async handleStreamEnd(_frame: StreamEndFrame) {}
+
+    private async respondWithError(id: Id, errorMessage: string) {
+        await this.sendFrame(Frame.messageResponseError(id, errorMessage));
+    }
+
+    private async handleMessageResponse(response: UnknownMessageResponseFrame) {
+        const { id, data, error } = response.data;
+
+        const deferred = this.responses.get(id.getValue());
+        if (!deferred) {
+            console.warn(`no response handler found for id: ${id}`);
+            return;
+        }
+
+        this.responses.delete(id.getValue());
+
+        if (error) {
+            deferred.reject(new Error(error.message));
+        } else {
+            deferred.resolve(data);
+        }
+    }
+
+    private async handleMessageRequest(request: UnknownMessageRequestFrame) {
+        const { id, path, data } = request.data;
+
+        try {
+            const handler = this.config.requestHandlers?.get(path);
+            if (!handler) {
+                await this.respondWithError(
+                    id,
+                    `No handler found for path: ${path}`,
+                );
+                return;
+            }
+
+            const result = await handler({
+                data,
+            });
+
+            await this.sendFrame(Frame.messageResponseSuccess(id, result));
+        } catch (error) {
+            await this.respondWithError(
+                id,
+                `Error handling request for path "${path}": ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    async requestWithId<TResponse>(
+        id: Id,
+        path: string,
+        data: unknown,
+    ): Promise<TResponse> {
+        const request = Frame.messageRequest(id, path, data);
+
+        const deferred = createDeferred<unknown>();
+
+        this.responses.set(id.getValue(), deferred);
+
+        await this.config.transport.send(encode(request));
+
+        return deferred.promise as Promise<TResponse>;
+    }
+
+    async request<TResponse>(path: string, data: unknown): Promise<TResponse> {
+        const id = Id.create();
+        return await this.requestWithId<TResponse>(id, path, data);
+    }
+
+    async stop() {
+        if (!this.isStarted) {
+            return this;
+        }
+
+        this.isStarted = false;
+        await this.sendFrame(FrameConstants.CLOSE);
+        this.responses.clear();
+        return this;
+    }
+
+    hasRequestHandler(path: TRequestHandlers[number]): boolean {
+        return this.config.requestHandlers?.has(path) ?? false;
+    }
+
+    hasStreamHandler(path: TStreamHandlers[number]): boolean {
+        return this.config.streamHandlers?.has(path) ?? false;
+    }
+
+    private ensureStarted() {
+        if (!this.isStarted) {
+            throw new Error("RPC is not started");
+        }
+    }
+
+    async probe(timeoutMs?: number): Promise<boolean> {
+        if (this.hasPendingProbe()) {
+            throw new Error("Probe already in progress");
+        }
+
+        this.ensureStarted();
+
+        const deferred = createDeferred<boolean>();
+        this.pendingProbe = deferred;
+        await this.sendFrame(FrameConstants.PROBE);
+
+        try {
+            return await withTimeout(deferred.promise, timeoutMs ?? 1000);
+        } catch (error) {
+            if (error instanceof TimeoutError) {
+                return false;
+            }
+            throw error;
+        } finally {
+            this.pendingProbe = null;
+        }
+    }
+
+    async start() {
+        if (this.isStarted) {
+            return this;
+        }
+
+        this.isStarted = true;
+
+        this.config.transport.onReceive(this.handle.bind(this));
+
+        return this;
+    }
+
+    hasPendingProbe(): boolean {
+        return this.pendingProbe !== null;
+    }
 }
