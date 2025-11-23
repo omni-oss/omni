@@ -21,12 +21,12 @@ export class TimeoutError extends Error {
 
 export function withTimeout<T>(
     promise: Promise<T>,
-    timeout: number,
+    timeoutMs: number,
 ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => {
-            reject(new TimeoutError(`Timeout after ${timeout} ms`));
-        }, timeout);
+            reject(new TimeoutError(`Timeout after ${timeoutMs} ms`));
+        }, timeoutMs);
 
         promise
             .then((result) => {

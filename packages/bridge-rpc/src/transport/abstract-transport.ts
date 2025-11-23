@@ -1,9 +1,11 @@
-import type { Transport } from "./interface";
+import type { MaybePromise, Transport } from "./interface";
 import { TransportReadFramer } from "./transport-read-framer";
 import { TransportWriteFramer } from "./transport-write-framer";
 
 export abstract class AbstractTransport implements Transport {
-    protected onReceiveCallbacks: Array<(data: Uint8Array) => void> = [];
+    protected onReceiveCallbacks: Array<
+        (data: Uint8Array) => MaybePromise<void>
+    > = [];
     private writeFramer = new TransportWriteFramer();
     private readFramer = new TransportReadFramer();
 

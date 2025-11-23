@@ -1,9 +1,10 @@
-import { decode, encode } from "@msgpack/msgpack";
 import { describe, expect, it, vi } from "vitest";
 import { withDelay } from "@/promise-utils";
 import type { Transport } from "@/transport";
 import { BridgeRpcBuilder } from "./builder";
-import { FRAME_CLOSE, fProbeAck, fReq, fResSuccess } from "./frame";
+import { Frame, FrameConstants } from "./frame";
+import { Id } from "./id";
+import { decode, encode } from "./utils";
 
 describe("BridgeRpc", () => {
     function mockTransport() {
@@ -29,7 +30,7 @@ describe("BridgeRpc", () => {
 
         t.send.mock.calls.forEach(([data]) => {
             const frame = decode(data);
-            expect(frame).toEqual(FRAME_CLOSE);
+            expect(frame).toEqual(FrameConstants.CLOSE);
         });
     });
 
@@ -41,36 +42,43 @@ describe("BridgeRpc", () => {
 
         const probe = withDelay(rpc.probe(100), 1);
 
-        const probeAckBytes = encode(fProbeAck());
+        const probeAckBytes = encode(FrameConstants.PROBE_ACK);
         for (const cb of t.onReceiveHandlers) {
             cb(probeAckBytes);
         }
 
         expect(await probe).toBe(true);
         expect(rpc.hasPendingProbe()).toBe(false);
+
+        await rpc.stop();
     });
 
     it("should be able to send a request", async () => {
         const t = mockTransport();
-        const id = crypto.randomUUID();
+        const id = Id.create();
         const expectedResponse = { testResponseField: "test" };
 
         const rpc = new BridgeRpcBuilder(t).build();
 
         await rpc.start();
 
-        const actualResponseTask = rpc.requestWithId(id, "test/path", {
-            testRequestField: "test",
-        });
+        const requestData = { testRequestField: "test" };
+        const actualResponseTask = withDelay(
+            rpc.requestWithId(id, "test/path", requestData),
+            1,
+        );
 
-        const responseBytes = encode(fResSuccess(id, expectedResponse));
+        const responseBytes = encode(
+            Frame.messageResponseSuccess(id, expectedResponse),
+        );
+
         for (const cb of t.onReceiveHandlers) {
             cb(responseBytes);
         }
 
-        const actualResponse = await actualResponseTask;
+        expect(await actualResponseTask).toEqual(expectedResponse);
 
-        expect(actualResponse).toEqual(expectedResponse);
+        await rpc.stop();
     });
 
     it("should be able to handle a request", async () => {
@@ -78,24 +86,28 @@ describe("BridgeRpc", () => {
         const handler = vi.fn();
         const responseData = { testResponseField: "test" };
 
-        handler.mockImplementation(async (data) => {
-            return { ...responseData, ...data };
+        handler.mockImplementation(async (context) => {
+            return { ...responseData, ...context?.data };
         });
 
         const rpc = new BridgeRpcBuilder(t)
-            .handler("test/path", handler)
+            .requestHandler("test/path", handler)
             .build();
 
-        const id = crypto.randomUUID();
         const requestData = { testRequestField: "test" };
-        const requestBytes = encode(fReq(id, "test/path", requestData));
+        const requestBytes = encode(
+            Frame.messageRequest(Id.create(), "test/path", requestData),
+        );
 
         await rpc.start();
 
+        // send request to the RPC
         for (const cb of t.onReceiveHandlers) {
             cb(requestBytes);
         }
 
-        expect(handler).toBeCalledWith(requestData);
+        expect(handler).toBeCalledWith({ data: requestData });
+
+        await rpc.stop();
     });
 });

@@ -26,9 +26,9 @@ describe("Rpc to Rpc Integration", () => {
         });
 
         const rpc1 = new BridgeRpcBuilder(transport1)
-            .handler("rpc1test", (data: unknown) => {
+            .requestHandler("rpc1test", (request) => {
                 return {
-                    data,
+                    data: request.data,
                     message: "Received data from rpc1, returning it back",
                 };
             })
@@ -40,9 +40,9 @@ describe("Rpc to Rpc Integration", () => {
         });
 
         const rpc2 = new BridgeRpcBuilder(transport2)
-            .handler("rpc2test", (data: unknown) => {
+            .requestHandler("rpc2test", (request) => {
                 return {
-                    data,
+                    data: request.data,
                     message: "Received data from rpc2, returning it back",
                 };
             })
