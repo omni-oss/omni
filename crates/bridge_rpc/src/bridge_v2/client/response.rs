@@ -3,15 +3,15 @@ use strum::IntoDiscriminant;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
-pub use super::response_error as error;
-use super::{
+use super::super::{
     frame::{ChannelResponseFrame, ResponseFrameType},
     status_code::ResponseStatusCode,
 };
+pub use super::response_error as error;
 
 use error::{ResponseErrorInner, ResponseResult};
 
-use super::{Headers, Trailers, frame::ResponseError, id::Id};
+use super::super::{Headers, Trailers, frame::ResponseError, id::Id};
 
 pub struct Response {
     id: Id,

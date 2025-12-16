@@ -2,20 +2,21 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::{self};
 
-use super::{frame, id::Id};
+use super::super::{BridgeRpcError, frame};
+use super::response::error::ResponseError;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct ResponseError(pub(crate) ResponseErrorInner);
+pub struct RequestError(pub(crate) RequestErrorInner);
 
-impl ResponseError {
+impl RequestError {
     #[allow(unused)]
-    pub fn kind(&self) -> ResponseErrorKind {
+    pub fn kind(&self) -> RequestErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<ResponseErrorInner>> From<T> for ResponseError {
+impl<T: Into<RequestErrorInner>> From<T> for RequestError {
     fn from(value: T) -> Self {
         let inner = value.into();
         Self(inner)
@@ -23,8 +24,8 @@ impl<T: Into<ResponseErrorInner>> From<T> for ResponseError {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
-#[strum_discriminants(name(ResponseErrorKind), vis(pub))]
-pub(crate) enum ResponseErrorInner {
+#[strum_discriminants(name(RequestErrorKind), vis(pub))]
+pub(crate) enum RequestErrorInner {
     #[error("serialization error")]
     Serialization(
         #[from]
@@ -80,30 +81,14 @@ pub(crate) enum ResponseErrorInner {
     #[error(transparent)]
     BridgeRpc {
         #[from]
-        error: super::BridgeRpcError,
+        error: BridgeRpcError,
     },
 
     #[error("response error(call_id: {call_id}, code: {code}): {msg}", call_id = .0.id, code = .0.code, msg = .0.message)]
-    ResponseError(frame::ResponseError),
+    ReceivedResponseErrorFrame(frame::ResponseError),
 
-    #[error(
-        "unexpected frame received for request id: {request_id}, expecting: {expected}, actual: {actual}",
-        expected = .expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "),
-    )]
-    UnexpectedFrame {
-        request_id: Id,
-        expected: Vec<frame::ResponseFrameType>,
-        actual: frame::ResponseFrameType,
-    },
-
-    #[error(
-        "no frame received for request id: {request_id}, expecting: {expected}",
-        expected = .expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "),
-    )]
-    NoFrame {
-        request_id: Id,
-        expected: Vec<frame::ResponseFrameType>,
-    },
+    #[error(transparent)]
+    Response(#[from] ResponseError),
 }
 
-pub type ResponseResult<T> = Result<T, ResponseError>;
+pub type RequestResult<T> = Result<T, RequestError>;
