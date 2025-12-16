@@ -92,8 +92,8 @@ pub(crate) enum ResponseErrorInner {
     )]
     UnexpectedFrame {
         request_id: Id,
-        expected: Vec<frame::ResponseFrameType>,
-        actual: frame::ResponseFrameType,
+        expected: Vec<frame::ChannelResponseFrameType>,
+        actual: frame::ChannelResponseFrameType,
     },
 
     #[error(
@@ -102,7 +102,7 @@ pub(crate) enum ResponseErrorInner {
     )]
     NoFrame {
         request_id: Id,
-        expected: Vec<frame::ResponseFrameType>,
+        expected: Vec<frame::ChannelResponseFrameType>,
     },
 }
 

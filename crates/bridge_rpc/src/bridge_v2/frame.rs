@@ -328,14 +328,14 @@ where
 #[derive(Debug, Clone, EnumIs, EnumDiscriminants)]
 #[strum_discriminants(
     derive(strum::Display, Serialize_repr, Deserialize_repr),
-    name(RequestFrameType)
+    name(ChannelRequestFrameType)
 )]
 #[repr(u8)]
-pub(crate) enum RequestFrame {
+pub(crate) enum ChannelRequestFrame {
     RequestStart(RequestStart) = 0,
     RequestHeaders(RequestHeaders),
     RequestBodyStart(RequestBodyStart),
-    RequestBody(RequestBodyChunk),
+    RequestBodyChunk(RequestBodyChunk),
     RequestBodyEnd(RequestBodyEnd),
     RequestTrailers(RequestTrailers),
     RequestEnd(RequestEnd),
@@ -345,7 +345,7 @@ pub(crate) enum RequestFrame {
 #[derive(Debug, Clone, EnumIs, EnumDiscriminants)]
 #[strum_discriminants(
     derive(strum::Display, Serialize_repr, Deserialize_repr),
-    name(ResponseFrameType)
+    name(ChannelResponseFrameType)
 )]
 #[repr(u8)]
 pub(crate) enum ChannelResponseFrame {
