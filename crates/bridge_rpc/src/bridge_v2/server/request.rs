@@ -1,51 +1,51 @@
+pub use super::request_error as error;
+
 use derive_new::new;
 use strum::IntoDiscriminant;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
-use super::super::{
-    frame::{ChannelResponseFrame, ChannelResponseFrameType},
-    status_code::ResponseStatusCode,
+use super::super::frame::{
+    ChannelRequestFrame, ChannelRequestFrameType, ResponseError,
 };
-pub use super::response_error as error;
 
-use error::{ResponseErrorInner, ResponseResult};
+use error::{RequestErrorInner, RequestResult};
 
-use super::super::{Headers, Trailers, frame::ResponseError, id::Id};
+use super::super::{Headers, Trailers, id::Id};
 
-pub struct Response {
+pub struct Request {
     id: Id,
-    rx: mpsc::Receiver<ChannelResponseFrame>,
+    rx: mpsc::Receiver<ChannelRequestFrame>,
     error_rx: oneshot::Receiver<ResponseError>,
     headers: Option<Headers>,
-    status: ResponseStatusCode,
+    path: String,
 }
 
-impl Response {
+impl Request {
     pub async fn init(
         id: Id,
-        mut rx: mpsc::Receiver<ChannelResponseFrame>,
+        mut rx: mpsc::Receiver<ChannelRequestFrame>,
         mut error_rx: oneshot::Receiver<ResponseError>,
-    ) -> ResponseResult<Response> {
+    ) -> RequestResult<Request> {
         return_if_error(&mut error_rx).await?;
 
         let start_frame = match rx.recv().await {
             Some(e) => {
-                if let ChannelResponseFrame::ResponseStart(start) = e {
+                if let ChannelRequestFrame::RequestStart(start) = e {
                     start
                 } else {
-                    return Err(ResponseErrorInner::new_unexpected_frame(
+                    return Err(RequestErrorInner::new_unexpected_frame(
                         id,
-                        vec![ChannelResponseFrameType::ResponseBodyStart],
+                        vec![ChannelRequestFrameType::RequestBodyStart],
                         e.discriminant(),
                     )
                     .into());
                 }
             }
             None => {
-                return Err(ResponseErrorInner::new_no_frame(
+                return Err(RequestErrorInner::new_no_frame(
                     id,
-                    vec![ChannelResponseFrameType::ResponseStart],
+                    vec![ChannelRequestFrameType::RequestStart],
                 )
                 .into());
             }
@@ -57,45 +57,42 @@ impl Response {
         match rx.recv().await {
             Some(frame) => {
                 let disc = frame.discriminant();
-                if let ChannelResponseFrame::ResponseHeaders(header_frame) =
-                    frame
+                if let ChannelRequestFrame::RequestHeaders(header_frame) = frame
                 {
                     headers = Some(header_frame.headers);
                     return_if_error(&mut error_rx).await?;
 
                     if let Some(frame) = rx.recv().await {
-                        if let ChannelResponseFrame::ResponseBodyStart(_) =
-                            frame
+                        if let ChannelRequestFrame::RequestBodyStart(_) = frame
                         {
                             return_if_error(&mut error_rx).await?;
                             // do nothing here
                         } else {
                             return Err(
-                                ResponseErrorInner::new_unexpected_frame(
+                                RequestErrorInner::new_unexpected_frame(
                                     id,
-                                    vec![ChannelResponseFrameType::ResponseBodyStart],
+                                    vec![ChannelRequestFrameType::RequestBodyStart],
                                     disc,
                                 )
                                 .into(),
                             );
                         }
                     } else {
-                        return Err(ResponseErrorInner::new_no_frame(
+                        return Err(RequestErrorInner::new_no_frame(
                             id,
-                            vec![ChannelResponseFrameType::ResponseBodyStart],
+                            vec![ChannelRequestFrameType::RequestBodyStart],
                         )
                         .into());
                     }
-                } else if let ChannelResponseFrame::ResponseBodyStart(_) = frame
-                {
+                } else if let ChannelRequestFrame::RequestBodyStart(_) = frame {
                     return_if_error(&mut error_rx).await?;
                     // do nothing with data start signal
                 } else {
-                    return Err(ResponseErrorInner::new_unexpected_frame(
+                    return Err(RequestErrorInner::new_unexpected_frame(
                         id,
                         vec![
-                            ChannelResponseFrameType::ResponseHeaders,
-                            ChannelResponseFrameType::ResponseBodyStart,
+                            ChannelRequestFrameType::RequestHeaders,
+                            ChannelRequestFrameType::RequestBodyStart,
                         ],
                         disc,
                     )
@@ -103,11 +100,11 @@ impl Response {
                 }
             }
             None => {
-                return Err(ResponseErrorInner::new_no_frame(
+                return Err(RequestErrorInner::new_no_frame(
                     id,
                     vec![
-                        ChannelResponseFrameType::ResponseHeaders,
-                        ChannelResponseFrameType::ResponseBodyStart,
+                        ChannelRequestFrameType::RequestHeaders,
+                        ChannelRequestFrameType::RequestBodyStart,
                     ],
                 )
                 .into());
@@ -115,53 +112,51 @@ impl Response {
         }
         return_if_error(&mut error_rx).await?;
 
-        Ok(Response {
+        Ok(Request {
             id,
             rx,
             error_rx,
             headers,
-            status: start_frame.status,
+            path: start_frame.path,
         })
     }
 }
 
-impl Response {
+impl Request {
     pub fn headers(&self) -> Option<&Headers> {
         self.headers.as_ref()
     }
 
-    pub fn status(&self) -> ResponseStatusCode {
-        self.status
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
-    pub fn parts(
-        self,
-    ) -> (ResponseStatusCode, Option<Headers>, ResponseBodyStream) {
+    pub fn parts(self) -> (String, Option<Headers>, RequestBodyStream) {
         (
-            self.status,
+            self.path,
             self.headers,
-            ResponseBodyStream::new(self.id, self.rx, self.error_rx),
+            RequestBodyStream::new(self.id, self.rx, self.error_rx),
         )
     }
 
-    pub fn body(self) -> ResponseBodyStream {
-        ResponseBodyStream::new(self.id, self.rx, self.error_rx)
+    pub fn body(self) -> RequestBodyStream {
+        RequestBodyStream::new(self.id, self.rx, self.error_rx)
     }
 }
 
 #[derive(new)]
-pub struct ResponseBodyStream {
+pub struct RequestBodyStream {
     id: Id,
-    rx: mpsc::Receiver<ChannelResponseFrame>,
+    rx: mpsc::Receiver<ChannelRequestFrame>,
     error_rx: oneshot::Receiver<ResponseError>,
     #[new(default)]
     body_ended: bool,
 }
 
-impl ResponseBodyStream {
+impl RequestBodyStream {
     pub async fn read(
         &mut self,
-    ) -> Result<Option<Vec<u8>>, super::response_error::ResponseError> {
+    ) -> Result<Option<Vec<u8>>, super::request_error::RequestError> {
         if self.body_ended {
             return Ok(None);
         }
@@ -172,24 +167,24 @@ impl ResponseBodyStream {
 
         return_if_error(&mut self.error_rx).await?;
         match frame {
-            Some(ChannelResponseFrame::ResponseBodyChunk(chunk)) => {
+            Some(ChannelRequestFrame::RequestBodyChunk(chunk)) => {
                 Ok(Some(chunk.chunk))
             }
-            Some(ChannelResponseFrame::ResponseBodyEnd(_)) => {
+            Some(ChannelRequestFrame::RequestBodyEnd(_)) => {
                 self.body_ended = true;
                 Ok(None)
             }
-            None => Err(ResponseErrorInner::new_no_frame(
+            None => Err(RequestErrorInner::new_no_frame(
                 self.id,
                 vec![
-                    ChannelResponseFrameType::ResponseBodyChunk,
-                    ChannelResponseFrameType::ResponseBodyEnd,
+                    ChannelRequestFrameType::RequestBodyChunk,
+                    ChannelRequestFrameType::RequestBodyEnd,
                 ],
             )
             .into()),
-            Some(frame) => Err(ResponseErrorInner::new_unexpected_frame(
+            Some(frame) => Err(RequestErrorInner::new_unexpected_frame(
                 self.id,
-                vec![ChannelResponseFrameType::ResponseBodyChunk],
+                vec![ChannelRequestFrameType::RequestBodyChunk],
                 frame.discriminant(),
             )
             .into()),
@@ -198,7 +193,7 @@ impl ResponseBodyStream {
 
     pub async fn finalize(
         mut self,
-    ) -> Result<Option<Trailers>, super::response_error::ResponseError> {
+    ) -> Result<Option<Trailers>, super::request_error::RequestError> {
         let trailers;
         if self.body_ended {
             return_if_error(&mut self.error_rx).await?;
@@ -206,31 +201,31 @@ impl ResponseBodyStream {
             let trailer_or_end = self.rx.recv().await;
 
             match trailer_or_end {
-                Some(ChannelResponseFrame::ResponseTrailers(
-                    response_trailers,
+                Some(ChannelRequestFrame::RequestTrailers(
+                    request_trailers,
                 )) => {
-                    trailers = Some(response_trailers.trailers);
+                    trailers = Some(request_trailers.trailers);
                 }
-                Some(ChannelResponseFrame::ResponseBodyEnd(_)) => {
+                Some(ChannelRequestFrame::RequestBodyEnd(_)) => {
                     return Ok(None);
                 }
                 Some(frame) => {
-                    return Err(ResponseErrorInner::new_unexpected_frame(
+                    return Err(RequestErrorInner::new_unexpected_frame(
                         self.id,
                         vec![
-                            ChannelResponseFrameType::ResponseTrailers,
-                            ChannelResponseFrameType::ResponseBodyEnd,
+                            ChannelRequestFrameType::RequestTrailers,
+                            ChannelRequestFrameType::RequestBodyEnd,
                         ],
                         frame.discriminant(),
                     )
                     .into());
                 }
                 None => {
-                    return Err(ResponseErrorInner::new_no_frame(
+                    return Err(RequestErrorInner::new_no_frame(
                         self.id,
                         vec![
-                            ChannelResponseFrameType::ResponseTrailers,
-                            ChannelResponseFrameType::ResponseBodyEnd,
+                            ChannelRequestFrameType::RequestTrailers,
+                            ChannelRequestFrameType::RequestBodyEnd,
                         ],
                     )
                     .into());
@@ -244,21 +239,21 @@ impl ResponseBodyStream {
             return_if_error(&mut self.error_rx).await?;
 
             match end {
-                Some(ChannelResponseFrame::ResponseBodyEnd(_)) => {
+                Some(ChannelRequestFrame::RequestBodyEnd(_)) => {
                     return Ok(trailers);
                 }
                 Some(frame) => {
-                    return Err(ResponseErrorInner::new_unexpected_frame(
+                    return Err(RequestErrorInner::new_unexpected_frame(
                         self.id,
-                        vec![ChannelResponseFrameType::ResponseBodyEnd],
+                        vec![ChannelRequestFrameType::RequestBodyEnd],
                         frame.discriminant(),
                     )
                     .into());
                 }
                 None => {
-                    return Err(ResponseErrorInner::new_no_frame(
+                    return Err(RequestErrorInner::new_no_frame(
                         self.id,
-                        vec![ChannelResponseFrameType::ResponseBodyEnd],
+                        vec![ChannelRequestFrameType::RequestBodyEnd],
                     )
                     .into());
                 }
@@ -274,10 +269,10 @@ impl ResponseBodyStream {
 
 async fn return_if_error(
     error_rx: &mut oneshot::Receiver<ResponseError>,
-) -> ResponseResult<()> {
+) -> RequestResult<()> {
     match error_rx.try_recv() {
         Ok(error) => {
-            return Err(ResponseErrorInner::ResponseError(error).into());
+            return Err(RequestErrorInner::ResponseError(error).into());
         }
         Err(e) => match e {
             oneshot::error::TryRecvError::Empty => return Ok(()),
