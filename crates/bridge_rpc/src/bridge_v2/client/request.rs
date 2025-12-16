@@ -8,7 +8,7 @@ use super::response::Response;
 
 use error::{RequestErrorInner, RequestResult};
 
-use super::{
+use super::super::{
     Headers, RequestErrorCode, Trailers,
     frame::{ChannelResponseFrame, Frame, ResponseError},
     id::Id,
