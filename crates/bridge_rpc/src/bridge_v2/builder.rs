@@ -30,11 +30,7 @@ impl<TTransport: Transport> BridgeRpcBuilder<TTransport> {
         TStreamData: for<'de> serde::Deserialize<'de>,
         TError: Display,
         TFuture: Future<Output = Result<(), TError>> + Send + 'static,
-        TFn: Fn(HandlerContext<TStartData, TStreamData, StreamError>) -> TFuture
-            + Send
-            + Sync
-            + Clone
-            + 'static,
+        TFn: Fn(HandlerContext) -> TFuture + Send + Sync + Clone + 'static,
     {
         self.handlers
             .insert(path.into(), bridge::create_handler(handler));
