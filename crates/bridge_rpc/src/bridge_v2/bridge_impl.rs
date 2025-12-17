@@ -19,11 +19,11 @@ use std::{collections::HashMap, sync::Arc};
 use super::BridgeRpcError;
 use super::BridgeRpcErrorInner;
 use super::BridgeRpcResult;
-use super::StreamError;
 use super::client::request::*;
 use super::constants::{BYTES_WORKER_BUFFER_SIZE, RESPONSE_BUFFER_SIZE};
 use super::frame::*;
 use super::id::*;
+use super::server;
 use super::utils::send_bytes_to_transport;
 use super::utils::send_frame_to_channel;
 use crate::Transport;
@@ -32,34 +32,32 @@ pub type BoxStream<'a, T> = Pin<Box<dyn TokioStream<Item = T> + Send + 'a>>;
 
 pub type HandlerFnFuture = BoxFuture<'static, BridgeRpcResult<()>>;
 
-type ResponseReceiver = mpsc::Receiver<ChannelResponseFrame>;
-type ResponseSender = mpsc::Sender<ChannelResponseFrame>;
-type ResponseSenders = HashMap<Id, ResponseSender>;
+type ResponseFrameReceiver = mpsc::Receiver<ChannelResponseFrame>;
+type ResponseFrameSender = mpsc::Sender<ChannelResponseFrame>;
+type ResponseFrameSenders = HashMap<Id, ResponseFrameSender>;
 
-type ErrorReceiver = oneshot::Receiver<ResponseError>;
-type ErrorSender = oneshot::Sender<ResponseError>;
-type ErrorSenders = HashMap<Id, ErrorSender>;
+type ResponseErrorReceiver = oneshot::Receiver<ResponseError>;
+type ResponseErrorSender = oneshot::Sender<ResponseError>;
+type ResponseErrorSenders = HashMap<Id, ResponseErrorSender>;
 
-pub struct HandlerContext<
-    TStartData = (),
-    TStreamData = (),
-    TError = StreamError,
-> {
-    pub start_data: Option<TStartData>,
-    pub stream: BoxStream<'static, Result<TStreamData, TError>>,
+type RequestFrameReceiver = mpsc::Receiver<ChannelRequestFrame>;
+type RequestFrameSender = mpsc::Sender<ChannelRequestFrame>;
+type RequestFrameSenders = HashMap<Id, RequestFrameSender>;
+
+type RequestErrorReceiver = oneshot::Receiver<RequestError>;
+type RequestErrorSender = oneshot::Sender<RequestError>;
+type RequestErrorSenders = HashMap<Id, RequestErrorSender>;
+
+pub struct HandlerContext {
+    pub request: server::request::Request,
 }
 
 pub struct RequestContext<TData = ()> {
     pub data: TData,
 }
 
-pub type HandlerFn = Arc<
-    dyn Fn(
-            HandlerContext<rmpv::Value, rmpv::Value, eyre::Report>,
-        ) -> HandlerFnFuture
-        + Send
-        + Sync,
->;
+pub type HandlerFn =
+    Arc<dyn Fn(HandlerContext) -> HandlerFnFuture + Send + Sync>;
 
 pub struct BridgeRpc<TTransport: Transport> {
     id: Id,
@@ -68,8 +66,10 @@ pub struct BridgeRpc<TTransport: Transport> {
     pending_ping: Arc<Mutex<Option<oneshot::Sender<()>>>>,
     bytes_worker: Arc<Mutex<Option<BytesWorker>>>,
     handler_tasks: Arc<Mutex<Option<JoinSet<Result<(), BridgeRpcError>>>>>,
-    response_senders: Arc<Mutex<ResponseSenders>>,
-    error_senders: Arc<Mutex<ErrorSenders>>,
+    response_frame_senders: Arc<Mutex<ResponseFrameSenders>>,
+    response_error_senders: Arc<Mutex<ResponseErrorSenders>>,
+    request_frame_senders: Arc<Mutex<RequestFrameSenders>>,
+    request_error_senders: Arc<Mutex<RequestErrorSenders>>,
 }
 
 struct BytesWorker {
@@ -86,8 +86,10 @@ impl<TTransport: Transport> Clone for BridgeRpc<TTransport> {
             handlers: self.handlers.clone(),
             bytes_worker: self.bytes_worker.clone(),
             handler_tasks: self.handler_tasks.clone(),
-            response_senders: self.response_senders.clone(),
-            error_senders: self.error_senders.clone(),
+            response_frame_senders: self.response_frame_senders.clone(),
+            response_error_senders: self.response_error_senders.clone(),
+            request_frame_senders: self.request_frame_senders.clone(),
+            request_error_senders: self.request_error_senders.clone(),
         }
     }
 }
@@ -197,8 +199,10 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
             pending_ping: Arc::new(Mutex::new(None)),
             bytes_worker: Arc::new(Mutex::new(None)),
             handler_tasks: Arc::new(Mutex::new(None)),
-            response_senders: Arc::new(Mutex::new(HashMap::new())),
-            error_senders: Arc::new(Mutex::new(HashMap::new())),
+            response_frame_senders: Arc::new(Mutex::new(HashMap::new())),
+            response_error_senders: Arc::new(Mutex::new(HashMap::new())),
+            request_frame_senders: Arc::new(Mutex::new(HashMap::new())),
+            request_error_senders: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -348,13 +352,15 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 self.handle_request_headers(request_headers, data_tx).await
             }
             Frame::RequestBodyStart(request_data_start) => {
-                self.handle_request_body_start(request_data_start).await
+                self.handle_request_body_start(request_data_start, data_tx)
+                    .await
             }
             Frame::RequestBodyChunk(request_data) => {
                 self.handle_request_body_chunk(request_data, data_tx).await
             }
             Frame::RequestBodyEnd(request_data_end) => {
-                self.handle_request_body_end(request_data_end).await
+                self.handle_request_body_end(request_data_end, data_tx)
+                    .await
             }
             Frame::RequestTrailers(request_trailers) => {
                 self.handle_request_trailers(request_trailers, data_tx)
@@ -431,63 +437,182 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
 
     async fn handle_request_start(
         &self,
-        _request_start: RequestStart,
+        request_start: RequestStart,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_start.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestStart(request_start))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_headers(
         &self,
-        _request_headers: RequestHeaders,
+        request_headers: RequestHeaders,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_headers.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestHeaders(request_headers))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_body_start(
         &self,
-        _request_data_start: RequestBodyStart,
+        request_body_start: RequestBodyStart,
+        _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_body_start.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestBodyStart(request_body_start))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_body_chunk(
         &self,
-        _request_data: RequestBodyChunk,
+        request_body_chunk: RequestBodyChunk,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_body_chunk.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestBodyChunk(request_body_chunk))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_body_end(
         &self,
-        _request_data_end: RequestBodyEnd,
+        request_body_end: RequestBodyEnd,
+        _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_body_end.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestBodyEnd(request_body_end))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_trailers(
         &self,
-        _request_trailers: RequestTrailers,
+        request_trailers: RequestTrailers,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .get_mut(&request_trailers.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestTrailers(request_trailers))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_end(
         &self,
-        _request_end: RequestEnd,
+        request_end: RequestEnd,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        let id = request_end.id;
+        if let Some(request) = self
+            .request_frame_senders
+            .lock()
+            .await
+            .remove(&request_end.id)
+        {
+            request
+                .send(ChannelRequestFrame::RequestEnd(request_end))
+                .await
+                .map_err(|e| {
+                    BridgeRpcErrorInner::new_send(eyre::Report::new(e))
+                });
+        }
+
+        _ = self.request_error_senders.lock().await.remove(&id);
+
         Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_request_error(
         &self,
-        _request_error: RequestError,
+        request_error: RequestError,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
+        let id = request_error.id;
+        if let Some(request) = self
+            .request_error_senders
+            .lock()
+            .await
+            .remove(&request_error.id)
+        {
+            request.send(request_error).map_err(|_| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send request error",
+                ))
+            });
+        }
+
+        _ = self.request_frame_senders.lock().await.remove(&id);
+
         Ok(ControlFlow::Continue(()))
     }
 
@@ -497,7 +622,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_start.id)
@@ -519,7 +644,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_headers.id)
@@ -541,7 +666,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_data_start.id)
@@ -565,7 +690,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_data.id)
@@ -587,7 +712,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_data_end.id)
@@ -609,7 +734,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         if let Some(response) = self
-            .response_senders
+            .response_frame_senders
             .lock()
             .await
             .get_mut(&response_trailers.id)
@@ -630,10 +755,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         response_end: ResponseEnd,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
-        self.error_senders.lock().await.remove(&response_end.id);
-
-        if let Some(response) =
-            self.response_senders.lock().await.remove(&response_end.id)
+        let id = response_end.id;
+        if let Some(response) = self
+            .response_frame_senders
+            .lock()
+            .await
+            .remove(&response_end.id)
         {
             response
                 .send(ChannelResponseFrame::ResponseEnd(response_end))
@@ -643,6 +770,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 });
         }
 
+        self.response_error_senders.lock().await.remove(&id);
+
         Ok(ControlFlow::Continue(()))
     }
 
@@ -651,13 +780,12 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         response_error: ResponseError,
         _data_tx: &mpsc::Sender<Vec<u8>>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
-        self.response_senders
+        let id = response_error.id;
+        if let Some(response) = self
+            .response_error_senders
             .lock()
             .await
-            .remove(&response_error.id);
-
-        if let Some(response) =
-            self.error_senders.lock().await.remove(&response_error.id)
+            .remove(&response_error.id)
         {
             response.send(response_error).map_err(|_| {
                 BridgeRpcErrorInner::new_send(eyre::eyre!(
@@ -665,6 +793,8 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
                 ))
             });
         }
+
+        self.response_frame_senders.lock().await.remove(&id);
 
         Ok(ControlFlow::Continue(()))
     }
@@ -684,20 +814,20 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
         &self,
         request_id: Id,
         path: impl Into<String>,
-    ) -> BridgeRpcResult<NewRequest> {
+    ) -> BridgeRpcResult<PendingRequest> {
         let tx = self.clone_bytes_sender().await?;
         let (error_tx, error_rx) = oneshot::channel();
 
-        let mut error_senders = self.error_senders.lock().await;
+        let mut error_senders = self.response_error_senders.lock().await;
         error_senders.insert(request_id, error_tx);
 
         let (response_sender, response_receiver) =
             mpsc::channel(RESPONSE_BUFFER_SIZE);
 
-        let mut response_senders = self.response_senders.lock().await;
+        let mut response_senders = self.response_frame_senders.lock().await;
         response_senders.insert(request_id, response_sender);
 
-        Ok(NewRequest::new(
+        Ok(PendingRequest::new(
             request_id,
             path.into(),
             tx,
@@ -711,7 +841,7 @@ impl<TTransport: Transport> BridgeRpc<TTransport> {
     pub async fn request(
         &self,
         path: impl Into<String>,
-    ) -> BridgeRpcResult<NewRequest> {
+    ) -> BridgeRpcResult<PendingRequest> {
         self.request_with_id(Id::new(), path).await
     }
 

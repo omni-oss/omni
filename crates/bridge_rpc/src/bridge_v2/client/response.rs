@@ -15,21 +15,22 @@ use super::super::{Headers, Trailers, frame::ResponseError, id::Id};
 
 pub struct Response {
     id: Id,
-    rx: mpsc::Receiver<ChannelResponseFrame>,
-    error_rx: oneshot::Receiver<ResponseError>,
     headers: Option<Headers>,
     status: ResponseStatusCode,
+    response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
+    response_error_rx: oneshot::Receiver<ResponseError>,
 }
 
 impl Response {
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?id)))]
     pub async fn init(
         id: Id,
-        mut rx: mpsc::Receiver<ChannelResponseFrame>,
-        mut error_rx: oneshot::Receiver<ResponseError>,
+        mut response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
+        mut response_error_rx: oneshot::Receiver<ResponseError>,
     ) -> ResponseResult<Response> {
-        return_if_error(&mut error_rx).await?;
+        return_if_error(&mut response_error_rx).await?;
 
-        let start_frame = match rx.recv().await {
+        let start_frame = match response_frame_rx.recv().await {
             Some(e) => {
                 if let ChannelResponseFrame::ResponseStart(start) = e {
                     start
@@ -50,24 +51,24 @@ impl Response {
                 .into());
             }
         };
-        return_if_error(&mut error_rx).await?;
+        return_if_error(&mut response_error_rx).await?;
 
         let mut headers = None;
 
-        match rx.recv().await {
+        match response_frame_rx.recv().await {
             Some(frame) => {
                 let disc = frame.discriminant();
                 if let ChannelResponseFrame::ResponseHeaders(header_frame) =
                     frame
                 {
                     headers = Some(header_frame.headers);
-                    return_if_error(&mut error_rx).await?;
+                    return_if_error(&mut response_error_rx).await?;
 
-                    if let Some(frame) = rx.recv().await {
+                    if let Some(frame) = response_frame_rx.recv().await {
                         if let ChannelResponseFrame::ResponseBodyStart(_) =
                             frame
                         {
-                            return_if_error(&mut error_rx).await?;
+                            return_if_error(&mut response_error_rx).await?;
                             // do nothing here
                         } else {
                             return Err(
@@ -88,7 +89,7 @@ impl Response {
                     }
                 } else if let ChannelResponseFrame::ResponseBodyStart(_) = frame
                 {
-                    return_if_error(&mut error_rx).await?;
+                    return_if_error(&mut response_error_rx).await?;
                     // do nothing with data start signal
                 } else {
                     return Err(ResponseErrorInner::new_unexpected_frame(
@@ -113,12 +114,12 @@ impl Response {
                 .into());
             }
         }
-        return_if_error(&mut error_rx).await?;
+        return_if_error(&mut response_error_rx).await?;
 
         Ok(Response {
             id,
-            rx,
-            error_rx,
+            response_frame_rx,
+            response_error_rx,
             headers,
             status: start_frame.status,
         })
@@ -134,43 +135,52 @@ impl Response {
         self.status
     }
 
-    pub fn parts(
+    pub fn into_parts(
         self,
-    ) -> (ResponseStatusCode, Option<Headers>, ResponseBodyStream) {
+    ) -> (ResponseStatusCode, Option<Headers>, ResponseReader) {
         (
             self.status,
             self.headers,
-            ResponseBodyStream::new(self.id, self.rx, self.error_rx),
+            ResponseReader::new(
+                self.id,
+                self.response_frame_rx,
+                self.response_error_rx,
+            ),
         )
     }
 
-    pub fn body(self) -> ResponseBodyStream {
-        ResponseBodyStream::new(self.id, self.rx, self.error_rx)
+    pub fn into_reader(self) -> ResponseReader {
+        ResponseReader::new(
+            self.id,
+            self.response_frame_rx,
+            self.response_error_rx,
+        )
     }
 }
 
 #[derive(new)]
-pub struct ResponseBodyStream {
+pub struct ResponseReader {
     id: Id,
-    rx: mpsc::Receiver<ChannelResponseFrame>,
-    error_rx: oneshot::Receiver<ResponseError>,
     #[new(default)]
     body_ended: bool,
+    response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
+    response_error_rx: oneshot::Receiver<ResponseError>,
 }
 
-impl ResponseBodyStream {
-    pub async fn read(
+impl ResponseReader {
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.id)))]
+    pub async fn read_body_chunk(
         &mut self,
     ) -> Result<Option<Vec<u8>>, super::response_error::ResponseError> {
         if self.body_ended {
             return Ok(None);
         }
 
-        return_if_error(&mut self.error_rx).await?;
+        return_if_error(&mut self.response_error_rx).await?;
 
-        let frame = self.rx.recv().await;
+        let frame = self.response_frame_rx.recv().await;
 
-        return_if_error(&mut self.error_rx).await?;
+        return_if_error(&mut self.response_error_rx).await?;
         match frame {
             Some(ChannelResponseFrame::ResponseBodyChunk(chunk)) => {
                 Ok(Some(chunk.chunk))
@@ -196,14 +206,15 @@ impl ResponseBodyStream {
         }
     }
 
-    pub async fn finalize(
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(response_id = ?self.id)))]
+    pub async fn end(
         mut self,
     ) -> Result<Option<Trailers>, super::response_error::ResponseError> {
         let trailers;
         if self.body_ended {
-            return_if_error(&mut self.error_rx).await?;
+            return_if_error(&mut self.response_error_rx).await?;
 
-            let trailer_or_end = self.rx.recv().await;
+            let trailer_or_end = self.response_frame_rx.recv().await;
 
             match trailer_or_end {
                 Some(ChannelResponseFrame::ResponseTrailers(
@@ -211,7 +222,7 @@ impl ResponseBodyStream {
                 )) => {
                     trailers = Some(response_trailers.trailers);
                 }
-                Some(ChannelResponseFrame::ResponseBodyEnd(_)) => {
+                Some(ChannelResponseFrame::ResponseEnd(_)) => {
                     return Ok(None);
                 }
                 Some(frame) => {
@@ -219,7 +230,7 @@ impl ResponseBodyStream {
                         self.id,
                         vec![
                             ChannelResponseFrameType::ResponseTrailers,
-                            ChannelResponseFrameType::ResponseBodyEnd,
+                            ChannelResponseFrameType::ResponseEnd,
                         ],
                         frame.discriminant(),
                     )
@@ -230,18 +241,18 @@ impl ResponseBodyStream {
                         self.id,
                         vec![
                             ChannelResponseFrameType::ResponseTrailers,
-                            ChannelResponseFrameType::ResponseBodyEnd,
+                            ChannelResponseFrameType::ResponseEnd,
                         ],
                     )
                     .into());
                 }
             }
 
-            return_if_error(&mut self.error_rx).await?;
+            return_if_error(&mut self.response_error_rx).await?;
 
-            let end = self.rx.recv().await;
+            let end = self.response_frame_rx.recv().await;
 
-            return_if_error(&mut self.error_rx).await?;
+            return_if_error(&mut self.response_error_rx).await?;
 
             match end {
                 Some(ChannelResponseFrame::ResponseBodyEnd(_)) => {
@@ -265,9 +276,9 @@ impl ResponseBodyStream {
             }
         } else {
             // consume all body
-            while let Some(_) = self.read().await? {}
+            while let Some(_) = self.read_body_chunk().await? {}
 
-            Box::pin(self.finalize()).await
+            Box::pin(self.end()).await
         }
     }
 }
@@ -280,8 +291,8 @@ async fn return_if_error(
             return Err(ResponseErrorInner::ResponseError(error).into());
         }
         Err(e) => match e {
-            oneshot::error::TryRecvError::Empty => return Ok(()),
-            oneshot::error::TryRecvError::Closed => return Ok(()),
+            oneshot::error::TryRecvError::Empty
+            | oneshot::error::TryRecvError::Closed => return Ok(()),
         },
     }
 }
