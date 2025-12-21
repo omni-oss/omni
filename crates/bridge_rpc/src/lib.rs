@@ -1,9 +1,9 @@
 #![feature(decl_macro)]
 
-mod bridge;
-pub mod bridge_v2;
+pub mod bridge;
+pub mod id;
 mod transport;
 
 pub use bridge::*;
-pub use bridge_v2 as v2;
+pub use id::*;
 pub use transport::*;

@@ -2,11 +2,6 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::error::RecvError;
 
-use crate::{
-    Id,
-    bridge::frame::{ErrorData, FrameType},
-};
-
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct BridgeRpcError(pub(crate) BridgeRpcErrorInner);
@@ -37,6 +32,9 @@ pub(crate) enum BridgeRpcErrorInner {
 
     #[error("rpc is not running")]
     NotRunning,
+
+    #[error(transparent)]
+    Service(#[from] super::service::error::ServiceError),
 
     #[error("serialization error")]
     Serialization(
@@ -90,14 +88,14 @@ pub(crate) enum BridgeRpcErrorInner {
         eyre::Report,
     ),
 
-    #[error("missing data for frame type: {frame_type}")]
-    MissingData { frame_type: FrameType },
+    #[error(transparent)]
+    SessionManager(#[from] super::session::SessionManagerError),
 
-    #[error(
-        "stream start response (id: {id}) rejected with error: {error}",
-        error = error.as_ref().map(|e| e.message.as_str()).unwrap_or("unknown")
-    )]
-    StreamStartResponse { id: Id, error: Option<ErrorData> },
+    #[error(transparent)]
+    RequestStateMachine(#[from] super::session::RequestStateMachineError),
+
+    #[error(transparent)]
+    ResponseStateMachine(#[from] super::session::ResponseStateMachineError),
 }
 
 pub type BridgeRpcResult<T> = Result<T, BridgeRpcError>;

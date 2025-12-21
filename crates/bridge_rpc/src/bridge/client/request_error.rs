@@ -3,19 +3,20 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::{self};
 
 use super::super::{BridgeRpcError, frame};
+use super::response::error::ResponseError;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct ResponseError(pub(crate) ResponseErrorInner);
+pub struct RequestError(pub(crate) RequestErrorInner);
 
-impl ResponseError {
+impl RequestError {
     #[allow(unused)]
-    pub fn kind(&self) -> ResponseErrorKind {
+    pub fn kind(&self) -> RequestErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<ResponseErrorInner>> From<T> for ResponseError {
+impl<T: Into<RequestErrorInner>> From<T> for RequestError {
     fn from(value: T) -> Self {
         let inner = value.into();
         Self(inner)
@@ -23,8 +24,8 @@ impl<T: Into<ResponseErrorInner>> From<T> for ResponseError {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
-#[strum_discriminants(name(ResponseErrorKind), vis(pub))]
-pub(crate) enum ResponseErrorInner {
+#[strum_discriminants(name(RequestErrorKind), vis(pub))]
+pub(crate) enum RequestErrorInner {
     #[error("serialization error")]
     Serialization(
         #[from]
@@ -46,9 +47,8 @@ pub(crate) enum ResponseErrorInner {
         rmpv::ext::Error,
     ),
 
-    #[error("receive error")]
-    DataSend(#[source] eyre::Report),
-
+    // #[error("receive error")]
+    // DataSend(#[source] eyre::Report),
     #[error("can't receive error")]
     ErrorReceive(
         #[from]
@@ -56,20 +56,19 @@ pub(crate) enum ResponseErrorInner {
         oneshot::error::TryRecvError,
     ),
 
-    #[error("send error")]
-    Send {
-        #[new(into)]
-        #[source]
-        error: eyre::Report,
-    },
+    // #[error("send error")]
+    // Send {
+    //     #[new(into)]
+    //     #[source]
+    //     error: eyre::Report,
+    // },
 
-    #[error("timeout")]
-    Timeout(
-        #[new(into)]
-        #[source]
-        eyre::Report,
-    ),
-
+    // #[error("timeout")]
+    // Timeout(
+    //     #[new(into)]
+    //     #[source]
+    //     eyre::Report,
+    // ),
     #[error("unknown error")]
     Unknown(
         #[from]
@@ -85,6 +84,9 @@ pub(crate) enum ResponseErrorInner {
 
     #[error("response error(call_id: {call_id}, code: {code}): {msg}", call_id = .0.id, code = .0.code, msg = .0.message)]
     ReceivedResponseErrorFrame(frame::ResponseError),
+
+    #[error(transparent)]
+    Response(#[from] ResponseError),
 }
 
-pub type ResponseResult<T> = Result<T, ResponseError>;
+pub type RequestResult<T> = Result<T, RequestError>;
