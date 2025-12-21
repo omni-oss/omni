@@ -3,24 +3,27 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
 pub use super::request_error as error;
-use super::response::{Response, error::ResponseResult};
 
 use error::{RequestErrorInner, RequestResult};
 
-use super::super::{
-    Headers, RequestErrorCode, Trailers,
-    frame::{ChannelResponseFrame, Frame, ResponseError},
-    id::Id,
-    utils::send_frame_to_channel,
+use super::{
+    super::{
+        super::Id,
+        Headers, RequestErrorCode, Trailers,
+        frame::{Frame, ResponseError, ResponseStart},
+        utils::send_frame_to_channel,
+    },
+    response::{PendingResponse, ResponseFrameEvent},
 };
 
 #[derive(new)]
 pub struct PendingRequest {
     id: Id,
     path: String,
-    request_bytes_tx: mpsc::Sender<Vec<u8>>,
-    response_error_rx: oneshot::Receiver<ResponseError>,
-    response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
+    request_bytes_sender: mpsc::Sender<Vec<u8>>,
+    response_start_receiver: oneshot::Receiver<ResponseStart>,
+    response_frame_receiver: mpsc::Receiver<ResponseFrameEvent>,
+    response_error_receiver: oneshot::Receiver<ResponseError>,
 }
 
 impl PendingRequest {
@@ -30,44 +33,38 @@ impl PendingRequest {
         headers: Headers,
     ) -> RequestResult<ActiveRequest> {
         send_frame_to_channel(
-            &self.request_bytes_tx,
-            &Frame::request_start(self.id, self.path),
+            &self.request_bytes_sender,
+            &Frame::request_start(self.id, self.path, Some(headers)),
         )
         .await?;
 
-        return_if_error(&mut self.response_error_rx).await?;
-
-        send_frame_to_channel(
-            &self.request_bytes_tx,
-            &Frame::request_headers(self.id, headers),
-        )
-        .await?;
-
-        return_if_error(&mut self.response_error_rx).await?;
+        return_if_error(&mut self.response_error_receiver).await?;
 
         Ok(ActiveRequest::new(
             self.id,
-            self.request_bytes_tx,
-            self.response_frame_rx,
-            self.response_error_rx,
+            self.request_bytes_sender,
+            self.response_start_receiver,
+            self.response_frame_receiver,
+            self.response_error_receiver,
         ))
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.id)))]
     pub async fn start(mut self) -> RequestResult<ActiveRequest> {
         send_frame_to_channel(
-            &self.request_bytes_tx,
-            &Frame::request_start(self.id, self.path),
+            &self.request_bytes_sender,
+            &Frame::request_start(self.id, self.path, None),
         )
         .await?;
 
-        return_if_error(&mut self.response_error_rx).await?;
+        return_if_error(&mut self.response_error_receiver).await?;
 
         Ok(ActiveRequest::new(
             self.id,
-            self.request_bytes_tx,
-            self.response_frame_rx,
-            self.response_error_rx,
+            self.request_bytes_sender,
+            self.response_start_receiver,
+            self.response_frame_receiver,
+            self.response_error_receiver,
         ))
     }
 }
@@ -85,7 +82,7 @@ impl Drop for RequestDataImpl {
         }
 
         let tx = self.request_bytes_tx.clone();
-        let frame = Frame::request_end(self.id);
+        let frame = Frame::request_end(self.id, None);
         tokio::spawn(async move {
             let result = send_frame_to_channel(&tx, &frame).await;
 
@@ -98,25 +95,28 @@ impl Drop for RequestDataImpl {
 
 pub struct ActiveRequest {
     data: RequestDataImpl,
-    response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
-    response_error_rx: oneshot::Receiver<ResponseError>,
+    response_start_receiver: oneshot::Receiver<ResponseStart>,
+    response_frame_receiver: mpsc::Receiver<ResponseFrameEvent>,
+    response_error_receiver: oneshot::Receiver<ResponseError>,
 }
 
 impl ActiveRequest {
-    pub fn new(
+    pub(self) fn new(
         id: Id,
-        request_bytes_tx: mpsc::Sender<Vec<u8>>,
-        response_frame_rx: mpsc::Receiver<ChannelResponseFrame>,
-        response_error_rx: oneshot::Receiver<ResponseError>,
+        request_bytes_sender: mpsc::Sender<Vec<u8>>,
+        response_start_receiver: oneshot::Receiver<ResponseStart>,
+        response_frame_receiver: mpsc::Receiver<ResponseFrameEvent>,
+        response_error_receiver: oneshot::Receiver<ResponseError>,
     ) -> Self {
         Self {
             data: RequestDataImpl {
                 id: id,
                 is_ended: false,
-                request_bytes_tx,
+                request_bytes_tx: request_bytes_sender,
             },
-            response_error_rx,
-            response_frame_rx,
+            response_error_receiver,
+            response_frame_receiver,
+            response_start_receiver,
         }
     }
 }
@@ -129,7 +129,7 @@ impl ActiveRequest {
 
 impl ActiveRequest {
     async fn return_if_error(&mut self) -> RequestResult<()> {
-        return_if_error(&mut self.response_error_rx).await
+        return_if_error(&mut self.response_error_receiver).await
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
@@ -151,40 +151,41 @@ impl ActiveRequest {
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
-    pub async fn end(mut self) -> RequestResult<EndedRequest> {
+    async fn end_inner(
+        mut self,
+        trailers: Option<Trailers>,
+    ) -> RequestResult<PendingResponse> {
         self.data.is_ended = true;
 
         self.return_if_error().await?;
 
         send_frame_to_channel(
             &self.data.request_bytes_tx,
-            &Frame::request_end(self.data.id),
+            &Frame::request_end(self.data.id, trailers),
         )
         .await?;
 
         self.return_if_error().await?;
 
-        Ok(EndedRequest::new(
+        Ok(PendingResponse::new(
             self.data.id,
-            self.response_frame_rx,
-            self.response_error_rx,
+            self.response_start_receiver,
+            self.response_frame_receiver,
+            self.response_error_receiver,
         ))
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
+    pub async fn end(self) -> RequestResult<PendingResponse> {
+        self.end_inner(None).await
+    }
+
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
     pub async fn end_with_trailers(
-        mut self,
+        self,
         trailers: Trailers,
-    ) -> RequestResult<EndedRequest> {
-        self.return_if_error().await?;
-
-        send_frame_to_channel(
-            &self.data.request_bytes_tx,
-            &Frame::request_trailers(self.data.id, trailers),
-        )
-        .await?;
-
-        self.end().await
+    ) -> RequestResult<PendingResponse> {
+        self.end_inner(Some(trailers)).await
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(request_id = ?self.data.id)))]
@@ -204,19 +205,6 @@ impl ActiveRequest {
         self.return_if_error().await?;
 
         Ok(())
-    }
-}
-
-#[derive(new)]
-pub struct EndedRequest {
-    id: Id,
-    response_rx: mpsc::Receiver<ChannelResponseFrame>,
-    error_rx: oneshot::Receiver<ResponseError>,
-}
-
-impl EndedRequest {
-    pub async fn start_response(self) -> ResponseResult<Response> {
-        Response::init(self.id, self.response_rx, self.error_rx).await
     }
 }
 

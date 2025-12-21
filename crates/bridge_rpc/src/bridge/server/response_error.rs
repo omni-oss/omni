@@ -2,7 +2,7 @@ use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use tokio::sync::oneshot::{self};
 
-use super::super::{BridgeRpcError, frame, id::Id};
+use super::super::BridgeRpcError;
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
@@ -46,9 +46,8 @@ pub(crate) enum ResponseErrorInner {
         rmpv::ext::Error,
     ),
 
-    #[error("receive error")]
-    DataSend(#[source] eyre::Report),
-
+    // #[error("receive error")]
+    // DataSend(#[source] eyre::Report),
     #[error("can't receive error")]
     ErrorReceive(
         #[from]
@@ -56,20 +55,19 @@ pub(crate) enum ResponseErrorInner {
         oneshot::error::TryRecvError,
     ),
 
-    #[error("send error")]
-    Send {
-        #[new(into)]
-        #[source]
-        error: eyre::Report,
-    },
+    // #[error("send error")]
+    // Send {
+    //     #[new(into)]
+    //     #[source]
+    //     error: eyre::Report,
+    // },
 
-    #[error("timeout")]
-    Timeout(
-        #[new(into)]
-        #[source]
-        eyre::Report,
-    ),
-
+    // #[error("timeout")]
+    // Timeout(
+    //     #[new(into)]
+    //     #[source]
+    //     eyre::Report,
+    // ),
     #[error("unknown error")]
     Unknown(
         #[from]
@@ -81,28 +79,6 @@ pub(crate) enum ResponseErrorInner {
     BridgeRpc {
         #[from]
         error: BridgeRpcError,
-    },
-
-    #[error("response error(call_id: {call_id}, code: {code}): {msg}", call_id = .0.id, code = .0.code, msg = .0.message)]
-    ResponseError(frame::ResponseError),
-
-    #[error(
-        "unexpected frame received for request id: {request_id}, expecting: {expected}, actual: {actual}",
-        expected = .expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "),
-    )]
-    UnexpectedFrame {
-        request_id: Id,
-        expected: Vec<frame::ChannelResponseFrameType>,
-        actual: frame::ChannelResponseFrameType,
-    },
-
-    #[error(
-        "no frame received for request id: {request_id}, expecting: {expected}",
-        expected = .expected.iter().map(|e| e.to_string()).collect::<Vec<_>>().join(", "),
-    )]
-    NoFrame {
-        request_id: Id,
-        expected: Vec<frame::ChannelResponseFrameType>,
     },
 }
 

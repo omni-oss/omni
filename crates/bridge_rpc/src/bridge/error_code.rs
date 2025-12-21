@@ -1,6 +1,6 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[repr(u8)]
+#[repr(u16)]
 #[derive(
     Debug,
     Clone,
@@ -18,12 +18,13 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ResponseErrorCode {
-    NotFound,
-    InvalidRequest,
+    UnexpectedFrame = 0,
+    NoHandlerForPath,
     InternalError,
+    IdInUse,
 }
 
-#[repr(u8)]
+#[repr(u16)]
 #[derive(
     Debug,
     Clone,
@@ -41,6 +42,7 @@ pub enum ResponseErrorCode {
 )]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RequestErrorCode {
+    UnexpectedFrame = 0,
     Cancelled,
-    Timeout,
+    TimedOut,
 }

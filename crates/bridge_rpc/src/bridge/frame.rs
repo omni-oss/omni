@@ -1,251 +1,290 @@
+use derive_new::new;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use strum::EnumIs;
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
-use crate::bridge::Id;
+use crate::bridge::ResponseStatusCode;
 
-#[repr(u8)]
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Deserialize_repr,
-    Serialize_repr,
-    EnumIs,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    strum::FromRepr,
-    strum::Display,
+use super::{Headers, RequestErrorCode, Trailers};
+
+use super::error_code::ResponseErrorCode;
+
+use super::super::Id;
+
+#[derive(Debug, Clone, EnumIs, EnumDiscriminants, PartialEq)]
+#[strum_discriminants(
+    derive(strum::Display, Serialize_repr, Deserialize_repr),
+    name(FrameType)
 )]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum FrameType {
-    Close = 0,
-    CloseAck = 1,
-    Probe = 2,
-    ProbeAck = 3,
-    StreamStart = 4,
-    StreamStartResponse = 5,
-    StreamData = 6,
-    StreamEnd = 7,
-    MessageRequest = 8,
-    MessageResponse = 9,
+#[repr(u8)]
+pub(crate) enum Frame {
+    RequestStart(RequestStart) = 0,
+    RequestBodyChunk(RequestBodyChunk),
+    RequestEnd(RequestEnd),
+    RequestError(RequestError),
+
+    ResponseStart(ResponseStart) = 20,
+    ResponseBodyChunk(ResponseBodyChunk),
+    ResponseEnd(ResponseEnd),
+    ResponseError(ResponseError),
+
+    Close = 40,
+    // Optional for TCP
+    Ping,
+    Pong,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct Frame<D> {
+impl Frame {
+    pub fn to_repr(
+        &self,
+    ) -> Result<FrameRepr<'static, rmpv::Value>, rmpv::ext::Error> {
+        let ty = self.discriminant();
+        let data = match self {
+            Frame::RequestStart(request_start) => {
+                rmpv::ext::to_value(request_start)?
+            }
+            Frame::RequestBodyChunk(request_data) => {
+                rmpv::ext::to_value(request_data)?
+            }
+            Frame::RequestEnd(request_end) => rmpv::ext::to_value(request_end)?,
+            Frame::RequestError(request_error) => {
+                rmpv::ext::to_value(request_error)?
+            }
+            Frame::ResponseStart(response_start) => {
+                rmpv::ext::to_value(response_start)?
+            }
+            Frame::ResponseBodyChunk(response_data) => {
+                rmpv::ext::to_value(response_data)?
+            }
+            Frame::ResponseEnd(response_end) => {
+                rmpv::ext::to_value(response_end)?
+            }
+            Frame::ResponseError(response_error) => {
+                rmpv::ext::to_value(response_error)?
+            }
+            Frame::Close => rmpv::Value::Nil,
+            Frame::Ping => rmpv::Value::Nil,
+            Frame::Pong => rmpv::Value::Nil,
+        };
+
+        Ok(FrameRepr {
+            r#type: ty,
+            data,
+            _data: std::marker::PhantomData,
+        })
+    }
+
+    pub fn from_repr(
+        repr: FrameRepr<'static, rmpv::Value>,
+    ) -> Result<Self, rmpv::ext::Error> {
+        let ty = repr.r#type;
+        let data = repr.data;
+
+        Ok(match ty {
+            FrameType::RequestStart => {
+                let request_start: RequestStart = rmpv::ext::from_value(data)?;
+                Frame::RequestStart(request_start)
+            }
+            FrameType::RequestBodyChunk => {
+                let request_data: RequestBodyChunk =
+                    rmpv::ext::from_value(data)?;
+                Frame::RequestBodyChunk(request_data)
+            }
+            FrameType::RequestEnd => {
+                let request_end: RequestEnd = rmpv::ext::from_value(data)?;
+                Frame::RequestEnd(request_end)
+            }
+            FrameType::RequestError => {
+                let request_error: RequestError = rmpv::ext::from_value(data)?;
+                Frame::RequestError(request_error)
+            }
+            FrameType::ResponseStart => {
+                let response_start: ResponseStart =
+                    rmpv::ext::from_value(data)?;
+                Frame::ResponseStart(response_start)
+            }
+            FrameType::ResponseBodyChunk => {
+                let response_data: ResponseBodyChunk =
+                    rmpv::ext::from_value(data)?;
+                Frame::ResponseBodyChunk(response_data)
+            }
+            FrameType::ResponseEnd => {
+                let response_end: ResponseEnd = rmpv::ext::from_value(data)?;
+                Frame::ResponseEnd(response_end)
+            }
+            FrameType::ResponseError => {
+                let response_error: ResponseError =
+                    rmpv::ext::from_value(data)?;
+                Frame::ResponseError(response_error)
+            }
+            FrameType::Close => Frame::Close,
+            FrameType::Ping => Frame::Ping,
+            FrameType::Pong => Frame::Pong,
+        })
+    }
+}
+
+impl serde::Serialize for Frame {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let repr = self.to_repr().map_err(|e| {
+            serde::ser::Error::custom(format!(
+                "failed to serialize frame: {}",
+                e
+            ))
+        })?;
+
+        repr.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Frame {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let frame = FrameRepr::deserialize(deserializer)?;
+
+        Self::from_repr(frame).map_err(|e| {
+            serde::de::Error::custom(format!(
+                "failed to deserialize frame: {}",
+                e
+            ))
+        })
+    }
+}
+
+/// General constructors
+impl Frame {
+    pub const fn request_start(
+        id: Id,
+        path: String,
+        headers: Option<Headers>,
+    ) -> Self {
+        Frame::RequestStart(RequestStart { id, path, headers })
+    }
+
+    pub const fn request_body_chunk(id: Id, data: Vec<u8>) -> Self {
+        Frame::RequestBodyChunk(RequestBodyChunk { id, chunk: data })
+    }
+
+    pub const fn request_end(id: Id, trailers: Option<Trailers>) -> Self {
+        Frame::RequestEnd(RequestEnd { id, trailers })
+    }
+
+    pub const fn request_error(
+        id: Id,
+        code: RequestErrorCode,
+        message: String,
+    ) -> Self {
+        Frame::RequestError(RequestError { id, code, message })
+    }
+
+    pub const fn response_start(
+        id: Id,
+        status: ResponseStatusCode,
+        headers: Option<Headers>,
+    ) -> Self {
+        Frame::ResponseStart(ResponseStart {
+            id,
+            status,
+            headers,
+        })
+    }
+
+    pub const fn response_body_chunk(id: Id, data: Vec<u8>) -> Self {
+        Frame::ResponseBodyChunk(ResponseBodyChunk { id, chunk: data })
+    }
+
+    pub const fn response_error(
+        id: Id,
+        code: ResponseErrorCode,
+        message: String,
+    ) -> Self {
+        Frame::ResponseError(ResponseError { id, code, message })
+    }
+
+    pub const fn response_end(id: Id, trailers: Option<Trailers>) -> Self {
+        Frame::ResponseEnd(ResponseEnd { id, trailers })
+    }
+
+    pub const fn ping() -> Self {
+        Frame::Ping
+    }
+
+    pub const fn pong() -> Self {
+        Frame::Pong
+    }
+
+    pub const fn close() -> Self {
+        Frame::Close
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FrameRepr<'a, TData>
+where
+    TData: 'a,
+{
     #[serde(rename = "type")]
     pub r#type: FrameType,
-
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "Option::default"
-    )]
-    pub data: Option<D>,
+    pub data: TData,
+    _data: std::marker::PhantomData<&'a ()>,
 }
 
-pub type StreamStartFrame<D> = Frame<StreamStart<D>>;
-pub type StreamStartResponseFrame = Frame<StreamStartResponse>;
-pub type StreamDataFrame<D> = Frame<StreamData<D>>;
-pub type StreamEndFrame = Frame<StreamEnd>;
-pub type RequestFrame<D> = Frame<Request<D>>;
-pub type ResponseFrame<D> = Frame<Response<D>>;
-
-impl<D> Frame<D> {
-    pub const fn new(r#type: FrameType, data: Option<D>) -> Self {
-        Self { r#type, data }
-    }
-}
-
-impl Frame<()> {
-    pub const fn close() -> Self {
-        Self::new(FrameType::Close, None)
-    }
-
-    pub const fn close_ack() -> Self {
-        Self::new(FrameType::CloseAck, None)
-    }
-
-    pub const fn probe() -> Self {
-        Self::new(FrameType::Probe, None)
-    }
-
-    pub const fn probe_ack() -> Self {
-        Self::new(FrameType::ProbeAck, None)
-    }
-}
-
-impl<TData> StreamStartFrame<TData> {
-    pub fn stream_start(
-        id: Id,
-        path: impl Into<String>,
-        data: Option<TData>,
-    ) -> Self {
-        Self::new(
-            FrameType::StreamStart,
-            Some(StreamStart {
-                id,
-                path: path.into(),
-                data,
-            }),
-        )
-    }
-}
-
-impl StreamStartResponseFrame {
-    pub fn stream_start_response(
-        id: Id,
-        ok: bool,
-        error: Option<String>,
-    ) -> Self {
-        Self::new(
-            FrameType::StreamStartResponse,
-            Some(StreamStartResponse {
-                id,
-                ok,
-                error: error.map(|e| ErrorData { message: e }),
-            }),
-        )
-    }
-
-    pub fn stream_start_response_ok(id: Id) -> Self {
-        Self::stream_start_response(id, true, None)
-    }
-
-    pub fn stream_start_response_error(
-        id: Id,
-        error: impl Into<String>,
-    ) -> Self {
-        Self::stream_start_response(id, false, Some(error.into()))
-    }
-}
-
-impl<D> StreamDataFrame<D> {
-    pub fn stream_data(id: Id, data: D) -> Self {
-        Self::new(FrameType::StreamData, Some(StreamData { id, data }))
-    }
-}
-
-impl StreamEndFrame {
-    pub fn stream_end(id: Id, error: Option<String>) -> Self {
-        Self::new(
-            FrameType::StreamEnd,
-            Some(StreamEnd {
-                id,
-                error: error.map(|e| ErrorData { message: e }),
-            }),
-        )
-    }
-
-    pub fn stream_end_success(id: Id) -> Self {
-        Self::stream_end(id, None)
-    }
-
-    pub fn stream_end_error(id: Id, error: impl Into<String>) -> Self {
-        Self::stream_end(id, Some(error.into()))
-    }
-}
-
-impl<D> RequestFrame<D> {
-    pub fn request(id: Id, path: impl Into<String>, data: D) -> Self {
-        Self::new(
-            FrameType::MessageRequest,
-            Some(Request {
-                id,
-                path: path.into(),
-                data,
-            }),
-        )
-    }
-}
-
-impl<D> ResponseFrame<D> {
-    pub fn response(id: Id, data: Option<D>, error: Option<String>) -> Self {
-        Self::new(
-            FrameType::MessageResponse,
-            Some(Response {
-                id,
-                data,
-                error: error.map(|e| ErrorData { message: e }),
-            }),
-        )
-    }
-}
-
-impl<D> Frame<Response<D>> {
-    pub fn success_response(id: Id, data: D) -> Self {
-        Self::response(id, Some(data), None)
-    }
-}
-
-impl Frame<Response<()>> {
-    pub fn error_response(id: Id, error: impl Into<String>) -> Self {
-        Self::response(id, None, Some(error.into()))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct StreamStart<TData> {
+// Request structures
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct RequestStart {
     pub id: Id,
     pub path: String,
-    pub data: Option<TData>,
+    pub headers: Option<Headers>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct StreamStartResponse {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct RequestBodyChunk {
     pub id: Id,
-    pub ok: bool,
-    pub error: Option<ErrorData>,
+    pub chunk: Vec<u8>, // Consider bytes::Bytes for zero-copy
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct StreamData<TData> {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct RequestEnd {
     pub id: Id,
-    pub data: TData,
+    pub trailers: Option<Trailers>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct StreamEnd {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct RequestError {
     pub id: Id,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "Option::default"
-    )]
-    pub error: Option<ErrorData>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct Request<TData> {
-    pub id: Id,
-    pub path: String,
-    pub data: TData,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct ErrorData {
+    pub code: RequestErrorCode,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) struct Response<TResponse> {
+// Response structures
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct ResponseStart {
     pub id: Id,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "Option::default"
-    )]
-    pub data: Option<TResponse>,
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        default = "Option::default"
-    )]
-    pub error: Option<ErrorData>,
+    pub status: ResponseStatusCode,
+    pub headers: Option<Headers>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct ResponseBodyChunk {
+    pub id: Id,
+    #[serde(with = "serde_bytes")]
+    pub chunk: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct ResponseEnd {
+    pub id: Id,
+    pub trailers: Option<Trailers>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
+pub(crate) struct ResponseError {
+    pub id: Id,
+    pub code: ResponseErrorCode,
+    pub message: String,
 }
