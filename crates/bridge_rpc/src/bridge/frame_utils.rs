@@ -14,7 +14,7 @@ pub fn single_data_response_frames(
     let data = serialize(data)?;
 
     Ok([
-        Frame::response_start(id, ResponseStatusCode::Success, None),
+        Frame::response_start(id, ResponseStatusCode::SUCCESS, None),
         Frame::response_body_chunk(id, data),
         Frame::response_end(id, None),
     ])

@@ -1,4 +1,5 @@
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use derive_new::new;
+use serde::{Deserialize, Serialize};
 
 #[derive(
     Debug,
@@ -9,10 +10,26 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     PartialOrd,
     Ord,
     Hash,
-    Deserialize_repr,
-    Serialize_repr,
+    Deserialize,
+    Serialize,
+    new,
 )]
-#[repr(u16)]
-pub enum ResponseStatusCode {
-    Success = 200,
+#[serde(transparent)]
+pub struct ResponseStatusCode(u16);
+
+#[macro_export]
+macro_rules! predefined_status_codes {
+    (
+        $(
+            $name:ident = $value:expr
+        ),*$(,)?
+    ) => {
+        $(
+            pub const $name: ResponseStatusCode = ResponseStatusCode($value);
+        )*
+    };
+}
+
+impl ResponseStatusCode {
+    predefined_status_codes!(SUCCESS = 200, NOT_FOUND = 404);
 }
