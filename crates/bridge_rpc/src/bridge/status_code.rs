@@ -1,5 +1,6 @@
-use derive_new::new;
 use serde::{Deserialize, Serialize};
+
+use crate::predefined_codes;
 
 #[derive(
     Debug,
@@ -12,24 +13,21 @@ use serde::{Deserialize, Serialize};
     Hash,
     Deserialize,
     Serialize,
-    new,
 )]
 #[serde(transparent)]
 pub struct ResponseStatusCode(u16);
 
-#[macro_export]
-macro_rules! predefined_status_codes {
-    (
-        $(
-            $name:ident = $value:expr
-        ),*$(,)?
-    ) => {
-        $(
-            pub const $name: ResponseStatusCode = ResponseStatusCode($value);
-        )*
-    };
+impl ResponseStatusCode {
+    pub const fn new(code: u16) -> Self {
+        Self(code)
+    }
+
+    pub const fn code(&self) -> u16 {
+        self.0
+    }
 }
 
-impl ResponseStatusCode {
-    predefined_status_codes!(SUCCESS = 200, NOT_FOUND = 404);
-}
+predefined_codes!(ResponseStatusCode {
+    SUCCESS = 0;
+    NO_HANDLER_FOR_PATH = 100;
+});

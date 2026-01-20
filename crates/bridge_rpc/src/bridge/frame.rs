@@ -17,7 +17,7 @@ use super::super::Id;
     name(FrameType)
 )]
 #[repr(u8)]
-pub(crate) enum Frame {
+pub enum Frame {
     RequestStart(RequestStart) = 0,
     RequestBodyChunk(RequestBodyChunk),
     RequestEnd(RequestEnd),
@@ -35,7 +35,7 @@ pub(crate) enum Frame {
 }
 
 impl Frame {
-    pub fn to_repr(
+    pub(crate) fn to_repr(
         &self,
     ) -> Result<FrameRepr<'static, rmpv::Value>, rmpv::ext::Error> {
         let ty = self.discriminant();
@@ -74,7 +74,7 @@ impl Frame {
         })
     }
 
-    pub fn from_repr(
+    pub(crate) fn from_repr(
         repr: FrameRepr<'static, rmpv::Value>,
     ) -> Result<Self, rmpv::ext::Error> {
         let ty = repr.r#type;
@@ -236,26 +236,26 @@ where
 
 // Request structures
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct RequestStart {
+pub struct RequestStart {
     pub id: Id,
     pub path: String,
     pub headers: Option<Headers>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct RequestBodyChunk {
+pub struct RequestBodyChunk {
     pub id: Id,
     pub chunk: Vec<u8>, // Consider bytes::Bytes for zero-copy
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct RequestEnd {
+pub struct RequestEnd {
     pub id: Id,
     pub trailers: Option<Trailers>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct RequestError {
+pub struct RequestError {
     pub id: Id,
     pub code: RequestErrorCode,
     pub message: String,
@@ -263,27 +263,27 @@ pub(crate) struct RequestError {
 
 // Response structures
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct ResponseStart {
+pub struct ResponseStart {
     pub id: Id,
     pub status: ResponseStatusCode,
     pub headers: Option<Headers>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct ResponseBodyChunk {
+pub struct ResponseBodyChunk {
     pub id: Id,
     #[serde(with = "serde_bytes")]
     pub chunk: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct ResponseEnd {
+pub struct ResponseEnd {
     pub id: Id,
     pub trailers: Option<Trailers>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
-pub(crate) struct ResponseError {
+pub struct ResponseError {
     pub id: Id,
     pub code: ResponseErrorCode,
     pub message: String,

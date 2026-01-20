@@ -1,48 +1,76 @@
-use serde_repr::{Deserialize_repr, Serialize_repr};
+use std::fmt::Display;
 
-#[repr(u16)]
+use serde::{Deserialize, Serialize};
+
+use crate::predefined_codes;
+
 #[derive(
     Debug,
     Clone,
     Copy,
-    Deserialize_repr,
-    Serialize_repr,
     PartialEq,
     Eq,
     Hash,
     PartialOrd,
     Ord,
-    strum::FromRepr,
-    strum::Display,
-    strum::EnumIs,
+    Deserialize,
+    Serialize,
 )]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ResponseErrorCode {
-    UnexpectedFrame = 0,
-    NoHandlerForPath,
-    InternalError,
-    IdInUse,
+#[serde(transparent)]
+pub struct ResponseErrorCode(u16);
+
+impl Display for ResponseErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
-#[repr(u16)]
+impl ResponseErrorCode {
+    pub const fn new(code: u16) -> Self {
+        Self(code)
+    }
+
+    pub const fn code(&self) -> u16 {
+        self.0
+    }
+}
+
+predefined_codes!(ResponseErrorCode {
+    UNEXPECTED_FRAME = 0;
+});
+
 #[derive(
     Debug,
     Clone,
     Copy,
-    Deserialize_repr,
-    Serialize_repr,
     PartialEq,
     Eq,
     Hash,
     PartialOrd,
     Ord,
-    strum::FromRepr,
-    strum::Display,
-    strum::EnumIs,
+    Deserialize,
+    Serialize,
 )]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RequestErrorCode {
-    UnexpectedFrame = 0,
-    Cancelled,
-    TimedOut,
+#[serde(transparent)]
+pub struct RequestErrorCode(u16);
+
+impl Display for RequestErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
+
+impl RequestErrorCode {
+    pub const fn new(code: u16) -> Self {
+        Self(code)
+    }
+
+    pub const fn code(&self) -> u16 {
+        self.0
+    }
+}
+
+predefined_codes!(RequestErrorCode {
+    UNEXPECTED_FRAME = 0;
+    TIMED_OUT = 1;
+});
