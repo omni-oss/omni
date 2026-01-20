@@ -223,11 +223,11 @@ mod tests {
 
         assert_eq!(
             response_state_machine
-                .transition(start_event(id, ResponseStatusCode::Success, None))
+                .transition(start_event(id, ResponseStatusCode::SUCCESS, None))
                 .expect("should be able to transition"),
             ResponseStateTransitionOutput::new_start(
                 id,
-                ResponseStatusCode::Success,
+                ResponseStatusCode::SUCCESS,
                 None
             ),
             "should be able to transition"
@@ -272,11 +272,11 @@ mod tests {
 
         assert_eq!(
             response_state_machine
-                .transition(start_event(id, ResponseStatusCode::Success, None))
+                .transition(start_event(id, ResponseStatusCode::SUCCESS, None))
                 .expect("should be able to transition"),
             ResponseStateTransitionOutput::new_start(
                 id,
-                ResponseStatusCode::Success,
+                ResponseStatusCode::SUCCESS,
                 None
             ),
             "should be able to transition"
@@ -307,11 +307,11 @@ mod tests {
 
         assert_eq!(
             response_state_machine
-                .transition(start_event(id, ResponseStatusCode::Success, None))
+                .transition(start_event(id, ResponseStatusCode::SUCCESS, None))
                 .expect("should be able to transition"),
             ResponseStateTransitionOutput::new_start(
                 id,
-                ResponseStatusCode::Success,
+                ResponseStatusCode::SUCCESS,
                 None
             ),
             "should be able to transition"
@@ -357,11 +357,11 @@ mod tests {
 
         assert_eq!(
             request_state_machine
-                .transition(start_event(id, ResponseStatusCode::Success, None))
+                .transition(start_event(id, ResponseStatusCode::SUCCESS, None))
                 .expect("should be able to transition"),
             ResponseStateTransitionOutput::new_start(
                 id,
-                ResponseStatusCode::Success,
+                ResponseStatusCode::SUCCESS,
                 None
             ),
             "should be able to transition"

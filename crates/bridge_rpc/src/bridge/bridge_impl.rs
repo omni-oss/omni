@@ -1045,7 +1045,7 @@ mod tests {
                 let trailers =
                     reader.trailers().expect("Failed to read trailers");
 
-                assert_eq!(status, ResponseStatusCode::Success);
+                assert_eq!(status, ResponseStatusCode::SUCCESS);
                 assert!(headers.is_none());
                 assert!(trailers.is_none());
                 assert_eq!(data, test_data_bytes);
@@ -1151,7 +1151,7 @@ mod tests {
 
                 let mut response = ctx
                     .response
-                    .start(ResponseStatusCode::Success)
+                    .start(ResponseStatusCode::SUCCESS)
                     .await
                     .expect("Failed to start response");
 
