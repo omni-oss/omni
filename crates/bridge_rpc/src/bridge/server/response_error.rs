@@ -1,0 +1,85 @@
+use derive_new::new;
+use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use tokio::sync::oneshot::{self};
+
+use super::super::BridgeRpcError;
+
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct ResponseError(pub(crate) ResponseErrorInner);
+
+impl ResponseError {
+    #[allow(unused)]
+    pub fn kind(&self) -> ResponseErrorKind {
+        self.0.discriminant()
+    }
+}
+
+impl<T: Into<ResponseErrorInner>> From<T> for ResponseError {
+    fn from(value: T) -> Self {
+        let inner = value.into();
+        Self(inner)
+    }
+}
+
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[strum_discriminants(name(ResponseErrorKind), vis(pub))]
+pub(crate) enum ResponseErrorInner {
+    #[error("serialization error")]
+    Serialization(
+        #[from]
+        #[source]
+        rmp_serde::encode::Error,
+    ),
+
+    #[error("deserialization error: {0}")]
+    Deserialization(
+        #[from]
+        #[source]
+        rmp_serde::decode::Error,
+    ),
+
+    #[error("value conversion error")]
+    ValueConversion(
+        #[from]
+        #[source]
+        rmpv::ext::Error,
+    ),
+
+    // #[error("receive error")]
+    // DataSend(#[source] eyre::Report),
+    #[error("can't receive error")]
+    ErrorReceive(
+        #[from]
+        #[source]
+        oneshot::error::TryRecvError,
+    ),
+
+    // #[error("send error")]
+    // Send {
+    //     #[new(into)]
+    //     #[source]
+    //     error: eyre::Report,
+    // },
+
+    // #[error("timeout")]
+    // Timeout(
+    //     #[new(into)]
+    //     #[source]
+    //     eyre::Report,
+    // ),
+    #[error("unknown error")]
+    Unknown(
+        #[from]
+        #[source]
+        eyre::Report,
+    ),
+
+    #[error(transparent)]
+    BridgeRpc {
+        #[from]
+        error: BridgeRpcError,
+    },
+}
+
+pub type ResponseResult<T> = Result<T, ResponseError>;

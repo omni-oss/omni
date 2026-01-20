@@ -1,74 +1,105 @@
 use std::time::Duration;
 
+use async_trait::async_trait;
 use bridge_rpc::{
-    BridgeRpc, BridgeRpcBuilder, RequestContext, StreamContext,
-    StreamTransport, Transport,
+    BridgeRpc, DynMap, ResponseStatusCode, StreamTransport,
+    service::{Service, ServiceContext},
+    service_error::ServiceError,
 };
+use derive_new::new;
 use ntest::timeout;
 use tokio::{io::DuplexStream, time::sleep};
-use tokio_stream::StreamExt;
 
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
-struct RpcResponse<T> {
-    data: T,
-    message: String,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone, Debug)]
-struct RpcRequest {
+struct RpcData {
     message: String,
 }
 
 type TestTransport = StreamTransport<DuplexStream, DuplexStream>;
 
-fn create_and_mutate_rpcs<TFn1, TFn2>(
-    mut fn1: TFn1,
-    mut fn2: TFn2,
-) -> (BridgeRpc<TestTransport>, BridgeRpc<TestTransport>)
-where
-    TFn1: FnMut(
-        BridgeRpcBuilder<TestTransport>,
-    ) -> BridgeRpcBuilder<TestTransport>,
-    TFn2: FnMut(
-        BridgeRpcBuilder<TestTransport>,
-    ) -> BridgeRpcBuilder<TestTransport>,
-{
+#[derive(new)]
+struct MirrorTestService {}
+
+#[async_trait]
+impl Service for MirrorTestService {
+    async fn run(&self, context: ServiceContext) -> Result<(), ServiceError> {
+        let (_, headers, mut reader) = context.request.into_parts();
+
+        let mut chunks = vec![];
+
+        while let Some(chunk) = reader
+            .read_body_chunk()
+            .await
+            .expect("Failed to read chunk")
+        {
+            chunks.push(chunk);
+        }
+
+        let trailers = reader
+            .trailers()
+            .expect("Failed to get trailers")
+            .map(|t| t.clone());
+        let mut response = if let Some(headers) = headers {
+            context
+                .response
+                .start_with_headers(ResponseStatusCode::Success, headers)
+                .await
+                .expect("Failed to start response with headers")
+        } else {
+            context
+                .response
+                .start(ResponseStatusCode::Success)
+                .await
+                .expect("Failed to start response")
+        };
+
+        for chunk in chunks {
+            response
+                .write_body_chunk(chunk)
+                .await
+                .expect("Failed to write chunk");
+        }
+
+        if let Some(trailers) = trailers {
+            response
+                .end_with_trailers(trailers)
+                .await
+                .expect("Failed to end response with trailers");
+        } else {
+            response.end().await.expect("Failed to end response");
+        }
+
+        Ok(())
+    }
+}
+
+fn create_rpcs_with_services<TService1: Service, TService2: Service>(
+    tservice1: TService1,
+    tservice2: TService2,
+) -> (
+    BridgeRpc<TestTransport, TService1>,
+    BridgeRpc<TestTransport, TService2>,
+) {
     let (pipe1_in, pipe1_out) = tokio::io::duplex(2048);
     let (pipe2_in, pipe2_out) = tokio::io::duplex(2048);
 
     let transport1 = StreamTransport::new(pipe1_in, pipe2_out);
     let transport2 = StreamTransport::new(pipe2_in, pipe1_out);
 
-    let rpc1 = BridgeRpcBuilder::new(transport1).request_handler(
-        "rpc1test",
-        async |request: RequestContext<RpcRequest>| {
-            Ok::<_, eyre::Report>(RpcResponse {
-                data: request.data,
-                message: "Received data from rpc1, returning it back"
-                    .to_string(),
-            })
-        },
-    );
-
-    let rpc2 = BridgeRpcBuilder::new(transport2).request_handler(
-        "rpc2test",
-        |request: RequestContext<RpcRequest>| async {
-            Ok::<_, eyre::Report>(RpcResponse {
-                data: request.data,
-                message: "Received data from rpc2, returning it back"
-                    .to_string(),
-            })
-        },
-    );
-
     (
-        fn1(rpc1).build().expect("should be able to build"),
-        fn2(rpc2).build().expect("should be able to build"),
+        BridgeRpc::new(transport1, tservice1),
+        BridgeRpc::new(transport2, tservice2),
     )
 }
 
-fn create_rpcs() -> (BridgeRpc<impl Transport>, BridgeRpc<impl Transport>) {
-    create_and_mutate_rpcs(|b| b, |b| b)
+fn create_mirror_rpcs() -> (
+    BridgeRpc<TestTransport, MirrorTestService>,
+    BridgeRpc<TestTransport, MirrorTestService>,
+) {
+    create_rpcs_with_services(
+        MirrorTestService::new(),
+        MirrorTestService::new(),
+    )
 }
 
 macro_rules! run_rpcs {
@@ -102,8 +133,24 @@ macro_rules! close_rpcs {
     }};
 }
 
-fn create_rpc_request() -> RpcRequest {
-    RpcRequest {
+fn create_headers() -> DynMap {
+    let mut headers = DynMap::new();
+
+    headers.insert("test_header_item".to_string(), "value".to_string());
+
+    headers
+}
+
+fn create_trailers() -> DynMap {
+    let mut trailers = DynMap::new();
+
+    trailers.insert("test_trailer_item".to_string(), "value".to_string());
+
+    trailers
+}
+
+fn create_data() -> RpcData {
+    RpcData {
         message: "test".to_string(),
     }
 }
@@ -111,19 +158,25 @@ fn create_rpc_request() -> RpcRequest {
 #[tokio::test(flavor = "multi_thread")]
 #[test_log::test]
 #[timeout(1000)]
-async fn test_probe() {
-    let (rpc1, rpc2) = create_rpcs();
+async fn test_ping() {
+    let (rpc1, rpc2) = create_mirror_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
 
     sleep(Duration::from_millis(1)).await;
 
-    assert!(
-        rpc1.probe(Duration::from_millis(100))
-            .await
-            .expect("Probe failed"),
-        "Probe should return true"
-    );
+    let result1 = rpc1
+        .ping(Duration::from_millis(100))
+        .await
+        .expect("rpc1 ping failed");
+
+    let result2 = rpc2
+        .ping(Duration::from_millis(100))
+        .await
+        .expect("rpc2 ping failed");
+
+    assert!(result1, "ping should return true");
+    assert!(result2, "ping should return true");
 
     close_rpcs!(rpc1, rpc2);
 
@@ -133,84 +186,65 @@ async fn test_probe() {
 #[tokio::test(flavor = "multi_thread")]
 #[test_log::test]
 #[timeout(1000)]
-async fn test_send_and_receive_data() {
-    let (rpc1, rpc2) = create_rpcs();
+async fn test_request() {
+    let (rpc1, rpc2) = create_mirror_rpcs();
 
     let runner = run_rpcs!(rpc1, rpc2);
 
     sleep(Duration::from_millis(1)).await;
 
-    let result1 = rpc1
-        .request::<RpcResponse<RpcRequest>, _>("rpc2test", create_rpc_request())
+    let request_data = create_data();
+    let serialized_data =
+        rmp_serde::to_vec(&request_data).expect("Failed to serialize data");
+    let headers = create_headers();
+    let trailers = create_trailers();
+    let path = "test_path";
+
+    let mut active_request = rpc1
+        .request(path)
         .await
-        .expect("Request failed");
-
-    let result2 = rpc2
-        .request::<RpcResponse<RpcRequest>, _>("rpc1test", create_rpc_request())
+        .expect("Request failed")
+        .start_with_headers(headers.clone())
         .await
-        .expect("Request failed");
+        .expect("Failed to start response");
 
-    assert_eq!(
-        result1,
-        RpcResponse {
-            data: create_rpc_request(),
-            message: "Received data from rpc2, returning it back".to_string()
-        }
-    );
-
-    assert_eq!(
-        result2,
-        RpcResponse {
-            data: create_rpc_request(),
-            message: "Received data from rpc1, returning it back".to_string()
-        }
-    );
-
-    close_rpcs!(rpc1, rpc2);
-
-    runner.await.expect("Failed to run RPC");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[test_log::test]
-#[timeout(2000)]
-async fn test_stream_data() {
-    let (rpc1, rpc2) = create_and_mutate_rpcs(
-        |rpc1| {
-            rpc1.stream_handler(
-                "rpc1test-stream",
-                async |mut r: StreamContext<RpcRequest, Vec<u8>>| {
-                    let value = r
-                        .stream
-                        .next()
-                        .await
-                        .expect("value should exist")
-                        .expect("should have data");
-
-                    println!("Received stream data: {:?}", value);
-                    assert_eq!(value, vec![1, 2, 3]);
-                    Ok::<_, eyre::Report>(())
-                },
-            )
-        },
-        |rpc2| rpc2,
-    );
-
-    let runner = run_rpcs!(rpc1, rpc2);
-
-    sleep(Duration::from_millis(1)).await;
-
-    let stream = rpc2
-        .start_stream("rpc1test-stream")
+    active_request
+        .write_body_chunk(serialized_data.clone())
         .await
-        .expect("should be able to start stream");
+        .expect("Failed to write body chunk");
 
-    stream
-        .send(vec![1, 2, 3])
+    let response = active_request
+        .end_with_trailers(trailers.clone())
         .await
-        .expect("should be able to send data");
+        .expect("Failed to end request")
+        .wait()
+        .await
+        .expect("failed to wait for response");
 
-    stream.end().await.expect("should be able to end stream");
+    let (status, response_headers, mut reader) = response.into_parts();
+
+    let mut response_data_serialized = vec![];
+    while let Some(chunk) = reader
+        .read_body_chunk()
+        .await
+        .expect("Failed to read chunk")
+    {
+        response_data_serialized.extend_from_slice(&chunk);
+    }
+
+    let response_data: RpcData =
+        rmp_serde::from_slice(&response_data_serialized)
+            .expect("Failed to deserialize data");
+
+    let response_trailers = reader
+        .trailers()
+        .expect("Failed to get trailers")
+        .map(|t| t.clone());
+
+    assert_eq!(status, ResponseStatusCode::Success);
+    assert_eq!(Some(headers), response_headers);
+    assert_eq!(Some(trailers), response_trailers);
+    assert_eq!(response_data, request_data);
 
     close_rpcs!(rpc1, rpc2);
 

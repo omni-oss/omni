@@ -21,8 +21,8 @@ thiserror = { workspace = true }
 eyre = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
-test-log = { workspace = true }
 serde = { workspace = true }
+serde_bytes = { workspace = true }
 serde_repr = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true }
@@ -35,8 +35,11 @@ bytes = { workspace = true }
 byteorder = { workspace = true }
 derive-new = { workspace = true }
 rand = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
 
 [dev-dependencies]
+test-log = { workspace = true }
 mockall = { workspace = true }
 parking_lot = { workspace = true }
 ntest = { workspace = true }
