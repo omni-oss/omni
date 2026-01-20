@@ -27,9 +27,13 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 {%- if prompts.use_tracing %}
-test-log = { workspace = true }
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 {%- endif %}
 derive_builder = { workspace = true }
 derive-new = { workspace = true }
+
+{%- if prompts.use_tracing %}
+[dev-dependencies]
+test-log = { workspace = true }
+{%- endif %}
