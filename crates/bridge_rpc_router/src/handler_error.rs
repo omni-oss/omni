@@ -3,26 +3,26 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, new)]
 #[error(transparent)]
-pub struct ServiceError(pub(crate) ServiceErrorInner);
+pub struct HandlerError(pub(crate) HandlerErrorInner);
 
-impl ServiceError {
+impl HandlerError {
     pub fn custom(message: impl Into<String>) -> Self {
-        Self(ServiceErrorInner::Custom(eyre::Report::msg(message.into())))
+        Self(HandlerErrorInner::Custom(eyre::Report::msg(message.into())))
     }
 
     pub fn custom_error(error: impl Into<eyre::Report>) -> Self {
-        Self(ServiceErrorInner::Custom(error.into()))
+        Self(HandlerErrorInner::Custom(error.into()))
     }
 }
 
-impl ServiceError {
+impl HandlerError {
     #[allow(unused)]
-    pub fn kind(&self) -> ServiceErrorKind {
+    pub fn kind(&self) -> HandlerErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<ServiceErrorInner>> From<T> for ServiceError {
+impl<T: Into<HandlerErrorInner>> From<T> for HandlerError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
 
@@ -31,10 +31,8 @@ impl<T: Into<ServiceErrorInner>> From<T> for ServiceError {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
-#[strum_discriminants(vis(pub), name(ServiceErrorKind))]
-pub(crate) enum ServiceErrorInner {
+#[strum_discriminants(vis(pub), name(HandlerErrorKind))]
+pub(crate) enum HandlerErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 }
-
-pub type ServiceResult<T> = Result<T, ServiceError>;

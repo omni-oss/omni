@@ -109,7 +109,7 @@ impl RequestReader {
     name(RequestFrameEventType)
 )]
 #[repr(u8)]
-pub(crate) enum RequestFrameEvent {
+pub enum RequestFrameEvent {
     BodyChunk { chunk: Vec<u8> },
     End { trailers: Option<Trailers> },
 }

@@ -325,7 +325,7 @@ mod tests {
         );
         let error = ResponseError {
             id,
-            code: ResponseErrorCode::UnexpectedFrame,
+            code: ResponseErrorCode::UNEXPECTED_FRAME,
             message: "error".to_string(),
         };
         let error_event = ResponseEvent::Error(error.clone());

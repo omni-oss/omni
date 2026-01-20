@@ -4,28 +4,24 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error, new)]
 #[error(transparent)]
-pub struct BridgeRpcClientHandleError(
-    pub(crate) BridgeRpcClientHandleErrorInner,
-);
+pub struct ClientHandleError(pub(crate) ClientHandleErrorInner);
 
-impl BridgeRpcClientHandleError {
+impl ClientHandleError {
     pub fn custom(message: impl Into<String>) -> Self {
-        Self(BridgeRpcClientHandleErrorInner::Custom(eyre::Report::msg(
+        Self(ClientHandleErrorInner::Custom(eyre::Report::msg(
             message.into(),
         )))
     }
 }
 
-impl BridgeRpcClientHandleError {
+impl ClientHandleError {
     #[allow(unused)]
-    pub fn kind(&self) -> BridgeRpcClientHandleErrorKind {
+    pub fn kind(&self) -> ClientHandleErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<BridgeRpcClientHandleErrorInner>> From<T>
-    for BridgeRpcClientHandleError
-{
+impl<T: Into<ClientHandleErrorInner>> From<T> for ClientHandleError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
 
@@ -34,8 +30,8 @@ impl<T: Into<BridgeRpcClientHandleErrorInner>> From<T>
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
-#[strum_discriminants(vis(pub), name(BridgeRpcClientHandleErrorKind))]
-pub(crate) enum BridgeRpcClientHandleErrorInner {
+#[strum_discriminants(vis(pub), name(ClientHandleErrorKind))]
+pub(crate) enum ClientHandleErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 
@@ -46,4 +42,4 @@ pub(crate) enum BridgeRpcClientHandleErrorInner {
     NotRunning,
 }
 
-pub type BridgeRpcClientHandleResult<T> = Result<T, BridgeRpcClientHandleError>;
+pub type ClientHandleResult<T> = Result<T, ClientHandleError>;

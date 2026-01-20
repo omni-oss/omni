@@ -157,7 +157,7 @@ async fn return_if_error(
     name(ResponseFrameEventType)
 )]
 #[repr(u8)]
-pub(crate) enum ResponseFrameEvent {
+pub enum ResponseFrameEvent {
     BodyChunk { chunk: Vec<u8> },
     End { trailers: Option<Trailers> },
 }

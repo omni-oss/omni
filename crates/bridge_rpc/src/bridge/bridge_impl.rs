@@ -22,7 +22,7 @@ use super::ResponseStatusCode;
 use super::bytes_worker::BytesWorker;
 use super::client::request::*;
 use super::client::response::ResponseFrameEvent;
-use super::client_handle::BridgeRpcClientHandle;
+use super::client_handle::ClientHandle;
 use super::constants::{BYTES_WORKER_BUFFER_SIZE, RESPONSE_BUFFER_SIZE};
 use super::contexts::*;
 use super::frame::*;
@@ -127,10 +127,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     }
 
     #[inline(always)]
-    pub async fn create_client_handle(
-        &self,
-    ) -> BridgeRpcResult<BridgeRpcClientHandle> {
-        Ok(BridgeRpcClientHandle::new(
+    pub async fn create_client_handle(&self) -> BridgeRpcResult<ClientHandle> {
+        Ok(ClientHandle::new(
             self.id,
             self.session_manager.clone(),
             self.bytes_worker.clone(),

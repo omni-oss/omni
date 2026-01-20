@@ -305,7 +305,7 @@ mod tests {
         );
         let error = RequestError {
             id,
-            code: RequestErrorCode::TimedOut,
+            code: RequestErrorCode::TIMED_OUT,
             message: "error".to_string(),
         };
         let error_event = RequestEvent::Error(error.clone());
