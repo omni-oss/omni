@@ -1,113 +1,204 @@
 import { describe, expect, it, vi } from "vitest";
-import { withDelay } from "@/promise-utils";
+import { Id } from "@/id";
 import type { Transport } from "@/transport";
-import { BridgeRpcBuilder } from "./builder";
-import { Frame, FrameConstants } from "./frame";
-import { Id } from "./id";
-import { decode, encode } from "./utils";
+import { BridgeRpc } from "./bridge-impl";
+import { decode, encode } from "./codec-utils";
+import { Frame } from "./frame";
+import { FrameType } from "./frame-schema";
+import type { ServiceContext } from "./service";
+import { ResponseStatusCode } from "./status-code";
+
+// Mock Constants
+const TEST_DATA = "test_data";
+const TEST_PATH = "test_path";
+const testDataBytes = encode(TEST_DATA);
 
 describe("BridgeRpc", () => {
-    function mockTransport() {
-        const mt = {
+    // Helper to create a Mock Transport
+    function createMockTransport() {
+        const mockTransport = {
             send: vi.fn(),
             onReceive: vi.fn(),
         } satisfies Transport;
 
         const onReceiveHandlers = [] as ((data: Uint8Array) => void)[];
 
-        mt.onReceive.mockImplementation((cb) => {
+        mockTransport.onReceive.mockImplementation((cb) => {
             onReceiveHandlers.push(cb);
         });
 
-        return { onReceiveHandlers, ...mt };
+        return { onReceiveHandlers, ...mockTransport };
     }
 
-    it("should be able to stop the RPC", async () => {
-        const t = mockTransport();
-        const rpc = new BridgeRpcBuilder(t).build();
+    // Helper to create a Mock Service
+    const createMockService = () => ({
+        run: vi.fn().mockImplementation(async (ctx: ServiceContext) => {
+            const { request, response } = ctx;
+            const requestBytes = await readAll(request.readBody());
 
-        await rpc.stop();
+            const activeResponse = await response.start(
+                ResponseStatusCode.SUCCESS,
+            );
+            await activeResponse.writeBodyChunk(requestBytes);
+            await activeResponse.end();
 
-        t.send.mock.calls.forEach(([data]) => {
-            const frame = decode(data);
-            expect(frame).toEqual(FrameConstants.CLOSE);
-        });
+            return undefined;
+        }),
     });
 
-    it("should be able to probe the RPC", async () => {
-        const t = mockTransport();
-        const rpc = new BridgeRpcBuilder(t).build();
+    const sleep = (ms: number) =>
+        new Promise((resolve) => setTimeout(resolve, ms));
 
-        await rpc.start();
+    it("should send close frame when stopped", async () => {
+        const transport = createMockTransport();
+        const service = createMockService();
+        const rpc = new BridgeRpc(transport, service);
 
-        const probe = withDelay(rpc.probe(100), 1);
+        await expect(rpc.start()).resolves.toBeUndefined();
+        await expect(rpc.stop()).resolves.toBeUndefined();
 
-        const probeAckBytes = encode(FrameConstants.PROBE_ACK);
-        for (const cb of t.onReceiveHandlers) {
-            cb(probeAckBytes);
-        }
+        expect(transport.send).toHaveBeenCalled();
+        // biome-ignore lint/style/noNonNullAssertion: should have value
+        const lastCallBytes = transport.send.mock.calls[0]![0];
+        const decodedFrame = decode(lastCallBytes) as Frame;
 
-        expect(await probe).toBe(true);
-        expect(rpc.hasPendingProbe()).toBe(false);
-
-        await rpc.stop();
+        expect(decodedFrame).toEqual(Frame.close());
     });
 
-    it("should be able to send a request", async () => {
-        const t = mockTransport();
-        const id = Id.create();
-        const expectedResponse = { testResponseField: "test" };
+    it("should handle ping/pong cycle", async () => {
+        const transport = createMockTransport();
+        const service = createMockService();
+        const rpc = new BridgeRpc(transport, service);
 
-        const rpc = new BridgeRpcBuilder(t).build();
-
-        await rpc.start();
-
-        const requestData = { testRequestField: "test" };
-        const actualResponseTask = withDelay(
-            rpc.requestWithId(id, "test/path", requestData),
-            1,
-        );
-
-        const responseBytes = encode(
-            Frame.messageResponseSuccess(id, expectedResponse),
-        );
-
-        for (const cb of t.onReceiveHandlers) {
-            cb(responseBytes);
-        }
-
-        expect(await actualResponseTask).toEqual(expectedResponse);
-
-        await rpc.stop();
-    });
-
-    it("should be able to handle a request", async () => {
-        const t = mockTransport();
-        const handler = vi.fn();
-        const responseData = { testResponseField: "test" };
-
-        handler.mockImplementation(async (context) => {
-            return { ...responseData, ...context?.data };
+        // When RPC sends a PING, we simulate the other side sending a PONG back
+        transport.send.mockImplementation(async (bytes: Uint8Array) => {
+            const frame = decode(bytes) as Frame;
+            if (frame.type === FrameType.PING) {
+                // Simulate network delay then send PONG
+                setTimeout(() => {
+                    const pongFrame = Frame.pong();
+                    // biome-ignore lint/style/noNonNullAssertion: should have value
+                    const receiveHandler = transport.onReceiveHandlers[0]!;
+                    receiveHandler(encode(pongFrame));
+                }, 10);
+            }
         });
 
-        const rpc = new BridgeRpcBuilder(t)
-            .requestHandler("test/path", handler)
-            .build();
+        await expect(rpc.start()).resolves.toBeUndefined();
+        // This should resolve when the PONG is received via transport.onReceive
+        await expect(rpc.ping(1000)).resolves.toBeTruthy();
 
-        const requestData = { testRequestField: "test" };
-        const requestBytes = encode(
-            Frame.messageRequest(Id.create(), "test/path", requestData),
-        );
+        await expect(rpc.stop()).resolves.toBeUndefined();
+    });
+
+    it("client sending request and receiving response", async () => {
+        const transport = createMockTransport();
+        const service = createMockService();
+        const rpc = new BridgeRpc(transport, service);
+        const reqId = Id.create();
 
         await rpc.start();
 
-        // send request to the RPC
-        for (const cb of t.onReceiveHandlers) {
-            cb(requestBytes);
+        // 1. Setup transport to simulate a server response when it receives request frames
+        transport.send.mockImplementation(async (bytes: Uint8Array) => {
+            const frame = decode(bytes) as Frame;
+
+            // If we see the end of the request, simulate the server's response
+            if (frame.type === FrameType.REQUEST_END) {
+                // biome-ignore lint/style/noNonNullAssertion: should have value
+                const receiveHandler = transport.onReceiveHandlers[0]!;
+                const frames = [
+                    Frame.responseStart(reqId, ResponseStatusCode.SUCCESS),
+                    Frame.responseBodyChunk(reqId, testDataBytes),
+                    Frame.responseEnd(reqId),
+                ];
+
+                for (const frame of frames) {
+                    receiveHandler(encode(frame));
+                }
+            }
+        });
+
+        const pendingRequest = await rpc.requestWithId(reqId, TEST_PATH);
+        const requestHandle = await pendingRequest.start();
+        await requestHandle.writeBodyChunk(testDataBytes);
+        const response = await (await requestHandle.end()).wait();
+
+        expect(response.status).toEqual(ResponseStatusCode.SUCCESS);
+        const body = await readAll(response.readBody());
+
+        expect(body).toEqual(testDataBytes);
+        await expect(rpc.stop()).resolves.toBeUndefined();
+    });
+
+    it("server handling request and sending response", async () => {
+        const transport = createMockTransport();
+        const reqId = Id.create();
+
+        // Logic inside the mock service to handle the incoming request
+        const service = {
+            run: vi.fn().mockImplementation(async (ctx: ServiceContext) => {
+                const { request, response } = ctx;
+                // Read the request body
+                const body = await readAll(request.readBody());
+
+                // Send back response
+                const respWriter = await response.start(
+                    ResponseStatusCode.SUCCESS,
+                );
+
+                await respWriter.writeBodyChunk(body);
+                await respWriter.end();
+
+                expect(request.path).toBe(TEST_PATH);
+            }),
+        };
+
+        const rpc = new BridgeRpc(transport, service);
+        await rpc.start();
+
+        // Simulate incoming request frames from the "network"
+        // biome-ignore lint/style/noNonNullAssertion: should have value
+        const receiveHandler = transport.onReceiveHandlers[0]!;
+
+        const frames = [
+            Frame.requestStart(reqId, TEST_PATH),
+            Frame.requestBodyChunk(reqId, testDataBytes),
+            Frame.requestEnd(reqId),
+        ];
+
+        for (const frame of frames) {
+            receiveHandler(encode(frame));
         }
 
-        expect(handler).toBeCalledWith({ data: requestData });
+        // Allow microtasks to process (service.run is called in background)
+        await sleep(50);
 
-        await rpc.stop();
+        // Verify transport sent response frames back
+        const sentFrameTypes = transport.send.mock.calls.map(
+            (call) => (decode(call[0]) as Frame).type,
+        );
+
+        expect(sentFrameTypes).toContain(FrameType.RESPONSE_START);
+        expect(sentFrameTypes).toContain(FrameType.RESPONSE_BODY_CHUNK);
+        expect(sentFrameTypes).toContain(FrameType.RESPONSE_END);
+
+        await expect(rpc.stop()).resolves.toBeUndefined();
     });
 });
+
+async function readAll(gen: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of gen) {
+        chunks.push(chunk);
+    }
+    const wholeChunk = new Uint8Array(
+        chunks.reduce((acc, c) => acc + c.length, 0),
+    );
+
+    for (const chunk of chunks) {
+        wholeChunk.set(chunk, wholeChunk.length - chunk.length);
+    }
+
+    return wholeChunk;
+}

@@ -5,7 +5,14 @@ import * as z from "zod";
  * Format: high 32 bits = PID, low 32 bits = counter
  */
 export class Id {
-    private constructor(private readonly value: bigint) {}
+    private readonly value: bigint;
+    private constructor(value: bigint | number | string) {
+        if (typeof value === "bigint") {
+            this.value = value;
+        } else {
+            this.value = BigInt(value);
+        }
+    }
 
     /**
      * Generate a new unique ID for this process
@@ -18,38 +25,46 @@ export class Id {
      * Create an Id from a string representation
      */
     static fromString(str: string): Id {
-        return new Id(BigInt(str));
+        return new Id(str);
     }
 
     static fromBigInt(value: bigint): Id {
         return new Id(value);
     }
 
+    static fromNumber(value: number): Id {
+        return new Id(value);
+    }
+
     /**
      * Get the underlying u64 value as a bigint
      */
-    getValue(): bigint {
+    public getValue(): bigint {
+        return this.value;
+    }
+
+    public valueOf(): bigint {
         return this.value;
     }
 
     /**
      * Convert to string representation
      */
-    toString(): string {
+    public toString(): string {
         return this.value.toString();
     }
 
     /**
-     * Convert to JSON (as string)
+     * Convert to JSON (as number)
      */
-    toJSON(): string {
-        return this.value.toString();
+    public toJSON(): number {
+        return Number(this.value);
     }
 
     /**
      * Check equality with another Id
      */
-    equals(other: Id): boolean {
+    public equals(other: Id): boolean {
         return this.value === other.value;
     }
 }
@@ -108,6 +123,6 @@ export function uniqueU64ForPid(): bigint {
  * Reset the counter (useful for testing)
  * @internal
  */
-export function _resetCounter(): void {
+export function resetCounter(): void {
     counter = null;
 }

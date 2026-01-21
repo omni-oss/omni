@@ -1,239 +1,158 @@
-import { createDeferred, type Deferred } from "@/deferred";
+import { Mutex } from "async-mutex";
+import { Deferred } from "@/deferred";
+import { Id } from "@/id";
+import { Mpsc, type MpscReceiver } from "@/mpsc";
+import { Oneshot, type OneshotReceiver } from "@/oneshot";
 import { TimeoutError, withTimeout } from "@/promise-utils";
 import type { Transport } from "@/transport";
+import { BackgroundProcessor } from "./background-processor";
+import {
+    PendingResponse as ClientPendingResponse,
+    PendingRequest,
+} from "./client";
+import {
+    type ResponseFrameEvent,
+    ResponseFrameEventType,
+} from "./client/response";
+import { decode, encode } from "./codec-utils";
+import { RequestSessionContext, ResponseSessionContext } from "./contexts";
+import type { Headers } from "./dyn-map";
 import {
     Frame,
-    FrameConstants,
-    FrameType,
-    type StreamEndFrame,
-    type StreamStartResponseFrame,
-    UnknownFrameSchema,
-    type UnknownMessageRequestFrame,
-    type UnknownMessageResponseFrame,
-    type UnknownStreamDataFrame,
-    type UnknownStreamStartFrame,
+    type RequestError,
+    type ResponseError,
+    type ResponseStart,
 } from "./frame";
-import { Id } from "./id";
-import { decode, encode } from "./utils";
+import { FrameSchema, FrameType } from "./frame-schema";
+import { FrameTransporter } from "./frame-transporter";
+import {
+    Request,
+    type RequestFrameEvent,
+    RequestFrameEventType,
+} from "./server/request";
+import { PendingResponse } from "./server/response";
+import { type Service, ServiceContext } from "./service";
+import {
+    type RequestEvent,
+    RequestEventType,
+    type ResponseEvent,
+    ResponseEventType,
+    SessionManager,
+} from "./session";
+import type { ResponseStatusCode } from "./status-code";
 
-type MaybePromise<T> = T | Promise<T>;
-
-export type BridgeRpcConfig = {
-    transport: Transport;
-    requestHandlers?: Map<string, UnknownBridgeRequestHandler>;
-    streamHandlers?: Map<string, UnknownBridgeStreamHandler>;
-};
-
-export type RequestContext<TRequestData> = {
-    data: TRequestData;
-};
-export type UnknownBridgeRequestHandler = (
-    context: RequestContext<unknown>,
-) => MaybePromise<unknown>;
-export type BridgeRequestHandler<TRequestData, TResponseData> = (
-    data: RequestContext<TRequestData>,
-) => MaybePromise<TResponseData>;
-
-export type StreamContext<TStartData, TStreamData> = {
-    startData: TStartData;
-    stream: AsyncIterable<TStreamData>;
-};
-export type UnknownBridgeStreamHandler = (
-    context: StreamContext<unknown, unknown>,
-) => MaybePromise<void>;
-export type BridgeStreamHandler<TStartData, TStreamData> = (
-    data: StreamContext<TStartData, TStreamData>,
-) => MaybePromise<void>;
-
-export class BridgeRpc<
-    TRequestHandlers extends [...string[]] = [],
-    TStreamHandlers extends [...string[]] = [],
-> {
-    private responses = new Map<bigint, Deferred<unknown>>();
+export class BridgeRpc {
+    private sessionManager = new SessionManager<
+        RequestSessionContext,
+        ResponseSessionContext
+    >();
     private isStarted = false;
-    private pendingProbe: Deferred<boolean> | null = null;
+    private pendingPing: Deferred<void> | undefined = undefined;
+    private frameTransporter: FrameTransporter;
+    private serviceTaskBackgroundProcessor = new BackgroundProcessor();
+    private id: Id = Id.create();
+    private mutex = new Mutex();
 
-    constructor(private readonly config: BridgeRpcConfig) {}
-
-    private async handle(frameBytes: Uint8Array) {
-        if (!this.isStarted) {
-            return;
-        }
-
-        const frame = decode(frameBytes);
-        const parsed = UnknownFrameSchema.safeParse(frame);
-        if (parsed.success) {
-            await this.handleFrame(parsed.data);
-        } else {
-            await this.respondWithError(
-                // biome-ignore lint/suspicious/noExplicitAny: "Allow any for id extraction",
-                (frame as any)?.content?.id || Id.create(),
-                `invalid frame: ${parsed.error.message}`,
-            );
-        }
+    constructor(
+        private transport: Transport,
+        private service: Service,
+    ) {
+        this.frameTransporter = new FrameTransporter((bytes) =>
+            transport.send(bytes),
+        );
     }
 
-    private async handleFrame(frame: Frame) {
-        switch (frame.type) {
-            case FrameType.CLOSE: {
-                await this.handleClose();
-                break;
-            }
-            case FrameType.CLOSE_ACK: {
-                await this.handleCloseAck();
-                break;
-            }
-            case FrameType.PROBE: {
-                await this.handleProbe();
-                break;
-            }
-            case FrameType.PROBE_ACK: {
-                await this.handleProbeAck();
-                break;
-            }
-            case FrameType.STREAM_START: {
-                await this.handleStreamStart(frame);
-                break;
-            }
-            case FrameType.STREAM_START_RESPONSE: {
-                await this.handleStreamStartResponse(frame);
-                break;
-            }
-            case FrameType.STREAM_DATA: {
-                await this.handleStreamData(frame);
-                break;
-            }
-            case FrameType.STREAM_END: {
-                await this.handleStreamEnd(frame);
-                break;
-            }
-            case FrameType.MESSAGE_REQUEST: {
-                await this.handleMessageRequest(frame);
-                break;
-            }
-            case FrameType.MESSAGE_RESPONSE: {
-                await this.handleMessageResponse(frame);
-                break;
-            }
-        }
-    }
+    public async requestWithId(id: Id, path: string) {
+        this.ensureStarted();
 
-    private async sendFrame(frame: Frame) {
-        await this.config.transport.send(encode(frame));
-    }
+        const responseSession = this.startResponseSession(id);
 
-    private async handleProbe() {
-        await this.sendFrame(FrameConstants.PROBE_ACK);
-    }
-
-    private async handleProbeAck() {
-        this.pendingProbe?.resolve(true);
-        this.pendingProbe = null;
-    }
-
-    private async handleClose() {
-        await this.sendFrame(FrameConstants.CLOSE_ACK);
-        this.responses.clear();
-    }
-
-    private async handleCloseAck() {
-        this.isStarted = false;
-    }
-
-    private async handleStreamStart(_frame: UnknownStreamStartFrame) {}
-
-    private async handleStreamStartResponse(_frame: StreamStartResponseFrame) {}
-
-    private async handleStreamData(_frame: UnknownStreamDataFrame) {}
-
-    private async handleStreamEnd(_frame: StreamEndFrame) {}
-
-    private async respondWithError(id: Id, errorMessage: string) {
-        await this.sendFrame(Frame.messageResponseError(id, errorMessage));
-    }
-
-    private async handleMessageResponse(response: UnknownMessageResponseFrame) {
-        const { id, data, error } = response.data;
-
-        const deferred = this.responses.get(id.getValue());
-        if (!deferred) {
-            console.warn(`no response handler found for id: ${id}`);
-            return;
-        }
-
-        this.responses.delete(id.getValue());
-
-        if (error) {
-            deferred.reject(new Error(error.message));
-        } else {
-            deferred.resolve(data);
-        }
-    }
-
-    private async handleMessageRequest(request: UnknownMessageRequestFrame) {
-        const { id, path, data } = request.data;
-
-        try {
-            const handler = this.config.requestHandlers?.get(path);
-            if (!handler) {
-                await this.respondWithError(
+        const request = new PendingRequest(
+            id,
+            path,
+            this.frameTransporter.sender,
+            (id) =>
+                new ClientPendingResponse(
                     id,
-                    `No handler found for path: ${path}`,
-                );
+                    responseSession.responseStartReceiver,
+                    responseSession.responseFrameReceiver,
+                    responseSession.responseErrorReceiver,
+                ),
+        );
+
+        return request;
+    }
+
+    public request(path: string) {
+        return this.requestWithId(Id.create(), path);
+    }
+
+    public async start() {
+        return await this.runExclusive(async () => {
+            if (this.isStarted) {
+                console.info(`rpc ${this.id} is already started`);
                 return;
             }
 
-            const result = await handler({
-                data,
-            });
+            this.transport.onReceive(this.handle.bind(this));
+            await this.frameTransporter.start();
+            this.isStarted = true;
+            console.info(`rpc ${this.id} started`);
+        });
+    }
 
-            await this.sendFrame(Frame.messageResponseSuccess(id, result));
-        } catch (error) {
-            await this.respondWithError(
-                id,
-                `Error handling request for path "${path}": ${error instanceof Error ? error.message : String(error)}`,
-            );
+    public async stop() {
+        return await this.runExclusive(async () => {
+            if (!this.isStarted) {
+                return;
+            }
+
+            await this.sendFrame(Frame.close());
+            await this.frameTransporter.stop();
+            await this.serviceTaskBackgroundProcessor.awaitAll();
+            console.info(`rpc ${this.id} stopped`);
+            this.isStarted = false;
+        });
+    }
+
+    public async ping(timeoutMs: number) {
+        return await this.runExclusive(async () => {
+            this.ensureStarted();
+
+            if (this.pendingPing) {
+                throw new Error("pending ping is already in progress");
+            }
+
+            const deferred = new Deferred<void>();
+            this.pendingPing = deferred;
+
+            await this.sendFrame(Frame.ping());
+
+            try {
+                await withTimeout(deferred.promise, timeoutMs);
+                return true;
+            } catch (e) {
+                if (e instanceof TimeoutError) {
+                    return false;
+                } else {
+                    throw e;
+                }
+            } finally {
+                this.pendingPing = undefined;
+            }
+        });
+    }
+
+    private async handle(frameBytes: Uint8Array) {
+        this.ensureStarted();
+
+        const frame = decode(frameBytes);
+        const parsed = FrameSchema.safeParse(frame);
+        if (parsed.success) {
+            await this.handleFrame(parsed.data);
+        } else {
+            await this.handleInvalidFrame(frame as Frame, parsed.error.message);
         }
-    }
-
-    async requestWithId<TResponse>(
-        id: Id,
-        path: string,
-        data: unknown,
-    ): Promise<TResponse> {
-        const request = Frame.messageRequest(id, path, data);
-
-        const deferred = createDeferred<unknown>();
-
-        this.responses.set(id.getValue(), deferred);
-
-        await this.config.transport.send(encode(request));
-
-        return deferred.promise as Promise<TResponse>;
-    }
-
-    async request<TResponse>(path: string, data: unknown): Promise<TResponse> {
-        const id = Id.create();
-        return await this.requestWithId<TResponse>(id, path, data);
-    }
-
-    async stop() {
-        if (!this.isStarted) {
-            return this;
-        }
-
-        this.isStarted = false;
-        await this.sendFrame(FrameConstants.CLOSE);
-        this.responses.clear();
-        return this;
-    }
-
-    hasRequestHandler(path: TRequestHandlers[number]): boolean {
-        return this.config.requestHandlers?.has(path) ?? false;
-    }
-
-    hasStreamHandler(path: TStreamHandlers[number]): boolean {
-        return this.config.streamHandlers?.has(path) ?? false;
     }
 
     private ensureStarted() {
@@ -242,42 +161,449 @@ export class BridgeRpc<
         }
     }
 
-    async probe(timeoutMs?: number): Promise<boolean> {
-        if (this.hasPendingProbe()) {
-            throw new Error("Probe already in progress");
+    private async handleInvalidFrame(frame: unknown, errorMessage: string) {
+        console.error(
+            `invalid frame received (frame type: ${(frame as Frame).type}): ${errorMessage}`,
+        );
+    }
+
+    private async handleFrame(frame: Frame) {
+        let event: Event;
+
+        console.log(
+            `[rpc_id: ${this.id}]: received frame: ${frame.type} with id: ${frame.data?.id}`,
+        );
+
+        switch (frame.type) {
+            case FrameType.REQUEST_START:
+                event = makeRequestEvent(RequestEventType.START, frame);
+                break;
+
+            case FrameType.REQUEST_BODY_CHUNK:
+                event = makeRequestEvent(RequestEventType.BODY_CHUNK, frame);
+                break;
+
+            case FrameType.REQUEST_END:
+                event = makeRequestEvent(RequestEventType.END, frame);
+                break;
+
+            case FrameType.REQUEST_ERROR:
+                event = makeRequestEvent(RequestEventType.ERROR, frame);
+                break;
+
+            case FrameType.RESPONSE_START:
+                event = makeResponseEvent(ResponseEventType.START, frame);
+                break;
+
+            case FrameType.RESPONSE_BODY_CHUNK:
+                event = makeResponseEvent(ResponseEventType.BODY_CHUNK, frame);
+                break;
+
+            case FrameType.RESPONSE_END:
+                event = makeResponseEvent(ResponseEventType.END, frame);
+                break;
+
+            case FrameType.RESPONSE_ERROR:
+                event = makeResponseEvent(ResponseEventType.ERROR, frame);
+                break;
+
+            case FrameType.CLOSE:
+                await this.handleClose();
+                return;
+
+            case FrameType.PING:
+                await this.handlePing();
+                return;
+
+            case FrameType.PONG:
+                await this.handlePong();
+                return;
+
+            default:
+                console.error(
+                    `unsupported frame type: ${(frame as unknown as { type: number }).type}`,
+                );
+                return;
         }
 
-        this.ensureStarted();
+        switch (event.type) {
+            case EventType.REQUEST:
+                {
+                    const requestSession =
+                        event.event.type === RequestEventType.START
+                            ? this.startRequestSession(event.event.data.id)
+                            : {
+                                  session: this.getRequestSession(
+                                      event.event.data.id,
+                                  ),
+                                  requestFrameReceiver: undefined,
+                                  requestErrorReceiver: undefined,
+                              };
 
-        const deferred = createDeferred<boolean>();
-        this.pendingProbe = deferred;
-        await this.sendFrame(FrameConstants.PROBE);
+                    if (!requestSession.session) {
+                        throw new Error(
+                            `cannot find request session for id: ${event.event.data.id}, this should never happen, please report this bug`,
+                        );
+                    }
 
-        try {
-            return await withTimeout(deferred.promise, timeoutMs ?? 1000);
-        } catch (error) {
-            if (error instanceof TimeoutError) {
-                return false;
-            }
-            throw error;
-        } finally {
-            this.pendingProbe = null;
+                    const { output, context } =
+                        await requestSession.session.runExclusive(
+                            (session) => ({
+                                output: session.state.transition(event.event),
+                                context: session.context,
+                            }),
+                        );
+
+                    switch (output.type) {
+                        case "Start":
+                            if (
+                                requestSession.requestFrameReceiver ===
+                                    undefined ||
+                                requestSession.requestErrorReceiver ===
+                                    undefined
+                            ) {
+                                throw new Error(
+                                    `no request frame receiver or error receiver found for request session with id: ${event.event.data.id}, this should never happen, please report this bug`,
+                                );
+                            }
+
+                            await this.handleRequestStart(
+                                event.event.data.id,
+                                output.path,
+                                output.headers,
+                                // biome-ignore lint/style/noNonNullAssertion: should have value here
+                                requestSession.requestFrameReceiver!,
+                                // biome-ignore lint/style/noNonNullAssertion: should have value here
+                                requestSession.requestErrorReceiver!,
+                            );
+                            break;
+                        case "BodyChunk":
+                            await this.handleRequestBodyChunk(
+                                context,
+                                output.chunk,
+                            );
+                            break;
+                        case "End":
+                            await this.handleRequestEnd(
+                                context,
+                                output.trailers,
+                            );
+                            break;
+                        case "Error":
+                            await this.handleRequestError(
+                                context,
+                                output.error,
+                            );
+                            break;
+                        case "Wait":
+                            // do nothing
+                            break;
+                        default:
+                            throw new Error("invalid request event type");
+                    }
+
+                    if (output.type === "End" || output.type === "Error") {
+                        await this.closeRequestSession(event.event.data.id);
+                    }
+                }
+                break;
+            case EventType.RESPONSE:
+                {
+                    const responseSession = this.getResponseSession(
+                        event.event.data.id,
+                    );
+
+                    if (!responseSession) {
+                        throw new Error(
+                            `cannot find response session for id: ${event.event.data.id}, this should never happen, please report this bug`,
+                        );
+                    }
+
+                    const { output, context } =
+                        await responseSession.runExclusive((session) => ({
+                            output: session.state.transition(event.event),
+                            context: session.context,
+                        }));
+                    switch (output.type) {
+                        case "Start":
+                            await this.handleResponseStart(
+                                context,
+                                output.id,
+                                output.status,
+                                output.headers,
+                            );
+                            break;
+                        case "BodyChunk":
+                            await this.handleResponseBodyChunk(
+                                context,
+                                output.chunk,
+                            );
+                            break;
+                        case "End":
+                            await this.handleResponseEnd(
+                                context,
+                                output.trailers,
+                            );
+                            break;
+                        case "Error":
+                            await this.handleResponseError(
+                                context,
+                                output.error,
+                            );
+                            break;
+                        case "Wait":
+                            // do nothing
+                            break;
+                        default:
+                            throw new Error("invalid response event type");
+                    }
+
+                    if (output.type === "End" || output.type === "Error") {
+                        await this.closeResponseSession(event.event.data.id);
+                    }
+                }
+                break;
+            default:
+                throw new Error("invalid event type");
         }
     }
 
-    async start() {
-        if (this.isStarted) {
-            return this;
+    private startResponseSession(id: Id) {
+        console.info(
+            `[rpc_id: ${this.id}]: starting response session with id: ${id}`,
+        );
+        const responseStart = new Oneshot<ResponseStart>();
+        const responseFrame = new Mpsc<ResponseFrameEvent>();
+        const responseError = new Oneshot<ResponseError>();
+        const responseSessionContext = new ResponseSessionContext(
+            responseStart.sender,
+            responseFrame.sender,
+            responseError.sender,
+        );
+        const session = this.sessionManager.startResponseSession(
+            id,
+            responseSessionContext,
+        );
+        console.info(
+            `[rpc_id: ${this.id}]: started response session with id: ${id}`,
+        );
+        return {
+            session,
+            responseStartReceiver: responseStart.receiver,
+            responseFrameReceiver: responseFrame.receiver,
+            responseErrorReceiver: responseError.receiver,
+        };
+    }
+
+    private getRequestSession(id: Id) {
+        return this.sessionManager.getRequestSession(id);
+    }
+
+    private closeRequestSession(id: Id) {
+        return this.sessionManager.closeRequestSession(id);
+    }
+
+    private getResponseSession(id: Id) {
+        return this.sessionManager.getResponseSession(id);
+    }
+
+    private closeResponseSession(id: Id) {
+        return this.sessionManager.closeResponseSession(id);
+    }
+
+    private startRequestSession(id: Id) {
+        console.info(
+            `[rpc_id: ${this.id}]: starting request session with id: ${id}`,
+        );
+        const requestFrame = new Mpsc<RequestFrameEvent>();
+        const requestError = new Oneshot<RequestError>();
+        const requestSessionContext = new RequestSessionContext(
+            requestFrame.sender,
+            requestError.sender,
+        );
+
+        const session = this.sessionManager.startRequestSession(
+            id,
+            requestSessionContext,
+        );
+
+        console.info(
+            `[rpc_id: ${this.id}]: started request session with id: ${id}`,
+        );
+
+        return {
+            session,
+            requestFrameReceiver: requestFrame.receiver,
+            requestErrorReceiver: requestError.receiver,
+        };
+    }
+
+    private async handleRequestStart(
+        id: Id,
+        path: string,
+        headers: Headers | undefined,
+        requestFrameReceiver: MpscReceiver<RequestFrameEvent>,
+        requestErrorReceiver: OneshotReceiver<RequestError>,
+    ) {
+        const request = new Request(
+            id,
+            path,
+            headers,
+            requestFrameReceiver,
+            requestErrorReceiver,
+        );
+
+        const response = new PendingResponse(id, this.frameTransporter.sender);
+
+        const serviceContext = new ServiceContext(request, response);
+
+        this.serviceTaskBackgroundProcessor.queue(
+            this.service.run(serviceContext),
+        );
+    }
+
+    private async handleRequestBodyChunk(
+        context: RequestSessionContext,
+        chunk: Uint8Array,
+    ) {
+        context.requestFrameSender.send({
+            type: RequestFrameEventType.BODY_CHUNK,
+            chunk,
+        });
+    }
+
+    private async handleRequestEnd(
+        context: RequestSessionContext,
+        trailers: Headers | undefined,
+    ) {
+        context.requestFrameSender.send({
+            type: RequestFrameEventType.END,
+            trailers,
+        });
+    }
+
+    private async handleRequestError(
+        context: RequestSessionContext,
+        error: RequestError,
+    ) {
+        context.requestErrorSender.send(error);
+    }
+
+    private async handleResponseStart(
+        context: ResponseSessionContext,
+        id: Id,
+        status: ResponseStatusCode,
+        headers: Headers | undefined,
+    ) {
+        context.responseStartSender.send({
+            id,
+            status,
+            headers,
+        });
+    }
+
+    private async handleResponseBodyChunk(
+        context: ResponseSessionContext,
+        chunk: Uint8Array,
+    ) {
+        context.responseFrameSender.send({
+            type: ResponseFrameEventType.BODY_CHUNK,
+            chunk,
+        });
+    }
+
+    private async handleResponseEnd(
+        context: ResponseSessionContext,
+        trailers: Headers | undefined,
+    ) {
+        context.responseFrameSender.send({
+            type: ResponseFrameEventType.END,
+            trailers,
+        });
+    }
+
+    private async handleResponseError(
+        context: ResponseSessionContext,
+        error: ResponseError,
+    ) {
+        context.responseErrorSender.send(error);
+    }
+
+    private async handleClose() {
+        this.isStarted = false;
+    }
+
+    private async handlePing() {
+        await this.sendFrame(Frame.pong());
+    }
+
+    private async handlePong() {
+        if (!this.pendingPing) {
+            return;
+        } else {
+            this.pendingPing.resolve(undefined);
         }
-
-        this.isStarted = true;
-
-        this.config.transport.onReceive(this.handle.bind(this));
-
-        return this;
     }
 
-    hasPendingProbe(): boolean {
-        return this.pendingProbe !== null;
+    private async sendFrame(frame: Frame) {
+        await this.transport.send(encode(frame));
     }
+
+    private runExclusive<T>(fn: () => T): Promise<T> {
+        return this.mutex.runExclusive(fn);
+    }
+}
+
+enum EventType {
+    REQUEST = 0,
+    RESPONSE = 1,
+}
+
+type Event =
+    | {
+          type: EventType.REQUEST;
+          event: RequestEvent;
+      }
+    | { type: EventType.RESPONSE; event: ResponseEvent };
+
+function makeRequestEvent(eventType: RequestEventType, frame: Frame): Event {
+    if (
+        !(
+            frame.type === FrameType.REQUEST_START ||
+            frame.type === FrameType.REQUEST_BODY_CHUNK ||
+            frame.type === FrameType.REQUEST_END ||
+            frame.type === FrameType.REQUEST_ERROR
+        )
+    ) {
+        throw new Error("invalid request frame");
+    }
+
+    return {
+        type: EventType.REQUEST,
+        event: {
+            type: eventType,
+            data: frame.data,
+        } as unknown as RequestEvent,
+    };
+}
+
+function makeResponseEvent(eventType: ResponseEventType, frame: Frame): Event {
+    if (
+        !(
+            frame.type === FrameType.RESPONSE_START ||
+            frame.type === FrameType.RESPONSE_BODY_CHUNK ||
+            frame.type === FrameType.RESPONSE_END ||
+            frame.type === FrameType.RESPONSE_ERROR
+        )
+    ) {
+        throw new Error("invalid response frame");
+    }
+
+    return {
+        type: EventType.RESPONSE,
+        event: {
+            type: eventType,
+            data: frame.data,
+        } as unknown as ResponseEvent,
+    };
 }
