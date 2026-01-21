@@ -1,20 +1,52 @@
-import { afterAll, describe, expect, it } from "vitest";
-import { type BridgeRpc, BridgeRpcBuilder } from "@/bridge";
+import { describe, expect, it } from "vitest";
+import { BridgeRpc } from "@/bridge";
+import { decode, encode } from "@/bridge/codec-utils";
+import type { ServiceContext } from "@/bridge/service";
+import { ResponseStatusCode } from "@/bridge/status-code";
+import { delay } from "@/promise-utils";
 import { StreamTransport } from "@/transport";
 
 describe("Rpc to Rpc Integration", () => {
-    const rpcs: ReturnType<typeof createRpcs>[] = [];
-
     type Rpcs = {
-        rpc1: BridgeRpc<string[]>;
-        rpc2: BridgeRpc<string[]>;
+        rpc1: BridgeRpc;
+        rpc2: BridgeRpc;
         start: () => Promise<void>;
         stop: () => Promise<void>;
     };
 
-    afterAll(async () => {
-        await Promise.all(rpcs.map((rpc) => rpc.stop()));
-    });
+    function createTestService() {
+        return {
+            run: async (context: ServiceContext) => {
+                const { request, response } = context;
+
+                const requestBody = await readAll(request.readBody());
+
+                const activeResponse = await response.start(
+                    ResponseStatusCode.SUCCESS,
+                );
+                await activeResponse.writeBodyChunk(requestBody);
+                await activeResponse.end();
+            },
+        };
+    }
+
+    async function readAll(
+        gen: AsyncIterable<Uint8Array>,
+    ): Promise<Uint8Array> {
+        const chunks: Uint8Array[] = [];
+        for await (const chunk of gen) {
+            chunks.push(chunk);
+        }
+        const wholeChunk = new Uint8Array(
+            chunks.reduce((acc, c) => acc + c.length, 0),
+        );
+
+        for (const chunk of chunks) {
+            wholeChunk.set(chunk, wholeChunk.length - chunk.length);
+        }
+
+        return wholeChunk;
+    }
 
     function createRpcs(): Rpcs {
         const transport1Side = new TransformStream<Uint8Array, Uint8Array>();
@@ -25,28 +57,16 @@ describe("Rpc to Rpc Integration", () => {
             output: transport2Side.writable,
         });
 
-        const rpc1 = new BridgeRpcBuilder(transport1)
-            .requestHandler("rpc1test", (request) => {
-                return {
-                    data: request.data,
-                    message: "Received data from rpc1, returning it back",
-                };
-            })
-            .build();
+        const service1 = createTestService();
+
+        const rpc1 = new BridgeRpc(transport1, service1);
 
         const transport2 = new StreamTransport({
             input: transport2Side.readable,
             output: transport1Side.writable,
         });
-
-        const rpc2 = new BridgeRpcBuilder(transport2)
-            .requestHandler("rpc2test", (request) => {
-                return {
-                    data: request.data,
-                    message: "Received data from rpc2, returning it back",
-                };
-            })
-            .build();
+        const service2 = createTestService();
+        const rpc2 = new BridgeRpc(transport2, service2);
 
         const ret = {
             rpc1,
@@ -59,33 +79,43 @@ describe("Rpc to Rpc Integration", () => {
             },
         };
 
-        rpcs.push(ret);
-
         return ret;
     }
 
-    it("should be able to probe the RPC", async () => {
-        const { rpc2: rpc, start } = createRpcs();
+    async function run(
+        action: (rpc1: BridgeRpc, rpc2: BridgeRpc) => Promise<void>,
+    ) {
+        const { rpc1, rpc2, start, stop } = createRpcs();
+        try {
+            await start();
+            await action(rpc1, rpc2);
+        } finally {
+            await stop();
+        }
+    }
 
-        await start();
+    it("should be able to handle ping/pong cycle", () =>
+        run(async (rpc) => {
+            await delay(10);
+            const pingResult = await rpc.ping(100);
+            await delay(10);
 
-        const probe = await rpc.probe(100);
+            expect(pingResult).toBe(true);
+        }));
 
-        expect(probe).toBe(true);
-    });
+    it("should be able to send and receive data", () =>
+        run(async (rpc) => {
+            const reqData = { test: "test" };
+            const reqDataBytes = encode(reqData);
 
-    it("should be able to send and receive data", async () => {
-        const { rpc1, start } = createRpcs();
+            const activeRequest = await (await rpc.request("rpc2test")).start();
 
-        await start();
+            await activeRequest.writeBodyChunk(reqDataBytes);
+            const response = await activeRequest.end();
+            const activeResponse = await response.wait();
+            const responseBody = await readAll(activeResponse.readBody());
 
-        const reqData = { test: "test" };
-
-        const data = await rpc1.request("rpc2test", reqData);
-
-        expect(data).toEqual({
-            data: reqData,
-            message: "Received data from rpc2, returning it back",
-        });
-    });
+            expect(activeResponse.status).toEqual(ResponseStatusCode.SUCCESS);
+            expect(decode(responseBody)).toEqual(reqData);
+        }));
 });

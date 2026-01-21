@@ -17,7 +17,6 @@ pub mod service;
 pub mod service_error;
 mod session;
 mod status_code;
-mod stream_error;
 mod utils;
 
 pub use bridge_impl::*;
@@ -27,4 +26,3 @@ pub use dyn_map::*;
 pub use error::*;
 pub use error_code::*;
 pub use status_code::*;
-pub use stream_error::*;
