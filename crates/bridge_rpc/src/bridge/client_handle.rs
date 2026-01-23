@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
+use crate::frame::Frame;
+
 use super::client_handle_error::{ClientHandleErrorInner, ClientHandleResult};
 use derive_new::new;
 use tokio::sync::{Mutex, mpsc};
 
 use super::{
     super::Id,
-    bytes_worker::BytesWorker,
     client::request::PendingRequest,
     contexts::{RequestSessionContext, ResponseSessionContext},
+    frame_transporter::FrameTransporter,
 };
 
 type SessionManager = super::session::SessionManager<
@@ -20,7 +22,7 @@ type SessionManager = super::session::SessionManager<
 pub struct ClientHandle {
     id: Id,
     session_manager: SessionManager,
-    bytes_worker: Arc<Mutex<Option<BytesWorker>>>,
+    frame_transporter: Arc<Mutex<Option<FrameTransporter>>>,
 }
 
 impl ClientHandle {
@@ -49,11 +51,11 @@ impl ClientHandle {
 
     async fn clone_bytes_sender(
         &self,
-    ) -> ClientHandleResult<mpsc::Sender<Vec<u8>>> {
+    ) -> ClientHandleResult<mpsc::Sender<Frame>> {
         trace::trace!("cloning bytes sender");
-        let bytes_worker = self.bytes_worker.lock().await;
-        if let Some(bytes_worker) = bytes_worker.as_ref() {
-            Ok(bytes_worker.sender.clone())
+        let frame_transporter = self.frame_transporter.lock().await;
+        if let Some(frame_transporter) = frame_transporter.as_ref() {
+            Ok(frame_transporter.sender.clone())
         } else {
             Err(ClientHandleErrorInner::new_not_running().into())
         }

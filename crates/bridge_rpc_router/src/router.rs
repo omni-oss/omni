@@ -84,7 +84,7 @@ mod tests {
     #[derive(new)]
     #[allow(unused)]
     struct ResponseAwaiter {
-        response_bytes_rx: mpsc::Receiver<Vec<u8>>,
+        frame_receiver: mpsc::Receiver<Frame>,
     }
 
     #[allow(unused)]
@@ -107,14 +107,11 @@ mod tests {
 
     impl ResponseAwaiter {
         pub async fn wait(mut self) -> Result<FullResponse, ServiceError> {
-            let start_frame_bytes = self
-                .response_bytes_rx
+            let start_frame = self
+                .frame_receiver
                 .recv()
                 .await
                 .expect("failed to receive response bytes");
-
-            let start_frame =
-                rmp_serde::from_slice::<Frame>(&start_frame_bytes).unwrap();
 
             let start_frame = if let Frame::ResponseStart(start) = start_frame {
                 start
@@ -128,14 +125,11 @@ mod tests {
 
             let mut body_bytes = Vec::new();
             loop {
-                let frame_bytes = self
-                    .response_bytes_rx
+                let frame = self
+                    .frame_receiver
                     .recv()
                     .await
                     .expect("failed to receive response bytes");
-
-                let frame =
-                    rmp_serde::from_slice::<Frame>(&frame_bytes).unwrap();
 
                 if let Frame::ResponseEnd(end) = frame {
                     let end_frame = FullResponse {

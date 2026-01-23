@@ -1,3 +1,5 @@
+use crate::frame::Frame;
+
 use super::super::Id;
 use super::client::request::PendingRequest;
 use super::constants::RESPONSE_BUFFER_SIZE;
@@ -8,7 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 pub async fn create_request(
     request_id: Id,
     path: impl AsRef<str>,
-    bytes_sender: mpsc::Sender<Vec<u8>>,
+    frame_sender: mpsc::Sender<Frame>,
     session_manager: &SessionManager<
         RequestSessionContext,
         ResponseSessionContext,
@@ -34,7 +36,7 @@ pub async fn create_request(
     Ok(PendingRequest::new(
         request_id,
         path.as_ref().to_string(),
-        bytes_sender,
+        frame_sender,
         response_start_receiver,
         response_frame_receiver,
         response_error_receiver,

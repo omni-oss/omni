@@ -1,5 +1,4 @@
 mod bridge_impl;
-mod bytes_worker;
 pub mod client;
 mod client_handle;
 mod client_handle_error;
@@ -9,6 +8,7 @@ mod dyn_map;
 mod error;
 mod error_code;
 pub mod frame;
+mod frame_transporter;
 mod frame_utils;
 mod predefined_code;
 mod request_utils;
