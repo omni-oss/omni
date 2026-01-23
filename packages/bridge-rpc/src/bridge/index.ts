@@ -1,2 +1,2 @@
 export * from "./bridge-impl";
-export * from "./builder";
+export * from "./dyn-map";

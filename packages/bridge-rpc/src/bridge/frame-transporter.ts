@@ -1,0 +1,78 @@
+import { Mutex } from "async-mutex";
+import { Mpsc, type MpscReceiver } from "@/mpsc";
+import { encode } from "./codec-utils";
+import type { Frame } from "./frame";
+
+type SendBytesFn = (chunk: Uint8Array) => Promise<void>;
+
+export class FrameTransporter {
+    private task:
+        | { promise: Promise<void>; abortController: AbortController }
+        | undefined;
+    private mpsc = new Mpsc<Frame>();
+    private mutex = new Mutex();
+
+    constructor(private sendBytesFn: SendBytesFn) {}
+
+    public get sender() {
+        if (!this.isRunning) {
+            throw new Error("Worker is not running");
+        }
+
+        return this.mpsc.sender;
+    }
+
+    public get isRunning() {
+        return this.task !== undefined;
+    }
+
+    public start() {
+        return this.runExclusive(() => {
+            if (this.task !== undefined) {
+                throw new Error("FrameTransporter already started");
+            }
+            const abortController = new AbortController();
+            this.task = {
+                promise: this.run(
+                    this.sendBytesFn,
+                    this.mpsc.receiver,
+                    abortController.signal,
+                ),
+                abortController,
+            };
+        });
+    }
+
+    public async stop() {
+        return await this.runExclusive(async () => {
+            if (this.task === undefined) {
+                throw new Error("FrameTransporter not started");
+            }
+
+            this.task.abortController.abort();
+            this.mpsc.sender.close();
+
+            await this.task.promise;
+
+            this.task = undefined;
+            this.mpsc = new Mpsc<Frame>();
+        });
+    }
+
+    private async run(
+        sendBytesFn: SendBytesFn,
+        frameReceiver: MpscReceiver<Frame>,
+        token: AbortSignal,
+    ) {
+        for await (const bytes of frameReceiver) {
+            await sendBytesFn(encode(bytes));
+            if (token.aborted) {
+                return;
+            }
+        }
+    }
+
+    private runExclusive<T>(fn: () => T): Promise<T> {
+        return this.mutex.runExclusive(fn);
+    }
+}

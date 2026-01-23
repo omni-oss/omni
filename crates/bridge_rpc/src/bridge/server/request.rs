@@ -57,7 +57,7 @@ impl Request {
 pub struct RequestReader {
     id: Id,
     request_frame_rx: mpsc::Receiver<RequestFrameEvent>,
-    response_error_rx: oneshot::Receiver<RequestError>,
+    request_error_rx: oneshot::Receiver<RequestError>,
     #[new(default)]
     ended: bool,
     #[new(default)]
@@ -73,11 +73,11 @@ impl RequestReader {
             return Ok(None);
         }
 
-        return_if_error(&mut self.response_error_rx).await?;
+        return_if_error(&mut self.request_error_rx).await?;
 
         let frame = self.request_frame_rx.recv().await;
 
-        return_if_error(&mut self.response_error_rx).await?;
+        return_if_error(&mut self.request_error_rx).await?;
         if let Some(frame) = frame {
             match frame {
                 RequestFrameEvent::BodyChunk { chunk } => Ok(Some(chunk)),
