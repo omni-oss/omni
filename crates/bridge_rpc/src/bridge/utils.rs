@@ -1,6 +1,4 @@
 use serde::Serialize;
-use strum::IntoDiscriminant as _;
-use tokio::sync::mpsc;
 
 use super::{BridgeRpcErrorInner, BridgeRpcResult, frame::Frame};
 use crate::Transport;
@@ -26,24 +24,13 @@ pub async fn send_bytes_to_transport<TTransport: Transport>(
 }
 
 #[inline(always)]
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(bytes_length = ?bytes.len())))]
-pub async fn send_bytes_to_channel(
-    sender: &mpsc::Sender<Vec<u8>>,
-    bytes: Vec<u8>,
-) -> BridgeRpcResult<()> {
-    sender.send(bytes).await.map_err(|e| eyre::Report::new(e))?;
-    Ok(())
-}
-
-#[inline(always)]
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(frame_type = ?frame.discriminant())))]
-pub async fn send_frame_to_channel(
-    sender: &mpsc::Sender<Vec<u8>>,
+pub async fn send_frame_to_transport<TTransport: Transport>(
+    transport: &TTransport,
     frame: &Frame,
 ) -> BridgeRpcResult<()> {
     let bytes = serialize(frame)?;
 
-    send_bytes_to_channel(sender, bytes).await?;
+    send_bytes_to_transport(transport, bytes).await?;
 
     Ok(())
 }

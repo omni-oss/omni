@@ -56,12 +56,12 @@ pub(crate) enum RequestErrorInner {
         oneshot::error::TryRecvError,
     ),
 
-    // #[error("send error")]
-    // Send {
-    //     #[new(into)]
-    //     #[source]
-    //     error: eyre::Report,
-    // },
+    #[error("send error")]
+    Send {
+        #[new(into)]
+        #[source]
+        error: eyre::Report,
+    },
 
     // #[error("timeout")]
     // Timeout(
@@ -82,7 +82,7 @@ pub(crate) enum RequestErrorInner {
         error: BridgeRpcError,
     },
 
-    #[error("response error(call_id: {call_id}, code: {code}): {msg}", call_id = .0.id, code = .0.code, msg = .0.message)]
+    #[error("response error(response_id: {response_id}, code: {code}): {msg}", response_id = .0.id, code = .0.code, msg = .0.message)]
     ReceivedResponseErrorFrame(frame::ResponseError),
 
     #[error(transparent)]

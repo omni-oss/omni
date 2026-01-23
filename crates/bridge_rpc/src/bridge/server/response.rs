@@ -1,5 +1,8 @@
 use derive_new::new;
-use tokio::sync::mpsc;
+use strum::IntoDiscriminant as _;
+use tokio::sync::mpsc::{self, error::SendError};
+
+use crate::server::response_error::ResponseErrorInner;
 
 pub use super::response_error as error;
 
@@ -7,13 +10,13 @@ use error::ResponseResult;
 
 use super::super::{
     super::Id, Headers, ResponseErrorCode, ResponseStatusCode, Trailers,
-    frame::Frame, utils::send_frame_to_channel,
+    frame::Frame,
 };
 
 #[derive(new)]
 pub struct PendingResponse {
     id: Id,
-    tx: mpsc::Sender<Vec<u8>>,
+    frame_sender: mpsc::Sender<Frame>,
 }
 
 impl PendingResponse {
@@ -39,20 +42,20 @@ impl PendingResponse {
         status: ResponseStatusCode,
         headers: Option<Headers>,
     ) -> ResponseResult<ActiveResponse> {
-        send_frame_to_channel(
-            &self.tx,
-            &Frame::response_start(self.id, status, headers),
+        send_frame(
+            &self.frame_sender,
+            Frame::response_start(self.id, status, headers),
         )
         .await?;
 
-        Ok(ActiveResponse::new(self.id, self.tx))
+        Ok(ActiveResponse::new(self.id, self.frame_sender))
     }
 }
 
 struct ResponseDataImpl {
     id: Id,
     is_ended: bool,
-    tx: mpsc::Sender<Vec<u8>>,
+    frame_sender: mpsc::Sender<Frame>,
 }
 
 impl Drop for ResponseDataImpl {
@@ -61,10 +64,10 @@ impl Drop for ResponseDataImpl {
             return;
         }
 
-        let tx = self.tx.clone();
+        let tx = self.frame_sender.clone();
         let frame = Frame::response_end(self.id, None);
         tokio::spawn(async move {
-            let result = send_frame_to_channel(&tx, &frame).await;
+            let result = tx.send(frame).await;
 
             if let Err(e) = result {
                 trace::error!("failed to send stream end frame: {}", e);
@@ -78,12 +81,12 @@ pub struct ActiveResponse {
 }
 
 impl ActiveResponse {
-    pub(self) fn new(id: Id, tx: mpsc::Sender<Vec<u8>>) -> Self {
+    pub(self) fn new(id: Id, tx: mpsc::Sender<Frame>) -> Self {
         Self {
             data: ResponseDataImpl {
                 id: id,
                 is_ended: false,
-                tx,
+                frame_sender: tx,
             },
         }
     }
@@ -101,9 +104,9 @@ impl ActiveResponse {
         &mut self,
         bytes: Vec<u8>,
     ) -> ResponseResult<()> {
-        send_frame_to_channel(
-            &self.data.tx,
-            &Frame::response_body_chunk(self.data.id, bytes),
+        send_frame(
+            &self.data.frame_sender,
+            Frame::response_body_chunk(self.data.id, bytes),
         )
         .await?;
 
@@ -129,9 +132,9 @@ impl ActiveResponse {
     ) -> ResponseResult<()> {
         self.data.is_ended = true;
 
-        send_frame_to_channel(
-            &self.data.tx,
-            &Frame::response_end(self.data.id, trailers),
+        send_frame(
+            &self.data.frame_sender,
+            Frame::response_end(self.data.id, trailers),
         )
         .await?;
 
@@ -144,12 +147,31 @@ impl ActiveResponse {
         code: ResponseErrorCode,
         message: impl Into<String>,
     ) -> ResponseResult<()> {
-        send_frame_to_channel(
-            &self.data.tx,
-            &Frame::response_error(self.data.id, code, message.into()),
+        send_frame(
+            &self.data.frame_sender,
+            Frame::response_error(self.data.id, code, message.into()),
         )
         .await?;
 
         Ok(())
     }
+}
+
+async fn send_frame(
+    frame_sender: &mpsc::Sender<Frame>,
+    frame: Frame,
+) -> ResponseResult<()> {
+    let result = frame_sender.send(frame).await;
+
+    if let Err(SendError(frame)) = result {
+        return Err(ResponseErrorInner::Send {
+            error: eyre::eyre!(
+                "failed to send frame of type {}",
+                frame.discriminant()
+            ),
+        }
+        .into());
+    }
+
+    Ok(())
 }
