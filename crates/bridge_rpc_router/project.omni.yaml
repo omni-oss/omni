@@ -4,3 +4,4 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
   - trace
+  - bridge_rpc

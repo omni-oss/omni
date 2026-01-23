@@ -55,12 +55,12 @@ pub(crate) enum ResponseErrorInner {
         oneshot::error::TryRecvError,
     ),
 
-    // #[error("send error")]
-    // Send {
-    //     #[new(into)]
-    //     #[source]
-    //     error: eyre::Report,
-    // },
+    #[error("send error")]
+    Send {
+        #[new(into)]
+        #[source]
+        error: eyre::Report,
+    },
 
     // #[error("timeout")]
     // Timeout(
