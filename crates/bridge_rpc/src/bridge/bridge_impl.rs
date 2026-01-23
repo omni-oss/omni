@@ -19,13 +19,13 @@ use super::BridgeRpcError;
 use super::BridgeRpcErrorInner;
 use super::BridgeRpcResult;
 use super::ResponseStatusCode;
-use super::bytes_worker::BytesWorker;
 use super::client::request::*;
 use super::client::response::ResponseFrameEvent;
 use super::client_handle::ClientHandle;
 use super::constants::{BYTES_WORKER_BUFFER_SIZE, RESPONSE_BUFFER_SIZE};
 use super::contexts::*;
 use super::frame::*;
+use super::frame_transporter::FrameTransporter;
 use super::server;
 use super::server::request::RequestFrameEvent;
 use super::service::{
@@ -33,10 +33,9 @@ use super::service::{
     error::{ServiceError, ServiceResult},
 };
 use super::session::*;
-use super::utils::send_bytes_to_transport;
-use super::utils::send_frame_to_channel;
 use super::{Headers, Trailers};
 use crate::Transport;
+use crate::bridge::utils::send_frame_to_transport;
 
 pub type BoxStream<'a, T> = Pin<Box<dyn TokioStream<Item = T> + Send + 'a>>;
 
@@ -45,7 +44,7 @@ pub struct BridgeRpc<TTransport: Transport, TService: Service> {
     service: Arc<TService>,
     transport: Arc<TTransport>,
     pending_ping: Arc<Mutex<Option<oneshot::Sender<()>>>>,
-    bytes_worker: Arc<Mutex<Option<BytesWorker>>>,
+    frame_transporter: Arc<Mutex<Option<FrameTransporter>>>,
     service_tasks: Arc<Mutex<Option<JoinSet<Result<(), ServiceError>>>>>,
     session_manager:
         SessionManager<RequestSessionContext, ResponseSessionContext>,
@@ -60,7 +59,7 @@ impl<TTransport: Transport, TService: Service> Clone
             transport: self.transport.clone(),
             pending_ping: self.pending_ping.clone(),
             service: self.service.clone(),
-            bytes_worker: self.bytes_worker.clone(),
+            frame_transporter: self.frame_transporter.clone(),
             service_tasks: self.service_tasks.clone(),
             session_manager: self.session_manager.clone(),
         }
@@ -80,19 +79,19 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             transport: Arc::new(transport),
             service: Arc::new(service),
             pending_ping: Arc::new(Mutex::new(None)),
-            bytes_worker: Arc::new(Mutex::new(None)),
+            frame_transporter: Arc::new(Mutex::new(None)),
             service_tasks: Arc::new(Mutex::new(None)),
             session_manager: SessionManager::new(),
         }
     }
 }
 
-macro_rules! do_work_with_bytes_worker {
+macro_rules! do_work_with_frame_transporter {
     ($self:expr, $work:expr) => {
         async move {
-            let bytes_worker = $self.bytes_worker.lock().await;
-            if let Some(bytes_worker) = bytes_worker.as_ref() {
-                $work(bytes_worker).await
+            let frame_transporter = $self.frame_transporter.lock().await;
+            if let Some(frame_transporter) = frame_transporter.as_ref() {
+                $work(frame_transporter).await
             } else {
                 println!("not running");
                 Err(BridgeRpcErrorInner::new_not_running().into())
@@ -108,7 +107,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         request_id: Id,
         path: impl AsRef<str>,
     ) -> BridgeRpcResult<PendingRequest> {
-        let tx = self.clone_bytes_sender().await?;
+        let tx = self.clone_frame_sender().await?;
         Ok(super::request_utils::create_request(
             request_id,
             path,
@@ -131,7 +130,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         Ok(ClientHandle::new(
             self.id,
             self.session_manager.clone(),
-            self.bytes_worker.clone(),
+            self.frame_transporter.clone(),
         ))
     }
 
@@ -144,9 +143,12 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         let (tx, rx) = oneshot::channel();
         self.pending_ping.lock().await.replace(tx);
 
-        do_work_with_bytes_worker!(self, async |worker: &BytesWorker| {
-            send_frame_to_channel(&worker.sender, &Frame::ping()).await
-        })
+        do_work_with_frame_transporter!(
+            self,
+            async |transporter: &FrameTransporter| {
+                transporter.transport(Frame::ping()).await
+            }
+        )
         .await?;
 
         let result = tokio::time::timeout(timeout, rx.map(|_| true))
@@ -167,9 +169,12 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     }
 
     pub async fn close(&self) -> BridgeRpcResult<()> {
-        do_work_with_bytes_worker!(self, async |worker: &BytesWorker| {
-            send_frame_to_channel(&worker.sender, &Frame::close()).await
-        })
+        do_work_with_frame_transporter!(
+            self,
+            async |frame_transporter: &FrameTransporter| {
+                frame_transporter.transport(Frame::close()).await
+            }
+        )
         .await
     }
 
@@ -177,8 +182,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     pub async fn run(&self) -> BridgeRpcResult<()> {
         self.clear_handler_tasks().await?;
 
-        let (bytes_sender, mut byte_receiver) =
-            mpsc::channel(BYTES_WORKER_BUFFER_SIZE);
+        let (frame_sender, mut frame_receiver) =
+            mpsc::channel::<Frame>(BYTES_WORKER_BUFFER_SIZE);
         let task = {
             let transport = self.transport.clone();
 
@@ -187,9 +192,9 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             };
 
             tokio::spawn(async move {
-                while let Some(bytes) = byte_receiver.recv().await {
+                while let Some(frame) = frame_receiver.recv().await {
                     let fut =
-                        send_bytes_to_transport(transport.as_ref(), bytes);
+                        send_frame_to_transport(transport.as_ref(), &frame);
 
                     trace::if_enabled! {
                         let span = trace::info_span!("run_send_task", rpc_id = ?id);
@@ -211,15 +216,15 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         };
         let abort_handle = task.abort_handle();
 
-        let bytes_worker = BytesWorker {
-            sender: bytes_sender.clone(),
+        let bytes_worker = FrameTransporter {
+            sender: frame_sender.clone(),
             abort_handle,
         };
 
-        let existing = self.bytes_worker.lock().await.replace(bytes_worker);
+        let existing =
+            self.frame_transporter.lock().await.replace(bytes_worker);
 
         if let Some(existing) = existing {
-            drop(existing.sender);
             existing.abort_handle.abort();
 
             trace::trace!("closing existing bytes worker");
@@ -233,17 +238,16 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                 BridgeRpcErrorInner::new_transport(eyre::eyre!(e.to_string()))
             })?;
 
-            let result = self.handle_receive(bytes, &bytes_sender).await?;
+            let result = self.handle_receive(bytes, &frame_sender).await?;
             if result.is_break() {
                 trace::trace!("received stop signal, stopping rpc loop");
                 break;
             }
         }
 
-        let bytes_worker = self.bytes_worker.lock().await.take();
+        let frame_transporter = self.frame_transporter.lock().await.take();
 
-        if let Some(bytes_worker) = bytes_worker {
-            drop(bytes_worker.sender);
+        if let Some(bytes_worker) = frame_transporter {
             bytes_worker.abort_handle.abort();
         }
 
@@ -325,7 +329,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     async fn handle_receive(
         &self,
         bytes: bytes::Bytes,
-        data_tx: &mpsc::Sender<Vec<u8>>,
+        frame_sender: &mpsc::Sender<Frame>,
     ) -> Result<ControlFlow<()>, BridgeRpcError> {
         let incoming: Frame = rmp_serde::from_slice(&bytes)
             .map_err(BridgeRpcErrorInner::Deserialization)?;
@@ -342,17 +346,17 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         let ev = match incoming {
             Frame::Close => {
-                self.handle_close(data_tx).await?;
+                self.handle_close().await?;
 
                 return Ok(ControlFlow::Break(()));
             }
             Frame::Ping => {
-                self.handle_ping(data_tx).await?;
+                self.handle_ping(frame_sender).await?;
 
                 return Ok(ControlFlow::Continue(()));
             }
             Frame::Pong => {
-                self.handle_pong(data_tx).await?;
+                self.handle_pong().await?;
 
                 return Ok(ControlFlow::Continue(()));
             }
@@ -509,27 +513,25 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         }
     }
 
-    async fn handle_close(
-        &self,
-        _data_tx: &mpsc::Sender<Vec<u8>>,
-    ) -> Result<(), BridgeRpcError> {
+    async fn handle_close(&self) -> Result<(), BridgeRpcError> {
         trace::trace!("received close frame, stopping rpc");
         Ok(())
     }
 
     async fn handle_ping(
         &self,
-        data_tx: &mpsc::Sender<Vec<u8>>,
+        frame_sender: &mpsc::Sender<Frame>,
     ) -> Result<(), BridgeRpcError> {
         trace::debug!("received probe, sending probe ack");
-        send_frame_to_channel(data_tx, &Frame::pong()).await?;
+        frame_sender.send(Frame::pong()).await.map_err(|_| {
+            BridgeRpcErrorInner::new_send(eyre::eyre!(
+                "failed to send probe ack"
+            ))
+        })?;
         Ok(())
     }
 
-    async fn handle_pong(
-        &self,
-        _data_tx: &mpsc::Sender<Vec<u8>>,
-    ) -> Result<(), BridgeRpcError> {
+    async fn handle_pong(&self) -> Result<(), BridgeRpcError> {
         trace::debug!("received probe ack");
         if let Some(rx) = self.pending_ping.lock().await.take() {
             rx.send(()).map_err(|_| {
@@ -552,7 +554,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         trace::trace!("received request start, starting request session");
         let service = self.service.clone();
 
-        let response_bytes_tx = self.clone_bytes_sender().await?;
+        let frame_sender = self.clone_frame_sender().await?;
 
         let request = server::request::Request::new(
             id,
@@ -562,8 +564,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             request_error_receiver,
         );
 
-        let response =
-            server::response::PendingResponse::new(id, response_bytes_tx);
+        let response = server::response::PendingResponse::new(id, frame_sender);
 
         self.spawn_service_task(async move {
             trace::trace!("running service");
@@ -751,13 +752,11 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         Ok(())
     }
 
-    async fn clone_bytes_sender(
-        &self,
-    ) -> BridgeRpcResult<mpsc::Sender<Vec<u8>>> {
+    async fn clone_frame_sender(&self) -> BridgeRpcResult<mpsc::Sender<Frame>> {
         trace::trace!("cloning bytes sender");
-        let bytes_worker = self.bytes_worker.lock().await;
-        if let Some(bytes_worker) = bytes_worker.as_ref() {
-            Ok(bytes_worker.sender.clone())
+        let transporter = self.frame_transporter.lock().await;
+        if let Some(transporter) = transporter.as_ref() {
+            Ok(transporter.sender.clone())
         } else {
             Err(BridgeRpcErrorInner::new_not_running().into())
         }
