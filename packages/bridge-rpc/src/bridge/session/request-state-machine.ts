@@ -84,7 +84,10 @@ export class RequestStateMachine {
                         if (this._state === RequestState.STARTED) {
                             this._state = RequestState.BODY_CHUNKS_RECEIVING;
                         }
-                        return { type: "BodyChunk", chunk: event.data.chunk };
+                        return {
+                            type: "BodyChunk",
+                            chunk: event.data.chunk,
+                        };
 
                     case RequestEventType.ERROR:
                         this._state = RequestState.ERRORED;

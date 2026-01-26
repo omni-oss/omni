@@ -43,6 +43,10 @@ export class Id {
         return this.value;
     }
 
+    public toNumber(): number {
+        return Number(this.value);
+    }
+
     public valueOf(): bigint {
         return this.value;
     }
