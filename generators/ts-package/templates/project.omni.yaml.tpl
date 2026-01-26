@@ -12,13 +12,11 @@ tasks:
   test:unit:
     command: bun x vitest --config ./vitest.config.unit.ts run
 
-{% if prompts.integration_test %}
   test:integration:
     enabled: {{ prompts.integration_test }}
     command: bun x vitest --config ./vitest.config.integration.ts run
     dependencies:
       - test:unit
-{% endif %}
 
   test:
     dependencies:
