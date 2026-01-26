@@ -95,7 +95,10 @@ export class ResponseStateMachine {
                 switch (event.type) {
                     case ResponseEventType.BODY_CHUNK:
                         this._state = ResponseState.BODY_CHUNKS_RECEIVING;
-                        return { type: "BodyChunk", chunk: event.data.chunk };
+                        return {
+                            type: "BodyChunk",
+                            chunk: event.data.chunk,
+                        };
 
                     case ResponseEventType.ERROR:
                         this._state = ResponseState.ERRORED;

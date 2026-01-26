@@ -49,11 +49,11 @@ export class SessionManager<TRequestContext, TResponseContext> {
     public async closeRequestSession(id: Id): Promise<void> {
         const entry = this.requestSessions.get(id.getValue());
         if (entry) {
-            this.requestSessions.delete(id.getValue());
             // Lock the session to ensure no other transitions are happening during close
             await entry.runExclusive(async (session) => {
                 await session.close();
             });
+            this.requestSessions.delete(id.getValue());
         }
     }
 
@@ -78,10 +78,10 @@ export class SessionManager<TRequestContext, TResponseContext> {
     public async closeResponseSession(id: Id): Promise<void> {
         const entry = this.responseSessions.get(id.getValue());
         if (entry) {
-            this.responseSessions.delete(id.getValue());
             await entry.runExclusive(async (session) => {
                 await session.close();
             });
+            this.responseSessions.delete(id.getValue());
         }
     }
 }
