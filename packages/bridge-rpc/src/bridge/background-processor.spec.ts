@@ -20,8 +20,8 @@ describe("BackgroundProcesser", () => {
 
         await sleep(20);
 
-        expect(Object.keys(processor.errors)).toHaveLength(1);
-        expect(processor.errors[id]).toBeInstanceOf(Error);
+        expect(processor.hasError(id)).toBeTruthy();
+        expect(processor.getError(id)).toBeInstanceOf(Error);
         await processor.awaitAll();
     });
 });

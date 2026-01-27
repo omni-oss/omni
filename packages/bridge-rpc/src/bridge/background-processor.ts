@@ -25,8 +25,12 @@ export class BackgroundProcessor {
         await Promise.all(this._tasks);
     }
 
-    public get errors() {
-        return this._errors;
+    public getError(id: string) {
+        return this._errors[id];
+    }
+
+    public hasError(id: string) {
+        return this._errors[id] !== undefined;
     }
 
     public clearErrors() {
