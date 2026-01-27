@@ -56,6 +56,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/node": "24.10.1",
         "typescript": "^5.9.3",
         "vite": "^7.2.2",
@@ -79,6 +80,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/node": "25.0.10",
         "typescript": "^5.9.3",
         "vite": "^7.3.1",
@@ -95,6 +97,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/node": "25.0.10",
         "typescript": "^5.9.3",
         "vite": "^7.3.1",
@@ -107,6 +110,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/node": "24.10.1",
         "typescript": "^5.9.3",
         "vite": "^7.2.2",
@@ -122,6 +126,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/bun": "^1.3.6",
         "@types/deno": "^2.5.0",
         "@types/node": "25.0.10",
@@ -153,6 +158,20 @@
       },
       "peerDependencies": {
         "vite": "^6.3.2",
+      },
+    },
+    "packages/vitest-config": {
+      "name": "@omni-oss/vitest-config",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:*",
+        "@omni-oss/vite-config": "workspace:*",
+        "unplugin-dts": "^1.0.0-beta.6",
+        "vite-tsconfig-paths": "^6.0.5",
+      },
+      "peerDependencies": {
+        "vite": "^7.3.1",
+        "vitest": "^4.0.18",
       },
     },
     "scripts/apply-version": {
@@ -408,6 +427,8 @@
     "@omni-oss/tsconfig": ["@omni-oss/tsconfig@workspace:packages/tsconfig"],
 
     "@omni-oss/vite-config": ["@omni-oss/vite-config@workspace:packages/vite-config"],
+
+    "@omni-oss/vitest-config": ["@omni-oss/vitest-config@workspace:packages/vitest-config"],
 
     "@oozcitak/dom": ["@oozcitak/dom@2.0.2", "", { "dependencies": { "@oozcitak/infra": "^2.0.2", "@oozcitak/url": "^3.0.0", "@oozcitak/util": "^10.0.0" } }, "sha512-GjpKhkSYC3Mj4+lfwEyI1dqnsKTgwGy48ytZEhm4A/xnH/8z9M3ZVXKr/YGQi3uCLs1AEBS+x5T2JPiueEDW8w=="],
 

@@ -17,6 +17,7 @@
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "vite": "^7.3.1",
         "vitest": "^4.0.18",
         "typescript": "^5.9.3",
