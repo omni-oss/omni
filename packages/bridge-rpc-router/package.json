@@ -1,8 +1,18 @@
 {
     "name": "@omni-oss/bridge-rpc-router",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.0",
     "exports": {
-        ".": "./src/index.ts"
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/bridge-rpc-router.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/bridge-rpc-router.cjs"
+            }
+        }
     },
     "dependencies": {
         "@omni-oss/channels": "workspace:*",

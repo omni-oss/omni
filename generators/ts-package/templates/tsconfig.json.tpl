@@ -3,15 +3,5 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 	},
-	"exclude": [
-        "coverage",
-		"dist",
-		"node_modules",
-		"output",
-		".output",
-		".vercel",
-		".solid",
-		"public",
-		"build"
-	]
+    "include": ["${configDir}/src/**/*.*"],
 }

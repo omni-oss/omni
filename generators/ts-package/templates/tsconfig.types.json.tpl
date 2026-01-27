@@ -6,15 +6,6 @@
         "declaration": true,
         "emitDeclarationOnly": true
     },
-    "exclude": [
-        "coverage",
-        "dist",
-        "node_modules",
-        "output",
-        ".output",
-        ".vercel",
-        ".solid",
-        "public",
-        "build"
-    ]
+    "include": ["${configDir}/src/**/*.*"],
+    "exclude": ["${configDir}/src/**/*.{spec,test}.*"]
 }

@@ -1,8 +1,18 @@
 {
     "name": "@omni-oss/system-interface",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.0",
     "exports": {
-        ".": "./src/index.ts"
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.cjs"
+            }
+        }
     },
     "dependencies": {
         "memfs": "^4.56.10"

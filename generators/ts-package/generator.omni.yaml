@@ -15,6 +15,16 @@ prompts:
           Package name must only contain alphanumeric characters, underscores, and hyphens,
           and must start with a letter
 
+  - name: package_type
+    type: select
+    message: What type of package is this?
+    options:
+      - name: Library
+        value: lib
+      - name: Application
+        value: app
+    default: lib
+
   - name: unit_test
     type: confirm
     message: Do you want to add unit tests?

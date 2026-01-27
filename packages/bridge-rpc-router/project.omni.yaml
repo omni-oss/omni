@@ -2,26 +2,17 @@
 name: "@omni-oss/bridge-rpc-router"
 
 extends:
-  - "@workspace/omni/presets/ts-lib.omni.yaml"
+  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
 tasks:
   build:
-    enabled: false
-    command: bun x vite build
+    enabled: true
 
   test:unit:
-    command: bun x vitest --config ./vitest.config.unit.ts run
+    enabled: true
 
   test:integration:
     enabled: true
-    command: bun x vitest --config ./vitest.config.integration.ts run
-    dependencies:
-      - test:unit
-
-  test:
-    dependencies:
-      - test:unit
-      - test:integration
 
 dependencies:
   - "@omni-oss/bridge-rpc"

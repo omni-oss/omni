@@ -1,11 +1,51 @@
 {
     "name": "@omni-oss/bridge-rpc",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.0",
     "exports": {
-        ".": "./src/index.ts",
-        "./frame": "./src/bridge/frame.ts",
-        "./client": "./src/bridge/client/index.ts",
-        "./server": "./src/bridge/server/index.ts"
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.cjs"
+            }
+        },
+        "./frame": {
+            "types": "./dist/bridge/frame.dts",
+            "import": {
+                "development": "./src/bridge/frame.ts",
+                "default": "./dist/frame.mjs"
+            },
+            "require": {
+                "development": "./src/bridge/frame.ts",
+                "default": "./dist/frame.cjs"
+            }
+        },
+        "./client": {
+            "types": "./dist/bridge/client/index.d.ts",
+            "import": {
+                "development": "./src/bridge/client/index.ts",
+                "default": "./dist/client.mjs"
+            },
+            "require": {
+                "development": "./src/bridge/client/index.ts",
+                "default": "./dist/client.cjs"
+            }
+        },
+        "./server": {
+            "types": "./dist/bridge/server/index.d.ts",
+            "import": {
+                "development": "./src/bridge/server/index.ts",
+                "default": "./dist/server.mjs"
+            },
+            "require": {
+                "development": "./src/bridge/server/index.ts",
+                "default": "./dist/server.cjs"
+            }
+        }
     },
     "dependencies": {
         "@omni-oss/async-utils": "workspace:*",

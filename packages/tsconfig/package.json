@@ -1,8 +1,11 @@
 {
     "name": "@omni-oss/tsconfig",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.0",
     "description": "",
-    "main": "base.json",
+    "exports": {
+        "./base.json": "./base.json",
+        "./with-paths.json": "./with-paths.json"
+    },
     "keywords": [],
     "author": "",
     "license": "ISC",
