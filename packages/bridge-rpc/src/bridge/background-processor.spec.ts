@@ -30,6 +30,22 @@ describe("BackgroundProcesser", () => {
             BackgroundProcessorCompoundError,
         );
     });
+
+    it("should clear errors after awaitAll", async () => {
+        const processor = new BackgroundProcessor();
+        const id = processor.queue(Promise.reject(new Error("test")));
+        processor.queue(sleep(10));
+
+        await sleep(20);
+
+        expect(processor.hasError(id)).toBeTruthy();
+        expect(processor.getError(id)).toBeInstanceOf(Error);
+        await expect(processor.awaitAll()).rejects.toThrowError(
+            BackgroundProcessorCompoundError,
+        );
+        expect(processor.hasError(id)).toBeFalsy();
+        expect(processor.getError(id)).toBeUndefined();
+    });
 });
 
 function sleep(ms: number) {
