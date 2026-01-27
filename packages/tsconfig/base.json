@@ -3,6 +3,7 @@
     "extends": ["@rencedm112/tsconfig/base.json"],
     "compilerOptions": {
         "moduleResolution": "Bundler",
+        "customConditions": ["development"],
         "module": "ESNext",
         "skipLibCheck": true
     }

@@ -1,7 +1,7 @@
 {
     "name": "@omni-oss/vite-config",
     "type": "module",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.0",
     "exports": {
         "./*": {
             "import": "./src/*.ts",
