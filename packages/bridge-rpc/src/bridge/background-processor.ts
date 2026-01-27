@@ -26,6 +26,7 @@ export class BackgroundProcessor {
 
         const errors = Object.values(this._errors);
         if (errors.length > 0) {
+            this._errors = {};
             throw new BackgroundProcessorCompoundError(errors);
         }
     }
