@@ -1,5 +1,5 @@
+import { Mpsc, type MpscReceiver } from "@omni-oss/channels";
 import { Mutex } from "async-mutex";
-import { Mpsc, type MpscReceiver } from "@/mpsc";
 import { encode } from "./codec-utils";
 import type { Frame } from "./frame";
 
