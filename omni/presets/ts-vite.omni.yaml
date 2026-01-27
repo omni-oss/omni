@@ -25,11 +25,6 @@ tasks:
             - "./vite.config.ts"
             - "./vitest.config.integration.ts"
 
-  test:
-    dependencies:
-      - test:unit
-      - test:integration
-
   build:
     command: bun x vite build
     cache:
