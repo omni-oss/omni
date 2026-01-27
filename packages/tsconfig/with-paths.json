@@ -6,7 +6,5 @@
         "paths": {
             "@/*": ["${configDir}/src/*"]
         }
-    },
-    "include": ["${configDir}/src/**/*.*"],
-    "exclude": ["${configDir}/src/**/*.{spec,test}.*"]
+    }
 }
