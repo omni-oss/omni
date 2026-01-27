@@ -6,11 +6,11 @@
             "types": "./dist/index.d.ts",
             "import": {
                 "development": "./src/index.ts",
-                "default": "./dist/bridge-rpc-router.mjs"
+                "default": "./dist/index.mjs"
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/bridge-rpc-router.cjs"
+                "default": "./dist/index.cjs"
             }
         }
     },

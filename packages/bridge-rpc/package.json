@@ -14,7 +14,7 @@
             }
         },
         "./frame": {
-            "types": "./dist/bridge/frame.dts",
+            "types": "./dist/frame.d.ts",
             "import": {
                 "development": "./src/bridge/frame.ts",
                 "default": "./dist/frame.mjs"
@@ -25,7 +25,7 @@
             }
         },
         "./client": {
-            "types": "./dist/bridge/client/index.d.ts",
+            "types": "./dist/client.d.ts",
             "import": {
                 "development": "./src/bridge/client/index.ts",
                 "default": "./dist/client.mjs"
@@ -36,7 +36,7 @@
             }
         },
         "./server": {
-            "types": "./dist/bridge/server/index.d.ts",
+            "types": "./dist/server.d.ts",
             "import": {
                 "development": "./src/bridge/server/index.ts",
                 "default": "./dist/server.mjs"
