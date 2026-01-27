@@ -46,11 +46,9 @@ describe("Mpsc", () => {
         const results: number[] = [];
 
         // Producer
-        (async () => {
-            tx.send(10);
-            tx.send(20);
-            tx.close();
-        })();
+        tx.send(10);
+        tx.send(20);
+        tx.close();
 
         // Consumer
         for await (const val of rx) {

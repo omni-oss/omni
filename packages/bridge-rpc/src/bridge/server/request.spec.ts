@@ -4,20 +4,18 @@ import { Mpsc } from "@/mpsc";
 import { Oneshot } from "@/oneshot";
 import { readAll } from "../byte-array-utils";
 import type { Headers } from "../dyn-map";
-import type { RequestError, RequestStart, ResponseError, ResponseStart } from "../frame";
-import { ResponseStatusCode } from "../status-code";
+import { RequestErrorCode } from "../error-code";
+import type { RequestError } from "../frame";
 import {
     Request,
     type RequestFrameEvent,
-    RequestFrameEventType
+    RequestFrameEventType,
 } from "./request";
-import { RequestErrorCode } from "../error-code";
-
 
 describe("Response", () => {
     it("should be able to read body chunk", async () => {
         const data = new Uint8Array([1, 2, 3]);
-        const { request} = createRequest(
+        const { request } = createRequest(
             "/test",
             {},
             {
@@ -65,7 +63,7 @@ describe("Response", () => {
     });
 
     it("should throw error when received error frame", async () => {
-        const {id, request, requestFrameError } = createRequest(
+        const { id, request, requestFrameError } = createRequest(
             "/test",
             {},
             {
@@ -93,8 +91,7 @@ function createRequest(
     },
 ) {
     const id = Id.create();
-    const {  requestFrame: requestFrame, requestError: requestError } = createPipes();
-
+    const { requestFrame, requestError } = createPipes();
 
     if (body) {
         for (const chunk of body.chunks) {
