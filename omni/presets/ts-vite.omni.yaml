@@ -32,6 +32,3 @@ tasks:
         files:
           append:
             - "./vite.config.ts"
-
-meta:
-  language: typescript
