@@ -1,3 +1,4 @@
+import { Mutex } from "async-mutex";
 import type { MaybePromise, Transport } from "./interface";
 import { TransportReadFramer } from "./transport-read-framer";
 import { TransportWriteFramer } from "./transport-write-framer";
@@ -8,6 +9,7 @@ export abstract class AbstractTransport implements Transport {
     > = [];
     private writeFramer = new TransportWriteFramer();
     private readFramer = new TransportReadFramer();
+    private sendMutex = new Mutex();
 
     protected abstract sendBytes(data: Uint8Array): Promise<void>;
 
@@ -23,10 +25,12 @@ export abstract class AbstractTransport implements Transport {
         }
     };
 
-    async send(data: Uint8Array): Promise<void> {
-        const [lengthPrefix, framedData] = this.writeFramer.frame(data);
-        await this.sendBytes(lengthPrefix);
-        await this.sendBytes(framedData);
+    send(data: Uint8Array): Promise<void> {
+        return this.sendMutex.runExclusive(async () => {
+            const [lengthPrefix, framedData] = this.writeFramer.frame(data);
+            await this.sendBytes(lengthPrefix);
+            await this.sendBytes(framedData);
+        });
     }
 
     onReceive(callback: (data: Uint8Array) => void): void {

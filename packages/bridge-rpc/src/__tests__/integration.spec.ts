@@ -82,29 +82,34 @@ describe("Rpc to Rpc Integration", () => {
         return ret;
     }
 
-    async function run(
+    function withRpcs(
         action: (rpc1: BridgeRpc, rpc2: BridgeRpc) => Promise<void>,
     ) {
-        const { rpc1, rpc2, start, stop } = createRpcs();
-        try {
-            await start();
-            await action(rpc1, rpc2);
-        } finally {
-            await stop();
-        }
+        return async () => {
+            const { rpc1, rpc2, start, stop } = createRpcs();
+            try {
+                await start();
+                await action(rpc1, rpc2);
+            } finally {
+                await stop();
+            }
+        };
     }
 
-    it("should be able to handle ping/pong cycle", () =>
-        run(async (rpc) => {
+    it(
+        "should be able to handle ping/pong cycle",
+        withRpcs(async (rpc) => {
             await delay(10);
             const pingResult = await rpc.ping(100);
             await delay(10);
 
             expect(pingResult).toBe(true);
-        }));
+        }),
+    );
 
-    it("should be able to send and receive data", () =>
-        run(async (rpc) => {
+    it(
+        "should be able to send and receive data",
+        withRpcs(async (rpc) => {
             const reqData = { test: "test" };
             const reqDataBytes = encode(reqData);
 
@@ -117,5 +122,6 @@ describe("Rpc to Rpc Integration", () => {
 
             expect(activeResponse.status).toEqual(ResponseStatusCode.SUCCESS);
             expect(decode(responseBody)).toEqual(reqData);
-        }));
+        }),
+    );
 });

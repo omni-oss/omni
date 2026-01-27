@@ -1,3 +1,4 @@
+import { Mutex } from "async-mutex";
 import { AbstractTransport } from "./abstract-transport";
 import type { Transport } from "./interface";
 
@@ -8,6 +9,7 @@ export type StreamTransportConfig = {
 
 export class StreamTransport extends AbstractTransport implements Transport {
     private writer: WritableStreamDefaultWriter<Uint8Array>;
+
     constructor(config: StreamTransportConfig) {
         super();
         this.writer = config.output.getWriter();
@@ -18,7 +20,7 @@ export class StreamTransport extends AbstractTransport implements Transport {
         );
     }
 
-    protected override async sendBytes(data: Uint8Array): Promise<void> {
-        await this.writer.write(data);
+    protected override sendBytes(data: Uint8Array): Promise<void> {
+        return this.writer.write(data);
     }
 }

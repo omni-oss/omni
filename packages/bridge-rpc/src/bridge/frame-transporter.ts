@@ -6,9 +6,7 @@ import type { Frame } from "./frame";
 type SendBytesFn = (chunk: Uint8Array) => Promise<void>;
 
 export class FrameTransporter {
-    private task:
-        | { promise: Promise<void>; abortController: AbortController }
-        | undefined;
+    private task: { promise: Promise<void> } | undefined;
     private mpsc = new Mpsc<Frame>();
     private mutex = new Mutex();
 
@@ -31,14 +29,9 @@ export class FrameTransporter {
             if (this.task !== undefined) {
                 throw new Error("FrameTransporter already started");
             }
-            const abortController = new AbortController();
+
             this.task = {
-                promise: this.run(
-                    this.sendBytesFn,
-                    this.mpsc.receiver,
-                    abortController.signal,
-                ),
-                abortController,
+                promise: this.run(this.sendBytesFn, this.mpsc.receiver),
             };
         });
     }
@@ -49,7 +42,6 @@ export class FrameTransporter {
                 throw new Error("FrameTransporter not started");
             }
 
-            this.task.abortController.abort();
             this.mpsc.sender.close();
 
             await this.task.promise;
@@ -62,13 +54,9 @@ export class FrameTransporter {
     private async run(
         sendBytesFn: SendBytesFn,
         frameReceiver: MpscReceiver<Frame>,
-        token: AbortSignal,
     ) {
         for await (const bytes of frameReceiver) {
             await sendBytesFn(encode(bytes));
-            if (token.aborted) {
-                return;
-            }
         }
     }
 

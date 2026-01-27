@@ -107,9 +107,9 @@ export class BridgeRpc {
                 return;
             }
 
-            await this.sendFrame(Frame.close());
             await this.frameTransporter.stop();
             await this.serviceTaskBackgroundProcessor.awaitAll();
+            await this.sendFrame(Frame.close());
             console.info(`rpc ${this.id} stopped`);
             this.isStarted = false;
         });
@@ -545,8 +545,8 @@ export class BridgeRpc {
         }
     }
 
-    private async sendFrame(frame: Frame) {
-        await this.transport.send(encode(frame));
+    private sendFrame(frame: Frame) {
+        return this.transport.send(encode(frame));
     }
 
     private runExclusive<T>(fn: () => T): Promise<T> {

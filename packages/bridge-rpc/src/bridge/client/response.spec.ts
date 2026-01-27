@@ -4,6 +4,7 @@ import { Mpsc } from "@/mpsc";
 import { Oneshot } from "@/oneshot";
 import { readAll } from "../byte-array-utils";
 import type { Headers } from "../dyn-map";
+import { ResponseErrorCode } from "../error-code";
 import type { ResponseError, ResponseStart } from "../frame";
 import { ResponseStatusCode } from "../status-code";
 import {
@@ -11,8 +12,6 @@ import {
     type ResponseFrameEvent,
     ResponseFrameEventType,
 } from "./response";
-import { ResponseErrorSchema } from "../frame-schema";
-import { ResponseErrorCode } from "../error-code";
 
 describe("PendingResponse", () => {
     it("should be able to wait for response", async () => {
@@ -94,7 +93,11 @@ describe("Respnse", () => {
     });
 
     it("should throw error when received error frame", async () => {
-        const { id, response: pendingResponse, responseErrorSender } = createPendingResponse(
+        const {
+            id,
+            response: pendingResponse,
+            responseErrorSender,
+        } = createPendingResponse(
             {
                 status: ResponseStatusCode.SUCCESS,
                 headers: {},
@@ -115,7 +118,6 @@ describe("Respnse", () => {
 
         await expect(readAll(response.readBody())).rejects.toThrowError();
     });
-
 });
 
 function createPendingResponse(

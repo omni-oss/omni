@@ -34,14 +34,17 @@ export class MpscReceiver<T> implements AsyncIterable<T> {
      * it returns a promise that resolves when a value is sent.
      */
     public next(): Promise<IteratorResult<T>> {
-        return this.mutex.runExclusive(async () => {
+        return this.mutex.runExclusive(() => {
             if (this.state.queue.length > 0) {
-                // biome-ignore lint/style/noNonNullAssertion: allow
-                return { done: false, value: this.state.queue.shift()! };
+                return Promise.resolve({
+                    done: false,
+                    // biome-ignore lint/style/noNonNullAssertion: allow
+                    value: this.state.queue.shift()!,
+                });
             }
 
             if (this.state.closed) {
-                return { done: true, value: undefined };
+                return Promise.resolve({ done: true, value: undefined });
             }
 
             return new Promise((resolve) => {
