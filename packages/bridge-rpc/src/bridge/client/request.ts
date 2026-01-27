@@ -1,5 +1,5 @@
+import type { MpscSender } from "@omni-oss/channels";
 import type { Id } from "@/id";
-import type { MpscSender } from "@/mpsc";
 import type { Headers, Trailers } from "../dyn-map";
 import { Frame } from "../frame";
 import type { PendingResponse } from "./response";

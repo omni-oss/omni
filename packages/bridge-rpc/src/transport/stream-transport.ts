@@ -1,4 +1,3 @@
-import { Mutex } from "async-mutex";
 import { AbstractTransport } from "./abstract-transport";
 import type { Transport } from "./interface";
 
