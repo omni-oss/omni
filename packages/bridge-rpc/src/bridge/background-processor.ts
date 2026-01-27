@@ -23,6 +23,11 @@ export class BackgroundProcessor {
 
     public async awaitAll() {
         await Promise.all(this._tasks);
+
+        const errors = Object.values(this._errors);
+        if (errors.length > 0) {
+            throw new BackgroundProcessorCompoundError(errors);
+        }
     }
 
     public getError(id: string) {
@@ -35,5 +40,12 @@ export class BackgroundProcessor {
 
     public clearErrors() {
         this._errors = {};
+    }
+}
+
+export class BackgroundProcessorCompoundError extends Error {
+    constructor(public readonly errors: Error[]) {
+        super("there were errors in the background processor");
+        this.name = "BackgroundProcessorCompoundError";
     }
 }

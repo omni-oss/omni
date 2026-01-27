@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { BackgroundProcessor } from "./background-processor";
+import {
+    BackgroundProcessor,
+    BackgroundProcessorCompoundError,
+} from "./background-processor";
 
 describe("BackgroundProcesser", () => {
     it("should be able to run a task", async () => {
@@ -14,15 +17,18 @@ describe("BackgroundProcesser", () => {
         await processor.awaitAll();
     });
 
-    it("should be able to handle errors", async () => {
+    it("should throw error in awaitAll if there are errors in any of the tasks", async () => {
         const processor = new BackgroundProcessor();
         const id = processor.queue(Promise.reject(new Error("test")));
+        processor.queue(sleep(10));
 
         await sleep(20);
 
         expect(processor.hasError(id)).toBeTruthy();
         expect(processor.getError(id)).toBeInstanceOf(Error);
-        await processor.awaitAll();
+        await expect(processor.awaitAll()).rejects.toThrowError(
+            BackgroundProcessorCompoundError,
+        );
     });
 });
 
