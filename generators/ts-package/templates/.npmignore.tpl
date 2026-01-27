@@ -1,9 +1,9 @@
 vite.config.ts
-vitest.config.unit.ts
-vitest.config.e2e.ts
-vitest.config.api.ts
-vitest.config.integration.ts
+vite.config.*.ts
+vitest.config.ts
+vitest.config.*.ts
 project.omni.yaml
 src/**/*.*
 tsconfig.json
 tsconfig.types.json
+tsconfig.*.json
