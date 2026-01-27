@@ -1,5 +1,5 @@
+import type { OneshotReceiver } from "@omni-oss/channels";
 import type { Id } from "@/id";
-import type { OneshotReceiver } from "@/oneshot";
 import type { Headers, Trailers } from "../dyn-map";
 import type { RequestError } from "../frame";
 

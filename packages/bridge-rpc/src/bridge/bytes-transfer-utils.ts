@@ -1,9 +1,9 @@
-import type { MpscSender } from "@/mpsc";
+import type { MpscSender } from "@omni-oss/channels";
 import { encode } from "./codec-utils";
 
 export async function sendToMpsc<T>(
     mpscSender: MpscSender<Uint8Array>,
     data: T,
 ) {
-    await mpscSender.send(encode(data));
+    mpscSender.send(encode(data));
 }
