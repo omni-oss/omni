@@ -5,9 +5,6 @@ extends:
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
 tasks:
-  build:
-    enabled: {{ prompts.published }}
-
   test:unit:
     enabled: {{ prompts.unit_test }}
 
@@ -15,6 +12,10 @@ tasks:
     enabled: {{ prompts.integration_test }}
 
   test:
-    dependencies:
-      - test:unit
-      - test:integration
+    enabled: true
+
+  build:
+    enabled: true
+
+  publish:
+    enabled: {{ prompts.publish }}

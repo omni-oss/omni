@@ -1,14 +1,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
 name: ts
 
+extends: ["./base.omni.yaml"]
+
 cache:
   key:
     files:
       - "package.json"
       - "./src/**/*.{ts,tsx,js,jsx,cjs,mjs,mts,cts}"
-
-extends:
-  - "./base.omni.yaml"
 
 tasks:
   test:unit:
@@ -26,6 +25,11 @@ tasks:
 
   build:
     command: bun run build
+
+  publish:
+    command: bun publish
+    dependencies:
+      - build
 
 meta:
   language: typescript
