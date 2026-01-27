@@ -210,6 +210,7 @@
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",
+        "@omni-oss/vitest-config": "workspace:*",
         "@types/node": "25.0.10",
         "typescript": "^5.9.3",
         "vite": "^7.3.1",
