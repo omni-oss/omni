@@ -121,3 +121,7 @@ export class MpscClosedError extends Error {
         super.name = "MpscClosedError";
     }
 }
+
+export function mpsc<T>(): Mpsc<T> {
+    return new Mpsc();
+}

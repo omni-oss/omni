@@ -123,6 +123,6 @@ export class OneshotValueSentError extends Error {
     }
 }
 
-export function createOneshot<T>(): Oneshot<T> {
+export function oneshot<T>(): Oneshot<T> {
     return new Oneshot<T>();
 }
