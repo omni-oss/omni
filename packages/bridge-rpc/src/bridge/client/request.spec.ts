@@ -1,7 +1,6 @@
+import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it } from "vitest";
 import { Id } from "@/id";
-import { Mpsc } from "@/mpsc";
-import { Oneshot } from "@/oneshot";
 import { Frame, type ResponseError, type ResponseStart } from "../frame";
 import {
     ActiveRequest,

@@ -1,20 +1,13 @@
-import { Id } from "@/id";
-import { Mpsc } from "@/mpsc";
-import { Frame,  } from "../frame";
-import {
-    ActiveResponse,
-    PendingResponse,
-} from "./response";
-import { ResponseStatusCode } from "../status-code";
+import { Mpsc } from "@omni-oss/channels";
 import { describe, expect, it } from "vitest";
+import { Id } from "@/id";
+import { Frame } from "../frame";
+import { ResponseStatusCode } from "../status-code";
+import { ActiveResponse, PendingResponse } from "./response";
 
 describe("PendingResponse", () => {
     it("should be able to start response", async () => {
-        const {
-            id,
-            request,
-            receiver
-        } = createPendingResponse();
+        const { id, request, receiver } = createPendingResponse();
 
         const headers = {};
         await request.start(ResponseStatusCode.SUCCESS, headers);
@@ -22,7 +15,11 @@ describe("PendingResponse", () => {
         const frame = await receiver.receive();
 
         expect(frame).toBeDefined();
-        const expectedFrame = Frame.responseStart(id, ResponseStatusCode.SUCCESS, headers);
+        const expectedFrame = Frame.responseStart(
+            id,
+            ResponseStatusCode.SUCCESS,
+            headers,
+        );
         expect(frame).toEqual(expectedFrame);
     });
 });
@@ -60,10 +57,7 @@ function createPendingResponse() {
     return {
         id,
         receiver: mpsc.receiver,
-        request: new PendingResponse(
-            id,
-            mpsc.sender,
-        ),
+        request: new PendingResponse(id, mpsc.sender),
     };
 }
 
@@ -73,9 +67,6 @@ function createActiveResponse() {
     return {
         id,
         receiver: mpsc.receiver,
-        request: new ActiveResponse(
-            id,
-            mpsc.sender,
-        ),
+        request: new ActiveResponse(id, mpsc.sender),
     };
 }

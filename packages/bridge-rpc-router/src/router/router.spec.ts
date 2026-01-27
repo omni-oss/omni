@@ -1,4 +1,4 @@
-import { Id, Mpsc, Oneshot, ResponseStatusCode } from "@omni-oss/bridge-rpc";
+import { Id, ResponseStatusCode } from "@omni-oss/bridge-rpc";
 import {
     type Frame,
     FrameType,
@@ -10,6 +10,7 @@ import {
     type RequestFrameEvent,
     RequestFrameEventType,
 } from "@omni-oss/bridge-rpc/server";
+import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it, vi } from "vitest";
 import { Router } from "./router";
 
