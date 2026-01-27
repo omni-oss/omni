@@ -1,8 +1,12 @@
+import { Deferred } from "@omni-oss/async-utils";
+import {
+    Mpsc,
+    type MpscReceiver,
+    Oneshot,
+    type OneshotReceiver,
+} from "@omni-oss/channels";
 import { Mutex } from "async-mutex";
-import { Deferred } from "@/deferred";
 import { Id } from "@/id";
-import { Mpsc, type MpscReceiver } from "@/mpsc";
-import { Oneshot, type OneshotReceiver } from "@/oneshot";
 import { TimeoutError, withTimeout } from "@/promise-utils";
 import type { Transport } from "@/transport";
 import { BackgroundProcessor } from "./background-processor";
