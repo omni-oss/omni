@@ -6,5 +6,6 @@
         "customConditions": ["development"],
         "module": "ESNext",
         "skipLibCheck": true
-    }
+    },
+    "include": ["${configDir}/src/**/*.*"]
 }
