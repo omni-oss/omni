@@ -18,6 +18,7 @@ import {
     type ResponseFrameEvent,
     ResponseFrameEventType,
 } from "./client/response";
+import type { ClientHandle } from "./client-handle";
 import { decode, encode } from "./codec-utils";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";
 import type { Headers } from "./dyn-map";
@@ -85,6 +86,12 @@ export class BridgeRpc {
         );
 
         return request;
+    }
+
+    public get clientHandle(): ClientHandle {
+        return {
+            requestWithId: this.requestWithId.bind(this),
+        };
     }
 
     public request(path: string) {
