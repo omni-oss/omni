@@ -46,6 +46,6 @@ export class Deferred<T> {
     }
 }
 
-export function createDeferred<T>(): Deferred<T> {
+export function deferred<T>(): Deferred<T> {
     return new Deferred();
 }
