@@ -2,7 +2,7 @@
 owner = "omni-oss"
 repo = "omni"
 
-[bot.release]
+[bot.releases]
 enabled = true
 pull_request.title = "Release $version"
 
