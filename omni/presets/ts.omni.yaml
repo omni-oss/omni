@@ -25,11 +25,9 @@ tasks:
 
   build:
     command: bun run build
-
-  publish:
-    command: bun publish
-    dependencies:
-      - build
+    output:
+      files:
+        - dist/**/*
 
 meta:
   language: typescript

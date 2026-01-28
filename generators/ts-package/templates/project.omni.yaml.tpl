@@ -19,3 +19,6 @@ tasks:
 
   publish:
     enabled: {{ prompts.publish }}
+
+meta:
+  publish: {{ prompts.publish }}

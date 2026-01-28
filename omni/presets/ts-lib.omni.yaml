@@ -4,5 +4,12 @@ name: ts-lib
 extends:
   - "./ts.omni.yaml"
 
+tasks:
+  publish:
+    command: bun publish
+    dependencies:
+      - build
+
 meta:
   type: lib
+  publish: true
