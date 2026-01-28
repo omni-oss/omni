@@ -1,12 +1,13 @@
 {
-  "name": "determine-build-steps",
-  "version": "1.0.0",
-  "description": "Determines build steps based on build aggregation data.",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "dependencies": {
-    "@actions/core": "^1.10.0"
-  }
+    "name": "determine-build-steps",
+    "type": "module",
+    "version": "1.0.0",
+    "description": "Determines build steps based on build aggregation data.",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "dependencies": {
+        "@actions/core": "^1.10.0"
+    }
 }
