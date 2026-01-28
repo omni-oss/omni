@@ -1,0 +1,60 @@
+name: Publish Projects
+
+on:
+  workflow_dispatch:
+    inputs:
+      names:
+        required: true
+        type: string
+        description: "Project to publish"
+      # version:
+      #   required: true
+      #   type: string
+      #   description: "Version to publish"
+  workflow_call:
+    inputs:
+      names:
+        required: true
+        type: string
+        description: "Project to publish"
+      # version:
+      #   required: false
+      #   type: string
+      #   description: "Version to publish"
+
+permissions:
+  contents: write
+
+jobs:
+  preview-site:
+    strategy:
+      matrix:
+        project: ${{ fromJSON(inputs.names) }}
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-key-prefix: build
+
+      - name: Determine Build Steps
+        id: determine
+        uses: ./.github/actions/determine-build-steps
+        with:
+          omni-run: -p ${{ matrix.project }} publish
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: false
+          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

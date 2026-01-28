@@ -12,15 +12,30 @@ export type SummaryData = {
     completed_with_cache_hit_success: number;
 };
 
+export type MetadataSummaryData = SummaryData & {
+    projects: string[];
+    tasks: string[];
+};
+
 export type Summary = SummaryData & {
     aggregated_by_metadata: {
-        [key: string]: SummaryData;
+        [key: string]: MetadataSummaryData;
     };
     aggregated_by_project: {
         [key: string]: SummaryData;
     };
     aggregated_by_task: {
         [key: string]: SummaryData;
+    };
+    projects: {
+        [key: string]: {
+            tasks: {
+                [key: string]: {
+                    execute: boolean;
+                    meta: Meta;
+                };
+            };
+        };
     };
 };
 
@@ -44,19 +59,38 @@ export function summarize(results: TaskResultArray): Summary {
         aggregated_by_metadata: {},
         aggregated_by_project: {},
         aggregated_by_task: {},
+        projects: {},
     };
 
     for (const result of results) {
+        if (!summary.projects[result.task.project_name]) {
+            summary.projects[result.task.project_name] = {
+                tasks: {},
+            };
+        }
+
+        // biome-ignore lint/style/noNonNullAssertion: expected
+        summary.projects[result.task.project_name]!.tasks[
+            result.task.task_name
+        ] = {
+            execute: result.status === "completed" && !result.cache_hit,
+            meta: result.details.meta,
+        };
+
         applyResultToSummary(result, summary);
 
         const metas = flattenMetadata(result.details.meta);
 
         for (const metadata of metas) {
             if (!summary.aggregated_by_metadata[metadata]) {
-                summary.aggregated_by_metadata[metadata] = initSummaryData(0);
+                summary.aggregated_by_metadata[metadata] = {
+                    ...initSummaryData(0),
+                    projects: [],
+                    tasks: [],
+                };
             }
 
-            applyResultToSummary(
+            applyResultToMetadataSummary(
                 result,
                 summary.aggregated_by_metadata[metadata],
             );
@@ -120,6 +154,10 @@ function flattenMetadata(meta: Meta): string[] {
         metadatas.push(`language:${meta.language}`);
     }
 
+    if (meta.publish) {
+        metadatas.push(`publish:${meta.publish}`);
+    }
+
     return metadatas;
 }
 
@@ -152,4 +190,13 @@ function applyResultToSummary(result: TaskResult, summaryData: SummaryData) {
 
             break;
     }
+}
+
+function applyResultToMetadataSummary(
+    result: TaskResult,
+    summaryData: MetadataSummaryData,
+) {
+    summaryData.projects.push(result.task.project_name);
+    summaryData.tasks.push(result.task.full_task_name);
+    applyResultToSummary(result, summaryData);
 }
