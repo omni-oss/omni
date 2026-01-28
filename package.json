@@ -17,6 +17,7 @@
         "scripts/*",
         "apps/*",
         "services/*",
-        "tests/*"
+        "tests/*",
+        ".github/actions/*"
     ]
 }
