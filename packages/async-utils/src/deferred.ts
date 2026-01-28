@@ -23,7 +23,7 @@ export class Deferred<T> {
 
     resolve(value: T) {
         if (this._state !== DeferredState.PENDING) {
-            throw new Error(
+            throw new DeferredError(
                 "cannot resolve a Deferred that is not in pending state",
             );
         }
@@ -33,7 +33,7 @@ export class Deferred<T> {
 
     reject(reason?: unknown) {
         if (this._state !== DeferredState.PENDING) {
-            throw new Error(
+            throw new DeferredError(
                 "cannot reject a Deferred that is not in pending state",
             );
         }
@@ -48,4 +48,11 @@ export class Deferred<T> {
 
 export function deferred<T>(): Deferred<T> {
     return new Deferred();
+}
+
+export class DeferredError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "DeferredError";
+    }
 }
