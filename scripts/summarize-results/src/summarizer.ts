@@ -12,14 +12,9 @@ export type SummaryData = {
     completed_with_cache_hit_success: number;
 };
 
-export type MetadataSummaryData = SummaryData & {
-    projects: string[];
-    tasks: string[];
-};
-
 export type Summary = SummaryData & {
     aggregated_by_metadata: {
-        [key: string]: MetadataSummaryData;
+        [key: string]: SummaryData;
     };
     aggregated_by_project: {
         [key: string]: SummaryData;
@@ -83,14 +78,10 @@ export function summarize(results: TaskResultArray): Summary {
 
         for (const metadata of metas) {
             if (!summary.aggregated_by_metadata[metadata]) {
-                summary.aggregated_by_metadata[metadata] = {
-                    ...initSummaryData(0),
-                    projects: [],
-                    tasks: [],
-                };
+                summary.aggregated_by_metadata[metadata] = initSummaryData(0);
             }
 
-            applyResultToMetadataSummary(
+            applyResultToSummary(
                 result,
                 summary.aggregated_by_metadata[metadata],
             );
@@ -190,13 +181,4 @@ function applyResultToSummary(result: TaskResult, summaryData: SummaryData) {
 
             break;
     }
-}
-
-function applyResultToMetadataSummary(
-    result: TaskResult,
-    summaryData: MetadataSummaryData,
-) {
-    summaryData.projects.push(result.task.project_name);
-    summaryData.tasks.push(result.task.full_task_name);
-    applyResultToSummary(result, summaryData);
 }
