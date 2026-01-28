@@ -1,8 +1,8 @@
-const core = require("@actions/core");
+import { getInput, info, setFailed, setOutput } from "@actions/core";
 
 try {
     // 1. Get and parse the build data JSON input
-    const buildDataJson = core.getInput("build_data_json", { required: true });
+    const buildDataJson = getInput("build_data_json", { required: true });
     const data = JSON.parse(buildDataJson);
 
     // Initialize all output variables to 'false' (default is to skip)
@@ -42,17 +42,38 @@ try {
         buildOmni = "true";
     }
 
+    const buildProjects = [];
+    const publishProjects = [];
+    for (const [projectName, project] of Object.entries(projects)) {
+        if (needsAction(project)) {
+            const projectTasks = data.projects[projectName].tasks;
+
+            for (const [_, task] of Object.keys(projectTasks)) {
+                if (task.execute) {
+                    buildProjects.push(projectName);
+                    if (task.meta.publish) {
+                        publishProjects.push(projectName);
+                    }
+                }
+            }
+        }
+    }
+
     // --- Set Action Outputs ---
-    core.setOutput("INSTALL_RUST_TOOLS", installRustTools);
-    core.setOutput("INSTALL_JS_TOOLS", installJsTools);
-    core.setOutput("BUILD_ORCS", buildOrcs);
-    core.setOutput("BUILD_OMNI", buildOmni);
+    setOutput("INSTALL_RUST_TOOLS", installRustTools);
+    setOutput("INSTALL_JS_TOOLS", installJsTools);
+    setOutput("BUILD_ORCS", buildOrcs);
+    setOutput("BUILD_OMNI", buildOmni);
+    setOutput("BUILD_PROJECTS", JSON.stringify(buildProjects));
+    setOutput("PUBLISH_PROJECTS", JSON.stringify(publishProjects));
 
     // Log the final determined values for debugging in the workflow
-    core.info(`INSTALL_RUST_TOOLS set to: ${installRustTools}`);
-    core.info(`INSTALL_JS_TOOLS set to: ${installJsTools}`);
-    core.info(`BUILD_ORCS set to: ${buildOrcs}`);
-    core.info(`BUILD_OMNI set to: ${buildOmni}`);
+    info(`INSTALL_RUST_TOOLS set to: ${installRustTools}`);
+    info(`INSTALL_JS_TOOLS set to: ${installJsTools}`);
+    info(`BUILD_ORCS set to: ${buildOrcs}`);
+    info(`BUILD_OMNI set to: ${buildOmni}`);
+    info(`BUILD_PROJECTS: ${JSON.stringify(buildProjects, null, 4)}`);
+    info(`PUBLISH_PROJECTS: ${JSON.stringify(publishProjects, null, 4)}`);
 } catch (error) {
-    core.setFailed(`Action failed: ${error.message}`);
+    setFailed(`Action failed: ${error.message}`);
 }

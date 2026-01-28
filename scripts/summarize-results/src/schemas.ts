@@ -18,6 +18,18 @@ const ElapsedSchema = z.object({
         .describe("The number of nanoseconds elapsed."),
 });
 
+const TargetSchema = z.object({
+    os: z.enum(["linux", "windows", "macos", "any"]).or(z.string()),
+    vendor: z.enum(["apple", "pc", "nvidia", "unknown"]).or(z.string()),
+    arch: z.enum(["x86_64", "aarch64", "riscv64", "wasm32"]).or(z.string()),
+    abi: z.enum(["gnu", "msvc", "musl"]).or(z.string()).optional(),
+    features: z
+        .array(z.string())
+        .default([])
+        .describe("Conditional compilation flags"),
+    binaryExtension: z.string().optional().describe("e.g., '.exe' or '.wasm'"),
+});
+
 /**
  * Defines the metadata for the project/task details.
  */
@@ -30,6 +42,14 @@ const MetaSchema = z.object({
         .enum(["rust", "typescript"])
         .or(z.string())
         .describe("The primary language of the project."),
+    publish: z
+        .boolean()
+        .optional()
+        .describe("Whether the project is published."),
+    targets: z
+        .array(TargetSchema)
+        .optional()
+        .describe("The targets that the project needs to be built for."),
 });
 
 /**
@@ -67,7 +87,9 @@ const CompletedTaskSchema = z.object({
     status: z.literal("completed"),
     hash: z
         .string()
-        .describe("The task's content hash (Base64 encoded string). Used for caching."),
+        .describe(
+            "The task's content hash (Base64 encoded string). Used for caching.",
+        ),
     task: TaskSchema,
     exit_code: z
         .number()

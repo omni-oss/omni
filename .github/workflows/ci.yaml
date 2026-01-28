@@ -9,8 +9,7 @@ on:
       - "!bun.lock"
     tags:
       - "v*.*.*"
-      - "omni-v*.*.*"
-      - "omni-remote-cache-service-v*.*.*"
+      - "*/v*.*.*"
   pull_request:
     branches: [main]
 
@@ -86,10 +85,6 @@ jobs:
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Apply Version
-        if: ${{ github.ref_type == 'tag' }}
-        run: bun run ./scripts/apply-version/bin/index.js
 
       - name: Build Projects
         run: >
