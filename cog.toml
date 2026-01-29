@@ -28,4 +28,46 @@ authors = []
 
 [bump_profiles]
 
-[packages]
+[packages.omni]
+path = "./cli/omni"
+public_api = true
+
+[packages.omni_remote_cache_service]
+path = "./services/omni_remote_cache_service"
+public_api = true
+
+[packages."@omni-oss/async-utils"]
+path = "./packages/async-utils"
+public_api = true
+
+[packages."@omni-oss/channels"]
+path = "./packages/channels"
+public_api = true
+
+[packages."@omni-oss/bridge-rpc"]
+path = "./packages/bridge-rpc"
+public_api = true
+
+[packages."@omni-oss/bridge-rpc-router"]
+path = "./packages/bridge-rpc-router"
+public_api = true
+
+[packages."@omni-oss/system-interface"]
+path = "./packages/system-interface"
+public_api = true
+
+[packages."@omni-oss/biome-config"]
+path = "./packages/biome-config"
+public_api = false
+
+[packages."@omni-oss/tsconfig"]
+path = "./packages/tsconfig"
+public_api = false
+
+[packages."@omni-oss/vite-config"]
+path = "./packages/vite-config"
+public_api = false
+
+[packages."@omni-oss/vitest-config"]
+path = "./packages/vitest-config"
+public_api = false
