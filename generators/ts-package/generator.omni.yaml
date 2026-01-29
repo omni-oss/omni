@@ -23,7 +23,20 @@ prompts:
         value: lib
       - name: Application
         value: app
+      - name: Script
+        value: script
     default: lib
+
+  - if: "{{ prompts.package_type == 'script' }}"
+    name: script_can_be_used_as_lib
+    type: confirm
+    message: Can this script be used as a library?
+    default: false
+
+  - name: package_description
+    type: text
+    message: What is the description of your package?
+    default: A TypeScript Package
 
   - name: unit_test
     type: confirm
@@ -55,10 +68,17 @@ actions:
     base_path: templates
     template_files:
       - templates/**/*
+      - "!templates/src/cli/index.ts.tpl"
       - "!templates/vitest.config.unit.ts.tpl"
       - "!templates/vitest.config.integration.ts.tpl"
       - "!templates/src/__tests__/integration.spec.ts.tpl"
       - "!templates/src/add.spec.ts.tpl"
+
+  - if: "{{ prompts.package_type == 'script' }}"
+    type: add-many
+    base_path: templates
+    template_files:
+      - templates/src/cli/index.ts.tpl
 
   - if: "{{ prompts.integration_test }}"
     type: add-many

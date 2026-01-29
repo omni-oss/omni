@@ -2,7 +2,13 @@
 name: "@omni-oss/{{ prompts.package_name }}"
 
 extends:
+{% if prompts.package_type == 'lib' %}
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
+{% elif prompts.package_type == 'app' %}
+  - "@workspace/omni/presets/ts-vite-app.omni.yaml"
+{% elif prompts.package_type == 'script' %}
+  - "@workspace/omni/presets/ts-vite-script.omni.yaml"
+{% endif %}
 
 tasks:
   test:unit:
@@ -18,7 +24,7 @@ tasks:
     enabled: true
 
   publish:
-    enabled: {{ prompts.publish }}
+    enabled: {{ prompts.published }}
 
 meta:
-  publish: {{ prompts.publish }}
+  publish: {{ prompts.published }}
