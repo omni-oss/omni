@@ -1,13 +1,19 @@
 {% if prompts.package_type == "lib" %}
 import baseConfig from "@omni-oss/vite-config/library";
 {% elif prompts.package_type == "script" %}
-import baseConfig from "@omni-oss/vite-config/script";
+import createBaseConfig from "@omni-oss/vite-config/script";
 {% elif prompts.package_type == "app" %}
 import baseConfig from "@omni-oss/vite-config/app";
 {% endif %}
 import { mergeConfig, type UserConfig } from "vite";
 {% if prompts.package_type == "lib" %}
 import { dependencies } from "./package.json";
+{% endif %}
+
+{% if prompts.package_type == "script" %}
+const baseConfig = createBaseConfig({
+    generateTypes: {{ prompts.script_can_be_used_as_lib }},
+});
 {% endif %}
 
 export default mergeConfig(baseConfig, {

@@ -5,6 +5,7 @@
     {% if prompts.package_type == 'script' %}
     "bin": "./dist/cli.js",
     {% endif %}
+    {% if prompts.package_type == 'lib' or (prompts.package_type == 'script' and prompts.script_can_be_used_as_lib) %}
     "exports": {
         ".": {
             "import": {
@@ -18,6 +19,7 @@
             "types": "./dist/index.d.ts"
         }
     },
+    {% endif %}
     "dependencies": {
         {% if prompts.package_type == "script" %}
         "zod": "^4.3.6",
