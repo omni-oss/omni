@@ -8,6 +8,7 @@
     {% if prompts.package_type == 'lib' or (prompts.package_type == 'script' and prompts.script_can_be_used_as_lib) %}
     "exports": {
         ".": {
+            "types": "./dist/index.d.ts",
             "import": {
                 "development": "./src/index.ts",
                 "default": "./dist/{{ prompts.package_name }}.mjs"
@@ -15,8 +16,7 @@
             "require": {
                 "development": "./src/index.ts",
                 "default": "./dist/{{ prompts.package_name }}.cjs"
-            },
-            "types": "./dist/index.d.ts"
+            }
         }
     },
     {% endif %}

@@ -6,7 +6,8 @@ import createBaseConfig from "@omni-oss/vite-config/script";
 import baseConfig from "@omni-oss/vite-config/app";
 {% endif %}
 import { mergeConfig, type UserConfig } from "vite";
-{% if prompts.package_type == "lib" %}
+{% set exclude_deps_from_bundle = prompts.package_type == "lib" or (prompts.package_type == "script" and prompts.script_can_be_used_as_lib) %}
+{% if exclude_deps_from_bundle %}
 import { dependencies } from "./package.json";
 {% endif %}
 
@@ -33,7 +34,7 @@ export default mergeConfig(baseConfig, {
                 `${entryName || "{{ prompts.package_name }}"}.${format === "cjs" ? "cjs" : "mjs"}`,
             name: "{{ prompts.package_name | upper_camel_case }}",
         },
-        {% if prompts.package_type == "lib" or prompts.package_type == "script" %}
+        {% if exclude_deps_from_bundle %}
         rollupOptions: {
             external: Object.keys(dependencies),
         },
