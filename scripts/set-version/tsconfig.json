@@ -1,0 +1,3 @@
+{
+	"extends": ["@omni-oss/tsconfig/with-paths.json", "./tsconfig.project.json"],
+}
