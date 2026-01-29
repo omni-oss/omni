@@ -33,6 +33,19 @@ prompts:
     message: Can this script be used as a library?
     default: false
 
+  - if: "{{ prompts.package_type == 'script' }}"
+    name: shebang_executor
+    type: select
+    message: What shebang should be used for the script?
+    options:
+      - name: Node.js
+        value: "node"
+      - name: Bun
+        value: "bun"
+      - name: Deno
+        value: "deno"
+    default: "node"
+
   - name: package_description
     type: text
     message: What is the description of your package?
