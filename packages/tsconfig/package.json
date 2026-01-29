@@ -4,7 +4,8 @@
     "description": "",
     "exports": {
         "./base.json": "./base.json",
-        "./with-paths.json": "./with-paths.json"
+        "./with-paths.json": "./with-paths.json",
+        "./types.json": "./types.json"
     },
     "keywords": [],
     "author": "",
