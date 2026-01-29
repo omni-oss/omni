@@ -9,9 +9,14 @@ branch_whitelist = []
 skip_ci = "[skip ci]"
 skip_untracked = false
 pre_bump_hooks = []
-post_bump_hooks = []
+post_bump_hooks = [
+    "git push origin {{version_tag}}",
+]
 pre_package_bump_hooks = []
-post_package_bump_hooks = []
+post_package_bump_hooks = [
+    "git push origin {{version_tag}}",
+]
+tag_prefix = "v"
 
 [git_hooks.commit-msg]
 script = """#!/bin/sh
@@ -30,44 +35,55 @@ authors = []
 
 [packages.omni]
 path = "./cli/omni"
+include = ["./cli/omni/**"]
 public_api = true
 
 [packages.omni_remote_cache_service]
 path = "./services/omni_remote_cache_service"
+include = ["./services/omni_remote_cache_service/**"]
 public_api = true
 
 [packages."@omni-oss/async-utils"]
 path = "./packages/async-utils"
+include = ["./packages/async-utils/**"]
 public_api = true
 
 [packages."@omni-oss/channels"]
 path = "./packages/channels"
+include = ["./packages/channels/**"]
 public_api = true
 
 [packages."@omni-oss/bridge-rpc"]
 path = "./packages/bridge-rpc"
+include = ["./packages/bridge-rpc/**"]
 public_api = true
 
 [packages."@omni-oss/bridge-rpc-router"]
 path = "./packages/bridge-rpc-router"
+include = ["./packages/bridge-rpc-router/**"]
 public_api = true
 
 [packages."@omni-oss/system-interface"]
 path = "./packages/system-interface"
+include = ["./packages/system-interface/**"]
 public_api = true
 
 [packages."@omni-oss/biome-config"]
 path = "./packages/biome-config"
+include = ["./packages/biome-config/**"]
 public_api = false
 
 [packages."@omni-oss/tsconfig"]
 path = "./packages/tsconfig"
+include = ["./packages/tsconfig/**"]
 public_api = false
 
 [packages."@omni-oss/vite-config"]
 path = "./packages/vite-config"
+include = ["./packages/vite-config/**"]
 public_api = false
 
 [packages."@omni-oss/vitest-config"]
 path = "./packages/vitest-config"
+include = ["./packages/vitest-config/**"]
 public_api = false
