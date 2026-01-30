@@ -11,7 +11,19 @@ export class BunFileSystem implements FileSystem {
         return Bun.file(path).text();
     }
 
+    readFileAsBytes(path: string): Promise<Uint8Array> {
+        throwIfBunNotAvailable();
+
+        return Bun.file(path).bytes();
+    }
+
     async writeStringToFile(path: string, content: string): Promise<void> {
+        throwIfBunNotAvailable();
+
+        await Bun.file(path).write(content);
+    }
+
+    async writeBytesToFile(path: string, content: Uint8Array): Promise<void> {
         throwIfBunNotAvailable();
 
         await Bun.file(path).write(content);

@@ -7,9 +7,19 @@ export class NodeFileSystem implements FileSystem {
         return fs.readFile(path, "utf-8");
     }
 
+    async readFileAsBytes(path: string): Promise<Uint8Array> {
+        const fs = await loadNodeFs();
+        return fs.readFile(path);
+    }
+
     async writeStringToFile(path: string, content: string): Promise<void> {
         const fs = await loadNodeFs();
         await fs.writeFile(path, content, "utf-8");
+    }
+
+    async writeBytesToFile(path: string, content: Uint8Array): Promise<void> {
+        const fs = await loadNodeFs();
+        await fs.writeFile(path, content);
     }
 
     async pathExists(path: string): Promise<boolean> {

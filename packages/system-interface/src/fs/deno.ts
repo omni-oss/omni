@@ -5,14 +5,24 @@ import { NodeFileSystem } from "./node";
 export class DenoFileSystem implements FileSystem {
     private fallbackFs: NodeFileSystem = new NodeFileSystem();
 
-    async readFileAsString(path: string): Promise<string> {
+    readFileAsString(path: string): Promise<string> {
         throwIfDenoNotAvailable();
         return Deno.readTextFile(path);
+    }
+
+    readFileAsBytes(path: string): Promise<Uint8Array> {
+        throwIfDenoNotAvailable();
+        return Deno.readFile(path);
     }
 
     async writeStringToFile(path: string, content: string): Promise<void> {
         throwIfDenoNotAvailable();
         await Deno.writeTextFile(path, content);
+    }
+
+    async writeBytesToFile(path: string, content: Uint8Array): Promise<void> {
+        throwIfDenoNotAvailable();
+        await Deno.writeFile(path, content);
     }
 
     async pathExists(path: string): Promise<boolean> {

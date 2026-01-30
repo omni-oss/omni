@@ -6,11 +6,24 @@ export interface FileSystem {
     readFileAsString(path: string): Promise<string>;
 
     /**
+     * Reads the entire contents of a file as a bytearray.
+     * @param path The path to the file.
+     */
+    readFileAsBytes(path: string): Promise<Uint8Array>;
+
+    /**
      * Writes a string to a file, overwriting the file if it already exists.
      * @param path The path to the file.
      * @param content The string content to write.
      */
     writeStringToFile(path: string, content: string): Promise<void>;
+
+    /**
+     * Writes bytearray to a file, overwriting the file if it already exists.
+     * @param path The path to the file.
+     * @param content The string content to write.
+     */
+    writeBytesToFile(path: string, content: Uint8Array): Promise<void>;
 
     /**
      * Checks if the given path exists (file or directory).
