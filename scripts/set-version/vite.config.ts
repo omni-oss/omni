@@ -22,7 +22,7 @@ export default mergeConfig(baseConfig, {
         },
 
         rollupOptions: {
-            external: Object.keys(dependencies),
+            external: [...Object.keys(dependencies), "node:path"],
         },
     },
 } satisfies UserConfig);

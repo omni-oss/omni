@@ -29,10 +29,23 @@ export class VirtualFileSystem implements FileSystem {
         return data.toString();
     }
 
+    async readFileAsBytes(path: string): Promise<Uint8Array> {
+        const data = await this.fs.readFile(this.resolve(path), {
+            encoding: "binary",
+        });
+        return data as Uint8Array;
+    }
+
     writeStringToFile(path: string, content: string): Promise<void> {
         const data = Buffer.from(content, "utf-8");
         return this.fs.writeFile(this.resolve(path), data, {
             encoding: "utf-8",
+        });
+    }
+
+    writeBytesToFile(path: string, content: Uint8Array): Promise<void> {
+        return this.fs.writeFile(this.resolve(path), content, {
+            encoding: "binary",
         });
     }
 
