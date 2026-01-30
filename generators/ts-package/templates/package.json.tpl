@@ -35,7 +35,11 @@
         "vitest": "^4.0.8",
         {% if prompts.package_type == "script" %}
         "@types/node": "24.10.1",
-        "@types/bun": "^1.3.6",
+            {% if prompts.shebang_executor == 'bun' %}
+        "@types/bun": "^1.3.8",
+            {% elif f prompts.shebang_executor == 'deno' %}
+        "@types/deno": "^2.5.0",
+            {% endif %}
         {% endif %}
         "typescript": "^5.9.3"
     }
