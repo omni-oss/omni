@@ -26,8 +26,16 @@ export class OptimizedFileSystem implements FileSystem {
         return this.fs.readFileAsString(path);
     }
 
+    readFileAsBytes(path: string): Promise<Uint8Array> {
+        return this.fs.readFileAsBytes(path);
+    }
+
     writeStringToFile(path: string, content: string): Promise<void> {
         return this.fs.writeStringToFile(path, content);
+    }
+
+    writeBytesToFile(path: string, content: Uint8Array): Promise<void> {
+        return this.fs.writeBytesToFile(path, content);
     }
 
     pathExists(path: string): Promise<boolean> {
