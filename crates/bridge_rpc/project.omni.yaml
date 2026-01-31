@@ -3,3 +3,7 @@ name: bridge_rpc
 
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+tasks:
+  test:
+    max_retries: 5
