@@ -97,8 +97,9 @@ if (Test-Path $OmniPath) {
 
 Write-Output "Downloading omni $TO_INSTALL_VERSION..."
 
-$DOWNLOAD_URL = "https://github.com/$OWNER/$REPO/releases/download/$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
-$ZipFile = Join-Path $BinDir "omni.zip"
+$DOWNLOAD_URL = "https://github.com/$OWNER/$REPO/releases/download/omni-$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
+$FILENAME = "omni-$TO_INSTALL_VERSION-$TARGET.zip"
+$ZipFile = Join-Path $BinDir $FILENAME
 
 # Ensure directory exists
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -128,6 +129,7 @@ Invoke-Download -Uri $DOWNLOAD_URL -OutFile $ZipFile
 
 # Extract zip
 Expand-Archive -Path $ZipFile -DestinationPath $BinDir -Force
+Rename-Item -Path (Join-Path $BinDir "omni-$TO_INSTALL_VERSION-$TARGET") -NewName "omni"
 Remove-Item $ZipFile
 
 # Add to PATH (User environment variable)

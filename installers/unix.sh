@@ -94,13 +94,15 @@ fi
 
 echo "Downloading omni $TO_INSTALL_VERSION..."
 
-DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
+DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/omni-$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
 mkdir -p "$HOME/.omni/bin"
+
+FILENAME="omni-$TO_INSTALL_VERSION-$TARGET.zip"
 
 # Retry function for downloads
 i=1
 while [ $i -le 3 ]; do
-    if curl -L -o "$HOME/.omni/bin/omni.zip" "$DOWNLOAD_URL"; then
+    if curl -L -o "$HOME/.omni/bin/$FILENAME" "$DOWNLOAD_URL"; then
         break
     fi
     echo "Attempt ${i}: Download failed. Retrying in 2 seconds..."
@@ -109,14 +111,14 @@ while [ $i -le 3 ]; do
 done
 
 # Final validation of download
-if [ ! -f "$HOME/.omni/bin/omni.zip" ]; then
+if [ ! -f "$HOME/.omni/bin/$FILENAME" ]; then
     echo "❌ Failed to download file after 3 attempts: $DOWNLOAD_URL"
     exit 1
 fi
 
-unzip -o "$HOME/.omni/bin/omni.zip" -d "$HOME/.omni/bin"
+unzip -o "$HOME/.omni/bin/$FILENAME" -d "$HOME/.omni/bin"
 chmod +x "$HOME/.omni/bin/omni"
-rm "$HOME/.omni/bin/omni.zip"
+rm "$HOME/.omni/bin/$FILENAME"
 
 # Setup PATH env
 if [ -n "${ZSH_VERSION:-}" ] || [ -n "${BASH_VERSION:-}" ]; then
