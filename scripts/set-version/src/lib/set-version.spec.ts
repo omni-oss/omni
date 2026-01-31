@@ -7,7 +7,7 @@ import YAML from "yaml";
 import { UnsupportedFileTypeError } from "./codec-utils";
 import { Format } from "./format";
 import type { TaggedPathProfile, TaggedRegexProfile } from "./profile";
-import { applyVersion, setVersionAtDir } from "./set-version";
+import { applyVersion, NotChangedReason, setVersionAtDir } from "./set-version";
 
 const DATA = {
     name: "test",
@@ -231,10 +231,132 @@ describe("setVersionAtDir", () => {
             await system.fs.readFileAsString(fileName),
         );
 
-        expect(updated).toEqual({
+        expect(updated).toEqual(DATA);
+    });
+
+    it("should return the reason why a file was not updated when there is the file is already up to date", async () => {
+        const system = await VirtualSystem.create();
+        await system.fs.createDirectory("/test");
+        system.proc.setCurrentDir("/test");
+
+        const profile = {
+            type: "regex",
+            files: ["*.csproj"],
+            pattern: "<version>(?<version>.*)</version>",
+        } satisfies TaggedRegexProfile;
+
+        const fileName = "TestProject.csproj";
+
+        const NEW_DATA = {
             ...DATA,
-            version: DATA.version,
-        });
+            version: NEW_VERSION,
+        };
+
+        await system.fs.writeStringToFile(
+            fileName,
+            serialize(fileName, Format.XML, NEW_DATA),
+        );
+
+        const matched = await setVersionAtDir(
+            system.proc.currentDir(),
+            NEW_VERSION,
+            [profile],
+            system,
+        );
+
+        const updated = deserialize(
+            fileName,
+            Format.XML,
+            await system.fs.readFileAsString(fileName),
+        );
+
+        expect(updated).toEqual(NEW_DATA);
+        expect(matched.length).not.toBe(0);
+        expect(matched[0]?.notChangedReason).toBe(
+            NotChangedReason.ALREADY_UP_TO_DATE,
+        );
+    });
+
+    it("should return the reason why a file was not updated when the regex pattern did not match", async () => {
+        const system = await VirtualSystem.create();
+        await system.fs.createDirectory("/test");
+        system.proc.setCurrentDir("/test");
+
+        const profile = {
+            type: "regex",
+            files: ["*.csproj"],
+            pattern: "<WrongVersion>(?<version>.*)</WrongVersion>",
+        } satisfies TaggedRegexProfile;
+
+        const fileName = "TestProject.csproj";
+
+        const NEW_DATA = {
+            ...DATA,
+            version: NEW_VERSION,
+        };
+
+        await system.fs.writeStringToFile(
+            fileName,
+            serialize(fileName, Format.XML, NEW_DATA),
+        );
+
+        const matched = await setVersionAtDir(
+            system.proc.currentDir(),
+            NEW_VERSION,
+            [profile],
+            system,
+        );
+
+        const updated = deserialize(
+            fileName,
+            Format.XML,
+            await system.fs.readFileAsString(fileName),
+        );
+
+        expect(updated).toEqual(NEW_DATA);
+        expect(matched.length).not.toBe(0);
+        expect(matched[0]?.notChangedReason).toBe(
+            NotChangedReason.REGEX_PATTERN_NOT_MATCHED,
+        );
+    });
+
+    it("should return the reason why a file was not updated when there is no value at the path", async () => {
+        const system = await VirtualSystem.create();
+        await system.fs.createDirectory("/test");
+        system.proc.setCurrentDir("/test");
+
+        const profile = {
+            type: "path",
+            files: ["*.csproj"],
+            format: Format.XML,
+            path: ["Lead", "To", "Nowhere"], // wrong path
+        } satisfies TaggedPathProfile;
+
+        const fileName = "TestProject.csproj";
+
+        await system.fs.writeStringToFile(
+            fileName,
+            serialize(fileName, profile.format, DATA),
+        );
+
+        const matched = await setVersionAtDir(
+            system.proc.currentDir(),
+            NEW_VERSION,
+            [profile],
+            system,
+        );
+
+        const updated = deserialize(
+            fileName,
+            profile.format,
+            await system.fs.readFileAsString(fileName),
+        );
+
+        expect(updated).toEqual(DATA);
+        expect(matched.length).not.toBe(0);
+        expect(matched[0]?.notChangedReason).toBe(
+            NotChangedReason.NO_VALUE_AT_PATH,
+        );
     });
 });
 

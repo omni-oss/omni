@@ -4,6 +4,8 @@ export function replaceGroup(
     groupName: string,
     newValue: string,
 ) {
+    if (!regex.test(str)) throw new RegexNotMatchedError(regex.source);
+
     return str.replace(regex, (match, ...args) => {
         // The last argument is the groups object
         const groups = args[args.length - 1];
@@ -16,4 +18,11 @@ export function replaceGroup(
         // and swap it out for the new value
         return fullMatch.replace(groupValue, newValue);
     });
+}
+
+export class RegexNotMatchedError extends Error {
+    constructor(public readonly pattern: string) {
+        super(`Regex ${pattern} did not match`);
+        super.name = this.constructor.name;
+    }
 }

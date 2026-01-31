@@ -31,14 +31,27 @@ program
                 return;
             }
 
-            const updated = await setVersion(options.dir, version, profiles, {
+            const matched = await setVersion(options.dir, version, profiles, {
                 dryRun: options.dryRun,
             });
 
-            if (updated.length) {
-                console.log(`Updated ${updated.length} files:`);
-                for (const file of updated) {
-                    console.log(`  > ${file}`);
+            if (matched.length) {
+                const changed = matched.filter((m) => m.changed);
+                const notChanged = matched.filter((m) => !m.changed);
+                console.log(
+                    `Matched ${changed.length} file(s), updated ${changed.length} file(s), skipped ${notChanged.length} file(s)`,
+                );
+                for (const m of changed) {
+                    console.log(`  * [UPDATED]: ${m.path}`);
+                }
+                for (const m of notChanged) {
+                    if (m.notChangedReasonMessage) {
+                        console.log(
+                            `  * [SKIPPED]: ${m.path}\n    > ${m.notChangedReasonMessage}`,
+                        );
+                    } else {
+                        console.log(`  * [SKIPPED]: ${m.path}`);
+                    }
                 }
             } else {
                 console.warn("No files updated");
