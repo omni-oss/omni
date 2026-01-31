@@ -6,7 +6,7 @@ on:
       version:
         required: true
         type: string
-        description: "Version to publish"
+        description: "Version to publish (e.g., v1.0.0)"
 
 permissions:
   contents: write
@@ -26,14 +26,28 @@ jobs:
           install-all: true
 
       - name: Test
-        run: cargo test -p omni
+        run: cargo test --workspace --exclude omni_remote_cache_client
 
   build:
     runs-on: ${{ matrix.os }}
     needs: test
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # not supported yet, unavoidable compilation error due to crates not supporting win 11 on arm yet
+          # - os: windows-11-arm # <--- NATIVE Windows ARM Runner
+          #   target: aarch64-pc-windows-msvc
 
     steps:
       - name: Checkout repository
@@ -41,58 +55,74 @@ jobs:
         with:
           ref: omni-${{ inputs.version }}
 
+      - name: Setup OpenSSL (macOS x86_64 target only)
+        if: matrix.os == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
+        run: |
+          # Install OpenSSL for x86_64 architecture
+          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+          arch -x86_64 /usr/local/bin/brew install openssl@3
+
+          # Set environment variables for the build
+          echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
+
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
           install-all: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Rust Target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install Cross (Linux ARM64 target only)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
       - name: Build Projects
-        run: >
-          omni run -p omni -p omni_remote_cache_service -L -f=failed build
-
-      - name: Compress Binaries on Linux/macOS
-        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
         run: |
-          zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            cross build --release -p omni --target ${{ matrix.target }}
+          else
+            cargo build --release -p omni --target ${{ matrix.target }}
+          fi
+        shell: bash
 
-      - name: Compress Binaries on Windows
-        if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
+      - name: Package
+        shell: bash
         run: |
-          cd target/release
-          7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
-          7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
-        shell: pwsh
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            7z a ../../../omni-${{ inputs.version }}-${{ matrix.target }}.zip omni.exe
+          else
+            zip ../../../omni-${{ inputs.version }}-${{ matrix.target }}.zip omni
+          fi
 
-      - name: Upload Omni Compressed Binary
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
-        if: ${{ github.ref_type == 'tag' }}
         with:
-          name: omni-${{ github.ref_name }}-${{ matrix.os }}
-          path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
-
-      - name: Upload Omni Remote Cache Service Compressed Binary
-        uses: actions/upload-artifact@v4
-        if: ${{ github.ref_type == 'tag' }}
-        with:
-          name: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}
-          path: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip
+          name: omni-${{ inputs.version }}-${{ matrix.target }}
+          path: omni-${{ inputs.version }}-${{ matrix.target }}.zip
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
-
     steps:
       - name: Download All Binaries
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
+          pattern: "*-binary"
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/**
-          make_latest: ${{ github.ref_type == 'tag' }}
+          tag_name: omni-${{ inputs.version }}
+          files: ./*.zip
+          make_latest: true
           generate_release_notes: true
           token: ${{ secrets.GITHUB_TOKEN }}
