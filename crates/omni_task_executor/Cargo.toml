@@ -10,7 +10,7 @@ default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
 vendored-openssl = [
     "omni_cache/vendored-openssl",
-    "omni_context/vendored-openssl"
+    "omni_context/vendored-openssl",
     "omni_execution_plan/vendored-openssl",
 ]
 
