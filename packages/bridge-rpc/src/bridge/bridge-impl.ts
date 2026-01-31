@@ -101,14 +101,14 @@ export class BridgeRpc {
     public async start() {
         return await this.runExclusive(async () => {
             if (this.isStarted) {
-                console.info(`rpc ${this.id} is already started`);
+                // console.info(`rpc ${this.id} is already started`);
                 return;
             }
 
             this.transport.onReceive(this.handle.bind(this));
             await this.frameTransporter.start();
             this.isStarted = true;
-            console.info(`rpc ${this.id} started`);
+            // console.info(`rpc ${this.id} started`);
         });
     }
 
@@ -121,7 +121,7 @@ export class BridgeRpc {
             await this.frameTransporter.stop();
             await this.serviceTaskBackgroundProcessor.awaitAll();
             await this.sendFrame(Frame.close());
-            console.info(`rpc ${this.id} stopped`);
+            // console.info(`rpc ${this.id} stopped`);
             this.isStarted = false;
         });
     }
@@ -172,18 +172,18 @@ export class BridgeRpc {
         }
     }
 
-    private async handleInvalidFrame(frame: unknown, errorMessage: string) {
-        console.error(
-            `invalid frame received (frame type: ${(frame as Frame).type}): ${errorMessage}`,
-        );
+    private async handleInvalidFrame(_frame: unknown, _errorMessage: string) {
+        // console.error(
+        //     `invalid frame received (frame type: ${(frame as Frame).type}): ${errorMessage}`,
+        // );
     }
 
     private async handleFrame(frame: Frame) {
         let event: Event;
 
-        console.log(
-            `[rpc_id: ${this.id}]: received frame: ${frame.type} with id: ${frame.data?.id}`,
-        );
+        // console.log(
+        //     `[rpc_id: ${this.id}]: received frame: ${frame.type} with id: ${frame.data?.id}`,
+        // );
 
         switch (frame.type) {
             case FrameType.REQUEST_START:
@@ -231,9 +231,9 @@ export class BridgeRpc {
                 return;
 
             default:
-                console.error(
-                    `unsupported frame type: ${(frame as unknown as { type: number }).type}`,
-                );
+                // console.error(
+                //     `unsupported frame type: ${(frame as unknown as { type: number }).type}`,
+                // );
                 return;
         }
 
@@ -380,9 +380,9 @@ export class BridgeRpc {
     }
 
     private startResponseSession(id: Id) {
-        console.info(
-            `[rpc_id: ${this.id}]: starting response session with id: ${id}`,
-        );
+        // console.info(
+        //     `[rpc_id: ${this.id}]: starting response session with id: ${id}`,
+        // );
         const responseStart = new Oneshot<ResponseStart>();
         const responseFrame = new Mpsc<ResponseFrameEvent>();
         const responseError = new Oneshot<ResponseError>();
@@ -395,9 +395,9 @@ export class BridgeRpc {
             id,
             responseSessionContext,
         );
-        console.info(
-            `[rpc_id: ${this.id}]: started response session with id: ${id}`,
-        );
+        // console.info(
+        //     `[rpc_id: ${this.id}]: started response session with id: ${id}`,
+        // );
         return {
             session,
             responseStartReceiver: responseStart.receiver,
@@ -423,9 +423,9 @@ export class BridgeRpc {
     }
 
     private startRequestSession(id: Id) {
-        console.info(
-            `[rpc_id: ${this.id}]: starting request session with id: ${id}`,
-        );
+        // console.info(
+        //     `[rpc_id: ${this.id}]: starting request session with id: ${id}`,
+        // );
         const requestFrame = new Mpsc<RequestFrameEvent>();
         const requestError = new Oneshot<RequestError>();
         const requestSessionContext = new RequestSessionContext(
@@ -438,9 +438,9 @@ export class BridgeRpc {
             requestSessionContext,
         );
 
-        console.info(
-            `[rpc_id: ${this.id}]: started request session with id: ${id}`,
-        );
+        // console.info(
+        //     `[rpc_id: ${this.id}]: started request session with id: ${id}`,
+        // );
 
         return {
             session,
