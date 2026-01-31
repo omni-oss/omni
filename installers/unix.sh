@@ -3,19 +3,34 @@ set -eu
 
 OWNER="omni-oss"
 REPO="omni"
+UNAME_S=$(uname -s)
+UNAME_M=$(uname -m)
+VERSION=${1:-latest}
 
-# Parameter to accept an optional version argument, defaults to 'latest'
-VERSION="${1:-latest}"
-
-# check if linux or macos
-case "$(uname)" in
-Linux*) TARGET="ubuntu-latest" ;;
-Darwin*) TARGET="macos-latest" ;;
-*)
-    echo "Unsupported OS. Please install omni manually."
-    exit 1
-    ;;
+case "$UNAME_M" in
+    x86_64) ARCH="x86_64" ;;
+    arm64|aarch64) ARCH="aarch64" ;;
+    *) ARCH="$UNAME_M" ;;
 esac
+
+case "$UNAME_S" in
+    Darwin)
+        TARGET="${ARCH}-apple-darwin"
+        ;;
+    Linux)
+        # Only check ldd if it exists (avoids errors on macOS)
+        if command -v ldd >/dev/null && ldd /bin/ls | grep -q 'musl'; then
+            TARGET="${ARCH}-unknown-linux-musl"
+        else
+            TARGET="${ARCH}-unknown-linux-gnu"
+        fi
+        ;;
+    *)
+        TARGET="${ARCH}-unknown-linux-gnu"
+        ;;
+esac
+
+echo "Target: $TARGET"
 
 latest_url="https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 

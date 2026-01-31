@@ -9,7 +9,25 @@ $ErrorActionPreference = "Stop"
 
 $OWNER = "omni-oss"
 $REPO = "omni"
-$TARGET = "windows-latest"
+# Get architecture
+$RawArch = $Env:PROCESSOR_ARCHITECTURE
+
+# Map to Rust standards
+switch -Wildcard ($RawArch) {
+    "AMD64"   { $ARCH = "x86_64" }
+    "ARM64"   { $ARCH = "aarch64" }
+    "IA64"    { $ARCH = "x86_64" } # Older Itanium systems
+    "x86"     { $ARCH = "i686" }
+    default   { $ARCH = "x86_64" } # Fallback
+}
+
+# Set the TARGET variable
+$TARGET = "$ARCH-pc-windows-msvc"
+
+# Export to environment for the current session
+$env:TARGET = $TARGET
+
+Write-Host "Target: $env:TARGET"
 
 $BinDir = "$HOME\AppData\Local\omni\bin"
 $OmniPath = Join-Path $BinDir "omni.exe"
