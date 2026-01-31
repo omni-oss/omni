@@ -74,6 +74,11 @@ path = "./packages/system-interface"
 include = ["./packages/system-interface/**"]
 public_api = true
 
+[packages."@omni-oss/set-version"]
+path = "./scripts/set-version"
+include = ["./scripts/set-version/**"]
+public_api = true
+
 [packages."@omni-oss/biome-config"]
 path = "./packages/biome-config"
 include = ["./packages/biome-config/**"]
