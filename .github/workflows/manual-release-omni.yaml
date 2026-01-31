@@ -116,7 +116,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
-          pattern: "*-binary"
+          pattern: "omni-*"
           merge-multiple: true
 
       - name: Create GitHub Release
