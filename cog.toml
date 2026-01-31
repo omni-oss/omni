@@ -40,61 +40,95 @@ authors = []
 [bump_profiles]
 
 [packages.omni]
-path = "./cli/omni"
-include = ["./cli/omni/**"]
+path = "cli/omni"
+include = [
+    "cli/omni/**",
+    "crates/omni_cache/**",
+    "crates/omni_cli_core/**",
+    "crates/omni_collector/**",
+    "crates/omni_configurations/**",
+    "crates/omni_context/**",
+    "crates/omni_core/**",
+    "crates/omni_discovery/**",
+    "crates/omni_discovery_utils/**",
+    "crates/omni_execution_plan/**",
+    "crates/omni_expressions/**",
+    "crates/omni_file_data_serde/**",
+    "crates/omni_generator/**",
+    "crates/omni_generator_configurations/**",
+    "crates/omni_hasher/**",
+    "crates/omni_path_utils/**",
+    "crates/omni_process/**",
+    "crates/omni_remote_cache_client/**",
+    "crates/omni_scm/**",
+    "crates/omni_serde_validators/**",
+    "crates/omni_setup/**",
+    "crates/omni_tera/**",
+    "crates/omni_test_utils/**",
+    "crates/omni_task_context/**",
+    "crates/omni_task_executor/**",
+    "crates/omni_types/**",
+    "crates/omni_utils/**",
+    "crates/omni_tracing_subscriber/**",
+    "crates/omni_types/**",
+    "crates/omni_utils/**",
+]
 public_api = true
 
 [packages.omni_remote_cache_service]
-path = "./services/omni_remote_cache_service"
-include = ["./services/omni_remote_cache_service/**"]
+path = "services/omni_remote_cache_service"
+include = [
+    "services/omni_remote_cache_service/**",
+    "crates/omni_remote_cache_storage/**",
+]
 public_api = true
 
 [packages."@omni-oss/async-utils"]
-path = "./packages/async-utils"
-include = ["./packages/async-utils/**"]
+path = "packages/async-utils"
+include = ["packages/async-utils/**"]
 public_api = true
 
 [packages."@omni-oss/channels"]
-path = "./packages/channels"
-include = ["./packages/channels/**"]
+path = "packages/channels"
+include = ["packages/channels/**"]
 public_api = true
 
 [packages."@omni-oss/bridge-rpc"]
-path = "./packages/bridge-rpc"
-include = ["./packages/bridge-rpc/**"]
+path = "packages/bridge-rpc"
+include = ["packages/bridge-rpc/**"]
 public_api = true
 
 [packages."@omni-oss/bridge-rpc-router"]
-path = "./packages/bridge-rpc-router"
-include = ["./packages/bridge-rpc-router/**"]
+path = "packages/bridge-rpc-router"
+include = ["packages/bridge-rpc-router/**"]
 public_api = true
 
 [packages."@omni-oss/system-interface"]
-path = "./packages/system-interface"
-include = ["./packages/system-interface/**"]
+path = "packages/system-interface"
+include = ["packages/system-interface/**"]
 public_api = true
 
 [packages."@omni-oss/set-version"]
-path = "./scripts/set-version"
-include = ["./scripts/set-version/**"]
+path = "scripts/set-version"
+include = ["scripts/set-version/**"]
 public_api = true
 
 [packages."@omni-oss/biome-config"]
-path = "./packages/biome-config"
-include = ["./packages/biome-config/**"]
+path = "packages/biome-config"
+include = ["packages/biome-config/**"]
 public_api = false
 
 [packages."@omni-oss/tsconfig"]
-path = "./packages/tsconfig"
-include = ["./packages/tsconfig/**"]
+path = "packages/tsconfig"
+include = ["packages/tsconfig/**"]
 public_api = false
 
 [packages."@omni-oss/vite-config"]
-path = "./packages/vite-config"
-include = ["./packages/vite-config/**"]
+path = "packages/vite-config"
+include = ["packages/vite-config/**"]
 public_api = false
 
 [packages."@omni-oss/vitest-config"]
-path = "./packages/vitest-config"
-include = ["./packages/vitest-config/**"]
+path = "packages/vitest-config"
+include = ["packages/vitest-config/**"]
 public_api = false
