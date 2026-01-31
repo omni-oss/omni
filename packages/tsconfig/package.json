@@ -1,6 +1,6 @@
 {
     "name": "@omni-oss/tsconfig",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "description": "",
     "exports": {
         "./base.json": "./base.json",
