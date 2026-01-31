@@ -1,0 +1,98 @@
+name: Manual Release Omni
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+        description: "Version to publish"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: omni-${{ inputs.version }}
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: true
+
+      - name: Test
+        run: cargo test -p omni
+
+  build:
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: omni-${{ inputs.version }}
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Projects
+        run: >
+          omni run -p omni -p omni_remote_cache_service -L -f=failed build
+
+      - name: Compress Binaries on Linux/macOS
+        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
+        run: |
+          zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
+
+      - name: Compress Binaries on Windows
+        if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
+        run: |
+          cd target/release
+          7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
+          7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
+        shell: pwsh
+
+      - name: Upload Omni Compressed Binary
+        uses: actions/upload-artifact@v4
+        if: ${{ github.ref_type == 'tag' }}
+        with:
+          name: omni-${{ github.ref_name }}-${{ matrix.os }}
+          path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
+
+      - name: Upload Omni Remote Cache Service Compressed Binary
+        uses: actions/upload-artifact@v4
+        if: ${{ github.ref_type == 'tag' }}
+        with:
+          name: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}
+          path: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+
+    steps:
+      - name: Download All Binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/**
+          make_latest: ${{ github.ref_type == 'tag' }}
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
