@@ -129,7 +129,6 @@ Invoke-Download -Uri $DOWNLOAD_URL -OutFile $ZipFile
 
 # Extract zip
 Expand-Archive -Path $ZipFile -DestinationPath $BinDir -Force
-Rename-Item -Path (Join-Path $BinDir "omni-$TO_INSTALL_VERSION-$TARGET") -NewName "omni"
 Remove-Item $ZipFile
 
 # Add to PATH (User environment variable)
