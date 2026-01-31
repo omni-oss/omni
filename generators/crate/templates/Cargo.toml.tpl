@@ -2,7 +2,11 @@
 name = "{{ prompts.crate_name }}"
 rust-version.workspace = true
 edition.workspace = true
+{%- if prompts.version == 'workspace' %}
 version.workspace = true
+{%- elif prompts.version == 'custom' %}
+version = "{{ prompts.crate_version }}"
+{%- endif %}
 authors.workspace = true
 repository.workspace = true
 

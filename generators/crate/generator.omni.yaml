@@ -29,6 +29,29 @@ prompts:
           Crate name must only contain alphanumeric characters, underscores, and hyphens,
           and must start with a letter
 
+  - type: select
+    name: version
+    message: Version
+    default: "custom"
+    options:
+      - name: Inherit from workspace
+        value: workspace
+        description: Inherit the workspace version
+      - name: Custom
+        value: custom
+        description: Set own crate version
+
+  - if: "{{ prompts.version == 'custom' }}"
+    type: text
+    name: crate_version
+    message: Crate version
+    default: "0.0.0"
+    validate:
+      - condition: "{{ value | length > 0 }}"
+        error_message: Crate version must not be empty
+      - condition: "{{ value is matching('^\\d+\\.\\d+\\.\\d+(?:-(?:[\\w\\d]+)(?:(?:\\.[\\w\\d]*)*(?:\\+[\\d\\w]+)?)?)?$') }}"
+        error_message: Crate version must be in the format of x.y.z
+
   - type: confirm
     name: add_error_type
     message: Add error type
