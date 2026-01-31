@@ -8,11 +8,17 @@ generate_mono_repository_package_tags = true
 branch_whitelist = []
 skip_ci = "[skip ci]"
 skip_untracked = false
-pre_bump_hooks = []
+pre_bump_hooks = [
+    "bun x @omni-oss/set-version {{version}}",
+    "git add package.json Cargo.toml",
+]
 post_bump_hooks = [
     "git push origin {{version_tag}}",
 ]
-pre_package_bump_hooks = []
+pre_package_bump_hooks = [
+    "bun x @omni-oss/set-version {{version}}",
+    "git add .",
+]
 post_package_bump_hooks = [
     "git push origin {{version_tag}}",
 ]
