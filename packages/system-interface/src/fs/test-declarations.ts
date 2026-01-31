@@ -34,7 +34,7 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
     }
 
     describe.skipIf(args.skip ?? false)(`FileSystem ${args.name}`, () => {
-        async function expectAbleToWriteFile(dir: string) {
+        async function expectAbleToWriteStringFile(dir: string) {
             const p = path.join(dir, "test.txt");
             await args.fs.writeStringToFile(p, "test");
             const contents = await args.fs.readFileAsString(p);
@@ -42,18 +42,41 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
         }
 
         if (useRealDir) {
-            it("should be able to write file", async ({ realDir }) => {
-                await expectAbleToWriteFile(realDir);
+            it("should be able to write string to file", async ({
+                realDir,
+            }) => {
+                await expectAbleToWriteStringFile(realDir);
             });
         } else {
-            it("should be able to write file", async ({ tempDir }) => {
+            it("should be able to write string to file", async ({
+                tempDir,
+            }) => {
                 await withFixture(tempDir, () =>
-                    expectAbleToWriteFile(tempDir),
+                    expectAbleToWriteStringFile(tempDir),
                 );
             });
         }
 
-        async function expectAbleToReadFile(dir: string) {
+        async function expectAbleToWriteBytesFile(dir: string) {
+            const p = path.join(dir, "test.txt");
+            await args.fs.writeBytesToFile(p, Buffer.from("test"));
+            const contents = await args.fs.readFileAsString(p);
+            expect(contents).toBe("test");
+        }
+
+        if (useRealDir) {
+            it("should be able to write bytes to file", async ({ realDir }) => {
+                await expectAbleToWriteBytesFile(realDir);
+            });
+        } else {
+            it("should be able to write bytes to file", async ({ tempDir }) => {
+                await withFixture(tempDir, () =>
+                    expectAbleToWriteBytesFile(tempDir),
+                );
+            });
+        }
+
+        async function expectAbleToReadFileAsString(dir: string) {
             const p = path.join(dir, "test.txt");
             await args.fs.writeStringToFile(p, "test");
             const contents = await args.fs.readFileAsString(p);
@@ -61,12 +84,41 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
         }
 
         if (useRealDir) {
-            it("should be able to read a file", async ({ realDir }) => {
-                await expectAbleToReadFile(realDir);
+            it("should be able to read a file as string", async ({
+                realDir,
+            }) => {
+                await expectAbleToReadFileAsString(realDir);
             });
         } else {
-            it("should be able to read a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () => expectAbleToReadFile(tempDir));
+            it("should be able to read a file as string", async ({
+                tempDir,
+            }) => {
+                await withFixture(tempDir, () =>
+                    expectAbleToReadFileAsString(tempDir),
+                );
+            });
+        }
+
+        async function expectAbleToReadFileAsBytes(dir: string) {
+            const p = path.join(dir, "test.txt");
+            await args.fs.writeStringToFile(p, "test");
+            const contents = await args.fs.readFileAsBytes(p);
+            expect(contents).toEqual(Buffer.from("test"));
+        }
+
+        if (useRealDir) {
+            it("should be able to read a file as bytes", async ({
+                realDir,
+            }) => {
+                await expectAbleToReadFileAsBytes(realDir);
+            });
+        } else {
+            it("should be able to read a file as bytes", async ({
+                tempDir,
+            }) => {
+                await withFixture(tempDir, () =>
+                    expectAbleToReadFileAsBytes(tempDir),
+                );
             });
         }
 
