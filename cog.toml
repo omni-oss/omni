@@ -43,45 +43,344 @@ authors = []
 path = "cli/omni"
 include = [
     "cli/omni/**",
-    "crates/omni_cache/**",
-    "crates/omni_cli_core/**",
-    "crates/omni_collector/**",
-    "crates/omni_configurations/**",
-    "crates/omni_context/**",
-    "crates/omni_core/**",
-    "crates/omni_discovery/**",
-    "crates/omni_discovery_utils/**",
-    "crates/omni_execution_plan/**",
-    "crates/omni_expressions/**",
-    "crates/omni_file_data_serde/**",
-    "crates/omni_generator/**",
-    "crates/omni_generator_configurations/**",
-    "crates/omni_hasher/**",
-    "crates/omni_path_utils/**",
-    "crates/omni_process/**",
-    "crates/omni_remote_cache_client/**",
-    "crates/omni_scm/**",
-    "crates/omni_serde_validators/**",
-    "crates/omni_setup/**",
-    "crates/omni_tera/**",
-    "crates/omni_test_utils/**",
-    "crates/omni_task_context/**",
-    "crates/omni_task_executor/**",
-    "crates/omni_types/**",
-    "crates/omni_utils/**",
-    "crates/omni_tracing_subscriber/**",
-    "crates/omni_types/**",
-    "crates/omni_utils/**",
+    "crates/*/**"
+]
+ignore = [
+    "crates/omni_remote_cache_storage/**",
 ]
 public_api = true
+
+[packages.omni_cli_core]
+path = "crates/omni_cli_core"
+include = [
+    "cli/omni/**",
+    "crates/*/**"
+]
+ignore = [
+    "crates/omni_remote_cache_storage/**",
+]
+public_api = false
 
 [packages.omni_remote_cache_service]
 path = "services/omni_remote_cache_service"
 include = [
     "services/omni_remote_cache_service/**",
     "crates/omni_remote_cache_storage/**",
+    "crates/omni_tracing_subscriber/**",
+    "crates/omni_path_utils/**",
+    "crates/sets/**",
+    "crates/maps/**",
+    "crates/trace/**",
 ]
 public_api = true
+
+[packages.bridge_rpc]
+path = "crates/bridge_rpc"
+include = [
+    "crates/bridge_rpc/**",
+]
+public_api = false
+
+[packages.bridge_rpc_router]
+path = "crates/bridge_rpc_router"
+include = [
+    "crates/bridge_rpc_router/**",
+]
+public_api = false
+
+[packages.clap_declspec]
+path = "crates/clap_declspec"
+include = [
+    "crates/clap_declspec/**",
+]
+public_api = false
+
+[packages.clap_utils]
+path = "crates/clap_utils"
+include = [
+    "crates/clap_utils/**",
+]
+public_api = false
+
+[packages.config_utils]
+path = "crates/config_utils"
+include = [
+    "crates/config_utils/**",
+]
+public_api = false
+
+[packages.dir_walker]
+path = "crates/dir_walker"
+include = [
+    "crates/dir_walker/**",
+]
+public_api = false
+
+[packages.env]
+path = "crates/env"
+include = [
+    "crates/env/**",
+]
+public_api = false
+
+[packages.env_loader]
+path = "crates/env_loader"
+include = [
+    "crates/env_loader/**",
+]
+public_api = false
+
+[packages.js_runtime]
+path = "crates/js_runtime"
+include = [
+    "crates/js_runtime/**",
+]
+public_api = false
+
+[packages.maps]
+path = "crates/maps"
+include = [
+    "crates/maps/**",
+]
+public_api = false
+
+[packages.omni_cache]
+path = "crates/omni_cache"
+include = [
+    "crates/omni_cache/**",
+]
+public_api = false
+
+[packages.omni_collector]
+path = "crates/omni_collector"
+include = [
+    "crates/omni_collector/**",
+]
+public_api = false
+
+[packages.omni_configuration_discovery]
+path = "crates/omni_configuration_discovery"
+include = [
+    "crates/omni_configuration_discovery/**",
+]
+public_api = false
+
+[packages.omni_configurations]
+path = "crates/omni_configurations"
+include = [
+    "crates/omni_configurations/**",
+]
+public_api = false
+
+[packages.omni_context]
+path = "crates/omni_context"
+include = [
+    "crates/omni_context/**",
+]
+public_api = false
+
+[packages.omni_core]
+path = "crates/omni_core"
+include = [
+    "crates/omni_core/**",
+]
+public_api = false
+
+[packages.omni_discovery]
+path = "crates/omni_discovery"
+include = [
+    "crates/omni_discovery/**",
+]
+public_api = false
+
+[packages.omni_discovery_utils]
+path = "crates/omni_discovery_utils"
+include = [
+    "crates/omni_discovery_utils/**",
+]
+public_api = false
+
+[packages.omni_execution_plan]
+path = "crates/omni_execution_plan"
+include = [
+    "crates/omni_execution_plan/**",
+]
+public_api = false
+
+[packages.omni_expressions]
+path = "crates/omni_expressions"
+include = [
+    "crates/omni_expressions/**",
+]
+public_api = false
+
+[packages.omni_file_data_serde]
+path = "crates/omni_file_data_serde"
+include = [
+    "crates/omni_file_data_serde/**",
+]
+public_api = false
+
+[packages.omni_generator]
+path = "crates/omni_generator"
+include = [
+    "crates/omni_generator/**",
+]
+public_api = false
+
+[packages.omni_generator_configurations]
+path = "crates/omni_generator_configurations"
+include = [
+    "crates/omni_generator_configurations/**",
+]
+public_api = false
+
+[packages.omni_hasher]
+path = "crates/omni_hasher"
+include = [
+    "crates/omni_hasher/**",
+]
+public_api = false
+
+[packages.omni_path_utils]
+path = "crates/omni_path_utils"
+include = [
+    "crates/omni_path_utils/**",
+]
+public_api = false
+
+[packages.omni_process]
+path = "crates/omni_process"
+include = [
+    "crates/omni_process/**",
+]
+public_api = false
+
+[packages.omni_prompt]
+path = "crates/omni_prompt"
+include = [
+    "crates/omni_prompt/**",
+]
+public_api = false
+
+[packages.omni_remote_cache_client]
+path = "crates/omni_remote_cache_client"
+include = [
+    "crates/omni_remote_cache_client/**",
+]
+public_api = false
+
+[packages.omni_remote_cache_storage]
+path = "crates/omni_remote_cache_storage"
+include = [
+    "crates/omni_remote_cache_storage/**",
+]
+public_api = false
+
+[packages.omni_scm]
+path = "crates/omni_scm"
+include = [
+    "crates/omni_scm/**",
+]
+public_api = false
+
+[packages.omni_serde_validators]
+path = "crates/omni_serde_validators"
+include = [
+    "crates/omni_serde_validators/**",
+]
+public_api = false
+
+[packages.omni_setup]
+path = "crates/omni_setup"
+include = [
+    "crates/omni_setup/**",
+]
+public_api = false
+
+[packages.omni_task_context]
+path = "crates/omni_task_context"
+include = [
+    "crates/omni_task_context/**",
+]
+public_api = false
+
+[packages.omni_task_executor]
+path = "crates/omni_task_executor"
+include = [
+    "crates/omni_task_executor/**",
+]
+public_api = false
+
+[packages.omni_tera]
+path = "crates/omni_tera"
+include = [
+    "crates/omni_tera/**",
+]
+public_api = false
+
+[packages.omni_term_ui]
+path = "crates/omni_term_ui"
+include = [
+    "crates/omni_term_ui/**",
+]
+public_api = false
+
+[packages.omni_test_utils]
+path = "crates/omni_test_utils"
+include = [
+    "crates/omni_test_utils/**",
+]
+public_api = false
+
+[packages.omni_tracing_subscriber]
+path = "crates/omni_tracing_subscriber"
+include = [
+    "crates/omni_tracing_subscriber/**",
+]
+public_api = false
+
+[packages.omni_types]
+path = "crates/omni_types"
+include = [
+    "crates/omni_types/**",
+]
+public_api = false
+
+[packages.omni_utils]
+path = "crates/omni_utils"
+include = [
+    "crates/omni_utils/**",
+]
+public_api = false
+
+[packages.serde_validate]
+path = "crates/serde_validate"
+include = [
+    "crates/serde_validate/**",
+]
+public_api = false
+
+[packages.sets]
+path = "crates/sets"
+include = [
+    "crates/sets/**",
+]
+public_api = false
+
+[packages.system_traits]
+path = "crates/system_traits"
+include = [
+    "crates/system_traits/**",
+]
+public_api = false
+
+[packages.trace]
+path = "crates/trace"
+include = [
+    "crates/trace/**",
+]
+public_api = false
 
 [packages."@omni-oss/async-utils"]
 path = "packages/async-utils"

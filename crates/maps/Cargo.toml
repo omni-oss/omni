@@ -2,8 +2,8 @@
 name = "maps"
 rust-version.workspace = true
 edition.workspace = true
-version.workspace = true
 repository.workspace = true
+version = "0.0.0"
 
 [features]
 default = []

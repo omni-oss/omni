@@ -2,7 +2,7 @@
 name = "omni_remote_cache_storage"
 rust-version.workspace = true
 edition.workspace = true
-version = "0.0.0-semantically-released"
+version = "0.0.0"
 repository.workspace = true
 
 [features]

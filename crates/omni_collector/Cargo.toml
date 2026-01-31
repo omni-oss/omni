@@ -2,7 +2,7 @@
 name = "omni_collector"
 rust-version.workspace = true
 edition.workspace = true
-version.workspace = true
+version = "0.0.0"
 repository.workspace = true
 
 [features]
