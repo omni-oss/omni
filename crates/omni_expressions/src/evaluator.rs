@@ -25,7 +25,8 @@ impl Evaluator {
             cel::Value::List(_)
             | cel::Value::Map(_)
             | cel::Value::Function(_, _)
-            | cel::Value::Bytes(_) => true,
+            | cel::Value::Bytes(_)
+            | cel::Value::Opaque(_) => true,
             cel::Value::Int(i) => i != 0,
             cel::Value::UInt(i) => i != 0,
             cel::Value::Float(f) => f != 0.0,

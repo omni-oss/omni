@@ -9,6 +9,7 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["dep:tracing", "trace/enabled"]
+vendored-openssl = ["git2/vendored-openssl"]
 
 [dependencies]
 eyre = { workspace = true }

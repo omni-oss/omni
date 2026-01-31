@@ -4,7 +4,7 @@
 // and get accumulated lines/spans.
 
 use enumflags2::{BitFlags, bitflags};
-use ratatui::style::{Color, Modifier, Style, Stylize as _};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use std::borrow::Cow;
 use vte::{Params, Parser, Perform};

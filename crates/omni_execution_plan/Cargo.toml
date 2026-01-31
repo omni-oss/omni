@@ -8,6 +8,7 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
+vendored-openssl = ["omni_scm/vendored-openssl"]
 
 [dependencies]
 eyre = { workspace = true }

@@ -10,6 +10,7 @@ repository.workspace = true
 default = ["enable-tracing"]
 dhat-heap = ["dep:dhat"]
 enable-tracing = ["trace/enabled"]
+vendored-openssl = ["omni_cli_core/vendored-openssl"]
 
 [dependencies]
 dhat = { workspace = true, optional = true }

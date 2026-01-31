@@ -15,6 +15,10 @@ enable-tracing = [
     "dep:tracing-subscriber",
     "dep:tracing-futures",
 ]
+vendored-openssl = [
+    "omni_cache/vendored-openssl",
+    "omni_execution_plan/vendored-openssl",
+]
 
 [dependencies]
 eyre = { workspace = true }

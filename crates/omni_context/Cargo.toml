@@ -8,6 +8,10 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
+vendored-openssl = [
+    "omni_cache/vendored-openssl",
+    "omni_execution_plan/vendored-openssl",
+]
 
 [[bench]]
 path = "./benches/omni_context_benchmarks.rs"

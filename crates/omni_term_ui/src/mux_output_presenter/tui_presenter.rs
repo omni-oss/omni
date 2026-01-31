@@ -26,7 +26,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{
         Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation,
-        ScrollbarState, block::Title,
+        ScrollbarState,
     },
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -578,7 +578,7 @@ fn get_frame_data<'a>(
         None
     };
 
-    fn block<'a, T: Into<Title<'a>>>(title: T) -> Block<'a> {
+    fn block<'a, T: Into<Line<'a>>>(title: T) -> Block<'a> {
         Block::new().title(title).borders(Borders::ALL)
     }
 
