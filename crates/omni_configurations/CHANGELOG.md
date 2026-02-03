@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.2.0 - 2026-02-03
+#### Features
+- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_tracing_subscriber**) support for custom ad-hoc writers - (f584f1f) - Clarence Manuel

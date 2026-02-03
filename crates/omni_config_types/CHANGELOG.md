@@ -2,18 +2,9 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
-## omni_tera-v0.2.0 - 2026-02-03
+## omni_config_types-v0.1.0 - 2026-02-03
 #### Features
 - support if expressions for task condition - (cb1c87d) - Clarence Manuel
-
-- - -
-
-## omni_tera-v0.1.0 - 2026-01-31
-#### Features
-- support target override on run-generator action - (a63f18c) - Clarence Manuel
-- implement run-generator action - (9cb9f7c) - Clarence Manuel
-#### Miscellaneous Chores
-- set versions and update cog.toml [skip ci] - (c6efdcf) - Clarence Manuel
 
 - - -
 

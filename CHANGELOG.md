@@ -2,6 +2,247 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.1.0 - 2026-02-03
+#### Features
+- (**bridge-rpc**) update implementation to v2 - (f7f38b8) - Clarence Manuel
+- (**bridge-rpc-router**) implement router - (89bce93) - Clarence Manuel
+- (**bridge_rpc_router**) implement router - (20f0e20) - Clarence Manuel
+- (**omni-remote-cache-service-tests**) add api tests - (4d52766) - Clarence Manuel
+- (**omni_cache_remote_service**) implement integration tests - (427accb) - Clarence Manuel
+- (**omni_generator**) implement add-many action - (4156d24) - Clarence Manuel
+- (**omni_generator_configurations**) utilize omni_serde_validators - (2dec237) - Clarence Manuel
+- (**omni_generatore**) implement add-inline action - (61088ab) - Clarence Manuel
+- (**omni_generatore**) add execution_actions stub - (f15d44f) - Clarence Manuel
+- (**omni_generators**) add-inline implement prompting for missing target and expanding output path - (52ea1fb) - Clarence Manuel
+- (**omni_prompt**) validate duplicate generator names - (995022f) - Clarence Manuel
+- (**omni_prompt**) fix default value in template to support raw values - (d30952b) - Clarence Manuel
+- (**omni_prompt**) support templates in default values - (292d337) - Clarence Manuel
+- (**omni_remote_cache_client**) add tests - (9917ded) - Clarence Manuel
+- (**omni_remote_cache_service**) implement API key security handling - (1a0871b) - Clarence Manuel
+- (**omni_remote_cache_service**) implement config file - (75c9f1d) - Clarence Manuel
+- (**omni_remote_cache_service**) implement basic functionality - (bbb9f62) - Clarence Manuel
+- (**omni_remote_cache_service**) add scalar ui [skip ci] - (563331c) - Clarence Manuel
+- (**omni_remote_cache_service_client**) add RemoteCacheServiceClient trait - (a45a3a8) - Clarence Manuel
+- (**omni_remote_cache_storage**) implement LruCached - (021b4c4) - Clarence Manuel
+- (**omni_remote_cache_storage**) implement local disk and s3 backend - (a299b55) - Clarence Manuel
+- (**omni_serde_validators**) extract common validators into one crate - (f9657cb) - Clarence Manuel
+- (**omni_task_executor**) utilize omni_tracing_subscriber ad-hoc writer for TUI mode - (413a3f1) - Clarence Manuel
+- (**omni_task_executor**) add cache_manager module - (310e4b2) - Clarence Manuel
+- (**omni_term_ui**) implement key event handling in TUI mode - (123ccb0) - Clarence Manuel
+- (**omni_term_ui**) implement scrolling on TUI - (ec11707) - Clarence Manuel
+- (**omni_tracing_subscriber**) support for custom ad-hoc writers - (f584f1f) - Clarence Manuel
+- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+- implement set-version script - (13f0c84) - Clarence Manuel
+- [WIP] update implementation - (5b267cd) - Clarence Manuel
+- implement run-command action - (a1bf24f) - Clarence Manuel
+- implement modify and modify-content actions - (edfd7c4) - Clarence Manuel
+- implement run-generator action - (9cb9f7c) - Clarence Manuel
+- add log for retry interval - (268912e) - Clarence Manuel
+- utilize omni_generator crate and implement basic prompting - (d835d3c) - Clarence Manuel
+- implement gen run command handling - (b9856c9) - Clarence Manuel
+- implement omni_prompt crate - (48ab0df) - Clarence Manuel
+- secure storage for remote cache config - (9d9317b) - Clarence Manuel
+- add initial omni_generator_configurations crate implementation - (f80884b) - Clarence Manuel
+- implement initial system-interface package - (d579bf6) - Clarence Manuel
+- add hash project subcommand - (40f5d1a) - Clarence Manuel
+- create summarize-results script - (e489555) - Clarence Manuel
+- implement setup command for remote cache - (e2ae4d0) - Clarence Manuel
+- implement head /artifacts for credentials validation - (5772be3) - Clarence Manuel
+- utilize RemoteCacheClient in omni_cache - (5d04312) - Clarence Manuel
+- implement experimental --stale-only flag - (1d6029b) - Clarence Manuel
+- implement cache prune command - (1726796) - Clarence Manuel
+- implement cache stats command - (265706c) - Clarence Manuel
+- refactor declspec subcommand - (cef37ee) - Clarence Manuel
+- experimental tui mode - (a44bbad) - Clarence Manuel
+- add omni_term_ui stream implementation - (57505b5) - Clarence Manuel
+- declspec command - (a8e23a8) - Clarence Manuel
+- support --result flag for exec and run command - (3311ba8) - Clarence Manuel
+- support sibling task, disabling task - (2f9ff3a) - Clarence Manuel
+- add max_concurrency flag - (13b4d39) - Clarence Manuel
+- retrieve version from git tags - (f463516) - Clarence Manuel
+- add apply-version script - (092372c) - Clarence Manuel
+- improve load_projects performance by 50-60% - (869b91e) - Clarence Manuel
+- convert load_projects to async - (23e26c3) - Clarence Manuel
+- support empty commands - (211b260) - Clarence Manuel
+- improve load_projects performance from 20-50% by utilizing build_parallel in ignore - (5a55399) - Clarence Manuel
+- improve load_projects performance by 50% - (94f2084) - Clarence Manuel
+- add omni load_projects benchmarks - (d93c8ea) - Clarence Manuel
+- add omni_test_utils - (941e1bd) - Clarence Manuel
+- support for meta filter - (238661e) - Clarence Manuel
+- add omni_expressions - (31fa618) - Clarence Manuel
+- added execution time on cache outputs - (c4025d9) - Clarence Manuel
+- color reporting and resolve @project to the current project's - (4d3dc8e) - Clarence Manuel
+- record and replay logs - (1f33d00) - Clarence Manuel
+- integrate caching to TaskOrchestrator - (5e98052) - Clarence Manuel
+- new on_failure handling - (2f42dc9) - Clarence Manuel
+- load cache_keys in load_projects - (5c8ac18) - Clarence Manuel
+- support get_many and cache_many operation - (a408ccd) - Clarence Manuel
+- support @workspace in input and output files - (e1edb84) - Clarence Manuel
+- support OmniPath in caching - (9ae0c25) - Clarence Manuel
+- LocalTaskExecutionCacheStore initial implementation - (36758a6) - Clarence Manuel
+- RealDirHashBuilder implementation + tests - (6f01e4b) - Clarence Manuel
+- utilize portable-pty - (b691f3d) - Clarence Manuel
+- utilize OmniPath syntax for path configurations - (ce111ed) - Clarence Manuel
+- support env values per task - (1663fa2) - Clarence Manuel
+- utilize maps and sets create in the CLI - (5c55f01) - Clarence Manuel
+- improve env parser performance by 7% - (14d1fd7) - Clarence Manuel
+- global maps and sets in config_utils, env, and env_loader - (835b9fd) - Clarence Manuel
+- create crates for global maps and sets implementation - (da41d3e) - Clarence Manuel
+- tracing with file - (44e2d31) - Clarence Manuel
+- custom env_files + override - (cb095b7) - Clarence Manuel
+- add WORKSPACE_DIR and PROJECT_DIR support on extend paths - (3ed4c6a) - Clarence Manuel
+- integrate ExtensionGraph to Context::load_projects - (87dc968) - Clarence Manuel
+- add merge support for configurations - (b952e72) - Clarence Manuel
+- add StreamTransport to bridge_rpc crate - (0047182) - Clarence Manuel
+- add TransportReadFramer and TransportWriteFramer to bridge_rpc crate - (85faf60) - Clarence Manuel
+- use bytes crate for bridge_rpc - (64403db) - Clarence Manuel
+- read and write framers in typescript - (b5acf32) - Clarence Manuel
+- add probe to bridge-rpc-ts - (118bb26) - Clarence Manuel
+- bridge rpc ts package initial implementation - (c1f61f5) - Clarence Manuel
+- add typescript projects - (028e56c) - Clarence Manuel
+- ignore run dependencies and failures - (d0ef6da) - Clarence Manuel
+- bridge_rpc tests - (c88b1d6) - Clarence Manuel
+- WIP bridge_rpc - (6e6a556) - Clarence Manuel
+- utilize BatchedExecutionPlan in run command - (8d754ac) - Clarence Manuel
+- test from_project_graph - (7976665) - Clarence Manuel
+- add from_projects test - (ee35ce5) - Clarence Manuel
+- project graph - (a3fcb4d) - Clarence Manuel
+- js_runtime configuration - (56752bd) - Clarence Manuel
+- add test for load_projects - (1720882) - Clarence Manuel
+- use deno_task_shell - (c0aa5d4) - Clarence Manuel
+- WIP DirWalker trait - (fda06d1) - Clarence Manuel
+- WIP JsRuntime - (04270a6) - Clarence Manuel
+- created run command - (d2e898d) - Clarence Manuel
+- env parser - (dbdddef) - Clarence Manuel
+#### Bug Fixes
+- (**bridge_rpc**) test for duplicate paths in builder - (691ae42) - Clarence Manuel
+- (**bridge_rpc**) test_stream_data integration test - (8b86fdf) - Clarence Manuel
+- (**omni_cli_core**) broken log colors due to tracing-subscriber 0.3.20 - (91ceb27) - Clarence Manuel
+- (**omni_prompt**) values passed as pre exec are the wrong type - (50a5dc0) - Clarence Manuel
+- (**omni_remote_cache_service**) open api specs [skip ci] - (208b436) - Clarence Manuel
+- (**omni_task_executor**) no cache hits bug - (a0f2b01) - Clarence Manuel
+- (**omni_task_executor**) compile error - (0eb44cf) - Clarence Manuel
+- remove @omni-oss/apply-version from root package.json - (29f81c4) - Clarence Manuel
+- no expansion of command and env vars - (66b84e0) - Clarence Manuel
+- prompt configuration schema - (4f80238) - Clarence Manuel
+- build issue for site due to latest tanstack start version error - (256bad7) - Clarence Manuel
+- no hash when running dry run - (f4495c9) - Clarence Manuel
+- merging behavior for enabled, persistent, interactive in TaskConfigurationLongForm - (ce1a976) - Clarence Manuel
+- handle non pty compatible scenarios - (9697e2f) - Clarence Manuel
+- windows not loading projects - (a12bc9e) - Clarence Manuel
+- pin rust nightly version - (485c085) - Clarence Manuel
+- pin rust nightly version - (ce7c477) - Clarence Manuel
+- cached output files linking and *ignore file handling - (f1553ce) - Clarence Manuel
+- compile speed on dev - (69b4609) - Clarence Manuel
+#### Performance Improvements
+- add omni_context benchmarks - (55628d7) - Clarence Manuel
+#### Documentation
+- fix build error - (894dcbd) - Clarence Manuel
+- use shadcn and add frontpage - (d91902e) - Clarence Manuel
+- add autogenerator script [skip ci] - (f79909f) - Clarence Manuel
+- move location [skip ci] - (9b7637d) - Clarence Manuel
+- add startlight astro docs - (00d29de) - Clarence Manuel
+#### Continuous Integration
+- update manual release workflow [skip ci] - (be4a8d5) - Clarence Manuel
+- update @actions/core version - (0384531) - Clarence Manuel
+- fix workflow - (986ff24) - Clarence Manuel
+- bundle apply-version script [skip ci] - (42b596a) - Clarence Manuel
+- update publish docs workflow - (9da9a00) - Clarence Manuel
+- exclude docs project - (044198e) - Clarence Manuel
+- publish json schemas - (c11f0fb) - Clarence Manuel
+- fix error - (759d8d5) - Clarence Manuel
+#### Refactoring
+- (**bridge_rpc**) cleanup Frame implementation - (962f77f) - Clarence Manuel
+- (**bridge_rpc**) use tokio traits instead of futures traits - (9db748d) - Clarence Manuel
+- (**clap_utils**) create ValueEnumAdapter - (e0fc922) - Clarence Manuel
+- (**omni_configuration_discovery**) extract crates with duplicated functionality - (f6f530d) - Clarence Manuel
+- (**omni_context**) re enable tests - (e9ee414) - Clarence Manuel
+- (**omni_execution_plan**) create reusable omni_execution_plan crate - (c583161) - Clarence Manuel
+- (**omni_task_context**) create reusable omni_task_context crate - (f154cf4) - Clarence Manuel
+- (**omni_task_executor**) add result, error, sys types - (4a547a0) - Clarence Manuel
+- (**omni_test_utils**) remove omni_cli_core as dependency and use omni_configurations instead - (1e7fcfb) - Clarence Manuel
+- create packages for channels and async-utils - (797e64a) - Clarence Manuel
+- cleanup omni_context [skip ci] - (7c94419) - Clarence Manuel
+- major refactor for omni_context and related crates - (28f69e7) - Clarence Manuel
+- create omni_context crate [skip ci] - (4fefab0) - Clarence Manuel
+- create omni_configurations crate - (4b3a7b1) - Clarence Manuel
+- omni_process - (7fa0852) - Clarence Manuel
+- move all collect features to omni_collector crate - (17bb79e) - Clarence Manuel
+- utilize refactored omni_collecter, omni_utils, omni_hasher in omni_cache - (a995400) - Clarence Manuel
+- create TaskOrchestrator to generalize run and exec commands - (8af7849) - Clarence Manuel
+- error types to use strum - (0076af9) - Clarence Manuel
+- core types - (ffa5294) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_remote_cache_service**) add flate2 dependency [skip ci] - (1606c30) - Clarence Manuel
+- (**version**) v0.1.0 - (b9d0460) - Clarence Manuel
+- set versions and update cog.toml [skip ci] - (c6efdcf) - Clarence Manuel
+- update versions [skip ci] - (706a1d9) - Clarence Manuel
+- update package.json version [skip ci] - (5f549ba) - Clarence Manuel
+- update crates [skip ci] - (8b9022a) - Clarence Manuel
+- create set-version script - (f53c54e) - Clarence Manuel
+- update ts build - (5c64054) - Clarence Manuel
+- update rust-toolchain.toml - (9706e24) - Clarence Manuel
+- update Cargo.lock and Cargo.toml - (22bb8b8) - Clarence Manuel
+- refactor vitest configs - (9add54f) - Clarence Manuel
+- refactor vitest configs - (5943ba0) - Clarence Manuel
+- update packages - (eec46c9) - Clarence Manuel
+- update rust version - (4c17057) - Clarence Manuel
+- update Cargo.lock and Cargo.toml - (4f42230) - Clarence Manuel
+- update packages - (17b4708) - Clarence Manuel
+- update Cargo.lock - (2abf5fa) - Clarence Manuel
+- update crate generator - (986bb7c) - Clarence Manuel
+- update npm dependencies - (5e0af81) - Clarence Manuel
+- update npm dependency versions - (996f24f) - Clarence Manuel
+- update Cargo.lock, Cargo.toml, rust-toolchain.toml - (b209fa6) - Clarence Manuel
+- update dependencies [skip ci] - (5c6db83) - Clarence Manuel
+- upgrade rust version - (8499332) - Clarence Manuel
+- update Cargo.lock and Cargo.toml - (397801f) - Clarence Manuel
+- upgrade dependencies - (766d147) - Clarence Manuel
+- update dependencies [skip ci] - (280976f) - Clarence Manuel
+- update dependencies [skip ci] - (d31a4ea) - Clarence Manuel
+- add license [skip ci] - (751024e) - Clarence Manuel
+- update dependencies [skip ci] - (e8d8e65) - Clarence Manuel
+- update README.md [skip ci] - (54f40a1) - Clarence Manuel
+- update packages [skip ci] - (513b425) - Clarence Manuel
+- add publish-json-schemas workflow [skip ci] - (8144c86) - Clarence Manuel
+- update yaml-language-server schema on omni config files [skip ci] - (554ea4d) - Clarence Manuel
+- context tests - (f997e5a) - Clarence Manuel
+- update README.md installer command for Windows PowerShell [skip ci] - (fa00702) - Clarence Manuel
+- update Cargo project manifests - (7f5fdc3) - Clarence Manuel
+- added installer scripts - (d059dec) - Clarence Manuel
+- add omni_generator project - (dc529ef) - Clarence Manuel
+- sync changes - (6c9a887) - Clarence Manuel
+- sync changes - (96d6b2f) - Clarence Manuel
+- sync changes - (7e7daae) - Clarence Manuel
+- sync updates - (c494e10) - Clarence Manuel
+- sync - (1c70cef) - Clarence Manuel
+- add deno - (75903c5) - Clarence Manuel
+- initial commit - (4db3eaf) - Clarence Manuel
+
+- - -
+
+## v0.2.0 - 2026-02-03
+### Package updates
+- omni_core bumped to omni_core-v0.2.0
+- omni_cli_core bumped to omni_cli_core-v0.2.0
+- omni bumped to omni-v0.2.0
+- omni_tera bumped to omni_tera-v0.2.0
+- omni_config_types bumped to omni_config_types-v0.1.0
+- omni_task_executor bumped to omni_task_executor-v0.2.0
+- omni_execution_plan bumped to omni_execution_plan-v0.2.0
+- @omni-oss/bridge-rpc bumped to @omni-oss/bridge-rpc-v0.1.1
+- omni_configurations bumped to omni_configurations-v0.2.0
+- root bumped to root-v0.1.0
+### Global changes
+#### Features
+- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+#### Continuous Integration
+- update filter for check-pr-message [skip ci] - (3f2544b) - Clarence Manuel
+#### Miscellaneous Chores
+- fix windows installer [skip ci] - (1c8122e) - Clarence Manuel
+
+- - -
+
 ## v0.1.0 - 2026-01-31
 ### Package updates
 - omni_types bumped to omni_types-v0.1.0

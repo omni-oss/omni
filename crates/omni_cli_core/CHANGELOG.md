@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.2.0 - 2026-02-03
+#### Features
+- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+#### Miscellaneous Chores
+- (**bridge_rpc**) add max_retries - (92e5ee1) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.1.0 - 2026-01-31
 #### Features
 - (**bridge-rpc**) update implementation to v2 - (f7f38b8) - Clarence Manuel

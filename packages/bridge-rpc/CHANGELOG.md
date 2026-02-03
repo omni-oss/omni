@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-rpc-v0.1.1 - 2026-02-03
+#### Bug Fixes
+- (**@omni-oss/bridge-rpc**) remove console logs - (0ded265) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-rpc-v0.1.0 - 2026-01-31
 #### Features
 - (**bridge-rpc**) update implementation to v2 - (f7f38b8) - Clarence Manuel

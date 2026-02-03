@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -4353,7 +4353,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -4453,7 +4453,7 @@ dependencies = [
 
 [[package]]
 name = "omni_config_types"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -4488,7 +4488,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -4566,7 +4566,7 @@ dependencies = [
 
 [[package]]
 name = "omni_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -4616,7 +4616,7 @@ dependencies = [
 
 [[package]]
 name = "omni_execution_plan"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ahash 0.8.12",
  "bs58",
@@ -5008,7 +5008,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -5055,7 +5055,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tera"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "derive_builder",

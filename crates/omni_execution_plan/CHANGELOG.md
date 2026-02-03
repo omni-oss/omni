@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_execution_plan-v0.2.0 - 2026-02-03
+#### Features
+- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+
+- - -
+
 ## omni_execution_plan-v0.1.0 - 2026-01-31
 #### Features
 - implement retry interval - (209a039) - Clarence Manuel
