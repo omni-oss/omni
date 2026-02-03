@@ -13,3 +13,4 @@ dependencies:
   - omni_expressions
   - system_traits
   - trace
+  - omni_config_types

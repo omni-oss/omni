@@ -4452,6 +4452,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_config_types"
+version = "0.0.0"
+dependencies = [
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "merge",
+ "omni_serde_validators",
+ "schemars",
+ "serde",
+ "strum 0.27.2",
+ "test-log",
+ "thiserror 2.0.18",
+ "trace",
+ "tracing",
+]
+
+[[package]]
 name = "omni_configuration_discovery"
 version = "0.1.0"
 dependencies = [
@@ -4483,6 +4501,7 @@ dependencies = [
  "lazy-regex",
  "maps",
  "merge",
+ "omni_config_types",
  "omni_core",
  "omni_expressions",
  "omni_types",
@@ -4554,6 +4573,7 @@ dependencies = [
  "eyre",
  "maps",
  "merge",
+ "omni_config_types",
  "petgraph",
  "schemars",
  "serde",
@@ -4606,6 +4626,7 @@ dependencies = [
  "eyre",
  "globset",
  "maps",
+ "omni_config_types",
  "omni_configurations",
  "omni_core",
  "omni_expressions",
@@ -5007,6 +5028,7 @@ dependencies = [
  "num_cpus",
  "omni_cache",
  "omni_collector",
+ "omni_config_types",
  "omni_configurations",
  "omni_context",
  "omni_core",
@@ -5015,6 +5037,7 @@ dependencies = [
  "omni_hasher",
  "omni_process",
  "omni_task_context",
+ "omni_tera",
  "omni_term_ui",
  "omni_tracing_subscriber",
  "omni_types",

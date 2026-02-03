@@ -35,3 +35,4 @@ system_traits = { workspace = true }
 lazy-regex = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
+omni_config_types = { workspace = true }

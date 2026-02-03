@@ -2,6 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use derive_new::new;
 use maps::OrderedMap;
+use omni_config_types::TeraExprBoolean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +22,7 @@ pub struct Task {
     pub command: String,
     pub dependencies: Vec<TaskDependency>,
     pub description: Option<String>,
-    pub enabled: bool,
+    pub r#if: TeraExprBoolean,
     pub interactive: bool,
     pub persistent: bool,
     pub siblings: Vec<TaskDependency>,
@@ -34,7 +35,7 @@ pub(crate) struct TaskBuilder {
     command: String,
     dependencies: Vec<TaskDependency>,
     description: Option<String>,
-    enabled: bool,
+    r#if: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
     siblings: Vec<TaskDependency>,
@@ -49,7 +50,7 @@ impl TaskBuilder {
             command,
             dependencies: Default::default(),
             description: Default::default(),
-            enabled: true,
+            r#if: TeraExprBoolean::new_boolean(true),
             interactive: false,
             persistent: false,
             siblings: Default::default(),
@@ -113,8 +114,8 @@ impl TaskBuilder {
     }
 
     #[allow(unused)]
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
+    pub fn r#if(mut self, r#if: TeraExprBoolean) -> Self {
+        self.r#if = r#if;
         self
     }
 
@@ -141,7 +142,7 @@ impl TaskBuilder {
             command: self.command,
             dependencies: self.dependencies,
             description: self.description,
-            enabled: self.enabled,
+            r#if: self.r#if,
             interactive: self.interactive,
             persistent: self.persistent,
             siblings: self.siblings,

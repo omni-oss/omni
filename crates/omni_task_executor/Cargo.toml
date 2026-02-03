@@ -54,3 +54,5 @@ omni_execution_plan = { workspace = true }
 omni_task_context = { workspace = true }
 omni_collector = { workspace = true }
 omni_types = { workspace = true }
+omni_tera = { workspace = true }
+omni_config_types = { workspace = true }

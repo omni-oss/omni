@@ -10,7 +10,7 @@ skip_ci = "[skip ci]"
 skip_untracked = false
 pre_bump_hooks = [
     "bun x @omni-oss/set-version {{version}}",
-    "git add package.json Cargo.toml",
+    "git add package.json Cargo.toml Cargo.lock",
 ]
 post_bump_hooks = [
     "git push origin {{version_tag}}",
@@ -347,6 +347,13 @@ include = [
 ]
 public_api = false
 
+[packages.omni_config_types]
+path = "crates/omni_config_types"
+include = [
+    "crates/omni_config_types/**",
+]
+public_api = false
+
 [packages.omni_utils]
 path = "crates/omni_utils"
 include = [
@@ -431,3 +438,24 @@ public_api = false
 path = "packages/vitest-config"
 include = ["packages/vitest-config/**"]
 public_api = false
+
+[packages.root]
+path = "."
+include = [
+    "Cargo.lock",
+    "Cargo.toml",
+    "rust-toolchain.toml",
+    "cargo/*",
+    ".rustfmt.toml",
+    "package.json",
+    "bun.lock",
+    "LICENSE",
+    "README.md",
+    "workspace.omni.yaml",
+    "vitest.workspace.ts",
+    "biome.json"
+]
+public_api = false
+pre_bump_hooks = [
+    "git add package.json bun.lock Cargo.toml Cargo.lock",
+]

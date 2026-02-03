@@ -4,6 +4,7 @@ use std::{
 };
 
 use derive_new::new;
+use omni_config_types::TeraExprBoolean;
 use omni_configurations::MetaConfiguration;
 use omni_core::{
     BatchedExecutionPlan, Task, TaskDependency, TaskExecutionGraphError,
@@ -94,7 +95,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             p.name.clone(),
                             p.dir.clone(),
                             vec![],
-                            true,
+                            TeraExprBoolean::Boolean(true),
                             false,
                             false,
                             None,
@@ -144,7 +145,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             project.name.clone(),
                             project.dir.clone(),
                             vec![],
-                            task.enabled,
+                            task.r#if.clone(),
                             task.interactive,
                             task.persistent,
                             task.max_retries,
@@ -264,7 +265,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                                 task: task_name.clone(),
                             }],
                             None,
-                            true,
+                            TeraExprBoolean::Boolean(true),
                             false,
                             false,
                             vec![],

@@ -3,6 +3,7 @@ use std::time::Duration;
 use config_utils::{DictConfig, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
+use omni_config_types::TeraExprBoolean;
 use omni_core::{Task, TaskDependency};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,8 +32,8 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     pub description: Option<Replace<String>>,
 
-    #[serde(default = "default_enabled")]
-    pub enabled: Option<Replace<bool>>,
+    #[serde(default = "default_if", alias = "enabled")]
+    pub r#if: Option<TeraExprBoolean>,
 
     #[serde(default = "default_interactive")]
     pub interactive: Option<Replace<bool>>,
@@ -101,8 +102,8 @@ mod retry_interval {
 }
 
 #[inline(always)]
-fn default_enabled() -> Option<Replace<bool>> {
-    None
+fn default_if() -> Option<TeraExprBoolean> {
+    Some(TeraExprBoolean::Boolean(true))
 }
 
 #[inline(always)]
@@ -125,7 +126,7 @@ impl Default for TaskConfigurationLongForm {
             cache: CacheConfiguration::default(),
             output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
-            enabled: default_enabled(),
+            r#if: default_if(),
             interactive: default_interactive(),
             persistent: default_persistent(),
             with: ListConfig::append(vec![]),
@@ -180,7 +181,7 @@ impl TaskConfiguration {
                     task: name.to_string(),
                 }],
                 None,
-                true,
+                true.into(),
                 false,
                 false,
                 vec![],
@@ -191,7 +192,7 @@ impl TaskConfiguration {
                 command,
                 dependencies,
                 description,
-                enabled,
+                r#if,
                 interactive,
                 persistent,
                 with,
@@ -202,7 +203,7 @@ impl TaskConfiguration {
                 command.clone(),
                 dependencies.iter().cloned().map(Into::into).collect(),
                 description.clone().map(|e| e.into_inner()),
-                enabled.map(|e| e.into_inner()).unwrap_or(true),
+                r#if.clone().unwrap_or(true.into()),
                 interactive.map(|e| e.into_inner()).unwrap_or(false),
                 persistent.map(|e| e.into_inner()).unwrap_or(false),
                 with.iter().cloned().map(Into::into).collect(),
@@ -266,7 +267,7 @@ impl Merge for TaskConfiguration {
                     cache: a_cache,
                     output: a_output,
                     meta: a_meta,
-                    enabled: a_enabled,
+                    r#if: a_enabled,
                     interactive: a_interactive,
                     persistent: a_persistent,
                     with: a_with,
@@ -281,7 +282,7 @@ impl Merge for TaskConfiguration {
                     cache: b_cache,
                     output: b_output,
                     meta: b_meta,
-                    enabled: b_enabled,
+                    r#if: b_enabled,
                     interactive: b_interactive,
                     persistent: b_persistent,
                     with: b_with,
@@ -342,7 +343,7 @@ mod tests {
             meta: Default::default(),
             interactive: Some(Replace::new(false)),
             persistent: Some(Replace::new(true)),
-            enabled: Some(Replace::new(true)),
+            r#if: Some(true.into()),
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(1)),
             retry_interval: Some(Replace::new(Duration::from_secs(1))),
@@ -363,7 +364,7 @@ mod tests {
             meta: Default::default(),
             interactive: Some(Replace::new(true)),
             persistent: Some(Replace::new(false)),
-            enabled: None,
+            r#if: None,
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(3)),
             retry_interval: Some(Replace::new(Duration::from_secs(2))),
@@ -383,7 +384,7 @@ mod tests {
                 meta: Default::default(),
                 interactive: Some(Replace::new(true)),
                 persistent: Some(Replace::new(false)),
-                enabled: Some(Replace::new(true)),
+                r#if: Some(true.into()),
                 with: ListConfig::append(vec![]),
                 max_retries: Some(Replace::new(3)),
                 retry_interval: Some(Replace::new(Duration::from_secs(2))),

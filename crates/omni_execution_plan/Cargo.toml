@@ -30,3 +30,4 @@ bs58 = { workspace = true }
 omni_scm = { workspace = true }
 omni_types = { workspace = true }
 path-clean = { workspace = true }
+omni_config_types = { workspace = true }

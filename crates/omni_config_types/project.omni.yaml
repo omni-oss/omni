@@ -1,15 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: omni_execution_plan
-
+name: omni_config_types
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
-
 dependencies:
-  - omni_configurations
-  - omni_core
-  - omni_expressions
-  - omni_scm
-  - omni_types
-  - config_utils
-  - maps
-  - omni_config_types
+  - trace
+  - omni_serde_validators

@@ -1,4 +1,4 @@
-use tera::{Result, Tera};
+pub use tera::{Context, Error, ErrorKind, Result, Tera};
 
 use crate::preset::FULL;
 

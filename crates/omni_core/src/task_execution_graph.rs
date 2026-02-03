@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use omni_config_types::TeraExprBoolean;
 use petgraph::{
     Direction,
     algo::is_cyclic_directed,
@@ -26,7 +27,7 @@ pub struct TaskExecutionNode {
     project_dir: PathBuf,
     full_task_name: String,
     dependencies: Vec<String>,
-    enabled: bool,
+    r#if: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
     max_retries: Option<u8>,
@@ -41,7 +42,7 @@ impl TaskExecutionNode {
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
         dependencies: Vec<String>,
-        enabled: bool,
+        r#if: TeraExprBoolean,
         interactive: bool,
         persistent: bool,
         max_retries: Option<u8>,
@@ -56,7 +57,7 @@ impl TaskExecutionNode {
             project_name,
             project_dir: project_dir.into(),
             dependencies,
-            enabled,
+            r#if,
             interactive,
             persistent,
             max_retries,
@@ -90,8 +91,8 @@ impl TaskExecutionNode {
         &self.dependencies
     }
 
-    pub fn enabled(&self) -> bool {
-        self.enabled
+    pub fn r#if(&self) -> &TeraExprBoolean {
+        &self.r#if
     }
 
     pub fn interactive(&self) -> bool {
@@ -120,7 +121,7 @@ impl TaskExecutionNode {
         PathBuf,
         String,
         Vec<String>,
-        bool,
+        TeraExprBoolean,
         bool,
         bool,
         Option<u8>,
@@ -133,7 +134,7 @@ impl TaskExecutionNode {
             self.project_dir,
             self.full_task_name,
             self.dependencies,
-            self.enabled,
+            self.r#if,
             self.interactive,
             self.persistent,
             self.max_retries,
@@ -200,7 +201,7 @@ impl TaskExecutionGraph {
                     project_name.to_string(),
                     project_dir.to_path_buf(),
                     vec![],
-                    task.1.enabled,
+                    task.1.r#if.clone(),
                     task.1.interactive,
                     task.1.persistent,
                     task.1.max_retries,
@@ -1191,7 +1192,7 @@ mod tests {
             project_name.to_string(),
             PathBuf::from(""),
             vec![],
-            true,
+            TeraExprBoolean::Boolean(true),
             false,
             false,
             None,

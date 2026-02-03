@@ -1,9 +1,10 @@
-use std::time::Duration;
+use std::{cell::LazyCell, time::Duration};
 
 use derive_new::new;
 use futures::future::join_all;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
+use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
@@ -199,7 +200,10 @@ where
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in &task_contexts {
-            if !task_ctx.node.enabled() {
+            let tera_ctx = LazyCell::new(|| create_tera_context(task_ctx));
+            let should_run =
+                evaluate_bool_expr(task_ctx.node.r#if(), &tera_ctx)?;
+            if !should_run {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_skipped(
@@ -352,6 +356,35 @@ where
 
         Ok(new_results)
     }
+}
+
+fn evaluate_bool_expr<InitFn: FnOnce() -> omni_tera::Context>(
+    expr: &TeraExprBoolean,
+    context: &LazyCell<omni_tera::Context, InitFn>,
+) -> omni_tera::Result<bool> {
+    Ok(match expr {
+        TeraExprBoolean::Boolean(b) => *b,
+        TeraExprBoolean::Expr(expr) => {
+            let normal = expr.trim().to_lowercase();
+            match normal.as_str() {
+                "true" | "yes" | "y" | "1" => return Ok(true),
+                "false" | "no" | "n" | "0" => return Ok(false),
+                _ => {}
+            }
+
+            let result = omni_tera::one_off(expr, "expr", &context)?;
+
+            result.trim().to_lowercase() == "true"
+        }
+    })
+}
+
+fn create_tera_context(task_ctx: &TaskContext) -> omni_tera::Context {
+    let mut context = omni_tera::Context::new();
+
+    context.insert("env", &task_ctx.env_vars);
+
+    context
 }
 
 async fn run_process<'a>(
@@ -511,4 +544,7 @@ pub(crate) enum BatchExecutorErrorInner {
 
     #[error(transparent)]
     StreamHandle(#[from] StreamHandleError),
+
+    #[error(transparent)]
+    Tera(#[from] omni_tera::Error),
 }

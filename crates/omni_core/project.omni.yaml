@@ -2,3 +2,6 @@
 name: omni_core
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - omni_config_types
