@@ -12,8 +12,12 @@ pub fn list_config_default<T: Merge>() -> ListConfig<T> {
 }
 
 pub mod fs {
-    use std::{io, path::Path};
+    use std::{
+        io,
+        path::{Path, PathBuf},
+    };
 
+    use derive_new::new;
     use serde::de::DeserializeOwned;
     use strum::{EnumDiscriminants, IntoDiscriminant as _};
     use system_traits::{FsRead, FsReadAsync};
@@ -35,7 +39,13 @@ pub mod fs {
     {
         let path: &'a Path = path.into();
         let ext = path.extension().unwrap_or_default();
-        let content = sys.fs_read_to_string_async(path).await?;
+        let content = sys.fs_read_to_string_async(path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
+            } else {
+                LoadConfigErrorInner::Io(e)
+            }
+        })?;
 
         deseralize_config(ext, content)
     }
@@ -95,7 +105,7 @@ pub mod fs {
         }
     }
 
-    #[derive(Error, Debug, EnumDiscriminants)]
+    #[derive(Error, Debug, EnumDiscriminants, new)]
     #[strum_discriminants(vis(pub), name(LoadConfigErrorKind))]
     enum LoadConfigErrorInner {
         #[error("unsupported file extension: {0}")]
@@ -103,6 +113,9 @@ pub mod fs {
 
         #[error(transparent)]
         Io(#[from] io::Error),
+
+        #[error("file not found: {path}", path = path.display())]
+        FileNotFound { path: PathBuf },
 
         #[error(transparent)]
         TomlDeserialize(#[from] toml::de::Error),
