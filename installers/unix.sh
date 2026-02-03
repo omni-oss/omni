@@ -67,6 +67,9 @@ if [ "$VERSION" = "latest" ]; then
         exit 1
     fi
 
+    # Remove the omni- prefix from the version if it exists
+    TO_INSTALL_VERSION=${TO_INSTALL_VERSION#omni-}
+
     echo "Latest version: $TO_INSTALL_VERSION"
 else
     # Use the specified version. Prepend 'v' if it's not already there.

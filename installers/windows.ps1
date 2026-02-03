@@ -68,6 +68,8 @@ if ($Version -eq "latest") {
     # Fetch the latest version from the GitHub API.
     Write-Output "Checking for latest version..."
     $TO_INSTALL_VERSION = Get-LatestRelease
+    # Remove the omni-  prefix from the version if it exists
+    $TO_INSTALL_VERSION = $TO_INSTALL_VERSION.Replace("omni-", "")
     Write-Output "Latest version: $TO_INSTALL_VERSION"
 } else {
     # Use the specified version.
