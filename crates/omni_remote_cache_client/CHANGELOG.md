@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_client-v0.2.0 - 2026-02-04
+#### Features
+- support tera template in task command - (7830096) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_client-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_remote_cache_client**) add negative test - (7561e0f) - Clarence Manuel

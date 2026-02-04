@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.1.1 - 2026-02-04
+#### Bug Fixes
+- improve error message when extended config is missing - (820c1ae) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_task_executor**) utilize omni_tracing_subscriber ad-hoc writer for TUI mode - (413a3f1) - Clarence Manuel

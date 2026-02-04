@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.2.0 - 2026-02-04
+#### Features
+- support tera template in cache input files and output files - (c0b305b) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_task_executor**) add cache_manager module - (310e4b2) - Clarence Manuel

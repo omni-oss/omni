@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## serde_validate-v0.2.0 - 2026-02-04
+#### Features
+- (**serde_validate**) add Validated type [skip ci] - (8f25faf) - Clarence Manuel
+
+- - -
+
 ## serde_validate-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_serde_validators**) extract common validators into one crate - (f9657cb) - Clarence Manuel

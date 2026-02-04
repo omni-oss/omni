@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_process-v0.2.0 - 2026-02-04
+#### Features
+- support tera template in task command - (7830096) - Clarence Manuel
+
+- - -
+
 ## omni_process-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_task_executor**) utilize omni_tracing_subscriber ad-hoc writer for TUI mode - (413a3f1) - Clarence Manuel

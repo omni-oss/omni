@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.2.0 - 2026-02-04
+#### Features
+- support tera template in cache input files and output files - (c0b305b) - Clarence Manuel
+- support tera template in task command - (7830096) - Clarence Manuel
+
+- - -
+
 ## root-v0.1.0 - 2026-02-03
 #### Features
 - (**bridge-rpc**) update implementation to v2 - (f7f38b8) - Clarence Manuel

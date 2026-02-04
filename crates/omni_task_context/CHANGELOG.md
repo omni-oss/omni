@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_context-v0.2.0 - 2026-02-04
+#### Features
+- support tera template in cache input files and output files - (c0b305b) - Clarence Manuel
+
+- - -
+
 ## omni_task_context-v0.1.0 - 2026-01-31
 #### Features
 - implement experimental --stale-only flag - (1d6029b) - Clarence Manuel

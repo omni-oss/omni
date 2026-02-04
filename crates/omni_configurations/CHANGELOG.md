@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.3.0 - 2026-02-04
+#### Features
+- support tera template in task command - (7830096) - Clarence Manuel
+#### Bug Fixes
+- improve error message when extended config is missing - (820c1ae) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.2.0 - 2026-02-03
 #### Features
 - support if expressions for task condition - (cb1c87d) - Clarence Manuel

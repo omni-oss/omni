@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.3.0 - 2026-02-04
+### Package updates
+- omni_task_executor bumped to omni_task_executor-v0.3.0
+- omni_configurations bumped to omni_configurations-v0.3.0
+- omni bumped to omni-v0.3.0
+- omni_remote_cache_client bumped to omni_remote_cache_client-v0.2.0
+- omni_process bumped to omni_process-v0.2.0
+- omni_cache bumped to omni_cache-v0.2.0
+- omni_task_context bumped to omni_task_context-v0.2.0
+- omni_cli_core bumped to omni_cli_core-v0.3.0
+- omni_context bumped to omni_context-v0.1.1
+- serde_validate bumped to serde_validate-v0.2.0
+- root bumped to root-v0.2.0
+### Global changes
+#### Features
+- support tera template in cache input files and output files - (c0b305b) - Clarence Manuel
+- support tera template in task command - (7830096) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (f6566f3) - Clarence Manuel
+#### Miscellaneous Chores
+- fix summarize-results script schema - (5e40d83) - Clarence Manuel
+- update root changelog path [skip ci] - (5883592) - Clarence Manuel
+- fix unix and windows latest installer [skip ci] - (9837df4) - Clarence Manuel
+
+- - -
+
 
 ## v0.2.0 - 2026-02-03
 ### Package updates
