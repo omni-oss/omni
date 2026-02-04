@@ -441,6 +441,7 @@ public_api = false
 
 [packages.root]
 path = "."
+changelog_path = "CHANGELOG.root.md"
 include = [
     "Cargo.lock",
     "Cargo.toml",
