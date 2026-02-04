@@ -5000,6 +5000,7 @@ dependencies = [
  "maps",
  "omni_core",
  "omni_hasher",
+ "omni_tera",
  "omni_types",
  "serde",
  "strum 0.27.2",

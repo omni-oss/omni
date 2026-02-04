@@ -1,4 +1,7 @@
+use std::borrow::Cow;
+
 use derive_new::new;
+use maps::Map;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -36,7 +39,8 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
 
         let cache_info = self
             .context
-            .get_cache_info(node.project_name(), node.task_name());
+            .get_cache_info(node.project_name(), node.task_name())
+            .map(|ci| Cow::Borrowed(ci));
 
         let dependency_hashes = if !ignore_dependencies {
             node.dependencies()
@@ -46,16 +50,28 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         } else {
             vec![]
         };
+        let template_context = create_template_context(&env_vars);
 
         let ctx = TaskContext {
             node,
             env_vars,
             cache_info,
             dependency_hashes,
+            template_context,
         };
 
         Ok(ctx)
     }
+}
+
+fn create_template_context<'a>(
+    env_vars: &'a Map<String, String>,
+) -> omni_tera::Context {
+    let mut context = omni_tera::Context::new();
+
+    context.insert("env", env_vars);
+
+    context
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -86,4 +102,7 @@ pub(crate) enum TaskContextProviderErrorInner {
 
     #[error(transparent)]
     ContextError(eyre::Report),
+
+    #[error(transparent)]
+    Custom(#[from] eyre::Report),
 }

@@ -8,3 +8,4 @@ dependencies:
   - maps
   - omni_types
   - omni_hasher
+  - omni_tera

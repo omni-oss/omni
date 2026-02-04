@@ -96,9 +96,9 @@ where
     TCacheStore: TaskExecutionCacheStore,
     TSys: CollectorSys,
 {
-    pub async fn get_cached_results(
+    pub async fn get_cached_results<'a>(
         &self,
-        inputs: &[TaskContext<'_>],
+        inputs: &[impl AsRef<TaskContext<'a>>],
     ) -> Result<UnorderedMap<String, CachedTaskExecution>, CacheManagerError>
     {
         if self.force.is_all() {
@@ -107,7 +107,7 @@ where
 
         let inputs = inputs
             .iter()
-            .filter_map(|i| i.execution_info())
+            .filter_map(|i| i.as_ref().execution_info())
             .collect::<Vec<_>>();
 
         let cached_items = self.store.get_many(&inputs).await.map_err(|e| {
@@ -148,6 +148,7 @@ where
             .filter_map(|r| {
                 if r.task_context()
                     .cache_info
+                    .as_ref()
                     .is_some_and(|ci| ci.cache_execution)
                     && !r.task_context().node.persistent()
                     && let Some(exec_info) = r.task_context().execution_info()

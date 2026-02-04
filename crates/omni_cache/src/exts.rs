@@ -2,13 +2,14 @@ use omni_task_context::TaskContext;
 
 use crate::TaskExecutionInfo;
 
-pub trait TaskExecutionInfoExt {
-    fn execution_info(&self) -> Option<TaskExecutionInfo<'_>>;
+pub trait TaskExecutionInfoExt<'a>: 'a {
+    fn execution_info(&'a self) -> Option<TaskExecutionInfo<'a>>;
 }
 
-impl<'a> TaskExecutionInfoExt for TaskContext<'a> {
-    fn execution_info(&self) -> Option<TaskExecutionInfo<'_>> {
-        let ci = self.cache_info?;
+impl<'a> TaskExecutionInfoExt<'a> for TaskContext<'a> {
+    fn execution_info(&'a self) -> Option<TaskExecutionInfo<'a>> {
+        let ci = self.cache_info.as_ref()?;
+
         Some(TaskExecutionInfo {
             dependency_digests: &self.dependency_hashes,
             env_vars: &self.env_vars,

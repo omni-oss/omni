@@ -1,4 +1,4 @@
-use std::{cell::LazyCell, time::Duration};
+use std::{borrow::Cow, time::Duration};
 
 use derive_new::new;
 use futures::future::join_all;
@@ -14,6 +14,7 @@ use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
     MuxOutputPresenterStatic, StreamHandleError,
 };
+use omni_types::OmniPath;
 use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -162,6 +163,68 @@ where
         Ok(())
     }
 
+    fn expand_templates<'a>(
+        &self,
+        task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
+    ) -> Result<Vec<Cow<'a, TaskContext<'a>>>, BatchExecutorError> {
+        let mut new_task_contexts = vec![];
+
+        for task_ctx in task_contexts {
+            if let Some(ci) = task_ctx.cache_info.as_ref() {
+                if (!ci.cache_output_files.is_empty()
+                    && ci
+                        .cache_output_files
+                        .iter()
+                        .any(|fi| omni_path_contains_byte(fi, b'{')))
+                    || (!ci.key_input_files.is_empty()
+                        && ci
+                            .key_input_files
+                            .iter()
+                            .any(|fi| omni_path_contains_byte(fi, b'{')))
+                {
+                    let mut new_ci = ci.as_ref().clone();
+
+                    if !ci.cache_output_files.is_empty() {
+                        let mut new_files =
+                            Vec::with_capacity(ci.cache_output_files.len());
+
+                        for file in ci.cache_output_files.iter() {
+                            new_files.push(expand_omni_path(
+                                file,
+                                &task_ctx.template_context,
+                            )?);
+                        }
+
+                        new_ci.cache_output_files = new_files;
+                    }
+
+                    if !ci.key_input_files.is_empty() {
+                        let mut new_files =
+                            Vec::with_capacity(ci.key_input_files.len());
+
+                        for file in ci.key_input_files.iter() {
+                            new_files.push(expand_omni_path(
+                                file,
+                                &task_ctx.template_context,
+                            )?);
+                        }
+
+                        new_ci.key_input_files = new_files;
+                    }
+                    let mut new_ctx = task_ctx.clone();
+                    new_ctx.cache_info = Some(Cow::Owned(new_ci));
+                    new_task_contexts.push(Cow::Owned(new_ctx));
+                } else {
+                    new_task_contexts.push(Cow::Borrowed(task_ctx));
+                }
+            } else {
+                new_task_contexts.push(Cow::Borrowed(task_ctx));
+            }
+        }
+
+        Ok(new_task_contexts)
+    }
+
     pub async fn execute_batch<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],
@@ -185,9 +248,11 @@ where
         let ctx_provider =
             DefaultTaskContextProvider::new(self.context, overall_results);
 
-        let task_contexts = ctx_provider
+        let tmp_task_contexts = ctx_provider
             .get_task_contexts(batch, self.ignore_dependencies)
             .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
+
+        let task_contexts = self.expand_templates(&tmp_task_contexts)?;
 
         let cached_results = self
             .cache_manager
@@ -198,23 +263,12 @@ where
         let mut new_results = unordered_map!(cap: task_contexts.len());
         let mut fut_results = Vec::with_capacity(task_contexts.len());
         let mut futs = Vec::with_capacity(task_contexts.len());
-        let tera_ctxs = task_contexts
-            .iter()
-            .map(|tc| {
-                (
-                    tc.node.full_task_name(),
-                    LazyCell::new(|| create_tera_context(tc)),
-                )
-            })
-            .collect::<UnorderedMap<_, _>>();
 
         for task_ctx in &task_contexts {
-            let tera_ctx =
-                tera_ctxs.get(task_ctx.node.full_task_name()).expect(
-                    "1. should always have value, if it's missing it's a bug",
-                );
-            let should_run =
-                evaluate_bool_expr(task_ctx.node.r#if(), &tera_ctx)?;
+            let should_run = evaluate_bool_expr(
+                task_ctx.node.r#if(),
+                &task_ctx.template_context,
+            )?;
             if !should_run {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
@@ -275,7 +329,7 @@ where
             }
 
             let record_logs =
-                task_ctx.cache_info.is_some_and(|ci| ci.cache_logs);
+                task_ctx.cache_info.as_ref().is_some_and(|ci| ci.cache_logs);
 
             if self.dry_run {
                 trace::info!(
@@ -294,14 +348,10 @@ where
                     0,
                 ));
             } else {
-                let tera_ctx = tera_ctxs.get(task_ctx.node.full_task_name()).expect(
-                    "2. should always have value, if it's missing it's a bug",
-                );
-
                 let override_command = omni_tera::one_off(
                     task_ctx.node.task_command(),
                     "command",
-                    &tera_ctx,
+                    &task_ctx.template_context,
                 )?;
 
                 futs.push(run_process(
@@ -385,9 +435,9 @@ where
     }
 }
 
-fn evaluate_bool_expr<InitFn: FnOnce() -> omni_tera::Context>(
+fn evaluate_bool_expr(
     expr: &TeraExprBoolean,
-    context: &LazyCell<omni_tera::Context, InitFn>,
+    context: &omni_tera::Context,
 ) -> omni_tera::Result<bool> {
     Ok(match expr {
         TeraExprBoolean::Boolean(b) => *b,
@@ -406,12 +456,23 @@ fn evaluate_bool_expr<InitFn: FnOnce() -> omni_tera::Context>(
     })
 }
 
-fn create_tera_context(task_ctx: &TaskContext) -> omni_tera::Context {
-    let mut context = omni_tera::Context::new();
+fn omni_path_contains_byte(path: &OmniPath, byte: u8) -> bool {
+    path.unresolved_path()
+        .as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .any(|b| *b == byte)
+}
 
-    context.insert("env", &task_ctx.env_vars);
+fn expand_omni_path(
+    path: &OmniPath,
+    context: &omni_tera::Context,
+) -> omni_tera::Result<OmniPath> {
+    let text = path.unresolved_path().to_string_lossy();
 
-    context
+    let expanded = omni_tera::one_off(&text, "path", context)?;
+
+    Ok(OmniPath::new(expanded))
 }
 
 async fn run_process<'a>(
