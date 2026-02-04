@@ -70,9 +70,13 @@ const TaskSchema = z.object({
     dependencies: z
         .array(z.string())
         .describe("A list of dependent task names."),
-    enabled: z
+    if: z
         .boolean()
-        .describe("Whether the task is enabled by configuration."),
+        .or(z.string())
+        .optional()
+        .describe(
+            "Whether the task is enabled by configuration. Either a boolean or a tera template string that evaluates to a boolean.",
+        ),
     interactive: z.boolean().describe("Whether the task is interactive."),
     persistent: z.boolean().describe("Whether the task is persistent."),
 });
