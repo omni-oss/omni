@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: rust-multiplatform
+
+extends:
+  - ./rust.omni.yaml
+
+cache:
+  key:
+    env:
+      append:
+        - RUST_TARGET
+
+tasks:
+  test:
+    cache:
+      key:
+        env:
+          append:
+            - RUST_TEST_ADDITIONAL_ARGS
+    command: >
+      {% if env.RUST_TARGET %}
+        {% if env.RUST_TARGET == "" %}
+          cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+        {% elif env.RUST_TARGET == "aarch64-unknown-linux-gnu" %}
+          cross test --target ${RUST_TARGET} -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+        {% else %}
+          cargo test --target ${RUST_TARGET} -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+        {% endif %}
+      {% else %}
+        cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITONAL_ARGS:-}
+      {% endif %}
+
+  build:
+    cache:
+      key:
+        env:
+          append:
+            - RUST_BUILD_ADDITIONAL_ARGS
+    command: >
+      {% if env.RUST_TARGET %}
+        {% if env.RUST_TARGET == "" %}
+          cargo build -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+        {% elif env.RUST_TARGET == "aarch64-unknown-linux-gnu" %}
+          cross build --target ${RUST_TARGET} -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+        {% else %}
+          cargo build --target ${RUST_TARGET} -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+        {% endif %}
+      {% else %}
+        cargo build -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+      {% endif %}
+    dependencies:
+      - test
+
+meta:
+  type: cli

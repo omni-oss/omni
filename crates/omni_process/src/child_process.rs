@@ -295,6 +295,12 @@ fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
 #[error(transparent)]
 pub struct ChildProcessError(pub(crate) ChildProcessErrorInner);
 
+impl ChildProcessError {
+    pub fn custom<T: Into<eyre::Report>>(inner: T) -> Self {
+        Self(ChildProcessErrorInner::Custom(inner.into()))
+    }
+}
+
 impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
     fn from(value: T) -> Self {
         let inner = value.into();
@@ -336,7 +342,7 @@ pub(crate) enum ChildProcessErrorInner {
     // #[error("cant't take stderr")]
     // CantTakeStderr,
     #[error(transparent)]
-    Unknown(#[from] eyre::Report),
+    Custom(#[from] eyre::Report),
 
     #[error(transparent)]
     Join(#[from] tokio::task::JoinError),

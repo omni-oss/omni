@@ -15,8 +15,12 @@ pub struct TaskChildProcess {
 }
 
 impl TaskChildProcess {
-    pub fn new(task: TaskExecutionNode) -> Self {
-        let command = task.task_command().to_owned();
+    pub fn new(
+        task: TaskExecutionNode,
+        override_command: Option<String>,
+    ) -> Self {
+        let command =
+            override_command.unwrap_or_else(|| task.task_command().to_string());
         let current_dir = task.project_dir().to_owned();
         Self {
             task,

@@ -198,9 +198,21 @@ where
         let mut new_results = unordered_map!(cap: task_contexts.len());
         let mut fut_results = Vec::with_capacity(task_contexts.len());
         let mut futs = Vec::with_capacity(task_contexts.len());
+        let tera_ctxs = task_contexts
+            .iter()
+            .map(|tc| {
+                (
+                    tc.node.full_task_name(),
+                    LazyCell::new(|| create_tera_context(tc)),
+                )
+            })
+            .collect::<UnorderedMap<_, _>>();
 
         for task_ctx in &task_contexts {
-            let tera_ctx = LazyCell::new(|| create_tera_context(task_ctx));
+            let tera_ctx =
+                tera_ctxs.get(task_ctx.node.full_task_name()).expect(
+                    "1. should always have value, if it's missing it's a bug",
+                );
             let should_run =
                 evaluate_bool_expr(task_ctx.node.r#if(), &tera_ctx)?;
             if !should_run {
@@ -282,9 +294,24 @@ where
                     0,
                 ));
             } else {
+                let tera_ctx = tera_ctxs.get(task_ctx.node.full_task_name()).expect(
+                    "2. should always have value, if it's missing it's a bug",
+                );
+
+                let override_command = omni_tera::one_off(
+                    task_ctx.node.task_command(),
+                    "command",
+                    &tera_ctx,
+                )?;
+
                 futs.push(run_process(
                     self.presenter,
                     task_ctx,
+                    if override_command != task_ctx.node.task_command() {
+                        Some(override_command)
+                    } else {
+                        None
+                    },
                     record_logs,
                     self.max_retries
                         .unwrap_or(task_ctx.node.max_retries().unwrap_or(0)),
@@ -390,6 +417,7 @@ fn create_tera_context(task_ctx: &TaskContext) -> omni_tera::Context {
 async fn run_process<'a>(
     presenter: &'a MuxOutputPresenterStatic,
     task_ctx: &'a TaskContext<'a>,
+    override_command: Option<String>,
     record_logs: bool,
     max_retries: u8,
     retry_duration: Option<Duration>,
@@ -398,7 +426,11 @@ async fn run_process<'a>(
 
     let result = loop {
         tries += 1;
-        let mut proc = TaskChildProcess::new(task_ctx.node.clone());
+        let mut proc = TaskChildProcess::new(
+            task_ctx.node.clone(),
+            override_command.clone(),
+        );
+
         let handle = if presenter.accepts_input() {
             let (out_writer, in_reader, handle) = presenter
                 .add_piped_stream_full(task_ctx.node.full_task_name())

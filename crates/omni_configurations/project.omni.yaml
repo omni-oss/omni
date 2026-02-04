@@ -14,3 +14,5 @@ dependencies:
   - system_traits
   - trace
   - omni_config_types
+  - serde_validate
+  - omni_serde_validators

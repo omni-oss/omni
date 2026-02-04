@@ -15,7 +15,7 @@ tasks:
     persistent: true
     cache:
       enabled: false
-    command: watchexec -d 2s -r --exts rs -w src cargo run --package ${PROJECT_NAME} ${ADDITIONAL_ARGS}
+    command: watchexec -d 2s -r --exts rs -w src cargo run --package ${PROJECT_NAME} ${ADDITIONAL_ARGS:-}
 
 meta:
   type: service

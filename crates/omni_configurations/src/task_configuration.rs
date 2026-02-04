@@ -5,6 +5,7 @@ use garde::Validate;
 use merge::Merge;
 use omni_config_types::TeraExprBoolean;
 use omni_core::{Task, TaskDependency};
+use omni_serde_validators::tera_expr::validate_tera_expr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +18,7 @@ use super::TaskDependencyConfiguration;
 )]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "validate_tera_expr")]
     pub command: String,
     #[serde(
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
