@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -4314,7 +4314,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cache"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -4353,7 +4353,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -4488,7 +4488,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -4522,7 +4522,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bs58",
@@ -4786,7 +4786,7 @@ dependencies = [
 
 [[package]]
 name = "omni_process"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "atty",
  "bytes 1.11.0",
@@ -4838,7 +4838,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_cache_client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bytes 1.11.0",
@@ -4991,7 +4991,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_context"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -5011,7 +5011,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6963,7 +6963,7 @@ dependencies = [
 
 [[package]]
 name = "serde_validate"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "eyre",

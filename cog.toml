@@ -440,6 +440,7 @@ include = ["packages/vitest-config/**"]
 public_api = false
 
 [packages.root]
+bump_order = 1000
 path = "."
 changelog_path = "CHANGELOG.root.md"
 include = [
