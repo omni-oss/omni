@@ -8,6 +8,9 @@
             "require": "./src/*.ts"
         }
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "peerDependencies": {
         "vite": "^6.3.2"
     },

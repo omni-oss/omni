@@ -54,6 +54,9 @@
         "zod": "^4.3.6",
         "async-mutex": "^0.5.0"
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",

@@ -18,6 +18,9 @@
         "@omni-oss/channels": "workspace:*",
         "@omni-oss/bridge-rpc": "workspace:*"
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:*",
         "@omni-oss/vite-config": "workspace:*",

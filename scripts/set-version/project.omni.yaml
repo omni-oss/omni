@@ -20,7 +20,7 @@ tasks:
     enabled: true
 
   publish:
-    enabled: false
+    enabled: true
 
 meta:
   publish: false

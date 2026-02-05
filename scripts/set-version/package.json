@@ -3,6 +3,9 @@
     "description": "Sets version of various package manifests",
     "version": "0.1.0",
     "bin": "./dist/cli.mjs",
+    "publishConfig": {
+        "access": "public"
+    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
