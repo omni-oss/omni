@@ -76,6 +76,16 @@ prompts:
     message: Will the package be published to a registry?
     default: false
 
+  - name: publish_access
+    type: select
+    message: What is the publish access of your package?
+    options:
+      - name: Public
+        value: public
+      - name: Restricted
+        value: restricted
+    default: public
+
 actions:
   - type: add-many
     base_path: templates

@@ -20,6 +20,11 @@
         }
     },
     {% endif %}
+    {% if prompts.published %}
+    "publishConfig": {
+        "access": "{{ prompts.publish_access }}"
+    }
+    {% endif %}
     "dependencies": {
         {% if prompts.package_type == "script" %}
         "zod": "^4.3.6",
