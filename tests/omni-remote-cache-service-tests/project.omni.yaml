@@ -19,5 +19,8 @@ tasks:
     dependencies:
       - test:api
 
+  publish:
+    enabled: false
+
 dependencies:
   - omni_remote_cache_service
