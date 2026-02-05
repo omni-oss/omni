@@ -8,8 +8,8 @@ on:
       - "!./apps/site/**"
       - "!bun.lock"
     tags:
-      - "v*.*.*"
-      - "*/v*.*.*"
+      - "!v*.*.*"
+      - "!*-v*.*.*"
   pull_request:
     branches: [main]
 
