@@ -9,7 +9,7 @@
         ".": "./src/lib.ts"
     },
     "devDependencies": {
-        "@omni-oss/tsconfig": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:^",
         "typescript": "^5.9.3",
         "@types/node": "25.2.0",
         "@types/bun": "^1.3.8",

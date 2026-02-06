@@ -33,9 +33,9 @@
         {% endif %}
     },
     "devDependencies": {
-        "@omni-oss/tsconfig": "workspace:*",
-        "@omni-oss/vite-config": "workspace:*",
-        "@omni-oss/vitest-config": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
         "vite": "^7.2.2",
         "vitest": "^4.0.8",
         {% if prompts.package_type == "script" %}

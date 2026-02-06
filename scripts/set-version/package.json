@@ -23,7 +23,7 @@
         "zod": "^4.3.6",
         "commander": "^14.0.3",
         "@commander-js/extra-typings": "14.0.0",
-        "@omni-oss/system-interface": "workspace:*",
+        "@omni-oss/system-interface": "workspace:^",
         "fast-xml-parser": "^5.3.4",
         "yaml": "^2.8.2",
         "comment-json": "^4.5.1",
@@ -31,9 +31,9 @@
         "picomatch": "^4.0.3"
     },
     "devDependencies": {
-        "@omni-oss/tsconfig": "workspace:*",
-        "@omni-oss/vite-config": "workspace:*",
-        "@omni-oss/vitest-config": "workspace:*",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
         "vite": "^7.3.1",
         "vitest": "^4.0.18",
         "@types/node": "25.2.0",
