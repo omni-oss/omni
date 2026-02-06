@@ -3,3 +3,7 @@ name: "@omni-oss/vitest-config"
 
 tasks:
   publish: bun publish --tolerate-republish
+
+dependencies:
+  - "@omni-oss/vite-config"
+  - "@omni-oss/tsconfig"
