@@ -6,6 +6,8 @@ const baseConfig = createBaseConfig({
     generateTypes: true,
 });
 
+const externalNodeDeps = ["node:path"];
+
 export default mergeConfig(baseConfig, {
     build: {
         minify: "esbuild",
@@ -22,7 +24,7 @@ export default mergeConfig(baseConfig, {
         },
 
         rollupOptions: {
-            external: [...Object.keys(dependencies), "node:path"],
+            external: [...Object.keys(dependencies), ...externalNodeDeps],
         },
     },
 } satisfies UserConfig);
