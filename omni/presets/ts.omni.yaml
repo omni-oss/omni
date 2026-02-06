@@ -25,6 +25,8 @@ tasks:
 
   build:
     command: bun run build
+    dependencies:
+      - ^build
     output:
       files:
         - dist/**/*
