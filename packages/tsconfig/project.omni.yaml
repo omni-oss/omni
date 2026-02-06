@@ -1,2 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
-name: tsconfig
+name: "@omni-oss/tsconfig"
+
+tasks:
+  publish: bun publish --tolerate-republish

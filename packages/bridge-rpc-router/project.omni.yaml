@@ -15,4 +15,8 @@ tasks:
     enabled: true
 
 dependencies:
+  - "@omni-oss/tsconfig"
+  - "@omni-oss/vite-config"
+  - "@omni-oss/vitest-config"
   - "@omni-oss/bridge-rpc"
+  - "@omni-oss/channels"

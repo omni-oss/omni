@@ -13,3 +13,10 @@ tasks:
 
   test:integration:
     enabled: true
+
+dependencies:
+  - "@omni-oss/tsconfig"
+  - "@omni-oss/vite-config"
+  - "@omni-oss/vitest-config"
+  - "@omni-oss/async-utils"
+  - "@omni-oss/channels"

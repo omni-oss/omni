@@ -1,6 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
 name: "@omni-oss/system-interface"
 
+extends:
+  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
+
 tasks:
   build:
     enabled: true
@@ -11,5 +14,7 @@ tasks:
   test:integration:
     enabled: true
 
-extends:
-  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
+dependencies:
+  - "@omni-oss/tsconfig"
+  - "@omni-oss/vite-config"
+  - "@omni-oss/vitest-config"
