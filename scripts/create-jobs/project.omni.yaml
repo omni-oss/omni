@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/project-latest.json
+name: "@omni-oss/create-jobs"
+
+extends:
+  - "@workspace/omni/presets/ts-vite-script.omni.yaml"
+
+tasks:
+  test:unit:
+    enabled: true
+
+  test:integration:
+    enabled: true
+
+  test:
+    enabled: true
+
+  build:
+    enabled: true
+
+  publish:
+    enabled: true
+
+meta:
+  publish: true
+
+dependencies:
+  - "@omni-oss/tsconfig"
+  - "@omni-oss/vite-config"
+  - "@omni-oss/vitest-config"
