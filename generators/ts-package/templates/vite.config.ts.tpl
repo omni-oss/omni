@@ -23,8 +23,8 @@ export default mergeConfig(baseConfig, {
         lib: {
             {% if prompts.package_type == "script" %}
             entry: {
-                cli: "src/cli/index.ts",
-                "{{ prompts.package_name }}": "src/index.ts",
+                "{{ prompts.package_name }}": "src/cli/index.ts",
+                "index": "src/index.ts",
             },
             {% else %}
             entry: "src/index.ts",
