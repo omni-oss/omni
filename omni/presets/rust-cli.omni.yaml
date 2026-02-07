@@ -19,3 +19,5 @@ tasks:
 
 meta:
   type: cli
+  release:
+    github: true

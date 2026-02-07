@@ -19,3 +19,5 @@ tasks:
 
 meta:
   type: service
+  release:
+    github: true
