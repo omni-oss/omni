@@ -232,7 +232,7 @@ where
         task_ctx: Option<&TaskContext>,
     ) {
         let task_name = result.task().task_name().to_string();
-        let project_name = result.task().task_command().to_string();
+        let project_name = result.task().project_name().to_string();
         if result.details().is_none() {
             result.set_details(TaskDetails::default());
         }
@@ -259,9 +259,10 @@ where
         }
     }
 
-    pub async fn execute_batch<'a>(
+    async fn execute_batch_inner<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],
+        task_contexts: &'a [Cow<'a, TaskContext<'a>>],
         overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
     ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
     {
@@ -279,15 +280,6 @@ where
             return Ok(skipped_results);
         }
 
-        let ctx_provider =
-            DefaultTaskContextProvider::new(self.context, overall_results);
-
-        let tmp_task_contexts = ctx_provider
-            .get_task_contexts(batch, self.ignore_dependencies)
-            .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
-
-        let task_contexts = self.expand_templates(&tmp_task_contexts)?;
-
         let cached_results = self
             .cache_manager
             .get_cached_results(&task_contexts)
@@ -298,7 +290,7 @@ where
         let mut fut_results = Vec::with_capacity(task_contexts.len());
         let mut futs = Vec::with_capacity(task_contexts.len());
 
-        for task_ctx in &task_contexts {
+        for task_ctx in task_contexts {
             let should_run = evaluate_bool_expr(
                 task_ctx.node.enabled(),
                 &task_ctx.template_context,
@@ -464,6 +456,38 @@ where
 
             new_results.insert(fname, result);
         }
+
+        if self.add_task_details {
+            let task_ctx_map = task_contexts
+                .iter()
+                .map(|t| (t.node.full_task_name(), t))
+                .collect::<UnorderedMap<_, _>>();
+            for result in new_results.values_mut() {
+                let task_ctx = task_ctx_map.get(result.task().full_task_name());
+                self.assign_task_details(result, task_ctx.map(|t| t.as_ref()));
+            }
+        }
+
+        Ok(new_results)
+    }
+
+    pub async fn execute_batch<'a>(
+        &mut self,
+        batch: &'a [TaskExecutionNode],
+        overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
+    ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
+    {
+        let ctx_provider =
+            DefaultTaskContextProvider::new(self.context, overall_results);
+
+        let tmp_task_contexts = ctx_provider
+            .get_task_contexts(batch, self.ignore_dependencies)
+            .map_err(BatchExecutorErrorInner::new_cant_get_task_contexts)?;
+        let task_contexts = self.expand_templates(&tmp_task_contexts)?;
+
+        let mut new_results = self
+            .execute_batch_inner(batch, &task_contexts, overall_results)
+            .await?;
 
         if self.add_task_details {
             let task_ctx_map = task_contexts
