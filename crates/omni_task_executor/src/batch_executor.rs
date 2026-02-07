@@ -14,7 +14,7 @@ use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
     MuxOutputPresenterStatic, StreamHandleError,
 };
-use omni_types::OmniPath;
+use omni_types::{OmniPath, Root, RootMap, enum_map};
 use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -229,6 +229,7 @@ where
     fn assign_task_details(
         &self,
         result: &mut TaskExecutionResult,
+        bases: &RootMap,
         task_ctx: Option<&TaskContext>,
     ) {
         let task_name = result.task().task_name().to_string();
@@ -248,12 +249,21 @@ where
 
             if let Some(ci) = task_ctx.and_then(|t| t.cache_info.as_ref()) {
                 if details.output_files.is_none() {
-                    details.output_files = Some(ci.cache_output_files.clone());
+                    details.output_files = Some(
+                        ci.cache_output_files
+                            .iter()
+                            .map(|f| f.resolve(bases).into_owned())
+                            .collect(),
+                    );
                 }
 
                 if details.cache_key_input_files.is_none() {
-                    details.cache_key_input_files =
-                        Some(ci.key_input_files.clone());
+                    details.cache_key_input_files = Some(
+                        ci.key_input_files
+                            .iter()
+                            .map(|f| f.resolve(bases).into_owned())
+                            .collect(),
+                    );
                 }
             }
         }
@@ -457,17 +467,6 @@ where
             new_results.insert(fname, result);
         }
 
-        if self.add_task_details {
-            let task_ctx_map = task_contexts
-                .iter()
-                .map(|t| (t.node.full_task_name(), t))
-                .collect::<UnorderedMap<_, _>>();
-            for result in new_results.values_mut() {
-                let task_ctx = task_ctx_map.get(result.task().full_task_name());
-                self.assign_task_details(result, task_ctx.map(|t| t.as_ref()));
-            }
-        }
-
         Ok(new_results)
     }
 
@@ -494,9 +493,22 @@ where
                 .iter()
                 .map(|t| (t.node.full_task_name(), t))
                 .collect::<UnorderedMap<_, _>>();
+            let ws_dir = self.context.root_dir();
             for result in new_results.values_mut() {
                 let task_ctx = task_ctx_map.get(result.task().full_task_name());
-                self.assign_task_details(result, task_ctx.map(|t| t.as_ref()));
+                let project_dir = task_ctx
+                    .map(|t| t.node.project_dir())
+                    .expect("should have project dir, if seen please report this as a bug");
+
+                let root_map = enum_map! {
+                    Root::Project => project_dir,
+                    Root::Workspace => ws_dir.into(),
+                };
+                self.assign_task_details(
+                    result,
+                    &root_map,
+                    task_ctx.map(|t| t.as_ref()),
+                );
             }
         }
 
