@@ -9,6 +9,7 @@ tasks:
     command: bun publish --tolerate-republish
     dependencies:
       - build
+      - ^publish
 
 meta:
   type: lib
