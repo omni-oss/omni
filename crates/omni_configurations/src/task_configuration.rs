@@ -33,8 +33,8 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     pub description: Option<Replace<String>>,
 
-    #[serde(default = "default_if", alias = "enabled")]
-    pub r#if: Option<TeraExprBoolean>,
+    #[serde(default = "default_if", alias = "if")]
+    pub enabled: Option<TeraExprBoolean>,
 
     #[serde(default = "default_interactive")]
     pub interactive: Option<Replace<bool>>,
@@ -127,7 +127,7 @@ impl Default for TaskConfigurationLongForm {
             cache: CacheConfiguration::default(),
             output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
-            r#if: default_if(),
+            enabled: default_if(),
             interactive: default_interactive(),
             persistent: default_persistent(),
             with: ListConfig::append(vec![]),
@@ -193,7 +193,7 @@ impl TaskConfiguration {
                 command,
                 dependencies,
                 description,
-                r#if,
+                enabled: r#if,
                 interactive,
                 persistent,
                 with,
@@ -268,7 +268,7 @@ impl Merge for TaskConfiguration {
                     cache: a_cache,
                     output: a_output,
                     meta: a_meta,
-                    r#if: a_enabled,
+                    enabled: a_enabled,
                     interactive: a_interactive,
                     persistent: a_persistent,
                     with: a_with,
@@ -283,7 +283,7 @@ impl Merge for TaskConfiguration {
                     cache: b_cache,
                     output: b_output,
                     meta: b_meta,
-                    r#if: b_enabled,
+                    enabled: b_enabled,
                     interactive: b_interactive,
                     persistent: b_persistent,
                     with: b_with,
@@ -344,7 +344,7 @@ mod tests {
             meta: Default::default(),
             interactive: Some(Replace::new(false)),
             persistent: Some(Replace::new(true)),
-            r#if: Some(true.into()),
+            enabled: Some(true.into()),
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(1)),
             retry_interval: Some(Replace::new(Duration::from_secs(1))),
@@ -365,7 +365,7 @@ mod tests {
             meta: Default::default(),
             interactive: Some(Replace::new(true)),
             persistent: Some(Replace::new(false)),
-            r#if: None,
+            enabled: None,
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(3)),
             retry_interval: Some(Replace::new(Duration::from_secs(2))),
@@ -385,7 +385,7 @@ mod tests {
                 meta: Default::default(),
                 interactive: Some(Replace::new(true)),
                 persistent: Some(Replace::new(false)),
-                r#if: Some(true.into()),
+                enabled: Some(true.into()),
                 with: ListConfig::append(vec![]),
                 max_retries: Some(Replace::new(3)),
                 retry_interval: Some(Replace::new(Duration::from_secs(2))),
