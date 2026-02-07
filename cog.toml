@@ -419,6 +419,11 @@ path = "scripts/set-version"
 include = ["scripts/set-version/**"]
 public_api = true
 
+[packages."@omni-oss/create-jobs"]
+path = "scripts/create-jobs"
+include = ["scripts/create-jobs/**"]
+public_api = true
+
 [packages."@omni-oss/biome-config"]
 path = "packages/biome-config"
 include = ["packages/biome-config/**"]
