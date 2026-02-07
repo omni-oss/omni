@@ -13,8 +13,8 @@ export default mergeConfig(baseConfig, {
         minify: "esbuild",
         lib: {
             entry: {
-                cli: "src/cli/index.ts",
-                "set-version": "src/index.ts",
+                "set-verson": "src/cli/index.ts",
+                index: "src/index.ts",
             },
 
             formats: ["es", "cjs"],

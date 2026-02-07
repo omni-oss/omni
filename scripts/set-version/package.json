@@ -2,7 +2,7 @@
     "name": "@omni-oss/set-version",
     "description": "Sets version of various package manifests",
     "version": "0.1.0",
-    "bin": "./dist/cli.mjs",
+    "bin": "./dist/set-version.mjs",
     "publishConfig": {
         "access": "public"
     },
@@ -11,11 +11,11 @@
             "types": "./dist/index.d.ts",
             "import": {
                 "development": "./src/index.ts",
-                "default": "./dist/set-version.mjs"
+                "default": "./dist/index.mjs"
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/set-version.cjs"
+                "default": "./dist/index.cjs"
             }
         }
     },
