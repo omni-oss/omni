@@ -145,7 +145,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                             project.name.clone(),
                             project.dir.clone(),
                             vec![],
-                            task.r#if.clone(),
+                            task.enabled.clone(),
                             task.interactive,
                             task.persistent,
                             task.max_retries,

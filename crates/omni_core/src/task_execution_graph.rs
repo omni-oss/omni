@@ -27,7 +27,7 @@ pub struct TaskExecutionNode {
     project_dir: PathBuf,
     full_task_name: String,
     dependencies: Vec<String>,
-    r#if: TeraExprBoolean,
+    enabled: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
     max_retries: Option<u8>,
@@ -42,7 +42,7 @@ impl TaskExecutionNode {
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
         dependencies: Vec<String>,
-        r#if: TeraExprBoolean,
+        enabled: TeraExprBoolean,
         interactive: bool,
         persistent: bool,
         max_retries: Option<u8>,
@@ -57,7 +57,7 @@ impl TaskExecutionNode {
             project_name,
             project_dir: project_dir.into(),
             dependencies,
-            r#if,
+            enabled,
             interactive,
             persistent,
             max_retries,
@@ -91,8 +91,8 @@ impl TaskExecutionNode {
         &self.dependencies
     }
 
-    pub fn r#if(&self) -> &TeraExprBoolean {
-        &self.r#if
+    pub fn enabled(&self) -> &TeraExprBoolean {
+        &self.enabled
     }
 
     pub fn interactive(&self) -> bool {
@@ -134,7 +134,7 @@ impl TaskExecutionNode {
             self.project_dir,
             self.full_task_name,
             self.dependencies,
-            self.r#if,
+            self.enabled,
             self.interactive,
             self.persistent,
             self.max_retries,
@@ -201,7 +201,7 @@ impl TaskExecutionGraph {
                     project_name.to_string(),
                     project_dir.to_path_buf(),
                     vec![],
-                    task.1.r#if.clone(),
+                    task.1.enabled.clone(),
                     task.1.interactive,
                     task.1.persistent,
                     task.1.max_retries,

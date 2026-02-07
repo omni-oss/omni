@@ -300,7 +300,7 @@ where
 
         for task_ctx in &task_contexts {
             let should_run = evaluate_bool_expr(
-                task_ctx.node.r#if(),
+                task_ctx.node.enabled(),
                 &task_ctx.template_context,
             )?;
             if !should_run {

@@ -22,7 +22,7 @@ pub struct Task {
     pub command: String,
     pub dependencies: Vec<TaskDependency>,
     pub description: Option<String>,
-    pub r#if: TeraExprBoolean,
+    pub enabled: TeraExprBoolean,
     pub interactive: bool,
     pub persistent: bool,
     pub siblings: Vec<TaskDependency>,
@@ -35,7 +35,7 @@ pub(crate) struct TaskBuilder {
     command: String,
     dependencies: Vec<TaskDependency>,
     description: Option<String>,
-    r#if: TeraExprBoolean,
+    enabled: TeraExprBoolean,
     interactive: bool,
     persistent: bool,
     siblings: Vec<TaskDependency>,
@@ -50,7 +50,7 @@ impl TaskBuilder {
             command,
             dependencies: Default::default(),
             description: Default::default(),
-            r#if: TeraExprBoolean::new_boolean(true),
+            enabled: TeraExprBoolean::new_boolean(true),
             interactive: false,
             persistent: false,
             siblings: Default::default(),
@@ -114,8 +114,8 @@ impl TaskBuilder {
     }
 
     #[allow(unused)]
-    pub fn r#if(mut self, r#if: TeraExprBoolean) -> Self {
-        self.r#if = r#if;
+    pub fn enabled(mut self, enabled: TeraExprBoolean) -> Self {
+        self.enabled = enabled;
         self
     }
 
@@ -142,7 +142,7 @@ impl TaskBuilder {
             command: self.command,
             dependencies: self.dependencies,
             description: self.description,
-            r#if: self.r#if,
+            enabled: self.enabled,
             interactive: self.interactive,
             persistent: self.persistent,
             siblings: self.siblings,
