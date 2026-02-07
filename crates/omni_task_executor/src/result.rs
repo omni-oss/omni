@@ -2,6 +2,7 @@ use derive_new::new;
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
+use omni_types::OmniPath;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs};
 
@@ -116,4 +117,6 @@ pub enum SkipReason {
 #[derive(Debug, Clone, new, Serialize, Deserialize, Default)]
 pub struct TaskDetails {
     pub meta: Option<MetaConfiguration>,
+    pub output_files: Option<Vec<OmniPath>>,
+    pub cache_key_input_files: Option<Vec<OmniPath>>,
 }

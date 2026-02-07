@@ -83,7 +83,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
 
         let pipeline = ExecutionPipeline::new(plan, self.context, &self.config);
 
-        let mut results = if self.config.ui().is_tui() {
+        let results = if self.config.ui().is_tui() {
             let (temp, file_write_task, sub) =
                 self.prepare_in_memory_subscriber()?;
 
@@ -99,28 +99,6 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         } else {
             pipeline.run().await?
         };
-
-        if self.config.add_task_details() {
-            for result in results.iter_mut() {
-                let task = result.task();
-                let mut details = result.details().cloned().unwrap_or_default();
-
-                if details.meta.is_none() {
-                    details.meta = (if self.config.call().is_command() {
-                        self.context
-                            .get_project_meta_config(task.project_name())
-                    } else {
-                        self.context.get_task_meta_config(
-                            task.project_name(),
-                            task.task_name(),
-                        )
-                    })
-                    .cloned();
-                }
-
-                result.set_details(details);
-            }
-        }
 
         trace::info!("Overrall execution time: {:?}", start_time.elapsed());
 
@@ -162,7 +140,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             for chunk in rx {
                 std::io::copy(&mut chunk.take(u64::MAX), &mut file)?;
             }
-            Ok::<(), std::io::Error>(())
+            Ok::<_, std::io::Error>(())
         });
         let tracer = InMemoryTracer::new(tx);
         let custom_output = CustomOutput::new_instance(
@@ -181,24 +159,19 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct TaskExecutorError {
-    kind: TaskExecutorErrorKind,
-    #[source]
-    inner: TaskExecutorErrorInner,
-}
+#[error(transparent)]
+pub struct TaskExecutorError(TaskExecutorErrorInner);
 
 impl TaskExecutorError {
     pub fn kind(&self) -> TaskExecutorErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<TaskExecutorErrorInner>> From<T> for TaskExecutorError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 

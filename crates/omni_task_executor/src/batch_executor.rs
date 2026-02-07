@@ -19,7 +19,7 @@ use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{
-    OnFailure, SkipReason, TaskExecutionResult, TaskExecutorSys,
+    OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
     cache_manager::{CacheManager, TaskResultContext},
     task_context_provider::DefaultTaskContextProvider,
 };
@@ -42,6 +42,7 @@ where
     max_retries: Option<u8>,
     retry_interval: Option<Duration>,
     no_cache: bool,
+    add_task_details: bool,
 }
 
 impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
@@ -223,6 +224,39 @@ where
         }
 
         Ok(new_task_contexts)
+    }
+
+    fn assign_task_details(
+        &self,
+        result: &mut TaskExecutionResult,
+        task_ctx: Option<&TaskContext>,
+    ) {
+        let task_name = result.task().task_name().to_string();
+        let project_name = result.task().task_command().to_string();
+        if result.details().is_none() {
+            result.set_details(TaskDetails::default());
+        }
+        let details = result.details_mut();
+        if let Some(details) = details {
+            if details.meta.is_none() {
+                details.meta = self
+                    .context
+                    .get_task_meta_config(&task_name, &project_name)
+                    .or(self.context.get_project_meta_config(&project_name))
+                    .cloned();
+            }
+
+            if let Some(ci) = task_ctx.and_then(|t| t.cache_info.as_ref()) {
+                if details.output_files.is_none() {
+                    details.output_files = Some(ci.cache_output_files.clone());
+                }
+
+                if details.cache_key_input_files.is_none() {
+                    details.cache_key_input_files =
+                        Some(ci.key_input_files.clone());
+                }
+            }
+        }
     }
 
     pub async fn execute_batch<'a>(
@@ -429,6 +463,17 @@ where
             };
 
             new_results.insert(fname, result);
+        }
+
+        if self.add_task_details {
+            let task_ctx_map = task_contexts
+                .iter()
+                .map(|t| (t.node.full_task_name(), t))
+                .collect::<UnorderedMap<_, _>>();
+            for result in new_results.values_mut() {
+                let task_ctx = task_ctx_map.get(result.task().full_task_name());
+                self.assign_task_details(result, task_ctx.map(|t| t.as_ref()));
+            }
         }
 
         Ok(new_results)

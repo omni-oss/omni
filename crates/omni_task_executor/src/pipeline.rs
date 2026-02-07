@@ -73,6 +73,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             self.config.max_retries(),
             self.config.retry_interval(),
             self.config.no_cache(),
+            self.config.add_task_details(),
         );
 
         for batch in &execution_plan {
@@ -90,25 +91,20 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{inner}")]
-pub struct ExecutionPipelineError {
-    #[source]
-    inner: ExecutionPipelineErrorInner,
-    kind: ExecutionPipelineErrorKind,
-}
+#[error(transparent)]
+pub struct ExecutionPipelineError(ExecutionPipelineErrorInner);
 
 impl ExecutionPipelineError {
     #[allow(unused)]
     pub fn kind(&self) -> ExecutionPipelineErrorKind {
-        self.kind
+        self.0.discriminant()
     }
 }
 
 impl<T: Into<ExecutionPipelineErrorInner>> From<T> for ExecutionPipelineError {
     fn from(value: T) -> Self {
         let inner = value.into();
-        let kind = inner.discriminant();
-        Self { inner, kind }
+        Self(inner)
     }
 }
 
