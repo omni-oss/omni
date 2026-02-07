@@ -1,6 +1,6 @@
 {
     "name": "@omni-oss/create-jobs",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.1",
     "bin": "./dist/create-jobs.mjs",
     "publishConfig": {
         "access": "public"
