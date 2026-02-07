@@ -2,7 +2,7 @@
     "name": "@omni-oss/summarize-results",
     "version": "0.0.0-semantically-released",
     "scripts": {
-        "build": "bun run ./build.ts"
+        "build": "bun run ./src/build.ts"
     },
     "bin": "./bin/index.js",
     "exports": {

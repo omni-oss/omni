@@ -18,18 +18,6 @@ const ElapsedSchema = z.object({
         .describe("The number of nanoseconds elapsed."),
 });
 
-const TargetSchema = z.object({
-    os: z.enum(["linux", "windows", "macos", "any"]).or(z.string()),
-    vendor: z.enum(["apple", "pc", "nvidia", "unknown"]).or(z.string()),
-    arch: z.enum(["x86_64", "aarch64", "riscv64", "wasm32"]).or(z.string()),
-    abi: z.enum(["gnu", "msvc", "musl"]).or(z.string()).optional(),
-    features: z
-        .array(z.string())
-        .default([])
-        .describe("Conditional compilation flags"),
-    binaryExtension: z.string().optional().describe("e.g., '.exe' or '.wasm'"),
-});
-
 /**
  * Defines the metadata for the project/task details.
  */
@@ -42,14 +30,6 @@ const MetaSchema = z.object({
         .enum(["rust", "typescript"])
         .or(z.string())
         .describe("The primary language of the project."),
-    publish: z
-        .boolean()
-        .optional()
-        .describe("Whether the project is published."),
-    targets: z
-        .array(TargetSchema)
-        .optional()
-        .describe("The targets that the project needs to be built for."),
 });
 
 /**
@@ -70,7 +50,7 @@ const TaskSchema = z.object({
     dependencies: z
         .array(z.string())
         .describe("A list of dependent task names."),
-    if: z
+    enabled: z
         .boolean()
         .or(z.string())
         .optional()
