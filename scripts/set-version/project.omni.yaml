@@ -24,4 +24,7 @@ meta:
   publish: true
 
 dependencies:
+  - "@omni-oss/tsconfig"
+  - "@omni-oss/vite-config"
+  - "@omni-oss/vitest-config"
   - "@omni-oss/system-interface"
