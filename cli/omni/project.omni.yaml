@@ -14,6 +14,21 @@ tasks:
     dependencies:
       - ^passthrough
 
+meta:
+  targets:
+    x86_64-unknown-linux-gnu:
+      runner: ubuntu-latest
+    aarch64-unknown-linux-gnu:
+      runner: ubuntu-latest
+      build_flags: --features vendored-openssl
+      test_flags: --features vendored-openssl
+    x86_64-apple-darwin:
+      runner: macos-latest
+    aarch64-apple-darwin:
+      runner: macos-latest
+    x86_64-pc-windows-msvc:
+      runner: windows-latest
+
 dependencies:
   - omni_cli_core
   - omni_test_utils
