@@ -7,7 +7,6 @@
 	},
     "include": [
         "src/**/*",
-        "build.ts"
     ],
 	"exclude": [
         "coverage",
