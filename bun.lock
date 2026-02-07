@@ -139,7 +139,7 @@
     },
     "packages/tsconfig": {
       "name": "@omni-oss/tsconfig",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@rencedm112/tsconfig": "^3.0.7",
       },
@@ -178,7 +178,7 @@
     },
     "scripts/create-jobs": {
       "name": "@omni-oss/create-jobs",
-      "version": "0.0.0-semantically-released",
+      "version": "0.1.0",
       "bin": "./dist/create-jobs.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "14.0.0",
@@ -196,7 +196,7 @@
     },
     "scripts/set-version": {
       "name": "@omni-oss/set-version",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": "./dist/set-version.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "14.0.0",
