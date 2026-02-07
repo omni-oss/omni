@@ -18,3 +18,4 @@ result-summary.json
 .turbo
 .artifacts
 .tests
+jobs.json
