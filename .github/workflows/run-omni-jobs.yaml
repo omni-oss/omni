@@ -1,0 +1,74 @@
+name: Run Omni Jobs
+
+on:
+  workflow_call:
+    inputs:
+      jobs:
+        description: The tasks to run
+        required: true
+        type: string
+      multiplatform:
+        description: Whether to run the job on supported platforms
+        required: false
+        default: false
+        type: boolean
+
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: The tasks to run
+        required: true
+        type: string
+      multiplatform:
+        description: Whether to run the job on supported platforms
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  run-tasks:
+    name: Run Tasks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Process JSON
+        id: process
+        env:
+          RAW_JSON: ${{ inputs.jobs }}
+        run: |
+          # Use jq to map the names and join them with spaces
+          PROJECT_FLAGS=$(echo $RAW_JSON | jq -r '. | map("-p \"\(.project_name)\"") | join(" ")')
+          TASK_ARGS=$(echo $RAW_JSON | jq -r '. | map(.task_name) | unique | join(" ")')
+          echo "TASK_ARGS=$TASK_ARGS" >> $GITHUB_OUTPUT
+          echo "PROJECT_FLAGS=$PROJECT_FLAGS" >> $GITHUB_OUTPUT
+
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-key-prefix: build
+
+      - name: Determine Build Tools
+        id: determine
+        uses: ./.github/actions/determine-build-tools
+        with:
+          omni-run: -f=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: false
+          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Tasks
+        run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - name: Prune Unused Caches
+        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days

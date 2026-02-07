@@ -17,8 +17,11 @@ permissions:
   contents: write
 
 jobs:
-  test:
+  plan:
+    name: Generate Execution Plan
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.determine.outputs.matrix }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,126 +32,72 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: test
 
-      - name: Determine Build Steps
-        id: determine
-        uses: ./.github/actions/determine-build-steps
-        with:
-          omni-run: test
-
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
         with:
           install-all: false
-          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Test
-        run: omni run -L -f=failed test
+      - name: Generate Dry Run Results
+        run: omni run -L -f=failed -d --result=result.json test build publish
+
+      - name: Create Plan
+        shell: bash
+        run: |
+          bun --bun x @omni-oss/create-jobs result.json --output=jobs.json
+
+          JOBS=$(cat jobs.json)
+          echo "jobs=$JOBS" >> $GITHUB_OUTPUT
+          echo "jobs_test_typescript=$(echo $JOBS | jq '.test.typescript')" >> $GITHUB_OUTPUT
+          echo "jobs_test_typescript_count=$(echo $JOBS | jq '.test.typescript | length')" >> $GITHUB_OUTPUT
+          echo "jobs_test_rust=$(echo $JOBS | jq '.test.rust')" >> $GITHUB_OUTPUT
+          echo "jobs_test_rust_count=$(echo $JOBS | jq '.test.rust | length')" >> $GITHUB_OUTPUT
+          echo "jobs_build_typescript=$(echo $JOBS | jq '.build.typescript')" >> $GITHUB_OUTPUT
+          echo "jobs_build_typescript_count=$(echo $JOBS | jq '.build.typescript | length')" >> $GITHUB_OUTPUT
+          echo "jobs_build_rust=$(echo $JOBS | jq '.build.rust')" >> $GITHUB_OUTPUT
+          echo "jobs_build_rust_count=$(echo $JOBS | jq '.build.rust | length')" >> $GITHUB_OUTPUT
+          echo "jobs_publish_npm=$(echo $JOBS | jq '.publish.npm')" >> $GITHUB_OUTPUT
+          echo "jobs_publish_npm_count=$(echo $JOBS | jq '.publish.npm | length')" >> $GITHUB_OUTPUT
+          echo "jobs_publish_rust_github=$(echo $JOBS | jq '.publish.rust_github')" >> $GITHUB_OUTPUT
+          echo "jobs_publish_rust_github_count=$(echo $JOBS | jq '.publish.rust_github | length')" >> $GITHUB_OUTPUT
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
-  build:
-    runs-on: ${{ matrix.os }}
-    needs: test
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+  test-typescript:
+    needs:
+      - plan
+    if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    with:
+      jobs: ${{ toJSON(needs.plan.outputs.jobs_test_typescript) }}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  test-rust:
+    needs:
+      - plan
+    if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    with:
+      jobs: ${{ toJSON(needs.plan.outputs.jobs_test_rust) }}
+      multiplatform: true
 
-      - name: Setup Omni
-        uses: ./.github/actions/setup-omni
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: build
+  build-typescript:
+    needs:
+      - plan
+      - test-typescript
+    if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    with:
+      jobs: ${{ toJSON(needs.plan.outputs.jobs_build_typescript) }}
 
-      - name: Determine Build Steps
-        id: determine
-        uses: ./.github/actions/determine-build-steps
-        with:
-          omni-run: -p omni -p omni_remote_cache_service build
-
-      - name: Setup Tools
-        uses: ./.github/actions/setup-tools
-        with:
-          install-all: false
-          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS == 'true' || github.ref_type == 'tag' }}
-          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
-          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Projects
-        run: >
-          omni run -p omni -p omni_remote_cache_service -L -f=failed build
-
-      - name: Compress Binaries on Linux/macOS
-        if: ${{ runner.os != 'Windows' && github.ref_type == 'tag' }}
-        run: |
-          zip -j omni-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni
-          zip -j omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip target/release/omni_remote_cache_service
-
-      - name: Compress Binaries on Windows
-        if: ${{ runner.os == 'Windows' && github.ref_type == 'tag' }}
-        run: |
-          cd target/release
-          7z a ../../omni-${{ github.ref_name }}-${{ matrix.os }}.zip omni.exe
-          7z a ../../omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip omni_remote_cache_service.exe
-        shell: pwsh
-
-      - name: Upload Omni Compressed Binary
-        uses: actions/upload-artifact@v4
-        if: ${{ github.ref_type == 'tag' }}
-        with:
-          name: omni-${{ github.ref_name }}-${{ matrix.os }}
-          path: omni-${{ github.ref_name }}-${{ matrix.os }}.zip
-
-      - name: Upload Omni Remote Cache Service Compressed Binary
-        uses: actions/upload-artifact@v4
-        if: ${{ github.ref_type == 'tag' }}
-        with:
-          name: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}
-          path: omni-remote-cache-service-${{ github.ref_name }}-${{ matrix.os }}.zip
-
-      - name: Prune Unused Caches
-        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
-
-
-  # release:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   if: github.ref_type == 'tag'
-
-  #   steps:
-  #     - name: Download All Binaries
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         path: ./artifacts
-
-  #     - name: Create GitHub Release
-  #       uses: softprops/action-gh-release@v2
-  #       with:
-  #         files: ./artifacts/**
-  #         make_latest: ${{ github.ref_type == 'tag' }}
-  #         generate_release_notes: true
-  #         token: ${{ secrets.GITHUB_TOKEN }}
-
-  # publish-json-schemas:
-  #   needs: release
-  #   uses: ./.github/workflows/publish-json-schemas.yaml
-
-  # publish-site:
-  #   needs: release
-  #   uses: ./.github/workflows/publish-site.yaml
-  #   secrets:
-  #     VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-  #     VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-  #     VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  build-rust:
+    needs:
+      - plan
+      - test-rust
+    if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    with:
+      jobs: ${{ toJSON(needs.plan.outputs.jobs_build_rust) }}
+      multiplatform: true
