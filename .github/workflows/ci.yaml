@@ -121,33 +121,34 @@ jobs:
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
 
-    steps:
-      - name: Download All Binaries
-        uses: actions/download-artifact@v4
-        with:
-          path: ./artifacts
+  # release:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: github.ref_type == 'tag'
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ./artifacts/**
-          make_latest: ${{ github.ref_type == 'tag' }}
-          generate_release_notes: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+  #   steps:
+  #     - name: Download All Binaries
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: ./artifacts
 
-  publish-json-schemas:
-    needs: release
-    uses: ./.github/workflows/publish-json-schemas.yaml
+  #     - name: Create GitHub Release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: ./artifacts/**
+  #         make_latest: ${{ github.ref_type == 'tag' }}
+  #         generate_release_notes: true
+  #         token: ${{ secrets.GITHUB_TOKEN }}
 
-  publish-site:
-    needs: release
-    uses: ./.github/workflows/publish-site.yaml
-    secrets:
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  # publish-json-schemas:
+  #   needs: release
+  #   uses: ./.github/workflows/publish-json-schemas.yaml
+
+  # publish-site:
+  #   needs: release
+  #   uses: ./.github/workflows/publish-site.yaml
+  #   secrets:
+  #     VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  #     VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  #     VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
