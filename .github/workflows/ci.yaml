@@ -18,10 +18,21 @@ permissions:
 
 jobs:
   plan:
-    name: Generate Execution Plan
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.determine.outputs.matrix }}
+      jobs: ${{ steps.plan.outputs.jobs }}
+      jobs_test_typescript: ${{ steps.plan.outputs.jobs_test_typescript }}
+      jobs_test_typescript_count: ${{ steps.plan.outputs.jobs_test_typescript_count }}
+      jobs_test_rust: ${{ steps.plan.outputs.jobs_test_rust }}
+      jobs_test_rust_count: ${{ steps.plan.outputs.jobs_test_rust_count }}
+      jobs_build_typescript: ${{ steps.plan.outputs.jobs_build_typescript }}
+      jobs_build_typescript_count: ${{ steps.plan.outputs.jobs_build_typescript_count }}
+      jobs_build_rust: ${{ steps.plan.outputs.jobs_build_rust }}
+      jobs_build_rust_count: ${{ steps.plan.outputs.jobs_build_rust_count }}
+      jobs_publish_npm: ${{ steps.plan.outputs.jobs_publish_npm }}
+      jobs_publish_npm_count: ${{ steps.plan.outputs.jobs_publish_npm_count }}
+      jobs_publish_rust_github: ${{ steps.plan.outputs.jobs_publish_rust_github }}
+      jobs_publish_rust_github_count: ${{ steps.plan.outputs.jobs_publish_rust_github_count }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,14 +47,14 @@ jobs:
         uses: ./.github/actions/setup-tools
         with:
           install-all: false
-          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-bun: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Dry Run Results
         run: omni run -L -f=failed -d --result=result.json test build publish
 
       - name: Create Plan
+        id: plan
         shell: bash
         run: |
           bun --bun x @omni-oss/create-jobs result.json --output=jobs.json
