@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/tsconfig-v0.1.1 - 2026-02-07
+#### Bug Fixes
+- add rootDir [skip ci] - (3ec0de2) - Clarence Manuel
+#### Miscellaneous Chores
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add .npmignores [skip ci] - (14af7b3) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/tsconfig-v0.1.0 - 2026-01-31
 #### Features
 - implement initial system-interface package - (d579bf6) - Clarence Manuel

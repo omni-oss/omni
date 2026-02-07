@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.4.0 - 2026-02-07
+#### Features
+- (**omni_configurations**) rename if to enabled in TaskLongFormConfiguration - (22df638) - Clarence Manuel
+#### Bug Fixes
+- rename fields - (efc8cb2) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.3.0 - 2026-02-04
 #### Features
 - support tera template in task command - (7830096) - Clarence Manuel

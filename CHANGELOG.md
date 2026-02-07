@@ -2,6 +2,39 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.4.0 - 2026-02-07
+### Package updates
+- omni_execution_plan bumped to omni_execution_plan-v0.2.1
+- omni_task_executor bumped to omni_task_executor-v0.4.0
+- omni_configurations bumped to omni_configurations-v0.4.0
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.0
+- omni_cli_core bumped to omni_cli_core-v0.4.0
+- @omni-oss/set-version bumped to @omni-oss/set-version-v0.1.1
+- omni_core bumped to omni_core-v0.2.1
+- @omni-oss/tsconfig bumped to @omni-oss/tsconfig-v0.1.1
+- omni bumped to omni-v0.4.0
+### Global changes
+#### Continuous Integration
+- update ci - (7b28419) - Clarence Manuel
+- update omni version [skip ci] - (525b2ce) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/remote-cache-service-tests**) disable publishing - (9142a66) - Clarence Manuel
+- update presets to support release flagging [skip ci] - (38aeb6d) - Clarence Manuel
+- update cog.toml [skip ci] - (354a696) - Clarence Manuel
+- update ts-package generatore [skip ci] - (5f10713) - Clarence Manuel
+- update rust-multiplatform present [skip ci] - (1c0c549) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add build upstream dependencies [skip ci] - (6314532) - Clarence Manuel
+- tolerate package republish [skip ci] - (40cfcd1) - Clarence Manuel
+- update cog.toml [skip ci] - (f76efc1) - Clarence Manuel
+- add publishConfig to ts-package generator [skip ci] - (2524cc6) - Clarence Manuel
+- add .npmrc [skip ci] - (a31c76d) - Clarence Manuel
+- don't run CI on tag push [skip ci] - (df9e126) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+- update root project config in cog.toml [skip ci] - (03037bb) - Clarence Manuel
+
+- - -
+
 ## v0.3.0 - 2026-02-04
 ### Package updates
 - omni_task_executor bumped to omni_task_executor-v0.3.0

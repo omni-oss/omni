@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/set-version-v0.1.1 - 2026-02-07
+#### Bug Fixes
+- (**@omni-oss/set-version**) dist file names - (b6e453e) - Clarence Manuel
+- declaration types output path - (ce90fa6) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/set-version**) update cli dist name - (42df374) - Clarence Manuel
+- (**@omni-oss/set-version**) update project dependencies [skip ci] - (51bd839) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add .npmignores [skip ci] - (14af7b3) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/set-version-v0.1.0 - 2026-01-31
 #### Features
 - (**@omni-oss/set-version**) improve error handling - (3f8a9fb) - Clarence Manuel

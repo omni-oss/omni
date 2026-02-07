@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.4.0 - 2026-02-07
+#### Features
+- (**omni_task_executor**) support output files and cache input key files in task result details - (212fe99) - Clarence Manuel
+#### Bug Fixes
+- (**omni_task_executor**) resolve workspace scoped paths - (45bb047) - Clarence Manuel
+- (**omni_task_executor**) update task results details - (4daa71a) - Clarence Manuel
+- rename fields - (efc8cb2) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.3.0 - 2026-02-04
 #### Features
 - support tera template in cache input files and output files - (c0b305b) - Clarence Manuel

@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.4.0 - 2026-02-07
+#### Features
+- (**omni_configurations**) rename if to enabled in TaskLongFormConfiguration - (22df638) - Clarence Manuel
+- (**omni_task_executor**) support output files and cache input key files in task result details - (212fe99) - Clarence Manuel
+#### Bug Fixes
+- (**omni_task_executor**) resolve workspace scoped paths - (45bb047) - Clarence Manuel
+- (**omni_task_executor**) update task results details - (4daa71a) - Clarence Manuel
+- rename fields - (efc8cb2) - Clarence Manuel
+#### Miscellaneous Chores
+- add target metadata to rust binary projects [skip ci] - (aeb9ea8) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.3.0 - 2026-02-04
 #### Features
 - (**serde_validate**) add Validated type [skip ci] - (8f25faf) - Clarence Manuel
