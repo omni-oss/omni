@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      cache-key-prefix:
+        description: The prefix to use for the cache key
+        required: false
+        default: global
+        type: string
 
   workflow_dispatch:
     inputs:
@@ -34,6 +39,11 @@ on:
         required: false
         default: false
         type: boolean
+      cache-key-prefix:
+        description: The prefix to use for the cache key
+        required: false
+        default: global
+        type: string
 
 jobs:
   run-tasks:
@@ -58,7 +68,7 @@ jobs:
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: build
+          cache-key-prefix: ${{ inputs.cache-key-prefix }}
 
       - name: Determine Build Tools
         id: determine
@@ -75,6 +85,7 @@ jobs:
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          cache-key-prefix: ${{ inputs.cache-key-prefix }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Tasks

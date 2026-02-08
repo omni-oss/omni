@@ -16,6 +16,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -41,7 +45,7 @@ jobs:
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: test
+          cache-key-prefix: global
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -109,6 +113,7 @@ jobs:
 
   test-rust:
     needs:
+      - test-typescript
       - plan
     if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
@@ -119,7 +124,7 @@ jobs:
   build-typescript:
     needs:
       - plan
-      - test-typescript
+      - test-rust
     if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
@@ -128,7 +133,7 @@ jobs:
   build-rust:
     needs:
       - plan
-      - test-rust
+      - build-typescript
     if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
