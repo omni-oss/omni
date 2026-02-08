@@ -3,6 +3,7 @@ name: omni
 
 extends:
   - "@workspace/omni/presets/rust-cli.omni.yaml"
+  - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
 tasks:
   build:aarch64-unknown-linux-gnu:
@@ -10,7 +11,17 @@ tasks:
       vars:
         RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
 
+  build:aarch64-apple-darwin:
+    env:
+      vars:
+        RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
+
   test:aarch64-unknown-linux-gnu:
+    env:
+      vars:
+        RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
+
+  test:aarch64-apple-darwin:
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
