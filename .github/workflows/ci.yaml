@@ -59,20 +59,42 @@ jobs:
         run: |
           bun --bun x @omni-oss/create-jobs result.json --output=jobs.json
 
+          # Read the file into a variable
           JOBS=$(cat jobs.json)
-          echo "jobs=$JOBS" >> $GITHUB_OUTPUT
-          echo "jobs_test_typescript=$(echo $JOBS | jq '.test.typescript')" >> $GITHUB_OUTPUT
-          echo "jobs_test_typescript_count=$(echo $JOBS | jq '.test.typescript | length')" >> $GITHUB_OUTPUT
-          echo "jobs_test_rust=$(echo $JOBS | jq '.test.rust')" >> $GITHUB_OUTPUT
-          echo "jobs_test_rust_count=$(echo $JOBS | jq '.test.rust | length')" >> $GITHUB_OUTPUT
-          echo "jobs_build_typescript=$(echo $JOBS | jq '.build.typescript')" >> $GITHUB_OUTPUT
-          echo "jobs_build_typescript_count=$(echo $JOBS | jq '.build.typescript | length')" >> $GITHUB_OUTPUT
-          echo "jobs_build_rust=$(echo $JOBS | jq '.build.rust')" >> $GITHUB_OUTPUT
-          echo "jobs_build_rust_count=$(echo $JOBS | jq '.build.rust | length')" >> $GITHUB_OUTPUT
-          echo "jobs_publish_npm=$(echo $JOBS | jq '.publish.npm')" >> $GITHUB_OUTPUT
-          echo "jobs_publish_npm_count=$(echo $JOBS | jq '.publish.npm | length')" >> $GITHUB_OUTPUT
-          echo "jobs_publish_rust_github=$(echo $JOBS | jq '.publish.rust_github')" >> $GITHUB_OUTPUT
-          echo "jobs_publish_rust_github_count=$(echo $JOBS | jq '.publish.rust_github | length')" >> $GITHUB_OUTPUT
+
+          # Function to write multiline output to GITHUB_OUTPUT
+          set_output() {
+            local name=$1
+            local value=$2
+            # Use a unique delimiter to handle potential collisions in JSON
+            local delimiter="EOF_$(dd if=/dev/urandom bs=15 count=1 status=none | base64)"
+
+            echo "$name<<$delimiter" >> $GITHUB_OUTPUT
+            echo "$value" >> $GITHUB_OUTPUT
+            echo "$delimiter" >> $GITHUB_OUTPUT
+          }
+
+          # 1. Output the full JSON
+          set_output "jobs" "$JOBS"
+
+          # 2. Output the specific sections using your JQ logic
+          set_output "jobs_test_typescript" "$(echo "$JOBS" | jq -c '.test.typescript')"
+          echo "jobs_test_typescript_count=$(echo "$JOBS" | jq '.test.typescript | length')" >> $GITHUB_OUTPUT
+
+          set_output "jobs_test_rust" "$(echo "$JOBS" | jq -c '.test.rust')"
+          echo "jobs_test_rust_count=$(echo "$JOBS" | jq '.test.rust | length')" >> $GITHUB_OUTPUT
+
+          set_output "jobs_build_typescript" "$(echo "$JOBS" | jq -c '.build.typescript')"
+          echo "jobs_build_typescript_count=$(echo "$JOBS" | jq '.build.typescript | length')" >> $GITHUB_OUTPUT
+
+          set_output "jobs_build_rust" "$(echo "$JOBS" | jq -c '.build.rust')"
+          echo "jobs_build_rust_count=$(echo "$JOBS" | jq '.build.rust | length')" >> $GITHUB_OUTPUT
+
+          set_output "jobs_publish_npm" "$(echo "$JOBS" | jq -c '.publish.npm')"
+          echo "jobs_publish_npm_count=$(echo "$JOBS" | jq '.publish.npm | length')" >> $GITHUB_OUTPUT
+
+          set_output "jobs_publish_rust_github" "$(echo "$JOBS" | jq -c '.publish.rust_github')"
+          echo "jobs_publish_rust_github_count=$(echo "$JOBS" | jq '.publish.rust_github | length')" >> $GITHUB_OUTPUT
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
