@@ -16,7 +16,11 @@ describe("createJobs", () => {
         const results: any[] = [
             {
                 status: "skipped",
-                task: { task_name: "test", project_name: "p1" },
+                task: {
+                    task_name: "test",
+                    project_name: "p1",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: { meta: { language: "rust" } },
             },
         ];
@@ -28,7 +32,11 @@ describe("createJobs", () => {
         const results: any[] = [
             {
                 status: "success",
-                task: { task_name: "test", project_name: "rust-app" },
+                task: {
+                    task_name: "test",
+                    project_name: "rust-app",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: {
                     meta: { language: "rust" },
                     output_files: ["binary"],
@@ -36,7 +44,11 @@ describe("createJobs", () => {
             },
             {
                 status: "success",
-                task: { task_name: "build", project_name: "ts-lib" },
+                task: {
+                    task_name: "build",
+                    project_name: "ts-lib",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: { meta: { language: "typescript" } },
             },
         ];
@@ -46,7 +58,7 @@ describe("createJobs", () => {
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "rust-app",
             task_name: "test",
-            output_files: ["binary"],
+            output_files: ["/mnt/c/Users/user/project/binary"],
         });
         expect(jobs.build.typescript[0]?.project_name).toBe("ts-lib");
         expect(jobs.test.typescript).toHaveLength(0);
@@ -56,12 +68,20 @@ describe("createJobs", () => {
         const results: any[] = [
             {
                 status: "success",
-                task: { task_name: "publish", project_name: "js-pkg" },
+                task: {
+                    task_name: "publish",
+                    project_name: "js-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: { meta: { release: { npm: true } } },
             },
             {
                 status: "success",
-                task: { task_name: "any-task", project_name: "rust-pkg" },
+                task: {
+                    task_name: "any-task",
+                    project_name: "rust-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: {
                     meta: {
                         language: "rust",
@@ -87,7 +107,11 @@ describe("createJobs", () => {
         const results: any[] = [
             {
                 status: "success",
-                task: { task_name: "test", project_name: "minimal" },
+                task: {
+                    task_name: "test",
+                    project_name: "minimal",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
                 details: {}, // Missing meta and output_files
             },
         ];
@@ -95,5 +119,30 @@ describe("createJobs", () => {
         // This won't be added to test.rust because meta.language is missing
         const jobs = createJobs(results);
         expect(jobs.test.rust).toHaveLength(0);
+    });
+
+    it("should resolve the relative output files to the project directory", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "test",
+                    project_name: "minimal",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { language: "rust" },
+                    output_files: ["target/debug/minimal"],
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        expect(jobs.test.rust[0]).toMatchObject({
+            project_name: "minimal",
+            task_name: "test",
+            output_files: ["/mnt/c/Users/user/project/target/debug/minimal"],
+        });
     });
 });

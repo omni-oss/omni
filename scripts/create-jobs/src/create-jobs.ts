@@ -1,9 +1,11 @@
 import type { Meta, TaskResult, TaskResultArray } from "./schemas";
+import path from "node:path"
 
 export type Job = {
     task_name: string;
     project_name: string;
     output_files: string[];
+    project_dir: string;
     meta: Meta;
 };
 
@@ -89,7 +91,8 @@ function jobFromResult(result: TaskResult): Job {
     return {
         task_name: result.task.task_name,
         project_name: result.task.project_name,
-        output_files: result.details.output_files ?? [],
+        output_files: result.details.output_files?.map((file) => path.resolve(result.task.project_dir, file)) ?? [],
+        project_dir: result.task.project_dir,
         meta: result.details.meta ?? {},
     };
 }
