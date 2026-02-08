@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "clap",
  "color-eyre",
@@ -4353,7 +4353,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -4488,7 +4488,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "config_utils",
  "derive-new",
