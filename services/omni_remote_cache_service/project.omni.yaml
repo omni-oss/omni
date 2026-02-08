@@ -3,13 +3,9 @@ name: omni_remote_cache_service
 
 extends:
   - "@workspace/omni/presets/rust-service.omni.yaml"
+  - "@workspace/omni/presets/rust-multiplatform.omni.yaml"
 
 tasks:
-  build:
-    output:
-      files:
-        - "@workspace/target/release/omni_remote_cache_service"
-
   dev:
     env:
       vars:
