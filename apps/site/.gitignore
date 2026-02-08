@@ -1,14 +1,13 @@
 node_modules
-
 .DS_Store
-.cache
-.vercel
-.output
+dist
+dist-ssr
+*.local
+.env
 .nitro
-/build/
-.source
-
-content/docs/references/commands/omni
-
 .tanstack
-omni-declspec.json
+.wrangler
+
+## Panda
+styled-system
+styled-system-studio

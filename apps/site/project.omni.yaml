@@ -8,10 +8,8 @@ cache:
   key:
     files:
       append:
-        - content/**/*
-        - source.config.ts
+        - panda.config.ts
         - vite.config.ts
-        - source.generated.ts
 
 tasks:
   test:
@@ -48,16 +46,14 @@ tasks:
     dependencies:
       - gen:refdocs
 
+  prepare: bun x panda codegen
+
   build:
+    enabled: true
     dependencies:
+      - prepare
       - gen:refdocs
 
     output:
       files:
         - .vercel/**/*
-
-  preview:
-    dependencies:
-      - build
-    persistent: true
-    command: bun run preview

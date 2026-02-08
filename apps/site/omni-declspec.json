@@ -1,0 +1,2047 @@
+{
+  "name": "omni",
+  "bin_name": null,
+  "author": "Clarence Manuel <rencedm112@gmail.com>",
+  "version": "0.4.0",
+  "long_version": null,
+  "short_flag": null,
+  "long_flag": null,
+  "aliases": [],
+  "about": "omni is development workflow orchestration tool",
+  "long_about": "\nFlexible task runner and scaffolding CLI for streamlined development workflows.\n",
+  "positionals": [],
+  "opts": [
+    {
+      "id": "stdout_trace_level",
+      "short": "t",
+      "long": "stdout-trace-level",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "Print traces to stdout",
+      "default_values": [
+        "info"
+      ],
+      "possible_values": [
+        "off",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace"
+      ],
+      "env": "OMNI_STDOUT_TRACE_LEVEL",
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "stderr_trace",
+      "short": null,
+      "long": "stderr-trace",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "Output Error traces to stderr",
+      "default_values": [
+        "false"
+      ],
+      "possible_values": [
+        "true",
+        "false"
+      ],
+      "env": "OMNI_STDERR_TRACE_ENABLED",
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "file_trace_output",
+      "short": null,
+      "long": "file-trace-output",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "The file to write traces to",
+      "default_values": [
+        "./.omni/trace/logs"
+      ],
+      "possible_values": [],
+      "env": null,
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "file_trace_level",
+      "short": "f",
+      "long": "file-trace-level",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "The trace level to use for file traces",
+      "default_values": [
+        "off"
+      ],
+      "possible_values": [
+        "off",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace"
+      ],
+      "env": "OMNI_FILE_TRACE_LEVEL",
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "env_root_dir_marker",
+      "short": "r",
+      "long": "env-root-dir-marker",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "The file which marks the root dir where to stop looking for env files",
+      "default_values": [
+        "workspace.omni.yaml"
+      ],
+      "possible_values": [],
+      "env": null,
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "env_file",
+      "short": "e",
+      "long": "env-file",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "The env files to load per directory",
+      "default_values": [],
+      "possible_values": [],
+      "env": null,
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "env",
+      "short": null,
+      "long": "env",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "The environment to use",
+      "default_values": [],
+      "possible_values": [],
+      "env": "OMNI_ENV",
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    },
+    {
+      "id": "inherit_env_vars",
+      "short": "i",
+      "long": "inherit-env-vars",
+      "long_help": null,
+      "aliases": [],
+      "required": false,
+      "help": "Inherit environment variables from the parent process",
+      "default_values": [
+        "false"
+      ],
+      "possible_values": [
+        "true",
+        "false"
+      ],
+      "env": null,
+      "groups": [
+        "CliArgs"
+      ],
+      "conflicts_with": []
+    }
+  ],
+  "subcommands": [
+    {
+      "name": "env",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Output environment variabls values",
+      "long_about": null,
+      "positionals": [],
+      "opts": [],
+      "subcommands": [
+        {
+          "name": "get",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Retrieves the value of an environment variable",
+          "long_about": null,
+          "positionals": [
+            {
+              "id": "key",
+              "short": null,
+              "long": null,
+              "long_help": null,
+              "aliases": [],
+              "required": true,
+              "help": "The name of the environment variable to retrieve",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "Get"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "opts": [],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Get",
+              "arg_ids": [
+                "key"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "all",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Retrieves all environment variables",
+          "long_about": null,
+          "positionals": [],
+          "opts": [],
+          "subcommands": [],
+          "groups": []
+        }
+      ],
+      "groups": [
+        {
+          "id": "EnvCommand",
+          "arg_ids": []
+        }
+      ]
+    },
+    {
+      "name": "exec",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Execute an ad-hoc command in projects",
+      "long_about": null,
+      "positionals": [
+        {
+          "id": "command",
+          "short": null,
+          "long": null,
+          "long_help": null,
+          "aliases": [],
+          "required": true,
+          "help": null,
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "args",
+          "short": null,
+          "long": null,
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "The arguments to pass to the task",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        }
+      ],
+      "opts": [
+        {
+          "id": "meta",
+          "short": "m",
+          "long": "meta",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter the task/projects based on the meta configuration, accepts CEL syntax",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "project",
+          "short": "p",
+          "long": "project",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter based on the project name matching the passed argument, accepts glob patterns",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "dir",
+          "short": null,
+          "long": "dir",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter based on projects residing in the specified directories, accepts glob patterns",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "max_concurrency",
+          "short": "c",
+          "long": "max-concurrency",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How many concurrent tasks to run",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "dry_run",
+          "short": "d",
+          "long": "dry-run",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Don't execute the task, just print the command to be executed",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "result",
+          "short": null,
+          "long": "result",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Output the results of the execution to the specified file",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "result_format",
+          "short": null,
+          "long": "result-format",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension",
+          "default_values": [],
+          "possible_values": [
+            "json",
+            "yaml",
+            "toml"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "ui",
+          "short": "u",
+          "long": "ui",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Ui mode to use while running the command",
+          "default_values": [],
+          "possible_values": [
+            "stream",
+            "tui"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_base",
+          "short": "b",
+          "long": "scm-base",
+          "long_help": null,
+          "aliases": [
+            "base"
+          ],
+          "required": false,
+          "help": "The base commit to compare against. This will implicitly enable --scm-affected",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_target",
+          "short": "t",
+          "long": "scm-target",
+          "long_help": null,
+          "aliases": [
+            "target"
+          ],
+          "required": false,
+          "help": "The target commit to compare against. This will implicitly enable --scm-affected",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "retry",
+          "short": "r",
+          "long": "retry",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "retry_interval",
+          "short": null,
+          "long": "retry-interval",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_affected",
+          "short": "a",
+          "long": "scm-affected",
+          "long_help": null,
+          "aliases": [
+            "affected"
+          ],
+          "required": false,
+          "help": "Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks",
+          "default_values": [
+            "none"
+          ],
+          "possible_values": [
+            "auto",
+            "git",
+            "none"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        }
+      ],
+      "subcommands": [],
+      "groups": [
+        {
+          "id": "ExecCommand",
+          "arg_ids": []
+        },
+        {
+          "id": "RunArgs",
+          "arg_ids": [
+            "meta",
+            "project",
+            "dir",
+            "max_concurrency",
+            "dry_run",
+            "result",
+            "result_format",
+            "ui",
+            "scm_base",
+            "scm_target",
+            "retry",
+            "retry_interval",
+            "scm_affected"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "config",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Print configuration schemas in JSON",
+      "long_about": null,
+      "positionals": [],
+      "opts": [],
+      "subcommands": [
+        {
+          "name": "schema",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": null,
+          "long_about": null,
+          "positionals": [
+            {
+              "id": "schema",
+              "short": null,
+              "long": null,
+              "long_help": null,
+              "aliases": [],
+              "required": true,
+              "help": null,
+              "default_values": [],
+              "possible_values": [
+                "workspace",
+                "project",
+                "generator"
+              ],
+              "env": null,
+              "groups": [],
+              "conflicts_with": []
+            }
+          ],
+          "opts": [
+            {
+              "id": "pretty",
+              "short": "p",
+              "long": "pretty",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Pretty print the schema",
+              "default_values": [],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "PrintSchemaArgs"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Schema",
+              "arg_ids": []
+            },
+            {
+              "id": "PrintSchemaArgs",
+              "arg_ids": [
+                "pretty"
+              ]
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "id": "ConfigCommand",
+          "arg_ids": []
+        },
+        {
+          "id": "ConfigArgs",
+          "arg_ids": []
+        }
+      ]
+    },
+    {
+      "name": "completion",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Print shell completions",
+      "long_about": null,
+      "positionals": [],
+      "opts": [
+        {
+          "id": "shell",
+          "short": "s",
+          "long": "shell",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Which shell to generate completion for",
+          "default_values": [
+            "bash"
+          ],
+          "possible_values": [
+            "bash",
+            "elvish",
+            "fish",
+            "powershell",
+            "zsh"
+          ],
+          "env": null,
+          "groups": [
+            "CompletionArgs"
+          ],
+          "conflicts_with": []
+        }
+      ],
+      "subcommands": [],
+      "groups": [
+        {
+          "id": "CompletionCommand",
+          "arg_ids": []
+        },
+        {
+          "id": "CompletionArgs",
+          "arg_ids": [
+            "shell"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "run",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Execute specified task in projects",
+      "long_about": null,
+      "positionals": [
+        {
+          "id": "task",
+          "short": null,
+          "long": null,
+          "long_help": null,
+          "aliases": [],
+          "required": true,
+          "help": "The task to run",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        }
+      ],
+      "opts": [
+        {
+          "id": "ignore_dependencies",
+          "short": "i",
+          "long": "ignore-dependencies",
+          "long_help": null,
+          "aliases": [
+            "ignore-deps"
+          ],
+          "required": false,
+          "help": "Run the command without dependencies. Not compatible with --with-dependents",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": [
+            {
+              "id": "with_dependents",
+              "short": "w",
+              "long": "with-dependents"
+            }
+          ]
+        },
+        {
+          "id": "with_dependents",
+          "short": "w",
+          "long": "with-dependents",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Run the task along with its dependents. Useful for combining with filters. Not compatible with --ignore-deps",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "on_failure",
+          "short": "o",
+          "long": "on-failure",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How to handle failures",
+          "default_values": [
+            "skip-dependents"
+          ],
+          "possible_values": [
+            "continue",
+            "skip-next-batches",
+            "skip-dependents"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "no_cache",
+          "short": null,
+          "long": "no-cache",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Don't save the execution result to the cache",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "no_replay_logs",
+          "short": "L",
+          "long": "no-replay-logs",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Don't replay the logs of cached task executions",
+          "default_values": [],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "force",
+          "short": "f",
+          "long": "force",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Force execution of tasks, even if it's already cached",
+          "default_values": [
+            "none"
+          ],
+          "possible_values": [
+            "all",
+            "failed",
+            "none"
+          ],
+          "env": null,
+          "groups": [],
+          "conflicts_with": []
+        },
+        {
+          "id": "meta",
+          "short": "m",
+          "long": "meta",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter the task/projects based on the meta configuration, accepts CEL syntax",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "project",
+          "short": "p",
+          "long": "project",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter based on the project name matching the passed argument, accepts glob patterns",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "dir",
+          "short": null,
+          "long": "dir",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Filter based on projects residing in the specified directories, accepts glob patterns",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "max_concurrency",
+          "short": "c",
+          "long": "max-concurrency",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How many concurrent tasks to run",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "dry_run",
+          "short": "d",
+          "long": "dry-run",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Don't execute the task, just print the command to be executed",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "result",
+          "short": null,
+          "long": "result",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Output the results of the execution to the specified file",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "result_format",
+          "short": null,
+          "long": "result-format",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension",
+          "default_values": [],
+          "possible_values": [
+            "json",
+            "yaml",
+            "toml"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "ui",
+          "short": "u",
+          "long": "ui",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Ui mode to use while running the command",
+          "default_values": [],
+          "possible_values": [
+            "stream",
+            "tui"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_base",
+          "short": "b",
+          "long": "scm-base",
+          "long_help": null,
+          "aliases": [
+            "base"
+          ],
+          "required": false,
+          "help": "The base commit to compare against. This will implicitly enable --scm-affected",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_target",
+          "short": "t",
+          "long": "scm-target",
+          "long_help": null,
+          "aliases": [
+            "target"
+          ],
+          "required": false,
+          "help": "The target commit to compare against. This will implicitly enable --scm-affected",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "retry",
+          "short": "r",
+          "long": "retry",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "retry_interval",
+          "short": null,
+          "long": "retry-interval",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified",
+          "default_values": [],
+          "possible_values": [],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        },
+        {
+          "id": "scm_affected",
+          "short": "a",
+          "long": "scm-affected",
+          "long_help": null,
+          "aliases": [
+            "affected"
+          ],
+          "required": false,
+          "help": "Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks",
+          "default_values": [
+            "none"
+          ],
+          "possible_values": [
+            "auto",
+            "git",
+            "none"
+          ],
+          "env": null,
+          "groups": [
+            "RunArgs"
+          ],
+          "conflicts_with": []
+        }
+      ],
+      "subcommands": [],
+      "groups": [
+        {
+          "id": "RunCommand",
+          "arg_ids": []
+        },
+        {
+          "id": "RunArgs",
+          "arg_ids": [
+            "meta",
+            "project",
+            "dir",
+            "max_concurrency",
+            "dry_run",
+            "result",
+            "result_format",
+            "ui",
+            "scm_base",
+            "scm_target",
+            "retry",
+            "retry_interval",
+            "scm_affected"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "hash",
+      "bin_name": null,
+      "author": "Clarence Manuel <rencedm112@gmail.com>",
+      "version": "0.4.0",
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Get hash for workspace or projects",
+      "long_about": null,
+      "positionals": [],
+      "opts": [
+        {
+          "id": "raw_value",
+          "short": "r",
+          "long": "raw-value",
+          "long_help": null,
+          "aliases": [],
+          "required": false,
+          "help": "Only output the raw string representation of the hash, no trailing newline, and no traces",
+          "default_values": [
+            "false"
+          ],
+          "possible_values": [
+            "true",
+            "false"
+          ],
+          "env": null,
+          "groups": [
+            "HashArgs"
+          ],
+          "conflicts_with": []
+        }
+      ],
+      "subcommands": [
+        {
+          "name": "workspace",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Get the hash for the workspace",
+          "long_about": null,
+          "positionals": [],
+          "opts": [],
+          "subcommands": [],
+          "groups": []
+        },
+        {
+          "name": "project",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Get the hash for a project",
+          "long_about": null,
+          "positionals": [
+            {
+              "id": "project",
+              "short": null,
+              "long": null,
+              "long_help": null,
+              "aliases": [],
+              "required": true,
+              "help": "Project name",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "HashProjectCommand"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "opts": [
+            {
+              "id": "task",
+              "short": "t",
+              "long": "task",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Hash specific task",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "HashProjectCommand"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Project",
+              "arg_ids": []
+            },
+            {
+              "id": "HashProjectCommand",
+              "arg_ids": [
+                "project",
+                "task"
+              ]
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "id": "HashCommand",
+          "arg_ids": []
+        },
+        {
+          "id": "HashArgs",
+          "arg_ids": [
+            "raw_value"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "declspec",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Generate machine readable CLI specification",
+      "long_about": null,
+      "positionals": [],
+      "opts": [],
+      "subcommands": [
+        {
+          "name": "schema",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": null,
+          "long_about": null,
+          "positionals": [],
+          "opts": [
+            {
+              "id": "pretty",
+              "short": "p",
+              "long": "pretty",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Pretty print the schema",
+              "default_values": [
+                "false"
+              ],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "SchemaArgs"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Schema",
+              "arg_ids": []
+            },
+            {
+              "id": "SchemaArgs",
+              "arg_ids": [
+                "pretty"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "dump",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": null,
+          "long_about": null,
+          "positionals": [],
+          "opts": [
+            {
+              "id": "format",
+              "short": "f",
+              "long": "format",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "The format to use for the output",
+              "default_values": [
+                "json"
+              ],
+              "possible_values": [
+                "json",
+                "yaml",
+                "toml"
+              ],
+              "env": null,
+              "groups": [
+                "DumpArgs"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Dump",
+              "arg_ids": []
+            },
+            {
+              "id": "DumpArgs",
+              "arg_ids": [
+                "format"
+              ]
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "id": "DeclspecCommand",
+          "arg_ids": []
+        }
+      ]
+    },
+    {
+      "name": "cache",
+      "bin_name": null,
+      "author": "Clarence Manuel <rencedm112@gmail.com>",
+      "version": "0.4.0",
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [],
+      "about": "Cache related subcommands",
+      "long_about": null,
+      "positionals": [],
+      "opts": [],
+      "subcommands": [
+        {
+          "name": "dir",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Print the cache directory",
+          "long_about": null,
+          "positionals": [],
+          "opts": [],
+          "subcommands": [],
+          "groups": []
+        },
+        {
+          "name": "stats",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Show statistics about the cache",
+          "long_about": null,
+          "positionals": [],
+          "opts": [
+            {
+              "id": "project",
+              "short": "p",
+              "long": "project",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Filter the cache entries by project name, accepts glob patterns",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "StatsArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "task",
+              "short": "t",
+              "long": "task",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Filter the cache entries by task name, accepts glob patterns",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "StatsArgs"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Stats",
+              "arg_ids": []
+            },
+            {
+              "id": "StatsArgs",
+              "arg_ids": [
+                "project",
+                "task"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "prune",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Prune the local cache",
+          "long_about": null,
+          "positionals": [],
+          "opts": [
+            {
+              "id": "stale_only",
+              "short": "s",
+              "long": "stale-only",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only stale cache entries",
+              "default_values": [
+                "false"
+              ],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "older_than",
+              "short": "o",
+              "long": "older-than",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only stale cache entries",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "larger_than",
+              "short": "l",
+              "long": "larger-than",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only cache entries that are larger than the given size",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "project",
+              "short": "p",
+              "long": "project",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only cache entries belonging to a project that matches the given project name, accepts glob patterns",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "task",
+              "short": "t",
+              "long": "task",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only cache entries belonging to a task that matches the given task name, accepts glob patterns",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "dir",
+              "short": "d",
+              "long": "dir",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Add filter to clear only cache entries of projects residing in the given directory, accepts glob patterns",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "yes",
+              "short": "y",
+              "long": "yes",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Prune the cache without prompting for confirmation",
+              "default_values": [],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "dry_run",
+              "short": "d",
+              "long": "dry-run",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Show the cache entries that would be deleted",
+              "default_values": [
+                "false"
+              ],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "PruneArgs"
+              ],
+              "conflicts_with": [
+                {
+                  "id": "yes",
+                  "short": "y",
+                  "long": "yes"
+                }
+              ]
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "Prune",
+              "arg_ids": []
+            },
+            {
+              "id": "PruneArgs",
+              "arg_ids": [
+                "stale_only",
+                "older_than",
+                "larger_than",
+                "project",
+                "task",
+                "dir",
+                "yes",
+                "dry_run"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "remote",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": "Remote cache related commands",
+          "long_about": null,
+          "positionals": [],
+          "opts": [],
+          "subcommands": [
+            {
+              "name": "setup",
+              "bin_name": null,
+              "author": null,
+              "version": null,
+              "long_version": null,
+              "short_flag": null,
+              "long_flag": null,
+              "aliases": [],
+              "about": "Setup remote caching",
+              "long_about": null,
+              "positionals": [],
+              "opts": [
+                {
+                  "id": "api_base_url",
+                  "short": "b",
+                  "long": "api-base-url",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": true,
+                  "help": "The endpoint base URL of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "api_key",
+                  "short": "a",
+                  "long": "api-key",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": true,
+                  "help": "The API key of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "tenant",
+                  "short": "t",
+                  "long": "tenant",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": true,
+                  "help": "The tenant code of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "org",
+                  "short": "o",
+                  "long": "org",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": true,
+                  "help": "The organization code of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "ws",
+                  "short": "w",
+                  "long": "ws",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": true,
+                  "help": "The workspace code of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "env",
+                  "short": "e",
+                  "long": "env",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": false,
+                  "help": "The environment code of the remote cache server",
+                  "default_values": [],
+                  "possible_values": [],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                },
+                {
+                  "id": "secure",
+                  "short": "s",
+                  "long": "secure",
+                  "long_help": null,
+                  "aliases": [],
+                  "required": false,
+                  "help": "Encrypt the remote cache configuration file",
+                  "default_values": [
+                    "false"
+                  ],
+                  "possible_values": [
+                    "true",
+                    "false"
+                  ],
+                  "env": null,
+                  "groups": [
+                    "SetupArgs"
+                  ],
+                  "conflicts_with": []
+                }
+              ],
+              "subcommands": [],
+              "groups": [
+                {
+                  "id": "Setup",
+                  "arg_ids": []
+                },
+                {
+                  "id": "SetupArgs",
+                  "arg_ids": [
+                    "api_base_url",
+                    "api_key",
+                    "tenant",
+                    "org",
+                    "ws",
+                    "env",
+                    "secure"
+                  ]
+                }
+              ]
+            }
+          ],
+          "groups": [
+            {
+              "id": "Remote",
+              "arg_ids": []
+            },
+            {
+              "id": "RemoteArgs",
+              "arg_ids": []
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "id": "CacheCommand",
+          "arg_ids": []
+        }
+      ]
+    },
+    {
+      "name": "generator",
+      "bin_name": null,
+      "author": null,
+      "version": null,
+      "long_version": null,
+      "short_flag": null,
+      "long_flag": null,
+      "aliases": [
+        "gen"
+      ],
+      "about": "Code generation related subcommands",
+      "long_about": null,
+      "positionals": [],
+      "opts": [],
+      "subcommands": [
+        {
+          "name": "run",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [],
+          "about": null,
+          "long_about": null,
+          "positionals": [],
+          "opts": [
+            {
+              "id": "name",
+              "short": "n",
+              "long": "name",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Generator name",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "project",
+              "short": "p",
+              "long": "project",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "If provided, it will use the project's directory as output path",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": [
+                {
+                  "id": "output",
+                  "short": "o",
+                  "long": "output"
+                }
+              ]
+            },
+            {
+              "id": "output",
+              "short": "o",
+              "long": "output",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Output path",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "value",
+              "short": "v",
+              "long": "value",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Prefill values to prompts",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "target",
+              "short": "t",
+              "long": "target",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Override target paths",
+              "default_values": [],
+              "possible_values": [],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "dry_run",
+              "short": "d",
+              "long": "dry-run",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "Dry run",
+              "default_values": [
+                "false"
+              ],
+              "possible_values": [
+                "true",
+                "false"
+              ],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            },
+            {
+              "id": "overwrite",
+              "short": null,
+              "long": "overwrite",
+              "long_help": null,
+              "aliases": [],
+              "required": false,
+              "help": "How to handle overwriting existing files, takes precedence over the generator's configuration",
+              "default_values": [],
+              "possible_values": [
+                "prompt",
+                "always",
+                "never"
+              ],
+              "env": null,
+              "groups": [
+                "GeneratorRunArgs"
+              ],
+              "conflicts_with": []
+            }
+          ],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "GeneratorRunCommand",
+              "arg_ids": []
+            },
+            {
+              "id": "GeneratorRunArgs",
+              "arg_ids": [
+                "name",
+                "project",
+                "output",
+                "value",
+                "target",
+                "dry_run",
+                "overwrite"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "list",
+          "bin_name": null,
+          "author": null,
+          "version": null,
+          "long_version": null,
+          "short_flag": null,
+          "long_flag": null,
+          "aliases": [
+            "ls"
+          ],
+          "about": null,
+          "long_about": null,
+          "positionals": [],
+          "opts": [],
+          "subcommands": [],
+          "groups": [
+            {
+              "id": "GeneratorListCommand",
+              "arg_ids": []
+            },
+            {
+              "id": "GeneratorListArgs",
+              "arg_ids": []
+            }
+          ]
+        }
+      ],
+      "groups": [
+        {
+          "id": "GeneratorCommand",
+          "arg_ids": []
+        }
+      ]
+    }
+  ],
+  "groups": [
+    {
+      "id": "Cli",
+      "arg_ids": []
+    },
+    {
+      "id": "CliArgs",
+      "arg_ids": [
+        "stdout_trace_level",
+        "stderr_trace",
+        "file_trace_output",
+        "file_trace_level",
+        "env_root_dir_marker",
+        "env_file",
+        "env",
+        "inherit_env_vars"
+      ]
+    }
+  ]
+}

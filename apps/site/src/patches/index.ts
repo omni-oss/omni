@@ -1,1 +1,0 @@
-export { patchFetch } from "./fetch";

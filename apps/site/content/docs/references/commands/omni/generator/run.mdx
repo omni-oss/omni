@@ -1,0 +1,75 @@
+---
+
+title: "run"
+
+---
+
+
+
+## Usage
+
+```bash
+omni generator run [OPTIONS]
+```
+
+---
+
+## Options
+
+### `-n`, `--name`
+
+Generator name
+
+- **Required:** No
+
+### `-p`, `--project`
+
+If provided, it will use the project's directory as output path
+
+- **Required:** No
+
+### `-o`, `--output`
+
+Output path
+
+- **Required:** No
+
+### `-v`, `--value`
+
+Prefill values to prompts
+
+- **Required:** No
+
+### `-t`, `--target`
+
+Override target paths
+
+- **Required:** No
+
+### `-d`, `--dry-run`
+
+Dry run
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--overwrite`
+
+How to handle overwriting existing files, takes precedence over the generator's configuration
+
+- **Required:** No
+
+- **Possible values:** `prompt`, `always`, `never`
+
+---
+
+## Examples
+
+```bash
+omni generator run [OPTIONS]
+```
+
+---

@@ -1,0 +1,187 @@
+---
+
+title: "run"
+
+description: "Execute specified task in projects"
+
+---
+
+
+
+## Usage
+
+```bash
+omni run [OPTIONS] <task>
+```
+
+---
+
+## Positional arguments
+
+### `<task>`
+
+The task to run
+
+- **Required:** Yes
+
+---
+
+## Options
+
+### `-i`, `--ignore-dependencies`, `ignore-deps`
+
+Run the command without dependencies. Not compatible with --with-dependents
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `-w`, `--with-dependents`
+
+Run the task along with its dependents. Useful for combining with filters. Not compatible with --ignore-deps
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `-o`, `--on-failure`
+
+How to handle failures
+
+- **Required:** No
+
+- **Default:** `skip-dependents`
+
+- **Possible values:** `continue`, `skip-next-batches`, `skip-dependents`
+
+### `--no-cache`
+
+Don't save the execution result to the cache
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `-L`, `--no-replay-logs`
+
+Don't replay the logs of cached task executions
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+### `-f`, `--force`
+
+Force execution of tasks, even if it's already cached
+
+- **Required:** No
+
+- **Default:** `none`
+
+- **Possible values:** `all`, `failed`, `none`
+
+### `-m`, `--meta`
+
+Filter the task/projects based on the meta configuration, accepts CEL syntax
+
+- **Required:** No
+
+### `-p`, `--project`
+
+Filter based on the project name matching the passed argument, accepts glob patterns
+
+- **Required:** No
+
+### `--dir`
+
+Filter based on projects residing in the specified directories, accepts glob patterns
+
+- **Required:** No
+
+### `-c`, `--max-concurrency`
+
+How many concurrent tasks to run
+
+- **Required:** No
+
+### `-d`, `--dry-run`
+
+Don't execute the task, just print the command to be executed
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--result`
+
+Output the results of the execution to the specified file
+
+- **Required:** No
+
+### `--result-format`
+
+Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension
+
+- **Required:** No
+
+- **Possible values:** `json`, `yaml`, `toml`
+
+### `-u`, `--ui`
+
+Ui mode to use while running the command
+
+- **Required:** No
+
+- **Possible values:** `stream`, `tui`
+
+### `-b`, `--scm-base`, `base`
+
+The base commit to compare against. This will implicitly enable --scm-affected
+
+- **Required:** No
+
+### `-t`, `--scm-target`, `target`
+
+The target commit to compare against. This will implicitly enable --scm-affected
+
+- **Required:** No
+
+### `-r`, `--retry`
+
+How many retries to do if the task fails before failing the whole execution, takes precedence over `max_retry` task configuration if specified
+
+- **Required:** No
+
+### `--retry-interval`
+
+How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified
+
+- **Required:** No
+
+### `-a`, `--scm-affected`, `affected`
+
+Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks
+
+- **Required:** No
+
+- **Default:** `none`
+
+- **Possible values:** `auto`, `git`, `none`
+
+---
+
+## Examples
+
+```bash
+omni run [OPTIONS] <task>
+```
+
+---

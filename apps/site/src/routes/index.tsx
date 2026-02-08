@@ -1,186 +1,255 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { HomeLayout } from "fumadocs-ui/layouts/home";
-import { baseOptions } from "@/lib/layout.shared";
+import { createFileRoute } from "@tanstack/solid-router";
+import {
+    Route as RouteIcon,
+    Server,
+    Shield,
+    Sparkles,
+    Waves,
+    Zap,
+} from "lucide-solid";
+import { For } from "solid-js";
+import { css } from "~/css";
+import { center, container, grid, stack } from "~/patterns";
 
-export const Route = createFileRoute("/")({
-    component: Home,
+export const Route = createFileRoute("/")({ component: App });
+
+// Reusable icon style
+const iconStyle = css({
+    w: "12",
+    h: "12",
+    color: "cyan.400",
 });
 
-function Home() {
+function App() {
+    const features = [
+        {
+            icon: <Zap class={iconStyle} />,
+            title: "Powerful Server Functions",
+            description:
+                "Write server-side code that seamlessly integrates with your client components. Type-safe, secure, and simple.",
+        },
+        {
+            icon: <Server class={iconStyle} />,
+            title: "Flexible Server Side Rendering",
+            description:
+                "Full-document SSR, streaming, and progressive enhancement out of the box. Control exactly what renders where.",
+        },
+        {
+            icon: <RouteIcon class={iconStyle} />,
+            title: "API Routes",
+            description:
+                "Build type-safe API endpoints alongside your application. No separate backend needed.",
+        },
+        {
+            icon: <Shield class={iconStyle} />,
+            title: "Strongly Typed Everything",
+            description:
+                "End-to-end type safety from server to client. Catch errors before they reach production.",
+        },
+        {
+            icon: <Waves class={iconStyle} />,
+            title: "Full Streaming Support",
+            description:
+                "Stream data from server to client progressively. Perfect for AI applications and real-time updates.",
+        },
+        {
+            icon: <Sparkles class={iconStyle} />,
+            title: "Next Generation Ready",
+            description:
+                "Built from the ground up for modern web applications. Deploy anywhere JavaScript runs.",
+        },
+    ];
+
     return (
-        <HomeLayout
-            {...baseOptions()}
-            links={[
-                {
-                    type: "main",
-                    on: "all",
-                    text: "Documentation",
-                    url: "/docs/quick-start",
-                },
-            ]}
-            className="text-center pt-32 justify-center"
-            about="Omni Documentation"
+        <div
+            class={css({
+                minH: "screen",
+                bgGradient: "to-b",
+                gradientFrom: "slate.900",
+                gradientVia: "slate.800",
+                gradientTo: "slate.900",
+            })}
         >
             {/* Hero Section */}
-            <main className="container mx-auto px-6 md:px-16 py-32 text-center">
-                <div className="max-w-4xl mx-auto">
-                    <h1 className="text-5xl md:text-7xl font-extrabold leading-tight text-white mb-6 animate-fade-in">
-                        The Unified Build System for Modern{" "}
-                        <span className="text-blue-500">Monorepos</span>
-                    </h1>
-                    <p className="text-lg md:text-xl text-gray-400 mb-10 animate-fade-in delay-200">
-                        Omni helps you manage and scale complex projects by
-                        providing a powerful, integrated toolkit for your
-                        monorepo.
-                    </p>
-                    <div className="flex flex-col md:flex-row justify-center space-y-4 md:space-y-0 md:space-x-4">
-                        <Link
-                            to="/docs/$"
-                            params={{
-                                _splat: "quick-start",
-                            }}
-                            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-blue-500 text-white shadow hover:bg-blue-600 h-10 px-6 py-2 transform transition-transform hover:scale-105"
-                        >
-                            Get Started
-                        </Link>
-                        <Link
-                            to="/docs/$"
-                            params={{
-                                _splat: "features",
-                            }}
-                            className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-gray-800 hover:text-gray-50 h-10 px-6 py-2 border-gray-700 text-gray-400"
-                        >
-                            Learn More
-                        </Link>
-                    </div>
-                </div>
-            </main>
+            <section
+                class={css({
+                    position: "relative",
+                    py: "20",
+                    px: "6",
+                    textAlign: "center",
+                    overflow: "hidden",
+                })}
+            >
+                <div
+                    class={css({
+                        position: "absolute",
+                        inset: "0",
+                        bgGradient: "to-r",
+                        gradientFrom: "cyan.500/10",
+                        gradientVia: "blue.500/10",
+                        gradientTo: "purple.500/10",
+                    })}
+                />
 
-            {/* Features Section */}
-            <section className="py-24 px-6 md:px-16">
-                <div className="container mx-auto">
-                    <h2 className="text-4xl md:text-5xl font-bold text-center text-white mb-16">
-                        Core Features
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                        {/* Feature Card 1: Smart Task Execution & Caching */}
-                        <div className="relative rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-                            <div className="flex flex-col items-center text-center">
-                                <div className="w-16 h-16 flex items-center justify-center bg-blue-600 text-white rounded-full mb-4">
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        className="h-8 w-8"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z"
-                                        />
-                                    </svg>
-                                </div>
-                                <h3 className="text-xl font-semibold text-white mb-2">
-                                    Smart Task Execution
-                                </h3>
-                                <p className="text-gray-400 leading-relaxed">
-                                    Omni's advanced caching ensures that tasks
-                                    only run on affected projects, saving you
-                                    valuable time on builds and tests.
-                                </p>
-                            </div>
-                        </div>
-                        {/* Feature Card 2: Powerful Code Generation */}
-                        <div className="relative rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-                            <div className="flex flex-col items-center text-center">
-                                <div className="w-16 h-16 flex items-center justify-center bg-blue-600 text-white rounded-full mb-4">
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        className="h-8 w-8"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 21v-4a4 4 0 014-4h4a4 4 0 014 4v4h-6z"
-                                        />
-                                    </svg>
-                                </div>
-                                <h3 className="text-xl font-semibold text-white mb-2">
-                                    Powerful Code Generation
-                                </h3>
-                                <p className="text-gray-400 leading-relaxed">
-                                    Quickly generate new libraries, components,
-                                    and boilerplate code with flexible, built-in
-                                    schematics.
-                                </p>
-                            </div>
-                        </div>
-                        {/* Feature Card 3: Interactive Project Graph */}
-                        <div className="relative rounded-2xl border border-gray-800 bg-gray-950 p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-                            <div className="flex flex-col items-center text-center">
-                                <div className="w-16 h-16 flex items-center justify-center bg-blue-600 text-white rounded-full mb-4">
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        className="h-8 w-8"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M3 10v11m6-9v9m6-10v10m6-6v6a2 2 0 01-2 2h-4a2 2 0 01-2-2v-6a2 2 0 012-2h4a2 2 0 012 2zM3 10V4.5a2 2 0 012-2h14a2 2 0 012 2V10"
-                                        />
-                                    </svg>
-                                </div>
-                                <h3 className="text-xl font-semibold text-white mb-2">
-                                    Interactive Project Graph
-                                </h3>
-                                <p className="text-gray-400 leading-relaxed">
-                                    Visualize your workspace dependencies and
-                                    understand the relationship between your
-                                    projects with a dynamic graph.
-                                </p>
-                            </div>
-                        </div>
+                <div
+                    class={stack({
+                        position: "relative",
+                        maxW: "5xl",
+                        mx: "auto",
+                        gap: "8",
+                    })}
+                >
+                    <div
+                        class={center({
+                            gap: "6",
+                            flexDirection: { base: "column", md: "row" },
+                        })}
+                    >
+                        <img
+                            src="/tanstack-circle-logo.png"
+                            alt="TanStack Logo"
+                            class={css({
+                                w: { base: "24", md: "32" },
+                                h: { base: "24", md: "32" },
+                            })}
+                        />
+                        <h1
+                            class={css({
+                                textStyle: "6xl",
+                                md: { textStyle: "7xl" },
+                                fontWeight: "black",
+                                color: "white",
+                            })}
+                        >
+                            <span class={css({ color: "gray.300" })}>
+                                TANSTACK
+                            </span>{" "}
+                            <span
+                                class={css({
+                                    bgGradient: "to-r",
+                                    gradientFrom: "cyan.400",
+                                    gradientTo: "blue.400",
+                                    bgClip: "text",
+                                    color: "transparent",
+                                })}
+                            >
+                                START
+                            </span>
+                        </h1>
+                    </div>
+
+                    <p
+                        class={css({
+                            fontSize: { base: "2xl", md: "3xl" },
+                            color: "gray.300",
+                            fontWeight: "light",
+                        })}
+                    >
+                        The framework for next generation AI applications
+                    </p>
+
+                    <p
+                        class={css({
+                            fontSize: "lg",
+                            color: "gray.400",
+                            maxW: "3xl",
+                            mx: "auto",
+                        })}
+                    >
+                        Full-stack framework powered by TanStack Router for
+                        React and Solid. Build modern applications with server
+                        functions, streaming, and type safety.
+                    </p>
+
+                    <div class={stack({ alignItems: "center", gap: "4" })}>
+                        <a
+                            href="https://tanstack.com/start"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class={css({
+                                px: "8",
+                                py: "3",
+                                bg: "cyan.500",
+                                _hover: { bg: "cyan.600" },
+                                color: "white",
+                                fontWeight: "semibold",
+                                rounded: "lg",
+                                transition: "colors",
+                                shadow: "0 10px 15px -3px rgba(6, 182, 212, 0.5)",
+                            })}
+                        >
+                            Documentation
+                        </a>
+                        <p class={css({ color: "gray.400", fontSize: "sm" })}>
+                            Begin your TanStack Start journey by editing{" "}
+                            <code
+                                class={css({
+                                    px: "2",
+                                    py: "1",
+                                    bg: "slate.700",
+                                    rounded: "sm",
+                                    color: "cyan.400",
+                                })}
+                            >
+                                /src/routes/index.tsx
+                            </code>
+                        </p>
                     </div>
                 </div>
             </section>
-            {/* Footer */}
-            <footer className="py-10 px-6 md:px-16 border-t">
-                <div className="container mx-auto flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0 text-gray-400 text-sm">
-                    <p>
-                        &copy; {new Date().getFullYear()} Omni CLI. All rights
-                        reserved.
-                    </p>
-                    <div className="flex space-x-6">
-                        <Link
-                            to="/docs/$"
-                            params={{
-                                _splat: "quick-start",
-                            }}
-                            className="hover:text-white transition-colors"
-                        >
-                            Docs
-                        </Link>
-                        <a
-                            href="https://github.com/omni-oss/omni"
-                            className="hover:text-white transition-colors"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            GitHub
-                        </a>
-                    </div>
+
+            {/* Features Grid */}
+            <section class={container({ py: "16", px: "6", maxW: "7xl" })}>
+                <div
+                    class={grid({
+                        columns: { base: 1, md: 2, lg: 3 },
+                        gap: "6",
+                    })}
+                >
+                    <For each={features}>
+                        {(feature) => (
+                            <div
+                                class={css({
+                                    bg: "slate.800/50",
+                                    backdropBlur: "sm",
+                                    border: "1px solid",
+                                    borderColor: "slate.700",
+                                    rounded: "xl",
+                                    p: "6",
+                                    transition: "all",
+                                    transitionDuration: "300ms",
+                                    _hover: {
+                                        borderColor: "cyan.500/50",
+                                        shadow: "0 10px 15px -3px rgba(6, 182, 212, 0.1)",
+                                    },
+                                })}
+                            >
+                                <div class={css({ mb: "4" })}>
+                                    {feature.icon}
+                                </div>
+                                <h3
+                                    class={css({
+                                        fontSize: "xl",
+                                        fontWeight: "semibold",
+                                        color: "white",
+                                        mb: "3",
+                                    })}
+                                >
+                                    {feature.title}
+                                </h3>
+                                <p
+                                    class={css({
+                                        color: "gray.400",
+                                        lineHeight: "relaxed",
+                                    })}
+                                >
+                                    {feature.description}
+                                </p>
+                            </div>
+                        )}
+                    </For>
                 </div>
-            </footer>
-        </HomeLayout>
+            </section>
+        </div>
     );
 }

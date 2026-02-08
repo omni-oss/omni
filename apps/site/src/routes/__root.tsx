@@ -1,53 +1,38 @@
-/// <reference types="vite/client" />
 import {
-    createRootRoute,
+    createRootRouteWithContext,
     HeadContent,
     Outlet,
     Scripts,
-} from "@tanstack/react-router";
-import { TanstackProvider } from "fumadocs-core/framework/tanstack";
-import type * as React from "react";
-import { AppProvider } from "@/components/provider";
-import appCss from "@/styles/app.css?url";
+} from "@tanstack/solid-router";
+import { TanStackRouterDevtools } from "@tanstack/solid-router-devtools";
+import { Suspense } from "solid-js";
+import { HydrationScript } from "solid-js/web";
 
-export const Route = createRootRoute({
+import Header from "../components/Header";
+
+import styleCss from "../index.css?url";
+
+export const Route = createRootRouteWithContext()({
     head: () => ({
-        meta: [
-            {
-                charSet: "utf-8",
-            },
-            {
-                name: "viewport",
-                content: "width=device-width, initial-scale=1",
-            },
-            {
-                title: "Omni",
-            },
-        ],
-        links: [{ rel: "stylesheet", href: appCss }],
+        links: [{ rel: "stylesheet", href: styleCss }],
     }),
-    component: RootComponent,
+    shellComponent: RootComponent,
 });
 
 function RootComponent() {
     return (
-        <RootDocument>
-            <Outlet />
-        </RootDocument>
-    );
-}
-
-function RootDocument({ children }: { children: React.ReactNode }) {
-    return (
-        // biome-ignore lint/a11y/useHtmlLang: false
-        <html suppressHydrationWarning>
+        <html lang="en">
             <head>
-                <HeadContent />
+                <HydrationScript />
             </head>
-            <body className="flex flex-col min-h-screen">
-                <TanstackProvider>
-                    <AppProvider>{children}</AppProvider>
-                </TanstackProvider>
+            <body>
+                <HeadContent />
+                <Suspense>
+                    <Header />
+
+                    <Outlet />
+                    <TanStackRouterDevtools />
+                </Suspense>
                 <Scripts />
             </body>
         </html>

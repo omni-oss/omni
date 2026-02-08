@@ -1,0 +1,15 @@
+{
+  "projectName": "site",
+  "mode": "file-router",
+  "typescript": true,
+  "tailwind": true,
+  "packageManager": "bun",
+  "git": true,
+  "install": true,
+  "addOnOptions": {},
+  "version": 1,
+  "framework": "solid",
+  "chosenAddOns": [
+    "start"
+  ]
+}

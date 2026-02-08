@@ -1,0 +1,135 @@
+---
+
+title: "omni"
+
+description: "omni is development workflow orchestration tool"
+
+version: "0.4.0"
+
+author: "Clarence Manuel &lt;rencedm112@gmail.com&gt;"
+
+---
+
+
+
+
+Flexible task runner and scaffolding CLI for streamlined development workflows.
+
+
+## Usage
+
+```bash
+omni [OPTIONS] <SUBCOMMAND>
+```
+
+---
+
+## Options
+
+### `-t`, `--stdout-trace-level`
+
+Print traces to stdout
+
+- **Required:** No
+
+- **Default:** `info`
+
+- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
+
+- **Environment variable:** `OMNI_STDOUT_TRACE_LEVEL`
+
+### `--stderr-trace`
+
+Output Error traces to stderr
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+- **Environment variable:** `OMNI_STDERR_TRACE_ENABLED`
+
+### `--file-trace-output`
+
+The file to write traces to
+
+- **Required:** No
+
+- **Default:** `./.omni/trace/logs`
+
+### `-f`, `--file-trace-level`
+
+The trace level to use for file traces
+
+- **Required:** No
+
+- **Default:** `off`
+
+- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
+
+- **Environment variable:** `OMNI_FILE_TRACE_LEVEL`
+
+### `-r`, `--env-root-dir-marker`
+
+The file which marks the root dir where to stop looking for env files
+
+- **Required:** No
+
+- **Default:** `workspace.omni.yaml`
+
+### `-e`, `--env-file`
+
+The env files to load per directory
+
+- **Required:** No
+
+### `--env`
+
+The environment to use
+
+- **Required:** No
+
+- **Environment variable:** `OMNI_ENV`
+
+### `-i`, `--inherit-env-vars`
+
+Inherit environment variables from the parent process
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Subcommands
+
+- [`env`](./env) - Output environment variabls values
+
+- [`exec`](./exec) - Execute an ad-hoc command in projects
+
+- [`config`](./config) - Print configuration schemas in JSON
+
+- [`completion`](./completion) - Print shell completions
+
+- [`run`](./run) - Execute specified task in projects
+
+- [`hash`](./hash) - Get hash for workspace or projects
+
+- [`declspec`](./declspec) - Generate machine readable CLI specification
+
+- [`cache`](./cache) - Cache related subcommands
+
+- [`generator`](./generator) - Code generation related subcommands
+
+---
+
+## Examples
+
+```bash
+omni [OPTIONS] <SUBCOMMAND>
+```
+
+---
