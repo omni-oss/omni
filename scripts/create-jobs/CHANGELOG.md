@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. See [conven
 - - -
 ## @omni-oss/create-jobs-v0.1.3 - 2026-02-08
 #### Bug Fixes
+- (**@omni-oss/create-jobs**) add more data to artifacts - (76e7437) - Clarence Manuel
+- (**@omni-oss/create-jobs**) create artifacts data - (d1e292c) - Clarence Manuel
+- (**@omni-oss/create-jobs**) resolve output files to project dir - (8f18f0d) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.5.2 - (4fadfff) - Clarence Manuel
+
+- - -
+
+## @omni-oss/create-jobs-v0.1.3 - 2026-02-08
+#### Bug Fixes
 - (**@omni-oss/create-jobs**) create artifacts data - (d1e292c) - Clarence Manuel
 - (**@omni-oss/create-jobs**) resolve output files to project dir - (8f18f0d) - Clarence Manuel
 
