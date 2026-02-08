@@ -24,3 +24,4 @@ omni_core = { workspace = true }
 omni_types = { workspace = true }
 omni_hasher = { workspace = true }
 omni_tera = { workspace = true }
+omni_configurations = { workspace = true }

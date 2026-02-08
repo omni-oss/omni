@@ -4998,6 +4998,7 @@ dependencies = [
  "eyre",
  "globset",
  "maps",
+ "omni_configurations",
  "omni_core",
  "omni_hasher",
  "omni_tera",

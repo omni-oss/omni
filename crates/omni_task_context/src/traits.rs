@@ -17,6 +17,17 @@ pub trait Context {
         node: &TaskExecutionNode,
     ) -> Result<Option<Arc<EnvVars>>, Self::Error>;
 
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration>;
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration>;
+
     fn get_cache_info(
         &self,
         project_name: &str,

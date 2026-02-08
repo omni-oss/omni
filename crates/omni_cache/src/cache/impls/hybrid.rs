@@ -925,6 +925,21 @@ impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
     ) -> Option<&omni_task_context::CacheInfo> {
         self.inner.get_cache_info(project_name, task_name)
     }
+
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.inner.get_task_meta_config(task_name, project_name)
+    }
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.inner.get_project_meta_config(project_name)
+    }
 }
 
 async fn load_stats<P: AsRef<Path> + Clone>(

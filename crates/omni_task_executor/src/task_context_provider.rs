@@ -70,6 +70,21 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
     ) -> Option<&CacheInfo> {
         self.context.get_cache_info(project_name, task_name)
     }
+
+    fn get_task_meta_config(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.context.get_task_meta_config(project_name, task_name)
+    }
+
+    fn get_project_meta_config(
+        &self,
+        project_name: &str,
+    ) -> Option<&omni_configurations::MetaConfiguration> {
+        self.context.get_project_meta_config(project_name)
+    }
 }
 
 struct OverallResultsTashHashProvider<'a> {

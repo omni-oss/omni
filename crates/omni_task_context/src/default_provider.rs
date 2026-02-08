@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use derive_new::new;
 use maps::Map;
+use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -37,6 +38,13 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
                 full_task_name: node.full_task_name().to_string(),
             })?;
 
+        let meta = self
+            .context
+            .get_task_meta_config(node.project_name(), node.task_name())
+            .or_else(|| {
+                self.context.get_project_meta_config(node.project_name())
+            });
+
         let cache_info = self
             .context
             .get_cache_info(node.project_name(), node.task_name())
@@ -50,7 +58,7 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         } else {
             vec![]
         };
-        let template_context = create_template_context(&env_vars);
+        let template_context = create_template_context(&env_vars, meta);
 
         let ctx = TaskContext {
             node,
@@ -66,10 +74,16 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
 
 fn create_template_context<'a>(
     env_vars: &'a Map<String, String>,
+    meta: Option<&MetaConfiguration>,
 ) -> omni_tera::Context {
     let mut context = omni_tera::Context::new();
 
     context.insert("env", env_vars);
+    if let Some(meta) = meta {
+        context.insert("meta", meta);
+    } else {
+        context.insert("meta", &MetaConfiguration::default());
+    }
 
     context
 }

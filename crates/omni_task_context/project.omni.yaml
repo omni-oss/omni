@@ -9,3 +9,4 @@ dependencies:
   - omni_types
   - omni_hasher
   - omni_tera
+  - omni_configurations
