@@ -7,6 +7,11 @@ on:
         description: The tasks to run
         required: true
         type: string
+      default-runner:
+        description: The default runner to use
+        required: false
+        default: ubuntu-latest
+        type: string
       multiplatform:
         description: Whether to run the job on supported platforms
         required: false
@@ -19,6 +24,11 @@ on:
         description: The tasks to run
         required: true
         type: string
+      default-runner:
+        description: The default runner to use
+        required: false
+        default: ubuntu-latest
+        type: string
       multiplatform:
         description: Whether to run the job on supported platforms
         required: false
@@ -28,7 +38,7 @@ on:
 jobs:
   run-tasks:
     name: Run Tasks
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.default-runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
