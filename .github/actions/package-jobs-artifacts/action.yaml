@@ -21,7 +21,8 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - run: npm install archiver glob
+    - name: Install Dependencies
+      run: npm install -g archiver glob
       shell: bash
 
     - name: Collect Artifacts

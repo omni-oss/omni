@@ -62,6 +62,8 @@ runs:
     - name: Install Rust
       if: ${{ inputs.install-all == 'true' || inputs.install-rust == 'true' }}
       uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        cache: false
 
     - name: Install Bun
       if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' }}
