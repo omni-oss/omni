@@ -425,7 +425,10 @@ where
         for fut_result in &fut_results {
             let fname =
                 fut_result.task_context().node.full_task_name().to_string();
-            let hash = if self.no_cache {
+            let hash = if self.no_cache
+                || fut_result.task_context().node.persistent()
+            // never cache persistent tasks
+            {
                 DefaultHash::default()
             } else {
                 hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
