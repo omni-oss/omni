@@ -70,48 +70,61 @@ jobs:
 
       - name: Create Plan
         id: plan
-        shell: bash
-        run: |
-          bun --bun x @omni-oss/create-jobs result.json --output=jobs.json
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const execSync = require('child_process').execSync;
 
-          # Read the file into a variable
-          JOBS=$(cat jobs.json)
+            // 1. Run the bun command
+            execSync('bun --bun x @omni-oss/create-jobs result.json --output=jobs.json');
 
-          # Function to write multiline output to GITHUB_OUTPUT
-          set_output() {
-            local name=$1
-            local value=$2
-            # Use a unique delimiter to handle potential collisions in JSON
-            local delimiter="EOF_$(dd if=/dev/urandom bs=15 count=1 status=none | base64)"
+            // 2. Read and parse the generated JSON
+            const jobsRaw = fs.readFileSync('jobs.json', 'utf8');
+            const jobs = JSON.parse(jobsRaw);
 
-            echo "$name<<$delimiter" >> $GITHUB_OUTPUT
-            echo "$value" >> $GITHUB_OUTPUT
-            echo "$delimiter" >> $GITHUB_OUTPUT
-          }
+            const updateArtifactData = (data) => {
+                if (typeof data.artifacts === "object") {
+                    const partialKey = `${data.project_name}__${data.task_name}`
+                    if (typeof data.artifacts.workspace === "object") {
+                        data.artifacts.workspace.name = `${partialKey}__workspace`;
 
-          # 1. Output the full JSON
-          set_output "jobs" "$JOBS"
+                        if (Array.isArray(data.artifacts.workspace.files)) {
+                            data.artifacts.workspace.files_count = data.artifacts.workspace.files.length;
+                        }
+                    }
+                    if (typeof data.artifacts.project === "object") {
+                        data.artifacts.project.name = `${partialKey}__project`;
 
-          # 2. Output the specific sections using your JQ logic
-          set_output "jobs_test_typescript" "$(echo "$JOBS" | jq -c '.test.typescript')"
-          echo "jobs_test_typescript_count=$(echo "$JOBS" | jq '.test.typescript | length')" >> $GITHUB_OUTPUT
+                        if (Array.isArray(data.artifacts.project.files)) {
+                            data.artifacts.project.files_count = data.artifacts.project.files.length;
+                        }
+                    }
+                }
+            }
 
-          set_output "jobs_test_rust" "$(echo "$JOBS" | jq -c '.test.rust')"
-          echo "jobs_test_rust_count=$(echo "$JOBS" | jq '.test.rust | length')" >> $GITHUB_OUTPUT
+            // Helper to set both the stringified JSON and the length count
+            const setJobOutput = (name, data) => {
+                data.forEach(updateArtifactData);
+                core.setOutput(name, JSON.stringify(data));
+                core.setOutput(`${name}_count`, data ? data.length : 0);
+            };
 
-          set_output "jobs_build_typescript" "$(echo "$JOBS" | jq -c '.build.typescript')"
-          echo "jobs_build_typescript_count=$(echo "$JOBS" | jq '.build.typescript | length')" >> $GITHUB_OUTPUT
+            // 3. Set the full jobs output
+            core.setOutput('jobs', jobsRaw);
 
-          set_output "jobs_build_rust" "$(echo "$JOBS" | jq -c '.build.rust')"
-          echo "jobs_build_rust_count=$(echo "$JOBS" | jq '.build.rust | length')" >> $GITHUB_OUTPUT
+            // 4. Set specific sections
+            setJobOutput('jobs_test_typescript', jobs.test?.typescript || []);
+            setJobOutput('jobs_test_rust', jobs.test?.rust || []);
 
-          set_output "jobs_publish_npm" "$(echo "$JOBS" | jq -c '.publish.npm')"
-          echo "jobs_publish_npm_count=$(echo "$JOBS" | jq '.publish.npm | length')" >> $GITHUB_OUTPUT
+            setJobOutput('jobs_build_typescript', jobs.build?.typescript || []);
+            setJobOutput('jobs_build_rust', jobs.build?.rust || []);
 
-          set_output "jobs_publish_rust_github" "$(echo "$JOBS" | jq -c '.publish.rust_github')"
-          echo "jobs_publish_rust_github_count=$(echo "$JOBS" | jq '.publish.rust_github | length')" >> $GITHUB_OUTPUT
+            setJobOutput('jobs_publish_npm', jobs.publish?.npm || []);
+            setJobOutput('jobs_publish_rust_github', jobs.publish?.rust_github || []);
 
-          set_output "jobs_cache_restore_key_prefixes" "${{ env.restore-key-prefixes }}"
+            // 5. Handle the environment variable prefix
+            core.setOutput('jobs_cache_restore_key_prefixes', process.env['restore-key-prefixes']);
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days

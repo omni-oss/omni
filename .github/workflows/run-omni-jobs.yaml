@@ -38,6 +38,11 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      save-outputs:
+        description: Whether to save the outputs as artifacts
+        required: false
+        default: false
+        type: boolean
       cache-key-prefix:
         description: The prefix to use for the cache key
         required: false
@@ -72,6 +77,7 @@ jobs:
 
             for (const job of jobsInput) {
                 const targetEntries = Object.entries(job.meta?.targets ?? {});
+
                 if (targetEntries.length > 0) {
                     for (const [targetName, data] of targetEntries) {
                         const keyParts = [targetName];
@@ -104,11 +110,11 @@ jobs:
                             matrixMap[key].jobs.push(job);
                         }
 
-                        if (job.meta.language) {
+                        if (typeof job.meta.language === 'string') {
                             matrixMap[key].env[job.meta.language.toUpperCase() + '_TARGET'] = targetName;
                         }
 
-                        if (job.meta.sdk) {
+                        if (typeof job.meta.sdk === 'string') {
                             matrixMap[key].env[job.meta.sdk.toUpperCase() + '_TARGET'] = targetName;
                         }
                     }
