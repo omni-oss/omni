@@ -190,6 +190,12 @@ jobs:
       - name: Run Tasks
         run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
 
+      - if: ${{ inputs.save-outputs }}
+        name: Save Outputs As Artifacts
+        uses: ./.github/actions/package-jobs-artifacts
+        with:
+          jobs: ${{ needs.plan.outputs.jobs }}
+
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
@@ -254,6 +260,13 @@ jobs:
 
       - name: Run Tasks
         run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - if: ${{ inputs.save-outputs }}
+        name: Save Outputs As Artifacts
+        uses: ./.github/actions/package-jobs-artifacts
+        with:
+          jobs: ${{ toJSON(matrix.jobs) }}
+          target: ${{ matrix.target }}
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days

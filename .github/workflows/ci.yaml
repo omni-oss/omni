@@ -84,23 +84,7 @@ jobs:
             const jobs = JSON.parse(jobsRaw);
 
             const updateArtifactData = (data) => {
-                if (typeof data.artifacts === "object") {
-                    const partialKey = `${data.project_name}__${data.task_name}`
-                    if (typeof data.artifacts.workspace === "object") {
-                        data.artifacts.workspace.name = `${partialKey}__workspace`;
-
-                        if (Array.isArray(data.artifacts.workspace.files)) {
-                            data.artifacts.workspace.files_count = data.artifacts.workspace.files.length;
-                        }
-                    }
-                    if (typeof data.artifacts.project === "object") {
-                        data.artifacts.project.name = `${partialKey}__project`;
-
-                        if (Array.isArray(data.artifacts.project.files)) {
-                            data.artifacts.project.files_count = data.artifacts.project.files.length;
-                        }
-                    }
-                }
+                // do nothing for now
             }
 
             // Helper to set both the stringified JSON and the length count
