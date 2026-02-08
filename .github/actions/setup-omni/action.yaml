@@ -5,6 +5,9 @@ inputs:
     description: "Additional text to prepend to cache keys"
     required: false
     default: "global"
+  cache-restore-key-prefixes:
+    description: "Additional text to prepend to cache restore keys"
+    required: false
   shell:
     description: "Shell to use"
     required: false
@@ -32,12 +35,32 @@ runs:
       run: echo "workspace_hash=$(omni hash -r workspace)" >> $GITHUB_OUTPUT
       shell: bash
 
+    - name: Create Restore Key List
+      shell: bash
+      id: create_restore_key_list
+      env:
+        RAW_RESTORE_KEY_LIST: ${{ inputs.cache-restore-key-prefixes }}
+      run: |
+        # Define a literal newline
+        NL=$'\n'
+
+        res="${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}-"
+
+        for prefix in $RAW_RESTORE_KEY_LIST; do
+          # Use the variable for clean concatenation
+          res="${res}${NL}${{ runner.os }}-omni-$prefix-${{ steps.get_workspace_hash.outputs.workspace_hash }}"
+        done
+        res="${res}${NL}${{ runner.os }}-omni"
+
+        echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$res" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+        echo "Restore Key List: $res"
+
     - name: Cache Omni directory
       uses: actions/cache@v4
       with:
         path: |
           .omni
         key: ${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}-${{ steps.get_workspace_hash.outputs.workspace_hash }}
-        restore-keys: |
-          ${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}-
-          ${{ runner.os }}-omni-
+        restore-keys: ${{ steps.create_restore_key_list.outputs.restore_key_list }}

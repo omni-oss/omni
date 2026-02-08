@@ -20,6 +20,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  restore-key-prefixes: |
+    publish_rust_github
+    publish_npm
+    build_rust
+    build_typescript
+    test_rust
+    test_typescript
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -37,6 +46,7 @@ jobs:
       jobs_publish_npm_count: ${{ steps.plan.outputs.jobs_publish_npm_count }}
       jobs_publish_rust_github: ${{ steps.plan.outputs.jobs_publish_rust_github }}
       jobs_publish_rust_github_count: ${{ steps.plan.outputs.jobs_publish_rust_github_count }}
+      jobs_cache_restore_key_prefixes: ${{ steps.plan.outputs.jobs_cache_restore_key_prefixes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,7 +55,8 @@ jobs:
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: global
+          cache-key-prefix: plan
+          cache-restore-key-prefixes: ${{ env.restore-key-prefixes }}
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -100,6 +111,8 @@ jobs:
           set_output "jobs_publish_rust_github" "$(echo "$JOBS" | jq -c '.publish.rust_github')"
           echo "jobs_publish_rust_github_count=$(echo "$JOBS" | jq '.publish.rust_github | length')" >> $GITHUB_OUTPUT
 
+          set_output "jobs_cache_restore_key_prefixes" "${{ env.restore-key-prefixes }}"
+
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
@@ -110,6 +123,8 @@ jobs:
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
+      cache-key-prefix: test_typescript
+      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
 
   test-rust:
     needs:
@@ -120,6 +135,8 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       multiplatform: true
+      cache-key-prefix: test_rust
+      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
 
   build-typescript:
     needs:
@@ -129,6 +146,8 @@ jobs:
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
+      cache-key-prefix: build_typescript
+      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
 
   build-rust:
     needs:
@@ -139,3 +158,5 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       multiplatform: true
+      cache-key-prefix: build_rust
+      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
