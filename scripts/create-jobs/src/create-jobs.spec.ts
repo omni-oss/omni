@@ -58,7 +58,11 @@ describe("createJobs", () => {
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "rust-app",
             task_name: "test",
-            output_files: ["/mnt/c/Users/user/project/binary"],
+            artifacts: {
+                project: {
+                    files: ["/mnt/c/Users/user/project/binary"],
+                },
+            },
         });
         expect(jobs.build.typescript[0]?.project_name).toBe("ts-lib");
         expect(jobs.test.typescript).toHaveLength(0);
@@ -142,7 +146,40 @@ describe("createJobs", () => {
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "minimal",
             task_name: "test",
-            output_files: ["/mnt/c/Users/user/project/target/debug/minimal"],
+            artifacts: {
+                project: {
+                    files: ["/mnt/c/Users/user/project/target/debug/minimal"],
+                },
+            },
+        });
+    });
+
+    it("should assign output files not in the project directory to the workspace artifacts", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "test",
+                    project_name: "minimal",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { language: "rust" },
+                    output_files: ["/mnt/c/Users/user/target/debug/minimal"],
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        expect(jobs.test.rust[0]).toMatchObject({
+            project_name: "minimal",
+            task_name: "test",
+            artifacts: {
+                workspace: {
+                    files: ["/mnt/c/Users/user/target/debug/minimal"],
+                },
+            },
         });
     });
 });

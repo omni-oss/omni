@@ -1,11 +1,18 @@
+import path from "node:path";
 import type { Meta, TaskResult, TaskResultArray } from "./schemas";
-import path from "node:path"
 
 export type Job = {
     task_name: string;
     project_name: string;
-    output_files: string[];
     project_dir: string;
+    artifacts: {
+        workspace: {
+            files: string[];
+        };
+        project: {
+            files: string[];
+        };
+    };
     meta: Meta;
 };
 
@@ -88,11 +95,47 @@ export function createJobs(results: TaskResultArray): Jobs {
 }
 
 function jobFromResult(result: TaskResult): Job {
+    const workspaceArtifacts = [] as string[];
+    const projectArtifacts = [] as string[];
+
+    if (result.details.output_files && result.details.output_files.length > 0) {
+        for (const file of result.details.output_files) {
+            const fullPath = path.resolve(result.task.project_dir, file);
+
+            if (isPathInside(result.task.project_dir, fullPath)) {
+                projectArtifacts.push(fullPath);
+            } else {
+                workspaceArtifacts.push(fullPath);
+            }
+        }
+    }
+
     return {
         task_name: result.task.task_name,
         project_name: result.task.project_name,
-        output_files: result.details.output_files?.map((file) => path.resolve(result.task.project_dir, file)) ?? [],
+        artifacts: {
+            project: {
+                files: projectArtifacts,
+            },
+            workspace: {
+                files: workspaceArtifacts,
+            },
+        },
         project_dir: result.task.project_dir,
         meta: result.details.meta ?? {},
     };
+}
+
+/**
+ * Checks if 'child' is physically inside 'parent'
+ * @param {string} parent - The potential parent directory
+ * @param {string} child - The path to check
+ */
+function isPathInside(parent: string, child: string) {
+    const relative = path.relative(parent, child);
+
+    // path.relative returns an empty string if paths are the same.
+    // If the path starts with '..' (or the platform equivalent),
+    // it means the child is outside the parent.
+    return relative && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
