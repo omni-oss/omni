@@ -6,7 +6,11 @@ extends:
 
 tasks:
   build:
-    command: cargo build --release --package ${PROJECT_NAME}
+    command: cargo build --release --package ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    cache:
+      key:
+        env:
+          append: [RUST_BUILD_ADDITIONAL_ARGS]
     dependencies:
       - test
 

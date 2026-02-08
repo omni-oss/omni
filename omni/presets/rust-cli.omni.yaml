@@ -10,8 +10,7 @@ tasks:
     cache:
       key:
         env:
-          append:
-            - RUST_BUILD_ADDITIONAL_ARGS
+          append: [RUST_BUILD_ADDITIONAL_ARGS]
     dependencies:
       - test
 
