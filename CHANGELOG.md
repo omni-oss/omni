@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.4.1 - 2026-02-08
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.1
+### Global changes
+#### Continuous Integration
+- update ci - (9577952) - Clarence Manuel
+- update ci - (25211dd) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/summarize-results**) update package.json [skip ci] - (f1dfe63) - Clarence Manuel
+- (**@omni-oss/summarize-results**) remove unused fields in schemas [skip ci] - (64bdd39) - Clarence Manuel
+- update .gitignore [skip ci] - (5c73c1e) - Clarence Manuel
+- update ts-lib preset [skip ci] - (6e8ebcc) - Clarence Manuel
+- force regenerate bun.lock on bump [skip ci] - (dc58a55) - Clarence Manuel
+
+- - -
+
 ## v0.4.0 - 2026-02-07
 ### Package updates
 - omni_execution_plan bumped to omni_execution_plan-v0.2.1
