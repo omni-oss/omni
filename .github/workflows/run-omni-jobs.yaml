@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       jobs:
-        description: The tasks to run
+        description: The jobs to run
         required: true
         type: string
       default-runner:
@@ -12,11 +12,6 @@ on:
         required: false
         default: ubuntu-latest
         type: string
-      multiplatform:
-        description: Whether to run the job on supported platforms
-        required: false
-        default: false
-        type: boolean
       cache-key-prefix:
         description: The prefix to use for the cache key
         required: false
@@ -30,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       jobs:
-        description: The tasks to run
+        description: The jobs to run
         required: true
         type: string
       default-runner:
@@ -38,11 +33,6 @@ on:
         required: false
         default: ubuntu-latest
         type: string
-      multiplatform:
-        description: Whether to run the job on supported platforms
-        required: false
-        default: false
-        type: boolean
       cache-key-prefix:
         description: The prefix to use for the cache key
         required: false
@@ -54,8 +44,93 @@ on:
         type: string
 
 jobs:
-  run-tasks:
-    name: Run Tasks
+  plan:
+    outputs:
+      jobs_count: ${{ steps.split.outputs.jobs_count }}
+      jobs: ${{ steps.split.outputs.jobs }}
+      multiplatform_matrix: ${{ steps.split.outputs.multiplatform_matrix }}
+      multiplatform_jobs_count: ${{ steps.split.outputs.multiplatform_jobs_count }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Split
+        id: split
+        uses: actions/github-script@v8
+        env:
+          RAW_JSON: ${{ inputs.jobs }}
+          RESTORE_KEY_PREFIXES: ${{ inputs.cache-restore-key-prefixes }}
+        with:
+          script: |
+            const jobsInput = JSON.parse(process.env.RAW_JSON);
+
+            const jobs = [];
+            const matrixMap = {};
+
+            for (const job of jobsInput) {
+                const targetEntries = Object.entries(job.meta?.targets ?? {});
+                if (targetEntries.length > 0) {
+                    for (const [targetName, data] of targetEntries) {
+                        const keyParts = [targetName];
+                        if (job.meta.language) {
+                            keyParts.push(job.meta.language);
+                        }
+                        if (job.meta.sdk) {
+                            keyParts.push(job.meta.sdk);
+                        }
+                        if (data.runner) {
+                            keyParts.push(data.runner);
+                        }
+                        const key = keyParts.join('-');
+
+                        if (!matrixMap[key]) {
+                            const restoreKeyPrefixes = process.env.RESTORE_KEY_PREFIXES
+                                .split(/\s+/)
+                                .map(prefix => `${targetName}-${prefix.trim()}`)
+                                .join("\n");
+                            matrixMap[key] = {
+                                runner: data.runner,
+                                target: targetName,
+                                jobs: [job],
+                                env: {
+                                    TARGET: targetName,
+                                },
+                                cache_restore_key_prefixes: restoreKeyPrefixes,
+                            };
+                        } else {
+                            matrixMap[key].jobs.push(job);
+                        }
+
+                        if (job.meta.language) {
+                            matrixMap[key].env[job.meta.language.toUpperCase() + '_TARGET'] = targetName;
+                        }
+
+                        if (job.meta.sdk) {
+                            matrixMap[key].env[job.meta.sdk.toUpperCase() + '_TARGET'] = targetName;
+                        }
+                    }
+                } else {
+                    jobs.push(job);
+                }
+            }
+
+            const multiplatformMatrix = Object.values(matrixMap);
+            const multiplatformJobsCount = multiplatformMatrix.reduce((acc, matrix) => acc + matrix.jobs.length, 0);
+
+            core.setOutput('jobs_count', jobs.length);
+            core.setOutput('jobs', JSON.stringify(jobs));
+            core.setOutput('multiplatform_matrix', JSON.stringify(multiplatformMatrix));
+            core.setOutput('multiplatform_jobs_count', multiplatformJobsCount);
+
+
+            console.log("jobs", JSON.stringify(jobs, null, 4));
+            console.log("multiplatform_matrix", JSON.stringify(multiplatformMatrix, null, 4));
+
+          result-encoding: string
+
+  run-jobs:
+    needs:
+      - plan
+    if: ${{ needs.plan.outputs.jobs_count > 0 }}
+    name: Run Jobs
     runs-on: ${{ inputs.default-runner }}
     steps:
       - name: Checkout repository
@@ -63,14 +138,18 @@ jobs:
 
       - name: Process JSON
         id: process
+        shell: bash
         env:
-          RAW_JSON: ${{ inputs.jobs }}
+          RAW_JSON: ${{ needs.plan.outputs.jobs }}
         run: |
+          echo "Received jobs: $RAW_JSON"
           # Use jq to map the names and join them with spaces
           PROJECT_FLAGS=$(echo $RAW_JSON | jq -r '. | map("-p \"\(.project_name)\"") | join(" ")')
           TASK_ARGS=$(echo $RAW_JSON | jq -r '. | map(.task_name) | unique | join(" ")')
           echo "TASK_ARGS=$TASK_ARGS" >> $GITHUB_OUTPUT
           echo "PROJECT_FLAGS=$PROJECT_FLAGS" >> $GITHUB_OUTPUT
+          echo "Task Args: $TASK_ARGS"
+          echo "Project Flags: $PROJECT_FLAGS"
 
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
@@ -89,6 +168,70 @@ jobs:
         uses: ./.github/actions/setup-tools
         with:
           install-all: false
+          install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
+          install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          cache-key-prefix: ${{ inputs.cache-key-prefix }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Tasks
+        run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - name: Prune Unused Caches
+        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
+
+  run-jobs-multiplatform:
+    needs:
+      - plan
+    if: ${{ needs.plan.outputs.multiplatform_jobs_count > 0 }}
+    name: Run Multiplatform Jobs
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.multiplatform_matrix) }}
+      fail-fast: true
+
+    env: ${{ matrix.env }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Process JSON
+        id: process
+        shell: bash
+        env:
+          RAW_JSON: ${{ toJSON(matrix.jobs) }}
+        run: |
+          echo "Received jobs: $RAW_JSON"
+          # Use jq to map the names and join them with spaces
+          PROJECT_FLAGS=$(echo $RAW_JSON | jq -r '. | map("-p \"\(.project_name)\"") | join(" ")')
+          TASK_ARGS=$(echo $RAW_JSON | jq -r '. | map(.task_name) | unique | join(" ")')
+          echo "TASK_ARGS=$TASK_ARGS" >> $GITHUB_OUTPUT
+          echo "PROJECT_FLAGS=$PROJECT_FLAGS" >> $GITHUB_OUTPUT
+          echo "Task Args: $TASK_ARGS"
+          echo "Project Flags: $PROJECT_FLAGS"
+
+      - name: Setup Omni
+        uses: ./.github/actions/setup-omni
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-key-prefix: ${{ inputs.cache-key-prefix }}
+          cache-restore-key-prefixes: ${{ matrix.cache_restore_key_prefixes }}
+
+      - name: Determine Build Tools
+        id: determine
+        uses: ./.github/actions/determine-build-tools
+        with:
+          omni-run: -f=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+
+      - name: Setup Tools
+        uses: ./.github/actions/setup-tools
+        with:
+          install-all: false
+          rust-target: ${{ matrix.target }}
           install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}

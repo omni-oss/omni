@@ -134,7 +134,6 @@ jobs:
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
-      multiplatform: true
       cache-key-prefix: test_rust
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
 
@@ -157,6 +156,5 @@ jobs:
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
-      multiplatform: true
       cache-key-prefix: build_rust
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
