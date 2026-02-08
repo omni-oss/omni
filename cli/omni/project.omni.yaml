@@ -11,7 +11,7 @@ tasks:
       vars:
         RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
 
-  build:aarch64-apple-darwin:
+  build:x86_64-apple-darwin:
     env:
       vars:
         RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
@@ -21,7 +21,7 @@ tasks:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
 
-  test:aarch64-apple-darwin:
+  test:x86_64-apple-darwin:
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl

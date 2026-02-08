@@ -13,7 +13,7 @@ cache:
 tasks:
   test:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cross test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    command: cargo test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:aarch64-unknown-linux-gnu
     env:
@@ -137,7 +137,7 @@ tasks:
 
   build:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cross build --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    command: cargo build --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-unknown-linux-gnu
     output:
