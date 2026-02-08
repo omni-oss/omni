@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.4.1 - 2026-02-08
+#### Bug Fixes
+- (**omni_cofigurations**) enable field default value - (db6ff61) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.4.0 - 2026-02-07
 #### Features
 - (**omni_configurations**) rename if to enabled in TaskLongFormConfiguration - (22df638) - Clarence Manuel

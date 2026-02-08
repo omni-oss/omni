@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.5.1 - 2026-02-08
+#### Bug Fixes
+- (**omni_cofigurations**) enable field default value - (db6ff61) - Clarence Manuel
+#### Continuous Integration
+- (**omni**) use rust-multiplaform preset - (cbe815e) - Clarence Manuel
+#### Miscellaneous Chores
+- improve rust-multiplatform preset - (4d46a14) - Clarence Manuel
+
+- - -
+
 ## omni-v0.5.0 - 2026-02-08
 #### Features
 - add meta to template context - (bd1c6d0) - Clarence Manuel

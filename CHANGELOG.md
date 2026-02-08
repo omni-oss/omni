@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.1 - 2026-02-08
+### Package updates
+- omni_configurations bumped to omni_configurations-v0.4.1
+- omni_cli_core bumped to omni_cli_core-v0.5.1
+- omni bumped to omni-v0.5.1
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.2
+### Global changes
+#### Bug Fixes
+- build error - (b8ccb0c) - Clarence Manuel
+#### Continuous Integration
+- support multiplatform jobs - (f560c57) - Clarence Manuel
+- support rust cross compile setup - (4586cba) - Clarence Manuel
+- improve caching - (23d21f8) - Clarence Manuel
+- update omni version [skip ci] - (365aa72) - Clarence Manuel
+- fix ci [skip ci] - (1422130) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust-multiplatform preset - (feca9b3) - Clarence Manuel
+- improve ts omni presets - (757f0e6) - Clarence Manuel
+- improve rust-multiplatform preset - (4d46a14) - Clarence Manuel
+
+- - -
+
 ## v0.5.0 - 2026-02-08
 ### Package updates
 - omni_cache bumped to omni_cache-v0.3.0

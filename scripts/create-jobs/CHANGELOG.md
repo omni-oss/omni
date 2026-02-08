@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.2 - 2026-02-08
+#### Bug Fixes
+- (**@omni-oss/create-jobs**) remove unused properties - (c5f5d01) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/create-jobs**) add unit tests - (0d2e86e) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.1 - 2026-02-08
 #### Bug Fixes
 - (**@omni-oss/set-version**) add shebang - (f972dec) - Clarence Manuel
