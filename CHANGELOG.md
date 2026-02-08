@@ -12,6 +12,25 @@ All notable changes to this project will be documented in this file. See [conven
 - improve ci [skip ci] - (9d7f110) - Clarence Manuel
 - update omni version [skip ci] - (1af9eda) - Clarence Manuel
 #### Miscellaneous Chores
+- (**version**) v0.5.2 - (ea0b13e) - Clarence Manuel
+- (**version**) v0.5.2 - (fc202c5) - Clarence Manuel
+- (**version**) v0.5.2 - (4fadfff) - Clarence Manuel
+- improve rust omni presets - (db10a50) - Clarence Manuel
+- update rust-multiplatform preset - (3ff7292) - Clarence Manuel
+- update Cargo.lock - (d0695db) - Clarence Manuel
+
+- - -
+
+## v0.5.2 - 2026-02-08
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.3
+### Global changes
+#### Continuous Integration
+- add package artifacts action - (35065eb) - Clarence Manuel
+- add artifact handling - (48f51e9) - Clarence Manuel
+- improve ci [skip ci] - (9d7f110) - Clarence Manuel
+- update omni version [skip ci] - (1af9eda) - Clarence Manuel
+#### Miscellaneous Chores
 - (**version**) v0.5.2 - (fc202c5) - Clarence Manuel
 - (**version**) v0.5.2 - (4fadfff) - Clarence Manuel
 - improve rust omni presets - (db10a50) - Clarence Manuel
