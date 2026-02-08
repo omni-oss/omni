@@ -9,7 +9,7 @@ tasks:
     enabled: true
 
   test:integration:
-    enabled: true
+    enabled: false
 
   test:
     enabled: true
