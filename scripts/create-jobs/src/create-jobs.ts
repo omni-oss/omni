@@ -1,17 +1,19 @@
 import path from "node:path";
 import type { Meta, TaskResult, TaskResultArray } from "./schemas";
 
+export type Artifact = {
+    name: string;
+    files: string[];
+    files_count: number;
+};
+
 export type Job = {
     task_name: string;
     project_name: string;
     project_dir: string;
     artifacts: {
-        workspace: {
-            files: string[];
-        };
-        project: {
-            files: string[];
-        };
+        workspace: Artifact;
+        project: Artifact;
     };
     meta: Meta;
 };
@@ -115,10 +117,14 @@ function jobFromResult(result: TaskResult): Job {
         project_name: result.task.project_name,
         artifacts: {
             project: {
+                name: `project-${result.task.project_name}__${result.task.task_name}`,
                 files: projectArtifacts,
+                files_count: projectArtifacts.length,
             },
             workspace: {
+                name: `workspace-${result.task.project_name}__${result.task.task_name}`,
                 files: workspaceArtifacts,
+                files_count: workspaceArtifacts.length,
             },
         },
         project_dir: result.task.project_dir,
