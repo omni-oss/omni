@@ -73,6 +73,7 @@ jobs:
         uses: ./.github/actions/setup-tools
         with:
           install-all: true
+          cache-key-prefix: ${{ matrix.target }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - if: matrix.target != 'aarch64-unknown-linux-gnu'
