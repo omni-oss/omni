@@ -20,14 +20,6 @@ const ElapsedSchema = z.object({
 
 const TargetSchema = z.object({
     runner: z.string().describe("The runner to use for the target."),
-    build_flags: z
-        .string()
-        .optional()
-        .describe("The build flags to use for the target."),
-    test_flags: z
-        .string()
-        .optional()
-        .describe("The test flags to use for the target."),
 });
 
 const ReleaseSchema = z.object({
