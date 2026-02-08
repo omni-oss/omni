@@ -51,6 +51,10 @@ inputs:
     description: "GitHub token for higher rate limit"
     required: false
     default: ${{ github.token }}
+  rust-target:
+    description: "Rust target to install"
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -94,6 +98,42 @@ runs:
         restore-keys: |
           ${{ runner.os }}-target-${{ inputs.rust-target-cache-key-prefix || inputs.cache-key-prefix }}-
           ${{ runner.os }}-target-
+
+    - if: ${{ inputs.install-all == 'true' || inputs.install-rust == 'true'}}
+      shell: bash
+      id: rust-info
+      run: |
+        HOST_TARGET=$(rustc -Vv | grep host | cut -d ' ' -f2)
+        echo "host_target=$HOST_TARGET" >> $GITHUB_ENV
+
+        # Logical check for installation intent
+        INSTALL_REQUESTED="${{ inputs.install-all == 'true' || inputs.install-rust == 'true' }}"
+        # Check if target is valid and NOT equal to host
+        TARGET="${{ inputs.rust-target }}"
+
+        if [[ "$INSTALL_REQUESTED" == "true" ]] && \
+          [[ -n "$TARGET" && "$TARGET" != "null" ]] && \
+          [[ "$TARGET" != "$HOST_TARGET" ]]; then
+          CROSS_COMPILE=true
+        else
+          CROSS_COMPILE=false
+        fi
+
+        echo "cross_compile=$CROSS_COMPILE" >> $GITHUB_OUTPUT
+
+        echo "Host Target: $HOST_TARGET"
+        echo "Target: $TARGET"
+        echo "Cross Compile: $CROSS_COMPILE"
+
+    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' }}
+      shell: bash
+      run: rustup target add ${{ inputs.rust-target }}
+
+    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+        fallback: none
 
     - name: Cache Bun install
       if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' || inputs.install-node-modules == 'true' }}
