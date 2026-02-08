@@ -12,20 +12,24 @@ extends:
 
 tasks:
   test:
-    command: cargo test -p ${PROJECT_NAME}
+    command: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test
     env:
       vars:
         # RUST_LOG_SPAN_EVENTS: new,close
         RUST_LOG: trace
+
     cache:
       key:
+        env:
+          append:
+            - RUST_TEST_ADDITIONAL_ARGS
         files:
           append: ["./tests/**/*.rs"]
 
   bench:
-    command: cargo bench -p ${PROJECT_NAME}
+    command: cargo bench -p ${PROJECT_NAME} ${RUST_BENCH_ADDITIONAL_ARGS:-}
     dependencies:
       - test
       - ^bench
