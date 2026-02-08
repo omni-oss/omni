@@ -16,8 +16,6 @@ tasks:
 
   test:integration:
     command: bun run vitest --config ./vitest.config.integration.ts run
-    dependencies:
-      - test:unit
     cache:
       key:
         files:

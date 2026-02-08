@@ -20,12 +20,14 @@ tasks:
 
   test:
     dependencies:
+      - ^test
       - test:unit
       - test:integration
 
   build:
     command: bun run build
     dependencies:
+      - test
       - ^build
     output:
       files:
