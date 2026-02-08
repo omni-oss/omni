@@ -105,7 +105,7 @@ jobs:
     if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
-      jobs: ${{ toJSON(needs.plan.outputs.jobs_test_typescript) }}
+      jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
 
   test-rust:
     needs:
@@ -113,7 +113,7 @@ jobs:
     if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
-      jobs: ${{ toJSON(needs.plan.outputs.jobs_test_rust) }}
+      jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       multiplatform: true
 
   build-typescript:
@@ -123,7 +123,7 @@ jobs:
     if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
-      jobs: ${{ toJSON(needs.plan.outputs.jobs_build_typescript) }}
+      jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
 
   build-rust:
     needs:
@@ -132,5 +132,5 @@ jobs:
     if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
-      jobs: ${{ toJSON(needs.plan.outputs.jobs_build_rust) }}
+      jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       multiplatform: true

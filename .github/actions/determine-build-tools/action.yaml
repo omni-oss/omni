@@ -51,11 +51,11 @@ runs:
     - name: Install JS Actions NPM Dependencies
       shell: bash
       run: |
-        cd .github/actions/determine-build-steps-js
+        cd .github/actions/determine-build-tools-js
         bun install
 
     - name: Run Core JS Logic
       id: determine
-      uses: ./.github/actions/determine-build-steps-js
+      uses: ./.github/actions/determine-build-tools-js
       with:
         build_data_json: ${{ steps.load_result.outputs.build_data_json }}
