@@ -104,7 +104,7 @@ mod retry_interval {
 
 #[inline(always)]
 fn default_if() -> Option<TeraExprBoolean> {
-    Some(TeraExprBoolean::Boolean(true))
+    None
 }
 
 #[inline(always)]
