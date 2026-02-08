@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.0 - 2026-02-08
+### Package updates
+- omni_cache bumped to omni_cache-v0.3.0
+- omni bumped to omni-v0.5.0
+- omni_task_executor bumped to omni_task_executor-v0.5.0
+- omni_cli_core bumped to omni_cli_core-v0.5.0
+- omni_task_context bumped to omni_task_context-v0.3.0
+- root bumped to root-v0.3.0
+### Global changes
+#### Features
+- (**@omni-oss/site**) initial new docs - (020751a) - Clarence Manuel
+- add meta to template context - (bd1c6d0) - Clarence Manuel
+#### Continuous Integration
+- fix ci - (cf16798) - Clarence Manuel
+- fix ci - (c13ff62) - Clarence Manuel
+- add default-runner option to run-omni-jobs workflow [skip ci] - (cdc29aa) - Clarence Manuel
+- support multiline strings in github output - (b55410a) - Clarence Manuel
+- update cache key - (55865a8) - Clarence Manuel
+#### Miscellaneous Chores
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+- add .node-version file - (d95e2c3) - Clarence Manuel
+- update rust-multiplatform targets [skip ci] - (f0b38f2) - Clarence Manuel
+- add comment to cog.toml [skip ci] - (be643f7) - Clarence Manuel
+
+- - -
+
 ## v0.4.1 - 2026-02-08
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.1

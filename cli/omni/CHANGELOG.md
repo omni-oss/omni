@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.5.0 - 2026-02-08
+#### Features
+- add meta to template context - (bd1c6d0) - Clarence Manuel
+#### Bug Fixes
+- (**omni_task_executor**) bug where persistent tasks causes panic on exit - (8de6991) - Clarence Manuel
+
+- - -
+
 ## omni-v0.4.0 - 2026-02-07
 #### Features
 - (**omni_configurations**) rename if to enabled in TaskLongFormConfiguration - (22df638) - Clarence Manuel

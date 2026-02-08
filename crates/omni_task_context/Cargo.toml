@@ -2,7 +2,7 @@
 name = "omni_task_context"
 rust-version.workspace = true
 edition.workspace = true
-version = "0.2.0"
+version = "0.3.0"
 repository.workspace = true
 
 [features]

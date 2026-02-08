@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.3.0 - 2026-02-08
+#### Features
+- (**@omni-oss/site**) initial new docs - (020751a) - Clarence Manuel
+- add meta to template context - (bd1c6d0) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.4.1 - (70b1270) - Clarence Manuel
+- (**version**) v0.4.0 - (f34416d) - Clarence Manuel
+- update ts-lib preset [skip ci] - (6e8ebcc) - Clarence Manuel
+- force regenerate bun.lock on bump [skip ci] - (dc58a55) - Clarence Manuel
+- update cog.toml [skip ci] - (354a696) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- update cog.toml [skip ci] - (f76efc1) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+- update root project config in cog.toml [skip ci] - (03037bb) - Clarence Manuel
+
+- - -
+
 ## root-v0.2.0 - 2026-02-04
 #### Features
 - support tera template in cache input files and output files - (c0b305b) - Clarence Manuel

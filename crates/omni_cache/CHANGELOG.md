@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.3.0 - 2026-02-08
+#### Features
+- add meta to template context - (bd1c6d0) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.2.0 - 2026-02-04
 #### Features
 - support tera template in cache input files and output files - (c0b305b) - Clarence Manuel
