@@ -134,8 +134,8 @@ function jobFromResult(result: TaskResult): Job {
 
 /**
  * Checks if 'child' is physically inside 'parent'
- * @param {string} parent - The potential parent directory
- * @param {string} child - The path to check
+ * @param parent - The potential parent directory
+ * @param child - The path to check
  */
 function isPathInside(parent: string, child: string) {
     const relative = path.relative(parent, child);
