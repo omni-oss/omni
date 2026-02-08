@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.4 - 2026-02-08
+#### Bug Fixes
+- (**@omni-oss/create-jobs**) update comments - (b67cc92) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.3 - 2026-02-08
 #### Bug Fixes
 - (**@omni-oss/create-jobs**) add more data to artifacts - (76e7437) - Clarence Manuel

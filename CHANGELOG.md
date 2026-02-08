@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.3 - 1970-01-01
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.4
+### Global changes
+
+- - -
+
 ## v0.5.2 - 2026-02-08
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.3
