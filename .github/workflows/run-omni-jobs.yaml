@@ -12,6 +12,11 @@ on:
         required: false
         default: ubuntu-latest
         type: string
+      save-outputs:
+        description: Whether to save the outputs as artifacts
+        required: false
+        default: false
+        type: boolean
       cache-key-prefix:
         description: The prefix to use for the cache key
         required: false
@@ -237,7 +242,7 @@ jobs:
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
-          cache-key-prefix: ${{ inputs.cache-key-prefix }}
+          cache-key-prefix: ${{ matrix.target }}-${{ inputs.cache-key-prefix }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Tasks

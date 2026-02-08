@@ -8,7 +8,7 @@ on:
       - "!./apps/site/**"
       - "!bun.lock"
     tags:
-      - "!v*.*.*"
+      - "v*.*.*"
       - "!*-v*.*.*"
   pull_request:
     branches: [main]
@@ -147,6 +147,7 @@ jobs:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
       cache-key-prefix: build_typescript
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      save-outputs: true
 
   build-rust:
     needs:
@@ -158,3 +159,4 @@ jobs:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       cache-key-prefix: build_rust
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      save-outputs: true

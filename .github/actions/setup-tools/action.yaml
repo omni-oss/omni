@@ -129,12 +129,6 @@ runs:
       shell: bash
       run: rustup target add ${{ inputs.rust-target }}
 
-    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' }}
-      uses: taiki-e/install-action@v2
-      with:
-        tool: cross
-        fallback: none
-
     - name: Cache Bun install
       if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' || inputs.install-node-modules == 'true' }}
       uses: actions/cache@v4
