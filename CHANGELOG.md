@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.2 - 2026-02-08
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.3
+### Global changes
+#### Continuous Integration
+- add artifact handling - (48f51e9) - Clarence Manuel
+- improve ci [skip ci] - (9d7f110) - Clarence Manuel
+- update omni version [skip ci] - (1af9eda) - Clarence Manuel
+#### Miscellaneous Chores
+- improve rust omni presets - (db10a50) - Clarence Manuel
+- update rust-multiplatform preset - (3ff7292) - Clarence Manuel
+- update Cargo.lock - (d0695db) - Clarence Manuel
+
+- - -
+
 ## v0.5.1 - 2026-02-08
 ### Package updates
 - omni_configurations bumped to omni_configurations-v0.4.1

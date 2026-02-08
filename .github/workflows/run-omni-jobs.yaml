@@ -196,6 +196,7 @@ jobs:
   run-jobs-multiplatform:
     needs:
       - plan
+      - run-jobs
     if: ${{ needs.plan.outputs.multiplatform_jobs_count > 0 }}
     name: Run Multiplatform Jobs
     runs-on: ${{ matrix.runner }}

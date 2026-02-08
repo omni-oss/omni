@@ -129,19 +129,8 @@ jobs:
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
-  test-typescript:
-    needs:
-      - plan
-    if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
-    uses: ./.github/workflows/run-omni-jobs.yaml
-    with:
-      jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
-      cache-key-prefix: test_typescript
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
-
   test-rust:
     needs:
-      - test-typescript
       - plan
     if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
@@ -150,26 +139,37 @@ jobs:
       cache-key-prefix: test_rust
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
 
-  build-typescript:
+  test-typescript:
     needs:
-      - plan
       - test-rust
-    if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
+      - plan
+    if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
-      jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
-      cache-key-prefix: build_typescript
+      jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
+      cache-key-prefix: test_typescript
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
-      save-outputs: true
 
   build-rust:
     needs:
+      - test-typescript
       - plan
-      - build-typescript
     if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       cache-key-prefix: build_rust
+      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      save-outputs: true
+
+  build-typescript:
+    needs:
+      - test-typescript
+      - plan
+    if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
+      cache-key-prefix: build_typescript
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
       save-outputs: true
