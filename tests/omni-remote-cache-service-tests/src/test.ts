@@ -67,9 +67,9 @@ export const test = baseTest.extend<{
                       ]
                     : [defaultPath];
 
-            for (const path of lookupPaths) {
-                if (fsSync.existsSync(path)) {
-                    omniPath = path;
+            for (const lookupPath of lookupPaths) {
+                if (fsSync.existsSync(lookupPath)) {
+                    omniPath = lookupPath;
                     break;
                 }
             }
