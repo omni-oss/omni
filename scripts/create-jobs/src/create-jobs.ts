@@ -36,6 +36,7 @@ export type BuildJobs = {
 
 export type PublishJobs = {
     npm: Job[];
+    generic: Job[];
     rust_github: Job[];
 };
 
@@ -50,6 +51,7 @@ export function createJobs(results: TaskResultArray): Jobs {
             typescript: [],
         },
         publish: {
+            generic: [],
             npm: [],
             rust_github: [],
         },
@@ -61,7 +63,7 @@ export function createJobs(results: TaskResultArray): Jobs {
         }
 
         const task = result.task;
-        if (task.task_name === "test") {
+        if (task.task_name === "test" || result.details.meta?.is_test_task) {
             if (result.details.meta?.language === "rust") {
                 jobs.test.rust.push(jobFromResult(result));
             }
@@ -71,7 +73,7 @@ export function createJobs(results: TaskResultArray): Jobs {
             }
         }
 
-        if (task.task_name === "build") {
+        if (task.task_name === "build" || result.details.meta?.is_build_task) {
             if (result.details.meta?.language === "rust") {
                 jobs.build.rust.push(jobFromResult(result));
             }
@@ -81,15 +83,24 @@ export function createJobs(results: TaskResultArray): Jobs {
             }
         }
 
-        if (task.task_name === "publish" && result.details.meta?.release?.npm) {
-            jobs.publish.npm.push(jobFromResult(result));
-        }
-
         if (
+            (task.task_name === "publish" ||
+                result.details.meta?.is_publish_task) &&
+            result.details.meta?.release?.npm
+        ) {
+            jobs.publish.npm.push(jobFromResult(result));
+        } else if (
             result.details.meta?.release?.github &&
-            result.details.meta?.language === "rust"
+            result.details.meta?.language === "rust" &&
+            (result.task.task_name === "publish" ||
+                result.details.meta.is_publish_task)
         ) {
             jobs.publish.rust_github.push(jobFromResult(result));
+        } else if (
+            result.details.meta?.is_publish_task ||
+            result.task.task_name === "publish"
+        ) {
+            jobs.publish.generic.push(jobFromResult(result));
         }
     }
 

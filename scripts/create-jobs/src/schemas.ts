@@ -44,6 +44,18 @@ const MetaSchema = z.object({
         .optional()
         .describe("The targets to build."),
     release: ReleaseSchema.optional(),
+    is_publish_task: z
+        .boolean()
+        .optional()
+        .describe("Whether this is a publish job."),
+    is_build_task: z
+        .boolean()
+        .optional()
+        .describe("Whether this is a build job."),
+    is_test_task: z
+        .boolean()
+        .optional()
+        .describe("Whether this is a test job."),
 });
 
 const DetailsSchema = z.object({

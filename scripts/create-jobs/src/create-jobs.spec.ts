@@ -82,7 +82,7 @@ describe("createJobs", () => {
             {
                 status: "success",
                 task: {
-                    task_name: "any-task",
+                    task_name: "publish",
                     project_name: "rust-pkg",
                     project_dir: "/mnt/c/Users/user/project",
                 },
@@ -101,8 +101,7 @@ describe("createJobs", () => {
         expect(jobs.publish.npm).toHaveLength(1);
         expect(jobs.publish.npm[0]?.project_name).toBe("js-pkg");
 
-        // Checks GitHub logic: meta.release.github must be true AND language must be "rust"
-        // Note: your code doesn't strictly check if task_name === "publish" for rust_github!
+        // Checks GitHub logic: meta.release.github must be true AND language must be "rust" AND task_name must be "publish"
         expect(jobs.publish.rust_github).toHaveLength(1);
         expect(jobs.publish.rust_github[0]?.project_name).toBe("rust-pkg");
     });
@@ -215,5 +214,124 @@ describe("createJobs", () => {
                 },
             },
         });
+    });
+
+    it("should handle is_publish_task correctly", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "publish",
+                    project_name: "js-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { release: { npm: true }, is_publish_task: true },
+                },
+            },
+            {
+                status: "success",
+                task: {
+                    task_name: "any-task",
+                    project_name: "rust-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: {
+                        language: "rust",
+                        release: { github: true },
+                        is_publish_task: true,
+                    },
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        // Checks NPM logic: task_name must be "publish" AND meta.release.npm must be true
+        expect(jobs.publish.npm).toHaveLength(1);
+        expect(jobs.publish.npm[0]?.project_name).toBe("js-pkg");
+
+        // Checks GitHub logic: meta.release.github must be true AND language must be "rust"
+        // Note that your code doesn't strictly check if task_name === "publish" for rust_github!
+        expect(jobs.publish.rust_github).toHaveLength(1);
+        expect(jobs.publish.rust_github[0]?.project_name).toBe("rust-pkg");
+    });
+
+    it("should handle is_build_task correctly", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "build",
+                    project_name: "ts-lib",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { language: "typescript", is_build_task: true },
+                },
+            },
+            {
+                status: "success",
+                task: {
+                    task_name: "any-task",
+                    project_name: "rust-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: {
+                        language: "rust",
+                        is_build_task: true,
+                    },
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        // Checks build logic: task_name must be "build" AND meta.language must be "typescript"
+        expect(jobs.build.typescript).toHaveLength(1);
+        expect(jobs.build.typescript[0]?.project_name).toBe("ts-lib");
+
+        // Checks build logic: task_name must be "any-task" AND meta.language must be "rust"
+        expect(jobs.build.rust).toHaveLength(1);
+        expect(jobs.build.rust[0]?.project_name).toBe("rust-pkg");
+    });
+
+    it("should handle is_test_task correctly", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "test",
+                    project_name: "rust-app",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { language: "rust", is_test_task: true },
+                },
+            },
+            {
+                status: "success",
+                task: {
+                    task_name: "test",
+                    project_name: "rust-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: {
+                        language: "rust",
+                        is_test_task: true,
+                    },
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        // Checks test logic: task_name must be "test" AND meta.language must be "rust"
+        expect(jobs.test.rust).toHaveLength(2);
+        expect(jobs.test.rust[0]?.project_name).toBe("rust-app");
+        expect(jobs.test.rust[1]?.project_name).toBe("rust-pkg");
     });
 });
