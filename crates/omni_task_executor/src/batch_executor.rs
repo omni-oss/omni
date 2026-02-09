@@ -164,6 +164,10 @@ where
         Ok(())
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = "debug", skip(self, task_contexts))
+    )]
     fn expand_templates<'a>(
         &self,
         task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
@@ -189,7 +193,12 @@ where
                         let mut new_files =
                             Vec::with_capacity(ci.cache_output_files.len());
 
-                        for file in ci.cache_output_files.iter() {
+                        trace::info!(
+                            ?ci.cache_output_files,
+                            "original_cache_output_files"
+                        );
+
+                        for file in &ci.cache_output_files {
                             let expanded = expand_omni_path(
                                 file,
                                 &task_ctx.template_context,
@@ -198,13 +207,22 @@ where
                         }
 
                         new_ci.cache_output_files = new_files;
+                        trace::info!(
+                            ?new_ci.cache_output_files,
+                            "expanded_cache_output_files"
+                        );
                     }
 
                     if !ci.key_input_files.is_empty() {
                         let mut new_files =
                             Vec::with_capacity(ci.key_input_files.len());
 
-                        for file in ci.key_input_files.iter() {
+                        trace::info!(
+                            ?ci.key_input_files,
+                            "original_key_input_files"
+                        );
+
+                        for file in &ci.key_input_files {
                             let expanded = expand_omni_path(
                                 file,
                                 &task_ctx.template_context,
@@ -213,6 +231,10 @@ where
                         }
 
                         new_ci.key_input_files = new_files;
+                        trace::info!(
+                            ?new_ci.key_input_files,
+                            "expanded_key_input_files"
+                        );
                     }
                     let mut new_ctx = task_ctx.clone();
                     new_ctx.cache_info = Some(Cow::Owned(new_ci));

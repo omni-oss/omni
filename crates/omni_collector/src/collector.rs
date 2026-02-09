@@ -203,10 +203,9 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(
-            level = "debug",
-            skip(self, project_tasks, config)
-        )
+        tracing::instrument(level = "debug", skip(self, config, project_tasks),
+            fields(project_tasks_count = project_tasks.len()
+        ))
     )]
     pub async fn collect(
         &self,
@@ -214,6 +213,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, Error> {
         let mut to_process = Vec::with_capacity(project_tasks.len());
+
+        trace::trace!(?project_tasks, ?config, "begin_collect");
 
         let should_collect_input_files =
             config.input_files || config.digests || config.cache_output_dirs;
@@ -337,6 +338,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
             let forced_includes =
                 forced_includes.into_iter().collect::<Vec<_>>();
+
             let topmost =
                 topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
                     .into_iter()
@@ -345,6 +347,12 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
             let topmost =
                 topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
+
+            trace::trace!(
+                forced_includes = ?forced_includes,
+                topmost = ?topmost,
+                "before_walk"
+            );
 
             let dirwalker = RealGlobDirWalker::config()
                 .standard_filters(true)
@@ -388,6 +396,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         && let Some(resolved_input_files) =
                             project.resolved_input_files.as_mut()
                     {
+                        trace::trace!(
+                            file = ?original_file_abs_path,
+                            "found_input_file",
+                        );
                         resolved_input_files.push(rooted_path.clone());
                     }
 
@@ -397,6 +409,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         && let Some(resolved_output_files) =
                             project.resolved_output_files.as_mut()
                     {
+                        trace::trace!(
+                            file = ?original_file_abs_path,
+                            "found_output_file",
+                        );
                         resolved_output_files.push(rooted_path);
                     }
                 }
@@ -460,6 +476,12 @@ fn populate_includes_and_globset(
     roots: &RootMap,
     output_globset: &mut GlobSetBuilder,
 ) -> Result<(), Error> {
+    trace::trace!(
+        files = ?files,
+        project_dir = ?project_dir,
+        roots = ?roots,
+        "populate_includes_and_globset"
+    );
     for p in files {
         let p = p.resolve(roots);
 
