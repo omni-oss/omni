@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import fsSync from "node:fs";
 import { test as baseTest } from "vitest";
 
 const ports = new Set<number>();
@@ -55,13 +56,24 @@ export const test = baseTest.extend<{
                     ? ".exe"
                     : "";
 
-            const binaryPath =
-                target && target !== ""
-                    ? `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`
-                    : `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+            let omniPath = "";
+
+            if (target !== "") {
+                const path = `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`;
+                if (fsSync.existsSync(path)) {
+                    omniPath = path;
+                }
+            }
+
+            if (omniPath === "") {
+                const path = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+                if (fsSync.existsSync(path)) {
+                    omniPath = path;
+                }
+            }
 
             const childProcess = spawn(
-                binaryPath,
+                omniPath,
                 [
                     "serve",
                     "--listen",
