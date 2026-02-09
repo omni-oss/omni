@@ -26,6 +26,10 @@ tasks:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
 
+  build:
+    meta:
+      is_publish_task: true
+
   profile:
     dependencies:
       - ^passthrough

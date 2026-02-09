@@ -11,6 +11,9 @@ tasks:
       vars:
         ADDITIONAL_ARGS: >
           -- serve -b in-memory --routes.enable-openapi
+  build:
+    meta:
+      is_publish_task: true
 
   prod:
     command: >
