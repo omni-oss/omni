@@ -125,7 +125,9 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       cache-key-prefix: test_rust
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        publish_rust_github
+        build_rust
 
   test-typescript:
     needs:
@@ -136,7 +138,10 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
       cache-key-prefix: test_typescript
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        publish_npm
+        test_rust
+        build_typescript
 
   build-rust:
     needs:
@@ -147,7 +152,8 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       cache-key-prefix: build_rust
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        publish_rust_github
       save-outputs: true
       artifacts-name: build-rust
 

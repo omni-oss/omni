@@ -48,9 +48,8 @@ runs:
 
         for prefix in $RAW_RESTORE_KEY_LIST; do
           # Use the variable for clean concatenation
-          res="${res}${NL}${{ runner.os }}-omni-$prefix-${{ steps.get_workspace_hash.outputs.workspace_hash }}"
+          res="${res}${NL}${{ runner.os }}-omni-$prefix-"
         done
-        res="${res}${NL}${{ runner.os }}-omni"
 
         echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
         echo "$res" >> "$GITHUB_OUTPUT"

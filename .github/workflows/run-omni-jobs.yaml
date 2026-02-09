@@ -98,9 +98,8 @@ jobs:
                         const key = keyParts.join('-');
 
                         if (!matrixMap[key]) {
-                            const restoreKeyPrefixes = process.env.RESTORE_KEY_PREFIXES
-                                .split(/\s+/)
-                                .map(prefix => `${targetName}-${prefix.trim()}`)
+                            const restoreKeyPrefixes = [process.env.RESTORE_KEY_PREFIXES.split(/\s+/), `${targetName}-`]
+                                .map(prefix => prefix.trim())
                                 .join("\n");
                             matrixMap[key] = {
                                 runner: data.runner,
@@ -241,7 +240,7 @@ jobs:
         uses: ./.github/actions/setup-omni
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          cache-key-prefix: ${{ inputs.cache-key-prefix }}
+          cache-key-prefix: ${{ matrix.target }}-${{ inputs.cache-key-prefix }}
           cache-restore-key-prefixes: ${{ matrix.cache_restore_key_prefixes }}
 
       - name: Determine Build Tools
