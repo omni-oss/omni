@@ -48,8 +48,20 @@ export const test = baseTest.extend<{
                 throw new Error("WORKSPACE_DIR is not set");
             }
 
+            const target = process.env.RUST_TARGET ?? "";
+
+            const ext =
+                target && target !== "" && target.includes("windows")
+                    ? ".exe"
+                    : "";
+
+            const binaryPath =
+                target && target !== ""
+                    ? `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`
+                    : `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+
             const childProcess = spawn(
-                `${wsDir}/target/release/omni_remote_cache_service`,
+                binaryPath,
                 [
                     "serve",
                     "--listen",
