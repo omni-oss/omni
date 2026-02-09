@@ -190,10 +190,11 @@ where
                             Vec::with_capacity(ci.cache_output_files.len());
 
                         for file in ci.cache_output_files.iter() {
-                            new_files.push(expand_omni_path(
+                            let expanded = expand_omni_path(
                                 file,
                                 &task_ctx.template_context,
-                            )?);
+                            )?;
+                            new_files.push(expanded);
                         }
 
                         new_ci.cache_output_files = new_files;
@@ -204,10 +205,11 @@ where
                             Vec::with_capacity(ci.key_input_files.len());
 
                         for file in ci.key_input_files.iter() {
-                            new_files.push(expand_omni_path(
+                            let expanded = expand_omni_path(
                                 file,
                                 &task_ctx.template_context,
-                            )?);
+                            )?;
+                            new_files.push(expanded);
                         }
 
                         new_ci.key_input_files = new_files;
@@ -552,11 +554,16 @@ fn expand_omni_path(
     path: &OmniPath,
     context: &omni_tera::Context,
 ) -> omni_tera::Result<OmniPath> {
-    let text = path.unresolved_path().to_string_lossy();
+    let text = path.unresolved_path().to_str().unwrap_or("");
+    let root = path.root();
 
     let expanded = omni_tera::one_off(&text, "path", context)?;
 
-    Ok(OmniPath::new(expanded))
+    Ok(if let Some(root) = root {
+        OmniPath::new_rooted(expanded, root)
+    } else {
+        OmniPath::new(expanded)
+    })
 }
 
 async fn run_process<'a>(
