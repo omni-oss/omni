@@ -182,4 +182,38 @@ describe("createJobs", () => {
             },
         });
     });
+
+    it("should sanitize the project name and task name in artifact names", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "test",
+                    project_name: "@project/name",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: { language: "rust" },
+                    output_files: [],
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        expect(jobs.test.rust[0]).toMatchObject({
+            project_name: "@project/name",
+            task_name: "test",
+            artifacts: {
+                project: {
+                    name: "project-@project_name__test",
+                    files: [],
+                },
+                workspace: {
+                    name: "workspace-@project_name__test",
+                    files: [],
+                },
+            },
+        });
+    });
 });

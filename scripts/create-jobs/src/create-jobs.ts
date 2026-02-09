@@ -117,12 +117,12 @@ function jobFromResult(result: TaskResult): Job {
         project_name: result.task.project_name,
         artifacts: {
             project: {
-                name: `project-${result.task.project_name}__${result.task.task_name}`,
+                name: `project-${toPathSafeString(result.task.project_name)}__${toPathSafeString(result.task.task_name)}`,
                 files: projectArtifacts,
                 files_count: projectArtifacts.length,
             },
             workspace: {
-                name: `workspace-${result.task.project_name}__${result.task.task_name}`,
+                name: `workspace-${toPathSafeString(result.task.project_name)}__${toPathSafeString(result.task.task_name)}`,
                 files: workspaceArtifacts,
                 files_count: workspaceArtifacts.length,
             },
@@ -144,4 +144,24 @@ function isPathInside(parent: string, child: string) {
     // If the path starts with '..' (or the platform equivalent),
     // it means the child is outside the parent.
     return relative && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function toPathSafeString(str: string): string {
+    // 1. Replace illegal characters: / \ ? % * : | " < >
+    // Also includes control characters (0-31) which are illegal on Windows
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: false
+    let safeStr = str.replace(/[/\\?%*:|"<> \x00-\x1f]/g, "_");
+
+    // 2. Trim trailing dots and spaces (illegal on Windows filenames)
+    safeStr = safeStr.replace(/[.\s]+$/, "");
+
+    // 3. Handle Windows Reserved Names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+    // These cannot be filenames even if they have no extension.
+    const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+    if (reservedNames.test(safeStr)) {
+        safeStr += "_";
+    }
+
+    // 4. Fallback for empty strings or strings that became empty after stripping
+    return safeStr || "unsaved_file";
 }
