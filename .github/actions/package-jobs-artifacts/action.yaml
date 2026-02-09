@@ -21,10 +21,6 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - name: Install Dependencies
-      run: npm install archiver
-      shell: bash
-
     - name: Collect Artifacts
       id: collect
       uses: actions/github-script@v8
@@ -35,85 +31,62 @@ runs:
         WORKSPACE_ROOT: ${{ github.workspace }}
       with:
         script: |
-          // github-script (node20)
-
           const fs = require('node:fs');
           const path = require('node:path');
-          const archiver = require('archiver');
 
-          const jobs = JSON.parse(process.env.JOBS_JSON); // JSON string
+          const jobs = JSON.parse(process.env.JOBS_JSON);
           const target = process.env.TARGET;
           const repoRoot = process.env.GITHUB_WORKSPACE;
+          const isWindows = process.platform === 'win32';
 
-          // OUTDIR can be relative or absolute
-          const outdir = path.isAbsolute(process.env.OUTDIR || '')
-            ? process.env.OUTDIR
-            : path.join(repoRoot, process.env.OUTDIR || 'artifacts');
+          const outdir = path.isAbsolute(process.env.OUTDIR)
+              ? process.env.OUTDIR
+              : path.join(repoRoot, process.env.OUTDIR);
 
           const createdZips = [];
-
-          function resolveFiles(patterns) {
-            return patterns.flatMap(p =>
-              glob.sync(p, { nodir: true, windowsPathsNoEscape: true })
-            );
-          }
-
-          async function zipFiles(zipPath, files, baseDir) {
-            await fs.promises.mkdir(path.dirname(zipPath), { recursive: true });
-
-            const output = fs.createWriteStream(zipPath);
-            const archive = archiver('zip', { zlib: { level: 9 } });
-
-            archive.pipe(output);
-
-            for (const file of files) {
-              const relativePath = path.relative(baseDir, file);
-              archive.file(file, { name: relativePath });
-            }
-
-            await archive.finalize();
-          }
-
           await fs.promises.mkdir(outdir, { recursive: true });
 
-          function getZipName(artifact) {
-            return target
-                ? `${artifact.name}_${target}.zip`
-                : `${artifact.name}.zip`;
-          };
+          const getZipName = (artifact) => target
+              ? `${artifact.name}_${target}.zip`
+              : `${artifact.name}.zip`;
 
           for (const job of jobs) {
-            const { project_dir, artifacts } = job;
+              const { project_dir, artifacts } = job;
+              const categories = [
+                  { data: artifacts.workspace, base: repoRoot },
+                  { data: artifacts.project, base: project_dir }
+              ];
 
-            // 1) Workspace-level artifact (relative to repo root)
-            if (artifacts.workspace.files_count > 0) {
-              const files = resolveFiles(artifacts.workspace.files);
-              if (files.length > 0) {
-                const zipName = getZipName(artifacts.workspace);
-                const zipPath = path.join(outdir, zipName);
+              for (const cat of categories) {
+                  if (cat.data && cat.data.files_count > 0) {
+                      const zipName = getZipName(cat.data);
+                      const zipPath = path.join(outdir, zipName);
 
-                await zipFiles(zipPath, files, repoRoot);
-                createdZips.push(zipPath);
+                      const globber = await glob.create(cat.data.files.join('\n'), { matchDirectories: false });
+                      const files = await globber.glob();
+
+                      if (files.length > 0) {
+                          const relativeFiles = files.map(f => path.relative(cat.base, f));
+
+                          if (isWindows) {
+                              // Windows: Use PowerShell Compress-Archive
+                              // We join files with commas for the PowerShell array syntax
+                              const filesList = relativeFiles.map(f => `'${f}'`).join(',');
+                              const psCommand = `Compress-Archive -Path ${filesList} -DestinationPath '${zipPath}' -Force`;
+                              await exec.exec('powershell', ['-Command', psCommand], { cwd: cat.base });
+                          } else {
+                              // Unix: Use standard zip utility
+                              await exec.exec('zip', ['-r9', zipPath, ...relativeFiles], { cwd: cat.base });
+                          }
+
+                          createdZips.push(zipPath);
+                      }
+                  }
               }
-            }
-
-            // 2) Project-level artifact (relative to project_dir)
-            if (artifacts.project.files_count > 0) {
-              const files = resolveFiles(artifacts.project.files);
-              if (files.length > 0) {
-                const zipName = getZipName(artifacts.project);
-                const zipPath = path.join(outdir, zipName);
-
-                await zipFiles(zipPath, files, project_dir);
-                createdZips.push(zipPath);
-              }
-            }
           }
 
-          // Output JSON array string
           core.setOutput('artifacts', createdZips.join('\n'));
-          core.setOutput('artifacts_count', createdZips.length);
-          console.log(`Created ${createdZips.length} zip files in ${outdir}:`, createdZips);
+          core.setOutput('artifacts_count', createdZips.length.toString());
 
     - if: ${{ steps.collect.outputs.artifacts_count > 0 }}
       name: Upload Artifacts
