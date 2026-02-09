@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Install Dependencies
-      run: npm install -g archiver glob
+      run: npm install archiver
       shell: bash
 
     - name: Collect Artifacts
@@ -39,7 +39,6 @@ runs:
 
           const fs = require('node:fs');
           const path = require('node:path');
-          const glob = require('glob');
           const archiver = require('archiver');
 
           const jobs = JSON.parse(process.env.JOBS_JSON); // JSON string
@@ -112,5 +111,13 @@ runs:
           }
 
           // Output JSON array string
-          core.setOutput('artifacts_list', JSON.stringify(createdZips));
+          core.setOutput('artifacts', createdZips.join('\n'));
+          core.setOutput('artifacts_count', createdZips.length);
           console.log(`Created ${createdZips.length} zip files in ${outdir}:`, createdZips);
+
+    - if: ${{ steps.collect.outputs.artifacts_count > 0 }}
+      name: Upload Artifacts
+      uses: actions/upload-artifact@v6
+      with:
+        name: artifacts
+        path: ${{ steps.collect.outputs.artifacts }}
