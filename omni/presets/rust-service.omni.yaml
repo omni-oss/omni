@@ -13,6 +13,11 @@ tasks:
           append: [RUST_BUILD_ADDITIONAL_ARGS]
     dependencies:
       - test
+    output:
+      files:
+        append:
+          - "@workspace/target/release/{{ env.PROJECT_NAME }}"
+          - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
 
   dev:
     interactive: true

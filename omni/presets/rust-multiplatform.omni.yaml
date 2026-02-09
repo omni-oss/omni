@@ -224,6 +224,10 @@ tasks:
     command: cargo build --release -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:current
+    output:
+      files:
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
