@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.5 - 2026-02-09
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.5
+### Global changes
+#### Continuous Integration
+- update package-jobs-artifacts action - (db2f08f) - Clarence Manuel
+- update package-jobs-artifacts action - (7477b89) - Clarence Manuel
+- update omni version [skip ci] - (705026b) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/omni-remote-cache-service-tests**) rename variable - (1101c55) - Clarence Manuel
+- update rust-multiplatform preset - (dcdec02) - Clarence Manuel
+- update rust-multiplatform preset - (6d20f3c) - Clarence Manuel
+
+- - -
+
 ## v0.5.4 - 2026-02-09
 ### Package updates
 - omni bumped to omni-v0.5.2
