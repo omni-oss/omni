@@ -58,17 +58,19 @@ export const test = baseTest.extend<{
 
             let omniPath = "";
 
-            if (target !== "") {
-                const path = `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`;
-                if (fsSync.existsSync(path)) {
-                    omniPath = path;
-                }
-            }
+            const defaultPath = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+            const lookupPaths =
+                target !== ""
+                    ? [
+                          `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`,
+                          defaultPath,
+                      ]
+                    : [defaultPath];
 
-            if (omniPath === "") {
-                const path = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+            for (const path of lookupPaths) {
                 if (fsSync.existsSync(path)) {
                     omniPath = path;
+                    break;
                 }
             }
 

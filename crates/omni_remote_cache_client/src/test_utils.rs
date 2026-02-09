@@ -61,23 +61,26 @@ impl ChildProcessGuard {
         };
 
         let mut path = String::new();
-        if !target.is_empty() {
-            let target_path = format!(
-                "{}/target/{}/release/omni_remote_cache_service{}",
-                ws_dir, target, ext
-            );
+        let default_path = format!(
+            "{}/target/release/omni_remote_cache_service{}",
+            ws_dir, ext
+        );
+        let lookup_paths = if !target.is_empty() {
+            vec![
+                format!(
+                    "{}/target/{}/release/omni_remote_cache_service{}",
+                    ws_dir, target, ext
+                ),
+                default_path,
+            ]
+        } else {
+            vec![default_path]
+        };
 
+        for target_path in lookup_paths {
             if Path::new(&target_path).exists() {
                 path = target_path;
-            }
-        }
-        if path.is_empty() {
-            let default_path = format!(
-                "{}/target/release/omni_remote_cache_service{}",
-                ws_dir, ext
-            );
-            if Path::new(&default_path).exists() {
-                path = default_path;
+                break;
             }
         }
 

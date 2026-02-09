@@ -142,7 +142,8 @@ tasks:
       - ^build:aarch64-unknown-linux-gnu
     output:
       files:
-        - "@workspace/target/aarch64-unknown-linux-gnu/release/${PROJECT_NAME}"
+        - "@workspace/target/aarch64-unknown-linux-gnu/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -155,7 +156,8 @@ tasks:
       - ^build:x86_64-unknown-linux-gnu
     output:
       files:
-        - "@workspace/target/x86_64-unknown-linux-gnu/release/${PROJECT_NAME}"
+        - "@workspace/target/x86_64-unknown-linux-gnu/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -168,7 +170,8 @@ tasks:
       - ^build:x86_64-apple-darwin
     output:
       files:
-        - "@workspace/target/x86_64-apple-darwin/release/${PROJECT_NAME}"
+        - "@workspace/target/x86_64-apple-darwin/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -181,7 +184,8 @@ tasks:
       - ^build:aarch64-apple-darwin
     output:
       files:
-        - "@workspace/target/aarch64-apple-darwin/release/${PROJECT_NAME}"
+        - "@workspace/target/aarch64-apple-darwin/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -194,7 +198,8 @@ tasks:
       - ^build:x86_64-pc-windows-msvc
     output:
       files:
-        - "@workspace/target/x86_64-pc-windows-msvc/release/${PROJECT_NAME}.exe"
+        - "@workspace/target/x86_64-pc-windows-msvc/release/{{ env.PROJECT_NAME }}.exe"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
@@ -207,7 +212,8 @@ tasks:
       - ^build:aarch64-pc-windows-msvc
     output:
       files:
-        - "@workspace/target/aarch64-pc-windows-msvc/release/${PROJECT_NAME}.exe"
+        - "@workspace/target/aarch64-pc-windows-msvc/release/{{ env.PROJECT_NAME }}.exe"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
