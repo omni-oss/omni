@@ -145,6 +145,7 @@ jobs:
       cache-key-prefix: build_rust
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
       save-outputs: true
+      artifacts-name: build-rust
 
   build-typescript:
     needs:
@@ -157,3 +158,4 @@ jobs:
       cache-key-prefix: build_typescript
       cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
       save-outputs: true
+      artifacts-name: build-typescript

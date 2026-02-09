@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      artifacts-name:
+        description: The name of the artifacts
+        required: false
+        default: artifacts
+        type: string
       cache-key-prefix:
         description: The prefix to use for the cache key
         required: false
@@ -195,6 +200,7 @@ jobs:
         uses: ./.github/actions/package-jobs-artifacts
         with:
           jobs: ${{ needs.plan.outputs.jobs }}
+          name: ${{ inputs.artifacts-name }}
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
@@ -202,7 +208,6 @@ jobs:
   run-jobs-multiplatform:
     needs:
       - plan
-      - run-jobs
     if: ${{ needs.plan.outputs.multiplatform_jobs_count > 0 }}
     name: Run Multiplatform Jobs
     runs-on: ${{ matrix.runner }}
@@ -267,6 +272,7 @@ jobs:
         with:
           jobs: ${{ toJSON(matrix.jobs) }}
           target: ${{ matrix.target }}
+          name: ${{ inputs.artifacts-name }}-${{ matrix.target }}
 
       - name: Prune Unused Caches
         run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days

@@ -12,6 +12,10 @@ inputs:
     description: "Output directory"
     required: false
     default: "artifacts"
+  name:
+    description: "Name of the artifacts"
+    required: false
+    default: "artifacts"
 
 outputs:
   artifacts_list:
@@ -28,7 +32,6 @@ runs:
         JOBS_JSON: ${{ inputs.jobs }}
         TARGET: ${{ inputs.target }}
         OUTDIR: ${{ inputs.outdir }}
-        WORKSPACE_ROOT: ${{ github.workspace }}
       with:
         script: |
           const fs = require('node:fs');
@@ -87,10 +90,15 @@ runs:
 
           core.setOutput('artifacts', createdZips.join('\n'));
           core.setOutput('artifacts_count', createdZips.length.toString());
+          if (createdZips.length > 0) {
+              core.info(`Created ${createdZips.length} artifacts`);
+          } else {
+              core.info('No artifacts created');
+          }
 
     - if: ${{ steps.collect.outputs.artifacts_count > 0 }}
       name: Upload Artifacts
       uses: actions/upload-artifact@v6
       with:
-        name: artifacts
+        name: ${{ inputs.name }}
         path: ${{ steps.collect.outputs.artifacts }}
