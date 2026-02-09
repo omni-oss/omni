@@ -236,7 +236,11 @@ tasks:
   build:
     command: "echo 'build completed'"
     output:
-      files: []
+      files:
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
+        - "@workspace/target/{% if env.RUST_TARGET %}{{ env.RUST_TARGET }}/{% endif %}release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/{% if env.RUST_TARGET %}{{ env.RUST_TARGET }}/{% endif %}release/{{ env.PROJECT_NAME }}.exe"
     dependencies:
       - test
       - ^build
