@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     env,
+    path::Path,
     process::{Child, Command, Stdio},
     sync::{LazyLock, Mutex},
     thread::sleep,
@@ -49,31 +50,63 @@ impl ChildProcessGuard {
 
         let ws_dir =
             env::var("WORKSPACE_DIR").expect("WORKSPACE_DIR is not set");
+        let target =
+            env::var("RUST_TARGET").unwrap_or_else(|_| String::default());
         let api_base_url = format!("http://localhost:{}/api", port);
 
-        let child = Command::new(format!(
-            "{}/target/release/omni_remote_cache_service",
-            ws_dir
-        ))
-        .args([
-            "serve",
-            "--listen",
-            &format!("0.0.0.0:{}", port),
-            "-b",
-            "in-memory",
-            "--routes.api-prefix",
-            "/api",
-            "--config",
-            "orcs.config.json",
-            "--config-type",
-            "file",
-        ])
-        .envs(env::vars())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn child process");
+        let ext = if target.contains("windows") {
+            ".exe"
+        } else {
+            ""
+        };
+
+        let mut path = String::new();
+        if !target.is_empty() {
+            let target_path = format!(
+                "{}/target/{}/release/omni_remote_cache_service{}",
+                ws_dir, target, ext
+            );
+
+            if Path::new(&target_path).exists() {
+                path = target_path;
+            }
+        }
+        if path.is_empty() {
+            let default_path = format!(
+                "{}/target/release/omni_remote_cache_service{}",
+                ws_dir, ext
+            );
+            if Path::new(&default_path).exists() {
+                path = default_path;
+            }
+        }
+
+        if path.is_empty() {
+            panic!("Could not find omni_remote_cache_service binary");
+        }
+
+        trace::trace!("Starting omni_remote_cache_service at {}", path);
+
+        let child = Command::new(path)
+            .args([
+                "serve",
+                "--listen",
+                &format!("0.0.0.0:{}", port),
+                "-b",
+                "in-memory",
+                "--routes.api-prefix",
+                "/api",
+                "--config",
+                "orcs.config.json",
+                "--config-type",
+                "file",
+            ])
+            .envs(env::vars())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn child process");
 
         // Give the server time to start
         sleep(Duration::from_millis(25));
