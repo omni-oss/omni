@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.6 - 2026-02-09
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.6
+### Global changes
+#### Continuous Integration
+- update run-omni-jobs.yaml - (2c1142a) - Clarence Manuel
+
+- - -
+
 ## v0.5.5 - 2026-02-09
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.5
