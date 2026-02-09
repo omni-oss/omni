@@ -124,7 +124,7 @@ tasks:
           append: ["./tests/**/*.rs"]
 
   test:
-    command: "echo 'Test completed'"
+    command: "echo 'test completed'"
     dependencies:
       - ^test
       - test:current
@@ -234,8 +234,12 @@ tasks:
           append: [RUST_BUILD_ADDITIONAL_ARGS]
 
   build:
+    command: "echo 'build completed'"
+    output:
+      files: []
     dependencies:
       - test
+      - ^build
       - build:current
       - build:aarch64-unknown-linux-gnu
       - build:x86_64-unknown-linux-gnu
