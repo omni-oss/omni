@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.4 - 2026-02-09
+### Package updates
+- omni bumped to omni-v0.5.2
+- omni_cli_core bumped to omni_cli_core-v0.5.2
+- omni_task_executor bumped to omni_task_executor-v0.5.1
+### Global changes
+#### Continuous Integration
+- fix npm package global deps - (b4da3c6) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/omni-remote-cache-service-tests**) use fallback mechanism when selecting paths - (17a007a) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) improve omni binary path handling - (37518ef) - Clarence Manuel
+- update rust-multiplatform preset - (b3dba91) - Clarence Manuel
+
+- - -
+
 ## v0.5.3 - 1970-01-01
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.4

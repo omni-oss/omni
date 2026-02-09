@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.5.1 - 2026-02-09
+#### Bug Fixes
+- (**omni_task_executor**) expanding output paths for tera removes the OmniPath root - (15e3b82) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.5.0 - 2026-02-08
 #### Features
 - add meta to template context - (bd1c6d0) - Clarence Manuel

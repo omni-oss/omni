@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.5.2 - 2026-02-09
+#### Bug Fixes
+- (**omni_task_executor**) expanding output paths for tera removes the OmniPath root - (15e3b82) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_remote_cache_client**) improve omni binary path handling - (f49ae72) - Clarence Manuel
+- update rust-multiplatform preset - (b3dba91) - Clarence Manuel
+- update rust-multiplatform preset - (3ff7292) - Clarence Manuel
+
+- - -
+
 ## omni-v0.5.1 - 2026-02-08
 #### Bug Fixes
 - (**omni_cofigurations**) enable field default value - (db6ff61) - Clarence Manuel
