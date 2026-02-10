@@ -162,21 +162,14 @@ impl<T: Merge + ExtensionGraphNode> ExtensionGraph<T> {
 
         for (extender_idx, node) in nodes {
             let extendee_ids = node.extendee_ids();
-            let num_extendees = extendee_ids.len();
 
-            // Linearize the extension graph, starting from the most extending node
-            let mut current_extender_idx = extender_idx;
-            for i in (0..num_extendees).rev() {
-                let extendee_id = &extendee_ids[i];
+            for extendee_id in extendee_ids {
                 let extendee_idx = self
                     .get_node_index(extendee_id)
                     .ok_or_else(|| ExtensionGraphErrorInner::NodeNotFound {
-                        message: format!("Node not found: {i:?}"),
+                        message: format!("Node not found: {extendee_id:?}"),
                     })?;
-
-                self.add_edge(current_extender_idx, extendee_idx)?;
-
-                current_extender_idx = extendee_idx;
+                self.add_edge(extender_idx, extendee_idx)?;
             }
         }
 
