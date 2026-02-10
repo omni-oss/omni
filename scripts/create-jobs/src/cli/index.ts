@@ -8,6 +8,7 @@ const command = new Command();
 command
     .argument("<input>", "The input file to read from.")
     .option("-o, --output <output>", "The output file to write to.")
+    .option("-r, --root <root>", "Override the workspace root.")
     .action(async (input, options) => {
         const inputFile = await fsAsync.readFile(input, "utf-8");
         const results = JSON.parse(inputFile);
@@ -15,7 +16,7 @@ command
 
         if (result.success) {
             const data = result.data;
-            const processed = createJobs(data);
+            const processed = createJobs(data, options.root);
             if (options.output) {
                 await fsAsync.writeFile(
                     options.output,

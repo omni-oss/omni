@@ -6,7 +6,12 @@ const baseConfig = createBaseConfig({
     generateTypes: true,
 });
 
-const externalNodeDeps = ["node:path", "node:fs", "node:fs/promises"];
+const externalNodeDeps = [
+    "node:path",
+    "node:fs",
+    "node:fs/promises",
+    "node:process",
+];
 
 export default mergeConfig(baseConfig, {
     build: {

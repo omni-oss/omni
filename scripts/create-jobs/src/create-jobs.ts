@@ -1,4 +1,5 @@
 import path from "node:path";
+import process from "node:process";
 import type { Meta, TaskResult, TaskResultArray } from "./schemas";
 
 export type Artifact = {
@@ -40,7 +41,11 @@ export type PublishJobs = {
     rust_github: Job[];
 };
 
-export function createJobs(results: TaskResultArray): Jobs {
+export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
+    if (!rootDir) {
+        rootDir = process.cwd();
+    }
+
     const jobs: Jobs = {
         test: {
             rust: [],
@@ -65,21 +70,21 @@ export function createJobs(results: TaskResultArray): Jobs {
         const task = result.task;
         if (task.task_name === "test" || result.details.meta?.is_test_task) {
             if (result.details.meta?.language === "rust") {
-                jobs.test.rust.push(jobFromResult(result));
+                jobs.test.rust.push(jobFromResult(result, rootDir));
             }
 
             if (result.details.meta?.language === "typescript") {
-                jobs.test.typescript.push(jobFromResult(result));
+                jobs.test.typescript.push(jobFromResult(result, rootDir));
             }
         }
 
         if (task.task_name === "build" || result.details.meta?.is_build_task) {
             if (result.details.meta?.language === "rust") {
-                jobs.build.rust.push(jobFromResult(result));
+                jobs.build.rust.push(jobFromResult(result, rootDir));
             }
 
             if (result.details.meta?.language === "typescript") {
-                jobs.build.typescript.push(jobFromResult(result));
+                jobs.build.typescript.push(jobFromResult(result, rootDir));
             }
         }
 
@@ -88,11 +93,11 @@ export function createJobs(results: TaskResultArray): Jobs {
             result.details.meta?.is_publish_task
         ) {
             if (result.details.meta?.language === "typescript") {
-                jobs.publish.npm.push(jobFromResult(result));
+                jobs.publish.npm.push(jobFromResult(result, rootDir));
             } else if (result.details.meta?.language === "rust") {
-                jobs.publish.rust_github.push(jobFromResult(result));
+                jobs.publish.rust_github.push(jobFromResult(result, rootDir));
             } else {
-                jobs.publish.generic.push(jobFromResult(result));
+                jobs.publish.generic.push(jobFromResult(result, rootDir));
             }
         }
     }
@@ -100,7 +105,7 @@ export function createJobs(results: TaskResultArray): Jobs {
     return jobs;
 }
 
-function jobFromResult(result: TaskResult): Job {
+function jobFromResult(result: TaskResult, rootDir: string): Job {
     const workspaceArtifacts = [] as string[];
     const projectArtifacts = [] as string[];
 
@@ -109,9 +114,11 @@ function jobFromResult(result: TaskResult): Job {
             const fullPath = path.resolve(result.task.project_dir, file);
 
             if (isPathInside(result.task.project_dir, fullPath)) {
-                projectArtifacts.push(fullPath);
+                projectArtifacts.push(
+                    path.relative(result.task.project_dir, fullPath),
+                );
             } else {
-                workspaceArtifacts.push(fullPath);
+                workspaceArtifacts.push(path.relative(rootDir, fullPath));
             }
         }
     }
@@ -131,7 +138,7 @@ function jobFromResult(result: TaskResult): Job {
                 files_count: workspaceArtifacts.length,
             },
         },
-        project_dir: result.task.project_dir,
+        project_dir: path.relative(rootDir, result.task.project_dir),
         meta: result.details.meta ?? {},
     };
 }

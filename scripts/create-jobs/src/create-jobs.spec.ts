@@ -53,14 +53,14 @@ describe("createJobs", () => {
             },
         ];
 
-        const jobs = createJobs(results);
+        const jobs = createJobs(results, "/mnt/c/Users/user");
 
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "rust-app",
             task_name: "test",
             artifacts: {
                 project: {
-                    files: ["/mnt/c/Users/user/project/binary"],
+                    files: ["binary"],
                 },
             },
         });
@@ -145,14 +145,14 @@ describe("createJobs", () => {
             },
         ];
 
-        const jobs = createJobs(results);
+        const jobs = createJobs(results, "/mnt/c/Users/usert");
 
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "minimal",
             task_name: "test",
             artifacts: {
                 project: {
-                    files: ["/mnt/c/Users/user/project/target/debug/minimal"],
+                    files: ["target/debug/minimal"],
                 },
             },
         });
@@ -174,14 +174,14 @@ describe("createJobs", () => {
             },
         ];
 
-        const jobs = createJobs(results);
+        const jobs = createJobs(results, "/mnt/c/Users/user");
 
         expect(jobs.test.rust[0]).toMatchObject({
             project_name: "minimal",
             task_name: "test",
             artifacts: {
                 workspace: {
-                    files: ["/mnt/c/Users/user/target/debug/minimal"],
+                    files: ["target/debug/minimal"],
                 },
             },
         });
