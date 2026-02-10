@@ -98,8 +98,13 @@ jobs:
                         const key = keyParts.join('-');
 
                         if (!matrixMap[key]) {
-                            const restoreKeyPrefixes = [...process.env.RESTORE_KEY_PREFIXES.split(/\s+/), `${targetName}-`]
-                                .map(prefix => prefix.trim())
+                            const tmp = process.env.RESTORE_KEY_PREFIXES
+                                    .split(/\s+/);
+                            const restoreKeyPrefixes = [
+                                targetName,
+                                ...tmp.map(prefix => `${targetName}-${prefix}`),
+                                ...tmp,
+                            ]
                                 .join("\n");
                             matrixMap[key] = {
                                 runner: data.runner,
@@ -135,9 +140,10 @@ jobs:
             core.setOutput('multiplatform_matrix', JSON.stringify(multiplatformMatrix));
             core.setOutput('multiplatform_jobs_count', multiplatformJobsCount);
 
-
-            console.log("jobs", JSON.stringify(jobs, null, 4));
-            console.log("multiplatform_matrix", JSON.stringify(multiplatformMatrix, null, 4));
+            core.info(`jobs_count: ${jobs.length}`);
+            core.info(`jobs: ${JSON.stringify(jobs, null, 4)}`);
+            core.info(`multiplatform_jobs_count: ${multiplatformJobsCount}`);
+            core.info(`multiplatform_matrix: ${JSON.stringify(multiplatformMatrix, null, 4)}`);
 
           result-encoding: string
 
