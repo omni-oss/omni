@@ -211,7 +211,8 @@ tasks:
       files:
         - "@workspace/target/release/{{ env.PROJECT_NAME }}"
         - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
-        - "@workspace/target/*/release/{{ env.PROJECT_NAME }}.exe"
+        - "@workspace/target/**/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/**/release/{{ env.PROJECT_NAME }}.exe"
     dependencies:
       - test
       - ^build

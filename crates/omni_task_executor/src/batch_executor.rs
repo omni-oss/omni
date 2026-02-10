@@ -193,7 +193,7 @@ where
                         let mut new_files =
                             Vec::with_capacity(ci.cache_output_files.len());
 
-                        trace::info!(
+                        trace::trace!(
                             ?ci.cache_output_files,
                             "original_cache_output_files"
                         );
@@ -207,7 +207,7 @@ where
                         }
 
                         new_ci.cache_output_files = new_files;
-                        trace::info!(
+                        trace::trace!(
                             ?new_ci.cache_output_files,
                             "expanded_cache_output_files"
                         );
@@ -217,7 +217,7 @@ where
                         let mut new_files =
                             Vec::with_capacity(ci.key_input_files.len());
 
-                        trace::info!(
+                        trace::trace!(
                             ?ci.key_input_files,
                             "original_key_input_files"
                         );
@@ -231,7 +231,7 @@ where
                         }
 
                         new_ci.key_input_files = new_files;
-                        trace::info!(
+                        trace::trace!(
                             ?new_ci.key_input_files,
                             "expanded_key_input_files"
                         );
