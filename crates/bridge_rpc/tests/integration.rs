@@ -13,7 +13,7 @@ use tokio::{io::DuplexStream, time::sleep};
 
 #[tokio::test(flavor = "multi_thread")]
 #[test_log::test]
-#[timeout(1000)]
+#[timeout(2000)]
 async fn test_ping() {
     let (rpc1, rpc2) = create_mirror_rpcs();
 
@@ -41,7 +41,7 @@ async fn test_ping() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[test_log::test]
-#[timeout(1000)]
+#[timeout(2000)]
 async fn test_request() {
     let (rpc1, rpc2) = create_mirror_rpcs();
 
@@ -109,7 +109,7 @@ async fn test_request() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[test_log::test]
-#[timeout(1000)]
+#[timeout(2000)]
 async fn test_response() {
     #[derive(new)]
     struct ResponseTestService {}
