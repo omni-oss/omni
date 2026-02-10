@@ -47,9 +47,8 @@ jobs:
             target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          # not supported yet, unavoidable compilation error due to crates not supporting win 11 on arm yet
-          # - os: windows-11-arm # <--- NATIVE Windows ARM Runner
-          #   target: aarch64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
 
     steps:
       - name: Checkout repository
