@@ -2,6 +2,30 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.7 - 2026-02-10
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.5.3
+- omni bumped to omni-v0.5.3
+- omni_core bumped to omni_core-v0.2.2
+- omni_task_executor bumped to omni_task_executor-v0.5.2
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.7
+### Global changes
+#### Bug Fixes
+- (**omni_task_executor**) update verbose info trace to trace level - (84e9471) - Clarence Manuel
+#### Continuous Integration
+- add support for windows arm builds - (9198516) - Clarence Manuel
+- improve ci cache hits - (51be0b7) - Clarence Manuel
+- run publish on tag - (ce9ec36) - Clarence Manuel
+- fix validation error - (a84e67c) - Clarence Manuel
+- fix split step - (d7d6dda) - Clarence Manuel
+- update restore keys - (1ea9432) - Clarence Manuel
+- add npm and generic publish jobs - (8f26186) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust-multiplatform preset - (6a5777e) - Clarence Manuel
+- update rust project presets - (3601d74) - Clarence Manuel
+
+- - -
+
 ## v0.5.6 - 2026-02-09
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.6

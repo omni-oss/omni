@@ -2,7 +2,7 @@
 name = "omni"
 rust-version.workspace = true
 edition.workspace = true
-version = "0.5.2"
+version = "0.5.3"
 authors.workspace = true
 repository.workspace = true
 

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.7 - 2026-02-10
+#### Bug Fixes
+- generic publish task - (f5d56c4) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.6 - 2026-02-09
 #### Bug Fixes
 - (**@omni-oss/create-jobs**) support create jobs via is_*_task meta data - (d95dbca) - Clarence Manuel

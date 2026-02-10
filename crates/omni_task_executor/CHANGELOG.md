@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.5.2 - 2026-02-10
+#### Bug Fixes
+- (**omni_task_executor**) update verbose info trace to trace level - (84e9471) - Clarence Manuel
+#### Miscellaneous Chores
+- add traces - (58e5715) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.5.1 - 2026-02-09
 #### Bug Fixes
 - (**omni_task_executor**) expanding output paths for tera removes the OmniPath root - (15e3b82) - Clarence Manuel
