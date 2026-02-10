@@ -98,7 +98,7 @@ jobs:
                         const key = keyParts.join('-');
 
                         if (!matrixMap[key]) {
-                            const restoreKeyPrefixes = [process.env.RESTORE_KEY_PREFIXES.split(/\s+/), `${targetName}-`]
+                            const restoreKeyPrefixes = [...process.env.RESTORE_KEY_PREFIXES.split(/\s+/), `${targetName}-`]
                                 .map(prefix => prefix.trim())
                                 .join("\n");
                             matrixMap[key] = {
