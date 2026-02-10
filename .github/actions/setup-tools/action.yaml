@@ -120,14 +120,21 @@ runs:
         fi
 
         echo "cross_compile=$CROSS_COMPILE" >> $GITHUB_OUTPUT
+        echo "host=$HOST_TARGET" >> $GITHUB_OUTPUT
 
-        echo "Host Target: $HOST_TARGET"
+        echo "Host: $HOST_TARGET"
         echo "Target: $TARGET"
         echo "Cross Compile: $CROSS_COMPILE"
 
     - if: ${{ steps.rust-info.outputs.cross_compile == 'true' }}
       shell: bash
       run: rustup target add ${{ inputs.rust-target }}
+
+    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && inputs.rust-target == 'aarch64-unknown-linux-gnu' }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
+        fallback: none
 
     - name: Cache Bun install
       if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' || inputs.install-node-modules == 'true' }}

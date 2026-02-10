@@ -13,7 +13,7 @@ cache:
 tasks:
   test:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cargo test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    command: cross test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:aarch64-unknown-linux-gnu
     env:
@@ -137,7 +137,7 @@ tasks:
 
   build:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cargo build --release --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    command: cross build --release --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-unknown-linux-gnu
     cache:
@@ -236,5 +236,6 @@ meta:
       runner: macos-latest
     x86_64-pc-windows-msvc:
       runner: windows-latest
-    aarch64-pc-windows-msvc:
-      runner: windows-latest
+    # disabled for now, can cross compile but can't cross test on windows-latest runner since it doesn't support native emulation of aarch64 binaries
+    # aarch64-pc-windows-msvc:
+    #   runner: windows-latest

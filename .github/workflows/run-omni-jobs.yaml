@@ -219,7 +219,9 @@ jobs:
     strategy:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.multiplatform_matrix) }}
-      fail-fast: true
+      fail-fast: false
+
+    env: ${{ matrix.env }}
 
     steps:
       - name: Checkout repository
