@@ -25,10 +25,12 @@ const MetaSchema = z.object({
     type: z
         .enum(["lib", "service", "script", "app"])
         .or(z.string())
+        .optional()
         .describe("The type of project (e.g., library, service, application)."),
     language: z
         .enum(["rust", "typescript"])
         .or(z.string())
+        .optional()
         .describe("The primary language of the project."),
 });
 
