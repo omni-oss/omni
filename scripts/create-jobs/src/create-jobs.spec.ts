@@ -77,7 +77,12 @@ describe("createJobs", () => {
                     project_name: "js-pkg",
                     project_dir: "/mnt/c/Users/user/project",
                 },
-                details: { meta: { release: { npm: true } } },
+                details: {
+                    meta: {
+                        language: "typescript",
+                        release: { npm: true },
+                    },
+                },
             },
             {
                 status: "success",
@@ -226,7 +231,11 @@ describe("createJobs", () => {
                     project_dir: "/mnt/c/Users/user/project",
                 },
                 details: {
-                    meta: { release: { npm: true }, is_publish_task: true },
+                    meta: {
+                        language: "typescript",
+                        release: { npm: true },
+                        is_publish_task: true,
+                    },
                 },
             },
             {
@@ -333,5 +342,30 @@ describe("createJobs", () => {
         expect(jobs.test.rust).toHaveLength(2);
         expect(jobs.test.rust[0]?.project_name).toBe("rust-app");
         expect(jobs.test.rust[1]?.project_name).toBe("rust-pkg");
+    });
+
+    it("should handle generic publish tasks correctly", () => {
+        const results: any[] = [
+            {
+                status: "success",
+                task: {
+                    task_name: "publish",
+                    project_name: "rust-pkg",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: {
+                    meta: {
+                        release: { github: true },
+                        is_publish_task: true,
+                    },
+                },
+            },
+        ];
+
+        const jobs = createJobs(results);
+
+        // Checks generic logic: task_name must be "publish" AND meta.release.github must be true
+        expect(jobs.publish.generic).toHaveLength(1);
+        expect(jobs.publish.generic[0]?.project_name).toBe("rust-pkg");
     });
 });

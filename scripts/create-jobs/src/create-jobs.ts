@@ -84,23 +84,16 @@ export function createJobs(results: TaskResultArray): Jobs {
         }
 
         if (
-            (task.task_name === "publish" ||
-                result.details.meta?.is_publish_task) &&
-            result.details.meta?.release?.npm
+            task.task_name === "publish" ||
+            result.details.meta?.is_publish_task
         ) {
-            jobs.publish.npm.push(jobFromResult(result));
-        } else if (
-            result.details.meta?.release?.github &&
-            result.details.meta?.language === "rust" &&
-            (result.task.task_name === "publish" ||
-                result.details.meta.is_publish_task)
-        ) {
-            jobs.publish.rust_github.push(jobFromResult(result));
-        } else if (
-            result.details.meta?.is_publish_task ||
-            result.task.task_name === "publish"
-        ) {
-            jobs.publish.generic.push(jobFromResult(result));
+            if (result.details.meta?.language === "typescript") {
+                jobs.publish.npm.push(jobFromResult(result));
+            } else if (result.details.meta?.language === "rust") {
+                jobs.publish.rust_github.push(jobFromResult(result));
+            } else {
+                jobs.publish.generic.push(jobFromResult(result));
+            }
         }
     }
 
