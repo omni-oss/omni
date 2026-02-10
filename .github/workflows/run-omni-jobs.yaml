@@ -221,8 +221,6 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.multiplatform_matrix) }}
       fail-fast: true
 
-    env: ${{ matrix.env }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -270,6 +268,7 @@ jobs:
 
       - name: Run Tasks
         run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+        env: ${{ matrix.env }}
 
       - if: ${{ inputs.save-outputs }}
         name: Save Outputs As Artifacts

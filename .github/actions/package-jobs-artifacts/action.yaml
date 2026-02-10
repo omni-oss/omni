@@ -57,7 +57,7 @@ runs:
               const { project_dir, artifacts } = job;
               const categories = [
                   { data: artifacts.workspace, base: repoRoot },
-                  { data: artifacts.project, base: project_dir }
+                  { data: artifacts.project, base: path.join(repoRoot, project_dir) },
               ];
 
               for (const cat of categories) {
