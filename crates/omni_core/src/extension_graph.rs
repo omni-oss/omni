@@ -414,33 +414,25 @@ mod tests {
 
     #[test]
     fn test_get_processed_node_linear_extensions() {
-        let mut graph = ExtensionGraph::new();
-
-        graph
-            .add_node(TestNode {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            TestNode {
                 id: 1,
                 extends: vec![],
                 items: vec![1, 2, 3],
-            })
-            .expect("Can't add node");
-
-        graph
-            .add_node(TestNode {
+            },
+            TestNode {
                 id: 2,
                 extends: vec![1],
                 items: vec![4, 5],
-            })
-            .expect("Can't add node");
-
-        graph
-            .add_node(TestNode {
+            },
+            TestNode {
                 id: 3,
                 extends: vec![2],
                 items: vec![6, 7],
-            })
-            .expect("Can't add node");
+            },
+        ])
+        .expect("can't process nodes");
 
-        graph.connect_nodes().expect("Can't connect nodes");
         let processed_node = graph
             .process_node_by_id(&3)
             .expect("Can't get processed node")
@@ -458,41 +450,30 @@ mod tests {
 
     #[test]
     fn test_get_processed_node_multiple_extensions() {
-        let mut graph = ExtensionGraph::new();
-
-        graph
-            .add_node(TestNode {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            TestNode {
                 id: 1,
                 extends: vec![],
                 items: vec![1, 2, 3],
-            })
-            .expect("Can't add node");
-
-        graph
-            .add_node(TestNode {
+            },
+            TestNode {
                 id: 2,
                 extends: vec![1],
                 items: vec![4, 5],
-            })
-            .expect("Can't add node");
-
-        graph
-            .add_node(TestNode {
+            },
+            TestNode {
                 id: 3,
                 extends: vec![2],
                 items: vec![6, 7],
-            })
-            .expect("Can't add node");
-
-        graph
-            .add_node(TestNode {
+            },
+            TestNode {
                 id: 4,
                 extends: vec![1, 2, 3],
                 items: vec![8, 9],
-            })
-            .expect("Can't add node");
+            },
+        ])
+        .expect("can't process nodes");
 
-        graph.connect_nodes().expect("Can't connect nodes");
         let processed_node = graph
             .process_node_by_id(&4)
             .expect("Can't get processed node")
@@ -504,6 +485,150 @@ mod tests {
                 id: 4,
                 extends: vec![1, 2, 3],
                 items: vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
+            }
+        );
+    }
+
+    #[test]
+    fn test_should_linearize_diamond_pattern() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            TestNode {
+                id: 1,
+                extends: vec![],
+                items: vec![1, 2, 3],
+            },
+            TestNode {
+                id: 2,
+                extends: vec![1],
+                items: vec![4, 5],
+            },
+            TestNode {
+                id: 3,
+                extends: vec![2],
+                items: vec![6, 7],
+            },
+            TestNode {
+                id: 4,
+                extends: vec![2, 3],
+                items: vec![8, 9],
+            },
+        ])
+        .expect("should be able to create from diamond pattern");
+
+        let processed_node = graph
+            .process_node_by_id(&4)
+            .expect("Can't get processed node")
+            .clone();
+
+        assert_eq!(
+            processed_node,
+            TestNode {
+                id: 4,
+                extends: vec![2, 3],
+                items: vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
+            }
+        );
+    }
+
+    #[test]
+    fn test_should_handle_common_ancestor() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            TestNode {
+                id: 1,
+                extends: vec![],
+                items: vec![1, 2, 3],
+            },
+            TestNode {
+                id: 2,
+                extends: vec![1],
+                items: vec![4, 5],
+            },
+            TestNode {
+                id: 3,
+                extends: vec![1],
+                items: vec![6, 7],
+            },
+        ])
+        .expect("should be able to create from diamond pattern");
+
+        let processed_node_1 = graph
+            .process_node_by_id(&2)
+            .expect("Can't get processed node")
+            .clone();
+
+        let processed_node_2 = graph
+            .process_node_by_id(&3)
+            .expect("Can't get processed node")
+            .clone();
+
+        assert_eq!(
+            processed_node_1,
+            TestNode {
+                id: 2,
+                extends: vec![1],
+                items: vec![1, 2, 3, 4, 5]
+            }
+        );
+        assert_eq!(
+            processed_node_2,
+            TestNode {
+                id: 3,
+                extends: vec![1],
+                items: vec![1, 2, 3, 6, 7]
+            }
+        );
+    }
+
+    #[test]
+    fn test_should_handle_deep_common_ancestor() {
+        let mut graph = ExtensionGraph::from_nodes(vec![
+            TestNode {
+                id: 1,
+                extends: vec![],
+                items: vec![1],
+            },
+            TestNode {
+                id: 11,
+                extends: vec![1],
+                items: vec![11],
+            },
+            TestNode {
+                id: 2,
+                extends: vec![1, 11],
+                items: vec![2],
+            },
+            TestNode {
+                id: 3,
+                extends: vec![1, 11],
+                items: vec![3],
+            },
+        ])
+        .expect("should be able to create from diamond pattern");
+
+        let processed_node_1 = graph
+            .process_node_by_id(&2)
+            .expect("Can't get processed node")
+            .clone();
+
+        let processed_node_2 = graph
+            .process_node_by_id(&3)
+            .expect("Can't get processed node")
+            .clone();
+
+        assert_eq!(
+            processed_node_1,
+            TestNode {
+                id: 2,
+                extends: vec![1, 11],
+                items: vec![1, 11, 2]
+            }
+        );
+        assert_eq!(
+            processed_node_2,
+            TestNode {
+                id: 3,
+                extends: vec![1, 11],
+                items: vec![1, 11, 3]
             }
         );
     }
