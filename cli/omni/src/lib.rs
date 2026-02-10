@@ -40,6 +40,8 @@ fn ctx(
     tracing: &TracingConfig,
     ws_root_dir: Option<&Path>,
 ) -> Result<Context<RealSys>, ContextError> {
+    trace::trace!(?args, "cli_args_received");
+
     let sys = RealSys;
     if let Some(root) = ws_root_dir {
         context::from_args_root_dir_and_sys(args, root, sys, tracing)
@@ -137,7 +139,7 @@ pub async fn main() -> eyre::Result<()> {
     #[cfg(feature = "enable-tracing")]
     {
         init_tracing(&tracing_config)?;
-        trace::trace!("Tracing config: {:?}", tracing_config);
+        trace::trace!(?tracing_config, "tracing_initialized");
     }
 
     run(

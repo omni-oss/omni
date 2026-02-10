@@ -24,7 +24,10 @@ pub struct EnvCommand {
 
 pub async fn run(env: &EnvCommand, ctx: &mut Context) -> eyre::Result<()> {
     let mut env_loader = ctx.create_env_loader();
-    let env_vars = env_loader.get(&GetVarsArgs::default())?;
+    let env_vars = env_loader.get(&GetVarsArgs {
+        inherit_env_vars: ctx.inherit_env_vars(),
+        ..Default::default()
+    })?;
 
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {

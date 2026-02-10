@@ -50,7 +50,7 @@ pub struct Cli {
     pub subcommand: CliSubcommands,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug)]
 #[command()]
 pub struct CliArgs {
     #[arg(

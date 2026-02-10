@@ -61,8 +61,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
         let remote_cache = get_remote_cache_configuration(&omni_dir, &sys)?;
-
-        Ok(Self {
+        let context = Self {
             env,
             inherit_env_vars,
             override_env_files,
@@ -73,7 +72,22 @@ impl<TSys: ContextSys> Context<TSys> {
             env_root_dir_marker: root_marker.to_string(),
             sys,
             tracing_config: tracing_config.clone(),
-        })
+        };
+
+        trace::trace!(
+            ?context.env,
+            ?context.inherit_env_vars,
+            ?context.override_env_files,
+            ?context.workspace,
+            ?context.remote_cache,
+            ?context.root_dir,
+            ?context.omni_dir,
+            ?context.env_root_dir_marker,
+            ?context.tracing_config,
+            "context_created"
+        );
+
+        Ok(context)
     }
 }
 
@@ -111,6 +125,10 @@ impl<TSys: ContextSys> Context<TSys> {
     pub fn remote_cache_configuration_path(&self, ext: &str) -> PathBuf {
         self.omni_dir()
             .join(constants::REMOTE_CACHE_OMNI.replace("{ext}", ext))
+    }
+
+    pub fn inherit_env_vars(&self) -> bool {
+        self.inherit_env_vars
     }
 
     pub fn root_dir(&self) -> &Path {
@@ -194,6 +212,12 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let mut env_loader = self.create_env_loader();
 
+        trace::trace!(
+            inherit_env_vars = self.inherit_env_vars,
+            root_dir = ?self.root_dir,
+            "extacting_project_data",
+        );
+
         let extractions = ProjectDataExtractor::new(
             self.sys(),
             &self.root_dir,
@@ -202,6 +226,8 @@ impl<TSys: ContextSys> Context<TSys> {
             self.workspace_configuration(),
         )
         .extract_all(&project_configs, &project_paths, &xt_graph)?;
+
+        trace::trace!("extacted_project_data");
 
         // run validations
         ExtractedDataValidator::new(false).validate(&extractions)?;
