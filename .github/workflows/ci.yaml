@@ -69,7 +69,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Dry Run Results
-        run: omni run -L -f=failed -d --result=result.json test build publish
+        run: omni -i run -L -f=failed -d --result=result.json test build publish
 
       - name: Create Plan
         id: plan
@@ -115,7 +115,7 @@ jobs:
             core.setOutput('jobs_cache_restore_key_prefixes', process.env['restore-key-prefixes']);
 
       - name: Prune Unused Caches
-        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
+        run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
   test-rust:
     needs:

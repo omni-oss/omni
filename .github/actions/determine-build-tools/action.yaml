@@ -34,7 +34,7 @@ runs:
 
     - name: Get Dry Run Result
       shell: ${{ inputs.shell }}
-      run: omni run -dL --result result.json ${{ inputs.omni-run }}
+      run: omni -i run -dL --result result.json ${{ inputs.omni-run }}
 
     - name: Summarize Dry Run Result
       shell: ${{ inputs.shell }}

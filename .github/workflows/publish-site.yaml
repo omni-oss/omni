@@ -61,7 +61,7 @@ jobs:
         run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
 
       - name: Generate Docs
-        run: omni run -p '@omni-oss/site' build
+        run: omni -i run -p '@omni-oss/site' build
 
       - name: Publish Docs
         run: vercel deploy --prod --prebuilt --token=${{ env.VERCEL_TOKEN }} --cwd ./apps/site

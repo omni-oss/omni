@@ -198,7 +198,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Tasks
-        run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
+        run: omni -i run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
 
       - if: ${{ inputs.save-outputs }}
         name: Save Outputs As Artifacts
@@ -208,7 +208,7 @@ jobs:
           name: ${{ inputs.artifacts-name }}
 
       - name: Prune Unused Caches
-        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
+        run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
   run-jobs-multiplatform:
     needs:
@@ -267,8 +267,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Tasks
-        run: omni run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
-        env: ${{ matrix.env }}
+        run: omni -i run -Lf=failed ${{ steps.process.outputs.TASK_ARGS }} ${{ steps.process.outputs.PROJECT_FLAGS }}
 
       - if: ${{ inputs.save-outputs }}
         name: Save Outputs As Artifacts
@@ -279,4 +278,4 @@ jobs:
           name: ${{ inputs.artifacts-name }}-${{ matrix.target }}
 
       - name: Prune Unused Caches
-        run: omni cache prune -sy -o="7d" # Remove stale caches older than 7 days
+        run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
