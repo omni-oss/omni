@@ -19,3 +19,4 @@ result-summary.json
 .artifacts
 .tests
 jobs.json
+orcs.config.json

@@ -1,4 +1,5 @@
 import { describe, expect } from "vitest";
+import { withTimeout } from "@/utils";
 import { test } from "../test";
 
 const DIGEST = "12345678901234567890123456789012345678901234567890123456789012";
@@ -14,7 +15,7 @@ const BODY = JSON.stringify({
     },
 });
 
-describe("v1.artifacts.api", () => {
+describe.sequential("v1.artifacts.api", () => {
     test("put artifact", async ({ apiBaseUrl }) => {
         const response = await putArtifact(apiBaseUrl);
 
@@ -96,6 +97,9 @@ describe("v1.artifacts.api", () => {
     });
 });
 
+// Usage with fetch
+const fetchWithTimeout = withTimeout(fetch, 1000);
+
 async function putArtifact(
     apiBaseUrl: string,
     digest: string = DIGEST,
@@ -106,7 +110,7 @@ async function putArtifact(
     body: string = BODY,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "PUT",
@@ -129,7 +133,7 @@ async function getArtifact(
     env: string = ENV,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "GET",
@@ -151,7 +155,7 @@ async function headArtifact(
     env: string = ENV,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "HEAD",
@@ -173,7 +177,7 @@ async function deleteArtifact(
     env: string = ENV,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts/${digest}?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "DELETE",
@@ -194,7 +198,7 @@ async function listArtifacts(
     env: string = ENV,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "GET",
@@ -214,7 +218,7 @@ async function headArtifacts(
     env: string = ENV,
     apiKey: string = API_KEY,
 ) {
-    return await fetch(
+    return await fetchWithTimeout(
         `${apiBaseUrl}/v1/artifacts?org=${org}&ws=${ws}&env=${env}`,
         {
             method: "HEAD",

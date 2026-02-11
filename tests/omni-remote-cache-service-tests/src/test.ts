@@ -1,9 +1,11 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fsSync from "node:fs";
-import { promisify } from "node:util";
 import { test as baseTest } from "vitest";
+import { getHost, sleep, withTimeout } from "./utils";
 
 const ports = new Set<number>();
+
+const timeoutFetch = withTimeout(fetch, 100);
 
 export const test = baseTest.extend<{
     port: number;
@@ -60,6 +62,7 @@ export const test = baseTest.extend<{
             let omniPath = "";
 
             const host = await getHost().catch(() => "");
+            let compileInfo = `Host: ${host}\nTarget: ${target}`;
 
             const defaultPath = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
             const lookupPaths =
@@ -84,6 +87,15 @@ export const test = baseTest.extend<{
                 }
             }
 
+            if (omniPath.trim() === "") {
+                throw new Error(
+                    `Could not find omni_remote_cache_service${ext} in: ${lookupPaths.join(
+                        "\n",
+                    )}\n${compileInfo}`,
+                );
+            }
+            compileInfo = `${compileInfo}\nPath: ${omniPath}`;
+
             const childProcess = spawn(
                 omniPath,
                 [
@@ -106,6 +118,15 @@ export const test = baseTest.extend<{
                 },
             );
 
+            const output = [] as string[];
+
+            childProcess.stdout?.on("data", (data) => {
+                output.push(data.toString());
+            });
+            childProcess.stderr?.on("data", (data) => {
+                output.push(data.toString());
+            });
+
             // we're not trying to get a successful response, just to make sure the server is up and can respond
             let currentTry = 0;
             let didConnect = false;
@@ -113,7 +134,7 @@ export const test = baseTest.extend<{
             const MAX_TRIES = 10;
             while (currentTry < MAX_TRIES) {
                 try {
-                    await fetch(apiBaseUrl);
+                    await timeoutFetch(apiBaseUrl);
                     didConnect = true;
                     break;
                 } catch (e) {
@@ -122,50 +143,41 @@ export const test = baseTest.extend<{
                     }
                 }
 
+                if (childProcess.exitCode != null) {
+                    throw new Error(
+                        `Child process exited with code ${childProcess.exitCode}:\n${output.join("\n")}\n${compileInfo}`,
+                    );
+                }
+
                 currentTry++;
                 // add a small delay to ensure the server is ready
-                await new Promise((resolve) => setTimeout(resolve, 100));
+                await sleep(100);
             }
 
             if (!didConnect) {
                 if (error) {
-                    console.error(error);
+                    throw error;
                 }
-                throw new Error(`Failed to connect to server: ${apiBaseUrl}`);
+                throw new Error(
+                    `Failed to connect to server: ${apiBaseUrl}\n${output.join(
+                        "\n",
+                    )}\n${compileInfo}`,
+                );
             }
 
             await use(childProcess);
-            if (!childProcess.kill("SIGTERM")) {
-                throw new Error(
-                    `Failed to kill child process: ${childProcess.pid}`,
-                );
+
+            const result = childProcess.kill("SIGTERM");
+            await sleep(100);
+
+            if (
+                !result &&
+                childProcess.exitCode !== null &&
+                !childProcess.killed
+            ) {
+                childProcess.kill("SIGKILL");
             }
         },
         { scope: "test", auto: true },
     ],
 });
-
-const execFileAsync = promisify(execFile);
-
-export async function getHost(): Promise<string> {
-    let stdout: string;
-
-    try {
-        ({ stdout } = await execFileAsync("rustc", ["-vV"]));
-    } catch (err) {
-        throw new Error("Failed to run rustc to get the host target", {
-            cause: err,
-        });
-    }
-
-    const field = "host: ";
-    const line = stdout.split("\n").find((l) => l.startsWith(field));
-
-    if (!line) {
-        throw new Error(
-            `\`rustc -vV\` didn't have a line for "${field.trim()}", got:\n${stdout}`,
-        );
-    }
-
-    return line.slice(field.length);
-}
