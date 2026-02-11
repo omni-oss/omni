@@ -120,7 +120,24 @@ jobs:
                         }
 
                         if (typeof job.meta.language === 'string') {
-                            matrixMap[key].env[job.meta.language.toUpperCase() + '_TARGET'] = targetName;
+                            const varName = job.meta.language.toUpperCase() + '_TARGET'
+                            if (varName === "RUST_TARGET") {
+                                switch(targetName) {
+                                    case "aarch64-unknown-linux-gnu":
+                                        matrixMap[key].env[varName] = `x86_64-unknown-linux-gnu;${targetName}`;
+                                        break;
+                                    case "x86_64-macos-darwin":
+                                        matrixMap[key].env[varName] = `aarch64-apple-darwin;${targetName}`;
+                                        break;
+                                    case "aarch64-pc-windows-msvc":
+                                        matrixMap[key].env[varName] = `x86_64-pc-windows-msvc;${targetName}`;
+                                        break;
+                                    default:
+                                        matrixMap[key].env[varName] = targetName;
+                                }
+                            } else {
+                                matrixMap[key].env[varName] = targetName;
+                            }
                         }
 
                         if (typeof job.meta.sdk === 'string') {
