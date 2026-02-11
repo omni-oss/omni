@@ -143,6 +143,11 @@ impl ChildProcessGuard {
                     }
                 }
             }
+            trace::trace!(
+                "Couldn't connect to server ({}), retrying ({})...",
+                api_base_url,
+                current_try
+            );
             current_try += 1;
             sleep(Duration::from_millis(100)).await;
         }
