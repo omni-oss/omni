@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{borrow::Cow, collections::BTreeMap};
 
 use axum::{Json, Router, extract::State, response::IntoResponse};
 use axum_extra::routing::{RouterExt, TypedPath};
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use strum::Display;
 use utoipa::{
     OpenApi as _,
-    openapi::{OpenApi, PathItem},
+    openapi::{OpenApi, PathItem, Server},
 };
 
 use crate::{
@@ -67,8 +67,18 @@ pub enum Format {
     Yaml,
 }
 
-fn apply(api_prefix: &str, version: Version, mut openapi: OpenApi) -> OpenApi {
-    let base_path = format!("{api_prefix}/{version}");
+fn apply(
+    api_prefix: &str,
+    addr: &str,
+    version: Version,
+    mut openapi: OpenApi,
+) -> OpenApi {
+    let api_prefix = api_prefix.trim();
+    let base_path = if !api_prefix.is_empty() {
+        format!("{api_prefix}/{version}")
+    } else {
+        format!("{version}")
+    };
 
     openapi.paths.paths = openapi
         .paths
@@ -76,6 +86,14 @@ fn apply(api_prefix: &str, version: Version, mut openapi: OpenApi) -> OpenApi {
         .iter()
         .map(|(k, v)| (format!("{base_path}{k}"), v.clone()))
         .collect::<BTreeMap<String, PathItem>>();
+
+    if let Some(servers) = openapi.servers.as_mut() {
+        servers.iter_mut().for_each(|s| {
+            s.url = s.url.replace(&base_path, "");
+        });
+    } else {
+        openapi.servers = Some(vec![Server::new(addr)]);
+    }
 
     openapi
 }
@@ -91,17 +109,24 @@ pub async fn get_open_api_doc(
         .as_ref()
         .and_then(|r| r.api_prefix.as_deref())
         .unwrap_or("/api");
+    let listen = if state.args.listen.contains("0.0.0.0") {
+        Cow::Owned(state.args.listen.replace("0.0.0.0", "localhost"))
+    } else {
+        Cow::Borrowed(&state.args.listen)
+    };
+    let protocol = if state.args.secure { "https" } else { "http" };
+    let addr = format!("{protocol}://{listen}");
 
     match format {
         Format::Json => match version {
             Version::V1 => {
-                Json(apply(api_prefix, version, V1RootApiDoc::openapi()))
+                Json(apply(api_prefix, &addr, version, V1RootApiDoc::openapi()))
                     .into_response()
             }
         },
         Format::Yaml => match version {
             Version::V1 => {
-                Yaml(apply(api_prefix, version, V1RootApiDoc::openapi()))
+                Yaml(apply(api_prefix, &addr, version, V1RootApiDoc::openapi()))
                     .into_response()
             }
         },

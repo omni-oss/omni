@@ -44,6 +44,7 @@ maps = { workspace = true }
 sets = { workspace = true }
 time = { workspace = true }
 axum-test = { workspace = true }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 axum-test = { workspace = true }

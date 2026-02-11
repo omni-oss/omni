@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use axum::{extract::State, response::Html};
 use axum_extra::{response::InternalServerError, routing::TypedPath};
 use serde::{Deserialize, Serialize};
@@ -21,20 +23,16 @@ pub async fn get_scalar_ui(
     State(state): State<ServiceState>,
 ) -> Result<Html<String>, InternalServerError<serde_json::Error>> {
     let doc_uri = format!("/openapi/{version}/{format}");
-    let prefix_path = if let Some(prefix) = state
-        .args
-        .routes
-        .as_ref()
-        .map(|r| r.api_prefix.as_deref().unwrap_or("/api"))
-    {
-        format!("{prefix}/{version}")
+    let listen = if state.args.listen.contains("0.0.0.0") {
+        Cow::Owned(state.args.listen.replace("0.0.0.0", "localhost"))
     } else {
-        version.clone()
+        Cow::Borrowed(&state.args.listen)
     };
+    let protocol = if state.args.secure { "https" } else { "http" };
 
     let json = serde_json::to_string_pretty(&ScalarOptions {
         servers: Some(vec![ScalarServer {
-            url: prefix_path,
+            url: format!("{protocol}://{listen}"),
             ..Default::default()
         }]),
         ..Default::default()

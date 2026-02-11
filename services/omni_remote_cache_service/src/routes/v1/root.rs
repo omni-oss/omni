@@ -18,6 +18,6 @@ pub fn build_router() -> Router<ServiceState> {
     ),
     nest(
         (path = "/artifacts", api = ArtifactsApiDoc),
-    )
+    ),
 )]
 pub struct V1RootApiDoc;
