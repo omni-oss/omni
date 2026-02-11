@@ -91,7 +91,7 @@ impl ChildProcessGuard {
 
         trace::trace!("Starting omni_remote_cache_service at {}", path);
 
-        let child = Command::new(path)
+        let child = Command::new(&path)
             .args([
                 "serve",
                 "--listen",
@@ -116,6 +116,7 @@ impl ChildProcessGuard {
         let client = reqwest::Client::new();
         let mut did_connect = false;
         let mut current_try = 0;
+        let mut error = None;
         const MAX_TRIES: u32 = 10;
         // we're not trying to get a valid response, just to make sure the server is up and can respond
         while current_try < MAX_TRIES {
@@ -126,7 +127,7 @@ impl ChildProcessGuard {
                 }
                 Err(e) => {
                     if e.is_connect() {
-                        eprintln!("Failed to connect to server: {}", e);
+                        error = Some(e);
                     } else {
                         did_connect = true;
                         break;
@@ -138,7 +139,26 @@ impl ChildProcessGuard {
         }
 
         if !did_connect {
-            panic!("Failed to connect to server: {}", api_base_url);
+            let output = child
+                .wait_with_output()
+                .map(|o| {
+                    let stdout = String::from_utf8_lossy(&o.stdout);
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    format!("stdout: {}\nstderr: {}", stdout, stderr)
+                })
+                .unwrap_or_else(|_| String::default());
+
+            if let Some(e) = error {
+                panic!(
+                    "Failed to connect to server ({}) after {} tries\nPath: {}\n{}\n{:#?}",
+                    api_base_url, current_try, path, output, e
+                );
+            } else {
+                panic!(
+                    "Failed to connect to server ({}) after {} tries\nPath: {}\n{}",
+                    api_base_url, current_try, path, output
+                );
+            }
         } else {
             trace::trace!("Connected to server at {}", api_base_url);
         }
