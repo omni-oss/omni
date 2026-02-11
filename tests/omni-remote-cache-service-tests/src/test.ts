@@ -1,5 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import fsSync from "node:fs";
+import { promisify } from "node:util";
 import { test as baseTest } from "vitest";
 
 const ports = new Set<number>();
@@ -58,12 +59,21 @@ export const test = baseTest.extend<{
 
             let omniPath = "";
 
+            const host = await getHost().catch(() => "");
+
             const defaultPath = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
             const lookupPaths =
                 target !== ""
                     ? [
-                          `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`,
-                          defaultPath,
+                          ...(host !== "" && target.includes(host)
+                              ? [defaultPath]
+                              : []),
+                          ...target
+                              .split(";")
+                              .map(
+                                  (target) =>
+                                      `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`,
+                              ),
                       ]
                     : [defaultPath];
 
@@ -134,3 +144,28 @@ export const test = baseTest.extend<{
         { scope: "test", auto: true },
     ],
 });
+
+const execFileAsync = promisify(execFile);
+
+export async function getHost(): Promise<string> {
+    let stdout: string;
+
+    try {
+        ({ stdout } = await execFileAsync("rustc", ["-vV"]));
+    } catch (err) {
+        throw new Error("Failed to run rustc to get the host target", {
+            cause: err,
+        });
+    }
+
+    const field = "host: ";
+    const line = stdout.split("\n").find((l) => l.startsWith(field));
+
+    if (!line) {
+        throw new Error(
+            `\`rustc -vV\` didn't have a line for "${field.trim()}", got:\n${stdout}`,
+        );
+    }
+
+    return line.slice(field.length);
+}
