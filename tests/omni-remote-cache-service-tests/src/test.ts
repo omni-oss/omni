@@ -43,7 +43,7 @@ export const test = baseTest.extend<{
         { scope: "test" },
     ],
     childProcess: [
-        async ({ port }, use) => {
+        async ({ apiBaseUrl, port }, use) => {
             const wsDir = process.env.WORKSPACE_DIR ?? "";
             if (!wsDir) {
                 throw new Error("WORKSPACE_DIR is not set");
@@ -95,8 +95,35 @@ export const test = baseTest.extend<{
                     cwd: process.cwd(),
                 },
             );
-            // add a small delay to ensure the server is ready
-            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // we're not trying to get a successful response, just to make sure the server is up and can respond
+            let currentTry = 0;
+            let didConnect = false;
+            let error: Error | null = null;
+            const MAX_TRIES = 10;
+            while (currentTry < MAX_TRIES) {
+                try {
+                    await fetch(apiBaseUrl);
+                    didConnect = true;
+                    break;
+                } catch (e) {
+                    if (error instanceof Error) {
+                        error = e as Error;
+                    }
+                }
+
+                currentTry++;
+                // add a small delay to ensure the server is ready
+                await new Promise((resolve) => setTimeout(resolve, 100));
+            }
+
+            if (!didConnect) {
+                if (error) {
+                    console.error(error);
+                }
+                throw new Error(`Failed to connect to server: ${apiBaseUrl}`);
+            }
+
             await use(childProcess);
             if (!childProcess.kill("SIGTERM")) {
                 throw new Error(
