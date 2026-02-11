@@ -223,7 +223,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_put_artifact() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -236,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_artifact() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -254,7 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_artifact_not_found() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -266,7 +266,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_artifact_exists() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -283,7 +283,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_artifact_exists_not_found() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -295,7 +295,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_access() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -307,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_access_invalid_api_key() {
-        let guard = ChildProcessGuard::new();
+        let guard = ChildProcessGuard::new().await;
         let client = DefaultRemoteCacheClient::default();
 
         let mut remote = def_remote_access_args(&guard.api_base_url);

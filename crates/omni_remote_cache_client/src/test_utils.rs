@@ -4,9 +4,10 @@ use std::{
     path::Path,
     process::{Child, Command, Stdio},
     sync::{LazyLock, Mutex},
-    thread::sleep,
     time::Duration,
 };
+
+use tokio::time::sleep;
 
 // Track used ports globally
 static PORTS: LazyLock<Mutex<HashSet<u16>>> =
@@ -44,7 +45,7 @@ pub struct ChildProcessGuard {
 }
 
 impl ChildProcessGuard {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         let port_guard = PortGuard::new();
         let port = port_guard.port;
 
@@ -111,8 +112,36 @@ impl ChildProcessGuard {
             .spawn()
             .expect("failed to spawn child process");
 
-        // Give the server time to start
-        sleep(Duration::from_millis(25));
+        // check if the server is up
+        let client = reqwest::Client::new();
+        let mut did_connect = false;
+        let mut current_try = 0;
+        const MAX_TRIES: u32 = 10;
+        // we're not trying to get a valid response, just to make sure the server is up and can respond
+        while current_try < MAX_TRIES {
+            match client.get(&api_base_url).send().await {
+                Ok(_) => {
+                    did_connect = true;
+                    break;
+                }
+                Err(e) => {
+                    if e.is_connect() {
+                        eprintln!("Failed to connect to server: {}", e);
+                    } else {
+                        did_connect = true;
+                        break;
+                    }
+                }
+            }
+            current_try += 1;
+            sleep(Duration::from_millis(100)).await;
+        }
+
+        if !did_connect {
+            panic!("Failed to connect to server: {}", api_base_url);
+        } else {
+            trace::trace!("Connected to server at {}", api_base_url);
+        }
 
         Self {
             child,
