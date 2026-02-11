@@ -45,7 +45,7 @@ pub struct ChildProcessGuard {
 }
 
 impl ChildProcessGuard {
-    pub async fn new() -> Self {
+    pub async fn new(host: &str) -> Self {
         let port_guard = PortGuard::new();
         let port = port_guard.port;
 
@@ -62,18 +62,27 @@ impl ChildProcessGuard {
         };
 
         let mut path = String::new();
+        trace::info!("Host: {}", host);
         let default_path = format!(
             "{}/target/release/omni_remote_cache_service{}",
             ws_dir, ext
         );
         let lookup_paths = if !target.is_empty() {
-            vec![
+            let split = target.split(';').map(|s| {
                 format!(
                     "{}/target/{}/release/omni_remote_cache_service{}",
-                    ws_dir, target, ext
-                ),
-                default_path,
-            ]
+                    ws_dir, s, ext
+                )
+            });
+
+            let mut paths = if target.contains(&host) {
+                vec![default_path]
+            } else {
+                vec![]
+            };
+            paths.extend(split);
+
+            paths
         } else {
             vec![default_path]
         };
@@ -150,13 +159,13 @@ impl ChildProcessGuard {
 
             if let Some(e) = error {
                 panic!(
-                    "Failed to connect to server ({}) after {} tries\nPath: {}\n{}\n{:#?}",
-                    api_base_url, current_try, path, output, e
+                    "Failed to connect to server ({}) after {} tries\nHost: {}\nPath: {}\n{}\n{:#?}",
+                    api_base_url, current_try, host, path, output, e
                 );
             } else {
                 panic!(
-                    "Failed to connect to server ({}) after {} tries\nPath: {}\n{}",
-                    api_base_url, current_try, path, output
+                    "Failed to connect to server ({}) after {} tries\nHost: {}\nPath: {}\n{}",
+                    api_base_url, current_try, host, path, output
                 );
             }
         } else {

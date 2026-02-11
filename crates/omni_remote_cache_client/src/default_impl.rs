@@ -194,7 +194,10 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
 
 #[cfg(test)]
 mod tests {
+    use std::{process::Command, sync::LazyLock};
+
     use bytes::Bytes;
+    use eyre::Context as _;
 
     use crate::{
         DefaultRemoteCacheClient, RemoteAccessArgs, RemoteCacheClient,
@@ -221,9 +224,36 @@ mod tests {
         }
     }
 
+    static HOST: LazyLock<String> =
+        LazyLock::new(|| get_host().expect("can't get host"));
+
+    fn get_host() -> eyre::Result<String> {
+        let output = Command::new("rustc")
+            .arg("-vV")
+            .output()
+            .context("Failed to run rustc to get the host target")?;
+        let output = str::from_utf8(&output.stdout)
+            .context("`rustc -vV` didn't return utf8 output")?;
+
+        let field = "host: ";
+        let host = output
+            .lines()
+            .find(|l| l.starts_with(field))
+            .map(|l| &l[field.len()..])
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "`rustc -vV` didn't have a line for `{}`, got:\n{}",
+                    field.trim(),
+                    output
+                )
+            })?
+            .to_string();
+        Ok(host)
+    }
+
     #[tokio::test]
     async fn test_put_artifact() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -236,7 +266,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_artifact() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -254,7 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_artifact_not_found() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -266,7 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_artifact_exists() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -283,7 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_artifact_exists_not_found() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -295,7 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_access() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -307,7 +337,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_access_invalid_api_key() {
-        let guard = ChildProcessGuard::new().await;
+        let guard = ChildProcessGuard::new(&*HOST).await;
         let client = DefaultRemoteCacheClient::default();
 
         let mut remote = def_remote_access_args(&guard.api_base_url);
