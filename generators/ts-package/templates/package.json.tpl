@@ -42,7 +42,7 @@
         "@types/node": "24.10.1",
             {% if prompts.shebang_executor == 'bun' %}
         "@types/bun": "^1.3.8",
-            {% elif f prompts.shebang_executor == 'deno' %}
+            {% elif prompts.shebang_executor == 'deno' %}
         "@types/deno": "^2.5.0",
             {% endif %}
         {% endif %}
