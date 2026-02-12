@@ -47,6 +47,7 @@ include = [
 ]
 ignore = [
     "crates/omni_remote_cache_storage/**",
+    "crates/bridge_rpc/**",
 ]
 public_api = true
 

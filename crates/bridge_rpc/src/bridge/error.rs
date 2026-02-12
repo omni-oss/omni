@@ -33,6 +33,9 @@ pub(crate) enum BridgeRpcErrorInner {
     #[error("rpc is not running")]
     NotRunning,
 
+    #[error("rpc is already running")]
+    AlreadyRunning,
+
     #[error(transparent)]
     Service(#[from] super::service::error::ServiceError),
 

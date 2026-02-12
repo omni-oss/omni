@@ -1,10 +1,10 @@
 use futures::FutureExt as _;
 use strum::IntoDiscriminant;
-use tokio::sync::mpsc;
 use tokio::sync::{
     Mutex,
     oneshot::{self},
 };
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio_stream::Stream as TokioStream;
 use tracing::Instrument;
@@ -48,6 +48,7 @@ pub struct BridgeRpc<TTransport: Transport, TService: Service> {
     service_tasks: Arc<Mutex<Option<JoinSet<Result<(), ServiceError>>>>>,
     session_manager:
         SessionManager<RequestSessionContext, ResponseSessionContext>,
+    stop_signal_sender: Arc<Mutex<Option<watch::Sender<bool>>>>,
 }
 
 impl<TTransport: Transport, TService: Service> Clone
@@ -62,6 +63,7 @@ impl<TTransport: Transport, TService: Service> Clone
             frame_transporter: self.frame_transporter.clone(),
             service_tasks: self.service_tasks.clone(),
             session_manager: self.session_manager.clone(),
+            stop_signal_sender: self.stop_signal_sender.clone(),
         }
     }
 }
@@ -82,6 +84,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             frame_transporter: Arc::new(Mutex::new(None)),
             service_tasks: Arc::new(Mutex::new(None)),
             session_manager: SessionManager::new(),
+            stop_signal_sender: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -175,11 +178,31 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                 frame_transporter.transport(Frame::close()).await
             }
         )
-        .await
+        .await?;
+
+        if let Some(stop_signal_sender) =
+            self.stop_signal_sender.lock().await.take()
+        {
+            stop_signal_sender.send(true).map_err(|_| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send stop signal"
+                ))
+            })?;
+        }
+
+        Ok(())
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn run(&self) -> BridgeRpcResult<()> {
+        if self.stop_signal_sender.lock().await.is_some() {
+            return Err(BridgeRpcErrorInner::AlreadyRunning)?;
+        }
+
+        let (stop_signal_sender, mut stop_signal_receiver) =
+            watch::channel(false);
+        *self.stop_signal_sender.lock().await = Some(stop_signal_sender);
+
         self.clear_handler_tasks().await?;
 
         let (frame_sender, mut frame_receiver) =
@@ -204,14 +227,14 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                     fut.await
                         .inspect_err(|e| {
                             trace::error!(
-                                "failed to send bytes to transport: {}",
-                                e
+                                error = ?e,
+                                "failed_to_send_bytes_to_transport",
                             )
                         })
                         .ok();
                 }
 
-                trace::trace!("stream data task stopped");
+                trace::trace!("stream_data_task_stopped");
             })
         };
         let abort_handle = task.abort_handle();
@@ -227,21 +250,28 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         if let Some(existing) = existing {
             existing.abort_handle.abort();
 
-            trace::trace!("closing existing bytes worker");
+            trace::trace!("closed_existing_bytes_worker");
         }
 
-        trace::trace!("running rpc");
+        trace::trace!("running_rpc");
 
         loop {
-            let bytes = self.transport.receive().await;
-            let bytes = bytes.map_err(|e| {
-                BridgeRpcErrorInner::new_transport(eyre::eyre!(e.to_string()))
-            })?;
+            tokio::select! {
+                bytes = self.transport.receive() => {
+                    let bytes = bytes.map_err(|e| {
+                        BridgeRpcErrorInner::new_transport(eyre::eyre!(e.to_string()))
+                    })?;
 
-            let result = self.handle_receive(bytes, &frame_sender).await?;
-            if result.is_break() {
-                trace::trace!("received stop signal, stopping rpc loop");
-                break;
+                    let result = self.handle_receive(bytes, &frame_sender).await?;
+                    if result.is_break() {
+                        trace::trace!("received_stop_signal");
+                        break;
+                    }
+                }
+                _ = stop_signal_receiver.changed() => {
+                    trace::trace!("received_stop_signal");
+                    break;
+                }
             }
         }
 
@@ -249,11 +279,13 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         if let Some(bytes_worker) = frame_transporter {
             bytes_worker.abort_handle.abort();
+            trace::trace!("stopped_bytes_worker");
         }
 
         self.clear_handler_tasks().await?;
+        trace::trace!("cleared_service_tasks");
 
-        trace::trace!("stopped rpc");
+        trace::trace!("stopped_rpc");
 
         Ok(())
     }
@@ -313,14 +345,12 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
             for result in results {
                 result.inspect_err(|e| {
-                    trace::error!("stream handler task failed: {}", e);
+                    trace::error!(error = ?e, "stream_handler_task_failed");
                 })?;
             }
         }
 
         _ = self.service_tasks.lock().await.insert(Default::default());
-
-        trace::trace!("cleared service tasks");
 
         Ok(())
     }
@@ -336,7 +366,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         trace::trace!(
             frame_type = ?incoming.discriminant(),
-            "received frame from rpc"
+            "received_frame_from_rpc"
         );
 
         enum Event {
@@ -514,7 +544,15 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     }
 
     async fn handle_close(&self) -> Result<(), BridgeRpcError> {
-        trace::trace!("received close frame, stopping rpc");
+        trace::trace!("received_close_frame");
+        if let Some(stop_signal_) = self.stop_signal_sender.lock().await.take()
+        {
+            stop_signal_.send(true).map_err(|e| {
+                BridgeRpcErrorInner::new_send(eyre::eyre!(
+                    "failed to send stop signal: {e}"
+                ))
+            })?
+        }
         Ok(())
     }
 
@@ -522,23 +560,26 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         &self,
         frame_sender: &mpsc::Sender<Frame>,
     ) -> Result<(), BridgeRpcError> {
-        trace::debug!("received probe, sending probe ack");
+        trace::debug!("received_ping");
         frame_sender.send(Frame::pong()).await.map_err(|_| {
+            trace::error!("failed_to_send_pong");
             BridgeRpcErrorInner::new_send(eyre::eyre!(
                 "failed to send probe ack"
             ))
         })?;
+        trace::trace!("sent_pong");
         Ok(())
     }
 
     async fn handle_pong(&self) -> Result<(), BridgeRpcError> {
-        trace::debug!("received probe ack");
+        trace::debug!("received_pong");
         if let Some(rx) = self.pending_ping.lock().await.take() {
             rx.send(()).map_err(|_| {
                 BridgeRpcErrorInner::new_send(eyre::eyre!(
                     "failed to send probe ack"
                 ))
             })?;
+            trace::trace!("removed_pending_ping_receiver");
         };
         Ok(())
     }
@@ -551,7 +592,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         request_frame_receiver: RequestFrameReceiver,
         request_error_receiver: RequestErrorReceiver,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received request start, starting request session");
+        trace::trace!("received_request_start");
         let service = self.service.clone();
 
         let frame_sender = self.clone_frame_sender().await?;
@@ -567,16 +608,16 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         let response = server::response::PendingResponse::new(id, frame_sender);
 
         self.spawn_service_task(async move {
-            trace::trace!("running service");
+            trace::trace!("running_service");
             let context = ServiceContext::new(request, response);
 
             let result = service.run(context).await;
 
             if let Err(error) = result {
-                trace::error!("service error: {}", error);
+                trace::error!(error = ?error, "service_error");
                 Err(error)?
             } else {
-                trace::trace!("service finished");
+                trace::trace!("service_finished");
                 Ok(())
             }
         })
@@ -589,7 +630,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     where
         F: Future<Output = ServiceResult<()>> + Send + 'static,
     {
-        trace::trace!("spawning service task");
+        trace::trace!("spawning_service_task");
         let mut tasks = self.service_tasks.lock().await;
         let tasks = tasks.get_or_insert_default();
         tasks.spawn(future);
@@ -600,9 +641,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         chunk: Vec<u8>,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!(
-            "received request body chunk, sending request body chunk"
-        );
+        trace::trace!("received_request_body_chunk");
         session
             .lock()
             .await
@@ -611,6 +650,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .send(RequestFrameEvent::new_body_chunk(chunk))
             .await
             .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
+        trace::trace!("sent_request_body_chunk_to_session");
 
         Ok(())
     }
@@ -774,7 +814,7 @@ mod tests {
     use super::super::service::MockService;
     use super::super::utils::serialize;
     use super::*;
-    use crate::MockTransport;
+    use crate::{BridgeRpcErrorKind, MockTransport};
     use ntest::timeout;
     use rmp_serde;
     use tokio::{task::yield_now, time::sleep};
@@ -861,6 +901,15 @@ mod tests {
             );
 
             ready(Ok(()))
+        });
+
+        transport.expect_receive().returning(move || {
+            delayed(
+                Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into()),
+                Duration::from_millis(20),
+            )
         });
 
         let rpc = empty_rpc(transport);
@@ -1206,5 +1255,46 @@ mod tests {
         };
 
         _ = tokio::join!(run, create, close);
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    #[timeout(1000)]
+    async fn test_should_not_all_double_run() {
+        let mut transport = mock_transport();
+
+        transport
+            .expect_send()
+            .returning(|_| delayed(Ok(()), Duration::from_millis(5)));
+
+        transport.expect_receive().returning(move || {
+            delayed(
+                Ok(serialize(&Frame::close())
+                    .expect("Failed to serialize close frame")
+                    .into()),
+                Duration::from_millis(20),
+            )
+        });
+
+        let rpc = empty_rpc(transport);
+
+        let rpc2 = rpc.clone();
+        tokio::spawn(async move {
+            rpc2.run().await.expect("Failed to run RPC");
+            trace::trace!("rpc2 run done");
+        });
+        yield_now().await; // wait for rpc2 to proceed to run
+
+        let result = rpc.run().await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err().kind(),
+            BridgeRpcErrorKind::AlreadyRunning
+        ));
+
+        trace::trace!("test_should_not_all_double_run");
+
+        rpc.close().await.expect("Failed to close RPC");
     }
 }

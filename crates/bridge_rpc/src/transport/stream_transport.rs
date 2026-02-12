@@ -92,25 +92,25 @@ where
         output.write_all(&frame.data).await?;
         trace::trace!(
             bytes_sent = frame.length.len() + frame.data.len(),
-            "sent frame"
+            "sent_frame"
         );
         Ok(())
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(transport_id = ?self.id)))]
     async fn receive(&self) -> Result<Bytes, Self::Error> {
-        trace::trace!("starting receive");
+        trace::trace!("starting_receive");
         // If we have a buffered frame, return it and remove it from the buffer
         if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
-            trace::trace!("got frame from buffer, returning");
+            trace::trace!("got_frame_from_buffer");
             return Ok(frame);
         }
 
         let mut buf = [0; STREAM_BUFFER_SIZE];
         loop {
-            trace::trace!("reading from input");
+            trace::trace!("reading_from_input");
             let n_bytes_read = self.input.lock().await.read(&mut buf).await?;
-            trace::trace!(bytes_read = n_bytes_read, "received bytes");
+            trace::trace!(bytes_read = n_bytes_read, "received_bytes");
 
             if n_bytes_read == 0 {
                 let mut read_framer = self.read_framer.lock().await;
@@ -123,10 +123,10 @@ where
                 if let Some(frame) =
                     self.buffered_frames.lock().await.pop_front()
                 {
-                    trace::trace!("got frame from buffer, returning");
+                    trace::trace!("got_frame_from_buffer");
                     return Ok(frame);
                 } else {
-                    trace::error!("no frame found, returning end of stream");
+                    trace::error!("no_frame_found_returning_end_of_stream");
                     return Err(StreamTransportErrorInner::EndOfStream.into());
                 }
             }
@@ -140,12 +140,12 @@ where
             if let Some(frame) = frame
                 && !frame.is_empty()
             {
-                trace::trace!("completed frame from framer, add to buffer");
+                trace::trace!("completed_frame_from_framer");
                 self.buffered_frames.lock().await.extend(frame);
             }
 
             if let Some(frame) = self.buffered_frames.lock().await.pop_front() {
-                trace::trace!("got frame from buffer, returning");
+                trace::trace!("got_frame_from_buffer");
                 return Ok(frame);
             }
         }
