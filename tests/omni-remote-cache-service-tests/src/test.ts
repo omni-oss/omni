@@ -165,17 +165,19 @@ export const test = baseTest.extend<{
                 );
             }
 
-            await use(childProcess);
+            try {
+                await use(childProcess);
+            } finally {
+                const result = childProcess.kill("SIGTERM");
+                await sleep(100);
 
-            const result = childProcess.kill("SIGTERM");
-            await sleep(100);
-
-            if (
-                !result &&
-                childProcess.exitCode !== null &&
-                !childProcess.killed
-            ) {
-                childProcess.kill("SIGKILL");
+                if (
+                    !result &&
+                    childProcess.exitCode !== null &&
+                    !childProcess.killed
+                ) {
+                    childProcess.kill("SIGKILL");
+                }
             }
         },
         { scope: "test", auto: true },
