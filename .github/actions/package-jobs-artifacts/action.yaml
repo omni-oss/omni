@@ -60,21 +60,36 @@ runs:
                   { data: artifacts.project, base: path.join(repoRoot, project_dir) },
               ];
 
+              const fullTaskName = `${job.task_name}#${job.project_name}`;
+              core.info(`Collecting artifacts for ${fullTaskName}`);
+
               for (const cat of categories) {
+                  console.log(`Base dir: ${cat.base}`);
                   if (cat.data && cat.data.files_count > 0) {
                       const zipName = getZipName(cat.data);
                       const zipPath = path.join(outdir, zipName);
 
-                      const globber = await glob.create(cat.data.files.join('\n'), { matchDirectories: false });
+                      const patterns = cat.data.files.map((f) => path.join(cat.base, f)).join('\n');
+
+                      core.info(`Discovering files for ${cat.data.name} from job ${fullTaskName} using:\n${patterns}`);
+
+                      const globber = await glob.create(patterns, { matchDirectories: false });
                       const files = await globber.glob();
 
                       if (files.length > 0) {
-                          const relativeFiles = files.map(f => path.relative(cat.base, f));
+                          const relativeFiles = files.map((f) => {
+                              if (path.isAbsolute(f)) {
+                                  return path.relative(cat.base, f);
+                              } else {
+                                  return f;
+                              }
+                          });
+                          core.info(`Creating ${zipName} from files: \n${relativeFiles.join('\n')}`);
 
                           if (isWindows) {
                               // Windows: Use PowerShell Compress-Archive
                               // We join files with commas for the PowerShell array syntax
-                              const filesList = relativeFiles.map(f => `'${f}'`).join(',');
+                              const filesList = relativeFiles.join(',');
                               const psCommand = `Compress-Archive -Path ${filesList} -DestinationPath '${zipPath}' -Force`;
                               await exec.exec('powershell', ['-Command', psCommand], { cwd: cat.base });
                           } else {
@@ -83,7 +98,11 @@ runs:
                           }
 
                           createdZips.push(zipPath);
+                      } else {
+                          core.info(`No files discovered for ${cat.data.name} from job ${fullTaskName}`);
                       }
+                  } else {
+                      core.info(`No files found for ${cat.data.name} from job ${fullTaskName}`);
                   }
               }
           }
