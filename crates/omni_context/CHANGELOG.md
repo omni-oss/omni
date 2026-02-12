@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.1.2 - 2026-02-12
+#### Bug Fixes
+- support --inherit-env-vars flag in env subcommand - (e42f576) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.1.1 - 2026-02-04
 #### Bug Fixes
 - improve error message when extended config is missing - (820c1ae) - Clarence Manuel

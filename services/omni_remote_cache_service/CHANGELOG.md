@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_service-v0.1.1 - 2026-02-12
+#### Bug Fixes
+- (**omni_remote_cache_service**) openapi server url - (9ac06e2) - Clarence Manuel
+#### Continuous Integration
+- (**omni_remote_cache_service**) use rust-multiplaform preset - (ed86c20) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_remote_cache_service**) update targets - (5d88569) - Clarence Manuel
+- update rust project presets - (3271200) - Clarence Manuel
+- add target metadata to rust binary projects [skip ci] - (aeb9ea8) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_service-v0.1.0 - 2026-01-31
 #### Features
 - (**omni-remote-cache-service-tests**) add api tests - (4d52766) - Clarence Manuel

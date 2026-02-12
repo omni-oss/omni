@@ -2,6 +2,26 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.3.1 - 2026-02-12
+#### Bug Fixes
+- (**omni_remote_cache_service**) openapi server url - (9ac06e2) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (ab69598) - Clarence Manuel
+- update omni version [skip ci] - (705026b) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_remote_cache_client**) add timeout in tests - (85a30b2) - Clarence Manuel
+- (**version**) v0.5.7 - (56e7b33) - Clarence Manuel
+- (**version**) v0.5.6 - (213e5a1) - Clarence Manuel
+- (**version**) v0.5.5 - (a2a9ee0) - Clarence Manuel
+- (**version**) v0.5.4 - (812f1a3) - Clarence Manuel
+- (**version**) v0.5.3 - (6b06f95) - Clarence Manuel
+- (**version**) v0.5.2 - (4fadfff) - Clarence Manuel
+- (**version**) v0.5.1 - (23aa5b3) - Clarence Manuel
+- update Cargo.lock - (d0695db) - Clarence Manuel
+- improve rust-multiplatform preset - (4d46a14) - Clarence Manuel
+
+- - -
+
 ## root-v0.3.0 - 2026-02-08
 #### Features
 - (**@omni-oss/site**) initial new docs - (020751a) - Clarence Manuel

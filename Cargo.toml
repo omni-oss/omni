@@ -14,7 +14,7 @@ description = "A build system for the modern age"
 categories = []
 rust-version = "1.93.0"
 edition = "2024"
-version = "0.5.7"
+version = "0.5.8"
 authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 
 [workspace.dependencies]

@@ -2,6 +2,37 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.5.8 - 2026-02-12
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.8
+- omni bumped to omni-v0.5.4
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.1.1
+- omni_cli_core bumped to omni_cli_core-v0.5.4
+- omni_context bumped to omni_context-v0.1.2
+- root bumped to root-v0.3.1
+### Global changes
+#### Bug Fixes
+- (**omni_remote_cache_service**) openapi server url - (9ac06e2) - Clarence Manuel
+#### Continuous Integration
+- improve package action - (db26ac4) - Clarence Manuel
+- add support for crossplatform build in setup-tools - (bff3ef7) - Clarence Manuel
+- add support for crossplatform build in setup-tools - (c159f74) - Clarence Manuel
+- add support for crossplatform testing - (a3347e7) - Clarence Manuel
+- readd env in ci - (f90565d) - Clarence Manuel
+- set inherit env vars - (b2fff22) - Clarence Manuel
+- update package-jobs-artifacts action - (178741e) - Clarence Manuel
+- update omni version [skip ci] - (ab69598) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/omni-remote-cache-service-tests**) add finalizer - (4c0bdb8) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) update tests - (fd4aa00) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) update tests - (2858184) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) improve logging on failure - (c7ea68f) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) add checking host target - (e67dd82) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) update test reliability - (966e009) - Clarence Manuel
+- (**omni_remote_cache_client**) add timeout in tests - (85a30b2) - Clarence Manuel
+
+- - -
+
 ## v0.5.7 - 2026-02-10
 ### Package updates
 - omni_cli_core bumped to omni_cli_core-v0.5.3

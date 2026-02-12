@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.5.4 - 2026-02-12
+#### Bug Fixes
+- support --inherit-env-vars flag in env subcommand - (e42f576) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_remote_cache_client**) add timeout in tests - (85a30b2) - Clarence Manuel
+- (**omni_remote_cache_client**) update crossplatform testing - (83fde88) - Clarence Manuel
+- (**omni_remote_cache_client**) update test failure logs - (fdda3f3) - Clarence Manuel
+- (**omni_remote_cache_client**) update test reliability - (f611fce) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.5.3 - 2026-02-10
 #### Bug Fixes
 - (**omni_core**) remove buggy extension graph linearization - (7d453fc) - Clarence Manuel
