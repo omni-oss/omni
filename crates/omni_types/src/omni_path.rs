@@ -69,6 +69,12 @@ impl<TRoot: OmniPathRoot> Default for OmniPath<TRoot> {
     }
 }
 
+impl<TRoot: OmniPathRoot> From<&OmniPath<TRoot>> for OmniPath<TRoot> {
+    fn from(value: &OmniPath<TRoot>) -> Self {
+        value.clone()
+    }
+}
+
 #[cfg(feature = "schemars")]
 impl<T: OmniPathRoot> schemars::JsonSchema for OmniPath<T> {
     fn schema_name() -> std::borrow::Cow<'static, str> {

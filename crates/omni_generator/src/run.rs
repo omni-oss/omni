@@ -15,6 +15,7 @@ use crate::{
     GeneratorSys,
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
+    gen_session::GenSession,
     sys_impl::DryRunSys,
     utils::{expand_json_value, get_tera_context},
 };
@@ -37,7 +38,7 @@ pub async fn run<'a>(
     generator_patterns: &'a [String],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
-) -> Result<(), Error> {
+) -> Result<GenSession, Error> {
     let generators =
         crate::discover(config.workspace_dir, generator_patterns, sys).await?;
 
@@ -58,12 +59,10 @@ pub async fn run<'a>(
 
     if config.dry_run {
         let sys = DryRunSys::default();
-        run_internal(&generator, &generators, config, &sys).await?;
+        run_internal(&generator, &generators, config, &sys).await
     } else {
-        run_internal(&generator, &generators, config, sys).await?;
+        run_internal(&generator, &generators, config, sys).await
     }
-
-    Ok(())
 }
 
 pub(crate) async fn run_internal<'a>(
@@ -71,8 +70,11 @@ pub(crate) async fn run_internal<'a>(
     available_generators: &[GeneratorConfiguration],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
-) -> Result<(), Error> {
+) -> Result<GenSession, Error> {
     let prompting_config = PromptingConfiguration::default();
+
+    let session =
+        GenSession::new(config.target_overrides.clone(), Default::default());
 
     let mut values = omni_prompt::prompt(
         &r#gen.prompts,
@@ -88,7 +90,7 @@ pub(crate) async fn run_internal<'a>(
         }
     }
 
-    trace::trace!("prompt values: {:#?}", values);
+    trace::trace!(?values, "prompt_values");
 
     let mut context_values = config.context_values.clone();
 
@@ -122,9 +124,11 @@ pub(crate) async fn run_internal<'a>(
         env: config.env,
     };
 
-    execute_actions(&args, sys).await?;
+    execute_actions(&args, &session, sys).await?;
 
-    Ok(())
+    session.set_prompts(values);
+
+    Ok(session)
 }
 
 fn expand_vars(

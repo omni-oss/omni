@@ -18,6 +18,7 @@ use crate::{
     GeneratorSys,
     action_handlers::HandlerContext,
     error::{Error, ErrorInner},
+    gen_session::GenSession,
     utils::expand_json_value,
 };
 
@@ -188,6 +189,7 @@ pub async fn get_target_dir<'a>(
     target_overrides: &'a UnorderedMap<String, OmniPath>,
     generator_targets: &'a UnorderedMap<String, OmniPath>,
     output_dir: &Path,
+    prompted_values: &GenSession,
     _sys: &impl GeneratorSys,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
@@ -230,7 +232,11 @@ pub async fn get_target_dir<'a>(
             trace::error!("invalid target dir: {}", err);
         }
 
-        break Ok(Cow::Owned(OmniPath::new(path)));
+        let path = OmniPath::new(path);
+
+        prompted_values.add_target(target_name.to_string(), &path);
+
+        break Ok(Cow::Owned(path));
     }
 }
 
@@ -356,6 +362,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     ctx: &HandlerContext<'a>,
     strip_extensions: &'a [TExt],
     flatten: bool,
+    prompted_values: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
@@ -365,6 +372,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
                 &ctx.target_overrides,
                 &ctx.generator_targets,
                 ctx.output_path,
+                prompted_values,
                 sys,
             )
             .await?,

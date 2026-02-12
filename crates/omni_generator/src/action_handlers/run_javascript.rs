@@ -19,7 +19,7 @@ pub async fn run_javascript<'a>(
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let script_path = ctx.generator_dir.join(&config.script);
-    let tp = target_path(&config.common, ctx, sys).await?;
+    let tp = target_path(&config.common, ctx, ctx.gen_session, sys).await?;
     let relative_path = pathdiff::diff_paths(&script_path, &tp);
     let command = build_cmd(
         config.runtime,

@@ -56,3 +56,4 @@ omni_utils = { workspace = true }
 env = { workspace = true }
 which = { workspace = true }
 pathdiff = { workspace = true }
+serde = { workspace = true }

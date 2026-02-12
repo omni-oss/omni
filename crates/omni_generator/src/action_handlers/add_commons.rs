@@ -33,6 +33,7 @@ where
         ctx,
         &["tpl"],
         flatten,
+        ctx.gen_session,
         sys,
     )
     .await?;

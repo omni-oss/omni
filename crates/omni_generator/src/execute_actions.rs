@@ -17,6 +17,7 @@ use crate::{
         run_generator, run_javascript,
     },
     error::{Error, ErrorInner},
+    gen_session::GenSession,
     utils::get_tera_context,
 };
 
@@ -38,6 +39,7 @@ pub struct ExecuteActionsArgs<'a> {
 
 pub async fn execute_actions<'a>(
     args: &ExecuteActionsArgs<'a>,
+    prompted_values: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let mut tera_context = get_tera_context(args.context_values);
@@ -81,6 +83,7 @@ pub async fn execute_actions<'a>(
             resolved_action_name: action_name.as_str(),
             current_dir: args.current_dir,
             env: args.env,
+            gen_session: prompted_values,
         };
 
         let in_progress_message =

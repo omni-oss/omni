@@ -2,17 +2,19 @@ use std::path::{Path, PathBuf};
 
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
+use either::Left;
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
-use omni_generator::RunConfig;
+use omni_generator::{GenSession, RunConfig};
 use omni_generator_configurations::{OmniPath, OverwriteConfiguration};
 use omni_prompt::configuration::{
-    BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
-    PromptingConfiguration, SelectPromptConfiguration, TextPromptConfiguration,
-    ValidatedPromptConfiguration,
+    BasePromptConfiguration, ConfirmPromptConfiguration, OptionConfiguration,
+    PromptConfiguration, PromptingConfiguration, SelectPromptConfiguration,
+    TextPromptConfiguration, ValidatedPromptConfiguration,
 };
 use owo_colors::OwoColorize;
+use system_traits::{FsCreateDirAllAsync, FsMetadataAsync};
 use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(Debug, Clone, clap::Args)]
@@ -82,6 +84,15 @@ pub struct GeneratorRunArgs {
         value_enum
     )]
     pub overwrite: Option<EnumValueAdapter<OverwriteConfiguration>>,
+
+    #[arg(
+        long,
+        help = "Save prompts and targets to the output directory so they can be reused future invocations"
+    )]
+    pub save_session: Option<bool>,
+
+    #[arg(long, help = "Don't load the session from the output directory")]
+    pub ignore_session: Option<bool>,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -117,6 +128,8 @@ async fn run_generator_run(
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
     let workspace_dir = loaded_context.root_dir();
+    const GENERATOR_OUTPUT_DIR: &str = ".omni";
+    const GENERATOR_OUTPUT_FILE: &str = ".omni/generator.json";
 
     let (output_dir, project) =
         match (command.args.output.clone(), &command.args.project) {
@@ -140,9 +153,12 @@ async fn run_generator_run(
             }
         };
 
+    let gen_output_dir = output_dir.join(GENERATOR_OUTPUT_DIR);
+    let file = output_dir.join(GENERATOR_OUTPUT_FILE);
+
     trace::trace!("Generator output directory: {}", output_dir.display());
 
-    let pre_exec_values = get_prompt_values(&command.args.value);
+    let mut pre_exec_values = get_prompt_values(&command.args.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
 
     let mut context_values = unordered_map!();
@@ -161,7 +177,18 @@ async fn run_generator_run(
         );
     }
 
-    let target_overrides = get_target_overrides(&command.args.target);
+    let mut target_overrides = get_target_overrides(&command.args.target);
+
+    let mut has_exiting_session = false;
+    let sys = loaded_context.sys();
+    if !command.args.ignore_session.unwrap_or(false)
+        && sys.fs_exists_no_err_async(&file).await
+    {
+        let session = GenSession::from_disk(file.as_path(), sys).await?;
+        has_exiting_session = true;
+        session.restore_targets(&mut target_overrides, false);
+        session.restore_prompts(&mut pre_exec_values, false);
+    }
 
     let default_map = Map::default();
 
@@ -177,13 +204,31 @@ async fn run_generator_run(
         env: &env.as_deref().unwrap_or(&default_map),
     };
 
-    omni_generator::run(
+    let session = omni_generator::run(
         command.args.name.as_deref(),
         &ctx.workspace_configuration().generators,
         &run,
         loaded_context.sys(),
     )
     .await?;
+
+    if !command.args.dry_run {
+        let save = if let Some(save) = command.args.save_session {
+            save
+        } else if has_exiting_session {
+            true
+        } else {
+            prompt_save_prompts()?
+        };
+
+        if save {
+            if !sys.fs_exists_no_err_async(&gen_output_dir).await {
+                sys.fs_create_dir_all_async(&gen_output_dir).await?;
+            }
+
+            session.write_to_disk(file.as_path(), sys).await?;
+        }
+    }
 
     Ok(())
 }
@@ -316,6 +361,37 @@ fn prompt_output_dir(
             "invalid value for output_dir_or_project: {value}"
         ))
     }
+}
+
+fn prompt_save_prompts() -> eyre::Result<bool> {
+    let context_values = unordered_map!();
+    let prompting_config = PromptingConfiguration::default();
+
+    let prompt = PromptConfiguration::new_confirm(
+        ConfirmPromptConfiguration::new(
+            BasePromptConfiguration::new(
+                "save_prompts",
+                "Would you like to save prompts and targets to the output directory?",
+                Some(Left(true)),
+            ),
+            Some(Left(true)),
+        ),
+    );
+
+    let value = omni_prompt::prompt_one(
+        &prompt,
+        None,
+        &context_values,
+        &prompting_config,
+    )?
+    .expect("should have value at this point");
+
+    let value = value
+        .by_ref()
+        .to_bool()
+        .ok_or_else(|| eyre::eyre!("value is not boolean"))?;
+
+    Ok(value)
 }
 
 async fn run_generator_list(

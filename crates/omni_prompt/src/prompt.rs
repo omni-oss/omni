@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::{
     configuration::{
         ConfirmPromptConfiguration, FloatNumberPromptConfiguration,
@@ -116,52 +114,53 @@ fn get_value(
     pre_exec_value: Option<&OwnedValueBag>,
 ) -> Result<OwnedValueBag, Error> {
     let value = if let Some(pre_exec_value) = pre_exec_value {
-        let value = match prompt.discriminant() {
-            crate::configuration::PromptType::Confirm => {
-                let bool = try_parse_value::<bool>(pre_exec_value.by_ref())
-                    .ok_or_else(|| {
-                        make_prompt_type_error(
-                            key,
-                            pre_exec_value.by_ref(),
-                            "boolean",
-                        )
-                    })?;
+        let value =
+            match prompt.discriminant() {
+                crate::configuration::PromptType::Confirm => {
+                    let bool = try_parse_bool(pre_exec_value.by_ref())
+                        .ok_or_else(|| {
+                            make_prompt_type_error(
+                                key,
+                                pre_exec_value.by_ref(),
+                                "boolean",
+                            )
+                        })?;
 
-                ValueBag::capture_serde1(&bool).to_owned()
-            }
-            crate::configuration::PromptType::Float => {
-                let float = try_parse_value::<f64>(pre_exec_value.by_ref())
-                    .ok_or_else(|| {
-                        make_prompt_type_error(
-                            key,
-                            pre_exec_value.by_ref(),
-                            "float",
-                        )
-                    })?;
+                    ValueBag::capture_serde1(&bool).to_owned()
+                }
+                crate::configuration::PromptType::Float => {
+                    let float = try_parse_float(pre_exec_value.by_ref())
+                        .ok_or_else(|| {
+                            make_prompt_type_error(
+                                key,
+                                pre_exec_value.by_ref(),
+                                "float",
+                            )
+                        })?;
 
-                ValueBag::capture_serde1(&float).to_owned()
-            }
-            crate::configuration::PromptType::Integer => {
-                let int = try_parse_value::<i64>(pre_exec_value.by_ref())
-                    .ok_or_else(|| {
-                        make_prompt_type_error(
-                            key,
-                            pre_exec_value.by_ref(),
-                            "integer",
-                        )
-                    })?;
+                    ValueBag::capture_serde1(&float).to_owned()
+                }
+                crate::configuration::PromptType::Integer => {
+                    let int = try_parse_int(pre_exec_value.by_ref())
+                        .ok_or_else(|| {
+                            make_prompt_type_error(
+                                key,
+                                pre_exec_value.by_ref(),
+                                "integer",
+                            )
+                        })?;
 
-                ValueBag::capture_serde1(&int).to_owned()
-            }
+                    ValueBag::capture_serde1(&int).to_owned()
+                }
 
-            // these types don't need to be transformed
-            crate::configuration::PromptType::Select
-            | crate::configuration::PromptType::MultiSelect
-            | crate::configuration::PromptType::Text
-            | crate::configuration::PromptType::Password => {
-                pre_exec_value.clone()
-            }
-        };
+                // these types don't need to be transformed
+                crate::configuration::PromptType::Select
+                | crate::configuration::PromptType::MultiSelect
+                | crate::configuration::PromptType::Text
+                | crate::configuration::PromptType::Password => {
+                    pre_exec_value.clone()
+                }
+            };
         let result = validate_value(
             key,
             &value,
@@ -186,20 +185,37 @@ fn get_value(
     Ok(value)
 }
 
-fn try_parse_value<'a, T: FromStr + Clone + 'static>(
-    value: ValueBag<'a>,
-) -> Option<T> {
-    if value.is::<T>() {
-        return Some(
-            value
-                .downcast_ref::<T>()
-                .expect("should be downcasted")
-                .clone(),
-        );
+fn try_parse_bool<'a>(value: ValueBag<'a>) -> Option<bool> {
+    if let Some(value) = value.to_bool() {
+        return Some(value);
     }
 
     if let Some(value) = value.to_str() {
-        return Some(T::from_str(&value).ok()?);
+        return Some(value.parse::<bool>().ok()?);
+    }
+
+    None
+}
+
+fn try_parse_float<'a>(value: ValueBag<'a>) -> Option<f64> {
+    if let Some(value) = value.to_f64() {
+        return Some(value);
+    }
+
+    if let Some(value) = value.to_str() {
+        return Some(value.parse::<f64>().ok()?);
+    }
+
+    None
+}
+
+fn try_parse_int<'a>(value: ValueBag<'a>) -> Option<i64> {
+    if let Some(value) = value.to_i64() {
+        return Some(value);
+    }
+
+    if let Some(value) = value.to_str() {
+        return Some(value.parse::<i64>().ok()?);
     }
 
     None

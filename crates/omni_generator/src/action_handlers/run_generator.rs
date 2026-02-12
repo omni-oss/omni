@@ -63,13 +63,17 @@ pub async fn run_generator<'a>(
         env: ctx.env,
     };
 
-    Box::pin(run_internal(
+    let prompted_values = Box::pin(run_internal(
         generator,
         ctx.available_generators,
         &run_config,
         sys,
     ))
-    .await
+    .await?;
+
+    ctx.gen_session.merge(prompted_values);
+
+    Ok(())
 }
 
 fn resolve_prompt_values<'a>(

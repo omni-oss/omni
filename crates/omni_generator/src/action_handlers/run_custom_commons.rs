@@ -11,11 +11,13 @@ use crate::{
         utils::{get_bases, get_target_dir},
     },
     error::{Error, ErrorInner},
+    gen_session::GenSession,
 };
 
 pub async fn target_path(
     common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'_>,
+    prompted_values: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let bases = get_bases(ctx);
@@ -25,6 +27,7 @@ pub async fn target_path(
             ctx.target_overrides,
             ctx.generator_targets,
             ctx.output_path,
+            prompted_values,
             sys,
         )
         .await?;
@@ -48,7 +51,8 @@ pub async fn run_custom_commons<'a>(
     let target = if let Some(target_path) = target_path {
         target_path
     } else {
-        __s_target = self::target_path(common, ctx, sys).await?;
+        __s_target =
+            self::target_path(common, ctx, ctx.gen_session, sys).await?;
 
         &__s_target
     };
