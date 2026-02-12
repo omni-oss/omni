@@ -46,7 +46,7 @@ describe("v1.artifacts.api", () => {
     });
 
     test("get artifact not found", async ({ apiBaseUrl }) => {
-        const response = await getArtifact(apiBaseUrl);
+        const response = await getArtifact(apiBaseUrl, crypto.randomUUID());
 
         expect(response.status).toBe(404);
     });
@@ -60,7 +60,7 @@ describe("v1.artifacts.api", () => {
     });
 
     test("artifact exists not found", async ({ apiBaseUrl }) => {
-        const response = await headArtifact(apiBaseUrl);
+        const response = await headArtifact(apiBaseUrl, crypto.randomUUID());
 
         expect(response.status).toBe(404);
     });
