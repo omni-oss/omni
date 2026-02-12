@@ -119,7 +119,8 @@ runs:
         fi
 
         echo "cross_compile=$CROSS_COMPILE" >> $GITHUB_OUTPUT
-        echo "host=$HOST_TARGET" >> $GITHUB_OUTPUT
+        echo "host=$HOST" >> $GITHUB_OUTPUT
+        echo "target=$TARGET" >> $GITHUB_OUTPUT
 
         echo "Host: $HOST"
         echo "Target: $TARGET"
@@ -134,17 +135,19 @@ runs:
       shell: bash
       run: |
         # Install OpenSSL for x86_64 architecture
-        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
-        arch -x86_64 /usr/local/bin/brew install openssl@3
+        # arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+        # arch -x86_64 /usr/local/bin/brew install openssl@3
 
         # Set environment variables for the build
-        echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
-        echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
-        echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
-        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
+        # echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
+        # echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
+        # echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
+        # echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+        # echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
 
-    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && inputs.rust-target == 'aarch64-unknown-linux-gnu' }}
+        # echo "Installed OpenSSL for x86_64 architecture (macOS)"
+
+    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && steps.rust-info.outputs.host == 'x86_64-unknown-linux-gnu' && contains(inputs.rust-target, 'aarch64-unknown-linux-gnu') }}
       uses: taiki-e/install-action@v2
       with:
         tool: cross
