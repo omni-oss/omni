@@ -47,28 +47,14 @@ jobs:
             target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
+          # - os: windows-latest
+          #   target: aarch64-pc-windows-msvc
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: omni-${{ inputs.version }}
-
-      - name: Setup OpenSSL (macOS x86_64 target only)
-        if: matrix.os == 'macos-latest' && matrix.target == 'x86_64-apple-darwin'
-        run: |
-          # Install OpenSSL for x86_64 architecture
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
-          arch -x86_64 /usr/local/bin/brew install openssl@3
-
-          # Set environment variables for the build
-          echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -93,6 +79,10 @@ jobs:
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             cross build --release -p omni --target ${{ matrix.target }} --features vendored-openssl
+          elif [[ "${{ matrix.target }}" == "x86_64-apple-darwin" ]]; then
+            cargo build --release -p omni --target ${{ matrix.target }} --features vendored-openssl
+          elif [[ "${{ matrix.target }}" == "aarch64-pc-windows-msvc" ]]; then
+            cargo build --release -p omni --target ${{ matrix.target }} --features vendored-openssl
           else
             cargo build --release -p omni --target ${{ matrix.target }}
           fi
