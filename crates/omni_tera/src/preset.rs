@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::LazyLock};
+use std::{collections::HashMap, path::Path, sync::LazyLock};
 
 use heck::*;
 use tera::{Result, Tera, Value, to_value, try_get_value};
@@ -22,6 +22,8 @@ fn register_all_filters(tera: &mut Tera) {
     tera.register_filter("shouty_snake_case", shouty_snake_case);
     tera.register_filter("title_case", title_case);
     tera.register_filter("shouty_kebab_case", shouty_kebab_case);
+    tera.register_filter("base_name", base_name);
+    tera.register_filter("relative_path", relative_path);
 }
 
 pub fn upper_camel_case(
@@ -66,4 +68,26 @@ pub fn shouty_kebab_case(
 ) -> Result<Value> {
     let s = try_get_value!("shouty_kebab_case", "value", String, value);
     Ok(to_value(s.to_shouty_kebab_case()).unwrap())
+}
+
+pub fn base_name(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("base_name", "value", String, value);
+    let path = Path::new(&s);
+    Ok(to_value(path.file_name()).unwrap())
+}
+
+pub fn relative_path(
+    value: &Value,
+    args: &HashMap<String, Value>,
+) -> Result<Value> {
+    let s = try_get_value!("relative_path", "value", String, value);
+    let path = Path::new(&s);
+    let root = Path::new(args["root"].as_str().ok_or_else(|| {
+        tera::Error::msg("missing root argument or invalid type, must be present and be a string")
+    })?);
+    let relative_path = pathdiff::diff_paths(path, root).ok_or_else(|| {
+        tera::Error::msg("unable to find relative path between root and path")
+    })?;
+
+    Ok(to_value(relative_path).unwrap())
 }
