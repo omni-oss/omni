@@ -89,7 +89,7 @@ export const test = baseTest.extend<{
 
             if (omniPath.trim() === "") {
                 throw new Error(
-                    `Could not find omni_remote_cache_service${ext} in: ${lookupPaths.join(
+                    `Could not find omni_remote_cache_service${ext} in: \n${lookupPaths.join(
                         "\n",
                     )}\n${compileInfo}`,
                 );

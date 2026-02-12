@@ -15,7 +15,7 @@ const BODY = JSON.stringify({
     },
 });
 
-describe.sequential("v1.artifacts.api", () => {
+describe("v1.artifacts.api", () => {
     test("put artifact", async ({ apiBaseUrl }) => {
         const response = await putArtifact(apiBaseUrl);
 
