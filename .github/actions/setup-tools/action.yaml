@@ -103,8 +103,7 @@ runs:
       shell: bash
       id: rust-info
       run: |
-        HOST_TARGET=$(rustc -Vv | grep host | cut -d ' ' -f2)
-        echo "host_target=$HOST_TARGET" >> $GITHUB_ENV
+        HOST=$(rustc -Vv | grep host | cut -d ' ' -f2)
 
         # Logical check for installation intent
         INSTALL_REQUESTED="${{ inputs.install-all == 'true' || inputs.install-rust == 'true' }}"
@@ -113,7 +112,7 @@ runs:
 
         if [[ "$INSTALL_REQUESTED" == "true" ]] && \
           [[ -n "$TARGET" && "$TARGET" != "null" ]] && \
-          [[ "$TARGET" != "$HOST_TARGET" ]]; then
+          [[ "$TARGET" != "$HOST" ]]; then
           CROSS_COMPILE=true
         else
           CROSS_COMPILE=false
@@ -122,13 +121,28 @@ runs:
         echo "cross_compile=$CROSS_COMPILE" >> $GITHUB_OUTPUT
         echo "host=$HOST_TARGET" >> $GITHUB_OUTPUT
 
-        echo "Host: $HOST_TARGET"
+        echo "Host: $HOST"
         echo "Target: $TARGET"
         echo "Cross Compile: $CROSS_COMPILE"
 
     - if: ${{ steps.rust-info.outputs.cross_compile == 'true' }}
       shell: bash
       run: rustup target add ${{ inputs.rust-target }}
+
+    - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && steps.rust-info.outputs.host == 'aarch64-apple-darwin' && contains(inputs.rust-target, 'x86_64-apple-darwin') }}
+      name: Install OpenSSL for x86_64 architecture (macOS)
+      shell: bash
+      run: |
+        # Install OpenSSL for x86_64 architecture
+        arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
+        arch -x86_64 /usr/local/bin/brew install openssl@3
+
+        # Set environment variables for the build
+        echo "OPENSSL_DIR=/usr/local/opt/openssl@3" >> $GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@3/include" >> $GITHUB_ENV
+        echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl@3/lib" >> $GITHUB_ENV
+        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/local/opt/openssl@3/lib/pkgconfig" >> $GITHUB_ENV
 
     - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && inputs.rust-target == 'aarch64-unknown-linux-gnu' }}
       uses: taiki-e/install-action@v2
