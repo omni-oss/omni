@@ -40,22 +40,30 @@ runs:
       id: create_restore_key_list
       env:
         RAW_RESTORE_KEY_LIST: ${{ inputs.cache-restore-key-prefixes }}
+        CACHE_KEY_PREFIX: ${{ inputs.cache-key-prefix }}
+        RUNNER_OS: ${{ runner.os }}
       run: |
-        # Define a literal newline
-        NL=$'\n'
+        # check if $RAW_RESTORE_KEY_LIST is empty
+        if [ -z "$RAW_RESTORE_KEY_LIST" ]; then
+          res="${RUNNER_OS}-omni-${CACHE_KEY_PREFIX}-"
+          echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$res" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        else
+          # Define a literal newline
+          NL=$'\n'
 
-        res="${{ runner.os }}-omni-${{ inputs.cache-key-prefix }}"
+          for prefix in $RAW_RESTORE_KEY_LIST; do
+            # Use the variable for clean concatenation
+            res="${res}${NL}${RUNNER_OS}-omni-$prefix-"
+          done
 
-        for prefix in $RAW_RESTORE_KEY_LIST; do
-          # Use the variable for clean concatenation
-          res="${res}${NL}${{ runner.os }}-omni-$prefix-"
-        done
+          res="${res}${NL}${RUNNER_OS}-omni-"
 
-        res="${res}${NL}${{ runner.os }}-omni-"
-
-        echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
-        echo "$res" >> "$GITHUB_OUTPUT"
-        echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "restore_key_list<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$res" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+        fi
         echo "Restore Key List: $res"
 
     - name: Cache Omni directory

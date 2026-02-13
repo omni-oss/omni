@@ -20,16 +20,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  restore-key-prefixes: |
-    publish_rust_github
-    publish_generic
-    publish_npm
-    build_rust
-    build_typescript
-    test_rust
-    test_typescript
-
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -59,7 +49,15 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           cache-key-prefix: plan
-          cache-restore-key-prefixes: ${{ env.restore-key-prefixes }}
+          cache-restore-key-prefixes: |
+            publish_rust_github
+            publish_generic
+            publish_npm
+            build_rust
+            build_typescript
+            test_rust
+            test_typescript
+            plan
 
       - name: Setup Tools
         uses: ./.github/actions/setup-tools
@@ -128,6 +126,7 @@ jobs:
       cache-restore-key-prefixes: |
         publish_rust_github
         build_rust
+        test_rust
 
   test-typescript:
     needs:
@@ -140,8 +139,8 @@ jobs:
       cache-key-prefix: test_typescript
       cache-restore-key-prefixes: |
         publish_npm
-        test_rust
         build_typescript
+        test_typescript
 
   build-rust:
     needs:
@@ -154,6 +153,7 @@ jobs:
       cache-key-prefix: build_rust
       cache-restore-key-prefixes: |
         publish_rust_github
+        build_rust
       save-outputs: true
       artifacts-name: build-rust
 
@@ -166,7 +166,9 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
       cache-key-prefix: build_typescript
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        build_typescript
+        test_typescript
       save-outputs: true
       artifacts-name: build-typescript
 
@@ -180,7 +182,14 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_generic }}
       cache-key-prefix: publish_generic
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        publish_generic
+        publish_rust_github
+        publish_npm
+        build_rust
+        build_typescript
+        test_rust
+        test_typescript
 
   publish-npm:
     needs:
@@ -192,4 +201,7 @@ jobs:
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_npm }}
       cache-key-prefix: publish_npm
-      cache-restore-key-prefixes: ${{ needs.plan.outputs.jobs_cache_restore_key_prefixes }}
+      cache-restore-key-prefixes: |
+        publish_npm
+        build_rust
+        build_typescript
