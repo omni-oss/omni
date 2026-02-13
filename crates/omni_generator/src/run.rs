@@ -110,7 +110,7 @@ pub(crate) async fn run_internal<'a>(
         actions: &r#gen.actions,
         context_values: &context_values,
         dry_run: config.dry_run,
-        output_path: config.output_dir,
+        output_dir: config.output_dir,
         generator_dir: &r#gen
             .file
             .parent()

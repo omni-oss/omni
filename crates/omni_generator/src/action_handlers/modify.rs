@@ -12,7 +12,7 @@ pub async fn modify<'a>(
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let template = sys
-        .fs_read_to_string_async(&ctx.generator_dir.join(&config.template_file))
+        .fs_read_to_string_async(&ctx.generator_dir.join(&config.file))
         .await?;
 
     modify_one(&template, &config.common, ctx, sys).await?;

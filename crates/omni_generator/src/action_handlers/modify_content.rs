@@ -11,7 +11,7 @@ pub async fn modify_content<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    modify_one(&config.template, &config.common, ctx, sys).await?;
+    modify_one(&config.content, &config.common, ctx, sys).await?;
 
     Ok(())
 }

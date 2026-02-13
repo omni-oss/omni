@@ -126,8 +126,8 @@ async fn run_generator_run(
 ) -> eyre::Result<()> {
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
-    let current_dir = loaded_context.current_dir()?;
-    let workspace_dir = loaded_context.root_dir();
+    let current_dir = loaded_context.current_dir()?.clone();
+    let workspace_dir = loaded_context.root_dir().to_path_buf();
     const GENERATOR_OUTPUT_DIR: &str = ".omni";
     const GENERATOR_OUTPUT_FILE: &str = ".omni/generator.json";
 
@@ -147,7 +147,7 @@ async fn run_generator_run(
             }
             (Some(out), Some(_)) => {
                 trace::warn!(
-                    "Both --out-dir and --project are provided, using --out-dir"
+                    "Both --output and --project are provided, using --output"
                 );
                 (out, None)
             }
@@ -163,10 +163,32 @@ async fn run_generator_run(
 
     let mut context_values = unordered_map!();
 
+    context_values.insert(
+        "output_dir".to_string(),
+        ValueBag::capture_serde1(&output_dir).to_owned(),
+    );
+
+    context_values.insert(
+        "workspace_dir".to_string(),
+        ValueBag::capture_serde1(&workspace_dir).to_owned(),
+    );
+
+    context_values.insert(
+        "current_dir".to_string(),
+        ValueBag::capture_serde1(&current_dir).to_owned(),
+    );
+
+    let default_map = Map::default();
+
     if let Some(env) = &env {
         context_values.insert(
             "env".to_string(),
             ValueBag::capture_serde1(env).to_owned(),
+        );
+    } else {
+        context_values.insert(
+            "env".to_string(),
+            ValueBag::capture_serde1(&default_map).to_owned(),
         );
     }
 
@@ -190,13 +212,11 @@ async fn run_generator_run(
         session.restore_prompts(&mut pre_exec_values, false);
     }
 
-    let default_map = Map::default();
-
     let run = RunConfig {
         dry_run: command.args.dry_run,
         output_dir: output_dir.as_path(),
         overwrite: command.args.overwrite.map(|o| o.value()),
-        workspace_dir: workspace_dir,
+        workspace_dir: &workspace_dir,
         target_overrides: &target_overrides,
         context_values: &context_values,
         prompt_values: &pre_exec_values,

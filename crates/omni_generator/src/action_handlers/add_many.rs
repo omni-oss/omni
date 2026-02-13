@@ -10,7 +10,7 @@ pub async fn add_many<'a>(
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let glob_patterns = config
-        .template_files
+        .files
         .iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>();
@@ -34,8 +34,9 @@ pub async fn add_many<'a>(
 
         add_one(
             &stripped_path,
+            &stripped_path.to_string_lossy(),
             config.base_path.as_deref(),
-            |ctx| tera.render(&stripped_path.to_string_lossy(), ctx),
+            |content, ctx| tera.render(&content, ctx),
             &config.base.common,
             config.flatten,
             ctx,

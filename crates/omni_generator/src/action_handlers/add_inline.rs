@@ -13,10 +13,11 @@ pub async fn add_content<'a>(
 ) -> Result<(), Error> {
     add_one(
         &config.output_path,
+        &config.content,
         None,
-        |ctx| {
+        |content, ctx| {
             omni_tera::one_off(
-                &config.template,
+                content,
                 config.output_path.to_string_lossy().as_ref(),
                 ctx,
             )

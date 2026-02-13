@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use omni_generator_configurations::CommonInsertConfiguration;
 
 use crate::{
@@ -33,19 +35,23 @@ pub async fn insert_one<'a>(
         Some(&common.common.data),
     )?;
 
-    let rendered = omni_tera::one_off(
-        &template,
-        format!("template for action {}", ctx.resolved_action_name),
-        &tera_ctx_with_data,
-    )?;
+    let rendered = if common.render {
+        Cow::Owned(omni_tera::one_off(
+            &template,
+            format!("template for action {}", ctx.resolved_action_name),
+            &tera_ctx_with_data,
+        )?)
+    } else {
+        Cow::Borrowed(template)
+    };
 
     let mut file = vec![];
     let mut stop_inserting = false;
     for line in content.split(&common.separator) {
         let matching = rg.is_match(line);
-
+        let str = &rendered[..];
         if !stop_inserting && prepend && matching {
-            file.push(rendered.as_str());
+            file.push(str);
             if common.unique {
                 stop_inserting = true;
             }
@@ -54,7 +60,7 @@ pub async fn insert_one<'a>(
         file.push(line);
 
         if !stop_inserting && !prepend && matching {
-            file.push(rendered.as_str());
+            file.push(str);
             stop_inserting = true;
             if common.unique {
                 stop_inserting = true;

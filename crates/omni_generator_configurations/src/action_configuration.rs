@@ -81,6 +81,11 @@ pub struct CommonAddConfiguration {
 
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub data: UnorderedMap<String, serde_json::Value>,
+
+    // Whether to render the content as template before writing it to the file.
+    #[new(into)]
+    #[serde(default = "default_true")]
+    pub render: bool,
 }
 
 #[derive(
@@ -105,7 +110,7 @@ pub struct AddActionConfiguration {
 
     /// Provide a single template file to add, does not support glob patterns.
     #[new(into)]
-    pub template_file: PathBuf,
+    pub file: PathBuf,
 
     /// If provided, it will be stripped from the file names of the template files.
     /// If absent, use the generator's directory as the base path.
@@ -131,7 +136,7 @@ pub struct AddContentActionConfiguration {
     /// Accepts an inline tera template that will be evaluated to a string that will be used to produce the file.
     #[new(into)]
     #[serde(deserialize_with = "validate_tera_expr")]
-    pub template: String,
+    pub content: String,
 
     /// The path of the file to write to. Will be resolved relative to the output directory.
     #[new(into)]
@@ -147,7 +152,7 @@ pub struct AddManyActionConfiguration {
     pub base: BaseAddActionConfiguration,
 
     /// Provide a list of template files to add, accepts glob patterns.
-    pub template_files: Vec<PathBuf>,
+    pub files: Vec<PathBuf>,
 
     /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
     #[serde(default)]
@@ -192,6 +197,11 @@ pub struct CommonModifyConfiguration {
 
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub data: UnorderedMap<String, serde_json::Value>,
+
+    // Whether to render the content as template before writing it to the file.
+    #[new(into)]
+    #[serde(default = "default_true")]
+    pub render: bool,
 }
 
 #[derive(
@@ -205,7 +215,7 @@ pub struct ModifyActionConfiguration {
     #[serde(flatten)]
     pub common: CommonModifyConfiguration,
 
-    pub template_file: PathBuf,
+    pub file: PathBuf,
 }
 
 #[derive(
@@ -220,7 +230,7 @@ pub struct ModifyContentActionConfiguration {
     pub common: CommonModifyConfiguration,
 
     #[serde(deserialize_with = "validate_tera_expr")]
-    pub template: String,
+    pub content: String,
 }
 
 #[derive(
@@ -236,6 +246,11 @@ pub struct CommonInsertConfiguration {
 
     #[serde(default = "default_unique")]
     pub unique: bool,
+
+    // Whether to render the content as template before writing it to the file.
+    #[new(into)]
+    #[serde(default = "default_true")]
+    pub render: bool,
 }
 
 fn default_separator() -> String {
@@ -257,7 +272,7 @@ pub struct AppendActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
-    pub template_file: PathBuf,
+    pub file: PathBuf,
 }
 
 #[derive(
@@ -272,7 +287,7 @@ pub struct AppendContentActionConfiguration {
     pub common: CommonInsertConfiguration,
 
     #[serde(deserialize_with = "validate_tera_expr")]
-    pub template: String,
+    pub content: String,
 }
 
 #[derive(
@@ -286,7 +301,7 @@ pub struct PrependActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
-    pub template_file: PathBuf,
+    pub file: PathBuf,
 }
 
 #[derive(
@@ -301,7 +316,7 @@ pub struct PrependContentActionConfiguration {
     pub common: CommonInsertConfiguration,
 
     #[serde(deserialize_with = "validate_tera_expr")]
-    pub template: String,
+    pub content: String,
 }
 
 fn default_true() -> bool {

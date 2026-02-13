@@ -24,7 +24,7 @@ use crate::{
 #[derive(Debug, new)]
 pub struct ExecuteActionsArgs<'a> {
     pub dry_run: bool,
-    pub output_path: &'a Path,
+    pub output_dir: &'a Path,
     pub generator_dir: &'a Path,
     pub workspace_dir: &'a Path,
     pub current_dir: &'a Path,
@@ -44,22 +44,22 @@ pub async fn execute_actions<'a>(
 ) -> Result<(), Error> {
     let mut tera_context = get_tera_context(args.context_values);
 
-    let output_path = args.current_dir.join(args.output_path);
+    let output_dir = args.current_dir.join(args.output_dir);
     let expanded_output = omni_tera::one_off(
-        &output_path.to_string_lossy(),
-        "output_path",
+        &output_dir.to_string_lossy(),
+        "output_dir",
         &tera_context,
     )?;
     let output_path = Path::new(&expanded_output);
 
-    let output_path_rel = if output_path.starts_with(args.workspace_dir) {
+    let output_dir = if output_path.starts_with(args.workspace_dir) {
         output_path
             .strip_prefix(args.workspace_dir)
             .expect("should be within workspace dir")
     } else {
         &output_path
     };
-    tera_context.insert("output_path", &output_path_rel);
+    tera_context.insert("output_dir", &output_dir);
 
     for (index, action) in args.actions.iter().enumerate() {
         let action_name = get_action_name(index, action, &tera_context)?;

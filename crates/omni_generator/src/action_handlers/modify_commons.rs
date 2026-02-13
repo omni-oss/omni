@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use omni_generator_configurations::CommonModifyConfiguration;
 
 use crate::{
@@ -29,13 +31,17 @@ pub async fn modify_one<'a>(
     let tera_ctx_with_data =
         augment_tera_context(ctx.tera_context_values, Some(&common.data))?;
 
-    let rendered = omni_tera::one_off(
-        &template,
-        format!("template for action {}", ctx.resolved_action_name),
-        &tera_ctx_with_data,
-    )?;
+    let rendered = if common.render {
+        Cow::Owned(omni_tera::one_off(
+            template,
+            format!("template for action {}", ctx.resolved_action_name),
+            &tera_ctx_with_data,
+        )?)
+    } else {
+        Cow::Borrowed(template)
+    };
 
-    let replaced = rg.replace_all(&content, &rendered);
+    let replaced = rg.replace_all(&content, &rendered[..]);
 
     sys.fs_write_async(target.as_ref(), replaced.as_ref())
         .await?;

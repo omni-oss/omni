@@ -11,6 +11,6 @@ pub async fn append_content<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    insert_one(&config.template, false, &config.common, ctx, sys).await?;
+    insert_one(&config.content, false, &config.common, ctx, sys).await?;
     Ok(())
 }

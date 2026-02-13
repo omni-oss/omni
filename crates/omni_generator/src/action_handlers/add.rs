@@ -12,7 +12,7 @@ pub async fn add<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let template_file = ctx.generator_dir.join(&config.template_file);
+    let template_file = ctx.generator_dir.join(&config.file);
     let file = sys
         .fs_read_async(&template_file)
         .await
@@ -20,12 +20,13 @@ pub async fn add<'a>(
     let template_string = String::from_utf8(file.to_vec())?;
 
     add_one(
-        &config.template_file,
+        &config.file,
+        &template_string,
         config.base_path.as_deref(),
-        |ctx| {
+        |content, ctx| {
             omni_tera::one_off(
-                &template_string,
-                config.template_file.to_string_lossy().as_ref(),
+                content,
+                config.file.to_string_lossy().as_ref(),
                 ctx,
             )
         },

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
 use omni_generator_configurations::CommonAddConfiguration;
 
@@ -14,7 +14,8 @@ use crate::{
 };
 
 pub async fn add_one<'a, TRender, TSys>(
-    template_file: &'a Path,
+    file: &'a Path,
+    content: &'a str,
     base_path: Option<&'a Path>,
     render: TRender,
     common: &CommonAddConfiguration,
@@ -23,15 +24,16 @@ pub async fn add_one<'a, TRender, TSys>(
     sys: &'a TSys,
 ) -> Result<(), Error>
 where
-    TRender: FnOnce(&tera::Context) -> tera::Result<String> + Send + Sync + 'a,
+    TRender:
+        FnOnce(&str, &tera::Context) -> tera::Result<String> + Send + Sync + 'a,
     TSys: GeneratorSys,
 {
     let output_path = get_output_path(
         common.target.as_deref(),
-        &template_file,
+        &file,
         base_path,
         ctx,
-        &["tpl"],
+        if common.render { &["tpl"] } else { &[] },
         flatten,
         ctx.gen_session,
         sys,
@@ -59,9 +61,13 @@ where
     let tera_ctx_with_data =
         augment_tera_context(ctx.tera_context_values, Some(&common.data))?;
 
-    let result = render(&tera_ctx_with_data)?;
+    let result = if common.render {
+        Cow::Owned(render(content, &tera_ctx_with_data)?)
+    } else {
+        Cow::Borrowed(content)
+    };
 
-    sys.fs_write_async(&output_path, &result)
+    sys.fs_write_async(&output_path, result.as_bytes())
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(&output_path, e))?;
 
