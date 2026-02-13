@@ -66,14 +66,14 @@ actions:
   - type: add-many
     base_path: templates
     target: root
-    template_files:
+    files:
       - templates/**
       - "!templates/src/main.rs.tpl"
 
   - if: "{{ prompts.crate_type == 'bin' }}"
     type: add
     target: root
-    template_file: templates/src/main.rs.tpl
+    file: templates/src/main.rs.tpl
     base_path: templates
 
   - if: "{{ prompts.add_error_type }}"
@@ -87,7 +87,7 @@ actions:
   - type: prepend-content
     target: root_cargo_toml
     pattern: "@anchor:new-crate"
-    template: '{{ prompts.crate_name }} = { path = "{{ output_path }}" }'
+    template: '{{ prompts.crate_name }} = { path = "{{ output_dir }}" }'
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}

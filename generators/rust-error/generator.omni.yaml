@@ -20,4 +20,4 @@ actions:
     target: root
     data:
       rust_error_name: "{{ prompts.error_name | upper_camel_case }}"
-    template_file: templates/{{ vars.rust_file_name }}.rs.tpl
+    file: templates/{{ vars.rust_file_name }}.rs.tpl

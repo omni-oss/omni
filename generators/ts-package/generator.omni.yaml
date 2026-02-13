@@ -89,7 +89,7 @@ prompts:
 actions:
   - type: add-many
     base_path: templates
-    template_files:
+    files:
       - templates/**/*
       - "!templates/src/cli/index.ts.tpl"
       - "!templates/vitest.config.unit.ts.tpl"
@@ -100,19 +100,19 @@ actions:
   - if: "{{ prompts.package_type == 'script' }}"
     type: add-many
     base_path: templates
-    template_files:
+    files:
       - templates/src/cli/index.ts.tpl
 
   - if: "{{ prompts.integration_test }}"
     type: add-many
     base_path: templates
-    template_files:
+    files:
       - templates/vitest.config.integration.ts.tpl
       - templates/src/__tests__/integration.spec.ts.tpl
 
   - if: "{{ prompts.unit_test }}"
     type: add-many
     base_path: templates
-    template_files:
+    files:
       - templates/vitest.config.unit.ts.tpl
       - templates/src/add.spec.ts.tpl
