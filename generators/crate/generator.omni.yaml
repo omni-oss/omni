@@ -21,6 +21,7 @@ prompts:
   - type: text
     name: crate_name
     message: Crate name
+    default: "{{ output_dir | base_name }}"
     validate:
       - condition: "{{ value | length > 0 }}"
         error_message: Crate name must not be empty
@@ -87,7 +88,9 @@ actions:
   - type: prepend-content
     target: root_cargo_toml
     pattern: "@anchor:new-crate"
-    content: '{{ prompts.crate_name }} = { path = "{{ output_dir }}" }'
+    data:
+      generated_dir: "{{ current_dir ~ '/' ~ output_dir }}"
+    content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir | relative_path(root=workspace_dir) }}" }'
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}
