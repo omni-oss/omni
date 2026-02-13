@@ -92,11 +92,17 @@ pub struct GeneratorRunArgs {
 
     #[arg(
         long,
-        help = "Save prompts and targets to the output directory so they can be reused future invocations"
+        num_args(0..1),
+        help = "Save prompts and targets to the output directory so they can be reused future invocations",
+        default_missing_value = "true"
     )]
     pub save_session: Option<bool>,
 
-    #[arg(long, help = "Don't load the session from the output directory")]
+    #[arg(
+        long,
+        help = "Don't load the session from the output directory",
+        default_missing_value = "true"
+    )]
     pub ignore_session: Option<bool>,
 }
 
