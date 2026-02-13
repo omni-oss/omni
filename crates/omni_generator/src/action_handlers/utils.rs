@@ -128,7 +128,7 @@ pub async fn should_overwrite(
 
     let is_dir = sys.fs_is_dir_async(path).await?;
 
-    let prompt_cfg = PromptConfiguration::new_confirm(
+    let prompt_cfg = PromptConfiguration::<()>::new_confirm(
         ConfirmPromptConfiguration::new(
             BasePromptConfiguration::new(
                 "overwrite_path",
@@ -203,7 +203,7 @@ pub async fn get_target_dir<'a>(
     }
 
     let prompt_cfg =
-        PromptConfiguration::new_text(TextPromptConfiguration::new(
+        PromptConfiguration::<()>::new_text(TextPromptConfiguration::new(
             ValidatedPromptConfiguration::new(
                 BasePromptConfiguration::new(
                     target_name,
@@ -270,7 +270,7 @@ pub async fn prompt_target_file(
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let prompt_cfg =
-        PromptConfiguration::new_text(TextPromptConfiguration::new(
+        PromptConfiguration::<()>::new_text(TextPromptConfiguration::new(
             ValidatedPromptConfiguration::new(
                 BasePromptConfiguration::new(
                     target_name,

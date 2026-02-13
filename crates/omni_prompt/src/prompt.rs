@@ -11,13 +11,41 @@ use crate::{
     utils::{validate_boolean_expression_result, validate_value},
 };
 use either::Either;
+use garde::Validate;
 use maps::{UnorderedMap, unordered_map};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
+use std::fmt::Debug;
 use strum::IntoDiscriminant;
 use value_bag::{OwnedValueBag, ValueBag};
 
-pub fn prompt(
-    prompts: &[PromptConfiguration],
+pub trait PromptExtras:
+    for<'de> Deserialize<'de>
+    + Serialize
+    + JsonSchema
+    + Clone
+    + Debug
+    + PartialEq
+    + Validate
+    + Default
+{
+}
+
+impl<T> PromptExtras for T where
+    T: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + Clone
+        + Debug
+        + PartialEq
+        + Validate
+        + Default
+{
+}
+
+pub fn prompt<TExtra: PromptExtras>(
+    prompts: &[PromptConfiguration<TExtra>],
     pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
@@ -63,8 +91,8 @@ pub fn prompt(
     Ok(values)
 }
 
-pub fn prompt_one(
-    prompt: &PromptConfiguration,
+pub fn prompt_one<TExtra: PromptExtras>(
+    prompt: &PromptConfiguration<TExtra>,
     pre_exec_value: Option<&OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
@@ -105,10 +133,10 @@ pub fn prompt_one(
     Ok(Some(value))
 }
 
-fn get_value(
+fn get_value<TExtra: PromptExtras>(
     config: &PromptingConfiguration<'_>,
     ctx_vals: &tera::Context,
-    prompt: &PromptConfiguration,
+    prompt: &PromptConfiguration<TExtra>,
     validators: &[ValidateConfiguration],
     key: &String,
     pre_exec_value: Option<&OwnedValueBag>,
@@ -233,60 +261,64 @@ fn make_prompt_type_error<'a>(
     ))
 }
 
-fn get_prompt_value(
-    prompt: &PromptConfiguration,
+fn get_prompt_value<TExtra: PromptExtras>(
+    prompt: &PromptConfiguration<TExtra>,
     context_values: &tera::Context,
     config: &PromptingConfiguration<'_>,
 ) -> Result<OwnedValueBag, Error> {
     let value = match prompt {
-        PromptConfiguration::Confirm { prompt } => {
+        PromptConfiguration::Confirm { prompt, .. } => {
             prompt_checkbox(prompt, context_values, config)?
         }
-        PromptConfiguration::Select { prompt } => {
+        PromptConfiguration::Select { prompt, .. } => {
             prompt_select(prompt, context_values, config)?
         }
-        PromptConfiguration::MultiSelect { prompt } => {
+        PromptConfiguration::MultiSelect { prompt, .. } => {
             prompt_multi_select(prompt, context_values, config)?
         }
-        PromptConfiguration::Text { prompt } => {
+        PromptConfiguration::Text { prompt, .. } => {
             prompt_text(prompt, context_values, config)?
         }
-        PromptConfiguration::Password { prompt } => {
+        PromptConfiguration::Password { prompt, .. } => {
             prompt_password(prompt, context_values, config)?
         }
-        PromptConfiguration::Float { prompt } => {
+        PromptConfiguration::Float { prompt, .. } => {
             prompt_float_number(prompt, context_values, config)?
         }
-        PromptConfiguration::Integer { prompt } => {
+        PromptConfiguration::Integer { prompt, .. } => {
             prompt_integer_number(prompt, context_values, config)?
         }
     };
     Ok(value)
 }
 
-fn get_validators(prompt: &PromptConfiguration) -> &[ValidateConfiguration] {
+fn get_validators<TExtra: PromptExtras>(
+    prompt: &PromptConfiguration<TExtra>,
+) -> &[ValidateConfiguration] {
     match prompt {
         PromptConfiguration::Confirm { .. } => &[],
         PromptConfiguration::Select { .. } => &[],
         PromptConfiguration::MultiSelect { .. } => &[],
-        PromptConfiguration::Text { prompt } => &prompt.base.validate,
-        PromptConfiguration::Password { prompt } => &prompt.base.validate,
-        PromptConfiguration::Float { prompt } => &prompt.base.validate,
-        PromptConfiguration::Integer { prompt } => &prompt.base.validate,
+        PromptConfiguration::Text { prompt, .. } => &prompt.base.validate,
+        PromptConfiguration::Password { prompt, .. } => &prompt.base.validate,
+        PromptConfiguration::Float { prompt, .. } => &prompt.base.validate,
+        PromptConfiguration::Integer { prompt, .. } => &prompt.base.validate,
     }
 }
 
-fn get_if_expression(
-    prompt: &PromptConfiguration,
+fn get_if_expression<TExtra: PromptExtras>(
+    prompt: &PromptConfiguration<TExtra>,
 ) -> Option<&Either<bool, String>> {
     let if_expr = match prompt {
-        PromptConfiguration::Confirm { prompt } => &prompt.base.r#if,
-        PromptConfiguration::Select { prompt } => &prompt.base.r#if,
-        PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::Text { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::Password { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::Float { prompt } => &prompt.base.base.r#if,
-        PromptConfiguration::Integer { prompt } => &prompt.base.base.r#if,
+        PromptConfiguration::Confirm { prompt, .. } => &prompt.base.r#if,
+        PromptConfiguration::Select { prompt, .. } => &prompt.base.r#if,
+        PromptConfiguration::MultiSelect { prompt, .. } => {
+            &prompt.base.base.r#if
+        }
+        PromptConfiguration::Text { prompt, .. } => &prompt.base.base.r#if,
+        PromptConfiguration::Password { prompt, .. } => &prompt.base.base.r#if,
+        PromptConfiguration::Float { prompt, .. } => &prompt.base.base.r#if,
+        PromptConfiguration::Integer { prompt, .. } => &prompt.base.base.r#if,
     };
     if_expr.as_ref()
 }
@@ -317,8 +349,8 @@ fn skip(
     })
 }
 
-fn validate_prompt_configurations(
-    prompts: &[PromptConfiguration],
+fn validate_prompt_configurations<TExtra: PromptExtras>(
+    prompts: &[PromptConfiguration<TExtra>],
 ) -> Result<(), Error> {
     let mut seen_names = UnorderedSet::default();
 
@@ -335,15 +367,19 @@ fn validate_prompt_configurations(
     Ok(())
 }
 
-fn get_prompt_name(prompt: &PromptConfiguration) -> &str {
+fn get_prompt_name<TExtra: PromptExtras>(
+    prompt: &PromptConfiguration<TExtra>,
+) -> &str {
     let name = match prompt {
-        PromptConfiguration::Confirm { prompt } => &prompt.base.name,
-        PromptConfiguration::Select { prompt } => &prompt.base.name,
-        PromptConfiguration::MultiSelect { prompt } => &prompt.base.base.name,
-        PromptConfiguration::Text { prompt } => &prompt.base.base.name,
-        PromptConfiguration::Password { prompt } => &prompt.base.base.name,
-        PromptConfiguration::Float { prompt } => &prompt.base.base.name,
-        PromptConfiguration::Integer { prompt } => &prompt.base.base.name,
+        PromptConfiguration::Confirm { prompt, .. } => &prompt.base.name,
+        PromptConfiguration::Select { prompt, .. } => &prompt.base.name,
+        PromptConfiguration::MultiSelect { prompt, .. } => {
+            &prompt.base.base.name
+        }
+        PromptConfiguration::Text { prompt, .. } => &prompt.base.base.name,
+        PromptConfiguration::Password { prompt, .. } => &prompt.base.base.name,
+        PromptConfiguration::Float { prompt, .. } => &prompt.base.base.name,
+        PromptConfiguration::Integer { prompt, .. } => &prompt.base.base.name,
     };
     name
 }
@@ -559,6 +595,7 @@ mod test {
                     },
                     default: None,
                 },
+                extra: (),
             },
             PromptConfiguration::Confirm {
                 prompt: ConfirmPromptConfiguration {
@@ -570,6 +607,7 @@ mod test {
                     },
                     default: None,
                 },
+                extra: (),
             },
         ];
 

@@ -6,6 +6,7 @@ use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use omni_prompt::configuration::PromptingConfiguration;
+use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
@@ -121,7 +122,31 @@ pub(crate) async fn run_internal<'a>(
 
     execute_actions(&args, &session, sys).await?;
 
-    session.set_prompts(r#gen.name.as_str(), values);
+    let skip = r#gen
+        .prompts
+        .iter()
+        .filter_map(|p| {
+            if p.extra().remember {
+                None
+            } else {
+                Some(p.name())
+            }
+        })
+        .collect::<UnorderedSet<_>>();
+
+    session.set_prompts(
+        r#gen.name.as_str(),
+        values
+            .into_iter()
+            .filter_map(|(k, v)| {
+                if skip.contains(k.as_str()) {
+                    None
+                } else {
+                    Some((k, v))
+                }
+            })
+            .collect(),
+    );
 
     Ok(session)
 }

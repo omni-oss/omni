@@ -298,7 +298,7 @@ fn prompt_output_dir(
     let prompting_config = PromptingConfiguration::default();
 
     let prompt =
-        PromptConfiguration::new_select(SelectPromptConfiguration::new(
+        PromptConfiguration::<()>::new_select(SelectPromptConfiguration::new(
             BasePromptConfiguration::new(
                 "output_dir_or_project",
                 "Where should the generator output be written?",
@@ -346,7 +346,7 @@ fn prompt_output_dir(
             ),
             None,
         );
-        let prompt = &PromptConfiguration::new_text(text_prompt);
+        let prompt = &PromptConfiguration::<()>::new_text(text_prompt);
 
         loop {
             let output_dir = omni_prompt::prompt_one(
@@ -374,12 +374,13 @@ fn prompt_output_dir(
             })
             .collect::<Vec<_>>();
 
-        let prompt =
-            PromptConfiguration::new_select(SelectPromptConfiguration::new(
+        let prompt = PromptConfiguration::<()>::new_select(
+            SelectPromptConfiguration::new(
                 BasePromptConfiguration::new("project", "Select project", None),
                 options,
                 Some("project".to_string()),
-            ));
+            ),
+        );
 
         let value = omni_prompt::prompt_one(
             &prompt,
@@ -409,7 +410,7 @@ fn prompt_generator_name(
     let prompting_config = PromptingConfiguration::default();
 
     let prompt =
-        PromptConfiguration::new_select(SelectPromptConfiguration::new(
+        PromptConfiguration::<()>::new_select(SelectPromptConfiguration::new(
             BasePromptConfiguration::new(
                 "generator_name",
                 "Select generator",
@@ -449,7 +450,7 @@ fn prompt_save_prompts() -> eyre::Result<bool> {
     let context_values = unordered_map!();
     let prompting_config = PromptingConfiguration::default();
 
-    let prompt = PromptConfiguration::new_confirm(
+    let prompt = PromptConfiguration::<()>::new_confirm(
         ConfirmPromptConfiguration::new(
             BasePromptConfiguration::new(
                 "save_prompts",

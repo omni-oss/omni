@@ -33,7 +33,7 @@ pub struct GeneratorConfiguration {
 
     /// Prompts to ask the user
     #[serde(default)]
-    pub prompts: Vec<PromptConfiguration>,
+    pub prompts: Vec<PromptConfiguration<PromptConfigurationExtra>>,
 
     /// Actions to perform
     #[serde(default)]
@@ -54,4 +54,22 @@ pub struct GeneratorConfiguration {
     #[serde(deserialize_with = "validate_umap_target_path")]
     #[serde(default)]
     pub targets: UnorderedMap<String, OmniPath>,
+}
+
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Validate,
+)]
+#[garde(allow_unvalidated)]
+pub struct PromptConfigurationExtra {
+    /// Whether to remember the value of this prompt to the session so that future invocations of the generator don't ask the user again
+    /// when used in the same directory.
+    #[serde(default)]
+    pub remember: bool,
 }

@@ -199,6 +199,32 @@ impl GenSession {
 
         Ok(())
     }
+
+    pub fn unset_targets(
+        &self,
+        generator: impl Into<String>,
+        keys: impl IntoIterator<Item = impl AsRef<String>>,
+    ) {
+        let mut data = self.data.lock().unwrap();
+        if let Some(data) = data.get_mut(generator.into().as_str()) {
+            for key in keys {
+                data.targets.remove(key.as_ref());
+            }
+        }
+    }
+
+    pub fn unset_prompts(
+        &self,
+        generator: impl Into<String>,
+        keys: impl IntoIterator<Item = impl AsRef<String>>,
+    ) {
+        let mut data = self.data.lock().unwrap();
+        if let Some(data) = data.get_mut(generator.into().as_str()) {
+            for key in keys {
+                data.prompts.remove(key.as_ref());
+            }
+        }
+    }
 }
 
 #[derive(Clone, serde::Serialize, Default, Debug)]

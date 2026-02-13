@@ -1,5 +1,6 @@
-use crate::parsers::{
-    either_value_or_tera_expr, either_value_or_tera_expr_optional,
+use crate::{
+    PromptExtras,
+    parsers::{either_value_or_tera_expr, either_value_or_tera_expr_optional},
 };
 use derive_new::new;
 use either::Either;
@@ -299,42 +300,101 @@ pub struct IntegerNumberPromptConfiguration {
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
-pub enum PromptConfiguration {
+pub enum PromptConfiguration<TExtra: Default = ()> {
     Confirm {
         #[serde(flatten)]
         #[new(into)]
         prompt: ConfirmPromptConfiguration,
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     Select {
         #[serde(flatten)]
         #[new(into)]
         prompt: SelectPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     MultiSelect {
         #[serde(flatten)]
         #[new(into)]
         prompt: MultiSelectPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     Text {
         #[serde(flatten)]
         #[new(into)]
         prompt: TextPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     Password {
         #[serde(flatten)]
         #[new(into)]
         prompt: PasswordPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     Float {
         #[serde(flatten)]
         #[new(into)]
         prompt: FloatNumberPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
     Integer {
         #[serde(flatten)]
         #[new(into)]
         prompt: IntegerNumberPromptConfiguration,
+
+        #[serde(flatten)]
+        #[new(default)]
+        extra: TExtra,
     },
+}
+
+impl<TExtra: PromptExtras> PromptConfiguration<TExtra> {
+    pub fn extra(&self) -> &TExtra {
+        match self {
+            PromptConfiguration::Confirm { extra, .. } => extra,
+            PromptConfiguration::Select { extra, .. } => extra,
+            PromptConfiguration::MultiSelect { extra, .. } => extra,
+            PromptConfiguration::Text { extra, .. } => extra,
+            PromptConfiguration::Password { extra, .. } => extra,
+            PromptConfiguration::Float { extra, .. } => extra,
+            PromptConfiguration::Integer { extra, .. } => extra,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            PromptConfiguration::Confirm { prompt, .. } => &prompt.base.name,
+            PromptConfiguration::Select { prompt, .. } => &prompt.base.name,
+            PromptConfiguration::MultiSelect { prompt, .. } => {
+                &prompt.base.base.name
+            }
+            PromptConfiguration::Text { prompt, .. } => &prompt.base.base.name,
+            PromptConfiguration::Password { prompt, .. } => {
+                &prompt.base.base.name
+            }
+            PromptConfiguration::Float { prompt, .. } => &prompt.base.base.name,
+            PromptConfiguration::Integer { prompt, .. } => {
+                &prompt.base.base.name
+            }
+        }
+    }
 }
 
 #[derive(
