@@ -18,7 +18,6 @@ prompts:
 
   - name: package_type
     type: select
-    remember: true
     message: What type of package is this?
     options:
       - name: Library
