@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.4.0 - 2026-02-13
+#### Features
+- (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel
+- support generator sessions - (7595efb) - Clarence Manuel
+#### Bug Fixes
+- (**bridge_rpc**) add stop signal to loop - (791ecf2) - Clarence Manuel
+
+- - -
+
 ## root-v0.3.1 - 2026-02-12
 #### Bug Fixes
 - (**omni_remote_cache_service**) openapi server url - (9ac06e2) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.2.0 - 2026-02-13
+#### Features
+- add support for toggle off template rendering - (e62d540) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_generator_configurations**) utilize omni_serde_validators - (2dec237) - Clarence Manuel

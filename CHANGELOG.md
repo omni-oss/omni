@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.6.0 - 2026-02-13
+### Package updates
+- omni_types bumped to omni_types-v0.2.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.2.0
+- omni bumped to omni-v0.6.0
+- omni_cli_core bumped to omni_cli_core-v0.6.0
+- omni_prompt bumped to omni_prompt-v0.2.0
+- omni_generator bumped to omni_generator-v0.2.0
+- omni_tera bumped to omni_tera-v0.3.0
+- bridge_rpc bumped to bridge_rpc-v0.1.1
+- root bumped to root-v0.4.0
+### Global changes
+#### Features
+- (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel
+- update generators - (f50b423) - Clarence Manuel
+- support generator sessions - (7595efb) - Clarence Manuel
+#### Bug Fixes
+- (**bridge_rpc**) add stop signal to loop - (791ecf2) - Clarence Manuel
+#### Continuous Integration
+- fix manual-release-omni.yaml aarch64 windows compilation [skip ci] - (c0238c5) - Clarence Manuel
+#### Miscellaneous Chores
+- update generators - (56f9287) - Clarence Manuel
+- add npmignore to scripts - (40e7d91) - Clarence Manuel
+
+- - -
+
 ## v0.5.8 - 2026-02-12
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.8

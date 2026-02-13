@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.6.0 - 2026-02-13
+#### Features
+- (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel
+- support session namespacing for generator - (bcbfd04) - Clarence Manuel
+- add support for toggle off template rendering - (e62d540) - Clarence Manuel
+- support generator sessions - (7595efb) - Clarence Manuel
+#### Bug Fixes
+- (**omni_rpc**) base_name filter returning wrong text - (3e6c82a) - Clarence Manuel
+
+- - -
+
 ## omni-v0.5.4 - 2026-02-12
 #### Bug Fixes
 - support --inherit-env-vars flag in env subcommand - (e42f576) - Clarence Manuel

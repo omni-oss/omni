@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.2.0 - 2026-02-13
+#### Features
+- support session namespacing for generator - (bcbfd04) - Clarence Manuel
+- add support for toggle off template rendering - (e62d540) - Clarence Manuel
+- support generator sessions - (7595efb) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_generator**) implement add-many action - (4156d24) - Clarence Manuel

@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.3.0 - 2026-02-13
+#### Features
+- (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel
+#### Bug Fixes
+- (**omni_rpc**) base_name filter returning wrong text - (3e6c82a) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.2.0 - 2026-02-03
 #### Features
 - support if expressions for task condition - (cb1c87d) - Clarence Manuel
