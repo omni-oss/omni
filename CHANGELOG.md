@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.6.1 - 2026-02-13
+### Package updates
+- omni_generator bumped to omni_generator-v0.2.1
+- omni_generator_configurations bumped to omni_generator_configurations-v0.2.1
+- omni_prompt bumped to omni_prompt-v0.2.1
+- omni_cli_core bumped to omni_cli_core-v0.6.1
+- omni bumped to omni-v0.6.1
+### Global changes
+#### Continuous Integration
+- update omni version [skip ci] - (7358475) - Clarence Manuel
+#### Miscellaneous Chores
+- update generators - (fbc52b2) - Clarence Manuel
+- update generators - (675991d) - Clarence Manuel
+- update generators - (85d5a91) - Clarence Manuel
+
+- - -
+
 ## v0.6.0 - 2026-02-13
 ### Package updates
 - omni_types bumped to omni_types-v0.2.0

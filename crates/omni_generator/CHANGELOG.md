@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.2.1 - 2026-02-13
+#### Bug Fixes
+- add remember field for saveable prompts - (e4d4acd) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.2.0 - 2026-02-13
 #### Features
 - support session namespacing for generator - (bcbfd04) - Clarence Manuel

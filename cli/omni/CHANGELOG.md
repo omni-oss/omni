@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.6.1 - 2026-02-13
+#### Bug Fixes
+- optional value for --save-session and --ignore-session flag - (1284164) - Clarence Manuel
+- add remember field for saveable prompts - (e4d4acd) - Clarence Manuel
+
+- - -
+
 ## omni-v0.6.0 - 2026-02-13
 #### Features
 - (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel
