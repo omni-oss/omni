@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../.artifacts/generator.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/generator-latest.json
 name: crate
 display_name: Rust Crate
 description: Generate a new rust crate
@@ -87,7 +87,7 @@ actions:
   - type: prepend-content
     target: root_cargo_toml
     pattern: "@anchor:new-crate"
-    template: '{{ prompts.crate_name }} = { path = "{{ output_dir }}" }'
+    content: '{{ prompts.crate_name }} = { path = "{{ output_dir }}" }'
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}

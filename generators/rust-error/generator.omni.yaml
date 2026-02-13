@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../.artifacts/generator.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/omni/refs/heads/json-schemas/generator-latest.json
 name: rust-error
 display_name: Rust Error
 description: Generate a new error type
