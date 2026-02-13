@@ -188,9 +188,10 @@ pub async fn get_target_dir<'a>(
     target_name: &str,
     target_overrides: &'a UnorderedMap<String, OmniPath>,
     generator_targets: &'a UnorderedMap<String, OmniPath>,
-    output_dir: &Path,
-    prompted_values: &GenSession,
-    _sys: &impl GeneratorSys,
+    output_dir: &'a Path,
+    generator: &'a str,
+    session: &'a GenSession,
+    _sys: &'a impl GeneratorSys,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
         .get(target_name)
@@ -234,7 +235,7 @@ pub async fn get_target_dir<'a>(
 
         let path = OmniPath::new(path);
 
-        prompted_values.add_target(target_name.to_string(), &path);
+        session.set_target(generator, target_name.to_string(), &path);
 
         break Ok(Cow::Owned(path));
     }
@@ -362,8 +363,8 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     ctx: &HandlerContext<'a>,
     strip_extensions: &'a [TExt],
     flatten: bool,
-    prompted_values: &GenSession,
-    sys: &impl GeneratorSys,
+    session: &'a GenSession,
+    sys: &'a impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
         Some(
@@ -372,7 +373,8 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
                 &ctx.target_overrides,
                 &ctx.generator_targets,
                 ctx.output_path,
-                prompted_values,
+                ctx.generator_name,
+                session,
                 sys,
             )
             .await?,

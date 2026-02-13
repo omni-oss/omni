@@ -17,7 +17,7 @@ use crate::{
 pub async fn target_path(
     common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'_>,
-    prompted_values: &GenSession,
+    session: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let bases = get_bases(ctx);
@@ -27,7 +27,8 @@ pub async fn target_path(
             ctx.target_overrides,
             ctx.generator_targets,
             ctx.output_path,
-            prompted_values,
+            ctx.generator_name,
+            session,
             sys,
         )
         .await?;

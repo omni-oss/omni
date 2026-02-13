@@ -1,14 +1,11 @@
-use std::{borrow::Cow, path::Path};
+use std::path::Path;
 
 use derive_new::new;
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
-use omni_prompt::configuration::{
-    BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
-    PromptingConfiguration, SelectPromptConfiguration,
-};
+use omni_prompt::configuration::PromptingConfiguration;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
@@ -34,7 +31,7 @@ pub struct RunConfig<'a> {
 }
 
 pub async fn run<'a>(
-    generator_name: Option<&'a str>,
+    generator_name: &'a str,
     generator_patterns: &'a [String],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
@@ -43,12 +40,6 @@ pub async fn run<'a>(
         crate::discover(config.workspace_dir, generator_patterns, sys).await?;
 
     crate::validate(&generators)?;
-
-    let generator_name = if let Some(name) = generator_name.clone() {
-        Cow::Borrowed(name)
-    } else {
-        Cow::Owned(prompt_generator_name(&generators)?)
-    };
 
     let generator = generators
         .iter()
@@ -73,8 +64,11 @@ pub(crate) async fn run_internal<'a>(
 ) -> Result<GenSession, Error> {
     let prompting_config = PromptingConfiguration::default();
 
-    let session =
-        GenSession::new(config.target_overrides.clone(), Default::default());
+    let session = GenSession::with_restored(
+        r#gen.name.as_str(),
+        config.target_overrides.clone(),
+        Default::default(),
+    );
 
     let mut values = omni_prompt::prompt(
         &r#gen.prompts,
@@ -115,6 +109,7 @@ pub(crate) async fn run_internal<'a>(
             .file
             .parent()
             .expect("generator should have a directory"),
+        generator_name: &r#gen.name,
         targets: &r#gen.targets,
         overwrite: config.overwrite,
         workspace_dir: config.workspace_dir,
@@ -126,7 +121,7 @@ pub(crate) async fn run_internal<'a>(
 
     execute_actions(&args, &session, sys).await?;
 
-    session.set_prompts(values);
+    session.set_prompts(r#gen.name.as_str(), values);
 
     Ok(session)
 }
@@ -147,47 +142,4 @@ fn expand_vars(
     }
 
     Ok(result)
-}
-
-fn prompt_generator_name(
-    generators: &[GeneratorConfiguration],
-) -> Result<String, Error> {
-    let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
-
-    let prompt =
-        PromptConfiguration::new_select(SelectPromptConfiguration::new(
-            BasePromptConfiguration::new(
-                "generator_name",
-                "Select generator",
-                None,
-            ),
-            generators
-                .iter()
-                .map(|g| {
-                    OptionConfiguration::new(
-                        g.display_name.as_deref().unwrap_or(&g.name.as_str()),
-                        g.description.clone(),
-                        g.name.clone(),
-                        false,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            Some("generator_name".to_string()),
-        ));
-
-    let value = omni_prompt::prompt_one(
-        &prompt,
-        None,
-        &context_values,
-        &prompting_config,
-    )?
-    .expect("should have value at this point");
-
-    let value = value
-        .by_ref()
-        .to_str()
-        .ok_or_else(|| eyre::eyre!("value is not a string"))?;
-
-    Ok(value.to_string())
 }

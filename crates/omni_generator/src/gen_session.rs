@@ -7,16 +7,26 @@ use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(Debug, Default)]
 pub struct GenSession {
-    data: Mutex<DataImpl>,
+    data: Mutex<UnorderedMap<String, DataImpl>>,
 }
 
 impl GenSession {
-    pub fn new(
+    pub fn new() -> Self {
+        Self {
+            data: Mutex::new(UnorderedMap::default()),
+        }
+    }
+
+    pub fn with_restored(
+        generator_name: impl Into<String>,
         targets: UnorderedMap<String, OmniPath>,
         prompts: UnorderedMap<String, OwnedValueBag>,
     ) -> Self {
         Self {
-            data: Mutex::new(DataImpl { targets, prompts }),
+            data: Mutex::new(UnorderedMap::from_iter([(
+                generator_name.into(),
+                DataImpl { prompts, targets },
+            )])),
         }
     }
 
@@ -28,76 +38,149 @@ impl GenSession {
         TSys: FsReadAsync + Send + Sync,
         TPath: Into<&'a Path>,
     {
-        let result: DataImplDeserialize =
+        let result: UnorderedMap<String, DataImplDeserialize> =
             omni_file_data_serde::read_async(path, sys).await?;
 
         Ok(Self {
-            data: Mutex::new(DataImpl::from_de(result)),
+            data: Mutex::new(
+                result
+                    .into_iter()
+                    .map(|(k, v)| (k, DataImpl::from_de(v)))
+                    .collect(),
+            ),
         })
     }
 }
 
 impl GenSession {
-    pub fn add_target(
+    pub fn set_target(
         &self,
+        generator: impl Into<String>,
         key: impl Into<String>,
         value: impl Into<OmniPath>,
     ) {
         self.data
             .lock()
             .unwrap()
+            .entry(generator.into())
+            .or_insert_with(DataImpl::default)
             .targets
             .insert(key.into(), value.into());
     }
 
-    pub fn add_prompt(
+    pub fn get_target(
         &self,
+        generator: impl AsRef<str>,
+        key: impl AsRef<str>,
+    ) -> Option<OmniPath> {
+        self.data
+            .lock()
+            .unwrap()
+            .get(generator.as_ref())
+            .and_then(|d| d.targets.get(key.as_ref()))
+            .map(|p| p.clone())
+    }
+
+    pub fn set_prompt(
+        &self,
+        generator: impl Into<String>,
         key: impl Into<String>,
         value: impl Into<OwnedValueBag>,
     ) {
         self.data
             .lock()
             .unwrap()
+            .entry(generator.into())
+            .or_insert_with(DataImpl::default)
             .prompts
             .insert(key.into(), value.into());
     }
 
-    pub fn set_prompts(&self, prompts: UnorderedMap<String, OwnedValueBag>) {
-        self.data.lock().unwrap().prompts = prompts;
+    pub fn get_prompt(
+        &self,
+        generator: impl AsRef<str>,
+        key: impl AsRef<str>,
+    ) -> Option<OwnedValueBag> {
+        self.data
+            .lock()
+            .unwrap()
+            .get(generator.as_ref())
+            .and_then(|d| d.prompts.get(key.as_ref()))
+            .map(|p| p.clone())
     }
 
-    pub fn set_targets(&self, targets: UnorderedMap<String, OmniPath>) {
-        self.data.lock().unwrap().targets = targets;
+    pub fn set_prompts(
+        &self,
+        generator: impl Into<String>,
+        prompts: UnorderedMap<String, OwnedValueBag>,
+    ) {
+        self.data
+            .lock()
+            .unwrap()
+            .entry(generator.into())
+            .or_insert_with(DataImpl::default)
+            .prompts = prompts;
+    }
+
+    pub fn set_targets(
+        &self,
+
+        generator: impl Into<String>,
+        targets: UnorderedMap<String, OmniPath>,
+    ) {
+        self.data
+            .lock()
+            .unwrap()
+            .entry(generator.into())
+            .or_insert_with(DataImpl::default)
+            .targets = targets;
     }
 
     pub fn merge(&self, other: GenSession) {
         let mut data = self.data.lock().unwrap();
         let other = other.data.lock().unwrap();
 
-        data.targets.extend(other.targets.clone());
-        data.prompts.extend(other.prompts.clone());
+        for (generator, other_data) in other.iter() {
+            let data = data
+                .entry(generator.clone())
+                .or_insert_with(DataImpl::default);
+            data.targets.extend(other_data.targets.clone());
+            data.prompts.extend(other_data.prompts.clone());
+        }
     }
 
     pub fn restore_targets(
         &self,
+        generator: impl AsRef<str>,
         targets: &mut UnorderedMap<String, OmniPath>,
         override_existing: bool,
     ) {
-        for (k, v) in self.data.lock().unwrap().targets.iter() {
-            if override_existing || !targets.contains_key(k) {
-                targets.insert(k.clone(), v.clone());
+        let data = self.data.lock().unwrap();
+        let data = data.get(generator.as_ref()).map(|d| &d.targets);
+
+        if let Some(data) = data {
+            for (k, v) in data {
+                if override_existing || !targets.contains_key(k) {
+                    targets.insert(k.clone(), v.clone());
+                }
             }
         }
     }
 
     pub fn restore_prompts(
         &self,
+        generator: impl AsRef<str>,
         prompts: &mut UnorderedMap<String, OwnedValueBag>,
         override_existing: bool,
     ) {
-        for (k, v) in self.data.lock().unwrap().prompts.iter() {
-            if override_existing || !prompts.contains_key(k) {
-                prompts.insert(k.clone(), v.clone());
+        let data = self.data.lock().unwrap();
+        let data = data.get(generator.as_ref()).map(|d| &d.prompts);
+
+        if let Some(data) = data {
+            for (k, v) in data {
+                if override_existing || !prompts.contains_key(k) {
+                    prompts.insert(k.clone(), v.clone());
+                }
             }
         }
     }
@@ -141,4 +224,31 @@ impl DataImpl {
 struct DataImplDeserialize {
     targets: UnorderedMap<String, OmniPath>,
     prompts: UnorderedMap<String, serde_json::Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_types::OmniPath;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_merge() {
+        let session = GenSession::new();
+
+        session.set_target("a", "a", OmniPath::new("a"));
+        session.set_target("b", "b", OmniPath::new("b"));
+
+        let other = GenSession::new();
+
+        other.set_target("a", "b", OmniPath::new("b"));
+        other.set_target("c", "c", OmniPath::new("c"));
+
+        session.merge(other);
+
+        assert_eq!(session.get_target("a", "a"), Some(OmniPath::new("a")));
+        assert_eq!(session.get_target("a", "b"), Some(OmniPath::new("b")));
+        assert_eq!(session.get_target("b", "b"), Some(OmniPath::new("b")));
+        assert_eq!(session.get_target("c", "c"), Some(OmniPath::new("c")));
+    }
 }
