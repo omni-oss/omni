@@ -73,7 +73,7 @@ pub fn shouty_kebab_case(
 pub fn base_name(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
     let s = try_get_value!("base_name", "value", String, value);
     let path = Path::new(&s);
-    Ok(to_value(path.file_name()).unwrap())
+    Ok(to_value(path.file_name().map(|s| s.to_string_lossy())).unwrap())
 }
 
 pub fn relative_path(
