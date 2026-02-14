@@ -158,21 +158,19 @@ function isPathInside(parent: string, child: string) {
 }
 
 function toPathSafeString(str: string): string {
-    // 1. Replace illegal characters: / \ ? % * : | " < >
-    // Also includes control characters (0-31) which are illegal on Windows
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: false
-    let safeStr = str.replace(/[/\\?%*:|"<> \x00-\x1f]/g, "_");
+    // 1. Standard encoding (handles / \ : * ? " < > |)
+    let encoded = encodeURIComponent(str);
 
-    // 2. Trim trailing dots and spaces (illegal on Windows filenames)
-    safeStr = safeStr.replace(/[.\s]+$/, "");
+    // 2. Manually encode dots (encodeURIComponent ignores them)
+    // This prevents ".htaccess" or "file." issues
+    // encoded = encoded.replace(/\./g, '%2E');
 
-    // 3. Handle Windows Reserved Names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
-    // These cannot be filenames even if they have no extension.
-    const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-    if (reservedNames.test(safeStr)) {
-        safeStr += "_";
+    // 3. Handle Windows Reserved Names (CON, PRN, etc.)
+    // We check if the encoded string matches a reserved name
+    const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+    if (reserved.test(encoded)) {
+        encoded = `_${encoded}`;
     }
 
-    // 4. Fallback for empty strings or strings that became empty after stripping
-    return safeStr || "unsaved_file";
+    return encoded;
 }
