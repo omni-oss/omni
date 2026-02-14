@@ -1,0 +1,645 @@
+name: Publish Rust GitHub
+
+on:
+  workflow_call:
+    inputs:
+      jobs:
+        description: "The publish jobs to run"
+        required: true
+        type: string
+      commit_sha:
+        description: "Commit SHA to check for tags"
+        required: false
+        type: string
+        default: ${{ github.sha }}
+      artifacts_pattern:
+        description: "Glob pattern for artifact files"
+        required: false
+        type: string
+      run_id:
+        description: "Run ID"
+        required: false
+        type: string
+        default: ${{ github.run_id }}
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "The publish jobs to run"
+        required: true
+        type: string
+      commit_sha:
+        description: "Commit SHA to check for tags"
+        required: true
+        type: string
+      run_id:
+        description: "Run ID"
+        required: true
+        type: string
+      artifacts_pattern:
+        description: "Glob pattern for artifact files"
+        required: true
+        type: string
+
+permissions:
+  contents: write # Required for creating tags and releases
+  actions: read # Required for downloading artifacts
+
+jobs:
+  filter-projects:
+    runs-on: ubuntu-latest
+    outputs:
+      projects_to_publish: ${{ steps.filter.outputs.projects_to_publish }}
+      has_projects: ${{ steps.filter.outputs.has_projects }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Filter projects by tags
+        id: filter
+        uses: actions/github-script@v8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ inputs.commit_sha || github  }}
+          JOBS: ${{ inputs.jobs }}
+        with:
+          script: |
+            const jobsJson = process.env.JOBS;
+            const commitSha = process.env.COMMIT_SHA;
+
+            core.info('Input jobs JSON:', jobsJson);
+            core.info('Commit SHA:', commitSha);
+
+            let jobs;
+            try {
+              jobs = JSON.parse(jobsJson);
+            } catch (error) {
+              core.error('Failed to parse jobs JSON:', error);
+              throw error;
+            }
+
+            // Get all tags at this commit
+            const { data: refs } = await github.rest.git.listMatchingRefs({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'tags/'
+            });
+
+            // Filter tags that point to our commit
+            const tagsAtCommit = [];
+            for (const ref of refs) {
+              try {
+                // Handle both lightweight and annotated tags
+                let tagSha = ref.object.sha;
+
+                // If it's an annotated tag, get the commit it points to
+                if (ref.object.type === 'tag') {
+                  const { data: tag } = await github.rest.git.getTag({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    tag_sha: ref.object.sha
+                  });
+                  tagSha = tag.object.sha;
+                }
+
+                if (tagSha === commitSha) {
+                  const tagName = ref.ref.replace('refs/tags/', '');
+                  tagsAtCommit.push(tagName);
+                  core.info(`Found tag at commit: ${tagName}`);
+                }
+              } catch (error) {
+                core.info(`Error processing ref ${ref.ref}:`, error.message);
+              }
+            }
+
+            core.info('Tags at commit:', tagsAtCommit);
+
+            // Filter projects that have matching tags
+            const projectsToPublish = [];
+
+            for (const job of jobs) {
+              const projectName = job.project_name;
+
+              // Find matching tags for this project
+              const matchingTags = tagsAtCommit.filter(tag => {
+                // Tag format: <project-name>-v<version> or <project-name>@<version>
+                return tag.startsWith(`${projectName}-v`) ||
+                       tag.startsWith(`${projectName}@`);
+              });
+
+              if (matchingTags.length > 0) {
+                core.info(`Project ${projectName} has matching tags:`, matchingTags);
+
+                // Use the first matching tag (most specific)
+                const tag = matchingTags[0];
+
+                projectsToPublish.push({
+                  ...job,
+                  tag: tag
+                });
+              } else {
+                core.info(`Project ${projectName} has no matching tags, skipping release`);
+              }
+            }
+
+            core.info(`Projects to publish: ${projectsToPublish.length} of out ${jobs.length}`);
+            core.info(`Projects to publish: ${JSON.stringify(projectsToPublish.map(p => ({ project_name: p.project_name, tag: p.tag })), null, 4)}`);
+
+            core.setOutput('has_projects', projectsToPublish.length > 0 ? 'true' : 'false');
+            core.setOutput('projects_to_publish', JSON.stringify(projectsToPublish));
+
+  download-and-extract:
+    needs: filter-projects
+    if: ${{ needs.filter-projects.outputs.has_projects == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      publish_matrix: ${{ steps.prepare-matrix.outputs.publish_matrix }}
+      has_assets: ${{ steps.prepare-matrix.outputs.has_assets }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          run-id: ${{ inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pattern: ${{ inputs.artifacts_pattern }}
+          merge-multiple: true
+
+      - name: Extract and organize artifacts
+        id: extract
+        uses: actions/github-script@v8
+        env:
+          PROJECTS_TO_PUBLISH: ${{ needs.filter-projects.outputs.projects_to_publish }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { execSync } = require('child_process');
+
+            const projectsToPublish = JSON.parse(process.env.PROJECTS_TO_PUBLISH);
+
+            core.info(`Processing projects: ${projectsToPublish.map(p => p.project_name).join(', ')}`);
+
+            const extractedDir = 'extracted';
+            const extractedTmpDir = 'extracted_tmp';
+            const assetsDir = `${process.cwd()}/assets`;
+            fs.mkdirSync(extractedDir, { recursive: true });
+            fs.mkdirSync(extractedTmpDir, { recursive: true });
+            fs.mkdirSync(assetsDir, { recursive: true });
+
+            // Get all artifact directories
+            const artifactsDir = 'artifacts';
+            if (!fs.existsSync(artifactsDir)) {
+              core.info('No artifacts directory found');
+              core.setOutput('success', 'false');
+              return;
+            }
+
+            const artifactZipFiles = fs.readdirSync(artifactsDir, { withFileTypes: true })
+              .filter(dirent => dirent.isFile())
+              .map(dirent => dirent.name);
+
+            if (artifactZipFiles.length === 0) {
+                core.info('No artifacts found');
+                core.setOutput('success', 'false');
+                return;
+            }
+            core.info(`Found build artifacts:\n${artifactZipFiles.join('\n')}`);
+
+            function closestCommonAncestor(paths) {
+                if (!paths || paths.length === 0) return '';
+                if (paths.length === 1) return paths[0].slice(0, paths[0].lastIndexOf('/')) || '/';
+
+                // 1. Split paths into segments (arrays of folder names)
+                const splitPaths = paths.map(p => p.split('/'));
+
+                // 2. The common ancestor can't be longer than the shortest path
+                const firstPath = splitPaths[0];
+                let commonSegments = [];
+
+                // 3. Compare segments one by one across all paths
+                for (let i = 0; i < firstPath.length; i++) {
+                    const currentSegment = firstPath[i];
+
+                    // Check if every path has this same segment at this exact position
+                    const isCommon = splitPaths.every(path => path[i] === currentSegment);
+
+                    if (isCommon) {
+                        commonSegments.push(currentSegment);
+                    } else {
+                        break; // Stop as soon as a mismatch is found
+                    }
+                }
+
+                // 4. Join back and handle the root case
+                const result = commonSegments.join('/');
+                return result === '' && paths[0].startsWith('/') ? '/' : result;
+            }
+
+            function stripPrefix(filePath, prefixPath) {
+                if (typeof filePath !== 'string' || typeof prefixPath !== 'string') {
+                    throw new TypeError('Both filePath and prefixPath must be strings.');
+                }
+
+                // Normalize both paths for consistent separators
+                const normalizedFile = path.normalize(filePath);
+                const normalizedPrefix = path.normalize(prefixPath);
+
+                // Ensure prefix ends with a path separator
+                const prefixWithSep = normalizedPrefix.endsWith(path.sep)
+                    ? normalizedPrefix
+                    : normalizedPrefix + path.sep;
+
+                // If file path starts with the prefix, remove it
+                if (normalizedFile.startsWith(prefixWithSep)) {
+                    return normalizedFile.slice(prefixWithSep.length);
+                }
+
+                // If no match, return original path
+                return normalizedFile;
+            }
+
+
+            function pathSafe(str) {
+                // 1. Standard encoding (handles / \ : * ? " < > |)
+                let encoded = encodeURIComponent(str);
+
+                // 2. Manually encode dots (encodeURIComponent ignores them)
+                // This prevents ".htaccess" or "file." issues
+                // encoded = encoded.replace(/\./g, '%2E');
+
+                // 3. Handle Windows Reserved Names (CON, PRN, etc.)
+                // We check if the encoded string matches a reserved name
+                const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+                if (reserved.test(encoded)) {
+                    encoded = `_${encoded}`;
+                }
+
+                return encoded;
+            }
+
+            // Process each project
+            for (const project of projectsToPublish) {
+                core.info(`========== Processing project: ${project.project_name} ==========`);
+                const projectName = project.project_name;
+                const projectDir = project.project_dir;
+                const projectAssetsDir = path.join(assetsDir, pathSafe(projectName));
+                fs.mkdirSync(projectAssetsDir, { recursive: true });
+                const artifacts = project.artifacts;
+                const platforms = Object.keys(project.meta.targets);
+                for (const platform of platforms) {
+                    core.info(`>>>>> Processing project: ${projectName} for platform: ${platform}`);
+                    const dir = path.join(extractedDir, pathSafe(projectName), pathSafe(platform));
+                    const tmpDir = path.join(extractedTmpDir, pathSafe(projectName), pathSafe(platform));
+                    const fullProjectDir = path.join(dir, projectDir);
+                    const fullProjectTmpDir = path.join(tmpDir, projectDir);
+                    fs.mkdirSync(dir, { recursive: true });
+                    const projectArtifactName = `${artifacts.project.name}_${platform}.zip`;
+                    const workspaceArtifactName = `${artifacts.workspace.name}_${platform}.zip`;
+
+                    // extract the zip files from artifact dir to the extracted dir
+                    const projectArtifactPath = path.join(artifactsDir, projectArtifactName);
+                    const workspaceArtifactPath = path.join(artifactsDir, workspaceArtifactName);
+                    if (fs.existsSync(projectArtifactPath)) {
+                        fs.mkdirSync(fullProjectTmpDir, { recursive: true });
+                        core.info(`Extracting ${projectArtifactPath} to ${fullProjectTmpDir}`);
+                        execSync(`unzip -q ${projectArtifactPath} -d ${fullProjectTmpDir}`, { stdio: 'inherit' });
+                    } else {
+                        core.info(`No project artifact found at ${projectArtifactPath}`);
+                    }
+                    if (fs.existsSync(workspaceArtifactPath)) {
+                        fs.mkdirSync(tmpDir, { recursive: true });
+                        core.info(`Exracting ${workspaceArtifactPath} to ${tmpDir}`);
+                        execSync(`unzip -q ${workspaceArtifactPath} -d ${tmpDir}`, { stdio: 'inherit' });
+                    } else {
+                        core.info(`No workspace artifact found at ${workspaceArtifactPath}`);
+                    }
+
+                    // delete target folders for other platforms, we only need the one for the current platform
+                    const otherPlatforms = platforms.filter(p => p !== platform);
+                    for (const otherPlatform of otherPlatforms) {
+                        const otherPlatformPath = path.join(tmpDir, "target", otherPlatform);
+                        if (fs.existsSync(otherPlatformPath)) {
+                            core.info(`Deleting other platform target: ${otherPlatformPath}`);
+                            fs.rmSync(otherPlatformPath, { recursive: true, force: true });
+                        }
+                    }
+
+                    const globber = await glob.create(`${tmpDir}/**`, {
+                        matchDirectories: false,
+                    });
+                    const files = await globber.glob();
+                    core.info(`Found ${files.length} files to copy`);
+                    if (files.length > 0) {
+                        const commonAncestor = closestCommonAncestor(files);
+                        core.info(`Closest common ancestor for the files: ${commonAncestor}`);
+                        for (const file of files) {
+                            const copyToPath = path.join(
+                                dir,
+                                stripPrefix(file, commonAncestor)
+                            );
+                            const parentDir = path.dirname(copyToPath);
+                            if (!fs.existsSync(parentDir)) {
+                                fs.mkdirSync(parentDir, { recursive: true });
+                            }
+                            core.info(`Copying ${file} to ${copyToPath}`);
+                            fs.copyFileSync(file, copyToPath);
+                        }
+                        const zipName = `${pathSafe(project.tag)}-${pathSafe(platform)}.zip`;
+                        const zipPath = path.join(projectAssetsDir, zipName);
+
+                        core.info(`Zipping to ${zipName}...`);
+                        try {
+                            execSync(`zip -r ${zipPath} .`, { cwd: dir, stdio: 'inherit' });
+                        } catch (error) {
+                            core.error(`Failed to zip ${zipPath}: ${error}`);
+                            throw error;
+                        }
+                    }
+                    core.info(`>>>>> Done processing project: ${projectName} for platform: ${platform}`);
+                }
+
+                core.info(`========== Done processing project: ${projectName} ==========`);
+            }
+
+            core.info('Extraction complete. Contents:');
+            if (fs.existsSync(extractedDir)) {
+                const globber = await glob.create(`${extractedDir}/**`, {
+                    matchDirectories: false,
+                });
+                const files = await globber.glob();
+                const commonAncestor = closestCommonAncestor(files);
+                core.info(`in ${commonAncestor}:\n${files.map(f => stripPrefix(f, commonAncestor)).join('\n')}\nTotal: ${files.length}`);
+            }
+            core.info('Assets:');
+            if (fs.existsSync(assetsDir)) {
+                const globber = await glob.create(`${assetsDir}/**`, {
+                    matchDirectories: false,
+                });
+                const files = await globber.glob();
+                const commonAncestor = closestCommonAncestor(files);
+                core.info(`in ${commonAncestor}:\n${files.map(f => stripPrefix(f, commonAncestor)).join('\n')}\nTotal: ${files.length}`);
+            }
+
+            fs.rmSync(extractedTmpDir, { recursive: true, force: true });
+            fs.rmSync(extractedDir, { recursive: true, force: true });
+
+
+            core.setOutput('success', 'true');
+
+      - name: Prepare matrix
+        id: prepare-matrix
+        uses: actions/github-script@v8
+        env:
+          PROJECTS_TO_PUBLISH: ${{ needs.filter-projects.outputs.projects_to_publish }}
+        with:
+          script: |
+            const fs = require('fs').promises;
+            const fsSync = require('fs');
+            const path = require('path');
+
+            function pathSafe(str) {
+                // 1. Standard encoding (handles / \ : * ? " < > |)
+                let encoded = encodeURIComponent(str);
+
+                // 2. Manually encode dots (encodeURIComponent ignores them)
+                // This prevents ".htaccess" or "file." issues
+                // encoded = encoded.replace(/\./g, '%2E');
+
+                // 3. Handle Windows Reserved Names (CON, PRN, etc.)
+                // We check if the encoded string matches a reserved name
+                const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+                if (reserved.test(encoded)) {
+                    encoded = `_${encoded}`;
+                }
+
+                return encoded;
+            }
+
+            const projectsToPublish = JSON.parse(process.env.PROJECTS_TO_PUBLISH);
+            const assetsDir = 'assets';
+
+            if (!fsSync.existsSync(assetsDir)) {
+              core.info('No assets directory found');
+              core.setOutput('has_artifacts', 'false');
+              core.setOutput('matrix', JSON.stringify({ include: [] }));
+              return;
+            }
+
+            const publishMatrix = [];
+            const uploadMatrix = [];
+
+            // Build matrix from extracted files
+            const projectDirs = fsSync.readdirSync(assetsDir, { withFileTypes: true })
+              .filter(dirent => dirent.isDirectory())
+              .map(dirent => dirent.name);
+
+            for (const project of projectsToPublish) {
+                const platforms = Object.keys(project.meta.targets);
+
+                const assets = [];
+                const slug = pathSafe(project.tag);
+
+                for (const platform of platforms) {
+                    const assetSlug = `${slug}-${platform}`;
+                    const zipName = `${assetSlug}.zip`;
+                    const assetPath = path.join(assetsDir, pathSafe(project.project_name), zipName);
+                    const asset = {
+                        slug: assetSlug,
+                        name: zipName,
+                        path: assetPath,
+                    };
+                    assets.push(asset);
+                }
+
+                publishMatrix.push({
+                    project_name: project.project_name,
+                    slug,
+                    tag: project.tag,
+                    assets,
+                });
+            }
+
+            core.info(`Publish matrix: ${JSON.stringify(publishMatrix, null, 4)}`);
+            core.setOutput('has_assets', publishMatrix.length > 0 ? 'true' : 'false');
+            core.setOutput('publish_matrix', JSON.stringify({ include: publishMatrix }));
+
+      - name: Upload assets
+        if: steps.prepare-matrix.outputs.has_assets == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: assets
+          path: assets/
+          retention-days: 1
+
+  publish-releases:
+    needs: [filter-projects, download-and-extract]
+    if: needs.download-and-extract.outputs.has_assets == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.download-and-extract.outputs.publish_matrix) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download prepared artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: assets
+          path: assets
+
+      - name: Verify assets exist
+        run: |
+          echo "Verifying assets for ${{ matrix.project_name }}"
+          echo "Tag: ${{ matrix.tag }}"
+          echo "Assets to upload:"
+          for asset in $(echo '${{ toJson(matrix.assets) }}' | jq -r '.[].path'); do
+            echo "  - $asset"
+            if [ -f "$asset" ]; then
+              ls -lh "$asset"
+            else
+              echo "    WARNING: Asset not found!"
+            fi
+          done
+
+      - name: Create or update release
+        uses: actions/github-script@v8
+        env:
+          ASSETS: ${{ toJson(matrix.assets) }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const projectName = '${{ matrix.project_name }}';
+            const tag = '${{ matrix.tag }}';
+            const commitSha = '${{ inputs.commit_sha }}';
+            const assets = JSON.parse(process.env.ASSETS);
+
+            core.info(`Publishing ${projectName}`);
+            core.info(`Tag: ${tag}`);
+            core.info(`Assets: ${assets.length}`);
+
+            // Verify tag exists at the commit
+            try {
+              const { data: tagRef } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`
+              });
+
+              let tagSha = tagRef.object.sha;
+
+              // If it's an annotated tag, get the commit it points to
+              if (tagRef.object.type === 'tag') {
+                const { data: tagObj } = await github.rest.git.getTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_sha: tagRef.object.sha
+                });
+                tagSha = tagObj.object.sha;
+              }
+
+              if (tagSha !== commitSha) {
+                core.warn(`Tag ${tag} points to ${tagSha} but expected ${commitSha}`);
+              }
+            } catch (error) {
+              if (error.status === 404) {
+                core.warn(`Tag ${tag} does not exist, creating it`);
+                await github.rest.git.createRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `refs/tags/${tag}`,
+                  sha: commitSha
+                });
+              } else {
+                throw error;
+              }
+            }
+
+            // Check if release exists
+            let release;
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag
+              });
+              release = data;
+              core.info(`Found existing release: ${release.id}`);
+            } catch (error) {
+              if (error.status === 404) {
+                // Create new release
+                core.info(`Creating new release for tag: ${tag}`);
+
+                const { data } = await github.rest.repos.createRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_name: tag,
+                  name: `${projectName} (${tag})`,
+                  draft: false,
+                  prerelease: tag.includes('alpha') || tag.includes('beta') || tag.includes('rc'),
+                  generate_release_notes: true
+                });
+                release = data;
+                core.info(`Created release: ${release.id}`);
+              } else {
+                throw error;
+              }
+            }
+
+            // Get existing assets
+            const existingAssets = await github.rest.repos.listReleaseAssets({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id
+            });
+
+            // Upload all assets
+            for (const asset of assets) {
+              core.info(`Processing asset: ${asset.name}`);
+
+              // Check if asset file exists
+              if (!fs.existsSync(asset.path)) {
+                core.info(`Asset file not found: ${asset.path}`);
+                continue;
+              }
+
+              // Delete existing asset if it exists
+              const existingAsset = existingAssets.data.find(a => a.name === asset.name);
+              if (existingAsset) {
+                core.info(`Deleting existing asset: ${asset.name}`);
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existingAsset.id
+                });
+              }
+
+              // Upload asset
+              core.info(`Uploading asset: ${asset.name}`);
+              const assetData = fs.readFileSync(asset.path);
+
+              const uploadResponse = await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                name: asset.name,
+                data: assetData
+              });
+
+              core.info(`Successfully uploaded ${asset.name}`);
+              core.info(`Download URL: ${uploadResponse.data.browser_download_url}`);
+            }
+
+            core.info(`Completed publishing ${projectName} with ${assets.length} assets`);

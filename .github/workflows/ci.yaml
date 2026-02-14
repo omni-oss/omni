@@ -205,3 +205,14 @@ jobs:
         publish_npm
         build_rust
         build_typescript
+
+  publish-rust-github:
+    needs:
+      - build-rust
+      - build-typescript
+      - plan
+    if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/publish-rust-github.yaml
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_publish_rust_github }}
+      artifacts_pattern: build-rust-*
