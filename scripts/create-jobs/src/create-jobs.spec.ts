@@ -210,11 +210,11 @@ describe("createJobs", () => {
             task_name: "test",
             artifacts: {
                 project: {
-                    name: "project-@project_name__test",
+                    name: "project-%40project%2Fname__test",
                     files: [],
                 },
                 workspace: {
-                    name: "workspace-@project_name__test",
+                    name: "workspace-%40project%2Fname__test",
                     files: [],
                 },
             },
