@@ -133,18 +133,19 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             })?;
 
             let project_cache = &project_config.cache;
-            let meta_config = &project_config.meta;
+            let project_meta = &project_config.meta;
 
             project_meta_configs
-                .insert(project_config.name.clone(), meta_config.clone());
+                .insert(project_config.name.clone(), project_meta.clone());
 
             for (name, task) in project_config.tasks.iter() {
+                let full_task_name =
+                    format!("{}#{}", project_config.name, name);
                 if let Some(env) = task.env()
                     && let Some(vars) = env.vars.as_ref()
                 {
-                    let key = format!("{}#{}", project_config.name, name);
-
-                    task_env_var_overrides.insert(key, vars.to_map_to_inner());
+                    task_env_var_overrides
+                        .insert(full_task_name.clone(), vars.to_map_to_inner());
                 }
 
                 let task_cache = task.cache();
@@ -179,7 +180,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 };
 
                 cache_infos.insert(
-                    format!("{}#{}", project_config.name, name),
+                    full_task_name.clone(),
                     CacheInfo {
                         cache_execution: cache
                             .enabled
@@ -193,18 +194,18 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                     },
                 );
 
-                let meta = task.meta();
+                let task_meta = task.meta();
 
-                let meta = if let Some(meta) = meta {
-                    let mut meta = meta.clone();
-                    meta.merge(meta_config.clone());
-                    meta
+                let task_meta = if let Some(meta) = task_meta {
+                    let meta = meta.clone();
+                    let mut project_meta = project_meta.clone();
+                    project_meta.merge(meta);
+                    project_meta
                 } else {
-                    meta_config.clone()
+                    project_meta.clone()
                 };
 
-                task_meta_configs
-                    .insert(format!("{}#{}", project_config.name, name), meta);
+                task_meta_configs.insert(full_task_name, task_meta);
             }
 
             projects.push(Project::new(

@@ -266,8 +266,10 @@ where
             if details.meta.is_none() {
                 details.meta = self
                     .context
-                    .get_task_meta_config(&task_name, &project_name)
-                    .or(self.context.get_project_meta_config(&project_name))
+                    .get_task_meta_config(&project_name, &task_name)
+                    .or_else(|| {
+                        self.context.get_project_meta_config(&project_name)
+                    })
                     .cloned();
             }
 
