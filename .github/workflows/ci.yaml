@@ -213,6 +213,9 @@ jobs:
       - plan
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-rust-github.yaml
+    permissions:
+      actions: read
+      contents: write
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_rust_github }}
       artifacts_pattern: build-rust-*
