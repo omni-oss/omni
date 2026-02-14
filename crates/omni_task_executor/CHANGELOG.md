@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.5.3 - 2026-02-14
+#### Bug Fixes
+- task meta not discovered - (ec2412b) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.5.2 - 2026-02-10
 #### Bug Fixes
 - (**omni_task_executor**) update verbose info trace to trace level - (84e9471) - Clarence Manuel

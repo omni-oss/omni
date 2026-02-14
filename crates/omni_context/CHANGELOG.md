@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.1.3 - 2026-02-14
+#### Bug Fixes
+- task meta not discovered - (ec2412b) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.1.2 - 2026-02-12
 #### Bug Fixes
 - support --inherit-env-vars flag in env subcommand - (e42f576) - Clarence Manuel

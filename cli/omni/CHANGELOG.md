@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.6.3 - 2026-02-14
+#### Bug Fixes
+- task meta not discovered - (ec2412b) - Clarence Manuel
+
+- - -
+
 ## omni-v0.6.2 - 2026-02-14
 #### Bug Fixes
 - hide run-javascript action - (9cba894) - Clarence Manuel
