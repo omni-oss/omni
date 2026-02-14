@@ -110,9 +110,6 @@ jobs:
             setJobOutput('jobs_publish_rust_github', jobs.publish?.rust_github || []);
             setJobOutput('jobs_publish_generic', jobs.publish?.generic || []);
 
-            // 5. Handle the environment variable prefix
-            core.setOutput('jobs_cache_restore_key_prefixes', process.env['restore-key-prefixes']);
-
       - name: Prune Unused Caches
         run: omni -i cache prune -sy -o="7d" # Remove stale caches older than 7 days
 
