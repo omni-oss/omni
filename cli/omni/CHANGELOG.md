@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.6.2 - 2026-02-14
+#### Bug Fixes
+- hide run-javascript action - (9cba894) - Clarence Manuel
+
+- - -
+
 ## omni-v0.6.1 - 2026-02-13
 #### Bug Fixes
 - optional value for --save-session and --ignore-session flag - (1284164) - Clarence Manuel

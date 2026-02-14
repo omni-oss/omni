@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.9 - 2026-02-14
+#### Bug Fixes
+- (**@omni-oss/create-jobs**) improve artifact name escaping - (4eb9d91) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/create-jobs**) fix tests - (fabe516) - Clarence Manuel
+- add npmignore to scripts - (40e7d91) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.8 - 2026-02-12
 #### Bug Fixes
 - (**@omni-oss/create-jobs**) output relative paths - (db68af6) - Clarence Manuel

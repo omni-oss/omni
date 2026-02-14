@@ -4518,7 +4518,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "ahash 0.8.12",
  "atty",

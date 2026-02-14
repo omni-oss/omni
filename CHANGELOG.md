@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.6.2 - 2026-02-14
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.6.2
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.9
+- omni_generator_configurations bumped to omni_generator_configurations-v0.2.2
+- omni bumped to omni-v0.6.2
+### Global changes
+#### Continuous Integration
+- fix permissions - (42942a8) - Clarence Manuel
+- add support for publish rust github workflow [skip ci] - (e040393) - Clarence Manuel
+- improve omni cache prefixes - (def01d4) - Clarence Manuel
+- update omni version [skip ci] - (65eac89) - Clarence Manuel
+
+- - -
+
 ## v0.6.1 - 2026-02-13
 ### Package updates
 - omni_generator bumped to omni_generator-v0.2.1
