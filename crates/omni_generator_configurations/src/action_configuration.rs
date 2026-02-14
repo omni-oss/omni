@@ -567,8 +567,10 @@ pub enum ActionConfiguration {
     },
 
     /// Run a custom JavaScript program
+    /// Hidden for now since it's not fully implemented.
     #[strum_discriminants(strum(serialize = "run-javascript"))]
-    #[serde(rename = "run-javascript")]
+    #[serde(rename = "run-javascript", alias = "run-js", skip)]
+    #[schemars(skip)]
     RunJavaScript {
         #[serde(flatten)]
         action: RunJavaScriptActionConfiguration,
