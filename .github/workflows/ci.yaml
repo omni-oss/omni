@@ -93,6 +93,7 @@ jobs:
                 data.forEach(updateArtifactData);
                 core.setOutput(name, JSON.stringify(data));
                 core.setOutput(`${name}_count`, data ? data.length : 0);
+                core.info(`Set output ${name} to ${data.length} items:\n${JSON.stringify(data, null, 2)}`);
             };
 
             // 3. Set the full jobs output
@@ -193,7 +194,6 @@ jobs:
 
   publish-npm:
     needs:
-      - build-rust
       - build-typescript
       - plan
     if: ${{ needs.plan.outputs.jobs_publish_generic_count > 0 && startsWith(github.ref, 'refs/tags/') }}
@@ -209,7 +209,6 @@ jobs:
   publish-rust-github:
     needs:
       - build-rust
-      - build-typescript
       - plan
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-rust-github.yaml
