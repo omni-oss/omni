@@ -29,7 +29,7 @@ pub struct CollectConfig {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ProjectTaskInfo<'a> {
     pub project_name: &'a str,
     pub project_dir: &'a Path,
@@ -40,6 +40,7 @@ pub struct ProjectTaskInfo<'a> {
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
+    pub args: &'a Map<String, serde_json::Value>,
 }
 
 #[auto_impl]
@@ -48,7 +49,7 @@ pub trait CollectorSys:
 {
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CollectResult<'a> {
     pub task: ProjectTaskInfo<'a>,
     pub input_files: Option<Vec<OmniPath>>,
@@ -68,6 +69,7 @@ struct HashInput<'a> {
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
+    pub args: &'a Map<String, serde_json::Value>,
 }
 
 struct Holder<'a> {
@@ -170,6 +172,16 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let env_vars = buff.join("\n");
 
             tree.insert(DefaultHasher::hash(env_vars.as_bytes()));
+        }
+
+        if !hash_input.args.is_empty() {
+            let mut buff = vec![];
+            for (key, value) in hash_input.args.iter() {
+                buff.push(format!("{key}={value:?}"));
+            }
+
+            let args = buff.join("\n");
+            tree.insert(DefaultHasher::hash(args.as_bytes()));
         }
 
         if !hash_input.cached_output_files_glob.is_empty() {
@@ -435,6 +447,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         env_vars: holder.task.env_vars,
                         dependency_digests: holder.task.dependency_digests,
                         cached_output_files_glob: &holder.output_files_glob,
+                        args: holder.task.args,
                     })
                     .await?;
 

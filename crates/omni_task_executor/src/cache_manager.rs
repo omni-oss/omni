@@ -179,6 +179,7 @@ where
                     dependency_digests: info.task.dependency_digests,
                     env_vars: info.task.env_vars,
                     input_env_keys: info.task.input_env_keys,
+                    args: info.task.args,
                 })
                 .collect::<Vec<_>>();
 

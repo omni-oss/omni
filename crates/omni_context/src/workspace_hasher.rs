@@ -72,6 +72,8 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
             });
         }
 
+        let args = maps::map![];
+
         let task_infos = task_infos_tmp
             .iter()
             .map(|p| ProjectTaskInfo {
@@ -84,6 +86,7 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
                 dependency_digests: &[],
                 env_vars: &p.env_vars,
                 input_env_keys: &p.input_env_keys,
+                args: &args,
             })
             .collect::<Vec<_>>();
 

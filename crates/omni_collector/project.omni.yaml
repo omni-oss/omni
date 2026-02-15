@@ -8,3 +8,4 @@ dependencies:
   - omni_types
   - omni_hasher
   - omni_utils
+  - config_utils

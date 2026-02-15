@@ -122,25 +122,26 @@ fn hashtext(text: &str) -> String {
 impl HybridTaskExecutionCacheStore {
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, projects, config))
+        tracing::instrument(level = "debug", skip(self, tasks, config))
     )]
     async fn collect<'a>(
         &'a self,
-        projects: &[TaskExecutionInfo<'a>],
+        tasks: &[TaskExecutionInfo<'a>],
         config: &CollectConfig,
     ) -> Result<Vec<CollectResult<'a>>, LocalTaskExecutionCacheStoreError> {
-        let collect_task_infos = projects
+        let collect_task_infos = tasks
             .iter()
-            .map(|project| omni_collector::ProjectTaskInfo {
-                input_files: project.input_files,
-                output_files: project.output_files,
-                project_dir: project.project_dir,
-                project_name: project.project_name,
-                task_command: project.task_command,
-                task_name: project.task_name,
-                dependency_digests: project.dependency_digests,
-                env_vars: project.env_vars,
-                input_env_keys: project.input_env_keys,
+            .map(|task| omni_collector::ProjectTaskInfo {
+                input_files: task.input_files,
+                output_files: task.output_files,
+                project_dir: task.project_dir,
+                project_name: task.project_name,
+                task_command: task.task_command,
+                task_name: task.task_name,
+                dependency_digests: task.dependency_digests,
+                env_vars: task.env_vars,
+                input_env_keys: task.input_env_keys,
+                args: task.args,
             })
             .collect::<Vec<_>>();
 
@@ -1141,6 +1142,8 @@ mod tests {
         output_files: Vec<OmniPath>,
         env_vars: maps::Map<String, String>,
         input_env_cache_keys: Vec<String>,
+        pub dependency_digests: Vec<DefaultHash>,
+        pub args: Map<String, serde_json::Value>,
     }
 
     fn task_from_static<'a>(
@@ -1155,7 +1158,8 @@ mod tests {
             &task.input_files,
             &task.input_env_cache_keys,
             &task.env_vars,
-            &[],
+            &task.dependency_digests,
+            &task.args,
         )
     }
 
@@ -1175,6 +1179,8 @@ mod tests {
             project_dir,
             env_vars: env_vars(),
             input_env_cache_keys: env_cache_keys(),
+            dependency_digests: vec![],
+            args: Map::default(),
         };
         f(&mut owned);
 

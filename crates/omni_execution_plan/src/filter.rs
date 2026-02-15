@@ -409,14 +409,13 @@ pub(crate) enum FilterErrorInner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use config_utils::DictConfig;
-    use omni_configurations::{MetaConfiguration, MetaValue};
+    use config_utils::{DictConfig, DynValue};
     use omni_core::TaskExecutionNode;
 
     #[test]
     fn test_default_task_filter_project_name_and_meta_filter_matching_all() {
         let meta = MetaConfiguration::new(DictConfig::value(maps::map! {
-            "a".to_string() => MetaValue::new_integer(1),
+            "a".to_string() => DynValue::new_integer(1),
         }));
 
         let filter = DefaultTaskFilter::new(

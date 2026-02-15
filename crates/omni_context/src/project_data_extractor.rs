@@ -191,6 +191,16 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                         key_input_files: key_files,
                         cache_output_files: task_output.files.to_vec(),
                         cache_logs: task_output.logs,
+                        args: task
+                            .args()
+                            .map(|args| {
+                                args.iter()
+                                    .map(|(k, v)| {
+                                        (k.clone(), v.clone().into_json())
+                                    })
+                                    .collect::<Map<_, _>>()
+                            })
+                            .unwrap_or_default(),
                     },
                 );
 

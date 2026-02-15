@@ -1,10 +1,9 @@
-use config_utils::{DictConfig, ListConfig};
+use config_utils::{DictConfig, DynValue};
 use derive_new::new;
 use garde::Validate;
 use merge::Merge;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 #[derive(
     Deserialize,
@@ -20,7 +19,7 @@ use serde_json::Value as JsonValue;
 )]
 #[garde(allow_unvalidated)]
 #[serde(transparent)]
-pub struct MetaConfiguration(pub DictConfig<MetaValue>);
+pub struct MetaConfiguration(pub DictConfig<DynValue>);
 
 impl MetaConfiguration {
     pub fn into_expression_context(
@@ -34,65 +33,5 @@ impl MetaConfiguration {
         }
 
         Ok(ctx)
-    }
-}
-
-#[derive(
-    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
-)]
-#[serde(untagged)]
-#[garde(allow_unvalidated)]
-pub enum MetaValue {
-    Boolean(#[new(into)] bool),
-    Integer(#[new(into)] i64),
-    Float(#[new(into)] f64),
-    String(#[new(into)] String),
-    List(#[new(into)] ListConfig<MetaValue>),
-    Dict(#[new(into)] DictConfig<MetaValue>),
-}
-
-impl Merge for MetaValue {
-    fn merge(&mut self, other: Self) {
-        match (self, other) {
-            (MetaValue::List(a), MetaValue::List(b)) => {
-                a.merge(b);
-            }
-            (MetaValue::Dict(a), MetaValue::Dict(b)) => {
-                a.merge(b);
-            }
-            (this, other) => {
-                *this = other;
-            }
-        }
-    }
-}
-
-impl MetaValue {
-    pub fn into_json(self) -> JsonValue {
-        match self {
-            MetaValue::Boolean(b) => JsonValue::Bool(b),
-            MetaValue::Integer(i) => JsonValue::Number(
-                serde_json::Number::from_i128(i as i128)
-                    .expect("should be valid"),
-            ),
-            MetaValue::Float(f) => JsonValue::Number(
-                serde_json::Number::from_f64(f).expect("should be valid"),
-            ),
-            MetaValue::String(s) => JsonValue::String(s),
-            MetaValue::List(list_config) => JsonValue::Array(
-                list_config
-                    .to_vec()
-                    .into_iter()
-                    .map(MetaValue::into_json)
-                    .collect(),
-            ),
-            MetaValue::Dict(dict_config) => JsonValue::Object(
-                dict_config
-                    .into_map()
-                    .into_iter()
-                    .map(|(k, v)| (k, MetaValue::into_json(v)))
-                    .collect::<serde_json::Map<_, _>>(),
-            ),
-        }
     }
 }

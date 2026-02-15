@@ -58,7 +58,11 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         } else {
             vec![]
         };
-        let template_context = create_template_context(&env_vars, meta);
+        let template_context = create_template_context(
+            &env_vars,
+            meta,
+            cache_info.as_ref().map(|c| &c.args),
+        );
 
         let ctx = TaskContext {
             node,
@@ -75,6 +79,7 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
 fn create_template_context<'a>(
     env_vars: &'a Map<String, String>,
     meta: Option<&MetaConfiguration>,
+    args: Option<&'a Map<String, serde_json::Value>>,
 ) -> omni_tera::Context {
     let mut context = omni_tera::Context::new();
 
@@ -83,6 +88,12 @@ fn create_template_context<'a>(
         context.insert("meta", meta);
     } else {
         context.insert("meta", &MetaConfiguration::default());
+    }
+
+    if let Some(args) = args {
+        context.insert("args", args);
+    } else {
+        context.insert("args", &Map::<String, ()>::default());
     }
 
     context

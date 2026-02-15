@@ -87,7 +87,7 @@ impl<T: Merge> DictConfig<T> {
     }
 
     #[inline(always)]
-    pub fn to_hash_map(&self) -> Map<String, T>
+    pub fn to_map(&self) -> Map<String, T>
     where
         T: Clone,
     {

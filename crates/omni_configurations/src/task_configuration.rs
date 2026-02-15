@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use config_utils::{DictConfig, IntoInner, ListConfig, Replace};
+use config_utils::{DictConfig, DynValue, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
 use omni_config_types::TeraExprBoolean;
@@ -20,6 +20,10 @@ use super::TaskDependencyConfiguration;
 pub struct TaskConfigurationLongForm {
     #[serde(default, deserialize_with = "validate_tera_expr")]
     pub command: String,
+
+    #[serde(default)]
+    pub args: DictConfig<DynValue>,
+
     #[serde(
         default = "super::utils::list_config_default::<TaskDependencyConfiguration>"
     )]
@@ -123,6 +127,7 @@ impl Default for TaskConfigurationLongForm {
             command: String::new(),
             dependencies: ListConfig::append(vec![]),
             description: None,
+            args: DictConfig::default(),
             env: TaskEnvConfiguration::default(),
             cache: CacheConfiguration::default(),
             output: TaskOutputConfiguration::default(),
@@ -234,6 +239,16 @@ impl TaskConfiguration {
         }
     }
 
+    pub fn args(&self) -> Option<&DictConfig<DynValue>> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                args,
+                ..
+            }) => Some(args),
+        }
+    }
+
     pub fn env(&self) -> Option<&TaskEnvConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
@@ -274,6 +289,7 @@ impl Merge for TaskConfiguration {
                     with: a_with,
                     max_retries: a_retries,
                     retry_interval: a_retry_interval,
+                    args: a_args,
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
@@ -289,6 +305,7 @@ impl Merge for TaskConfiguration {
                     with: b_with,
                     max_retries: b_retries,
                     retry_interval: b_retry_interval,
+                    args: b_args,
                 }),
             ) => {
                 a_dep.merge(b_dep);
@@ -300,6 +317,7 @@ impl Merge for TaskConfiguration {
                 a_cache.merge(b_cache);
                 a_output.merge(b_output);
                 a_meta.merge(b_meta);
+                a_args.merge(b_args);
                 merge::option::recurse(a_enabled, b_enabled);
                 merge::option::recurse(a_interactive, b_interactive);
                 merge::option::recurse(a_persistent, b_persistent);
@@ -348,6 +366,7 @@ mod tests {
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(1)),
             retry_interval: Some(Replace::new(Duration::from_secs(1))),
+            ..Default::default()
         });
 
         let b_tdc = TaskDependencyConfiguration::ExplicitProject {
@@ -369,6 +388,7 @@ mod tests {
             with: ListConfig::append(vec![]),
             max_retries: Some(Replace::new(3)),
             retry_interval: Some(Replace::new(Duration::from_secs(2))),
+            ..Default::default()
         });
 
         a.merge(b);
@@ -389,6 +409,7 @@ mod tests {
                 with: ListConfig::append(vec![]),
                 max_retries: Some(Replace::new(3)),
                 retry_interval: Some(Replace::new(Duration::from_secs(2))),
+                ..Default::default()
             })
         );
     }

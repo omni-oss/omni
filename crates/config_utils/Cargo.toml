@@ -20,3 +20,5 @@ derive_more = { workspace = true }
 garde = { workspace = true, optional = true }
 maps = { workspace = true }
 sets = { workspace = true }
+serde_json = { workspace = true }
+derive-new = { workspace = true }

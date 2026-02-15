@@ -67,6 +67,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             env_vars: Arc<Map<String, String>>,
             dependency_digests: Vec<DefaultHash>,
             input_env_keys: &'a [String],
+            args: &'a Map<String, serde_json::Value>,
         }
 
         #[derive(Debug, Clone)]
@@ -137,6 +138,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                         .collect::<Vec<_>>(),
                     env_vars,
                     input_env_keys: &ci.key_env_keys,
+                    args: &ci.args,
                 });
             }
 
@@ -152,6 +154,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     dependency_digests: &p.dependency_digests,
                     env_vars: &p.env_vars,
                     input_env_keys: p.input_env_keys,
+                    args: &p.args,
                 })
                 .collect::<Vec<_>>();
 

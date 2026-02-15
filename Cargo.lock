@@ -1622,12 +1622,14 @@ dependencies = [
 name = "config_utils"
 version = "0.1.0"
 dependencies = [
+ "derive-new",
  "derive_more",
  "garde",
  "maps",
  "merge",
  "schemars",
  "serde",
+ "serde_json",
  "sets",
  "strum 0.27.2",
 ]
@@ -4504,6 +4506,7 @@ dependencies = [
  "omni_utils",
  "rmp-serde",
  "serde",
+ "serde_json",
  "strum 0.27.2",
  "system_traits",
  "tar",
@@ -4610,6 +4613,7 @@ dependencies = [
  "omni_hasher",
  "omni_types",
  "omni_utils",
+ "serde_json",
  "strum 0.27.2",
  "system_traits",
  "thiserror 2.0.18",
@@ -4720,6 +4724,7 @@ dependencies = [
  "owo-colors",
  "path-clean",
  "serde",
+ "serde_json",
  "serde_norway",
  "sets",
  "shadow-rs",
@@ -5174,6 +5179,7 @@ dependencies = [
  "omni_tera",
  "omni_types",
  "serde",
+ "serde_json",
  "strum 0.27.2",
  "thiserror 2.0.18",
  "trace",

@@ -47,6 +47,7 @@ omni_core = { workspace = true }
 omni_remote_cache_client = { workspace = true }
 flate2 = { workspace = true }
 tar = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

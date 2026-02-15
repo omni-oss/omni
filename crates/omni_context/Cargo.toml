@@ -55,6 +55,7 @@ omni_remote_cache_client = { workspace = true }
 omni_execution_plan = { workspace = true }
 omni_setup = { workspace = true }
 omni_configuration_discovery = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
