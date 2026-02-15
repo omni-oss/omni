@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, path::Path};
 
 use omni_generator_configurations::CommonInsertConfiguration;
 
@@ -8,7 +8,7 @@ use crate::{
         HandlerContext,
         utils::{augment_tera_context, get_target_file},
     },
-    error::Error,
+    error::{Error, ErrorInner},
 };
 
 pub async fn insert_one<'a>(
@@ -22,18 +22,31 @@ pub async fn insert_one<'a>(
     let target_name = &common.common.target;
     let target = get_target_file(target_name, ctx, sys).await?;
 
-    let content = sys.fs_read_to_string_async(target.as_ref()).await?;
+    let tera_ctx_with_data = augment_tera_context(
+        ctx.tera_context_values,
+        Some(&common.common.data),
+    )?;
+
+    let target = omni_tera::one_off(
+        &target.to_string_lossy(),
+        "output_path",
+        &tera_ctx_with_data,
+    )?;
+
+    let content = sys.fs_read_to_string_async(&target).await.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ErrorInner::new_file_not_found(Path::new(&target).to_path_buf(), e)
+        } else {
+            ErrorInner::new_generic_io(e)
+        }
+    })?;
+
     if !rg.is_match(&content) {
         return Err(Error::custom(format!(
             "pattern '{}' not found in template for action {}",
             common.common.pattern, ctx.resolved_action_name
         )));
     }
-
-    let tera_ctx_with_data = augment_tera_context(
-        ctx.tera_context_values,
-        Some(&common.common.data),
-    )?;
 
     let rendered = if common.render {
         Cow::Owned(omni_tera::one_off(
@@ -70,7 +83,7 @@ pub async fn insert_one<'a>(
 
     let file = file.join(&common.separator);
 
-    sys.fs_write_async(target.as_ref(), file.as_str()).await?;
+    sys.fs_write_async(&target, file.as_str()).await?;
 
     Ok(())
 }

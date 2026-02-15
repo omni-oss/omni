@@ -111,6 +111,13 @@ pub(crate) enum ErrorInner {
     #[error(transparent)]
     Regex(#[from] regex::Error),
 
+    #[error("file not found: {path}")]
+    FileNotFound {
+        path: PathBuf,
+        #[source]
+        error: std::io::Error,
+    },
+
     #[error(transparent)]
     ChildProcess(#[from] omni_process::ChildProcessError),
 
