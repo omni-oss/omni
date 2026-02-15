@@ -178,6 +178,9 @@ pub struct RunGeneratorActionConfiguration {
     #[serde(default)]
     pub prompt_values: PromptValuesConfiguration,
 
+    #[serde(default)]
+    pub args: UnorderedMap<String, serde_json::Value>,
+
     /// Target directories to place the generated files.
     /// Overrides the targets in the generator configuration.
     #[serde(deserialize_with = "validate_umap_target_path")]

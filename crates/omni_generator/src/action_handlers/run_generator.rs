@@ -61,6 +61,7 @@ pub async fn run_generator<'a>(
         target_overrides: target_overrides.as_ref(),
         current_dir: ctx.current_dir,
         env: ctx.env,
+        args: Some(&config.args),
     };
 
     let prompted_values = Box::pin(run_internal(

@@ -463,8 +463,10 @@ fn add_data_internal(
     let mut expanded_data = unordered_map!(cap: data.len());
 
     for (key, value) in data {
-        expanded_data
-            .insert(key.clone(), expand_json_value(tera_ctx, &key, value)?);
+        expanded_data.insert(
+            key.clone(),
+            expand_json_value(tera_ctx, None, &key, value)?,
+        );
     }
 
     tera_ctx.insert("data", &expanded_data);

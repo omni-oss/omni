@@ -29,6 +29,7 @@ pub struct RunConfig<'a> {
     pub prompt_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
+    pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
 }
 
 pub async fn run<'a>(
@@ -91,12 +92,26 @@ pub(crate) async fn run_internal<'a>(
         ValueBag::capture_serde1(&values).to_owned(),
     );
 
-    let vars = expand_vars(&r#gen.vars, &context_values)?;
+    let vars = expand_vars("vars", &r#gen.vars, &context_values)?;
 
     context_values.insert(
         "vars".to_string(),
         ValueBag::capture_serde1(&vars).to_owned(),
     );
+
+    if let Some(args) = config.args {
+        let args = expand_vars("args", args, &context_values)?;
+        context_values.insert(
+            "args".to_string(),
+            ValueBag::capture_serde1(&args).to_owned(),
+        );
+    } else {
+        let map = UnorderedMap::<&str, ()>::default();
+        context_values.insert(
+            "args".to_string(),
+            ValueBag::capture_serde1(&map).to_owned(),
+        );
+    }
 
     let args = ExecuteActionsArgs {
         actions: &r#gen.actions,
@@ -149,14 +164,16 @@ pub(crate) async fn run_internal<'a>(
 }
 
 fn expand_vars(
+    key: &str,
     values: &UnorderedMap<String, serde_json::Value>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
     let tera_ctx = get_tera_context(context_values);
     let mut result = unordered_map!();
+    let parent_key = Some(key);
 
     for (key, value) in values.iter() {
-        let value = expand_json_value(&tera_ctx, key, value)?;
+        let value = expand_json_value(&tera_ctx, parent_key, key, value)?;
         result.insert(
             key.to_string(),
             ValueBag::capture_serde1(value.as_ref()).to_owned(),

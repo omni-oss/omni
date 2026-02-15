@@ -247,6 +247,7 @@ async fn run_generator_run(
         prompt_values: &pre_exec_values,
         current_dir: &current_dir,
         env: &env.as_deref().unwrap_or(&default_map),
+        args: None,
     };
 
     let session = omni_generator::run(
