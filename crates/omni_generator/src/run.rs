@@ -33,14 +33,11 @@ pub struct RunConfig<'a> {
 
 pub async fn run<'a>(
     generator_name: &'a str,
-    generator_patterns: &'a [String],
+    generators: &'a [GeneratorConfiguration],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<GenSession, Error> {
-    let generators =
-        crate::discover(config.workspace_dir, generator_patterns, sys).await?;
-
-    crate::validate(&generators)?;
+    crate::validate(generators)?;
 
     let generator = generators
         .iter()
@@ -51,9 +48,9 @@ pub async fn run<'a>(
 
     if config.dry_run {
         let sys = DryRunSys::default();
-        run_internal(&generator, &generators, config, &sys).await
+        run_internal(&generator, generators, config, &sys).await
     } else {
-        run_internal(&generator, &generators, config, sys).await
+        run_internal(&generator, generators, config, sys).await
     }
 }
 

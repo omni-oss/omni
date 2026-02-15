@@ -251,7 +251,7 @@ async fn run_generator_run(
 
     let session = omni_generator::run(
         &generator_name,
-        &ctx.workspace_configuration().generators,
+        &generators,
         &run,
         loaded_context.sys(),
     )
