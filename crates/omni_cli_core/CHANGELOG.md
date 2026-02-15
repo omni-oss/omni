@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.8.0 - 2026-02-15
+#### Features
+- add args to run-generator action - (d8e9697) - Clarence Manuel
+#### Bug Fixes
+- (**omni_generator**) generators duplicate discovery - (9eecf57) - Clarence Manuel
+- add support to template expansion in append-* prepend-* modify-* actions - (08faa16) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.7.0 - 2026-02-15
 #### Features
 - add task args - (199f686) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.3.0 - 2026-02-15
+#### Features
+- add args to run-generator action - (d8e9697) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.2.2 - 2026-02-14
 #### Bug Fixes
 - hide run-javascript action - (9cba894) - Clarence Manuel
