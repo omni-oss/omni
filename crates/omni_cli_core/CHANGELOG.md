@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.7.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.6.3 - 2026-02-14
 #### Bug Fixes
 - task meta not discovered - (ec2412b) - Clarence Manuel

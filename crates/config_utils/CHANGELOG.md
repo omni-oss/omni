@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## config_utils-v0.2.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+
+- - -
+
 ## config_utils-v0.1.0 - 2026-01-31
 #### Features
 - utilize OmniPath syntax for path configurations - (ce111ed) - Clarence Manuel

@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.4.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+#### Miscellaneous Chores
+- add traces - (58e5715) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.3.0 - 2026-02-08
 #### Features
 - add meta to template context - (bd1c6d0) - Clarence Manuel

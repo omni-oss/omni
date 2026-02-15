@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.5.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (41ec7f4) - Clarence Manuel
+- update ci - (d86247f) - Clarence Manuel
+- update omni version [skip ci] - (65eac89) - Clarence Manuel
+- update omni version [skip ci] - (7358475) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.6.3 - (23bf127) - Clarence Manuel
+- (**version**) v0.6.2 - (d7c5a2f) - Clarence Manuel
+- (**version**) v0.6.1 - (0d70aab) - Clarence Manuel
+
+- - -
+
 ## root-v0.4.0 - 2026-02-13
 #### Features
 - (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel

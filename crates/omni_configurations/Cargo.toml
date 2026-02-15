@@ -3,7 +3,7 @@ name = "omni_configurations"
 rust-version.workspace = true
 edition.workspace = true
 repository.workspace = true
-version = "0.4.1"
+version = "0.5.0"
 
 [features]
 default = ["enable-tracing"]

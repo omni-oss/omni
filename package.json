@@ -1,6 +1,6 @@
 {
     "name": "@omni-oss/root",
-    "version": "0.6.3",
+    "version": "0.7.0",
     "dependencies": {
         "@omni-oss/biome-config": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",

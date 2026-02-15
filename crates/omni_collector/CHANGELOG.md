@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_collector-v0.2.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+#### Miscellaneous Chores
+- add traces - (58e5715) - Clarence Manuel
+
+- - -
+
 ## omni_collector-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_tracing_subscriber**) support for custom ad-hoc writers - (f584f1f) - Clarence Manuel

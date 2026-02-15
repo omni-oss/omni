@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_test_utils-v0.2.0 - 2026-02-15
+#### Features
+- add task args - (199f686) - Clarence Manuel
+
+- - -
+
 ## omni_test_utils-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_tracing_subscriber**) support for custom ad-hoc writers - (f584f1f) - Clarence Manuel

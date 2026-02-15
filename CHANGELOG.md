@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.7.0 - 2026-02-15
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.7.0
+- omni_collector bumped to omni_collector-v0.2.0
+- config_utils bumped to config_utils-v0.2.0
+- omni_task_executor bumped to omni_task_executor-v0.6.0
+- omni_test_utils bumped to omni_test_utils-v0.2.0
+- omni_cache bumped to omni_cache-v0.4.0
+- omni_context bumped to omni_context-v0.2.0
+- omni_task_context bumped to omni_task_context-v0.4.0
+- omni_execution_plan bumped to omni_execution_plan-v0.3.0
+- omni bumped to omni-v0.7.0
+- omni_configurations bumped to omni_configurations-v0.5.0
+- root bumped to root-v0.5.0
+### Global changes
+#### Features
+- add task args - (199f686) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (41ec7f4) - Clarence Manuel
+
+- - -
+
 ## v0.6.3 - 2026-02-14
 ### Package updates
 - omni bumped to omni-v0.6.3
