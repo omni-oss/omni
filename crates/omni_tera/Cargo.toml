@@ -23,4 +23,5 @@ derive_builder = { workspace = true }
 derive-new = { workspace = true }
 tera = { workspace = true }
 heck = { workspace = true }
+cruet = { workspace = true }
 pathdiff = { workspace = true }

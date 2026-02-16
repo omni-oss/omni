@@ -237,6 +237,7 @@ sqlx = { version = "^0.8.6", features = [
     "bstr",
     "ipnet"
 ] }
+cruet = { version = "^0.15.0" }
 # nom = { version = "^8.0.0" }
 
 [profile.release]

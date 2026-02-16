@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::Path, sync::LazyLock};
 
+use cruet::Inflector;
 use heck::*;
 use tera::{Result, Tera, Value, to_value, try_get_value};
 
@@ -22,8 +23,16 @@ fn register_all_filters(tera: &mut Tera) {
     tera.register_filter("shouty_snake_case", shouty_snake_case);
     tera.register_filter("title_case", title_case);
     tera.register_filter("shouty_kebab_case", shouty_kebab_case);
+    tera.register_filter("sentence_case", sentence_case);
+    tera.register_filter("table_case", table_case);
+    tera.register_filter("class_case", class_case);
+    tera.register_filter("train_case", train_case);
     tera.register_filter("base_name", base_name);
     tera.register_filter("relative_path", relative_path);
+    tera.register_filter("plural", plural);
+    tera.register_filter("singular", singular);
+    tera.register_filter("ordinalize", ordinal);
+    tera.register_filter("deordinalize", deordinal);
 }
 
 pub fn upper_camel_case(
@@ -70,6 +79,29 @@ pub fn shouty_kebab_case(
     Ok(to_value(s.to_shouty_kebab_case()).unwrap())
 }
 
+pub fn sentence_case(
+    value: &Value,
+    _: &HashMap<String, Value>,
+) -> Result<Value> {
+    let s = try_get_value!("sentence_case", "value", String, value);
+    Ok(to_value(s.to_sentence_case()).unwrap())
+}
+
+pub fn table_case(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("table_case", "value", String, value);
+    Ok(to_value(s.to_table_case()).unwrap())
+}
+
+pub fn class_case(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("class_case", "value", String, value);
+    Ok(to_value(s.to_class_case()).unwrap())
+}
+
+pub fn train_case(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("train_case", "value", String, value);
+    Ok(to_value(s.to_train_case()).unwrap())
+}
+
 pub fn base_name(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
     let s = try_get_value!("base_name", "value", String, value);
     let path = Path::new(&s);
@@ -90,4 +122,24 @@ pub fn relative_path(
     })?;
 
     Ok(to_value(relative_path).unwrap())
+}
+
+pub fn plural(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("plural", "value", String, value);
+    Ok(to_value(s.to_plural()).unwrap())
+}
+
+pub fn singular(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("singular", "value", String, value);
+    Ok(to_value(s.to_singular()).unwrap())
+}
+
+pub fn ordinal(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("ordinalize", "value", String, value);
+    Ok(to_value(s.ordinalize()).unwrap())
+}
+
+pub fn deordinal(value: &Value, _: &HashMap<String, Value>) -> Result<Value> {
+    let s = try_get_value!("deordinalize", "value", String, value);
+    Ok(to_value(s.deordinalize()).unwrap())
 }

@@ -1939,6 +1939,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cruet"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7a9ae414b9768aada1b316493261653e41af05c9d2ccc9c504a8fc051c6a790"
+dependencies = [
+ "once_cell",
+ "regex",
+]
+
+[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5237,6 +5247,7 @@ dependencies = [
 name = "omni_tera"
 version = "0.3.0"
 dependencies = [
+ "cruet",
  "derive-new",
  "derive_builder",
  "eyre",
