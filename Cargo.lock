@@ -4470,7 +4470,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap",
  "color-eyre",
@@ -4702,7 +4702,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "bs58",
@@ -5176,7 +5176,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_context"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "derive-new",
  "derive_builder",
