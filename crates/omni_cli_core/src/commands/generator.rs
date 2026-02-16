@@ -258,7 +258,7 @@ async fn run_generator_run(
     )
     .await?;
 
-    if !command.args.dry_run {
+    if !command.args.dry_run && !session.is_empty() {
         let save = if let Some(save) = command.args.save_session {
             save
         } else if has_exiting_session {

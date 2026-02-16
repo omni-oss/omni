@@ -225,6 +225,21 @@ impl GenSession {
             }
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        let data = self.data.lock().unwrap();
+        if data.is_empty() {
+            return true;
+        }
+
+        for (_, data) in data.iter() {
+            if !data.targets.is_empty() || !data.prompts.is_empty() {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
 
 #[derive(Clone, serde::Serialize, Default, Debug)]
