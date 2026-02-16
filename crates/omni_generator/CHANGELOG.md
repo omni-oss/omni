@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.3.1 - 2026-02-16
+#### Bug Fixes
+- only ask to save generator session if there is something to save - (c03f6cc) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.3.0 - 2026-02-15
 #### Features
 - add args to run-generator action - (d8e9697) - Clarence Manuel

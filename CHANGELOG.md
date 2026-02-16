@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.9.0 - 2026-02-16
+### Package updates
+- omni_tera bumped to omni_tera-v0.4.0
+- omni_generator bumped to omni_generator-v0.3.1
+- omni bumped to omni-v0.9.0
+- omni_cli_core bumped to omni_cli_core-v0.9.0
+- root bumped to root-v0.6.0
+### Global changes
+#### Features
+- (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (88201bf) - Clarence Manuel
+
+- - -
+
 ## v0.8.0 - 2026-02-15
 ### Package updates
 - omni_generator_configurations bumped to omni_generator_configurations-v0.3.0

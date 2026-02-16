@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.4.0 - 2026-02-16
+#### Features
+- (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.3.0 - 2026-02-13
 #### Features
 - (**omni_tera**) add base_name and relative_path filters - (fcd4fe0) - Clarence Manuel

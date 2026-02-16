@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.6.0 - 2026-02-16
+#### Features
+- (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (88201bf) - Clarence Manuel
+- update omni version [skip ci] - (6f67213) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.8.0 - (e1d29fa) - Clarence Manuel
+
+- - -
+
 ## root-v0.5.0 - 2026-02-15
 #### Features
 - add task args - (199f686) - Clarence Manuel

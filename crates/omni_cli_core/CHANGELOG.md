@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.9.0 - 2026-02-16
+#### Features
+- (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel
+#### Bug Fixes
+- only ask to save generator session if there is something to save - (c03f6cc) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.8.0 - 2026-02-15
 #### Features
 - add args to run-generator action - (d8e9697) - Clarence Manuel
