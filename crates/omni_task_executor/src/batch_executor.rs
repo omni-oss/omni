@@ -452,8 +452,14 @@ where
             let fname =
                 fut_result.task_context().node.full_task_name().to_string();
             let hash = if self.no_cache
+                // never cache persistent tasks
                 || fut_result.task_context().node.persistent()
-            // never cache persistent tasks
+                // never cache tasks that are not enabled
+                || fut_result
+                    .task_context()
+                    .cache_info
+                    .as_ref()
+                    .is_some_and(|ci| !ci.cache_enabled)
             {
                 DefaultHash::default()
             } else {

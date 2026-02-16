@@ -149,7 +149,7 @@ where
                 if r.task_context()
                     .cache_info
                     .as_ref()
-                    .is_some_and(|ci| ci.cache_execution)
+                    .is_some_and(|ci| ci.cache_enabled)
                     && !r.task_context().node.persistent()
                     && let Some(exec_info) = r.task_context().execution_info()
                 {

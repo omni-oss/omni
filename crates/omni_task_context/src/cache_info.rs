@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CacheInfo {
-    pub cache_execution: bool,
+    pub cache_enabled: bool,
     pub key_defaults: bool,
     pub key_env_keys: Vec<String>,
     pub key_input_files: Vec<OmniPath>,

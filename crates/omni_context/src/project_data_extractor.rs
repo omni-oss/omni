@@ -182,7 +182,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 cache_infos.insert(
                     full_task_name.clone(),
                     CacheInfo {
-                        cache_execution: cache
+                        cache_enabled: cache
                             .enabled
                             .map(|i| i.into_inner())
                             .unwrap_or(true),
