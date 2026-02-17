@@ -13,26 +13,26 @@
     },
     "dependencies": {
         "@ark-ui/solid": "^5.31.0",
-        "@tanstack/router-plugin": "^1.158.4",
-        "@tanstack/solid-router": "^1.159.1",
-        "@tanstack/solid-router-devtools": "^1.159.1",
-        "@tanstack/solid-router-ssr-query": "^1.159.1",
-        "@tanstack/solid-start": "^1.159.1",
-        "lucide-solid": "^0.563.0",
+        "@tanstack/router-plugin": "^1.160.2",
+        "@tanstack/solid-router": "^1.160.0",
+        "@tanstack/solid-router-devtools": "^1.160.0",
+        "@tanstack/solid-router-ssr-query": "^1.160.0",
+        "@tanstack/solid-start": "^1.160.2",
+        "lucide-solid": "^0.574.0",
         "solid-js": "^1.9.11",
-        "vite": "^7.3.1",
+        "vite": "catalog:",
         "vite-plugin-lucide-preprocess": "^1.4.6",
-        "vite-tsconfig-paths": "^6.1.0",
-        "zod": "^4.3.6"
+        "vite-tsconfig-paths": "catalog:",
+        "zod": "catalog:"
     },
     "devDependencies": {
-        "@pandacss/dev": "^1.8.1",
+        "@pandacss/dev": "^1.8.2",
         "@tanstack/devtools-vite": "^0.5.1",
-        "typescript": "^5.9.3",
-        "vite": "^7.3.1",
+        "typescript": "catalog:",
+        "vite": "catalog:",
         "vite-plugin-solid": "^2.11.10",
         "nitro": "^3.0.1-alpha.2",
-        "@commander-js/extra-typings": "^14.0.0",
-        "srvx": "^0.11.2"
+        "@commander-js/extra-typings": "catalog:",
+        "srvx": "^0.11.5"
     }
 }

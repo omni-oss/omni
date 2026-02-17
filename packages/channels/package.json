@@ -1,30 +1,30 @@
 {
-    "name": "@omni-oss/channels",
-    "version": "0.0.1",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": {
-                "development": "./src/index.ts",
-                "default": "./dist/index.mjs"
-            },
-            "require": {
-                "development": "./src/index.ts",
-                "default": "./dist/index.cjs"
-            }
-        }
-    },
-    "publishConfig": {
-        "access": "public"
-    },
-    "dependencies": {},
-    "devDependencies": {
-        "@omni-oss/tsconfig": "workspace:^",
-        "@omni-oss/vite-config": "workspace:^",
-        "@omni-oss/vitest-config": "workspace:^",
-        "vite": "^7.3.1",
-        "vitest": "^4.0.18",
-        "typescript": "^5.9.3",
-        "@types/node": "25.2.2"
+  "name": "@omni-oss/channels",
+  "version": "0.0.1",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": {
+        "development": "./src/index.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "development": "./src/index.ts",
+        "default": "./dist/index.cjs"
+      }
     }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@omni-oss/tsconfig": "catalog:",
+    "@omni-oss/vite-config": "catalog:",
+    "@omni-oss/vitest-config": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
 }

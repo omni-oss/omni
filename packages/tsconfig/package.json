@@ -1,25 +1,25 @@
 {
-    "name": "@omni-oss/tsconfig",
-    "version": "0.1.1",
-    "description": "",
-    "exports": {
-        "./base.json": "./base.json",
-        "./with-paths.json": "./with-paths.json",
-        "./types.json": "./types.json"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "publishConfig": {
-        "access": "public"
-    },
-    "devDependencies": {
-        "typescript": "^5.9.3"
-    },
-    "peerDependencies": {
-        "typescript": "^5.1.6"
-    },
-    "dependencies": {
-        "@rencedm112/tsconfig": "^3.0.7"
-    }
+  "name": "@omni-oss/tsconfig",
+  "version": "0.1.1",
+  "description": "",
+  "exports": {
+    "./base.json": "./base.json",
+    "./with-paths.json": "./with-paths.json",
+    "./types.json": "./types.json"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "@rencedm112/tsconfig": "^3.0.7"
+  }
 }

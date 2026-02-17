@@ -27,25 +27,25 @@
     {% endif %}
     "dependencies": {
         {% if prompts.package_type == "script" %}
-        "zod": "^4.3.6",
-        "commander": "^14.0.2",
-        "@commander-js/extra-typings": "14.0.0"
+        "zod": "catalog:",
+        "commander": "catalog:",
+        "@commander-js/extra-typings": "catalog:"
         {% endif %}
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
-        "vite": "^7.2.2",
-        "vitest": "^4.0.8",
+        "vite": "catalog:",
+        "vitest": "catalog:",
         {% if prompts.package_type == "script" %}
-        "@types/node": "24.10.1",
+        "@types/node": "catalog:",
             {% if prompts.shebang_executor == 'bun' %}
-        "@types/bun": "^1.3.8",
+        "@types/bun": "catalog:",
             {% elif prompts.shebang_executor == 'deno' %}
-        "@types/deno": "^2.5.0",
+        "@types/deno": "catalog:",
             {% endif %}
         {% endif %}
-        "typescript": "^5.9.3"
+        "typescript": "catalog:"
     }
 }
