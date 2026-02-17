@@ -10,7 +10,8 @@ use system_traits::{
     BaseFsReadAsync, BaseFsRemoveDir as _, BaseFsRemoveDirAll as _,
     BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
     BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync, FileType,
-    FsCreateDirAll, FsMetadataAsync as _, FsMetadataValue, FsRemoveFile,
+    FsCreateDirAll as _, FsMetadataAsync as _, FsMetadataValue,
+    FsRemoveFile as _,
     boxed::BoxedFsMetadataValue,
     impls::{InMemorySys, RealSys},
 };
@@ -35,7 +36,8 @@ impl BaseFsReadAsync for DryRunSys {
 
         let dir = path.parent().expect("should have directory");
         if !self.in_memory.fs_exists_async(dir).await? {
-            self.in_memory.fs_create_dir_all(path)?;
+            trace::info!("Dry run: creating directory: {}", dir.display());
+            self.in_memory.fs_create_dir_all(dir)?;
         }
 
         Ok(content)
@@ -50,6 +52,25 @@ impl BaseFsWriteAsync for DryRunSys {
         data: &[u8],
     ) -> io::Result<()> {
         trace::info!("Dry run: writing to path: {}", path.display());
+        let dir = path.parent().expect("should have directory");
+
+        if !self.in_memory.fs_exists_async(dir).await? {
+            if self.real.fs_exists_async(dir).await?
+                && self.real.fs_is_dir_async(dir).await?
+            {
+                trace::info!("Dry run: creating directory: {}", dir.display());
+                self.in_memory.fs_create_dir_all(dir)?;
+            }
+        }
+
+        if self.in_memory.fs_exists_no_err_async(path).await
+            && self.in_memory.fs_is_dir_no_err_async(path).await
+        {
+            trace::warn!(
+                "Dry run: writing to path that is not a file: {}",
+                path.display()
+            );
+        }
 
         self.in_memory.base_fs_write_async(path, data).await
     }

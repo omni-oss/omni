@@ -6,7 +6,7 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
-        utils::{augment_tera_context, get_target_file},
+        utils::{augment_tera_context, get_target_file, map_file_io_error},
     },
     error::{Error, ErrorInner},
 };
@@ -33,13 +33,10 @@ pub async fn insert_one<'a>(
         &tera_ctx_with_data,
     )?;
 
-    let content = sys.fs_read_to_string_async(&target).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ErrorInner::new_file_not_found(Path::new(&target).to_path_buf(), e)
-        } else {
-            ErrorInner::new_generic_io(e)
-        }
-    })?;
+    let content = sys
+        .fs_read_to_string_async(&target)
+        .await
+        .map_err(|e| map_file_io_error(Path::new(&target), e))?;
 
     if !rg.is_match(&content) {
         return Err(Error::custom(format!(
@@ -83,7 +80,11 @@ pub async fn insert_one<'a>(
 
     let file = file.join(&common.separator);
 
-    sys.fs_write_async(&target, file.as_str()).await?;
+    sys.fs_write_async(&target, file.as_str())
+        .await
+        .map_err(|e| {
+            ErrorInner::new_failed_to_write_file(Path::new(&target), e)
+        })?;
 
     Ok(())
 }

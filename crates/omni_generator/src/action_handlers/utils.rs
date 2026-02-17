@@ -474,6 +474,18 @@ fn add_data_internal(
     Ok(())
 }
 
+pub(crate) fn map_file_io_error<P: AsRef<Path>>(
+    target: P,
+    error: std::io::Error,
+) -> Error {
+    (if error.kind() == std::io::ErrorKind::NotFound {
+        ErrorInner::new_file_not_found(target.as_ref().to_path_buf(), error)
+    } else {
+        ErrorInner::new_generic_io(error)
+    })
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
