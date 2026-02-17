@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use rand::Rng;
+use rand::RngExt as _;
 
 #[derive(
     Debug,

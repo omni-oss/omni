@@ -2,7 +2,7 @@ use crate::util::env;
 use base64::Engine;
 use derive_new::new;
 use keyring::Entry;
-use rand::RngCore;
+use rand::Rng;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
 pub fn get_secret_key() -> Result<String, SecretKeyError> {
