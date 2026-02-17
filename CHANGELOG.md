@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.9.3 - 2026-02-17
+### Package updates
+- omni bumped to omni-v0.9.3
+- omni_task_executor bumped to omni_task_executor-v0.6.2
+- omni_cli_core bumped to omni_cli_core-v0.9.3
+### Global changes
+#### Continuous Integration
+- update omni version [skip ci] - (88153b9) - Clarence Manuel
+
+- - -
+
 ## v0.9.2 - 2026-02-17
 ### Package updates
 - omni_cli_core bumped to omni_cli_core-v0.9.2
