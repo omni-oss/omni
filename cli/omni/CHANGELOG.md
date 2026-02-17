@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.9.2 - 2026-02-17
+#### Bug Fixes
+- (**omni_generator**) dry run write error - (fa3d46f) - Clarence Manuel
+#### Miscellaneous Chores
+- update dependencies - (cbdbb59) - Clarence Manuel
+
+- - -
+
 ## omni-v0.9.1 - 2026-02-16
 #### Bug Fixes
 - error when cache is disabled for a task - (bb21a9b) - Clarence Manuel
