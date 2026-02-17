@@ -77,7 +77,8 @@ prompts:
     message: Will the package be published to a registry?
     default: false
 
-  - name: publish_access
+  - if: "{{ prompts.published }}"
+    name: publish_access
     type: select
     message: What is the publish access of your package?
     options:
