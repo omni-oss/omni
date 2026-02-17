@@ -128,9 +128,14 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         );
 
         let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);
-        let temp = self.context.trace_dir().join("temp.log");
+        let trace_dir = self.context.trace_dir();
+        let temp = trace_dir.join("temp.log");
         let f_temp = temp.clone();
         let file_write_task = tokio::task::spawn_blocking(move || {
+            if !trace_dir.exists() {
+                std::fs::create_dir_all(&trace_dir)?;
+            }
+
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true)
