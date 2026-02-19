@@ -116,7 +116,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^2.7.3" }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.3" }
-rmcp = { version = "^0.15.0", features = ["server", "macros"] }
+rmcp = { version = "^0.16.0", features = ["server", "macros"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
