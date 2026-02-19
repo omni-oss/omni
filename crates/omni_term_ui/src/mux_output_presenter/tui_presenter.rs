@@ -318,8 +318,20 @@ fn run_tui(
         }
         trace::trace!("scroll states: {:?}", scroll_states);
 
-        let fd =
-            get_frame_data(&screens, &active_id, input_enabled, &scroll_states);
+        // Estimate viewport height before layout so paragraph() can slice the
+        // parser output to only what's visible.  terminal.size() just reads a
+        // cached value so it's effectively free.
+        let term_height = terminal.size().map(|r| r.height).unwrap_or(40);
+        // subtract: 1 tab bar + 2 block borders + 1 controls bar = 4
+        let estimated_vp_height = (term_height as usize).saturating_sub(4);
+
+        let fd = get_frame_data(
+            &screens,
+            &active_id,
+            input_enabled,
+            &scroll_states,
+            estimated_vp_height,
+        );
 
         let order = fd.order.clone();
         let active_index = fd.active_index;
@@ -561,6 +573,8 @@ fn get_frame_data<'a>(
     active_id: &ActiveId,
     input_enabled: bool,
     scroll_states: &UnorderedMap<String, ScrollState>,
+    // Viewport geometry so we can ask the parser for only visible lines.
+    vp_height: usize,
 ) -> FrameData {
     let order = buffers.read().keys().rev().cloned().collect::<Vec<_>>();
 
@@ -568,6 +582,18 @@ fn get_frame_data<'a>(
     trace::trace!("active id: {active_id:?}");
     let active_index = get_active_index(&order, active_id.as_deref());
     let active_id = order.get(active_index);
+
+    // Resolve scroll offset so we can pass it to paragraph().
+    let scroll_offset = if let Some(id) = active_id.as_deref() {
+        let ss = scroll_states.get(id).copied().unwrap_or_default();
+        if ss.follow {
+            usize::MAX // resolved inside paragraph() after line_count is known
+        } else {
+            ss.scroll_y
+        }
+    } else {
+        0
+    };
 
     let mut buffers = buffers.write();
     let active_screen = if let Some(id) = order.get(active_index)
@@ -585,7 +611,17 @@ fn get_frame_data<'a>(
     let (paragraph, line_count) = if let Some(active_screen) = active_screen {
         active_screen.apply_pending_actions();
 
-        let (paragraph, line_count) = active_screen.paragraph();
+        // Determine actual scroll offset now that line_count is available.
+        let total = active_screen.parser.snapshot_line_count();
+        let max_scroll = total.saturating_sub(vp_height);
+        let effective_offset = if scroll_offset == usize::MAX {
+            max_scroll // follow mode
+        } else {
+            scroll_offset.min(max_scroll)
+        };
+
+        let (paragraph, line_count) =
+            active_screen.paragraph(effective_offset, vp_height);
 
         (
             paragraph.block(block(format!(
@@ -667,6 +703,8 @@ fn draw_ui<'a>(
     // terminal output
     let vp_height = right_pane_chunks[0].height.saturating_sub(2); // remove the borders
 
+    // The paragraph was already sliced to [scroll_y .. scroll_y + vp_height]
+    // by get_frame_data, so we render at offset 0 — no per-frame re-scroll.
     let max_scroll_y = line_count.saturating_sub(vp_height as usize);
     let scroll_y = if scroll_state.follow {
         max_scroll_y
@@ -677,7 +715,7 @@ fn draw_ui<'a>(
     if line_count > vp_height as usize {
         *scroll_bar_state = scroll_bar_state
             .content_length(line_count)
-            .position(scroll_y.into());
+            .position(scroll_y);
 
         // show a scroll bar
         let scroll_bar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
@@ -687,10 +725,8 @@ fn draw_ui<'a>(
                 [Constraint::Length(vp_height), Constraint::Min(0)].as_ref(),
             )
             .split(right_pane_chunks[0]);
-        f.render_widget(
-            paragraph.scroll((scroll_y as u16, 0)),
-            right_pane_chunks[0],
-        );
+        // Render without .scroll() — the slice already starts at the right offset.
+        f.render_widget(&paragraph, right_pane_chunks[0]);
         f.render_stateful_widget(
             scroll_bar,
             output_chunks[1].inner(Margin {
@@ -700,10 +736,7 @@ fn draw_ui<'a>(
             scroll_bar_state,
         );
     } else {
-        f.render_widget(
-            paragraph.scroll((scroll_y as u16, 0)),
-            right_pane_chunks[0],
-        );
+        f.render_widget(&paragraph, right_pane_chunks[0]);
     }
 
     // controls

@@ -34,10 +34,19 @@ pub enum ScreenAction {
 }
 
 impl TaskScreen {
-    pub fn paragraph(&mut self) -> (Paragraph<'static>, usize) {
-        let snapshot = self.parser.snapshot();
-        let line_count = snapshot.len();
-        (Paragraph::new(snapshot), line_count)
+    /// Returns a `Paragraph` containing only the visible slice of lines, and
+    /// the total line count for scrollbar calculation.
+    ///
+    /// `scroll_offset` and `vp_height` must be correct on every call —
+    /// the paragraph is pre-sliced so the caller renders it at offset (0, 0).
+    pub fn paragraph(
+        &mut self,
+        scroll_offset: usize,
+        vp_height: usize,
+    ) -> (Paragraph<'static>, usize) {
+        let line_count = self.parser.snapshot_line_count();
+        let lines = self.parser.snapshot_range(scroll_offset, vp_height);
+        (Paragraph::new(lines), line_count)
     }
 
     pub fn apply_pending_actions(&mut self) {
