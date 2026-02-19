@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_term_ui-v0.1.1 - 2026-02-19
+#### Bug Fixes
+- (**omni_term_ui**) vte performance issue - (64eea06) - Clarence Manuel
+
+- - -
+
 ## omni_term_ui-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_task_executor**) utilize omni_tracing_subscriber ad-hoc writer for TUI mode - (413a3f1) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.6.0 - 2026-02-19
+#### Features
+- support auto tui mode - (db6e135) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.5.0 - 2026-02-15
 #### Features
 - add task args - (199f686) - Clarence Manuel

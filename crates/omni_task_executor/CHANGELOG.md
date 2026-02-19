@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.7.0 - 2026-02-19
+#### Features
+- support auto tui mode - (db6e135) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.6.2 - 2026-02-17
 #### Bug Fixes
 - (**omni_task_executor**) error when trace folder doesn't exist - (a8de21d) - Clarence Manuel

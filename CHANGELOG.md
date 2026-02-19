@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.10.0 - 2026-02-19
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.10.0
+- omni_term_ui bumped to omni_term_ui-v0.1.1
+- omni bumped to omni-v0.10.0
+- omni_task_executor bumped to omni_task_executor-v0.7.0
+- omni_configurations bumped to omni_configurations-v0.6.0
+### Global changes
+#### Continuous Integration
+- update omni version [skip ci] - (9e9002a) - Clarence Manuel
+#### Miscellaneous Chores
+- update rmcp version - (79873ec) - Clarence Manuel
+- update ts-package generator - (eee43e2) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+
+- - -
+
 ## v0.9.3 - 2026-02-17
 ### Package updates
 - omni bumped to omni-v0.9.3
