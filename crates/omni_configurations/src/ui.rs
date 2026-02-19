@@ -21,9 +21,13 @@ use strum::{EnumIs, VariantArray};
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Ui {
-    #[default]
     #[strum(serialize = "stream")]
     Stream,
     #[strum(serialize = "tui")]
     Tui,
+    /// Automatically selects between `stream` and `tui` if there is an interactive
+    /// task in the execution plan.
+    #[default]
+    #[strum(serialize = "auto")]
+    Auto,
 }

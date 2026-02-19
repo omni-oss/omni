@@ -57,7 +57,24 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             omni_configurations::Ui::Stream => {
                 MuxOutputPresenterStatic::new_stream()
             }
-            omni_configurations::Ui::Tui => MuxOutputPresenterStatic::new_tui(),
+            omni_configurations::Ui::Tui => {
+                if atty::is(atty::Stream::Stdout) {
+                    MuxOutputPresenterStatic::new_tui()
+                } else {
+                    MuxOutputPresenterStatic::new_stream()
+                }
+            }
+            omni_configurations::Ui::Auto => {
+                if execution_plan
+                    .iter()
+                    .any(|b| b.iter().any(|t| t.interactive()))
+                    && atty::is(atty::Stream::Stdout)
+                {
+                    MuxOutputPresenterStatic::new_tui()
+                } else {
+                    MuxOutputPresenterStatic::new_stream()
+                }
+            }
         };
 
         let mut batch_exec = BatchExecutor::new(
