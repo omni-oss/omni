@@ -241,14 +241,16 @@ pub struct ModifyContentActionConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct CommonInsertConfiguration {
-    #[serde(flatten)]
-    pub common: CommonModifyConfiguration,
-
     #[serde(default = "default_separator")]
     pub separator: String,
 
     #[serde(default = "default_unique")]
     pub unique: bool,
+
+    #[serde(default, deserialize_with = "validate_umap_serde_json")]
+    pub data: UnorderedMap<String, serde_json::Value>,
+
+    pub target: String,
 
     // Whether to render the content as template before writing it to the file.
     #[new(into)]
@@ -275,6 +277,30 @@ pub struct AppendActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
+    pub entries: Vec<InsertFileContentEntry>,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct InsertInlineContentEntry {
+    #[serde(deserialize_with = "validate_regex")]
+    pub pattern: String,
+
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub content: String,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct InsertFileContentEntry {
+    #[serde(deserialize_with = "validate_regex")]
+    pub pattern: String,
+
+    /// Content will be loaded from the file at the path specified.
     pub file: PathBuf,
 }
 
@@ -289,8 +315,7 @@ pub struct AppendContentActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
-    #[serde(deserialize_with = "validate_tera_expr")]
-    pub content: String,
+    pub entries: Vec<InsertInlineContentEntry>,
 }
 
 #[derive(
@@ -304,7 +329,7 @@ pub struct PrependActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
-    pub file: PathBuf,
+    pub entries: Vec<InsertFileContentEntry>,
 }
 
 #[derive(
@@ -318,8 +343,7 @@ pub struct PrependContentActionConfiguration {
     #[serde(flatten)]
     pub common: CommonInsertConfiguration,
 
-    #[serde(deserialize_with = "validate_tera_expr")]
-    pub content: String,
+    pub entries: Vec<InsertInlineContentEntry>,
 }
 
 fn default_true() -> bool {
@@ -534,28 +558,28 @@ pub enum ActionConfiguration {
         action: ModifyContentActionConfiguration,
     },
 
-    /// Append a text rendered from a tera template after a line matching a regex
+    /// Append a text rendered from a tera template loaded from a file after a line matching a regex pattern
     #[strum_discriminants(strum(serialize = "append"))]
     Append {
         #[serde(flatten)]
         action: AppendActionConfiguration,
     },
 
-    /// Append a text rendered from a tera template after a line matching a regex
+    /// Append a text rendered from a tera template after a line matching a regex pattern
     #[strum_discriminants(strum(serialize = "append-content"))]
     AppendContent {
         #[serde(flatten)]
         action: AppendContentActionConfiguration,
     },
 
-    /// Prepend a text rendered from a tera template after a line matching a regex
+    /// Prepend a text rendered from a tera template loaded from a file before a line matching a regex pattern
     #[strum_discriminants(strum(serialize = "prepend"))]
     Prepend {
         #[serde(flatten)]
         action: PrependActionConfiguration,
     },
 
-    /// Prepend a text rendered from a tera template after a line matching a regex
+    /// Prepend a text rendered from a tera template before a line matching a regex pattern
     #[strum_discriminants(strum(serialize = "prepend-content"))]
     PrependContent {
         #[serde(flatten)]
