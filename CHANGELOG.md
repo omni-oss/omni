@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.11.0 - 2026-02-25
+### Package updates
+- omni_generator bumped to omni_generator-v0.4.0
+- omni bumped to omni-v0.11.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.4.0
+- omni_cli_core bumped to omni_cli_core-v0.11.0
+- root bumped to root-v0.7.0
+### Global changes
+#### Features
+- support multiple entries for prepend and append actions - (039388d) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (25b73a3) - Clarence Manuel
+#### Miscellaneous Chores
+- upgrade rust dependencies - (f1ed831) - Clarence Manuel
+
+- - -
+
 ## v0.10.0 - 2026-02-19
 ### Package updates
 - omni_cli_core bumped to omni_cli_core-v0.10.0

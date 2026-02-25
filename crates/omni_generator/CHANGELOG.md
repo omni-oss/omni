@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.4.0 - 2026-02-25
+#### Features
+- support multiple entries for modify-* actions - (196c184) - Clarence Manuel
+- support multiple entries for prepend and append actions - (039388d) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.3.2 - 2026-02-17
 #### Bug Fixes
 - (**omni_generator**) dry run write error - (fa3d46f) - Clarence Manuel

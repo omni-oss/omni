@@ -2,6 +2,26 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.7.0 - 2026-02-25
+#### Features
+- support multiple entries for prepend and append actions - (039388d) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (25b73a3) - Clarence Manuel
+- update omni version [skip ci] - (9e9002a) - Clarence Manuel
+- update omni version [skip ci] - (88153b9) - Clarence Manuel
+- update omni version [skip ci] - (98e334c) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.10.0 - (afac506) - Clarence Manuel
+- (**version**) v0.9.3 - (fdc766e) - Clarence Manuel
+- (**version**) v0.9.2 - (8766cc9) - Clarence Manuel
+- (**version**) v0.9.1 - (8bd6e68) - Clarence Manuel
+- upgrade rust dependencies - (f1ed831) - Clarence Manuel
+- update rmcp version - (79873ec) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- update dependencies - (cbdbb59) - Clarence Manuel
+
+- - -
+
 ## root-v0.6.0 - 2026-02-16
 #### Features
 - (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel
