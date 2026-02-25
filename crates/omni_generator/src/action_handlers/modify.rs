@@ -1,4 +1,6 @@
-use omni_generator_configurations::ModifyActionConfiguration;
+use omni_generator_configurations::{
+    ModifyActionConfiguration, ModifyInlineContentEntry,
+};
 
 use crate::{
     GeneratorSys,
@@ -11,11 +13,20 @@ pub async fn modify<'a>(
     ctx: &HandlerContext<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let template = sys
-        .fs_read_to_string_async(&ctx.generator_dir.join(&config.file))
-        .await?;
+    let mut entries = vec![];
 
-    modify_one(&template, &config.common, ctx, sys).await?;
+    for entry in &config.entries {
+        let content = sys
+            .fs_read_to_string_async(&ctx.generator_dir.join(&entry.file))
+            .await?
+            .to_string();
+        entries.push(ModifyInlineContentEntry {
+            pattern: entry.pattern.clone(),
+            content,
+        });
+    }
+
+    modify_one(&entries, &config.common, ctx, sys).await?;
 
     Ok(())
 }

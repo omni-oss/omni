@@ -1,6 +1,8 @@
 use std::{borrow::Cow, path::Path};
 
-use omni_generator_configurations::CommonModifyConfiguration;
+use omni_generator_configurations::{
+    CommonModifyConfiguration, ModifyInlineContentEntry,
+};
 
 use crate::{
     GeneratorSys,
@@ -12,12 +14,11 @@ use crate::{
 };
 
 pub async fn modify_one<'a>(
-    template: &'a str,
+    entries: &'a [ModifyInlineContentEntry],
     common: &'a CommonModifyConfiguration,
     ctx: &HandlerContext<'a>,
     sys: &'a impl GeneratorSys,
 ) -> Result<(), Error> {
-    let rg = regex::Regex::new(&common.pattern)?;
     let target_name = &common.target;
     let target = get_target_file(target_name, ctx, sys).await?;
 
@@ -30,33 +31,44 @@ pub async fn modify_one<'a>(
         &tera_ctx_with_data,
     )?;
 
-    let content = sys.fs_read_to_string_async(&target).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ErrorInner::new_file_not_found(Path::new(&target).to_path_buf(), e)
-        } else {
-            ErrorInner::new_generic_io(e)
+    let mut content = sys
+        .fs_read_to_string_async(&target)
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ErrorInner::new_file_not_found(
+                    Path::new(&target).to_path_buf(),
+                    e,
+                )
+            } else {
+                ErrorInner::new_generic_io(e)
+            }
+        })?
+        .into_owned();
+
+    for entry in entries {
+        let rg = regex::Regex::new(&entry.pattern)?;
+        if !rg.is_match(&content) {
+            return Err(Error::custom(format!(
+                "pattern '{}' not found in template for action {}",
+                &entry.pattern, ctx.resolved_action_name
+            )));
         }
-    })?;
-    if !rg.is_match(&content) {
-        return Err(Error::custom(format!(
-            "pattern '{}' not found in template for action {}",
-            common.pattern, ctx.resolved_action_name
-        )));
+
+        let rendered = if common.render {
+            Cow::Owned(omni_tera::one_off(
+                &entry.content,
+                format!("template for action {}", ctx.resolved_action_name),
+                &tera_ctx_with_data,
+            )?)
+        } else {
+            Cow::Borrowed(&entry.content)
+        };
+
+        content = rg.replace_all(&content, &rendered[..]).into_owned();
     }
 
-    let rendered = if common.render {
-        Cow::Owned(omni_tera::one_off(
-            template,
-            format!("template for action {}", ctx.resolved_action_name),
-            &tera_ctx_with_data,
-        )?)
-    } else {
-        Cow::Borrowed(template)
-    };
-
-    let replaced = rg.replace_all(&content, &rendered[..]);
-
-    sys.fs_write_async(&target, replaced.as_ref()).await?;
+    sys.fs_write_async(&target, &content).await?;
 
     Ok(())
 }

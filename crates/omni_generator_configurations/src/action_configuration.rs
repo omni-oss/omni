@@ -195,9 +195,6 @@ pub struct RunGeneratorActionConfiguration {
 pub struct CommonModifyConfiguration {
     pub target: String,
 
-    #[serde(deserialize_with = "validate_regex")]
-    pub pattern: String,
-
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
     pub data: UnorderedMap<String, serde_json::Value>,
 
@@ -211,6 +208,30 @@ pub struct CommonModifyConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+pub struct ModifyInlineContentEntry {
+    #[serde(deserialize_with = "validate_regex")]
+    pub pattern: String,
+
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub content: String,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+pub struct ModifyFileContentEntry {
+    #[serde(deserialize_with = "validate_regex")]
+    pub pattern: String,
+
+    /// Content will be loaded from the file at the path specified.
+    pub file: PathBuf,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
 pub struct ModifyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -218,7 +239,7 @@ pub struct ModifyActionConfiguration {
     #[serde(flatten)]
     pub common: CommonModifyConfiguration,
 
-    pub file: PathBuf,
+    pub entries: Vec<ModifyFileContentEntry>,
 }
 
 #[derive(
@@ -232,8 +253,7 @@ pub struct ModifyContentActionConfiguration {
     #[serde(flatten)]
     pub common: CommonModifyConfiguration,
 
-    #[serde(deserialize_with = "validate_tera_expr")]
-    pub content: String,
+    pub entries: Vec<ModifyInlineContentEntry>,
 }
 
 #[derive(
