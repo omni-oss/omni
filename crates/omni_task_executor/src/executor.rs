@@ -21,6 +21,7 @@ use crate::{
     execution_plan_provider::ContextExecutionPlanProvider,
     in_memory_tracer::InMemoryTracer,
     pipeline::{ExecutionPipeline, ExecutionPipelineError},
+    utils,
 };
 
 #[derive(Debug, new)]
@@ -81,9 +82,11 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             ))?;
         }
 
+        let is_tui = utils::should_use_tui(self.config.ui(), &plan);
+
         let pipeline = ExecutionPipeline::new(plan, self.context, &self.config);
 
-        let results = if self.config.ui().is_tui() {
+        let results = if is_tui {
             let (temp, file_write_task, sub) =
                 self.prepare_in_memory_subscriber()?;
 

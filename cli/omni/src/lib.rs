@@ -1,5 +1,3 @@
-#![feature(try_blocks)]
-
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,

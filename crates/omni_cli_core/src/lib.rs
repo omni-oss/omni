@@ -1,5 +1,3 @@
-#![feature(box_patterns)]
-
 pub mod build;
 pub mod commands;
 pub mod configurations;

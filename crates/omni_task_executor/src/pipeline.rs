@@ -7,12 +7,14 @@ use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterStatic,
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use trace::instrument::WithSubscriber;
 
 use crate::{
     ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     batch_executor::{BatchExecutor, BatchExecutorError},
     cache_manager::CacheManagerBuilder,
     cache_store_provider::{CacheStoreProvider, ContextCacheStoreProvider},
+    utils::should_use_tui,
 };
 
 #[derive(Debug, new)]
@@ -53,28 +55,10 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             trace::info!("Remote caching enabled");
         }
 
-        let presenter = match self.config.ui() {
-            omni_configurations::Ui::Stream => {
-                MuxOutputPresenterStatic::new_stream()
-            }
-            omni_configurations::Ui::Tui => {
-                if atty::is(atty::Stream::Stdout) {
-                    MuxOutputPresenterStatic::new_tui()
-                } else {
-                    MuxOutputPresenterStatic::new_stream()
-                }
-            }
-            omni_configurations::Ui::Auto => {
-                if execution_plan
-                    .iter()
-                    .any(|b| b.iter().any(|t| t.interactive()))
-                    && atty::is(atty::Stream::Stdout)
-                {
-                    MuxOutputPresenterStatic::new_tui()
-                } else {
-                    MuxOutputPresenterStatic::new_stream()
-                }
-            }
+        let presenter = if should_use_tui(self.config.ui(), &execution_plan) {
+            MuxOutputPresenterStatic::new_tui()
+        } else {
+            MuxOutputPresenterStatic::new_stream()
         };
 
         let mut batch_exec = BatchExecutor::new(
@@ -96,6 +80,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         for batch in &execution_plan {
             let results = batch_exec
                 .execute_batch(&batch, &results_accumulator)
+                .with_current_subscriber()
                 .await?;
 
             results_accumulator.extend(results);

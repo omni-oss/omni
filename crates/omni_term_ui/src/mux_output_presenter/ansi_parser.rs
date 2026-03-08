@@ -1,27 +1,3 @@
-// ansi_paragraph.rs
-// Incremental ANSI parser using `vte` to feed into `ratatui::Paragraph`.
-//
-// Key performance changes vs. the original:
-//
-//  1. Completed lines are encoded into `Line<'static>` exactly once, at the
-//     moment the cursor leaves them (newline / cursor-up past them).  They are
-//     stored in `completed_lines` and never re-encoded.
-//
-//  2. Only the *current* (hot) row is stored as a `Vec<Cell>` and re-encoded
-//     on each `snapshot()` call.  For a typical terminal this is at most one
-//     line per frame, not the entire history.
-//
-//  3. `snapshot_range(offset, len)` lets the caller ask for only the lines
-//     that will actually be visible, so ratatui never has to touch the rest.
-//     `snapshot_line_count()` returns the total cheaply without any allocation.
-//
-//  4. Cursor-up movements that re-enter a completed line promote it back into
-//     `active_row` so edits still work correctly, then re-bake it on the next
-//     newline.  This is rare (progress-bar style output) and correct.
-//
-//  5. A `MAX_LINES` cap (ring-buffer eviction via VecDeque) prevents unbounded
-//     memory growth for long-running processes.
-
 use std::borrow::Cow;
 use std::collections::VecDeque;
 
@@ -154,19 +130,6 @@ impl AnsiParser {
         len: usize,
     ) -> Vec<Line<'static>> {
         self.performer.snapshot_range(offset, len)
-    }
-
-    /// Legacy helper: returns *all* lines.  Prefer `snapshot_range` for the
-    /// render path; this is O(total_lines).
-    pub fn snapshot(&self) -> Vec<Line<'static>> {
-        let total = self.performer.line_count();
-        self.performer.snapshot_range(0, total)
-    }
-
-    /// Finish parsing and drain all buffered content.
-    #[allow(unused)]
-    pub fn finish(self) -> Vec<Line<'static>> {
-        self.snapshot()
     }
 }
 

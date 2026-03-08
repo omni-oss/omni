@@ -1,4 +1,4 @@
-#![feature(decl_macro, once_cell_try)]
+#![feature(decl_macro)]
 
 mod error;
 pub mod impls;

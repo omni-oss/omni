@@ -1,4 +1,3 @@
-#![feature(decl_macro)]
 #![allow(unused_imports)]
 
 #[cfg(feature = "async")]
