@@ -12,27 +12,27 @@
         "gen:refdocs": "bun run ./scripts/generate-references ./omni-declspec.json ./content/docs/references"
     },
     "dependencies": {
-        "@ark-ui/solid": "^5.31.0",
-        "@tanstack/router-plugin": "^1.160.2",
-        "@tanstack/solid-router": "^1.160.0",
-        "@tanstack/solid-router-devtools": "^1.160.0",
-        "@tanstack/solid-router-ssr-query": "^1.160.0",
-        "@tanstack/solid-start": "^1.160.2",
-        "lucide-solid": "^0.574.0",
+        "@ark-ui/solid": "^5.34.1",
+        "@tanstack/router-plugin": "^1.166.7",
+        "@tanstack/solid-router": "^1.166.7",
+        "@tanstack/solid-router-devtools": "^1.166.7",
+        "@tanstack/solid-router-ssr-query": "^1.166.7",
+        "@tanstack/solid-start": "^1.166.8",
+        "lucide-solid": "^0.577.0",
         "solid-js": "^1.9.11",
         "vite": "catalog:",
-        "vite-plugin-lucide-preprocess": "^1.4.6",
+        "vite-plugin-lucide-preprocess": "^1.4.8",
         "vite-tsconfig-paths": "catalog:",
         "zod": "catalog:"
     },
     "devDependencies": {
-        "@pandacss/dev": "^1.8.2",
-        "@tanstack/devtools-vite": "^0.5.1",
+        "@pandacss/dev": "^1.9.0",
+        "@tanstack/devtools-vite": "^0.5.5",
         "typescript": "catalog:",
         "vite": "catalog:",
         "vite-plugin-solid": "^2.11.10",
-        "nitro": "^3.0.1-alpha.2",
+        "nitro": "^3.0.260311-beta",
         "@commander-js/extra-typings": "catalog:",
-        "srvx": "^0.11.5"
+        "srvx": "^0.11.9"
     }
 }

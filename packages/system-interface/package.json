@@ -18,7 +18,7 @@
     "access": "public"
   },
   "dependencies": {
-    "memfs": "^4.56.10"
+    "memfs": "^4.56.11"
   },
   "devDependencies": {
     "@omni-oss/tsconfig": "catalog:",
