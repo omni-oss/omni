@@ -26,16 +26,16 @@ pub async fn target_path(
             target_name,
             ctx.target_overrides,
             ctx.generator_targets,
-            ctx.output_path,
+            ctx.output_dir,
             ctx.generator_name,
             session,
             sys,
         )
         .await?;
 
-        ctx.output_path.join(target.as_ref().resolve(&bases))
+        ctx.output_dir.join(target.as_ref().resolve(&bases))
     } else {
-        ctx.output_path.to_path_buf()
+        ctx.output_dir.to_path_buf()
     };
 
     Ok(result)

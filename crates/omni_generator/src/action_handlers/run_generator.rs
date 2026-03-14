@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     ForAllPromptValuesConfiguration, ForwardPromptValuesConfiguration,
-    PromptValue, RunGeneratorActionConfiguration,
+    PromptValue, Root, RunGeneratorActionConfiguration,
 };
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -51,9 +51,27 @@ pub async fn run_generator<'a>(
 
     trace::trace!("resolved target overrides: {target_overrides:#?}");
 
+    let override_output_dir = config.output_dir.as_ref().map(|d| {
+        let base = enum_map::enum_map! {
+            Root::Output => ctx.output_dir,
+            Root::Workspace => ctx.workspace_dir,
+        };
+
+        d.resolve(&base)
+    });
+    let output_dir = if let Some(override_output_dir) = override_output_dir {
+        if override_output_dir.is_absolute() {
+            override_output_dir
+        } else {
+            Cow::Owned(ctx.output_dir.join(override_output_dir))
+        }
+    } else {
+        Cow::Borrowed(ctx.output_dir)
+    };
+
     let run_config = RunConfig {
         dry_run: ctx.dry_run,
-        output_dir: ctx.output_path,
+        output_dir: &output_dir,
         workspace_dir: ctx.workspace_dir,
         overwrite: ctx.overwrite,
         context_values: ctx.context_values,

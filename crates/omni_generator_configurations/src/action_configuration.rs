@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use crate::{
     OmniPath,
     validators::{
-        validate_regex, validate_umap_serde_json, validate_umap_target_path,
+        option_validate_target_path, validate_regex, validate_umap_serde_json,
+        validate_umap_target_path,
     },
 };
 use derive_new::new;
@@ -180,6 +181,12 @@ pub struct RunGeneratorActionConfiguration {
 
     #[serde(default)]
     pub args: UnorderedMap<String, serde_json::Value>,
+
+    /// Override the output directory for the generator. If relative, it will be resolved to the output directory of the calling generator.
+    /// If not provided, defaults to the current output directory.
+    #[serde(default)]
+    #[serde(deserialize_with = "option_validate_target_path")]
+    pub output_dir: Option<OmniPath>,
 
     /// Target directories to place the generated files.
     /// Overrides the targets in the generator configuration.

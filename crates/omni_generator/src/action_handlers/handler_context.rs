@@ -12,7 +12,7 @@ use crate::gen_session::GenSession;
 #[allow(unused)]
 pub struct HandlerContext<'a> {
     pub dry_run: bool,
-    pub output_path: &'a Path,
+    pub output_dir: &'a Path,
     pub generator_dir: &'a Path,
     pub generator_name: &'a str,
     pub current_dir: &'a Path,

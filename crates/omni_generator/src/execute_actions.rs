@@ -74,7 +74,7 @@ pub async fn execute_actions<'a>(
             context_values: args.context_values,
             tera_context_values: &tera_context,
             dry_run: args.dry_run,
-            output_path: output_path,
+            output_dir: output_path,
             generator_targets: args.targets,
             target_overrides: args.target_overrides,
             generator_name: args.generator_name,

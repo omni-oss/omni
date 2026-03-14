@@ -248,7 +248,7 @@ pub async fn get_target_file<'a>(
 ) -> Result<Cow<'a, Path>, Error> {
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
-        Root::Output => ctx.output_path,
+        Root::Output => ctx.output_dir,
     };
     let target = ctx
         .generator_targets
@@ -286,7 +286,7 @@ pub async fn prompt_target_file(
 
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
-        Root::Output => ctx.output_path,
+        Root::Output => ctx.output_dir,
     };
 
     loop {
@@ -372,7 +372,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
                 target_name,
                 &ctx.target_overrides,
                 &ctx.generator_targets,
-                ctx.output_path,
+                ctx.output_dir,
                 ctx.generator_name,
                 session,
                 sys,
@@ -384,16 +384,16 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     };
 
     let bases = enum_map::enum_map! {
-        Root::Output => ctx.output_path,
+        Root::Output => ctx.output_dir,
         Root::Workspace => ctx.workspace_dir,
     };
 
     let target = target.map(|p| {
         let resolved = p.as_ref().resolve(&bases);
 
-        if resolved.starts_with(ctx.output_path) {
+        if resolved.starts_with(ctx.output_dir) {
             resolved
-                .strip_prefix(ctx.output_path)
+                .strip_prefix(ctx.output_dir)
                 .expect("should remove output dir prefix")
                 .to_path_buf()
         } else {
@@ -402,7 +402,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     });
 
     let output_path = resolve_output_path(
-        ctx.output_path,
+        ctx.output_dir,
         target.as_deref(),
         base_path.unwrap_or(ctx.generator_dir),
         &expected_output_path,
@@ -439,7 +439,7 @@ pub fn get_bases<'a>(
     ctx: &HandlerContext<'a>,
 ) -> enum_map::EnumMap<Root, &'a Path> {
     enum_map::enum_map! {
-        Root::Output => ctx.output_path,
+        Root::Output => ctx.output_dir,
         Root::Workspace => ctx.workspace_dir,
     }
 }
