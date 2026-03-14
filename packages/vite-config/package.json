@@ -1,22 +1,21 @@
 {
-  "name": "@omni-oss/vite-config",
-  "type": "module",
-  "version": "0.1.0",
-  "exports": {
-    "./*": {
-      "import": "./src/*.ts",
-      "require": "./src/*.ts"
+    "name": "@omni-oss/vite-config",
+    "type": "module",
+    "version": "0.1.0",
+    "exports": {
+        "./*": {
+            "import": "./src/*.ts",
+            "require": "./src/*.ts"
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "peerDependencies": {
+        "vite": "^6.3.2"
+    },
+    "devDependencies": {
+        "unplugin-dts": "catalog:",
+        "@omni-oss/tsconfig": "catalog:"
     }
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "peerDependencies": {
-    "vite": "^6.3.2"
-  },
-  "devDependencies": {
-    "unplugin-dts": "catalog:",
-    "vite-tsconfig-paths": "catalog:",
-    "@omni-oss/tsconfig": "catalog:"
-  }
 }

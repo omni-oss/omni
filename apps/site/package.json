@@ -22,7 +22,6 @@
         "solid-js": "^1.9.11",
         "vite": "catalog:",
         "vite-plugin-lucide-preprocess": "^1.4.8",
-        "vite-tsconfig-paths": "catalog:",
         "zod": "catalog:"
     },
     "devDependencies": {
@@ -33,6 +32,7 @@
         "vite-plugin-solid": "^2.11.10",
         "nitro": "^3.0.260311-beta",
         "@commander-js/extra-typings": "catalog:",
-        "srvx": "^0.11.9"
+        "srvx": "^0.11.9",
+        "@omni-oss/vite-config": "catalog:"
     }
 }
