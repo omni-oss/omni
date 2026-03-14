@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.12.0 - 2026-03-14
+#### Features
+- support overriding output_dir on run_generator actions - (c5524a7) - Clarence Manuel
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests - (27a1134) - Clarence Manuel
+- update cel crate version - (a58d1b7) - Clarence Manuel
+
+- - -
+
 ## omni-v0.11.0 - 2026-02-25
 #### Features
 - support multiple entries for modify-* actions - (196c184) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_term_ui-v0.1.2 - 2026-03-14
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+
+- - -
+
 ## omni_term_ui-v0.1.1 - 2026-02-19
 #### Bug Fixes
 - (**omni_term_ui**) vte performance issue - (64eea06) - Clarence Manuel

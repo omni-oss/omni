@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## bridge_rpc-v0.1.2 - 2026-03-14
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+#### Miscellaneous Chores
+- update dependencies - (cbdbb59) - Clarence Manuel
+
+- - -
+
 ## bridge_rpc-v0.1.1 - 2026-02-13
 #### Bug Fixes
 - (**bridge_rpc**) add stop signal to loop - (791ecf2) - Clarence Manuel

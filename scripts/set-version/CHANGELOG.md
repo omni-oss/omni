@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/set-version-v0.1.2 - 2026-03-14
+#### Bug Fixes
+- error when constructing NoConfigFoundError - (804af84) - Clarence Manuel
+#### Miscellaneous Chores
+- upgrade npm dependencies - (4323b60) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/set-version-v0.1.1 - 2026-02-07
 #### Bug Fixes
 - (**@omni-oss/set-version**) dist file names - (b6e453e) - Clarence Manuel

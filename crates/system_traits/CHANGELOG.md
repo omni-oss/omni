@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## system_traits-v0.1.1 - 2026-03-14
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+
+- - -
+
 ## system_traits-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_generatore**) implement add-inline action - (61088ab) - Clarence Manuel

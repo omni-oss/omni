@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.7.1 - 2026-03-14
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests - (27a1134) - Clarence Manuel
+- update cel crate version - (a58d1b7) - Clarence Manuel
+- remove vite-tsconfig-paths dependency - (bd49ed3) - Clarence Manuel
+- upgrade npm dependencies - (4323b60) - Clarence Manuel
+
+- - -
+
 ## root-v0.7.0 - 2026-02-25
 #### Features
 - support multiple entries for prepend and append actions - (039388d) - Clarence Manuel

@@ -2,6 +2,34 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.12.0 - 2026-03-14
+### Package updates
+- omni_generator_configurations bumped to omni_generator_configurations-v0.5.0
+- omni_generator bumped to omni_generator-v0.5.0
+- omni bumped to omni-v0.12.0
+- omni_task_executor bumped to omni_task_executor-v0.7.1
+- system_traits bumped to system_traits-v0.1.1
+- omni_cli_core bumped to omni_cli_core-v0.12.0
+- bridge_rpc bumped to bridge_rpc-v0.1.2
+- omni_term_ui bumped to omni_term_ui-v0.1.2
+- @omni-oss/set-version bumped to @omni-oss/set-version-v0.1.2
+- js_runtime bumped to js_runtime-v0.1.1
+- root bumped to root-v0.7.1
+### Global changes
+#### Bug Fixes
+- auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel
+#### Continuous Integration
+- update actions versions [skip ci] - (d7e3744) - Clarence Manuel
+- update omni version [skip ci] - (62bac08) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests - (27a1134) - Clarence Manuel
+- update cel crate version - (a58d1b7) - Clarence Manuel
+- remove vite-tsconfig-paths dependency - (bd49ed3) - Clarence Manuel
+- update generators - (a5cc9a4) - Clarence Manuel
+- upgrade npm dependencies - (4323b60) - Clarence Manuel
+
+- - -
+
 ## v0.11.0 - 2026-02-25
 ### Package updates
 - omni_generator bumped to omni_generator-v0.4.0
