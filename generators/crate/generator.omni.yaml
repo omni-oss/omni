@@ -87,10 +87,11 @@ actions:
 
   - type: prepend-content
     target: root_cargo_toml
-    pattern: "@anchor:new-crate"
+    entries:
+      - content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir | relative_path(root=workspace_dir) }}" }'
+        pattern: "@anchor:new-crate"
     data:
       generated_dir: "{{ current_dir ~ '/' ~ output_dir }}"
-    content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir | relative_path(root=workspace_dir) }}" }'
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}
