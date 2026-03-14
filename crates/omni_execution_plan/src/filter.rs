@@ -412,10 +412,10 @@ mod tests {
     use config_utils::{DictConfig, DynValue};
     use omni_core::TaskExecutionNode;
 
-    #[test]
+    #[test_log::test]
     fn test_default_task_filter_project_name_and_meta_filter_matching_all() {
         let meta = MetaConfiguration::new(DictConfig::value(maps::map! {
-            "a".to_string() => DynValue::new_integer(1),
+            "a".to_string() => DynValue::new_integer(-1),
         }));
 
         let filter = DefaultTaskFilter::new(
@@ -423,7 +423,7 @@ mod tests {
             &["project1"],
             &[],
             Path::new(""),
-            Some("a == 1"),
+            Some("a == -1"),
             |_| Some(&meta),
         )
         .unwrap();
@@ -440,12 +440,16 @@ mod tests {
             None,
             None,
         );
-
-        assert!(filter.should_include_task(&node).expect("should be true"));
+        assert!(
+            filter
+                .should_include_task(&node)
+                .expect("should have value"),
+            "should include task that matches project name and meta filter"
+        );
     }
 
-    #[test]
-    fn test_default_task_filter_meta_filter_mo_meta_configuration() {
+    #[test_log::test]
+    fn test_default_task_filter_meta_filter_no_meta_configuration() {
         let filter = DefaultTaskFilter::new(
             &["test"],
             &[],
@@ -476,7 +480,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[test_log::test]
     fn test_default_task_filter_not_matching_project_name() {
         let filter = DefaultTaskFilter::new(
             &["test"],
