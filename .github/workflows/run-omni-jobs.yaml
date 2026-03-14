@@ -172,7 +172,7 @@ jobs:
     runs-on: ${{ inputs.default-runner }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Process JSON
         id: process
@@ -242,7 +242,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Process JSON
         id: process

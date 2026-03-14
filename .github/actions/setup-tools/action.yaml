@@ -80,7 +80,7 @@ runs:
 
     - name: Cache cargo registry
       if: ${{ inputs.install-all == 'true' || inputs.install-rust-target == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -91,7 +91,7 @@ runs:
 
     - name: Cache target folder
       if: ${{ inputs.install-all == 'true' || inputs.install-rust-target == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           target
@@ -155,7 +155,7 @@ runs:
 
     - name: Cache Bun install
       if: ${{ inputs.install-all == 'true' || inputs.install-bun == 'true' || inputs.install-node-modules == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.bun/install

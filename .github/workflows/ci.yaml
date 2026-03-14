@@ -42,7 +42,7 @@ jobs:
       jobs_cache_restore_key_prefixes: ${{ steps.plan.outputs.jobs_cache_restore_key_prefixes }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Omni
         uses: ./.github/actions/setup-omni
