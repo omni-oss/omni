@@ -56,11 +56,11 @@ export async function findConfigAtDir<TRequired extends boolean>(
 
 export class NoConfigFoundError extends Error {
     constructor(public readonly dir?: string) {
-        if (dir) {
-            super(`No config found in ${dir}`);
-        } else {
-            super("No config found");
-        }
+        super(
+            dir
+                ? `No config found in ${dir} or any parent directories`
+                : "No config found",
+        );
         super.name = this.constructor.name;
     }
 }
