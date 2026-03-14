@@ -1,4 +1,5 @@
 use cel::Program as CelProgram;
+use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::Context;
@@ -59,7 +60,7 @@ impl<T: Into<ErrorInner>> From<T> for Error {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(name(ErrorKind), vis(pub))]
 #[error("cel expression error: {inner}")]
 pub enum ErrorInner {
@@ -71,6 +72,12 @@ pub enum ErrorInner {
 
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
+
+    #[error("variable not found: {name}")]
+    VariableNotFound {
+        #[new(into)]
+        name: String,
+    },
 }
 
 #[cfg(test)]

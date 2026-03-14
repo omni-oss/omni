@@ -1,4 +1,8 @@
-use cel::{Value, objects::TryIntoValue};
+use std::borrow::Cow;
+
+use cel::{common::value::Val, objects::TryIntoValue};
+
+use crate::ErrorInner;
 
 #[derive(Default)]
 pub struct Context<'a> {
@@ -21,10 +25,16 @@ impl<'a> Context<'a> {
             .map_err(|e| eyre::eyre!(e))?)
     }
 
-    pub fn get_variable<S>(&self, name: S) -> Result<Value, crate::Error>
+    pub fn get_variable<S>(
+        &self,
+        name: S,
+    ) -> Result<Cow<'_, dyn Val>, crate::Error>
     where
         S: AsRef<str>,
     {
-        Ok(self.inner.get_variable(name)?)
+        Ok(self
+            .inner
+            .get_variable(name.as_ref())
+            .ok_or_else(|| ErrorInner::new_variable_not_found(name.as_ref()))?)
     }
 }
