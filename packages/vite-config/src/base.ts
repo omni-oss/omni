@@ -1,5 +1,5 @@
 import { builtinModules } from "node:module";
-import { mergeConfig, type UserConfig } from "vite";
+import { mergeConfig, type Rolldown, type UserConfig } from "vite";
 import type { PackageJson } from "./types";
 
 const config: UserConfig = {
@@ -33,14 +33,18 @@ export type BaseConfigOptions = {
 };
 
 export function createConfig(options?: BaseConfigOptions) {
+    const rolldownOptions: Rolldown.RolldownOptions = options?.externalizeDeps
+        ? {
+              external: createExternalizePredicate(options),
+          }
+        : {};
+
     return mergeConfig(
         config,
         mergeConfig(
             {
                 build: {
-                    rolldownOptions: {
-                        external: createExternalizePredicate(options),
-                    },
+                    rolldownOptions,
                 },
             } satisfies UserConfig,
             options?.overrides || {},
