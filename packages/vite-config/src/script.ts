@@ -1,17 +1,37 @@
 import dts from "unplugin-dts/vite";
-import { mergeConfig, type UserConfig } from "vite";
-import base from "./base.ts";
+import {
+    type BaseConfigOptions,
+    createConfig as baseCreateConfig,
+} from "./base.ts";
 
-export type ConfigOptions = {
+export type ScriptConfigOptions = BaseConfigOptions & {
     generateTypes?: boolean;
+    typesTsConfigPath?: string;
 };
 
-const config = (options: ConfigOptions = {}) =>
-    mergeConfig(base, {
-        plugins: [
-            options.generateTypes &&
-                dts({ tsconfigPath: "./tsconfig.types.json" }),
-        ].filter(Boolean),
-    } satisfies UserConfig);
+const config = createConfig({
+    generateTypes: true,
+    externalizeDeps: true,
+});
 
 export default config;
+
+export function createConfig(options?: ScriptConfigOptions) {
+    return baseCreateConfig({
+        ...options,
+        externalizeDeps: options?.externalizeDeps ?? true,
+        overrides: {
+            ...options?.overrides,
+            plugins: options?.generateTypes
+                ? [
+                      dts({
+                          tsconfigPath:
+                              options.typesTsConfigPath ||
+                              "./tsconfig.types.json",
+                      }),
+                      ...(options?.overrides?.plugins ?? []),
+                  ]
+                : (options?.overrides?.plugins ?? []),
+        },
+    });
+}
