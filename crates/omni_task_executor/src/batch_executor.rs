@@ -8,7 +8,9 @@ use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
-use omni_process::{TaskChildProcess, TaskChildProcessResult};
+use omni_process::{
+    ChildProcessError, TaskChildProcess, TaskChildProcessResult,
+};
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
 use omni_term_ui::mux_output_presenter::{
     MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
@@ -50,7 +52,7 @@ where
     TCacheStore: TaskExecutionCacheStore,
     TSys: TaskExecutorSys,
 {
-    fn should_skip_batch(
+    fn should_skip_batch_on_error(
         &self,
         overall_results: &UnorderedMap<String, TaskExecutionResult>,
     ) -> bool {
@@ -58,7 +60,7 @@ where
             && overall_results.values().any(|r| r.is_failure())
     }
 
-    fn skipped_results_for_batch(
+    fn skipped_results_due_to_error_for_batch(
         &self,
         batch: &[TaskExecutionNode],
     ) -> UnorderedMap<String, TaskExecutionResult> {
@@ -76,7 +78,7 @@ where
             .collect()
     }
 
-    fn should_skip_task(
+    fn should_skip_task_on_error(
         &self,
         task_ctx: &TaskContext<'_>,
         overall_results: &UnorderedMap<String, TaskExecutionResult>,
@@ -304,7 +306,7 @@ where
     {
         // skip this batch if any error was encountered in a previous batch
         // when on_failure is set to skip_next_batches
-        if self.should_skip_batch(overall_results) {
+        if self.should_skip_batch_on_error(overall_results) {
             for task in batch {
                 trace::error!(
                     "Skipping task '{}' due to previous batch failure",
@@ -312,7 +314,8 @@ where
                 );
             }
 
-            let skipped_results = self.skipped_results_for_batch(batch);
+            let skipped_results =
+                self.skipped_results_due_to_error_for_batch(batch);
             return Ok(skipped_results);
         }
 
@@ -327,6 +330,27 @@ where
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in task_contexts {
+            if task_ctx.node.task_command().is_none() {
+                new_results.insert(
+                    task_ctx.node.full_task_name().to_string(),
+                    TaskExecutionResult::new_skipped(
+                        task_ctx.node.clone(),
+                        SkipReason::NoCommand,
+                    ),
+                );
+
+                trace::info!(
+                    "{}",
+                    format!(
+                        "Skipping task '{}' because it has no command",
+                        task_ctx.node.full_task_name()
+                    )
+                    .white()
+                    .dimmed()
+                );
+                continue;
+            }
+
             let should_run = evaluate_bool_expr(
                 task_ctx.node.enabled(),
                 &task_ctx.template_context,
@@ -353,7 +377,7 @@ where
             }
 
             if let Some(error) =
-                self.should_skip_task(task_ctx, overall_results)
+                self.should_skip_task_on_error(task_ctx, overall_results)
             {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
@@ -410,20 +434,22 @@ where
                     0,
                 ));
             } else {
-                let override_command = omni_tera::one_off(
+                let override_command = get_expanded_override_command(
                     task_ctx.node.task_command(),
                     "command",
-                    &task_ctx.template_context,
+                    task_ctx,
                 )?;
 
+                let override_retry_command = get_expanded_override_command(
+                    task_ctx.node.task_retry_command(),
+                    "retry_command",
+                    task_ctx,
+                )?;
                 futs.push(run_process(
                     self.presenter,
                     task_ctx,
-                    if override_command != task_ctx.node.task_command() {
-                        Some(override_command)
-                    } else {
-                        None
-                    },
+                    override_command,
+                    override_retry_command,
                     record_logs,
                     self.max_retries
                         .unwrap_or(task_ctx.node.max_retries().unwrap_or(0)),
@@ -551,6 +577,25 @@ where
     }
 }
 
+fn get_expanded_override_command<'a>(
+    command: Option<&'a str>,
+    template_name: &str,
+    task_ctx: &Cow<'_, TaskContext<'a>>,
+) -> Result<Option<String>, BatchExecutorError> {
+    let override_command = if let Some(cmd) = command {
+        let expanded =
+            omni_tera::one_off(cmd, template_name, &task_ctx.template_context)?;
+        if expanded != cmd {
+            Some(expanded)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    Ok(override_command)
+}
+
 fn evaluate_bool_expr(
     expr: &TeraExprBoolean,
     context: &omni_tera::Context,
@@ -600,18 +645,48 @@ async fn run_process<'a>(
     presenter: &'a MuxOutputPresenterStatic,
     task_ctx: &'a TaskContext<'a>,
     override_command: Option<String>,
+    override_retry_command: Option<String>,
     record_logs: bool,
     max_retries: u8,
     retry_duration: Option<Duration>,
 ) -> TaskResultContext<'a> {
     let mut tries = 0u8;
 
+    let reg_cmd = override_command.as_deref().or(task_ctx.node.task_command());
+
+    let retry_cmd = override_retry_command
+        .as_deref()
+        .or(task_ctx.node.task_retry_command())
+        .or(reg_cmd);
+
     let result = loop {
         tries += 1;
-        let mut proc = TaskChildProcess::new(
-            task_ctx.node.clone(),
-            override_command.clone(),
-        );
+
+        let command = if tries > 1 { retry_cmd } else { reg_cmd };
+
+        let command = if let Some(cmd) = command {
+            cmd
+        } else {
+            return TaskResultContext::new_error(
+                task_ctx,
+                ChildProcessError::no_command(),
+                tries,
+            );
+        };
+
+        let mut proc =
+            match TaskChildProcess::new(task_ctx.node.clone(), command) {
+                Ok(o) => o,
+                Err(e) => {
+                    return TaskResultContext::new_error(
+                        task_ctx,
+                        e.into(),
+                        tries,
+                    );
+                }
+            };
+
+        proc.empty_command_is_success(true);
 
         let handle = if presenter.accepts_input() {
             let (out_writer, in_reader, handle) = presenter

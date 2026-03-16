@@ -19,7 +19,8 @@ pub struct Project {
     Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, new,
 )]
 pub struct Task {
-    pub command: String,
+    pub command: Option<String>,
+    pub retry_command: Option<String>,
     pub dependencies: Vec<TaskDependency>,
     pub description: Option<String>,
     pub enabled: TeraExprBoolean,
@@ -32,7 +33,8 @@ pub struct Task {
 
 #[cfg(test)]
 pub(crate) struct TaskBuilder {
-    command: String,
+    command: Option<String>,
+    retry_command: Option<String>,
     dependencies: Vec<TaskDependency>,
     description: Option<String>,
     enabled: TeraExprBoolean,
@@ -47,7 +49,8 @@ pub(crate) struct TaskBuilder {
 impl TaskBuilder {
     pub fn new(command: String) -> Self {
         Self {
-            command,
+            command: Some(command),
+            retry_command: None,
             dependencies: Default::default(),
             description: Default::default(),
             enabled: TeraExprBoolean::new_boolean(true),
@@ -140,6 +143,7 @@ impl TaskBuilder {
     pub fn build(self) -> Task {
         Task {
             command: self.command,
+            retry_command: self.retry_command,
             dependencies: self.dependencies,
             description: self.description,
             enabled: self.enabled,

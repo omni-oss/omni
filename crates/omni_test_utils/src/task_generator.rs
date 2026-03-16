@@ -98,7 +98,7 @@ impl TaskGenerator {
 impl TaskGenerator {
     pub fn generate(&self) -> TaskConfiguration {
         TaskConfiguration::LongForm(Box::new(TaskConfigurationLongForm {
-            command: self.command.clone(),
+            command: Some(Replace::new(self.command.clone())),
             cache: self.cache.generate(),
             description: self.description.clone().map(|e| Replace::new(e)),
             env: self.env.generate(),

@@ -59,6 +59,34 @@ macro_rules! newtype_generic {
                 self.0
             }
         }
+
+        impl<$inner> AsRef<$inner> for $type<$inner> {
+            #[inline(always)]
+            fn as_ref(&self) -> &$inner {
+                &self.0
+            }
+        }
+
+        impl<$inner> std::borrow::Borrow<$inner> for $type<$inner> {
+            #[inline(always)]
+            fn borrow(&self) -> &$inner {
+                &self.0
+            }
+        }
+
+        impl<$inner> AsMut<$inner> for $type<$inner> {
+            #[inline(always)]
+            fn as_mut(&mut self) -> &mut $inner {
+                &mut self.0
+            }
+        }
+
+        impl<$inner> std::borrow::BorrowMut<$inner> for $type<$inner> {
+            #[inline(always)]
+            fn borrow_mut(&mut self) -> &mut $inner {
+                &mut self.0
+            }
+        }
     };
 }
 

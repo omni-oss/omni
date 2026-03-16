@@ -61,7 +61,8 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             project_name: &'a str,
             project_dir: &'a Path,
             task_name: &'a str,
-            task_command: &'a str,
+            task_command: Option<&'a str>,
+            task_retry_command: Option<&'a str>,
             input_files: &'a [OmniPath],
             output_files: &'a [OmniPath],
             env_vars: Arc<Map<String, String>>,
@@ -123,8 +124,11 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     task_command: project
                         .tasks
                         .get(task.task_name())
-                        .map(|t| t.command.as_str())
-                        .unwrap_or("default"),
+                        .and_then(|t| t.command.as_deref()),
+                    task_retry_command: project
+                        .tasks
+                        .get(task.task_name())
+                        .and_then(|t| t.retry_command.as_deref()),
                     output_files: &ci.cache_output_files,
                     input_files: &ci.key_input_files,
                     dependency_digests: task
@@ -149,6 +153,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     project_name: p.project_name,
                     task_name: p.task_name,
                     task_command: p.task_command,
+                    task_retry_command: p.task_retry_command,
                     input_files: p.input_files,
                     output_files: p.output_files,
                     dependency_digests: &p.dependency_digests,

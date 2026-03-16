@@ -22,7 +22,8 @@ use crate::{Project, ProjectGraph, ProjectGraphError};
 )]
 pub struct TaskExecutionNode {
     task_name: String,
-    task_command: String,
+    task_command: Option<String>,
+    task_retry_command: Option<String>,
     project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
@@ -38,7 +39,8 @@ impl TaskExecutionNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         task_name: impl Into<String>,
-        task_command: impl Into<String>,
+        task_command: Option<impl Into<String>>,
+        task_retry_command: Option<impl Into<String>>,
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
         dependencies: Vec<String>,
@@ -53,7 +55,8 @@ impl TaskExecutionNode {
         Self {
             full_task_name: format!("{}#{}", &project_name, &task_name),
             task_name,
-            task_command: task_command.into(),
+            task_command: task_command.map(|c| c.into()),
+            task_retry_command: task_retry_command.map(|c| c.into()),
             project_name,
             project_dir: project_dir.into(),
             dependencies,
@@ -71,8 +74,12 @@ impl TaskExecutionNode {
         self.task_name.as_str()
     }
 
-    pub fn task_command(&self) -> &str {
-        self.task_command.as_str()
+    pub fn task_command(&self) -> Option<&str> {
+        self.task_command.as_deref()
+    }
+
+    pub fn task_retry_command(&self) -> Option<&str> {
+        self.task_retry_command.as_deref()
     }
 
     pub fn project_name(&self) -> &str {
@@ -116,7 +123,8 @@ impl TaskExecutionNode {
         self,
     ) -> (
         String,
-        String,
+        Option<String>,
+        Option<String>,
         String,
         PathBuf,
         String,
@@ -130,6 +138,7 @@ impl TaskExecutionNode {
         (
             self.task_name,
             self.task_command,
+            self.task_retry_command,
             self.project_name,
             self.project_dir,
             self.full_task_name,
@@ -198,6 +207,7 @@ impl TaskExecutionGraph {
                 let task_execution_node = TaskExecutionNode::new(
                     task_name.to_string(),
                     task.1.command.clone(),
+                    None::<String>,
                     project_name.to_string(),
                     project_dir.to_path_buf(),
                     vec![],
@@ -1188,7 +1198,8 @@ mod tests {
     ) -> TaskExecutionNode {
         return TaskExecutionNode::new(
             task_name.to_string(),
-            task_command.to_string(),
+            Some(task_command.to_string()),
+            None::<String>,
             project_name.to_string(),
             PathBuf::from(""),
             vec![],

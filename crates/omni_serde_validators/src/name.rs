@@ -1,15 +1,17 @@
+use std::borrow::Borrow;
+
 use serde_validate::{StaticValidator, Validator, declare_static_validator};
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct NameValidator;
 
-impl StaticValidator<String> for NameValidator {
-    fn validate_static(value: &String) -> Result<(), String> {
-        if value.is_empty() {
+impl<V: Borrow<String>> StaticValidator<V> for NameValidator {
+    fn validate_static(value: &V) -> Result<(), String> {
+        if value.borrow().is_empty() {
             return Err("cannot be empty".to_string());
         }
 
-        let mut chars = value.chars();
+        let mut chars = value.borrow().chars();
 
         let first_char = chars.next().unwrap();
 
@@ -26,8 +28,8 @@ impl StaticValidator<String> for NameValidator {
     }
 }
 
-impl Validator<String> for NameValidator {
-    fn validate(&self, value: &String) -> Result<(), String> {
+impl<V: Borrow<String>> Validator<V> for NameValidator {
+    fn validate(&self, value: &V) -> Result<(), String> {
         Self::validate_static(value)
     }
 }

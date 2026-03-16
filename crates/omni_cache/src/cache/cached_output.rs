@@ -27,7 +27,10 @@ pub struct CachedTaskExecution {
     pub task_name: String,
 
     #[new(into)]
-    pub task_command: String,
+    pub task_command: Option<String>,
+
+    #[new(into)]
+    pub task_retry_command: Option<String>,
 
     #[new(into)]
     #[serde(alias = "execution_hash")]

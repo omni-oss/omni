@@ -3,14 +3,14 @@
 use maps::UnorderedMap;
 use omni_serde_validators::tera_expr::TeraExprValidator;
 use serde_validate::{StaticValidator, declare_static_validator};
-use std::path::PathBuf;
+use std::{borrow::Borrow, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SerdeJsonValidator;
 
-impl StaticValidator<serde_json::Value> for SerdeJsonValidator {
-    fn validate_static(value: &serde_json::Value) -> Result<(), String> {
-        match value {
+impl<V: Borrow<serde_json::Value>> StaticValidator<V> for SerdeJsonValidator {
+    fn validate_static(value: &V) -> Result<(), String> {
+        match value.borrow() {
             serde_json::Value::String(s) => {
                 TeraExprValidator::validate_static(s)?
             }
@@ -47,13 +47,11 @@ declare_static_validator!(
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UmapSerdeJsonValidator;
 
-impl StaticValidator<UnorderedMap<String, serde_json::Value>>
+impl<V: Borrow<UnorderedMap<String, serde_json::Value>>> StaticValidator<V>
     for UmapSerdeJsonValidator
 {
-    fn validate_static(
-        value: &UnorderedMap<String, serde_json::Value>,
-    ) -> Result<(), String> {
-        for (key, value) in value.iter() {
+    fn validate_static(value: &V) -> Result<(), String> {
+        for (key, value) in value.borrow().iter() {
             SerdeJsonValidator::validate_static(value).map_err(|e| {
                 format!("value for key {} is invalid: {}", key, e)
             })?;

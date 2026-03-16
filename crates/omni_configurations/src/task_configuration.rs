@@ -1,11 +1,13 @@
 use std::time::Duration;
 
-use config_utils::{DictConfig, DynValue, IntoInner, ListConfig, Replace};
+use config_utils::{
+    AsInner, DictConfig, DynValue, IntoInner, ListConfig, Replace,
+};
 use garde::Validate;
 use merge::Merge;
 use omni_config_types::TeraExprBoolean;
 use omni_core::{Task, TaskDependency};
-use omni_serde_validators::tera_expr::validate_tera_expr;
+use omni_serde_validators::tera_expr::option_validate_tera_expr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -18,8 +20,11 @@ use super::TaskDependencyConfiguration;
 )]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
-    #[serde(default, deserialize_with = "validate_tera_expr")]
-    pub command: String,
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    pub command: Option<Replace<String>>,
+
+    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    pub retry_command: Option<Replace<String>>,
 
     #[serde(default)]
     pub args: DictConfig<DynValue>,
@@ -124,7 +129,8 @@ fn default_interactive() -> Option<Replace<bool>> {
 impl Default for TaskConfigurationLongForm {
     fn default() -> Self {
         Self {
-            command: String::new(),
+            command: None,
+            retry_command: None,
             dependencies: ListConfig::append(vec![]),
             description: None,
             args: DictConfig::default(),
@@ -182,7 +188,8 @@ impl TaskConfiguration {
     pub fn get_task(&self, name: &str) -> Task {
         match self {
             TaskConfiguration::ShortForm(command) => Task::new(
-                command.clone(),
+                Some(command.clone()),
+                None,
                 vec![TaskDependency::Upstream {
                     task: name.to_string(),
                 }],
@@ -196,6 +203,7 @@ impl TaskConfiguration {
             ),
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
                 command,
+                retry_command,
                 dependencies,
                 description,
                 enabled,
@@ -206,7 +214,8 @@ impl TaskConfiguration {
                 retry_interval,
                 ..
             }) => Task::new(
-                command.clone(),
+                command.as_ref().map(|x| x.as_inner().clone()),
+                retry_command.as_ref().map(|x| x.as_inner().clone()),
                 dependencies.iter().cloned().map(Into::into).collect(),
                 description.clone().map(|e| e.into_inner()),
                 enabled.clone().unwrap_or(true.into()),
@@ -278,6 +287,7 @@ impl Merge for TaskConfiguration {
                 Lf(box TaskConfigurationLongForm {
                     dependencies: a_dep,
                     command: a_cmd,
+                    retry_command: a_retry_cmd,
                     description: a_desc,
                     env: a_env,
                     cache: a_cache,
@@ -294,6 +304,7 @@ impl Merge for TaskConfiguration {
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
                     command: b_cmd,
+                    retry_command: b_retry_cmd,
                     description: b_desc,
                     env: b_env,
                     cache: b_cache,
@@ -309,9 +320,8 @@ impl Merge for TaskConfiguration {
                 }),
             ) => {
                 a_dep.merge(b_dep);
-                if !b_cmd.trim().is_empty() {
-                    *a_cmd = b_cmd;
-                }
+                merge::option::recurse(a_cmd, b_cmd);
+                merge::option::recurse(a_retry_cmd, b_retry_cmd);
                 merge::option::recurse(a_desc, b_desc);
                 a_env.merge(b_env);
                 a_cache.merge(b_cache);
@@ -353,7 +363,7 @@ mod tests {
         };
 
         let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            command: "a".to_string(),
+            command: Some(Replace::new("a".to_string())),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
             description: Some(Replace::new(String::from("a description"))),
             env: Default::default(),
@@ -375,7 +385,7 @@ mod tests {
         };
 
         let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            command: "b".to_string(),
+            command: Some(Replace::new("b".to_string())),
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
             description: None,
             env: Default::default(),
@@ -396,7 +406,7 @@ mod tests {
         assert_eq!(
             a,
             TaskConfiguration::long_form(TaskConfigurationLongForm {
-                command: "b".to_string(),
+                command: Some(Replace::new("b".to_string())),
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),

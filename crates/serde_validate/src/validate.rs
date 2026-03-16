@@ -93,17 +93,23 @@ pub macro declare_validator($validator_type:ty, $type:ty, $name:ident, $option_n
 }
 
 pub macro declare_static_validator($validator_type:ty, $type:ty, $name:ident, $option_name:ident $(,)?) {
-    pub fn $name<'de, D: serde::de::Deserializer<'de>>(
+    pub fn $name<
+        'de,
+        T: std::borrow::Borrow<$type> + Deserialize<'de>,
+        D: serde::de::Deserializer<'de>,
+    >(
         deserializer: D,
-    ) -> Result<$type, D::Error> {
-        $crate::validate_static::<$validator_type, $type, _>(deserializer)
+    ) -> Result<T, D::Error> {
+        $crate::validate_static::<$validator_type, T, _>(deserializer)
     }
 
-    pub fn $option_name<'de, D: serde::de::Deserializer<'de>>(
+    pub fn $option_name<
+        'de,
+        T: std::borrow::Borrow<$type> + Deserialize<'de>,
+        D: serde::de::Deserializer<'de>,
+    >(
         deserializer: D,
-    ) -> Result<Option<$type>, D::Error> {
-        $crate::option_validate_static::<$validator_type, $type, _>(
-            deserializer,
-        )
+    ) -> Result<Option<T>, D::Error> {
+        $crate::option_validate_static::<$validator_type, T, _>(deserializer)
     }
 }

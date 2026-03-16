@@ -13,7 +13,8 @@ use yoke::Yokeable;
 #[derive(Clone, Copy, PartialEq, Eq, Debug, new, Yokeable, Serialize)]
 pub struct TaskExecutionInfo<'a> {
     pub task_name: &'a str,
-    pub task_command: &'a str,
+    pub task_command: Option<&'a str>,
+    pub task_retry_command: Option<&'a str>,
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub output_files: &'a [OmniPath],

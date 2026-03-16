@@ -1,11 +1,14 @@
+use std::borrow::Borrow;
+
 use maps::UnorderedMap;
 use serde_validate::{StaticValidator, declare_static_validator};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TeraExprValidator;
 
-pub fn validate_str(value: &str) -> Result<(), String> {
-    let result = tera::Template::new("__validate_template__", None, value);
+pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
+    let result =
+        tera::Template::new("__validate_template__", None, value.borrow());
 
     if let Err(error) = result {
         return Err(error.to_string());
@@ -14,9 +17,20 @@ pub fn validate_str(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-impl StaticValidator<String> for TeraExprValidator {
-    fn validate_static(value: &String) -> Result<(), String> {
-        validate_str(value)?;
+pub fn validate_string<V: Borrow<String>>(value: &V) -> Result<(), String> {
+    let result =
+        tera::Template::new("__validate_template__", None, value.borrow());
+
+    if let Err(error) = result {
+        return Err(error.to_string());
+    }
+
+    Ok(())
+}
+
+impl<V: Borrow<String>> StaticValidator<V> for TeraExprValidator {
+    fn validate_static(value: &V) -> Result<(), String> {
+        validate_string(value)?;
 
         Ok(())
     }
@@ -32,11 +46,11 @@ declare_static_validator!(
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UMapTeraExprValidator;
 
-impl StaticValidator<UnorderedMap<String, String>> for UMapTeraExprValidator {
-    fn validate_static(
-        value: &UnorderedMap<String, String>,
-    ) -> Result<(), String> {
-        for value in value.values() {
+impl<V: Borrow<UnorderedMap<String, String>>> StaticValidator<V>
+    for UMapTeraExprValidator
+{
+    fn validate_static(value: &V) -> Result<(), String> {
+        for value in value.borrow().values() {
             TeraExprValidator::validate_static(value)?;
         }
 

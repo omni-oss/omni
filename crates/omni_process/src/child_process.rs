@@ -69,6 +69,9 @@ pub struct ChildProcess<
 
     #[new(default)]
     keep_stdin_open: bool,
+
+    #[new(default)]
+    empty_command_is_success: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, new)]
@@ -129,18 +132,30 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
         self
     }
 
+    pub fn empty_command_is_success(
+        &mut self,
+        empty_command_is_success: bool,
+    ) -> &mut Self {
+        self.empty_command_is_success = empty_command_is_success;
+        self
+    }
+
     #[tracing::instrument(skip_all)]
     pub async fn exec(
         mut self,
     ) -> Result<ChildProcessResult, ChildProcessError> {
         let unexpanded_comand = self.command.command();
 
-        if unexpanded_comand.as_ref().is_empty() {
-            return Ok(ChildProcessResult {
-                exit_code: 0,
-                elapsed: std::time::Duration::ZERO,
-                logs: None,
-            });
+        if unexpanded_comand.trim().is_empty() {
+            if self.empty_command_is_success {
+                return Ok(ChildProcessResult {
+                    exit_code: 0,
+                    elapsed: std::time::Duration::default(),
+                    logs: None,
+                });
+            } else {
+                return Err(ChildProcessError::no_command());
+            }
         }
 
         let start_time = std::time::Instant::now();
@@ -299,6 +314,10 @@ impl ChildProcessError {
     pub fn custom<T: Into<eyre::Report>>(inner: T) -> Self {
         Self(ChildProcessErrorInner::Custom(inner.into()))
     }
+
+    pub fn no_command() -> Self {
+        Self(ChildProcessErrorInner::NoCommandProvided)
+    }
 }
 
 impl<T: Into<ChildProcessErrorInner>> From<T> for ChildProcessError {
@@ -349,4 +368,7 @@ pub(crate) enum ChildProcessErrorInner {
 
     #[error(transparent)]
     Mpsc(#[from] tokio::sync::mpsc::error::SendError<Bytes>),
+
+    #[error("no command is provided")]
+    NoCommandProvided,
 }

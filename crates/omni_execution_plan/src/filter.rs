@@ -430,7 +430,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            "echo test".to_string(),
+            Some("echo test"),
+            None::<String>,
             "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
@@ -462,7 +463,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            "echo test".to_string(),
+            Some("echo test"),
+            None::<String>,
             "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
@@ -494,7 +496,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            "echo test".to_string(),
+            Some("echo test"),
+            None::<String>,
             "project2".to_string(),
             std::path::PathBuf::from(""),
             vec![],

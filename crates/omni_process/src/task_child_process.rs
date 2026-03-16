@@ -17,15 +17,13 @@ pub struct TaskChildProcess {
 impl TaskChildProcess {
     pub fn new(
         task: TaskExecutionNode,
-        override_command: Option<String>,
-    ) -> Self {
-        let command =
-            override_command.unwrap_or_else(|| task.task_command().to_string());
+        command: &str,
+    ) -> Result<Self, ChildProcessError> {
         let current_dir = task.project_dir().to_owned();
-        Self {
+        Ok(Self {
             task,
             child_process: ChildProcess::new(command, current_dir),
-        }
+        })
     }
 }
 
@@ -90,6 +88,16 @@ impl TaskChildProcess {
 
     pub fn record_logs(&mut self, record_logs: bool) -> &mut Self {
         self.child_process.record_logs(record_logs);
+
+        self
+    }
+
+    pub fn empty_command_is_success(
+        &mut self,
+        empty_command_is_success: bool,
+    ) -> &mut Self {
+        self.child_process
+            .empty_command_is_success(empty_command_is_success);
 
         self
     }

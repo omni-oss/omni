@@ -137,6 +137,7 @@ impl HybridTaskExecutionCacheStore {
                 project_dir: task.project_dir,
                 project_name: task.project_name,
                 task_command: task.task_command,
+                task_retry_command: task.task_retry_command,
                 task_name: task.task_name,
                 dependency_digests: task.dependency_digests,
                 env_vars: task.env_vars,
@@ -301,7 +302,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 files: cache_output_files,
                 task_name: result.task.task_name.to_string(),
                 digest: result.digest.expect("should be some"),
-                task_command: result.task.task_command.to_string(),
+                task_command: result.task.task_command.map(|c| c.to_string()),
+                task_retry_command: result
+                    .task
+                    .task_retry_command
+                    .map(|c| c.to_string()),
                 execution_duration: new_cache_info.execution_duration,
                 exit_code: new_cache_info.exit_code,
                 execution_time: OffsetDateTime::now_utc(),
@@ -1151,7 +1156,8 @@ mod tests {
     ) -> TaskExecutionInfo<'a> {
         TaskExecutionInfo::new(
             task.task_name.as_str(),
-            task.task_command.as_str(),
+            Some(task.task_command.as_str()),
+            None,
             &task.project_name,
             &task.project_dir,
             &task.output_files,

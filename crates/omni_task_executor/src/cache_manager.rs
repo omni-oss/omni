@@ -175,6 +175,7 @@ where
                     project_dir: info.task.project_dir,
                     project_name: info.task.project_name,
                     task_command: info.task.task_command,
+                    task_retry_command: info.task.task_retry_command,
                     task_name: info.task.task_name,
                     dependency_digests: info.task.dependency_digests,
                     env_vars: info.task.env_vars,

@@ -34,7 +34,8 @@ pub struct ProjectTaskInfo<'a> {
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub task_name: &'a str,
-    pub task_command: &'a str,
+    pub task_command: Option<&'a str>,
+    pub task_retry_command: Option<&'a str>,
     pub output_files: &'a [OmniPath],
     pub input_files: &'a [OmniPath],
     pub input_env_keys: &'a [String],
@@ -61,7 +62,8 @@ pub struct CollectResult<'a> {
 
 struct HashInput<'a> {
     pub task_name: &'a str,
-    pub task_command: &'a str,
+    pub task_command: Option<&'a str>,
+    pub task_retry_command: Option<&'a str>,
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub input_files: &'a [OmniPath],
@@ -200,12 +202,22 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
         }
 
-        let full_task_name = format!(
-            "{}#{}: {}",
-            hash_input.project_name,
-            hash_input.task_name,
-            hash_input.task_command
-        );
+        let full_task_name =
+            format!("{}#{}", hash_input.project_name, hash_input.task_name);
+
+        if let Some(command) = hash_input.task_command
+            && !command.is_empty()
+        {
+            let command_str = format!("command={command}");
+            tree.insert(DefaultHasher::hash(command_str.as_bytes()));
+        }
+        if let Some(retry_command) = hash_input.task_retry_command
+            && !retry_command.is_empty()
+        {
+            let retry_command_str = format!("retry_command={retry_command}");
+            tree.insert(DefaultHasher::hash(retry_command_str.as_bytes()));
+        }
+
         tree.insert(DefaultHasher::hash(full_task_name.as_bytes()));
 
         tree.commit();
@@ -437,6 +449,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     .get_digest(&HashInput {
                         task_name: holder.task.task_name,
                         task_command: holder.task.task_command,
+                        task_retry_command: holder.task.task_retry_command,
                         project_name: holder.task.project_name,
                         project_dir: holder.task.project_dir,
                         input_files: holder

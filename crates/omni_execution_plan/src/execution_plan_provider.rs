@@ -91,7 +91,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     .map(|p| {
                         TaskExecutionNode::new(
                             tfqn.clone(),
-                            full_cmd.clone(),
+                            Some(&full_cmd),
+                            None::<String>,
                             p.name.clone(),
                             p.dir.clone(),
                             vec![],
@@ -142,6 +143,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                         let node = TaskExecutionNode::new(
                             task_name.clone(),
                             task.command.clone(),
+                            task.retry_command.clone(),
                             project.name.clone(),
                             project.dir.clone(),
                             vec![],
@@ -260,7 +262,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     p.tasks.insert(
                         task_name.clone(),
                         Task::new(
-                            full_cmd.clone(),
+                            Some(full_cmd.clone()),
+                            None,
                             vec![TaskDependency::Upstream {
                                 task: task_name.clone(),
                             }],

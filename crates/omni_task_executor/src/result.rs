@@ -113,6 +113,8 @@ pub enum SkipReason {
     DependeeTaskFailure,
     #[strum(to_string = "task is disabled")]
     Disabled,
+    #[strum(to_string = "no command to execute")]
+    NoCommand,
 }
 
 #[derive(Debug, Clone, new, Serialize, Deserialize, Default)]
