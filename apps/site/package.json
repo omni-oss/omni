@@ -11,7 +11,7 @@
         "gen:declspec": "omni declspec dump >| omni-declspec.json",
         "gen:refdocs": "bun run ./scripts/generate-references ./omni-declspec.json ./content/docs/references"
     },
-    "dependencies": {
+    "devDependencies": {
         "@ark-ui/solid": "^5.34.1",
         "@tanstack/router-plugin": "^1.166.7",
         "@tanstack/solid-router": "^1.166.7",
@@ -20,11 +20,8 @@
         "@tanstack/solid-start": "^1.166.8",
         "lucide-solid": "^0.577.0",
         "solid-js": "^1.9.11",
-        "vite": "catalog:",
         "vite-plugin-lucide-preprocess": "^1.4.8",
-        "zod": "catalog:"
-    },
-    "devDependencies": {
+        "zod": "catalog:",
         "@pandacss/dev": "^1.9.0",
         "@tanstack/devtools-vite": "^0.5.5",
         "typescript": "catalog:",

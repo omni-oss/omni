@@ -1,35 +1,21 @@
-import createBaseConfig from "@omni-oss/vite-config/script";
-import { mergeConfig, type UserConfig } from "vite";
-import { dependencies } from "./package.json";
+import { createConfig } from "@omni-oss/vite-config/script";
+import packageJson from "./package.json";
 
-const baseConfig = createBaseConfig({
-    generateTypes: true,
-});
+export default createConfig({
+    package: packageJson,
+    overrides: {
+        build: {
+            lib: {
+                entry: {
+                    "create-jobs": "src/cli/index.ts",
+                    index: "src/index.ts",
+                },
 
-const externalNodeDeps = [
-    "node:path",
-    "node:fs",
-    "node:fs/promises",
-    "node:process",
-];
-
-export default mergeConfig(baseConfig, {
-    build: {
-        minify: "esbuild",
-        lib: {
-            entry: {
-                "create-jobs": "src/cli/index.ts",
-                index: "src/index.ts",
+                formats: ["es", "cjs"],
+                fileName: (format, entryName) =>
+                    `${entryName || "create-jobs"}.${format === "cjs" ? "cjs" : "mjs"}`,
+                name: "CreateJobs",
             },
-
-            formats: ["es", "cjs"],
-            fileName: (format, entryName) =>
-                `${entryName || "create-jobs"}.${format === "cjs" ? "cjs" : "mjs"}`,
-            name: "CreateJobs",
-        },
-
-        rollupOptions: {
-            external: [...Object.keys(dependencies), ...externalNodeDeps],
         },
     },
-} satisfies UserConfig);
+});
