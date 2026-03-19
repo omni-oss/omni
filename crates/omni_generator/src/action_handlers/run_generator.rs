@@ -80,6 +80,7 @@ pub async fn run_generator<'a>(
         current_dir: ctx.current_dir,
         env: ctx.env,
         args: Some(&config.args),
+        use_prompt_defaults: false,
     };
 
     let prompted_values = Box::pin(run_internal(

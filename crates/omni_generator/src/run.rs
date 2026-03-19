@@ -30,6 +30,8 @@ pub struct RunConfig<'a> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
+    /// Skip prompts with default values
+    pub use_prompt_defaults: bool,
 }
 
 pub async fn run<'a>(
@@ -61,7 +63,10 @@ pub(crate) async fn run_internal<'a>(
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<GenSession, Error> {
-    let prompting_config = PromptingConfiguration::default();
+    let prompting_config = PromptingConfiguration {
+        use_defaults: config.use_prompt_defaults,
+        ..PromptingConfiguration::default()
+    };
 
     let session = GenSession::with_restored(
         r#gen.name.as_str(),

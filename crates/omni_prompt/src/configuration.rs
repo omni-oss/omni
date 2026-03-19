@@ -11,6 +11,7 @@ use omni_serde_validators::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
+use value_bag::{OwnedValueBag, ValueBag};
 
 #[derive(
     Deserialize,
@@ -395,6 +396,44 @@ impl<TExtra: PromptExtras> PromptConfiguration<TExtra> {
             }
         }
     }
+
+    pub fn default_value(&self) -> Option<OwnedValueBag> {
+        Some(match self {
+            PromptConfiguration::Confirm { prompt, .. } => {
+                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            }
+            PromptConfiguration::Select { prompt, .. } => {
+                let value = prompt.default.as_ref()?;
+                ValueBag::from_serde1(&value).to_owned()
+            }
+            PromptConfiguration::MultiSelect { prompt, .. } => {
+                let value = prompt.default.as_ref()?;
+                ValueBag::from_serde1(&value).to_owned()
+            }
+            PromptConfiguration::Text { prompt, .. } => {
+                let value = prompt.default.as_ref()?;
+                ValueBag::from_serde1(&value).to_owned()
+            }
+            PromptConfiguration::Password { .. } => {
+                return None;
+            }
+            PromptConfiguration::Float { prompt, .. } => {
+                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            }
+            PromptConfiguration::Integer { prompt, .. } => {
+                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            }
+        })
+    }
+}
+
+fn unwarp_either_to_vbag<L: Serialize, R: Serialize>(
+    either: &Either<L, R>,
+) -> OwnedValueBag {
+    match either {
+        Either::Left(l) => ValueBag::from_serde1(l).to_owned(),
+        Either::Right(r) => ValueBag::from_serde1(r).to_owned(),
+    }
 }
 
 #[derive(
@@ -425,6 +464,7 @@ pub struct OptionConfiguration {
 pub struct PromptingConfiguration<'a> {
     pub if_expressions_root_property: Option<&'a str>,
     pub validation_expressions_value_name: Option<&'a str>,
+    pub use_defaults: bool,
 }
 
 impl<'a> Default for PromptingConfiguration<'a> {
@@ -432,6 +472,7 @@ impl<'a> Default for PromptingConfiguration<'a> {
         Self {
             if_expressions_root_property: Some("prompts"),
             validation_expressions_value_name: Some("value"),
+            use_defaults: true,
         }
     }
 }

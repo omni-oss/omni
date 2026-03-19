@@ -40,7 +40,7 @@ pub struct ExecuteActionsArgs<'a> {
 
 pub async fn execute_actions<'a>(
     args: &ExecuteActionsArgs<'a>,
-    prompted_values: &GenSession,
+    gen_session: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let mut tera_context = get_tera_context(args.context_values);
@@ -85,7 +85,7 @@ pub async fn execute_actions<'a>(
             resolved_action_name: action_name.as_str(),
             current_dir: args.current_dir,
             env: args.env,
-            gen_session: prompted_values,
+            gen_session,
         };
 
         let in_progress_message =

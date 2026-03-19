@@ -85,6 +85,14 @@ pub struct GeneratorRunArgs {
 
     #[arg(
         long,
+        help = "Use default values for prompts",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue
+    )]
+    pub use_defaults: bool,
+
+    #[arg(
+        long,
         help = "How to handle overwriting existing files, takes precedence over the generator's configuration",
         value_enum
     )]
@@ -248,6 +256,7 @@ async fn run_generator_run(
         current_dir: &current_dir,
         env: &env.as_deref().unwrap_or(&default_map),
         args: None,
+        use_prompt_defaults: command.args.use_defaults,
     };
 
     let session = omni_generator::run(

@@ -73,8 +73,9 @@ pub fn prompt<TExtra: PromptExtras>(
             continue;
         }
 
-        let validators = get_validators(prompt);
         let key = get_prompt_name(prompt).to_string();
+
+        let validators = get_validators(prompt);
         let pre_exec_value = pre_exec_values.get(&key);
         let value = get_value(
             config,
@@ -142,75 +143,98 @@ fn get_value<TExtra: PromptExtras>(
     pre_exec_value: Option<&OwnedValueBag>,
 ) -> Result<OwnedValueBag, Error> {
     let value = if let Some(pre_exec_value) = pre_exec_value {
-        let value =
-            match prompt.discriminant() {
-                crate::configuration::PromptType::Confirm => {
-                    let bool = try_parse_bool(pre_exec_value.by_ref())
-                        .ok_or_else(|| {
-                            make_prompt_type_error(
-                                key,
-                                pre_exec_value.by_ref(),
-                                "boolean",
-                            )
-                        })?;
-
-                    ValueBag::capture_serde1(&bool).to_owned()
-                }
-                crate::configuration::PromptType::Float => {
-                    let float = try_parse_float(pre_exec_value.by_ref())
-                        .ok_or_else(|| {
-                            make_prompt_type_error(
-                                key,
-                                pre_exec_value.by_ref(),
-                                "float",
-                            )
-                        })?;
-
-                    ValueBag::capture_serde1(&float).to_owned()
-                }
-                crate::configuration::PromptType::Integer => {
-                    let int = try_parse_int(pre_exec_value.by_ref())
-                        .ok_or_else(|| {
-                            make_prompt_type_error(
-                                key,
-                                pre_exec_value.by_ref(),
-                                "integer",
-                            )
-                        })?;
-
-                    ValueBag::capture_serde1(&int).to_owned()
-                }
-
-                // these types don't need to be transformed
-                crate::configuration::PromptType::Select
-                | crate::configuration::PromptType::MultiSelect
-                | crate::configuration::PromptType::Text
-                | crate::configuration::PromptType::Password => {
-                    pre_exec_value.clone()
-                }
-            };
-        let result = validate_value(
-            key,
-            &value,
+        process_pre_filled_value(
+            config,
             ctx_vals,
+            prompt,
             validators,
-            config.validation_expressions_value_name,
-        );
-
-        if let Err(err) = result {
-            if err.kind() == ErrorKind::InvalidValue {
-                trace::error!("reprompting due to validation error: {err}");
-                get_prompt_value(prompt, ctx_vals, config)?
-            } else {
-                return Err(err);
-            }
-        } else {
-            value.clone()
-        }
+            key,
+            pre_exec_value,
+            false,
+        )?
+    } else if config.use_defaults
+        && let Some(value) = prompt.default_value()
+    {
+        process_pre_filled_value(
+            config, ctx_vals, prompt, validators, key, &value, true,
+        )?
     } else {
         get_prompt_value(prompt, ctx_vals, config)?
     };
     Ok(value)
+}
+
+fn process_pre_filled_value<TExtra: PromptExtras>(
+    config: &PromptingConfiguration<'_>,
+    ctx_vals: &tera::Context,
+    prompt: &PromptConfiguration<TExtra>,
+    validators: &[ValidateConfiguration],
+    key: &String,
+    value: &OwnedValueBag,
+    expand_str_value: bool,
+) -> Result<OwnedValueBag, Error> {
+    let value = match prompt.discriminant() {
+        crate::configuration::PromptType::Confirm => {
+            let bool = try_parse_bool(value.by_ref()).ok_or_else(|| {
+                make_prompt_type_error(key, value.by_ref(), "boolean")
+            })?;
+
+            ValueBag::capture_serde1(&bool).to_owned()
+        }
+        crate::configuration::PromptType::Float => {
+            let float = try_parse_float(value.by_ref()).ok_or_else(|| {
+                make_prompt_type_error(key, value.by_ref(), "float")
+            })?;
+
+            ValueBag::capture_serde1(&float).to_owned()
+        }
+        crate::configuration::PromptType::Integer => {
+            let int = try_parse_int(value.by_ref()).ok_or_else(|| {
+                make_prompt_type_error(key, value.by_ref(), "integer")
+            })?;
+
+            ValueBag::capture_serde1(&int).to_owned()
+        }
+
+        // these types don't need to be transformed
+        crate::configuration::PromptType::Select
+        | crate::configuration::PromptType::MultiSelect
+        | crate::configuration::PromptType::Text
+        | crate::configuration::PromptType::Password => value.clone(),
+    };
+
+    let value = if expand_str_value {
+        if let Some(template) = value.by_ref().to_borrowed_str() {
+            let expanded = omni_tera::one_off(
+                template,
+                format!("default value for {key}"),
+                ctx_vals,
+            )?;
+            ValueBag::from_str(&expanded).to_owned()
+        } else {
+            value
+        }
+    } else {
+        value
+    };
+
+    let result = validate_value(
+        key,
+        &value,
+        ctx_vals,
+        validators,
+        config.validation_expressions_value_name,
+    );
+    Ok(if let Err(err) = result {
+        if err.kind() == ErrorKind::InvalidValue {
+            trace::warn!("reprompting due to validation error: {err}");
+            get_prompt_value(prompt, ctx_vals, config)?
+        } else {
+            return Err(err);
+        }
+    } else {
+        value.clone()
+    })
 }
 
 fn try_parse_bool<'a>(value: ValueBag<'a>) -> Option<bool> {
