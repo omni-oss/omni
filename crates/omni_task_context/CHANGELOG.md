@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_context-v0.5.0 - 2026-03-21
+#### Features
+- implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel
+
+- - -
+
 ## omni_task_context-v0.4.1 - 2026-02-16
 #### Bug Fixes
 - error when cache is disabled for a task - (bb21a9b) - Clarence Manuel

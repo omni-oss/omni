@@ -1631,7 +1631,7 @@ dependencies = [
 
 [[package]]
 name = "config_utils"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -4525,7 +4525,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -4546,7 +4546,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cache"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -4586,7 +4586,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -4666,7 +4666,7 @@ dependencies = [
 
 [[package]]
 name = "omni_collector"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bs58",
  "derive-new",
@@ -4723,7 +4723,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -4757,7 +4757,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -4804,7 +4804,7 @@ dependencies = [
 
 [[package]]
 name = "omni_core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -4854,7 +4854,7 @@ dependencies = [
 
 [[package]]
 name = "omni_execution_plan"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ahash 0.8.12",
  "bs58",
@@ -4916,7 +4916,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -4955,7 +4955,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator_configurations"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -5026,7 +5026,7 @@ dependencies = [
 
 [[package]]
 name = "omni_process"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "atty",
  "bytes 1.11.0",
@@ -5052,7 +5052,7 @@ dependencies = [
 
 [[package]]
 name = "omni_prompt"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "derive-new",
  "either",
@@ -5192,7 +5192,7 @@ dependencies = [
 
 [[package]]
 name = "omni_serde_validators"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "eyre",
@@ -5234,7 +5234,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_context"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -5256,7 +5256,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -5350,7 +5350,7 @@ dependencies = [
 
 [[package]]
 name = "omni_test_utils"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bs58",
  "config_utils",
@@ -7285,7 +7285,7 @@ dependencies = [
 
 [[package]]
 name = "serde_validate"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "derive-new",
  "eyre",

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.3.0 - 2026-03-21
+#### Features
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.2.1 - 2026-02-16
 #### Bug Fixes
 - error when cache is disabled for a task - (bb21a9b) - Clarence Manuel

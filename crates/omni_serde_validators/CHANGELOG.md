@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_serde_validators-v0.2.0 - 2026-03-21
+#### Features
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_serde_validators-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_generators**) add-inline implement prompting for missing target and expanding output path - (52ea1fb) - Clarence Manuel

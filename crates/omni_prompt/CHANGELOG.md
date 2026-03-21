@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_prompt-v0.3.0 - 2026-03-21
+#### Features
+- implement --use-defaults flag for generator - (57e8255) - Clarence Manuel
+
+- - -
+
 ## omni_prompt-v0.2.1 - 2026-02-13
 #### Bug Fixes
 - add remember field for saveable prompts - (e4d4acd) - Clarence Manuel

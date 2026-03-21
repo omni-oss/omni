@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.8.0 - 2026-03-21
+#### Features
+- implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.7.1 - 2026-03-14
 #### Bug Fixes
 - auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel

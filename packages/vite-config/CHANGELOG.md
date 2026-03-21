@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/vite-config-v0.2.0 - 2026-03-21
+#### Features
+- (**@omni-oss/vite-config**) improved support for customizable vite-configs - (5dd046a) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/vite-config**) error when app config is used when building - (f198511) - Clarence Manuel
+#### Miscellaneous Chores
+- remove vite-tsconfig-paths dependency - (bd49ed3) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+- update workspace dependencies [skip ci] - (73a9563) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add .npmignores [skip ci] - (14af7b3) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/vite-config-v0.1.0 - 2026-01-31
 #### Features
 - (**bridge-rpc-router**) implement router - (89bce93) - Clarence Manuel

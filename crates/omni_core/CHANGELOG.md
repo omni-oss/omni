@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_core-v0.3.0 - 2026-03-21
+#### Features
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_core-v0.2.2 - 2026-02-10
 #### Bug Fixes
 - (**omni_core**) remove buggy extension graph linearization - (7d453fc) - Clarence Manuel

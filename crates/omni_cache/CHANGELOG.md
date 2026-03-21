@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.5.0 - 2026-03-21
+#### Features
+- implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.4.0 - 2026-02-15
 #### Features
 - add task args - (199f686) - Clarence Manuel

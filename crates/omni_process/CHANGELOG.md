@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_process-v0.3.0 - 2026-03-21
+#### Features
+- implement retry_command - (d2f1b3a) - Clarence Manuel
+
+- - -
+
 ## omni_process-v0.2.0 - 2026-02-04
 #### Features
 - support tera template in task command - (7830096) - Clarence Manuel

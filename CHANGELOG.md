@@ -2,6 +2,41 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.13.0 - 2026-03-21
+### Package updates
+- omni_task_executor bumped to omni_task_executor-v0.8.0
+- omni bumped to omni-v0.13.0
+- omni_generator bumped to omni_generator-v0.6.0
+- omni_test_utils bumped to omni_test_utils-v0.3.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.6.0
+- omni_process bumped to omni_process-v0.3.0
+- omni_cache bumped to omni_cache-v0.5.0
+- config_utils bumped to config_utils-v0.3.0
+- omni_task_context bumped to omni_task_context-v0.5.0
+- omni_execution_plan bumped to omni_execution_plan-v0.4.0
+- @omni-oss/set-version bumped to @omni-oss/set-version-v0.2.0
+- omni_context bumped to omni_context-v0.3.0
+- omni_collector bumped to omni_collector-v0.3.0
+- serde_validate bumped to serde_validate-v0.3.0
+- omni_serde_validators bumped to omni_serde_validators-v0.2.0
+- omni_cli_core bumped to omni_cli_core-v0.13.0
+- omni_prompt bumped to omni_prompt-v0.3.0
+- omni_core bumped to omni_core-v0.3.0
+- omni_configurations bumped to omni_configurations-v0.7.0
+- @omni-oss/vite-config bumped to @omni-oss/vite-config-v0.2.0
+- root bumped to root-v0.8.0
+### Global changes
+#### Features
+- implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel
+#### Continuous Integration
+- update omni version [skip ci] - (2642cf6) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/summarize-results**) update summarize results compiled script - (db9ccc0) - Clarence Manuel
+- update vite configs - (e326f27) - Clarence Manuel
+- update generators - (2f56f46) - Clarence Manuel
+
+- - -
+
 ## v0.12.0 - 2026-03-14
 ### Package updates
 - omni_generator_configurations bumped to omni_generator_configurations-v0.5.0

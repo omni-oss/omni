@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.6.0 - 2026-03-21
+#### Features
+- implement --use-defaults flag for generator - (57e8255) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.5.0 - 2026-03-14
 #### Features
 - support overriding output_dir on run_generator actions - (c5524a7) - Clarence Manuel
