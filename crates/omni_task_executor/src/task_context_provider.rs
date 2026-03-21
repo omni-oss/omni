@@ -25,11 +25,15 @@ impl<'a, TSys: ContextSys> DefaultTaskContextProvider<'a, TSys> {
     pub fn new(
         context: &'a LoadedContext<TSys>,
         overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
+        override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
     ) -> Self {
         Self {
             inner: Implementation::new(
                 OverallResultsTashHashProvider { overall_results },
-                ContextWrapper { context },
+                ContextWrapper {
+                    context,
+                    override_args,
+                },
             ),
         }
     }
@@ -51,6 +55,7 @@ impl<'a, TSys: ContextSys> TaskContextProvider<'a>
 
 struct ContextWrapper<'a, TSys: ContextSys> {
     context: &'a LoadedContext<TSys>,
+    override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
 }
 
 impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
@@ -84,6 +89,14 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
         project_name: &str,
     ) -> Option<&omni_configurations::MetaConfiguration> {
         self.context.get_project_meta_config(project_name)
+    }
+
+    fn get_task_override_args(
+        &self,
+        _project_name: &str,
+        _task_name: &str,
+    ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+        self.override_args
     }
 }
 

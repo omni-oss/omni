@@ -948,6 +948,14 @@ impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
     ) -> Option<&omni_configurations::MetaConfiguration> {
         self.inner.get_project_meta_config(project_name)
     }
+
+    fn get_task_override_args(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&UnorderedMap<String, serde_json::Value>> {
+        self.inner.get_task_override_args(project_name, task_name)
+    }
 }
 
 async fn load_stats<P: AsRef<Path> + Clone>(

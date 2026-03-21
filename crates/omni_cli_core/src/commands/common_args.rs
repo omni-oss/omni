@@ -2,10 +2,13 @@ use std::{path::PathBuf, time::Duration};
 
 use clap::{Args, ValueEnum};
 use clap_utils::EnumValueAdapter;
+use maps::UnorderedMap;
 use omni_configurations::{Ui, WorkspaceConfiguration};
 use omni_execution_plan::ScmAffectedFilter;
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
+
+use crate::commands::parser::parse_key_value;
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
@@ -90,12 +93,11 @@ pub struct RunArgs {
         help = "How long to wait before retrying a failed task, takes precedence over `retry_interval` task configuration if specified",
         value_parser = humantime::parse_duration
     )]
-    retry_interval: Option<Duration>,
+    pub retry_interval: Option<Duration>,
 
     #[arg(
         long,
         alias = "affected",
-        short = 'a',
         default_value_t = EnumValueAdapter::new(SelectScm::None),
         default_missing_value = "auto",
         value_enum,
@@ -103,6 +105,14 @@ pub struct RunArgs {
         help = "Enable scm-based filtering of tasks. Optionally specify the scm to use for detecting affected tasks",
     )]
     pub scm_affected: EnumValueAdapter<SelectScm>,
+
+    #[arg(
+        short = 'a',
+        long = "arg",
+        help = "Pass arguments to the commands invoked",
+        value_parser = parse_key_value::<String, String>,
+    )]
+    pub args: Vec<(String, String)>,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -157,6 +167,17 @@ impl RunArgs {
             let filter = ScmAffectedFilter { base, scm, target };
 
             builder.scm_affected_filter(filter);
+        }
+
+        if !self.args.is_empty() {
+            let hm = self
+                .args
+                .iter()
+                .cloned()
+                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                .collect::<UnorderedMap<_, _>>();
+
+            builder.args(hm);
         }
     }
 }

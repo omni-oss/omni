@@ -4,7 +4,7 @@
     "dependencies": {
         "@omni-oss/biome-config": "workspace:^",
         "@omni-oss/tsconfig": "catalog:",
-        "@biomejs/biome": "^2.4.6",
+        "@biomejs/biome": "^2.4.8",
         "@omni-oss/summarize-results": "workspace:^",
         "@omni-oss/set-version": "workspace:^",
         "@omni-oss/create-jobs": "workspace:^",
@@ -13,7 +13,7 @@
         "vitest": "catalog:",
         "typescript": "catalog:"
     },
-    "packageManager": "bun@1.3.10",
+    "packageManager": "bun@1.3.11",
     "workspaces": [
         "packages/*",
         "scripts/*",

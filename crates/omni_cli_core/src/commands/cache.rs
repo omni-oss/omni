@@ -293,7 +293,9 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         if cli_args.stale_only {
             loaded_context = ctx.clone().into_loaded().await?;
             // loaded_context.get_cache_info(project_name, task_name);
-            PruneStaleOnly::new_on(ContextWrapper::new(&loaded_context))
+            PruneStaleOnly::new_on(PruneCommandsContextWrapper::new(
+                &loaded_context,
+            ))
         } else {
             PruneStaleOnly::new_off()
         },
@@ -435,11 +437,13 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
 
 #[derive(new)]
 #[repr(transparent)]
-struct ContextWrapper<'a, TSys: ContextSys> {
+struct PruneCommandsContextWrapper<'a, TSys: ContextSys> {
     context: &'a LoadedContext<TSys>,
 }
 
-impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
+impl<'a, TSys: ContextSys> ContextTrait
+    for PruneCommandsContextWrapper<'a, TSys>
+{
     type Error = LoadedContextError;
 
     fn get_project_meta_config(
@@ -484,5 +488,13 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
 
     fn root_dir(&self) -> &std::path::Path {
         self.context.root_dir()
+    }
+
+    fn get_task_override_args(
+        &self,
+        _project_name: &str,
+        _task_name: &str,
+    ) -> Option<&maps::UnorderedMap<String, serde_json::Value>> {
+        None
     }
 }

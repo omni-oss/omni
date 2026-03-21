@@ -2,22 +2,14 @@ use std::time::Duration;
 
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
+use maps::UnorderedMap;
 use omni_configurations::Ui;
 use omni_execution_plan::{Call, ScmAffectedFilter};
 
 use crate::{Force, OnFailure};
 
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Builder,
-    CloneGetters,
-    CopyGetters,
-    Getters,
+    Debug, Clone, PartialEq, Eq, Builder, CloneGetters, CopyGetters, Getters,
 )]
 #[builder(setter(into, strip_option))]
 pub struct ExecutionConfig {
@@ -96,6 +88,10 @@ pub struct ExecutionConfig {
     #[builder(default)]
     #[getset(get = "pub")]
     scm_affected_filter: Option<ScmAffectedFilter>,
+
+    #[builder(default)]
+    #[getset(get = "pub")]
+    args: UnorderedMap<String, serde_json::Value>,
 }
 
 impl ExecutionConfigBuilder {

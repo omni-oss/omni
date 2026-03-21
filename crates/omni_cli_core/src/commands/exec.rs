@@ -17,14 +17,11 @@ use crate::{
 
 #[derive(Args, Debug)]
 pub struct ExecCommand {
-    #[arg(required = true)]
-    pub command: String,
-
     #[command(flatten)]
     pub run: RunArgs,
 
-    #[arg(num_args(0..), help = "The arguments to pass to the task", trailing_var_arg = true, allow_hyphen_values = true)]
-    pub args: Vec<String>,
+    #[arg(num_args(1..), help = "The command to run", trailing_var_arg = true, allow_hyphen_values = true)]
+    pub cmd: Vec<String>,
 }
 
 pub async fn run(
@@ -40,8 +37,12 @@ pub async fn run(
     }
 
     builder.call(Call::new_command(
-        command.command.clone(),
-        command.args.clone(),
+        command.cmd[0].clone(),
+        if command.cmd.len() > 1 {
+            command.cmd[1..].iter().cloned().collect::<Vec<_>>()
+        } else {
+            vec![]
+        },
     ));
 
     command

@@ -45,6 +45,7 @@ where
     retry_interval: Option<Duration>,
     no_cache: bool,
     add_task_details: bool,
+    args: &'s UnorderedMap<String, serde_json::Value>,
 }
 
 impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
@@ -303,6 +304,8 @@ where
         task_contexts: &'a [Cow<'a, TaskContext<'a>>],
         overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
     ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
+    where
+        's: 'a,
     {
         // skip this batch if any error was encountered in a previous batch
         // when on_failure is set to skip_next_batches
@@ -537,8 +540,11 @@ where
         overall_results: &'a UnorderedMap<String, TaskExecutionResult>,
     ) -> Result<UnorderedMap<String, TaskExecutionResult>, BatchExecutorError>
     {
-        let ctx_provider =
-            DefaultTaskContextProvider::new(self.context, overall_results);
+        let ctx_provider = DefaultTaskContextProvider::new(
+            self.context,
+            overall_results,
+            Some(self.args),
+        );
 
         let tmp_task_contexts = ctx_provider
             .get_task_contexts(batch, self.ignore_dependencies)

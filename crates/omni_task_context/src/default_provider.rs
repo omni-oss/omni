@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use derive_new::new;
-use maps::Map;
+use maps::{Map, UnorderedMap};
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -62,6 +62,8 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
             &env_vars,
             meta,
             cache_info.as_ref().map(|c| &c.args),
+            self.context
+                .get_task_override_args(node.project_name(), node.task_name()),
         );
 
         let ctx = TaskContext {
@@ -80,6 +82,7 @@ fn create_template_context<'a>(
     env_vars: &'a Map<String, String>,
     meta: Option<&MetaConfiguration>,
     args: Option<&'a Map<String, serde_json::Value>>,
+    override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
 ) -> omni_tera::Context {
     let mut context = omni_tera::Context::new();
 
@@ -91,9 +94,21 @@ fn create_template_context<'a>(
     }
 
     if let Some(args) = args {
-        context.insert("args", args);
+        if let Some(override_args) = override_args
+            && !override_args.is_empty()
+        {
+            let mut merged = args.clone();
+
+            for (k, v) in override_args {
+                merged.insert(k.to_owned(), v.to_owned());
+            }
+
+            context.insert("args", &merged);
+        } else {
+            context.insert("args", args);
+        }
     } else {
-        context.insert("args", &Map::<String, ()>::default());
+        context.insert("args", override_args.unwrap_or(&Default::default()));
     }
 
     context

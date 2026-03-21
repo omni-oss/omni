@@ -5291,6 +5291,7 @@ dependencies = [
  "omni_types",
  "owo-colors",
  "serde",
+ "serde_json",
  "shlex",
  "strum 0.28.0",
  "system_traits",

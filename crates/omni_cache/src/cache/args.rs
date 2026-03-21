@@ -2,6 +2,7 @@ use std::{error::Error, path::Path, sync::Arc, time::Duration};
 
 use bytesize::ByteSize;
 use derive_new::new;
+use maps::UnorderedMap;
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, ProjectGraph};
 use strum::EnumIs;
@@ -45,6 +46,12 @@ pub trait Context: Send + Sync {
         project_name: &str,
         task_name: &str,
     ) -> Option<&MetaConfiguration>;
+
+    fn get_task_override_args(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&UnorderedMap<String, serde_json::Value>>;
 
     fn get_project_graph(&self) -> Result<ProjectGraph, Self::Error>;
 
@@ -106,6 +113,14 @@ impl Context for () {
     }
 
     fn root_dir(&self) -> &Path {
+        panic!("should not be used")
+    }
+
+    fn get_task_override_args(
+        &self,
+        _project_name: &str,
+        _task_name: &str,
+    ) -> Option<&UnorderedMap<String, serde_json::Value>> {
         panic!("should not be used")
     }
 }

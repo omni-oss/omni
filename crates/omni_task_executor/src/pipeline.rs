@@ -75,6 +75,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             self.config.retry_interval(),
             self.config.no_cache(),
             self.config.add_task_details(),
+            self.config.args(),
         );
 
         for batch in &execution_plan {

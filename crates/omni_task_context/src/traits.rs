@@ -1,5 +1,6 @@
 use std::{error::Error, sync::Arc};
 
+use maps::UnorderedMap;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
 
@@ -33,6 +34,12 @@ pub trait Context {
         project_name: &str,
         task_name: &str,
     ) -> Option<&CacheInfo>;
+
+    fn get_task_override_args(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&UnorderedMap<String, serde_json::Value>>;
 }
 
 pub trait TaskContextProvider<'a>: 'a {

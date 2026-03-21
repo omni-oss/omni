@@ -24,7 +24,7 @@
         "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
         "@omni-oss/system-interface": "workspace:^",
-        "fast-xml-parser": "^5.5.3",
+        "fast-xml-parser": "^5.5.8",
         "yaml": "^2.8.2",
         "comment-json": "^4.6.2",
         "smol-toml": "^1.6.0",
