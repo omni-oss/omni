@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Setup Omni
-        uses: omni-oss/setup-omni@v1
+        uses: omni-oss/setup-omni@v2
         with:
           version: ${{ github.event.inputs.version || 'latest' }}
           github-token: ${{ github.token }}
@@ -39,16 +39,19 @@ jobs:
           schemas=("project" "workspace" "generator")
           for schema in "${schemas[@]}"; do
             echo "Publishing $schema schema..."
-            
-            omni config schema $schema >| "./json-schemas/$schema-$INSTALLED_VERSION.json"
-            omni config schema $schema >| "./json-schemas/$schema-latest.json"
+
+            omni config schema $schema >| "./json-schemas/$schema.json"
           done
 
       - name: Publish JSON Schemas
         uses: peaceiris/actions-gh-pages@v3
         with:
-          publish_branch: json-schemas
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          external_repository: omni-oss/json-schemas
+          publish_branch: main
+          #github_token: ${{ secrets.GITHUB_TOKEN }}
+          deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
           publish_dir: ./json-schemas
           destination_dir: .
           keep_files: true
+          tag_name: ${{ github.event.inputs.version || 'latest' }}
+          tag_message: "Publish version ${{ github.event.inputs.version || 'latest' }}"
