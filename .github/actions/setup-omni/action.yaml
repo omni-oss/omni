@@ -25,7 +25,7 @@ runs:
   using: "composite"
   steps:
     - name: Install Omni
-      uses: omni-oss/setup-omni@v1
+      uses: omni-oss/setup-omni@v2
       with:
         github-token: ${{ inputs.github-token }}
         version: ${{ inputs.version }}
