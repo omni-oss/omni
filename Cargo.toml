@@ -220,7 +220,7 @@ tar = { version = "^0.4.45" }
 keyring-core = { version = "^1.0.0" }
 apple-native-keyring-store = { version = "^1.0.0", features = ["keychain"] }
 windows-native-keyring-store = { version = "^1.0.0" }
-zbus-secret-service-keyring-store = { version = "^1.0.0" }
+zbus-secret-service-keyring-store = { version = "^1.0.0", features = ["rt-tokio-crypto-rust"] }
 machine-uid = { version = "^0.5.4" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }

@@ -14,7 +14,9 @@ pub fn initialize() -> eyre::Result<()> {
             let store = zbus_secret_service_keyring_store::Store::new()?;
             keyring_core::set_default_store(store);
         },
-        _ => {}
+        _ => {
+            panic!("Unsupported platform, omni_setup only supports macOS, Windows and Linux");
+        }
     }
 
     trace::trace!("initialized_omni_setup");
