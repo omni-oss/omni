@@ -21,7 +21,10 @@ omni_configurations = { workspace = true }
 omni_remote_cache_client = { workspace = true }
 derive_builder = { workspace = true }
 derive-new = { workspace = true }
-keyring = { workspace = true }
+keyring-core = { workspace = true }
+apple-native-keyring-store = { workspace = true }
+windows-native-keyring-store = { workspace = true }
+dbus-secret-service-keyring-store = { workspace = true }
 machine-uid = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }

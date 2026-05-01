@@ -1,5 +1,8 @@
-use crate::util::env;
-use std::{fs::OpenOptions, io::Write as _, path::Path};
+use crate::{
+    SetupSys,
+    util::{env, get_service_and_user},
+};
+use std::path::Path;
 
 use derive_new::new;
 use omni_configurations::RemoteCacheConfiguration;
@@ -7,13 +10,13 @@ use omni_remote_cache_client::{
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
 };
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
-use system_traits::impls::RealSys;
 
 use crate::{
     crypto, derive_key::derive_key_from_seed, secret_key::get_secret_key,
 };
 
-pub async fn setup_remote_caching_config<TClient: RemoteCacheClient>(
+pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
+    user: &str,
     client: &TClient,
     remote_config_path: &Path,
     api_base_url: &str,
@@ -23,6 +26,7 @@ pub async fn setup_remote_caching_config<TClient: RemoteCacheClient>(
     workspace_code: &str,
     environment_code: Option<&str>,
     encrypt: bool,
+    sys: &impl SetupSys,
 ) -> Result<(), SetupRemoteCachingConfigError> {
     let result = client
         .validate_access(&RemoteAccessArgs {
@@ -59,18 +63,13 @@ pub async fn setup_remote_caching_config<TClient: RemoteCacheClient>(
 
     let parent = remote_config_path.parent().expect("should have parent");
 
-    if !parent.exists() {
-        std::fs::create_dir_all(parent)?;
+    if sys.fs_exists_no_err_async(parent).await {
+        sys.fs_create_dir_all_async(parent).await?;
     }
 
     if encrypt {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&remote_config_path)?;
-
-        let secret_key = get_secret_key()?;
+        let (service, user) = get_service_and_user(None, Some(user))?;
+        let secret_key = get_secret_key(&service, &user)?;
         let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
         let derived_key = derive_key_from_seed(&secret_key, salt.as_bytes());
 
@@ -78,12 +77,12 @@ pub async fn setup_remote_caching_config<TClient: RemoteCacheClient>(
             rmp_serde::to_vec(&remote_config)?.as_slice(),
             &derived_key[..],
         )?;
-        file.write_all(&encrypted)?;
+        sys.fs_write_async(&remote_config_path, &encrypted).await?;
     } else {
         omni_file_data_serde::write_async(
             remote_config_path,
             &remote_config,
-            &RealSys,
+            sys,
         )
         .await?;
     }

@@ -90,9 +90,9 @@ pub async fn build_merkle_tree<THasher: Hasher>(
                 })?;
 
         let (file_entries, _size): (Vec<FileEntry<THasher>>, usize) =
-            bincode::serde::borrow_decode_from_slice(
+            bincode_next::serde::borrow_decode_from_slice(
                 &bytes,
-                bincode::config::standard(),
+                bincode_next::config::standard(),
             )?;
 
         file_entries_by_path
@@ -143,9 +143,9 @@ pub async fn build_merkle_tree<THasher: Hasher>(
     let new_hashes = try_join_all(tasks).await?;
 
     if new_hashes != file_entries {
-        let bytes = bincode::serde::encode_to_vec(
+        let bytes = bincode_next::serde::encode_to_vec(
             &new_hashes,
-            bincode::config::standard(),
+            bincode_next::config::standard(),
         )?;
 
         sys.fs_write_async(&partial_hashes_file, &bytes).await.inspect_err(|e| {
@@ -191,8 +191,8 @@ enum BuildMerkleTreeErrorInner {
     SystemTime(#[from] std::time::SystemTimeError),
 
     #[error(transparent)]
-    Decode(#[from] bincode::error::DecodeError),
+    Decode(#[from] bincode_next::error::DecodeError),
 
     #[error(transparent)]
-    Encode(#[from] bincode::error::EncodeError),
+    Encode(#[from] bincode_next::error::EncodeError),
 }

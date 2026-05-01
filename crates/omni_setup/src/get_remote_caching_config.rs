@@ -1,52 +1,57 @@
-use crate::util::env;
+use crate::{
+    SetupSys,
+    secret_key::get_secret_key,
+    util::{env, get_service_and_user},
+};
 use std::path::Path;
 
 use derive_new::new;
 use omni_configurations::RemoteCacheConfiguration;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
-use system_traits::impls::RealSys;
 
 use crate::{
     crypto::{self, CryptoError},
     derive_key::derive_key_from_seed,
-    secret_key::get_secret_key,
 };
 
 pub async fn get_remote_caching_config_async(
+    user: &str,
     remote_config_path: &Path,
     decrypt: bool,
+    sys: &impl SetupSys,
 ) -> Result<RemoteCacheConfiguration, GetRemoteCachingConfigError> {
     let remote_config: RemoteCacheConfiguration = if decrypt {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .open(remote_config_path)?;
-        let key = crate::secret_key::get_secret_key()?;
-        let decrypted = crypto::decrypt(&file, key.as_bytes())?;
+        let file = sys.fs_read_async(remote_config_path).await?;
+
+        let (service, user) = get_service_and_user(None, Some(user))?;
+        let key = get_secret_key(&service, &user)?;
+        let decrypted = crypto::decrypt(&file[..], key.as_bytes())?;
 
         rmp_serde::from_read(&decrypted[..])?
     } else {
-        omni_file_data_serde::read_async(remote_config_path, &RealSys).await?
+        omni_file_data_serde::read_async(remote_config_path, sys).await?
     };
 
     Ok(remote_config)
 }
 
-pub fn get_remote_caching_config_sync(
+pub fn get_remote_caching_config(
+    user: &str,
     remote_config_path: &Path,
     decrypt: bool,
+    sys: &impl SetupSys,
 ) -> Result<RemoteCacheConfiguration, GetRemoteCachingConfigError> {
     let remote_config: RemoteCacheConfiguration = if decrypt {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .open(remote_config_path)?;
-        let secret_key = get_secret_key()?;
+        let file = sys.fs_read(remote_config_path)?;
+        let (service, user) = get_service_and_user(None, Some(user))?;
+        let key = get_secret_key(&service, &user)?;
         let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
-        let derived_key = derive_key_from_seed(&secret_key, salt.as_bytes());
-        let decrypted = crypto::decrypt(&file, &derived_key[..])?;
+        let derived_key = derive_key_from_seed(&key, salt.as_bytes());
+        let decrypted = crypto::decrypt(&file[..], &derived_key[..])?;
 
         rmp_serde::from_read(&decrypted[..])?
     } else {
-        omni_file_data_serde::read(remote_config_path, &RealSys)?
+        omni_file_data_serde::read(remote_config_path, sys)?
     };
 
     Ok(remote_config)

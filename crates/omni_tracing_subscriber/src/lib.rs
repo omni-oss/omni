@@ -181,6 +181,7 @@ where
         Layer<Registry> + Send + Sync + 'static,
 {
     let layer = layer
+        .with_ansi_sanitization(false)
         .with_writer(factory)
         .with_line_number(options.contains(FormatOption::WithLineNumber))
         .with_thread_ids(options.contains(FormatOption::WithThreadId))

@@ -58,16 +58,18 @@ impl<TSys: ContextSys> Context<TSys> {
         tracing_config: &TracingConfig,
     ) -> Result<Self, ContextError> {
         let env = env.into();
-        let workspace = get_workspace_configuration(&env, root_dir, &sys)?;
+        let root_dir = sys.fs_canonicalize(root_dir)?;
+        let workspace = get_workspace_configuration(&env, &root_dir, &sys)?;
         let omni_dir = root_dir.join(OMNI_DIR);
-        let remote_cache = get_remote_cache_configuration(&omni_dir, &sys)?;
+        let remote_cache =
+            get_remote_cache_configuration(&root_dir, &omni_dir, &sys)?;
         let context = Self {
             env,
             inherit_env_vars,
             override_env_files,
             workspace,
             remote_cache,
-            root_dir: root_dir.to_path_buf(),
+            root_dir,
             omni_dir,
             env_root_dir_marker: root_marker.to_string(),
             sys,
@@ -131,6 +133,7 @@ impl<TSys: ContextSys> Context<TSys> {
         self.inherit_env_vars
     }
 
+    /// Guaranteed to be an absolute path to the root dir containing the workspace configuration file
     pub fn root_dir(&self) -> &Path {
         &self.root_dir
     }
@@ -345,6 +348,7 @@ fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
 }
 
 fn get_remote_cache_configuration(
+    abs_root_dir: &Path,
     omni_dir: &Path,
     sys: &impl ContextSys,
 ) -> Result<Option<RemoteCacheConfiguration>, ContextError> {
@@ -367,9 +371,12 @@ fn get_remote_cache_configuration(
     let rc_path =
         rc_path.expect("RemoteConfiguration should exist at this point");
 
-    let rc = omni_setup::get_remote_caching_config_sync(
+    let user = abs_root_dir.to_string_lossy();
+    let rc = omni_setup::get_remote_caching_config(
+        &user,
         rc_path.as_path(),
         rc_path.extension().is_some() && rc_path.extension().unwrap() == "enc",
+        sys,
     )?;
 
     trace::info!("Remote caching is enabled");

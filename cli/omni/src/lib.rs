@@ -9,6 +9,7 @@ use omni_cli_core::{
     context::{self, Context, ContextError, get_root_dir},
 };
 use omni_tracing_subscriber::TracingConfig;
+use scopeguard::defer;
 use system_traits::impls::RealSys;
 
 #[cfg(feature = "dhat-heap")]
@@ -139,6 +140,15 @@ pub async fn main() -> eyre::Result<()> {
         init_tracing(&tracing_config)?;
         trace::trace!(?tracing_config, "tracing_initialized");
     }
+
+    omni_setup::initialize()?;
+    defer! {
+        let res = omni_setup::deinitialize();
+
+        if let Err(e) = res {
+            trace::error!(error = %e, "deinit_failed");
+        }
+    };
 
     run(
         &cli.subcommand,

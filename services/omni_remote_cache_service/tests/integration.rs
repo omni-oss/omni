@@ -106,7 +106,7 @@ async fn create_server(cfg: &Configuration) -> TestServer {
     )
     .with_state(state);
 
-    TestServer::new(router).expect("should be able to create test server")
+    TestServer::new(router)
 }
 
 const DEFAULT_DIGEST: &str =

@@ -418,7 +418,9 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
     let ext = if cli_args.secure { "enc" } else { "yaml" };
     let config_path = ctx.remote_cache_configuration_path(ext);
 
-    omni_setup::setup_remote_caching_config(
+    let user = ctx.root_dir().to_string_lossy();
+    omni_setup::setup_remote_caching_config_async(
+        &user,
         &client,
         config_path.as_path(),
         &cli_args.api_base_url,
@@ -428,6 +430,7 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
         &cli_args.ws,
         cli_args.env.as_deref(),
         cli_args.secure,
+        ctx.sys(),
     )
     .await.inspect_err(|_| {
         trace::error!("Failed to setup remote caching. Please check your credentials and try again.");

@@ -1,13 +1,26 @@
-use crate::util::env;
 use base64::Engine;
 use derive_new::new;
-use keyring::Entry;
+use keyring_core::Entry;
 use rand::Rng;
+use ring::digest;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
-pub fn get_secret_key() -> Result<String, SecretKeyError> {
-    let service = env!("OMNI_SECRET_SERVICE_NAME", "omni")?;
-    let user = env!("OMNI_SECRET_USER_NAME", "omni")?;
+pub fn get_secret_key(
+    service: &str,
+    user: &str,
+) -> Result<String, SecretKeyError> {
+    let service = if service.is_empty() {
+        "omni-remote-cache-client"
+    } else {
+        service
+    };
+    let user = if user.is_empty() { "default" } else { user };
+
+    let service = digest::digest(&digest::SHA256, service.as_bytes());
+    let service =
+        base64::engine::general_purpose::STANDARD.encode(service.as_ref());
+    let user = digest::digest(&digest::SHA256, user.as_bytes());
+    let user = base64::engine::general_purpose::STANDARD.encode(user.as_ref());
 
     let entry = Entry::new(&service, &user)?;
 
@@ -19,7 +32,7 @@ pub fn get_secret_key() -> Result<String, SecretKeyError> {
     }
 
     if let Err(error) = entry_result
-        && !matches!(error, keyring::Error::NoEntry)
+        && !matches!(error, keyring_core::Error::NoEntry)
     {
         return Err(error.into());
     }
@@ -63,22 +76,37 @@ impl<T: Into<SecretKeyErrorInner>> From<T> for SecretKeyError {
 #[strum_discriminants(vis(pub), name(SecretKeyErrorKind))]
 pub(crate) enum SecretKeyErrorInner {
     #[error(transparent)]
-    Keyring(#[from] keyring::Error),
+    Keyring(#[from] keyring_core::Error),
 
     #[error(transparent)]
     MachineId(eyre::Report),
-
-    #[error(transparent)]
-    Var(#[from] std::env::VarError),
 }
 
 #[cfg(test)]
 mod tests {
+    use keyring_core::mock;
+
     use super::*;
+
+    fn with_mock_keyring_store<T>(test: impl FnOnce() -> T) -> T {
+        keyring_core::set_default_store(
+            mock::Store::new().expect("failed to create mock keyring store"),
+        );
+
+        let result = test();
+
+        keyring_core::unset_default_store()
+            .expect("should be able to unset keyring store");
+
+        result
+    }
 
     #[test]
     fn test_get_secret_key() {
-        let key = get_secret_key().expect("can't get secret key");
-        assert!(!key.is_empty(), "key should not be empty");
+        with_mock_keyring_store(|| {
+            let key = get_secret_key("test-service", "test-user")
+                .expect("can't get secret key");
+            assert!(!key.is_empty(), "key should not be empty");
+        });
     }
 }
