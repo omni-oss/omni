@@ -22,9 +22,6 @@ omni_remote_cache_client = { workspace = true }
 derive_builder = { workspace = true }
 derive-new = { workspace = true }
 keyring-core = { workspace = true }
-apple-native-keyring-store = { workspace = true }
-windows-native-keyring-store = { workspace = true }
-dbus-secret-service-keyring-store = { workspace = true }
 machine-uid = { workspace = true }
 rand = { workspace = true }
 ring = { workspace = true }
@@ -33,3 +30,12 @@ rmp-serde = { workspace = true }
 tokio = { workspace = true }
 omni_file_data_serde = { workspace = true }
 system_traits = { workspace = true, features = ["memory-async", "memory-sync", "real-sync", "real-async-tokio"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store = { workspace = true }

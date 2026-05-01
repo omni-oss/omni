@@ -11,7 +11,7 @@ pub fn initialize() -> eyre::Result<()> {
             keyring_core::set_default_store(store);
         },
         target_os = "linux" => {
-            let store = dbus_secret_service_keyring_store::Store::new()?;
+            let store = zbus_secret_service_keyring_store::Store::new()?;
             keyring_core::set_default_store(store);
         },
         _ => {}
