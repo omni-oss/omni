@@ -23,7 +23,6 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
         "~/*": ["./styled-system/*"]
-    },
-    "baseUrl": "${configDir}"
+    }
   }
 }
