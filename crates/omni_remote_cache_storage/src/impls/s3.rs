@@ -248,7 +248,7 @@ impl RemoteCacheStorageBackend for S3CacheBackend {
                     ReaderStream::new(data).filter_map(|e| match e {
                         Ok(b) => Some(b),
                         Err(e) => {
-                            trace::error!("Error reading from stream: {}", e);
+                            log::error!("Error reading from stream: {}", e);
                             None
                         }
                     });

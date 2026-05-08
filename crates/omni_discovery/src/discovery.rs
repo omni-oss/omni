@@ -60,7 +60,7 @@ impl<'a> Discovery<'a> {
         })? {
             num_iterations += 1;
             let f = f.map_err(ErrorInner::new_failed_to_get_dir_entry)?;
-            trace::trace!("checking path: {:?}", f.path());
+            trace::trace!(path = ?f.path(), "checking_path");
 
             let meta = f.metadata().map_err(|e| {
                 ErrorInner::new_failed_to_get_metadata(
@@ -78,7 +78,7 @@ impl<'a> Discovery<'a> {
             }
         }
 
-        trace::debug!(
+        log::debug!(
             "Found {} files in {:?}, walked {} items",
             discovered.len(),
             start_walk_time.elapsed().unwrap_or_default(),

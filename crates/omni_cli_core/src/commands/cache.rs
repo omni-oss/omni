@@ -308,7 +308,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
 
     let pruned = cache_store.prune_caches(&args).await?;
     if pruned.is_empty() {
-        trace::warn!("No cache entries matched the given filters");
+        log::warn!("No cache entries matched the given filters");
     } else {
         if !cli_args.dry_run {
             println!("--- Cache Entries ---");
@@ -384,7 +384,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
 
         if !cli_args.dry_run {
             cache_store.force_prune_caches(&pruned).await?;
-            trace::info!(
+            log::info!(
                 "{}",
                 format!(
                     "Pruned {} cache entries from {} projects",
@@ -393,7 +393,7 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
                 .red()
             );
         } else {
-            trace::info!(
+            log::info!(
                 "Dry mode enabled, would prune {} cache entries from {} projects",
                 pruned_count,
                 project_count
@@ -433,7 +433,7 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
         ctx.sys(),
     )
     .await.inspect_err(|_| {
-        trace::error!("Failed to setup remote caching. Please check your credentials and try again.");
+        log::error!("Failed to setup remote caching. Please check your credentials and try again.");
     })?;
     Ok(())
 }

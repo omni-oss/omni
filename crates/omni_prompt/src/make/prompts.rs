@@ -357,7 +357,7 @@ fn validate<T: Serialize + 'static>(
         } else {
             // TODO: find a better way to show errors,
             // currently this is badly displayed due to prompt formatting in the terminal
-            trace::error!("{:?}", err);
+            log::error!("{:?}", err);
             std::process::exit(1);
         }
     } else {

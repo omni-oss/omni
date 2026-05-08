@@ -268,7 +268,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         for project in project_tasks {
             trace::trace!(
                 project_name = ?project.project_name,
-                "processing project"
+                "processing_project"
             );
             let roots = enum_map! {
                 Root::Workspace => &self.ws_root_dir,

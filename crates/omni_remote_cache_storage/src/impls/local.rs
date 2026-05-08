@@ -79,7 +79,7 @@ impl RemoteCacheStorageBackend for LocalDiskCacheBackend {
             .filter_map(|x| match x {
                 Ok(b) => Some(b),
                 Err(e) => {
-                    trace::error!("error reading file: {}", e);
+                    log::error!("error reading file: {}", e);
                     None
                 }
             });

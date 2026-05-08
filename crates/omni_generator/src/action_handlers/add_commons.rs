@@ -51,7 +51,7 @@ where
         overwrite(&output_path, ctx.overwrite.or(common.overwrite), sys).await?
         && !did_overwrite
     {
-        trace::info!("Skipped writing to path {}", output_path.display());
+        log::info!("Skipped writing to path {}", output_path.display());
         return Ok(());
     }
 
@@ -71,7 +71,7 @@ where
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(&output_path, e))?;
 
-    trace::info!("Wrote to path {}", output_path.display());
+    log::info!("Wrote to path {}", output_path.display());
 
     Ok(())
 }

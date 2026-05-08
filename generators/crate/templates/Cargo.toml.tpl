@@ -33,6 +33,7 @@ strum = { workspace = true }
 {%- if prompts.use_tracing %}
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
+log = { workspace = true }
 {%- endif %}
 derive_builder = { workspace = true }
 derive-new = { workspace = true }

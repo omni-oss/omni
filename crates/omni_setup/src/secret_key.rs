@@ -27,7 +27,7 @@ pub fn get_secret_key(
     let entry_result = entry.get_password();
 
     if let Ok(result) = entry_result {
-        trace::debug!("secret key found in keyring");
+        log::debug!("secret key found in keyring");
         return Ok(result);
     }
 
@@ -49,7 +49,7 @@ pub fn get_secret_key(
 
     entry.set_password(&new_secret_key)?;
 
-    trace::debug!("secret key written to keyring");
+    log::debug!("secret key written to keyring");
 
     Ok(new_secret_key)
 }

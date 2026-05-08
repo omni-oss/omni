@@ -34,7 +34,7 @@ pub async fn run(env: &EnvCommand, ctx: &mut Context) -> eyre::Result<()> {
             if let Some(env) = env_vars.get(key) {
                 print!("{env}");
             } else {
-                trace::warn!("environmental variable does not exists: {}", key);
+                log::warn!("environmental variable does not exists: {}", key);
             }
         }
         EnvSubcommands::All => {

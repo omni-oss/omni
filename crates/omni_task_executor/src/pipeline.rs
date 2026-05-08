@@ -52,7 +52,7 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         let mut results_accumulator = unordered_map!(cap: task_count);
 
         if self.context.remote_cache_configuration().is_some() {
-            trace::info!("Remote caching enabled");
+            log::info!("Remote caching enabled");
         }
 
         let presenter = if should_use_tui(self.config.ui(), &execution_plan) {

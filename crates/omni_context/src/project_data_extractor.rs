@@ -94,8 +94,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         for project_config in filtered {
             trace::debug!(
                 project_configuration = ?project_config,
-                "processing project config: {}",
-                project_config.name
+                "processing_project_config",
             );
 
             let dir =

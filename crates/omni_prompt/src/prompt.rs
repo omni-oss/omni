@@ -227,7 +227,7 @@ fn process_pre_filled_value<TExtra: PromptExtras>(
     );
     Ok(if let Err(err) = result {
         if err.kind() == ErrorKind::InvalidValue {
-            trace::warn!("reprompting due to validation error: {err}");
+            log::warn!("reprompting due to validation error: {err}");
             get_prompt_value(prompt, ctx_vals, config)?
         } else {
             return Err(err);

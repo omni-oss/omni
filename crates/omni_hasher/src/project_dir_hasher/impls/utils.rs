@@ -86,7 +86,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
             sys.fs_read_async(&partial_hashes_file)
                 .await
                 .inspect_err(|e| {
-                    trace::error!("failed to read partial hashes file {partial_hashes_file:?}: {e}");
+                    log::error!("Failed to read partial hashes file {partial_hashes_file:?}: {e}");
                 })?;
 
         let (file_entries, _size): (Vec<FileEntry<THasher>>, usize) =
@@ -149,7 +149,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
         )?;
 
         sys.fs_write_async(&partial_hashes_file, &bytes).await.inspect_err(|e| {
-            trace::error!("failed to write partial hashes file {partial_hashes_file:?}: {e}");
+            log::error!("Failed to write partial hashes file {partial_hashes_file:?}: {e}");
         })?;
     }
 

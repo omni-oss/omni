@@ -219,7 +219,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             )
             .await?;
 
-        trace::trace!("collected results: {}", results.len());
+        trace::trace!(
+            results_count = results.len(),
+            "collected_results_for_caching"
+        );
 
         let logs_map = cache_infos
             .iter()
@@ -338,7 +341,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         if !cached_results.is_empty()
             && let RemoteConfig::Enabled(conf) = &self.remote_config
         {
-            trace::debug!("Uploading remote cache artifacts...");
+            log::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
             for (hash, output_dir) in cached_results {
                 let client = self.client.clone();
@@ -369,7 +372,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .put_artifact(&config, &digest, Bytes::from(artifact))
                         .await?;
 
-                    trace::debug!("Uploaded cache for {}", digest);
+                    log::debug!("Uploaded cache for {}", digest);
 
                     Ok::<_, LocalTaskExecutionCacheStoreError>(())
                 });
@@ -441,7 +444,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         .await?;
 
                     if let Some(bytes) = response {
-                        trace::debug!("fetched remote cache for {}", digest);
+                        log::debug!("fetched remote cache for {}", digest);
                         unarchive(&output_dir, Cursor::new(bytes))?;
                     }
 
@@ -565,7 +568,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let project_output_dir = &entry.path().join("output");
 
                 if !tokio::fs::try_exists(project_output_dir).await? {
-                    trace::debug!(
+                    log::debug!(
                         "no output dir found for {}",
                         entry.path().display()
                     );
@@ -583,7 +586,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
                 while let Some(entry) = task_entries.next_entry().await? {
                     if !entry.file_type().await?.is_dir() {
-                        trace::debug!(
+                        log::debug!(
                             "not a directory: {}",
                             entry.path().display()
                         );
@@ -594,7 +597,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         entry.path().join(CACHE_OUTPUT_METADATA_FILE);
 
                     if !tokio::fs::try_exists(&cache_meta_path).await? {
-                        trace::debug!(
+                        log::debug!(
                             "no cache metadata found for {}",
                             entry.path().display()
                         );
@@ -773,7 +776,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 hashes.extend(t_hashes);
             }
 
-            trace::debug!(
+            log::debug!(
                 "getting hashes for stale elapsed time: {:?}",
                 time_now.elapsed().unwrap()
             );
@@ -835,7 +838,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
     ) -> Result<(), Self::Error> {
         for entry in entries {
             if !tokio::fs::try_exists(&entry.entry_dir).await? {
-                trace::debug!(
+                log::debug!(
                     "Cache entry does not exist: {}",
                     entry.entry_dir.display()
                 );
@@ -845,10 +848,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             tokio::fs::remove_dir_all(&entry.entry_dir)
                 .await
                 .inspect_err(|e| {
-                    trace::debug!("Failed to delete cache entry: {}", e)
+                    log::error!("Failed to delete cache entry: {}", e)
                 })?;
 
-            trace::debug!("Pruned cache entry: {}", entry.entry_dir.display());
+            log::debug!("Pruned cache entry: {}", entry.entry_dir.display());
         }
 
         Ok(())
@@ -963,11 +966,7 @@ async fn load_stats<P: AsRef<Path> + Clone>(
 ) -> Result<FileCacheStats, LocalTaskExecutionCacheStoreError> {
     let path_ref = path.as_ref();
     let meta = tokio::fs::metadata(path_ref).await.inspect_err(|e| {
-        trace::debug!(
-            "failed to get metadata for {}: {}",
-            path_ref.display(),
-            e
-        )
+        log::error!("failed to get metadata for {}: {}", path_ref.display(), e)
     })?;
 
     Ok::<_, LocalTaskExecutionCacheStoreError>(FileCacheStats {

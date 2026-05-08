@@ -58,7 +58,7 @@ impl Child {
     }
 
     fn spawn_pty(cmd: PtyCommand) -> Result<Self, ChildError> {
-        trace::trace!("spawning pty");
+        log::trace!("spawning pty");
 
         let mut writer = cmd
             .master
@@ -102,9 +102,9 @@ impl Child {
                     nix::sys::termios::SetArg::TCSANOW,
                     &termios,
                 ) {
-                    trace::debug!("failed to set termios: {e}");
+                    log::debug!("failed to set termios: {e}");
                 } else {
-                    trace::trace!("termios set");
+                    log::trace!("termios set");
                 }
             }
         }
@@ -172,7 +172,7 @@ impl Child {
     }
 
     fn spawn_normal(mut cmd: StdCommand) -> Result<Self, ChildError> {
-        trace::trace!("spawning normal");
+        log::trace!("spawning normal");
         let builder = cmd
             .cmd
             .stdin(Stdio::piped())
@@ -190,7 +190,7 @@ impl Child {
                             "failed to create child process group: {e}"
                         )
                     })?;
-                    trace::debug!("child process group created");
+                    log::debug!("child process group created");
                     Ok(())
                 });
             }
@@ -272,16 +272,16 @@ impl Child {
                 writer?;
                 let status = status?;
 
-                trace::trace!("child exited with status: {status:?}");
+                log::trace!("child exited with status: {status:?}");
 
                 Ok(status.exit_code())
             }
             ChildInner::Normal(mut child) => {
                 let status = child.wait().await.inspect_err(|e| {
-                    trace::error!("wait error: {e}");
+                    log::error!("wait error: {e}");
                 })?;
 
-                trace::trace!("child exited with status: {status:?}");
+                log::trace!("child exited with status: {status:?}");
 
                 Ok(status.code().unwrap_or(0) as u32)
             }

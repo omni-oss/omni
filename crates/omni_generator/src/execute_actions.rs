@@ -66,7 +66,7 @@ pub async fn execute_actions<'a>(
         let action_name = get_action_name(index, action, &tera_context)?;
 
         if skip(&action_name, action, &tera_context)? {
-            trace::info!("Action {}: Skipped", &action_name);
+            log::info!("Action {}: Skipped", &action_name);
             continue;
         }
 
@@ -91,7 +91,7 @@ pub async fn execute_actions<'a>(
         let in_progress_message =
             get_in_progress_message(&action_name, action, &tera_context)?;
 
-        trace::info!("Action {}: {}", &action_name, in_progress_message);
+        log::info!("Action {}: {}", &action_name, in_progress_message);
 
         let result = match action {
             ActionConfiguration::Add { action } => {
@@ -136,14 +136,14 @@ pub async fn execute_actions<'a>(
             let error_message =
                 get_error_message(&action_name, &e, action, &tera_context)?;
 
-            trace::error!("Action {}: {}", &action_name, error_message);
+            log::error!("Action {}: {}", &action_name, error_message);
 
             return Err(e);
         } else {
             let success_message =
                 get_success_message(&action_name, action, &tera_context)?;
 
-            trace::info!("Action {}: {}", &action_name, success_message);
+            log::info!("Action {}: {}", &action_name, success_message);
         }
     }
 

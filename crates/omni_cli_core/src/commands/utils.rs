@@ -47,7 +47,7 @@ pub fn report_execution_results(results: &[TaskExecutionResult]) {
     }
 
     if success > 0 {
-        trace::info!(
+        log::info!(
             "{}",
             format!(
                 "Successfully executed {} tasks ({} results from cache)",
@@ -58,7 +58,7 @@ pub fn report_execution_results(results: &[TaskExecutionResult]) {
         );
     }
     if errored > 0 {
-        trace::info!(
+        log::info!(
             "{}",
             format!(
                 "Failed to execute {} tasks ({} results from cache)",
@@ -69,13 +69,10 @@ pub fn report_execution_results(results: &[TaskExecutionResult]) {
         );
     }
     if skipped > 0 {
-        trace::info!(
-            "{}",
-            format!("Skipped {} tasks", skipped).yellow().bold()
-        );
+        log::info!("{}", format!("Skipped {} tasks", skipped).yellow().bold());
     }
     if (cached_error + cached_success) > 0 {
-        trace::info!(
+        log::info!(
             "{}",
             format!(
                 "Saved {:?} in total from cached results",

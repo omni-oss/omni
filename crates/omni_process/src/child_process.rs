@@ -170,7 +170,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
             ChildProcessErrorInner::CantParseCommand(command.to_string())
         })?;
 
-        trace::trace!("executing command: {:?}", parsed);
+        log::trace!("executing command: {:?}", parsed);
 
         let child = Child::spawn(
             parsed[0].clone(),
@@ -196,7 +196,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
         let mut writer = self.output_writer.take();
         let logs_output_task = tokio::spawn(async move {
             if !self.record_logs && writer.is_none() {
-                trace::trace!("no logs output, exit early");
+                log::trace!("no logs output, exit early");
                 return Ok::<_, ChildProcessError>(None);
             }
 
@@ -206,7 +206,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
                 None
             };
 
-            trace::trace!("logs output task started");
+            log::trace!("logs output task started");
 
             let mut stderr = stderr.map(BufReader::new);
             let mut stdout = BufReader::new(stdout);
@@ -221,7 +221,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
                             n = res?;
                             if n == 0 {
                                 stderr = None;
-                                trace::trace!("stderr is empty, breaking");
+                                log::trace!("stderr is empty, breaking");
                                 continue;
                             }
                             line = stderr_line;
@@ -229,7 +229,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
                         res = stdout.read_line(&mut stdout_line) => {
                             n = res?;
                             if n == 0 {
-                                trace::trace!("stdout is empty, breaking");
+                                log::trace!("stdout is empty, breaking");
                                 break;
                             }
                             line = stdout_line;
@@ -239,25 +239,25 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
                     let mut stdout_line = String::new();
                     n = stdout.read_line(&mut stdout_line).await?;
                     if n == 0 {
-                        trace::trace!("stdout is empty, breaking");
+                        log::trace!("stdout is empty, breaking");
                         break;
                     }
                     line = stdout_line;
                 }
 
-                trace::trace!("received log chunk to write: {}", n);
+                log::trace!("received log chunk to write: {}", n);
 
                 if let Some(logs_output) = &mut logs_output {
-                    trace::trace!("writing log chunk to logs output");
+                    log::trace!("writing log chunk to logs output");
                     logs_output.put_slice(line.as_bytes());
                 }
 
                 if let Some(writer) = writer.as_mut() {
-                    trace::trace!("writing log chunk to output writer");
+                    log::trace!("writing log chunk to output writer");
                     writer.write_all(line.as_bytes()).await?;
                 }
             }
-            trace::trace!("logs output task done");
+            log::trace!("logs output task done");
             Ok::<_, ChildProcessError>(logs_output.map(|b| b.freeze()))
         });
 
@@ -276,7 +276,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
 
             tasks.push(stdin_task);
         } else if !self.keep_stdin_open {
-            trace::trace!("dropping input");
+            trace::trace!("dropping_input");
             std::mem::drop(input);
         }
 

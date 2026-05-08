@@ -104,7 +104,7 @@ where
         const EXIT_CODE_ERROR_STYLE: Style = Style::new().red().bold();
         const EXIT_CODE_SUCCESS_STYLE: Style = Style::new().green().bold();
 
-        trace::info!(
+        log::info!(
             "Cache hit for task '{}' with exit code '{}' {}",
             task_ctx.node.full_task_name(),
             res.exit_code.style(if res.exit_code == 0 {
@@ -311,7 +311,7 @@ where
         // when on_failure is set to skip_next_batches
         if self.should_skip_batch_on_error(overall_results) {
             for task in batch {
-                trace::error!(
+                log::error!(
                     "Skipping task '{}' due to previous batch failure",
                     task.full_task_name()
                 );
@@ -342,7 +342,7 @@ where
                     ),
                 );
 
-                trace::info!(
+                log::info!(
                     "{}",
                     format!(
                         "Skipping task '{}' because it has no command",
@@ -367,7 +367,7 @@ where
                     ),
                 );
 
-                trace::info!(
+                log::info!(
                     "{}",
                     format!(
                         "Skipping disabled task '{}'",
@@ -389,7 +389,7 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
-                trace::error!(
+                log::error!(
                     "Skipping task '{}' due to failed dependency '{}'",
                     task_ctx.node.full_task_name(),
                     error
@@ -421,7 +421,7 @@ where
                 task_ctx.cache_info.as_ref().is_some_and(|ci| ci.cache_logs);
 
             if self.dry_run {
-                trace::info!(
+                log::info!(
                     "Executing task '{}'",
                     task_ctx.node.full_task_name()
                 );
@@ -493,7 +493,7 @@ where
                 DefaultHash::default()
             } else {
                 hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
-                    trace::error!(
+                    log::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
                         fname
                     );
@@ -726,7 +726,7 @@ async fn run_process<'a>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                trace::warn!(
+                log::warn!(
                     "Wating for '{:?}' before retrying task '{}'",
                     duration,
                     task_ctx.node.full_task_name(),
@@ -734,7 +734,7 @@ async fn run_process<'a>(
                 tokio::time::sleep(duration).await;
             }
 
-            trace::warn!(
+            log::warn!(
                 "Failed task '{}' due to {}, retrying...",
                 task_ctx.node.full_task_name(),
                 match &result {
@@ -748,7 +748,7 @@ async fn run_process<'a>(
 
         if let Ok(t) = &result {
             if t.success() {
-                trace::info!(
+                log::info!(
                     "{}",
                     format!(
                         "Executed task '{}'",
@@ -756,7 +756,7 @@ async fn run_process<'a>(
                     )
                 );
             } else {
-                trace::error!(
+                log::error!(
                     "{}",
                     format!(
                         "Executed task '{}' but errored with exit code '{}'",
@@ -768,7 +768,7 @@ async fn run_process<'a>(
         }
 
         if let Err(e) = &result {
-            trace::error!(
+            log::error!(
                 "Failed to execute task '{}': {}",
                 task_ctx.node.full_task_name(),
                 e

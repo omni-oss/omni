@@ -77,7 +77,7 @@ impl IgnoreRealDirWalkerConfig {
             }
 
             let overrides = overrides.build()?;
-            trace::trace!("added overrides to ignore builder");
+            trace::trace!("added_overrides_to_ignore_builder");
             builder.overrides(overrides);
         }
         builder.standard_filters(self.standard_filters);

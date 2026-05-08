@@ -70,6 +70,7 @@ pub enum FormatOption {
     WithThreadId,
     WithThreadName,
     WithFileName,
+    WithAnsiSanitization,
 }
 
 pub type FormatOptions = BitFlags<FormatOption>;

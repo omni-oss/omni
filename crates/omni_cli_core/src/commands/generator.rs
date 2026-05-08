@@ -163,14 +163,14 @@ async fn run_generator_run(
                 (path_clean::clean(current_dir.join(out)), None)
             }
             (Some(out), Some(_)) => {
-                trace::warn!(
+                log::warn!(
                     "Both --output and --project are provided, using --output"
                 );
                 (out, None)
             }
         };
 
-    trace::trace!("Generator output directory: {}", output_dir.display());
+    log::trace!("Generator output directory: {}", output_dir.display());
 
     let mut pre_exec_values = get_prompt_values(&command.args.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());

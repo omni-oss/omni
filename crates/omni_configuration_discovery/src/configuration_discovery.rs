@@ -81,7 +81,7 @@ where
         })? {
             num_iterations += 1;
             let f = f.map_err(ErrorInner::new_failed_to_get_dir_entry)?;
-            trace::trace!("checking path: {:?}", f.path());
+            trace::trace!(path = ?f.path(), "checking_path");
 
             let meta = f.metadata().map_err(|e| {
                 ErrorInner::new_failed_to_get_metadata(
@@ -97,7 +97,7 @@ where
             if matcher.is_match(f.path()) {
                 for file_name in self.config_files {
                     if *f.file_name().to_string_lossy() == *file_name.as_ref() {
-                        trace::trace!(
+                        log::trace!(
                             "Found {} config: {:?}",
                             self.config_name,
                             f.path()
@@ -109,7 +109,7 @@ where
             }
         }
 
-        trace::debug!(
+        log::debug!(
             "Found {} {} configs in {:?}, walked {} items",
             discovered.len(),
             self.config_name,

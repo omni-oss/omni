@@ -23,6 +23,7 @@ tokio-util = { workspace = true }
 omni_core = { workspace = true }
 atty = { workspace = true }
 trace = { workspace = true }
+log = { workspace = true }
 tracing = { workspace = true }
 shlex = { workspace = true }
 omni_hasher = { workspace = true }

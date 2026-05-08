@@ -36,7 +36,7 @@ impl BaseFsReadAsync for DryRunSys {
 
         let dir = path.parent().expect("should have directory");
         if !self.in_memory.fs_exists_async(dir).await? {
-            trace::info!("Dry run: creating directory: {}", dir.display());
+            log::info!("Dry run: creating directory: {}", dir.display());
             self.in_memory.fs_create_dir_all(dir)?;
         }
 
@@ -51,14 +51,14 @@ impl BaseFsWriteAsync for DryRunSys {
         path: &Path,
         data: &[u8],
     ) -> io::Result<()> {
-        trace::info!("Dry run: writing to path: {}", path.display());
+        log::info!("Dry run: writing to path: {}", path.display());
         let dir = path.parent().expect("should have directory");
 
         if !self.in_memory.fs_exists_async(dir).await? {
             if self.real.fs_exists_async(dir).await?
                 && self.real.fs_is_dir_async(dir).await?
             {
-                trace::info!("Dry run: creating directory: {}", dir.display());
+                log::info!("Dry run: creating directory: {}", dir.display());
                 self.in_memory.fs_create_dir_all(dir)?;
             }
         }
@@ -66,7 +66,7 @@ impl BaseFsWriteAsync for DryRunSys {
         if self.in_memory.fs_exists_no_err_async(path).await
             && self.in_memory.fs_is_dir_no_err_async(path).await
         {
-            trace::warn!(
+            log::warn!(
                 "Dry run: writing to path that is not a file: {}",
                 path.display()
             );
@@ -131,7 +131,7 @@ impl BaseFsCreateDirAsync for DryRunSys {
         path: &Path,
         options: &CreateDirOptions,
     ) -> io::Result<()> {
-        trace::info!("Dry run: creating directory: {}", path.display());
+        log::info!("Dry run: creating directory: {}", path.display());
         self.in_memory.base_fs_create_dir(path, options)
     }
 }
@@ -139,7 +139,7 @@ impl BaseFsCreateDirAsync for DryRunSys {
 #[async_trait::async_trait]
 impl BaseFsRemoveDirAsync for DryRunSys {
     async fn base_fs_remove_dir_async(&self, path: &Path) -> io::Result<()> {
-        trace::info!("Dry run: removing directory: {}", path.display());
+        log::info!("Dry run: removing directory: {}", path.display());
         self.in_memory.base_fs_remove_dir(path)
     }
 }
@@ -150,7 +150,7 @@ impl BaseFsRemoveDirAllAsync for DryRunSys {
         &self,
         path: &Path,
     ) -> io::Result<()> {
-        trace::info!(
+        log::info!(
             "Dry run: removing directory and all of its contents: {}",
             path.display()
         );
@@ -161,7 +161,7 @@ impl BaseFsRemoveDirAllAsync for DryRunSys {
 #[async_trait::async_trait]
 impl BaseFsRemoveFileAsync for DryRunSys {
     async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()> {
-        trace::info!("Dry run: removing file: {}", path.display());
+        log::info!("Dry run: removing file: {}", path.display());
         self.in_memory.fs_remove_file(path)
     }
 }

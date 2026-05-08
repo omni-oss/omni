@@ -77,7 +77,7 @@ pub async fn put_artifact(
     let stream = body.into_data_stream().filter_map(|r| match r {
         Ok(b) => Some(b),
         Err(e) => {
-            trace::error!("Error reading from stream: {}", e);
+            log::error!("Error reading from stream: {}", e);
             None
         }
     });

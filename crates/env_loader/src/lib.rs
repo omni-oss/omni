@@ -69,7 +69,7 @@ where
     if let Some(cached_ref) = cache.as_mut()
         && let Some(vars) = cached_ref.get(start_dir)
     {
-        trace::debug!("Cache hit for start dir: {:?}", start_dir);
+        trace::debug!(?start_dir, "cache_hit_for_start_dir");
         let vars = vars.clone();
         return Ok(vars);
     }
@@ -102,7 +102,7 @@ where
         })
         .unwrap_or_else(|| PathBuf::from("/"));
 
-    trace::trace!("Root dir: {:?}", abs_root_dir);
+    trace::trace!(root_dir = ?abs_root_dir, "root_dir");
 
     let mut files = vec![];
     let default_envs = [Path::new(".env")];
@@ -123,7 +123,7 @@ where
         if let Some(cache_ref) = cache.as_mut()
             && let Some(vars) = cache_ref.get(dir)
         {
-            trace::trace!("Cache hit for dir: {:?}, setting env vars", dir);
+            trace::trace!(?dir, "cache_hit_for_dir");
 
             env = (*vars).clone();
             break;
@@ -133,7 +133,7 @@ where
         for env_file in env_files.iter().rev() {
             let env_file = dir.join(env_file);
 
-            trace::trace!("Checking env file: {:?}", env_file);
+            trace::trace!(?env_file, "checking_env_file");
 
             if sys.fs_exists(&env_file)? && sys.fs_is_file(&env_file)? {
                 to_process.push(env_file);
@@ -143,7 +143,7 @@ where
         files.push((dir, to_process));
 
         if dir == abs_root_dir {
-            trace::trace!("Reached root dir");
+            trace::trace!("reached_root_dir");
             // We've reached topmost dir
             break;
         }
@@ -153,7 +153,7 @@ where
 
     // Process it in reverse order so that we can process the files in the same order as they were specified
     for (dir, files) in files.iter().rev() {
-        trace::trace!("Processing dir: {:?}", dir);
+        trace::trace!(?dir, "processing_dir");
 
         if files.is_empty() {
             if let Some(cache) = cache.as_mut() {
@@ -170,7 +170,7 @@ where
         if let Some(cache) = cache.as_mut()
             && let Some(vars) = cache.get(dir)
         {
-            trace::trace!("Cache hit for dir: {:?}", dir);
+            trace::trace!(?dir, "cache_hit_for_dir");
             env.extend((*vars).clone());
             continue;
         }

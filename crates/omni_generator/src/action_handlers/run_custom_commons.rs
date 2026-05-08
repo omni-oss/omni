@@ -64,7 +64,7 @@ pub async fn run_custom_commons<'a>(
         &ctx.tera_context_values,
     )?;
 
-    trace::info!("Running command: {}", command);
+    log::info!("Running command: {}", command);
 
     if common.supports_dry_run || !ctx.dry_run {
         let mut cp =

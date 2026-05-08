@@ -1,10 +1,12 @@
 mod config;
 pub mod custom_output;
+mod log_handling;
 mod trace_level;
 
 pub use config::*;
 pub use trace_level::*;
 use tracing_subscriber::Layer;
+use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::fmt::FormatEvent;
 use tracing_subscriber::fmt::FormatFields;
 use tracing_subscriber::fmt::MakeWriter;
@@ -27,6 +29,7 @@ use crate::custom_output::CustomOutput;
 use crate::custom_output::CustomOutputFactory;
 use crate::custom_output::FormatOption;
 use crate::custom_output::FormatOptions;
+use crate::log_handling::LogFilter;
 
 pub fn noop_subscriber() -> TracingSubscriber {
     TracingSubscriber::new(
@@ -62,12 +65,15 @@ impl TracingSubscriber {
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .pretty()
                 .without_time()
+                .with_ansi_sanitization(false)
                 .with_writer(std::io::stdout)
                 .with_ansi(atty::is(atty::Stream::Stdout))
                 .with_file(false)
                 .with_target(false)
                 .with_line_number(false)
-                .with_filter(main_filters.clone().with_default(filter))
+                .with_filter(
+                    main_filters.clone().with_default(filter).and(LogFilter),
+                )
                 .boxed();
 
             layers.push(stdout_layer);
@@ -76,9 +82,14 @@ impl TracingSubscriber {
         if config.stderr_trace_enabled {
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(atty::is(atty::Stream::Stderr))
+                .with_ansi_sanitization(false)
                 .with_writer(std::io::stderr)
+                .with_filter(LogFilter)
                 .with_filter(
-                    main_filters.clone().with_default(LevelFilter::ERROR),
+                    main_filters
+                        .clone()
+                        .with_default(LevelFilter::ERROR)
+                        .and(LogFilter),
                 )
                 .boxed();
 
@@ -98,6 +109,7 @@ impl TracingSubscriber {
             let filter: LevelFilter = config.file_trace_level.into();
 
             let file_layer = tracing_subscriber::fmt::layer()
+                .with_ansi_sanitization(true)
                 .json()
                 .with_writer(Arc::new(File::create(file_path)?))
                 .with_filter(main_filters.clone().with_default(filter))
@@ -181,7 +193,9 @@ where
         Layer<Registry> + Send + Sync + 'static,
 {
     let layer = layer
-        .with_ansi_sanitization(false)
+        .with_ansi_sanitization(
+            options.contains(FormatOption::WithAnsiSanitization),
+        )
         .with_writer(factory)
         .with_line_number(options.contains(FormatOption::WithLineNumber))
         .with_thread_ids(options.contains(FormatOption::WithThreadId))

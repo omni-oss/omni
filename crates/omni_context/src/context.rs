@@ -162,7 +162,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let result = self.into_loaded_impl(project_paths).await;
 
-        trace::info!(
+        log::info!(
             "{}",
             format!("Loaded context in {:?}", start.elapsed()).bold()
         );
@@ -185,7 +185,7 @@ impl<TSys: ContextSys> Context<TSys> {
 
         let result = self.into_loaded_impl(project_paths).await;
 
-        trace::info!(
+        log::info!(
             "{}",
             format!("Loaded context in {:?}", start.elapsed()).bold()
         );
@@ -364,7 +364,7 @@ fn get_remote_cache_configuration(
     }
 
     if rc_path.is_none() {
-        trace::debug!("No remote cache configuration found");
+        log::debug!("No remote cache configuration found");
         return Ok(None);
     }
 
@@ -379,7 +379,7 @@ fn get_remote_cache_configuration(
         sys,
     )?;
 
-    trace::info!("Remote caching is enabled");
+    log::info!("Remote caching is enabled");
 
     Ok(Some(rc))
 }

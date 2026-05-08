@@ -37,7 +37,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
         let start_time = std::time::Instant::now();
         if self.config.dry_run() {
-            trace::info!(
+            log::info!(
                 "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed"
             );
         }
@@ -103,7 +103,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             pipeline.run().await?
         };
 
-        trace::info!("Overrall execution time: {:?}", start_time.elapsed());
+        log::info!("Overrall execution time: {:?}", start_time.elapsed());
 
         Ok(results)
     }
@@ -127,7 +127,7 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         };
         trace::debug!(
             ?config,
-            "updated tracing config for in-memory subscriber"
+            "updated_tracing_config_for_in_memory_subscriber"
         );
 
         let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);

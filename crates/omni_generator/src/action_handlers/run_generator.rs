@@ -33,7 +33,7 @@ pub async fn run_generator<'a>(
 
     let prompt_values = resolve_prompt_values(parent_prompts, config, &ctx)?;
 
-    trace::trace!("resolved prompt values: {prompt_values:#?}");
+    log::trace!("resolved prompt values: {prompt_values:#?}");
 
     let target_overrides = if config.targets.is_empty() {
         Cow::Borrowed(ctx.target_overrides)
@@ -49,7 +49,7 @@ pub async fn run_generator<'a>(
         Cow::Owned(map)
     };
 
-    trace::trace!("resolved target overrides: {target_overrides:#?}");
+    log::trace!("resolved target overrides: {target_overrides:#?}");
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {

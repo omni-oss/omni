@@ -660,7 +660,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         trailers: Option<Trailers>,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received request end, sending request end");
+        trace::trace!("received_request_end");
+        trace::trace!("forwarding_request_end");
         session
             .lock()
             .await
@@ -670,6 +671,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
 
+        trace::trace!("forwarded_request_end");
         Ok(())
     }
 
@@ -678,7 +680,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         error: RequestError,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received request error, sending request error");
+        trace::trace!("received_request_error");
+        trace::trace!("forwarding_request_error");
         let sender = session
             .lock()
             .await
@@ -693,6 +696,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                     "failed to send request error",
                 ))
             })?;
+            trace::trace!("forwarded_request_error");
         }
 
         Ok(())
@@ -705,7 +709,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         status: ResponseStatusCode,
         headers: Option<Headers>,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received response start, sending response start");
+        trace::trace!("received_response_start");
+        trace::trace!("forwarding_response_start");
         let start = response_session
             .lock()
             .await
@@ -724,6 +729,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                     e.id
                 ))
             })?;
+            trace::trace!("forwarded_response_start");
         }
 
         Ok(())
@@ -734,9 +740,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         response_session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         chunk: Vec<u8>,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!(
-            "received response body chunk, sending response body chunk"
-        );
+        trace::trace!("received_response_body_chunk");
+        trace::trace!("forwarding_response_body_chunk");
         response_session
             .lock()
             .await
@@ -746,6 +751,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
 
+        trace::trace!("forwarded_response_body_chunk");
+
         Ok(())
     }
 
@@ -754,7 +761,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         trailers: Option<Trailers>,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received response end, sending response end");
+        trace::trace!("received_response_end");
+        trace::trace!("forwarding_response_end");
         session
             .lock()
             .await
@@ -763,6 +771,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .send(ResponseFrameEvent::new_end(trailers))
             .await
             .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
+        trace::trace!("forwarded_response_end");
 
         Ok(())
     }
@@ -772,7 +781,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         response_error: ResponseError,
     ) -> Result<(), BridgeRpcError> {
-        trace::trace!("received response error, sending response error");
+        trace::trace!("received_response_error");
+        trace::trace!("forwarding_response_error");
         let error = session
             .lock()
             .await
@@ -787,6 +797,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                     "failed to send response error",
                 ))
             })?;
+            trace::trace!("forwarded_response_error");
         }
 
         Ok(())
@@ -1281,7 +1292,7 @@ mod tests {
         let rpc2 = rpc.clone();
         tokio::spawn(async move {
             rpc2.run().await.expect("Failed to run RPC");
-            trace::trace!("rpc2 run done");
+            trace::trace!("rpc2_run_done");
         });
         yield_now().await; // wait for rpc2 to proceed to run
 

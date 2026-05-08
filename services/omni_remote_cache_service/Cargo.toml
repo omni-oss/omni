@@ -12,6 +12,7 @@ eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 trace = { workspace = true }
+log = { workspace = true }
 tracing = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }

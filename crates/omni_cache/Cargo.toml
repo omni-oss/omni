@@ -34,6 +34,7 @@ omni_types = { workspace = true, features = ["serde"] }
 globset = { workspace = true }
 bytes = { workspace = true }
 trace = { workspace = true }
+log = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
 omni_utils = { workspace = true }

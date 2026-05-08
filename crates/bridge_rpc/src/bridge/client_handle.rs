@@ -52,7 +52,7 @@ impl ClientHandle {
     async fn clone_bytes_sender(
         &self,
     ) -> ClientHandleResult<mpsc::Sender<Frame>> {
-        trace::trace!("cloning bytes sender");
+        trace::trace!("cloning_bytes_sender");
         let frame_transporter = self.frame_transporter.lock().await;
         if let Some(frame_transporter) = frame_transporter.as_ref() {
             Ok(frame_transporter.sender.clone())

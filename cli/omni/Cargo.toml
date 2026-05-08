@@ -18,6 +18,7 @@ dhat = { workspace = true, optional = true }
 omni_cli_core = { workspace = true }
 omni_setup = { workspace = true }
 trace = { workspace = true }
+tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
 eyre = { workspace = true }

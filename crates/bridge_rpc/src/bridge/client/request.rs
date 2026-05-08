@@ -88,7 +88,7 @@ impl Drop for RequestDataImpl {
             let result = tx.send(frame).await;
 
             if let Err(e) = result {
-                trace::error!("failed to send stream end frame: {}", e);
+                trace::error!(error = ?e, "failed_to_send_stream_end_frame");
             }
         });
     }

@@ -27,7 +27,7 @@ impl GlobMatcher {
         {
             let pat = format!("{root}/{}", strip_starts_with(p.as_ref(), "!"));
 
-            trace::trace!("adding include pattern: {}", pat);
+            log::trace!("adding include pattern: {}", pat);
 
             match_include.add(Glob::new(pat.as_str())?);
         }
@@ -42,7 +42,7 @@ impl GlobMatcher {
         {
             let pat = format!("{root}/{}", strip_starts_with(p.as_ref(), "!"));
 
-            trace::trace!("adding exclude pattern: {}", pat);
+            log::trace!("adding exclude pattern: {}", pat);
 
             match_exclude.add(Glob::new(pat.as_str())?);
         }

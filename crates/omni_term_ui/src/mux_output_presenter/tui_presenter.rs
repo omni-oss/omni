@@ -91,7 +91,7 @@ impl TuiPresenter {
             if let Err(e) =
                 run_tui(ui_active_id, ui_buffers, shutdown_rx, keys_tx)
             {
-                trace::error!("TUI exited with error: {:?}", e);
+                log::error!("TUI exited with error: {:?}", e);
             }
         });
 
@@ -99,16 +99,16 @@ impl TuiPresenter {
         let inputs_task = tokio::spawn(async move {
             while let Some(key) = keys_rx.recv().await {
                 trace::trace!(
-                    "received_key: {} => {:?}",
-                    key.id,
-                    key.key_event
+                    ?key.id,
+                    ?key.key_event,
+                    "received_key",
                 );
 
                 let mut uts = i_inputs.lock().await;
                 let mut input = uts.get_mut(&key.id);
                 if let Some(w) = input.as_mut() {
                     let bytes = key_event_to_bytes(key.key_event);
-                    trace::trace!("found input, sending bytes: {:?}", bytes);
+                    log::trace!("found input, sending bytes: {:?}", bytes);
                     w.write_all(&bytes).await?;
                 }
             }
@@ -142,12 +142,12 @@ impl MuxOutputPresenter for TuiPresenter {
 
         // prepare buffer
         let screen = TaskScreen::new(id.clone(), screen_actions_rx);
-        trace::trace!("{id}: buffer created");
+        trace::trace!(id, "buffer_created");
         self.screens.write().insert(id.clone(), screen);
-        trace::trace!("{id}: buffer inserted");
+        trace::trace!(id, "buffer_inserted");
         if let Some(input) = input {
             self.inputs.lock().await.insert(id.clone(), input);
-            trace::trace!("{id}: input inserted");
+            trace::trace!(id, "input_inserted");
         }
 
         // spawn a task that copies reader -> buffer via BufferWriter
@@ -185,7 +185,7 @@ impl MuxOutputPresenter for TuiPresenter {
                             Bytes::copy_from_slice(&buff[..n]),
                         )).map_err(|e| TuiPresenterErrorInner::new_failed_to_send_action(ScreenActionsKind::Write, e))?;
                     } else {
-                        trace::trace!(
+                        log::trace!(
                             "{t_id}: UI task is not running anymore, ignoring data"
                         );
                     }
@@ -203,22 +203,22 @@ impl MuxOutputPresenter for TuiPresenter {
                     })?;
 
                 t_tasks.lock().await.remove(&t_id);
-                trace::trace!("{t_id}: task removed");
+                log::trace!("{t_id}: task removed");
                 t_screens.write().shift_remove(&t_id);
-                trace::trace!("{t_id}: screen removed");
+                log::trace!("{t_id}: screen removed");
                 t_inputs.lock().await.remove(&t_id);
-                trace::trace!("{t_id}: input removed");
+                log::trace!("{t_id}: input removed");
 
                 // signal driver completion
                 driver.mark_completed().await?;
-                trace::trace!("{t_id}: completed");
+                log::trace!("{t_id}: completed");
 
                 Ok(())
             })
         };
 
         self.tasks.lock().await.insert(id.clone(), join_handle);
-        trace::trace!("{id}: task inserted");
+        trace::trace!(id, "task_inserted");
         Ok(handle)
     }
 
@@ -244,7 +244,7 @@ impl MuxOutputPresenter for TuiPresenter {
             && !ui_task.is_finished()
             && let Err(e) = ui_task.await
         {
-            trace::error!("UI task exited with error: {:?}", e);
+            log::error!("UI task exited with error: {:?}", e);
         }
         wait(&self.tasks.clone()).await?;
         self.inputs_task.await??;
@@ -314,7 +314,7 @@ fn run_tui(
 
     loop {
         if let Ok(_) = shutdown_rx.try_recv() {
-            trace::trace!("shutdown requested");
+            trace::trace!("shutdown_requested");
             shutdown_rx.close();
             break;
         }
@@ -345,7 +345,7 @@ fn run_tui(
             if let Some(active_id) = acting_active_id.as_deref()
                 && let Some(scroll_state) = scroll_states.get_mut(active_id)
             {
-                trace::trace!(
+                log::trace!(
                     "State for {active_id:?}: {scroll_state:?}, {state:?}"
                 );
                 scroll_state.scroll_y = state.paragraph_scroll_y;
@@ -356,7 +356,7 @@ fn run_tui(
 
         if event::poll(timeout)? {
             let ev = event::read()?;
-            trace::trace!("polled event: {:?}", ev);
+            trace::trace!(event = ?ev, "polled_event");
             if let CEvent::Key(key) = ev
                 && key.kind == KeyEventKind::Press
             {
@@ -380,7 +380,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            trace::trace!("Down key pressed");
+                            trace::trace!("down_key_pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -396,7 +396,7 @@ fn run_tui(
                             );
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            trace::trace!("Up key pressed");
+                            trace::trace!("up_key_pressed");
                             update_or_insert_scroll_state(
                                 acting_active_id.as_deref(),
                                 &mut scroll_states,
@@ -428,16 +428,15 @@ fn run_tui(
                             *active_id.write() = new_active_id.cloned();
                         }
                         KeyCode::Char('q') | KeyCode::Esc => {
-                            trace::trace!(
-                                "received ESC or q, shutdown requested"
-                            );
+                            trace::trace!("quit_key_pressed");
+                            trace::trace!("shutdown_requested");
                             break;
                         }
-                        _ => {
-                            trace::trace!("no events matching")
+                        x => {
+                            log::error!("no events matching for key: {:?}", x)
                         }
                     },
-                    _ => {
+                    x => {
                         if input_enabled
                             && let Some(active_id) = acting_active_id.as_deref()
                         {
@@ -447,14 +446,14 @@ fn run_tui(
                             };
                             keys_tx.send(input_event)?;
                         } else {
-                            trace::trace!("no events matching")
+                            log::error!("no events matching for key: {:?}", x)
                         }
                     }
                 }
             }
         }
 
-        trace::trace!("ui drawn");
+        trace::trace!("ui_drawn");
 
         trace::trace!("looped");
         if last_tick.elapsed() >= tick_rate {
@@ -462,7 +461,7 @@ fn run_tui(
         }
     }
 
-    trace::trace!("ui loop exited");
+    trace::trace!("ui_loop_exited");
 
     disable_raw_mode()?;
     execute!(
@@ -471,9 +470,9 @@ fn run_tui(
         LeaveAlternateScreen
     )?;
 
-    trace::trace!("stdout cleanup done");
+    trace::trace!("stdout_cleanup_done");
 
-    trace::trace!("exiting ui loop");
+    trace::trace!("exiting_ui_loop");
     Ok(())
 }
 
@@ -486,11 +485,9 @@ fn update_or_insert_scroll_state(
     if let Some(scroll_state) =
         get_current_scroll_state(active_id, scroll_states)
     {
-        trace::trace!(
-            "Current scroll state for {active_id:?}: {scroll_state:?}"
-        );
+        log::trace!("Current scroll state for {active_id:?}: {scroll_state:?}");
         update_fn(scroll_state);
-        trace::trace!(
+        log::trace!(
             "Updated scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
         return Some(*scroll_state);
@@ -498,7 +495,7 @@ fn update_or_insert_scroll_state(
         let scroll_state = insert_fn();
 
         scroll_states.insert(active_id.to_string(), scroll_state);
-        trace::trace!(
+        log::trace!(
             "Inserted scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
         return Some(scroll_state);
@@ -581,7 +578,7 @@ fn get_frame_data<'a>(
     let order = buffers.read().keys().rev().cloned().collect::<Vec<_>>();
 
     let active_id = active_id.read();
-    trace::trace!("active id: {active_id:?}");
+    log::trace!("active id: {active_id:?}");
     let active_index = get_active_index(&order, active_id.as_deref());
     let active_id = order.get(active_index);
 
@@ -637,10 +634,10 @@ fn get_frame_data<'a>(
     };
 
     let scroll_state = if let Some(id) = active_id.as_deref() {
-        trace::trace!("scroll state for {id}: {:?}", scroll_states.get(id));
+        log::trace!("scroll state for {id}: {:?}", scroll_states.get(id));
         scroll_states.get(id).copied().unwrap_or_default()
     } else {
-        trace::trace!("no scroll state for active id: {active_id:?}");
+        log::trace!("no scroll state for active id: {active_id:?}");
         ScrollState::default()
     };
 

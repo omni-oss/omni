@@ -62,7 +62,7 @@ impl ChildProcessGuard {
         };
 
         let mut path = String::new();
-        trace::info!("Host: {}", host);
+        log::info!("Host: {}", host);
         let default_path = format!(
             "{}/target/release/omni_remote_cache_service{}",
             ws_dir, ext
@@ -98,7 +98,7 @@ impl ChildProcessGuard {
             panic!("Could not find omni_remote_cache_service binary");
         }
 
-        trace::trace!("Starting omni_remote_cache_service at {}", path);
+        log::trace!("Starting omni_remote_cache_service at {}", path);
 
         let child = Command::new(&path)
             .args([
@@ -143,7 +143,7 @@ impl ChildProcessGuard {
                     }
                 }
             }
-            trace::trace!(
+            log::trace!(
                 "Couldn't connect to server ({}), retrying ({})...",
                 api_base_url,
                 current_try
@@ -174,7 +174,7 @@ impl ChildProcessGuard {
                 );
             }
         } else {
-            trace::trace!("Connected to server at {}", api_base_url);
+            log::trace!("Connected to server at {}", api_base_url);
         }
 
         Self {

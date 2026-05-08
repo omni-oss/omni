@@ -67,7 +67,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!("get_artifact failed: {:?}", e);
+                trace::error!(error = ?e, "get_artifact_failed");
             })?;
 
         let status = response.status();
@@ -105,7 +105,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!("validate_access failed: {:?}", e);
+                trace::error!(error = ?e, "validate_access_failed");
             })?;
 
         let status = response.status();
@@ -144,7 +144,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!("artifact_exists failed: {:?}", e);
+                trace::error!(error = ?e, "artifact_exists_failed");
             })?;
 
         if response.status().is_success() {
@@ -178,7 +178,7 @@ impl RemoteCacheClient for DefaultRemoteCacheClient {
             .await
             .map_err(RemoteCacheClientError::custom)
             .inspect_err(|e| {
-                trace::error!("put_artifact failed: {:?}", e);
+                trace::error!(error = ?e, "put_artifact_failed");
             })?;
 
         if response.status().is_success() {

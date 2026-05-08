@@ -21,6 +21,7 @@ serde = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }
 trace = { workspace = true }
+log = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 bytes = { workspace = true }

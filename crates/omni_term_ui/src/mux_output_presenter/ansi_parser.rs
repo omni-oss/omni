@@ -397,7 +397,7 @@ impl AnsiToGrid {
                     1 => self.erase_in_line_start_to_cursor(),
                     2 => self.erase_line_all(),
                     _ => {
-                        trace::warn!("unsupported erase line param: {i}");
+                        log::warn!("unsupported erase line param: {i}");
                     }
                 }
             }
@@ -452,7 +452,7 @@ impl AnsiToGrid {
                 self.cursor.x = 0;
             }
             _ => {
-                trace::warn!("unsupported erase in display mode: {mode}");
+                log::warn!("unsupported erase in display mode: {mode}");
             }
         }
     }
@@ -553,7 +553,7 @@ impl AnsiToGrid {
                 39 => self.current_span_state.fg = None,
                 49 => self.current_span_state.bg = None,
                 u => {
-                    trace::warn!("unknown escape sequence: {}", u);
+                    log::warn!("unknown escape sequence: {}", u);
                 }
             }
             i += 1;
@@ -640,7 +640,7 @@ impl AnsiToGrid {
                 }
             }
             c => {
-                trace::warn!(
+                log::warn!(
                     "unsupported movement action: {c}, if seen please contact the maintainers to add support"
                 );
             }
@@ -702,7 +702,7 @@ impl Perform for AnsiToGrid {
             b'\n' => self.newline(),
             b'\r' => self.carriage_return(),
             b => {
-                trace::warn!(
+                log::warn!(
                     "unsupported byte: {b:?}, if seen please contact the maintainers to add support"
                 );
             }
@@ -737,7 +737,7 @@ impl Perform for AnsiToGrid {
             }
             'h' | 'l' => { /* ignore */ }
             c => {
-                trace::warn!(
+                log::warn!(
                     "unsupported CSI action: {c} (params = {params:?}), if seen please contact the maintainers to add support"
                 );
             }

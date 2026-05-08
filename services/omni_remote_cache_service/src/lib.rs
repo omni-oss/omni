@@ -52,7 +52,7 @@ pub async fn main() -> eyre::Result<()> {
 
             let socket = TcpListener::bind(&serve.args.listen).await?;
 
-            trace::info!("Listening on {}", socket.local_addr()?);
+            log::info!("Listening on {}", socket.local_addr()?);
 
             axum::serve(socket, router).await?;
         }

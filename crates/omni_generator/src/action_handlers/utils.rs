@@ -166,13 +166,13 @@ pub async fn overwrite(
         let output_path_d = output_path.display();
         if overwrite {
             if sys.fs_is_dir_async(&output_path).await? {
-                trace::info!(
+                log::info!(
                     "Removing directory and it's contents at path {}",
                     output_path_d
                 );
                 sys.fs_remove_dir_all_async(&output_path).await?;
             } else {
-                trace::info!("Overwriting path at {}", output_path_d);
+                log::info!("Overwriting path at {}", output_path_d);
             }
 
             return Ok(Some(true));
@@ -230,7 +230,7 @@ pub async fn get_target_dir<'a>(
         let path = Path::new(&path_str as &str);
 
         if let Err(err) = validate_target(output_dir, path) {
-            trace::error!("invalid target dir: {}", err);
+            log::error!("Invalid target dir: {}", err);
         }
 
         let path = OmniPath::new(path);
@@ -302,14 +302,14 @@ pub async fn prompt_target_file(
         let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
             path
         } else {
-            trace::warn!("invalid path: {}", path_str);
+            log::warn!("Invalid path: {}", path_str);
             continue;
         };
 
         let resolved = path.resolve(&base);
 
         if !sys.fs_exists_async(resolved.as_ref()).await? {
-            trace::warn!("file does not exist: {}", resolved.display());
+            log::warn!("File does not exist: {}", resolved.display());
         }
 
         break Ok(resolved.to_path_buf());

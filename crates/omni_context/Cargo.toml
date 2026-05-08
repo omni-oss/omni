@@ -56,6 +56,7 @@ omni_execution_plan = { workspace = true }
 omni_setup = { workspace = true }
 omni_configuration_discovery = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
