@@ -136,8 +136,8 @@ impl HybridTaskExecutionCacheStore {
                 output_files: task.output_files,
                 project_dir: task.project_dir,
                 project_name: task.project_name,
-                task_command: task.task_command,
-                task_retry_command: task.task_retry_command,
+                task_exec: task.task_exec,
+                task_retry_exec: task.task_retry_exec,
                 task_name: task.task_name,
                 dependency_digests: task.dependency_digests,
                 env_vars: task.env_vars,
@@ -305,10 +305,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 files: cache_output_files,
                 task_name: result.task.task_name.to_string(),
                 digest: result.digest.expect("should be some"),
-                task_command: result.task.task_command.map(|c| c.to_string()),
-                task_retry_command: result
+                task_exec: result.task.task_exec.map(|c| c.to_string()),
+                task_retry_exec: result
                     .task
-                    .task_retry_command
+                    .task_retry_exec
                     .map(|c| c.to_string()),
                 execution_duration: new_cache_info.execution_duration,
                 exit_code: new_cache_info.exit_code,
@@ -1147,7 +1147,7 @@ mod tests {
     #[derive(new, Debug)]
     struct TaskExecutionInfoStatic {
         task_name: String,
-        task_command: String,
+        task_exec: String,
         project_name: String,
         project_dir: PathBuf,
         input_files: Vec<OmniPath>,
@@ -1163,7 +1163,7 @@ mod tests {
     ) -> TaskExecutionInfo<'a> {
         TaskExecutionInfo::new(
             task.task_name.as_str(),
-            Some(task.task_command.as_str()),
+            Some(task.task_exec.as_str()),
             None,
             &task.project_name,
             &task.project_dir,
@@ -1185,7 +1185,7 @@ mod tests {
         let project_dir = root_dir.join(project_name);
         let mut owned = TaskExecutionInfoStatic {
             task_name: task_name.to_string(),
-            task_command: format!("ls {}", task_name),
+            task_exec: format!("ls {}", task_name),
             project_name: project_name.to_string(),
             input_files: vec![OmniPath::new("src/**/*.txt")],
             output_files: vec![OmniPath::new("dist/**/*.js")],

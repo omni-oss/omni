@@ -142,8 +142,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     for (task_name, task) in project.tasks.iter() {
                         let node = TaskExecutionNode::new(
                             task_name.clone(),
-                            task.command.clone(),
-                            task.retry_command.clone(),
+                            task.exec.clone(),
+                            task.retry_exec.clone(),
                             project.name.clone(),
                             project.dir.clone(),
                             vec![],

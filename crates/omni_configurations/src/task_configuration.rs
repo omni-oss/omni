@@ -20,11 +20,15 @@ use super::TaskDependencyConfiguration;
 )]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
-    pub command: Option<Replace<String>>,
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        alias = "command"
+    )]
+    pub exec: Option<Replace<String>>,
 
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
-    pub retry_command: Option<Replace<String>>,
+    pub retry_exec: Option<Replace<String>>,
 
     #[serde(default)]
     pub args: DictConfig<DynValue>,
@@ -129,8 +133,8 @@ fn default_interactive() -> Option<Replace<bool>> {
 impl Default for TaskConfigurationLongForm {
     fn default() -> Self {
         Self {
-            command: None,
-            retry_command: None,
+            exec: None,
+            retry_exec: None,
             dependencies: ListConfig::append(vec![]),
             description: None,
             args: DictConfig::default(),
@@ -202,8 +206,8 @@ impl TaskConfiguration {
                 None,
             ),
             TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                command,
-                retry_command,
+                exec: command,
+                retry_exec: retry_command,
                 dependencies,
                 description,
                 enabled,
@@ -286,8 +290,8 @@ impl Merge for TaskConfiguration {
             (
                 Lf(box TaskConfigurationLongForm {
                     dependencies: a_dep,
-                    command: a_cmd,
-                    retry_command: a_retry_cmd,
+                    exec: a_cmd,
+                    retry_exec: a_retry_cmd,
                     description: a_desc,
                     env: a_env,
                     cache: a_cache,
@@ -303,8 +307,8 @@ impl Merge for TaskConfiguration {
                 }),
                 Lf(box TaskConfigurationLongForm {
                     dependencies: b_dep,
-                    command: b_cmd,
-                    retry_command: b_retry_cmd,
+                    exec: b_cmd,
+                    retry_exec: b_retry_cmd,
                     description: b_desc,
                     env: b_env,
                     cache: b_cache,
@@ -363,7 +367,7 @@ mod tests {
         };
 
         let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            command: Some(Replace::new("a".to_string())),
+            exec: Some(Replace::new("a".to_string())),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
             description: Some(Replace::new(String::from("a description"))),
             env: Default::default(),
@@ -385,7 +389,7 @@ mod tests {
         };
 
         let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            command: Some(Replace::new("b".to_string())),
+            exec: Some(Replace::new("b".to_string())),
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
             description: None,
             env: Default::default(),
@@ -406,7 +410,7 @@ mod tests {
         assert_eq!(
             a,
             TaskConfiguration::long_form(TaskConfigurationLongForm {
-                command: Some(Replace::new("b".to_string())),
+                exec: Some(Replace::new("b".to_string())),
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),

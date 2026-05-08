@@ -18,8 +18,8 @@ impl<'a> TaskExecutionInfoExt<'a> for TaskContext<'a> {
             output_files: &ci.cache_output_files,
             project_dir: self.node.project_dir(),
             project_name: self.node.project_name(),
-            task_command: self.node.task_command(),
-            task_retry_command: self.node.task_retry_command(),
+            task_exec: self.node.task_exec(),
+            task_retry_exec: self.node.task_retry_exec(),
             task_name: self.node.task_name(),
             args: &ci.args,
         })

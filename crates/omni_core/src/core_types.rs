@@ -19,8 +19,8 @@ pub struct Project {
     Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, new,
 )]
 pub struct Task {
-    pub command: Option<String>,
-    pub retry_command: Option<String>,
+    pub exec: Option<String>,
+    pub retry_exec: Option<String>,
     pub dependencies: Vec<TaskDependency>,
     pub description: Option<String>,
     pub enabled: TeraExprBoolean,
@@ -33,8 +33,8 @@ pub struct Task {
 
 #[cfg(test)]
 pub(crate) struct TaskBuilder {
-    command: Option<String>,
-    retry_command: Option<String>,
+    exec: Option<String>,
+    retry_exec: Option<String>,
     dependencies: Vec<TaskDependency>,
     description: Option<String>,
     enabled: TeraExprBoolean,
@@ -47,10 +47,10 @@ pub(crate) struct TaskBuilder {
 
 #[cfg(test)]
 impl TaskBuilder {
-    pub fn new(command: String) -> Self {
+    pub fn new(exec: String) -> Self {
         Self {
-            command: Some(command),
-            retry_command: None,
+            exec: Some(exec),
+            retry_exec: None,
             dependencies: Default::default(),
             description: Default::default(),
             enabled: TeraExprBoolean::new_boolean(true),
@@ -142,8 +142,8 @@ impl TaskBuilder {
 
     pub fn build(self) -> Task {
         Task {
-            command: self.command,
-            retry_command: self.retry_command,
+            exec: self.exec,
+            retry_exec: self.retry_exec,
             dependencies: self.dependencies,
             description: self.description,
             enabled: self.enabled,
@@ -174,10 +174,10 @@ impl TasksBuilder {
     pub fn task(
         mut self,
         name: impl Into<String>,
-        cmd: impl Into<String>,
+        exec: impl Into<String>,
         build_task: impl FnOnce(TaskBuilder) -> TaskBuilder,
     ) -> Self {
-        let task = build_task(TaskBuilder::new(cmd.into())).build();
+        let task = build_task(TaskBuilder::new(exec.into())).build();
 
         self.tasks.insert(name.into(), task);
         self

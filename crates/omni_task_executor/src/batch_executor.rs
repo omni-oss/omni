@@ -333,7 +333,7 @@ where
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in task_contexts {
-            if task_ctx.node.task_command().is_none() {
+            if task_ctx.node.task_exec().is_none() {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_skipped(
@@ -438,13 +438,13 @@ where
                 ));
             } else {
                 let override_command = get_expanded_override_command(
-                    task_ctx.node.task_command(),
+                    task_ctx.node.task_exec(),
                     "command",
                     task_ctx,
                 )?;
 
                 let override_retry_command = get_expanded_override_command(
-                    task_ctx.node.task_retry_command(),
+                    task_ctx.node.task_retry_exec(),
                     "retry_command",
                     task_ctx,
                 )?;
@@ -658,11 +658,11 @@ async fn run_process<'a>(
 ) -> TaskResultContext<'a> {
     let mut tries = 0u8;
 
-    let reg_cmd = override_command.as_deref().or(task_ctx.node.task_command());
+    let reg_cmd = override_command.as_deref().or(task_ctx.node.task_exec());
 
     let retry_cmd = override_retry_command
         .as_deref()
-        .or(task_ctx.node.task_retry_command())
+        .or(task_ctx.node.task_retry_exec())
         .or(reg_cmd);
 
     let result = loop {

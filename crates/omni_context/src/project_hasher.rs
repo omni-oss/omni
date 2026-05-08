@@ -61,8 +61,8 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             project_name: &'a str,
             project_dir: &'a Path,
             task_name: &'a str,
-            task_command: Option<&'a str>,
-            task_retry_command: Option<&'a str>,
+            task_exec: Option<&'a str>,
+            task_retry_exec: Option<&'a str>,
             input_files: &'a [OmniPath],
             output_files: &'a [OmniPath],
             env_vars: Arc<Map<String, String>>,
@@ -121,14 +121,14 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     project_dir: &project.dir,
                     project_name: &project.name,
                     task_name: task.task_name(),
-                    task_command: project
+                    task_exec: project
                         .tasks
                         .get(task.task_name())
-                        .and_then(|t| t.command.as_deref()),
-                    task_retry_command: project
+                        .and_then(|t| t.exec.as_deref()),
+                    task_retry_exec: project
                         .tasks
                         .get(task.task_name())
-                        .and_then(|t| t.retry_command.as_deref()),
+                        .and_then(|t| t.retry_exec.as_deref()),
                     output_files: &ci.cache_output_files,
                     input_files: &ci.key_input_files,
                     dependency_digests: task
@@ -152,8 +152,8 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     project_dir: p.project_dir,
                     project_name: p.project_name,
                     task_name: p.task_name,
-                    task_command: p.task_command,
-                    task_retry_command: p.task_retry_command,
+                    task_exec: p.task_exec,
+                    task_retry_exec: p.task_retry_exec,
                     input_files: p.input_files,
                     output_files: p.output_files,
                     dependency_digests: &p.dependency_digests,

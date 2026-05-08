@@ -22,8 +22,8 @@ use crate::{Project, ProjectGraph, ProjectGraphError};
 )]
 pub struct TaskExecutionNode {
     task_name: String,
-    task_command: Option<String>,
-    task_retry_command: Option<String>,
+    task_exec: Option<String>,
+    task_retry_exec: Option<String>,
     project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
@@ -39,8 +39,8 @@ impl TaskExecutionNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         task_name: impl Into<String>,
-        task_command: Option<impl Into<String>>,
-        task_retry_command: Option<impl Into<String>>,
+        task_exec: Option<impl Into<String>>,
+        task_retry_exec: Option<impl Into<String>>,
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
         dependencies: Vec<String>,
@@ -55,8 +55,8 @@ impl TaskExecutionNode {
         Self {
             full_task_name: format!("{}#{}", &project_name, &task_name),
             task_name,
-            task_command: task_command.map(|c| c.into()),
-            task_retry_command: task_retry_command.map(|c| c.into()),
+            task_exec: task_exec.map(|c| c.into()),
+            task_retry_exec: task_retry_exec.map(|c| c.into()),
             project_name,
             project_dir: project_dir.into(),
             dependencies,
@@ -74,12 +74,12 @@ impl TaskExecutionNode {
         self.task_name.as_str()
     }
 
-    pub fn task_command(&self) -> Option<&str> {
-        self.task_command.as_deref()
+    pub fn task_exec(&self) -> Option<&str> {
+        self.task_exec.as_deref()
     }
 
-    pub fn task_retry_command(&self) -> Option<&str> {
-        self.task_retry_command.as_deref()
+    pub fn task_retry_exec(&self) -> Option<&str> {
+        self.task_retry_exec.as_deref()
     }
 
     pub fn project_name(&self) -> &str {
@@ -137,8 +137,8 @@ impl TaskExecutionNode {
     ) {
         (
             self.task_name,
-            self.task_command,
-            self.task_retry_command,
+            self.task_exec,
+            self.task_retry_exec,
             self.project_name,
             self.project_dir,
             self.full_task_name,
@@ -206,7 +206,7 @@ impl TaskExecutionGraph {
                 let task_name = task.0.as_str();
                 let task_execution_node = TaskExecutionNode::new(
                     task_name.to_string(),
-                    task.1.command.clone(),
+                    task.1.exec.clone(),
                     None::<String>,
                     project_name.to_string(),
                     project_dir.to_path_buf(),
@@ -1170,22 +1170,22 @@ mod tests {
 
     fn node_mut(
         task_name: &str,
-        task_command: &str,
+        task_exec: &str,
         project_name: &str,
         update: impl Fn(&mut TaskExecutionNode),
     ) -> TaskExecutionNode {
-        node_with_deps_mut(task_name, task_command, project_name, &[], update)
+        node_with_deps_mut(task_name, task_exec, project_name, &[], update)
     }
 
     fn node_with_deps_mut(
         task_name: &str,
-        task_command: &str,
+        task_exec: &str,
         project_name: &str,
         dependencies: &[&str],
         update: impl Fn(&mut TaskExecutionNode),
     ) -> TaskExecutionNode {
         let mut node =
-            node_with_deps(task_name, task_command, project_name, dependencies);
+            node_with_deps(task_name, task_exec, project_name, dependencies);
         update(&mut node);
 
         node
@@ -1193,12 +1193,12 @@ mod tests {
 
     fn node(
         task_name: &str,
-        task_command: &str,
+        task_exec: &str,
         project_name: &str,
     ) -> TaskExecutionNode {
         return TaskExecutionNode::new(
             task_name.to_string(),
-            Some(task_command.to_string()),
+            Some(task_exec.to_string()),
             None::<String>,
             project_name.to_string(),
             PathBuf::from(""),
@@ -1213,11 +1213,11 @@ mod tests {
 
     fn node_with_deps(
         task_name: &str,
-        task_command: &str,
+        task_exec: &str,
         project_name: &str,
         dependencies: &[&str],
     ) -> TaskExecutionNode {
-        let mut node = node(task_name, task_command, project_name);
+        let mut node = node(task_name, task_exec, project_name);
         node.dependencies =
             dependencies.iter().map(|s| s.to_string()).collect();
         node
