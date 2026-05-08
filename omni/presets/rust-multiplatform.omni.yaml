@@ -235,7 +235,7 @@ meta:
     aarch64-apple-darwin:
       runner: macos-latest
     x86_64-pc-windows-msvc:
-      runner: windows-latest
+      runner: windows-2022
     # disabled for now, can cross compile but can't cross test on windows-latest runner since it doesn't support native emulation of aarch64 binaries
     # aarch64-pc-windows-msvc:
-    #   runner: windows-latest
+    #   runner: windows-2022

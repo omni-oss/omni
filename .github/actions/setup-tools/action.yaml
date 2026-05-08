@@ -147,6 +147,14 @@ runs:
 
         # echo "Installed OpenSSL for x86_64 architecture (macOS)"
 
+    - if: ${{ steps.rust-info.outputs.host == 'x86_64-pc-windows-msvc' && contains(inputs.rust-target, 'x86_64-pc-windows-msvc') }}
+      name: Install NASM
+      uses: ilammy/setup-nasm@v1
+
+    - if: ${{ steps.rust-info.outputs.host == 'x86_64-pc-windows-msvc' && contains(inputs.rust-target, 'x86_64-pc-windows-msvc') }}
+      name: Set up MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+
     - if: ${{ steps.rust-info.outputs.cross_compile == 'true' && steps.rust-info.outputs.host == 'x86_64-unknown-linux-gnu' && contains(inputs.rust-target, 'aarch64-unknown-linux-gnu') }}
       uses: taiki-e/install-action@v2
       with:
