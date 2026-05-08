@@ -26,6 +26,7 @@ serde_json = { version = "^1.0.149" }
 serde_bytes = { version = "^0.11.19" }
 trace = { path = "./crates/trace" }
 tracing = { version = "^0.1.44" }
+tracing-log = { version = "^0.2.0" }
 tracing-core = { version = "^0.1.36" }
 tracing-subscriber = { version = "^0.3.23", features = ["json"] }
 tracing-serde = { version = "^0.2.0" }
@@ -144,6 +145,7 @@ omni_context = { path = "./crates/omni_context" }
 omni_task_executor = { path = "./crates/omni_task_executor" }
 bridge_rpc_router = { path = "crates/bridge_rpc_router" }
 omni_config_types = { path = "crates/omni_config_types" }
+log = { version = "^0.4.29" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
@@ -220,7 +222,7 @@ tar = { version = "^0.4.45" }
 keyring-core = { version = "^1.0.0" }
 apple-native-keyring-store = { version = "^1.0.0", features = ["keychain"] }
 windows-native-keyring-store = { version = "^1.0.0" }
-zbus-secret-service-keyring-store = { version = "^1.0.0", features = ["rt-tokio-crypto-rust"] }
+zbus-secret-service-keyring-store = { version = "^1.0.0", features = ["crypto-rust"] }
 machine-uid = { version = "^0.5.4" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }

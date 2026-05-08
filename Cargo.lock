@@ -4591,9 +4591,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.27"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "lru"
@@ -5244,6 +5244,7 @@ dependencies = [
  "itertools 0.14.0",
  "js_runtime",
  "lazy-regex",
+ "log",
  "maps",
  "merge",
  "num_cpus",
@@ -5400,6 +5401,7 @@ dependencies = [
  "env_loader",
  "eyre",
  "globset",
+ "log",
  "maps",
  "merge",
  "omni_cache",
@@ -5554,6 +5556,7 @@ dependencies = [
  "enum-map",
  "env",
  "eyre",
+ "log",
  "maps",
  "omni_configuration_discovery",
  "omni_discovery",
@@ -5717,6 +5720,7 @@ dependencies = [
  "eyre",
  "http 1.4.0",
  "http-body 1.0.1",
+ "log",
  "ntest",
  "reqwest",
  "serde",
@@ -5904,6 +5908,7 @@ dependencies = [
  "futures 0.3.32",
  "getset",
  "globset",
+ "log",
  "maps",
  "num_cpus",
  "omni_cache",
@@ -6010,6 +6015,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "strum 0.28.0",
  "tracing-core",
+ "tracing-log",
  "tracing-subscriber",
 ]
 
@@ -10942,7 +10948,6 @@ dependencies = [
  "rustix",
  "serde",
  "serde_repr",
- "tokio 1.52.1",
  "tracing",
  "uds_windows",
  "uuid",
