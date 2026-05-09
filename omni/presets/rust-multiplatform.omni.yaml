@@ -119,7 +119,7 @@ tasks:
     cache:
       key:
         env:
-          append: [RUST_TEST_ADDITIONAL_ARGSu]
+          append: [RUST_TEST_ADDITIONAL_ARGS]
         files:
           append: ["./tests/**/*.rs"]
 
@@ -140,6 +140,9 @@ tasks:
     command: cross build --release --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-unknown-linux-gnu
+    output:
+      files:
+        - "@workspace/target/aarch64-unknown-linux-gnu/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -150,6 +153,9 @@ tasks:
     command: cargo build --release --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-unknown-linux-gnu
+    output:
+      files:
+        - "@workspace/target/x86_64-unknown-linux-gnu/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -160,6 +166,9 @@ tasks:
     command: cargo build --release --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-apple-darwin
+    output:
+      files:
+        - "@workspace/target/x86_64-apple-darwin/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -170,6 +179,9 @@ tasks:
     command: cargo build --release --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-apple-darwin
+    output:
+      files:
+        - "@workspace/target/aarch64-apple-darwin/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
         env:
@@ -180,6 +192,9 @@ tasks:
     command: cargo build --release --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-pc-windows-msvc
+    output:
+      files:
+        - "@workspace/target/x86_64-pc-windows-msvc/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
@@ -190,6 +205,9 @@ tasks:
     command: cargo build --release --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-pc-windows-msvc
+    output:
+      files:
+        - "@workspace/target/aarch64-pc-windows-msvc/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
@@ -200,6 +218,10 @@ tasks:
     command: cargo build --release -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:current
+    output:
+      files:
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
+        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
     cache:
       key:
         env:
@@ -207,12 +229,12 @@ tasks:
 
   build:
     command: "echo 'build completed'"
-    output:
-      files:
-        - "@workspace/target/release/{{ env.PROJECT_NAME }}"
-        - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
-        - "@workspace/target/**/release/{{ env.PROJECT_NAME }}"
-        - "@workspace/target/**/release/{{ env.PROJECT_NAME }}.exe"
+    # output:
+    #   files:
+    #     - "@workspace/target/release/{{ env.PROJECT_NAME }}"
+    #     - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
+    #     - "@workspace/target/**/release/{{ env.PROJECT_NAME }}"
+    #     - "@workspace/target/**/release/{{ env.PROJECT_NAME }}.exe"
     dependencies:
       - test
       - ^build
