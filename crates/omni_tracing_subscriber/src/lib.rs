@@ -64,6 +64,7 @@ impl TracingSubscriber {
             let filter: LevelFilter = config.stdout_trace_level.into();
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .pretty()
+                .compact()
                 .without_time()
                 .with_ansi_sanitization(false)
                 .with_writer(std::io::stdout)
@@ -110,6 +111,7 @@ impl TracingSubscriber {
 
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_ansi_sanitization(true)
+                .with_ansi(false)
                 .json()
                 .with_writer(Arc::new(File::create(file_path)?))
                 .with_filter(main_filters.clone().with_default(filter))
