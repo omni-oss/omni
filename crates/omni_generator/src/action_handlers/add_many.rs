@@ -23,14 +23,20 @@ pub async fn add_many<'a>(
 
     let templates = discovery.discover().await?;
 
+    log::trace!("discovered {} template files", templates.len());
+
     let generator_dir = format!("{}/**", ctx.generator_dir.display());
 
-    let tera = omni_tera::new(&generator_dir)?;
+    log::trace!("running generator in dir {generator_dir}");
+
+    let tera = omni_tera::new_with_files(&templates)?;
 
     for template_file in templates.iter() {
         let stripped_path = template_file
             .strip_prefix(&ctx.generator_dir)
             .expect("should have value");
+
+        log::trace!("processing template tile {template_file:?}");
 
         add_one(
             &stripped_path,

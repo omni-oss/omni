@@ -10,7 +10,7 @@ pub fn validate(generators: &[GeneratorConfiguration]) -> Result<(), Error> {
         if names.contains(&generator.name) {
             return Err(ErrorInner::new_duplicate_generator_name(
                 generator.name.clone(),
-                generator.file.clone(),
+                generator.config_path.clone(),
             ))?;
         }
 

@@ -3,6 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::commands::{
+    generator_common_args::GeneratorRunCommonArgs,
+    generator_utils::{get_prompt_values, prompt_generator_name},
+};
+
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
 use either::Left;
@@ -10,9 +15,7 @@ use maps::{Map, UnorderedMap, unordered_map};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::{GenSession, RunConfig};
-use omni_generator_configurations::{
-    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
-};
+use omni_generator_configurations::{OmniPath, OverwriteConfiguration};
 use omni_prompt::configuration::{
     BasePromptConfiguration, ConfirmPromptConfiguration, OptionConfiguration,
     PromptConfiguration, PromptingConfiguration, SelectPromptConfiguration,
@@ -20,7 +23,7 @@ use omni_prompt::configuration::{
 };
 use owo_colors::OwoColorize;
 use system_traits::{FsCreateDirAllAsync, FsMetadataAsync};
-use value_bag::{OwnedValueBag, ValueBag};
+use value_bag::ValueBag;
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct GeneratorCommand {
@@ -61,14 +64,6 @@ pub struct GeneratorRunArgs {
     #[arg(
         long,
         short,
-        help = "Prefill values to prompts",
-        value_parser = parse_key_value::<String, String>
-    )]
-    pub value: Vec<(String, String)>,
-
-    #[arg(
-        long,
-        short,
         help = "Override target paths",
         value_parser = parse_key_value::<String, OmniPath>
     )]
@@ -82,14 +77,6 @@ pub struct GeneratorRunArgs {
         action = clap::ArgAction::SetTrue
     )]
     pub dry_run: bool,
-
-    #[arg(
-        long,
-        help = "Use default values for prompts",
-        default_value_t = false,
-        action = clap::ArgAction::SetTrue
-    )]
-    pub use_defaults: bool,
 
     #[arg(
         long,
@@ -112,6 +99,9 @@ pub struct GeneratorRunArgs {
         default_missing_value = "true"
     )]
     pub ignore_session: Option<bool>,
+
+    #[command(flatten)]
+    pub common: GeneratorRunCommonArgs,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -145,7 +135,7 @@ async fn run_generator_run(
 ) -> eyre::Result<()> {
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
-    let current_dir = loaded_context.current_dir()?.clone();
+    let current_dir = loaded_context.current_dir()?;
     let workspace_dir = loaded_context.root_dir().to_path_buf();
 
     let (output_dir, project) =
@@ -172,7 +162,7 @@ async fn run_generator_run(
 
     log::trace!("Generator output directory: {}", output_dir.display());
 
-    let mut pre_exec_values = get_prompt_values(&command.args.value);
+    let mut pre_exec_values = get_prompt_values(&command.args.common.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
 
     let mut context_values = unordered_map!();
@@ -256,16 +246,13 @@ async fn run_generator_run(
         current_dir: &current_dir,
         env: &env.as_deref().unwrap_or(&default_map),
         args: None,
-        use_prompt_defaults: command.args.use_defaults,
+        use_prompt_defaults: command.args.common.use_defaults,
+        available_generators: &generators,
     };
 
-    let session = omni_generator::run(
-        &generator_name,
-        &generators,
-        &run,
-        loaded_context.sys(),
-    )
-    .await?;
+    let session =
+        omni_generator::run_named(&generator_name, &run, loaded_context.sys())
+            .await?;
 
     if !command.args.dry_run && !session.is_empty() {
         let save = if let Some(save) = command.args.save_session {
@@ -286,16 +273,6 @@ async fn run_generator_run(
     }
 
     Ok(())
-}
-
-fn get_prompt_values(
-    values: &[(String, String)],
-) -> UnorderedMap<String, OwnedValueBag> {
-    UnorderedMap::from_iter(
-        values.iter().map(|(k, v)| {
-            (k.to_string(), ValueBag::capture_serde1(v).to_owned())
-        }),
-    )
 }
 
 fn get_target_overrides(
@@ -417,49 +394,6 @@ fn prompt_output_dir(
             "invalid value for output_dir_or_project: {value}"
         ))
     }
-}
-
-fn prompt_generator_name(
-    generators: &[GeneratorConfiguration],
-) -> eyre::Result<String> {
-    let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
-
-    let prompt =
-        PromptConfiguration::<()>::new_select(SelectPromptConfiguration::new(
-            BasePromptConfiguration::new(
-                "generator_name",
-                "Select generator",
-                None,
-            ),
-            generators
-                .iter()
-                .map(|g| {
-                    OptionConfiguration::new(
-                        g.display_name.as_deref().unwrap_or(&g.name.as_str()),
-                        g.description.clone(),
-                        g.name.clone(),
-                        false,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            Some("generator_name".to_string()),
-        ));
-
-    let value = omni_prompt::prompt_one(
-        &prompt,
-        None,
-        &context_values,
-        &prompting_config,
-    )?
-    .expect("should have value at this point");
-
-    let value = value
-        .by_ref()
-        .to_str()
-        .ok_or_else(|| eyre::eyre!("value is not a string"))?;
-
-    Ok(value.to_string())
 }
 
 fn prompt_save_prompts() -> eyre::Result<bool> {

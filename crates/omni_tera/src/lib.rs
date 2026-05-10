@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub use tera::{Context, Error, ErrorKind, Result, Tera};
 
 use crate::preset::FULL;
@@ -8,6 +10,16 @@ pub fn new(dir: &str) -> Result<Tera> {
     let mut tera = tera::Tera::new(dir)?;
 
     tera.extend(&FULL)?;
+
+    Ok(tera)
+}
+
+pub fn new_with_files<F: AsRef<Path>>(files: &[F]) -> Result<Tera> {
+    let mut tera = tera::Tera::default();
+
+    for f in files {
+        tera.add_template_file(f.as_ref(), None)?;
+    }
 
     Ok(tera)
 }

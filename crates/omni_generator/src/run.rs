@@ -32,17 +32,18 @@ pub struct RunConfig<'a> {
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
     /// Skip prompts with default values
     pub use_prompt_defaults: bool,
+    pub available_generators: &'a [GeneratorConfiguration],
 }
 
-pub async fn run<'a>(
+pub async fn run_named<'a>(
     generator_name: &'a str,
-    generators: &'a [GeneratorConfiguration],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<GenSession, Error> {
-    crate::validate(generators)?;
+    crate::validate(config.available_generators)?;
 
-    let generator = generators
+    let generator = config
+        .available_generators
         .iter()
         .find(|g| g.name == generator_name)
         .ok_or_else(|| {
@@ -51,15 +52,29 @@ pub async fn run<'a>(
 
     if config.dry_run {
         let sys = DryRunSys::default();
-        run_internal(&generator, generators, config, &sys).await
+        run_internal(&generator, config, &sys).await
     } else {
-        run_internal(&generator, generators, config, sys).await
+        run_internal(&generator, config, sys).await
+    }
+}
+
+pub async fn run<'a>(
+    generator: &'a GeneratorConfiguration,
+    config: &RunConfig<'a>,
+    sys: &impl GeneratorSys,
+) -> Result<GenSession, Error> {
+    crate::validate(config.available_generators)?;
+
+    if config.dry_run {
+        let sys = DryRunSys::default();
+        run_internal(&generator, config, &sys).await
+    } else {
+        run_internal(&generator, config, sys).await
     }
 }
 
 pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
-    available_generators: &[GeneratorConfiguration],
     config: &RunConfig<'a>,
     sys: &impl GeneratorSys,
 ) -> Result<GenSession, Error> {
@@ -124,14 +139,14 @@ pub(crate) async fn run_internal<'a>(
         dry_run: config.dry_run,
         output_dir: config.output_dir,
         generator_dir: &r#gen
-            .file
+            .config_path
             .parent()
             .expect("generator should have a directory"),
         generator_name: &r#gen.name,
         targets: &r#gen.targets,
         overwrite: config.overwrite,
         workspace_dir: config.workspace_dir,
-        available_generators,
+        available_generators: config.available_generators,
         target_overrides: config.target_overrides,
         current_dir: config.current_dir,
         env: config.env,

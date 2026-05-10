@@ -45,7 +45,7 @@ pub async fn discover<G: AsRef<str>>(
             >(file.as_path(), &sys)
             .await?;
 
-            conf.file = file;
+            conf.config_path = file;
 
             Ok::<_, Error>(conf)
         });

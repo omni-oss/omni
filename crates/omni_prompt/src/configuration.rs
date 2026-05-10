@@ -472,7 +472,7 @@ impl<'a> Default for PromptingConfiguration<'a> {
         Self {
             if_expressions_root_property: Some("prompts"),
             validation_expressions_value_name: Some("value"),
-            use_defaults: true,
+            use_defaults: false,
         }
     }
 }

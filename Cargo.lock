@@ -3539,6 +3539,7 @@ dependencies = [
  "gix-submodule",
  "gix-tempfile",
  "gix-trace",
+ "gix-transport",
  "gix-traverse",
  "gix-url",
  "gix-utils",
@@ -4050,7 +4051,9 @@ dependencies = [
  "gix-hashtable",
  "gix-object",
  "gix-path",
+ "gix-tempfile",
  "memmap2",
+ "parking_lot 0.12.5",
  "smallvec 1.15.1",
  "thiserror 2.0.18",
  "uluru",
@@ -4115,11 +4118,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa4bee82db63ec635996b96efae71cf467c155fa3f34a556184373224a26c4fd"
 dependencies = [
  "bstr",
+ "gix-credentials",
  "gix-date",
  "gix-features",
  "gix-hash",
+ "gix-lock",
+ "gix-negotiate",
+ "gix-object",
  "gix-ref",
+ "gix-refspec",
+ "gix-revwalk",
  "gix-shallow",
+ "gix-trace",
  "gix-transport",
  "gix-utils",
  "maybe-async",
@@ -4299,13 +4309,16 @@ version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ffd6a5c676b92d4ead5f5a2b2935024415dec69edc997b6090ca9cac010a3018"
 dependencies = [
+ "base64",
  "bstr",
  "gix-command",
+ "gix-credentials",
  "gix-features",
  "gix-packetline",
  "gix-quote",
  "gix-sec",
  "gix-url",
+ "reqwest",
  "thiserror 2.0.18",
 ]
 
@@ -5614,9 +5627,9 @@ dependencies = [
 
 [[package]]
 name = "machine-uid"
-version = "0.5.4"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d7217d573cdb141d6da43113b098172e057d39915d79c4bdedbc3aacd46bd96"
+checksum = "cfe0d6336d341b10ae80e099b8f3c59f34bf8aef66ef25e83aa98bf2955c0ae7"
 dependencies = [
  "libc",
  "windows-registry",
@@ -6259,6 +6272,7 @@ dependencies = [
  "omni_expressions",
  "omni_generator",
  "omni_generator_configurations",
+ "omni_git_utils",
  "omni_hasher",
  "omni_process",
  "omni_prompt",
@@ -6622,6 +6636,23 @@ dependencies = [
  "trace",
  "tracing",
  "value-bag",
+]
+
+[[package]]
+name = "omni_git_utils"
+version = "0.13.0"
+dependencies = [
+ "derive-new",
+ "derive_builder",
+ "eyre",
+ "gix",
+ "log",
+ "strum 0.28.0",
+ "system_traits",
+ "test-log",
+ "thiserror 2.0.18",
+ "trace",
+ "tracing",
 ]
 
 [[package]]

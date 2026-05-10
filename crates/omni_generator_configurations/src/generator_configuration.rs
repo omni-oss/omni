@@ -29,7 +29,7 @@ pub struct GeneratorConfiguration {
 
     #[serde(default)]
     #[serde(skip)]
-    pub file: PathBuf,
+    pub config_path: PathBuf,
 
     /// Prompts to ask the user
     #[serde(default)]

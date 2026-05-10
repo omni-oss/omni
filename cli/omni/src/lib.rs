@@ -70,8 +70,8 @@ pub async fn run(
             exit(res);
         }
         CliSubcommands::Env(env) => {
-            let mut context = create_ctx()?;
-            commands::env::run(env, &mut context).await?;
+            let context = create_ctx()?;
+            commands::env::run(env, &context).await?;
         }
         CliSubcommands::Run(run) => {
             let context = create_ctx()?;
@@ -92,6 +92,9 @@ pub async fn run(
         CliSubcommands::Generator(command) => {
             let context = create_ctx()?;
             commands::generator::run(command, &context).await?;
+        }
+        CliSubcommands::Init(command) => {
+            commands::init::run(command).await?;
         }
     }
 
@@ -145,8 +148,8 @@ pub async fn main() -> eyre::Result<()> {
     defer! {
         let res = omni_setup::deinitialize();
 
-        if let Err(e) = res {
-            trace::error!(error = %e, "deinit_failed");
+        if let Err(error) = res {
+            trace::error!(%error, "deinit_failed");
         }
     };
 
