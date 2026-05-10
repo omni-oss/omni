@@ -36,7 +36,7 @@ pub(crate) enum ErrorInner {
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
-    Git2(#[from] git2::Error),
+    Gix(#[from] gix::Error),
 
     #[error("unsupported scm")]
     UnsupportedScm,

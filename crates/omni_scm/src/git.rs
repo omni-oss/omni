@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use derive_new::new;
-use git2::Repository;
+use gix::{Repository, bstr::ByteSlice};
 
 use crate::{Scm, error::Error};
 
@@ -17,18 +17,22 @@ impl Scm for Git {
         base: &str,
         target: &str,
     ) -> Result<Vec<PathBuf>, Error> {
-        let base = self.repo.revparse_single(base)?.peel_to_commit()?;
-        let target = self.repo.revparse_single(target)?.peel_to_commit()?;
-        let diff = self.repo.diff_tree_to_tree(
-            Some(&base.tree()?),
-            Some(&target.tree()?),
-            None,
-        )?;
+        log::trace!("getting changed files between {} and {}", base, target);
+        let base = get_tree_from_spec(&self.repo, base)?;
+        let target = get_tree_from_spec(&self.repo, target)?;
 
-        Ok(diff
-            .deltas()
-            .filter_map(|d| Some(d.new_file().path()?.to_owned()))
-            .collect::<Vec<_>>())
+        let diff = self
+            .repo
+            .diff_tree_to_tree(Some(&base), Some(&target), None)
+            .map_err(gix::Error::from_error)?;
+        let diff = diff
+            .iter()
+            .filter_map(|entry| {
+                entry.location().to_path().map(|p| p.to_path_buf()).ok()
+            })
+            .collect();
+        log::trace!("git diff {}..{}: {:#?}", base.id(), target.id(), diff);
+        Ok(diff)
     }
 
     #[inline(always)]
@@ -40,4 +44,17 @@ impl Scm for Git {
     fn default_target(&self) -> &str {
         "HEAD"
     }
+}
+
+fn get_tree_from_spec<'a>(
+    repo: &'a Repository,
+    spec: &str,
+) -> Result<gix::Tree<'a>, gix::Error> {
+    repo.rev_parse_single(spec)
+        .map_err(gix::Error::from_error)?
+        .object()
+        .map_err(gix::Error::from_error)?
+        .into_commit()
+        .tree()
+        .map_err(gix::Error::from_error)
 }

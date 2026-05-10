@@ -256,13 +256,6 @@ where
                 .unwrap_or(scm.default_target()),
         )?;
 
-        #[cfg(feature = "enable-tracing")]
-        {
-            for path in &changed {
-                tracing::trace!("changed file: {:?}", path);
-            }
-        }
-
         let changed = changed
             .into_iter()
             .map(|path| {

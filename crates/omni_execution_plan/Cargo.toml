@@ -8,7 +8,7 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
-vendored-openssl = ["omni_scm/vendored-openssl"]
+vendored-openssl = []
 
 [dependencies]
 eyre = { workspace = true }
@@ -19,6 +19,7 @@ derive-new = { workspace = true }
 derive_builder = { workspace = true }
 globset = { workspace = true }
 trace = { workspace = true }
+log = { workspace = true }
 tracing = { workspace = true }
 omni_configurations = { workspace = true }
 omni_core = { workspace = true }

@@ -1,10 +1,8 @@
-use git2::Repository;
-
 use crate::{ScmImplementation, SelectScm, SupportedScm, git::Git};
 
 #[inline(always)]
 fn detect_scm(path: &str) -> Option<SupportedScm> {
-    if git2::Repository::discover(path).ok().is_some() {
+    if gix::discover(path).is_ok() {
         return Some(SupportedScm::Git);
     }
 
@@ -17,9 +15,9 @@ fn get_supported_impl(
     scm: SupportedScm,
 ) -> Option<ScmImplementation> {
     Some(match scm {
-        SupportedScm::Git => ScmImplementation::new_git(Git::new(
-            Repository::discover(path).ok()?,
-        )),
+        SupportedScm::Git => {
+            ScmImplementation::new_git(Git::new(gix::discover(path).ok()?))
+        }
     })
 }
 
