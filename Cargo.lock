@@ -2791,6 +2791,7 @@ dependencies = [
  "derive_more",
  "globset",
  "ignore",
+ "log",
  "num_cpus",
  "path-slash",
  "strum 0.28.0",

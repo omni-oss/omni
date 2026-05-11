@@ -132,8 +132,17 @@ impl DirWalkerBase for IgnoreRealDirWalker {
         std::thread::spawn(move || {
             walk.run(|| {
                 let tx = tx.clone();
-                Box::new(move |e| {
-                    tx.send(e.map(IgnoreRealDirEntry)).unwrap();
+                Box::new(move |entry| {
+                    // ignoring any not found errors is ok
+                    if let Err(err) = &entry
+                        && let Some(err) = err.io_error()
+                        && err.kind() == std::io::ErrorKind::NotFound
+                    {
+                        log::trace!("not found error, ignoring");
+                        return WalkState::Continue;
+                    }
+
+                    tx.send(entry.map(IgnoreRealDirEntry)).unwrap();
                     WalkState::Continue
                 })
             });
