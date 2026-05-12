@@ -14,11 +14,20 @@ pub fn new(dir: &str) -> Result<Tera> {
     Ok(tera)
 }
 
-pub fn new_with_files<F: AsRef<Path>>(files: &[F]) -> Result<Tera> {
+pub fn new_with_files<F: AsRef<Path>, N: AsRef<str>>(
+    files: &[(F, Option<N>)],
+) -> Result<Tera> {
     let mut tera = tera::Tera::default();
 
-    for f in files {
-        tera.add_template_file(f.as_ref(), None)?;
+    for (f, n) in files {
+        tera.add_template_file(
+            f.as_ref(),
+            if let Some(n) = n {
+                Some(n.as_ref())
+            } else {
+                None
+            },
+        )?;
     }
 
     Ok(tera)
