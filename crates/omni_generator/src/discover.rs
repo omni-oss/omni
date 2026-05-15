@@ -59,3 +59,34 @@ pub async fn discover<G: AsRef<str>>(
 
     Ok(configs)
 }
+
+pub async fn discover_one_in_dir<D: AsRef<Path>>(
+    dir: D,
+    sys: &impl GeneratorSys,
+) -> Result<Option<GeneratorConfiguration>, Error> {
+    let discovery = ConfigurationDiscovery::new(
+        dir.as_ref(),
+        &CONFIG_FILE_NAMES[..],
+        CONFIG_FILE_NAMES.as_slice(),
+        IGNORE_FILE_NAMES.as_slice(),
+        "generator",
+    );
+
+    let files = discovery.discover().await?;
+
+    for file in files {
+        if sys.fs_exists_no_err_async(&file).await {
+            let mut conf = omni_file_data_serde::read_async::<
+                GeneratorConfiguration,
+                _,
+                _,
+            >(file.as_path(), sys)
+            .await?;
+
+            conf.config_path = file;
+            return Ok(Some(conf));
+        }
+    }
+
+    Ok(None)
+}

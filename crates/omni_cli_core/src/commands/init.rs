@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Args;
+use eyre::Ok;
 use maps::{map, unordered_map};
 use omni_generator::RunConfig;
 use system_traits::{EnvCurrentDirAsync, impls::RealSys};
@@ -9,7 +10,7 @@ use value_bag::ValueBag;
 
 use crate::commands::{
     generator_common_args::GeneratorRunCommonArgs,
-    generator_utils::{get_prompt_values, prompt_generator_name},
+    generator_utils::get_prompt_values,
 };
 
 #[derive(Args, Debug)]
@@ -56,37 +57,22 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         return Ok(());
     }
 
-    let generators =
+    let primary_generator =
+        omni_generator::discover_one_in_dir(dir.path(), &sys).await?;
+
+    let generator = if let Some(generator) = primary_generator {
+        generator
+    } else {
+        log::error!(
+            "No primary generator is found, generators used as initializer must have one generator config in the root of the source folder",
+        );
+        return Ok(());
+    };
+
+    let all_generators =
         omni_generator::discover(dir.path(), &["**"], &sys).await?;
 
-    if generators.is_empty() {
-        log::error!(
-            "No generators found in the provided source. Please ensure the repository contains valid generators."
-        );
-
-        return Ok(());
-    }
-
-    log::info!("Found {} generator(s) in the source.", generators.len());
-
-    let generator = if generators.len() == 1 {
-        &generators[0]
-    } else {
-        let gen_name = prompt_generator_name(&generators)?;
-
-        let generator = generators.iter().find(|g| g.name == gen_name);
-
-        if let Some(generator) = generator {
-            generator
-        } else {
-            log::error!(
-                "Selected generator '{}' not found. Please select a valid generator.",
-                gen_name
-            );
-
-            return Ok(());
-        }
-    };
+    log::info!("Found {} generator(s) in the source.", all_generators.len());
 
     let pre_exec_values = get_prompt_values(&command.args.common.value);
 
@@ -96,7 +82,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     };
 
     let run_config = RunConfig {
-        available_generators: &generators,
+        available_generators: &all_generators,
         output_dir: output_dir,
         workspace_dir: output_dir,
         current_dir: &current_dir,
@@ -110,7 +96,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         prompt_values: &pre_exec_values,
     };
 
-    omni_generator::run(generator, &run_config, &sys).await?;
+    omni_generator::run(&generator, &run_config, &sys).await?;
 
     Ok(())
 }
