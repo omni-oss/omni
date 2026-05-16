@@ -26,3 +26,5 @@ dependencies:
   - clap_declspec
   - clap_utils
   - omni_tracing_subscriber
+  - omni_remote_source
+  - omni_git_utils

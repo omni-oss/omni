@@ -69,6 +69,25 @@ pub async fn run_generator<'a>(
         Cow::Borrowed(ctx.output_dir)
     };
 
+    let available_generators = if let Some(a_scope_id) = ctx.scope_id {
+        let generators = ctx
+            .available_generators
+            .iter()
+            .filter(|g| {
+                if let Some(b_scope_id) = g.scope_id.as_deref() {
+                    b_scope_id == a_scope_id
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        Cow::Owned(generators)
+    } else {
+        Cow::Borrowed(ctx.available_generators)
+    };
+
     let run_config = RunConfig {
         dry_run: ctx.dry_run,
         output_dir: &output_dir,
@@ -81,7 +100,7 @@ pub async fn run_generator<'a>(
         env: ctx.env,
         args: Some(&config.args),
         use_prompt_defaults: false,
-        available_generators: ctx.available_generators,
+        available_generators: &available_generators,
     };
 
     let prompted_values =

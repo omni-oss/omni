@@ -2,7 +2,17 @@ target
 dist
 .env
 .env.*
-**/.omni
+
+###############
+#### omni #####
+###############
+**/.omni/cache/**
+**/.omni/trace/**
+**/.omni/remote-cache.omni.*
+**/.omni/sources/*/**
+**/.omni/remote_cache/**
+!**/.omni/sources/*/lock.json
+
 node_modules
 **/node_modules
 perf.data*

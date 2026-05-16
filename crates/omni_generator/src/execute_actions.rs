@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
 use derive_new::new;
 use maps::{Map, UnorderedMap};
@@ -28,13 +28,14 @@ pub struct ExecuteActionsArgs<'a> {
     pub generator_dir: &'a Path,
     pub workspace_dir: &'a Path,
     pub generator_name: &'a str,
+    pub scope_id: Option<&'a str>,
     pub current_dir: &'a Path,
     pub actions: &'a [ActionConfiguration],
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub targets: &'a UnorderedMap<String, OmniPath>,
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub overwrite: Option<OverwriteConfiguration>,
-    pub available_generators: &'a [GeneratorConfiguration],
+    pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub env: &'a Map<String, String>,
 }
 
@@ -77,6 +78,7 @@ pub async fn execute_actions<'a>(
             output_dir: output_path,
             generator_targets: args.targets,
             target_overrides: args.target_overrides,
+            scope_id: args.scope_id,
             generator_name: args.generator_name,
             generator_dir: args.generator_dir,
             overwrite: args.overwrite,

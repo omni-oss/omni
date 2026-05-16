@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use crate::commands::{
@@ -12,17 +13,24 @@ use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
 use either::Left;
 use maps::{Map, UnorderedMap, unordered_map};
+use omni_configurations::GeneratorSourceConfiguration;
 use omni_context::Context;
 use omni_core::Project;
-use omni_generator::{GenSession, RunConfig};
-use omni_generator_configurations::{OmniPath, OverwriteConfiguration};
+use omni_generator::{GenSession, GeneratorSys, RunConfig};
+use omni_generator_configurations::{
+    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
+};
 use omni_prompt::configuration::{
     BasePromptConfiguration, ConfirmPromptConfiguration, OptionConfiguration,
     PromptConfiguration, PromptingConfiguration, SelectPromptConfiguration,
     TextPromptConfiguration, ValidatedPromptConfiguration,
 };
+use omni_remote_sources::manager::{
+    RemoteSourceManager, config::RemoteSourceConfig,
+};
 use owo_colors::OwoColorize;
 use system_traits::{FsCreateDirAllAsync, FsMetadataAsync};
+use tokio::task::JoinSet;
 use value_bag::ValueBag;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -211,12 +219,7 @@ async fn run_generator_run(
     const GENERATOR_OUTPUT_FILE: &str = ".omni/generator.json";
     let gen_output_dir = output_dir.join(GENERATOR_OUTPUT_DIR);
     let file = output_dir.join(GENERATOR_OUTPUT_FILE);
-    let generators = omni_generator::discover(
-        loaded_context.root_dir(),
-        &ctx.workspace_configuration().generators,
-        sys,
-    )
-    .await?;
+    let generators = get_generators(ctx, sys).await?;
 
     let generator_name = if let Some(name) = &command.args.name {
         Cow::Borrowed(name.as_str())
@@ -431,12 +434,7 @@ async fn run_generator_list(
     _command: &GeneratorListCommand,
     ctx: &Context,
 ) -> eyre::Result<()> {
-    let generators = omni_generator::discover(
-        ctx.root_dir(),
-        &ctx.workspace_configuration().generators,
-        ctx.sys(),
-    )
-    .await?;
+    let generators = get_generators(ctx, ctx.sys()).await?;
 
     println!("{}", "Available Generators:".bold());
     for generator in generators {
@@ -458,4 +456,72 @@ async fn run_generator_list(
     }
 
     Ok(())
+}
+
+async fn get_generators(
+    ctx: &Context,
+    sys: &impl GeneratorSys,
+) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>> {
+    let mut local_paths = vec![];
+    let omni_path = ctx.omni_dir();
+    let generator_sources_path = omni_path.join("./sources/generator");
+    let lockfile_path = generator_sources_path.join("lock.json");
+
+    let remote_sources = Arc::new(
+        RemoteSourceManager::new(
+            RemoteSourceConfig::builder()
+                .lockfile_path(lockfile_path)
+                .soure_dir_path(generator_sources_path)
+                .build(),
+            sys.clone(),
+        )
+        .await?,
+    );
+
+    let mut git_clone_tasks = JoinSet::new();
+
+    for (idx, config) in
+        ctx.workspace_configuration().generators.iter().enumerate()
+    {
+        match config {
+            GeneratorSourceConfiguration::Local(local) => {
+                local_paths.push(local.path.as_str());
+            }
+            GeneratorSourceConfiguration::Git(git) => {
+                let remote_sources = remote_sources.clone();
+
+                let sys = sys.clone();
+                let git = git.clone();
+                // remote generator scopes should start at 100, reserve 0-99 for future uses
+                let scope_id = idx + 100;
+
+                git_clone_tasks.spawn(async move {
+                    let dir = remote_sources
+                        .pull_git_repo(&git.uri, &git.rev)
+                        .await?;
+                    let configurations =
+                        omni_generator::discover(&dir, &["**"], &sys).await?;
+
+                    Ok::<_, eyre::Report>(omni_generator::assign_scope_id(
+                        scope_id,
+                        configurations,
+                    ))
+                });
+            }
+        }
+    }
+
+    let mut configurations = omni_generator::assign_scope_id(
+        0,
+        omni_generator::discover(ctx.root_dir(), local_paths.as_slice(), sys)
+            .await?,
+    );
+
+    for configs in git_clone_tasks.join_all().await {
+        configurations.extend(configs?);
+    }
+
+    remote_sources.lock().await?;
+
+    Ok(configurations)
 }

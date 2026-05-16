@@ -17,6 +17,16 @@ use crate::ActionConfiguration;
 )]
 #[garde(allow_unvalidated)]
 pub struct GeneratorConfiguration {
+    /// Absolute path to the configuration file where this is serialized from
+    #[serde(default)]
+    #[serde(skip)]
+    pub config_path: PathBuf,
+
+    /// Scope identifier. Once set, only generators with the same scope id will be able to call and be called by this generator.
+    #[serde(default)]
+    #[serde(skip)]
+    pub scope_id: Option<String>,
+
     /// Unique name of the generator
     pub name: String,
 
@@ -26,10 +36,6 @@ pub struct GeneratorConfiguration {
 
     /// Description of the generator
     pub description: Option<String>,
-
-    #[serde(default)]
-    #[serde(skip)]
-    pub config_path: PathBuf,
 
     /// Prompts to ask the user
     #[serde(default)]

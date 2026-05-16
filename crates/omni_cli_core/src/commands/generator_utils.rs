@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::GeneratorConfiguration;
 use omni_prompt::configuration::{
@@ -7,7 +9,7 @@ use omni_prompt::configuration::{
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub fn prompt_generator_name(
-    generators: &[GeneratorConfiguration],
+    generators: &[Cow<GeneratorConfiguration>],
 ) -> eyre::Result<String> {
     let context_values = unordered_map!();
     let prompting_config = PromptingConfiguration::default();

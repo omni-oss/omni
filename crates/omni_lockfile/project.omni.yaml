@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: omni_lockfile
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - trace

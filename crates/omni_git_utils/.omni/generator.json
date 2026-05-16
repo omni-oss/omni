@@ -1,0 +1,18 @@
+{
+  "crate": {
+    "targets": {},
+    "prompts": {}
+  },
+  "rust-error": {
+    "targets": {
+      "root": "./src"
+    },
+    "prompts": {
+      "crate_name": "omni_git_utils",
+      "version": "workspace",
+      "add_error_type": true,
+      "crate_type": "lib",
+      "use_tracing": true
+    }
+  }
+}

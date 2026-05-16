@@ -1,9 +1,13 @@
+use std::borrow::Cow;
+
 use omni_generator_configurations::GeneratorConfiguration;
 use sets::unordered_set;
 
 use crate::error::{Error, ErrorInner};
 
-pub fn validate(generators: &[GeneratorConfiguration]) -> Result<(), Error> {
+pub fn validate(
+    generators: &[Cow<GeneratorConfiguration>],
+) -> Result<(), Error> {
     let mut names = unordered_set!();
 
     for generator in generators {

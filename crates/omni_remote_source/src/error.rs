@@ -33,11 +33,11 @@ pub(crate) enum ErrorInner {
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
+    Lockfile(#[from] omni_lockfile::error::Error),
+
+    #[error(transparent)]
+    GitUtils(#[from] omni_git_utils::Error),
+
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Gix(#[from] gix::Error),
-
-    #[error(transparent)]
-    UrlParse(#[from] url::ParseError),
 }

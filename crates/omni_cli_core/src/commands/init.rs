@@ -82,7 +82,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     };
 
     let run_config = RunConfig {
-        available_generators: &all_generators,
+        available_generators: &all_generators[..],
         output_dir: output_dir,
         workspace_dir: output_dir,
         current_dir: &current_dir,

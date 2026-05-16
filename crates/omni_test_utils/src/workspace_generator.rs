@@ -3,7 +3,10 @@ use std::fs;
 use derive_builder::Builder;
 
 use crate::{ProjectGenerator, ProjectGeneratorBuilder};
-use omni_configurations::{Ui, WorkspaceConfiguration};
+use omni_configurations::{
+    GeneratorSourceConfiguration, LocalGeneratorSourceConfiguration, Ui,
+    WorkspaceConfiguration,
+};
 
 #[derive(Builder, Debug)]
 #[builder(setter(into, strip_option))]
@@ -71,7 +74,9 @@ impl WorkspaceGenerator {
 
         let ws = WorkspaceConfiguration {
             projects: vec!["./projects/*".to_string()],
-            generators: vec!["./generators/*".to_string()],
+            generators: vec![GeneratorSourceConfiguration::new_local(
+                LocalGeneratorSourceConfiguration::new("./generators/*"),
+            )],
             name: self.name.clone(),
             env: Default::default(),
             ui: Ui::Stream,

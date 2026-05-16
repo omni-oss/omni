@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::validators::*;
 use garde::Validate;
 use maps::Map;
 use schemars::JsonSchema;
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    Ui,
+    GeneratorSourceConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
@@ -28,8 +29,8 @@ pub struct WorkspaceConfiguration {
     #[serde(default)]
     pub ui: Ui,
 
-    #[serde(default)]
-    pub generators: Vec<String>,
+    #[serde(default, deserialize_with = "validate_generator_sources")]
+    pub generators: Vec<GeneratorSourceConfiguration>,
 
     #[serde(default)]
     pub env: WorkspaceEnvConfiguration,

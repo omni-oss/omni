@@ -24,6 +24,7 @@ tracing = { workspace = true, optional = true }
 strum = { workspace = true }
 derive-new = { workspace = true }
 maps = { workspace = true }
+sets =  { workspace=true }
 merge = { workspace = true }
 omni_core = { workspace = true }
 omni_expressions = { workspace = true }
@@ -38,3 +39,4 @@ humantime-serde = { workspace = true }
 omni_config_types = { workspace = true }
 serde_validate = { workspace = true }
 omni_serde_validators = { workspace = true }
+url = { workspace = true }

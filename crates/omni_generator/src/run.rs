@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
 use derive_new::new;
 use maps::{Map, UnorderedMap, unordered_map};
@@ -32,7 +32,7 @@ pub struct RunConfig<'a> {
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
     /// Skip prompts with default values
     pub use_prompt_defaults: bool,
-    pub available_generators: &'a [GeneratorConfiguration],
+    pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
 }
 
 pub async fn run_named<'a>(
@@ -143,6 +143,7 @@ pub(crate) async fn run_internal<'a>(
             .parent()
             .expect("generator should have a directory"),
         generator_name: &r#gen.name,
+        scope_id: r#gen.scope_id.as_deref(),
         targets: &r#gen.targets,
         overwrite: config.overwrite,
         workspace_dir: config.workspace_dir,

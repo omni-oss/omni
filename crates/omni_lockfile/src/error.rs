@@ -33,11 +33,5 @@ pub(crate) enum ErrorInner {
     Custom(#[from] eyre::Report),
 
     #[error(transparent)]
-    Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Gix(#[from] gix::Error),
-
-    #[error(transparent)]
-    UrlParse(#[from] url::ParseError),
+    FileData(#[from] omni_file_data_serde::Error),
 }

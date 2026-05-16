@@ -24,6 +24,9 @@ derive_builder = { workspace = true }
 derive-new = { workspace = true }
 gix = { workspace = true }
 system_traits = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }
+rstest = { workspace = true }
+rstest_reuse = { workspace = true }
