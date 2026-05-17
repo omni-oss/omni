@@ -1390,7 +1390,7 @@ dependencies = [
  "quote",
  "regex",
  "rustc-hash 2.1.1",
- "shlex",
+ "shlex 1.3.0",
  "syn 2.0.117",
 ]
 
@@ -1775,7 +1775,7 @@ dependencies = [
  "find-msvc-tools",
  "jobserver",
  "libc",
- "shlex",
+ "shlex 1.3.0",
 ]
 
 [[package]]
@@ -3012,7 +3012,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "maps",
- "shlex",
+ "shlex 2.0.0",
  "strum 0.28.0",
  "thiserror 2.0.18",
 ]
@@ -6825,7 +6825,7 @@ dependencies = [
  "omni_core",
  "omni_hasher",
  "portable-pty",
- "shlex",
+ "shlex 2.0.0",
  "strum 0.28.0",
  "system_traits",
  "terminal_size",
@@ -7117,7 +7117,7 @@ dependencies = [
  "owo-colors",
  "serde",
  "serde_json",
- "shlex",
+ "shlex 2.0.0",
  "strum 0.28.0",
  "system_traits",
  "thiserror 2.0.18",
@@ -9400,6 +9400,12 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "shlex"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f70fe4c6ac787e57441913f82b210e668fb2033613bc7a76909cd8afce8bb1f"
 
 [[package]]
 name = "signal-hook"
