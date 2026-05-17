@@ -3,6 +3,7 @@
 
 mod crypto;
 mod derive_key;
+mod fallback_store;
 mod get_remote_caching_config;
 mod init;
 mod secret_key;

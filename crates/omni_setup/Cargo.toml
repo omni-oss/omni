@@ -30,8 +30,12 @@ rmp-serde = { workspace = true }
 tokio = { workspace = true }
 omni_file_data_serde = { workspace = true }
 system_traits = { workspace = true, features = ["memory-async", "memory-sync", "real-sync", "real-async-tokio"] }
-db-keystore = { workspace = true }
 bon = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true }
+dashmap = { workspace = true }
+time = { workspace = true }
+directories = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { workspace = true }
@@ -41,3 +45,8 @@ windows-native-keyring-store = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { workspace = true }
+linux-keyutils-keyring-store = { workspace = true }
+
+
+[dev-dependencies]
+fastrand = { workspace = true }
