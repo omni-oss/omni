@@ -145,10 +145,6 @@ function flattenMetadata(meta: Meta): string[] {
         metadatas.push(`language:${meta.language}`);
     }
 
-    if (meta.publish) {
-        metadatas.push(`publish:${meta.publish}`);
-    }
-
     return metadatas;
 }
 
