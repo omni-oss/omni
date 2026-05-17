@@ -171,6 +171,27 @@ jobs:
     name: Run Jobs
     runs-on: ${{ inputs.default-runner }}
     steps:
+      - name: Expose Secrets with ENV_ Prefix
+        shell: bash
+        env:
+          SECRETS_CONTEXT: ${{ toJSON(secrets) }}
+        run: |
+          # 1. Filter secrets starting with ENV_
+          echo "$SECRETS_CONTEXT" | jq -r 'to_entries[] | select(.key | startswith("ENV_")) | "\(.key)=\(.value)"' | while read -r line; do
+
+            # 2. Separate the original key and value
+            ORIG_KEY=$(echo "$line" | cut -d '=' -f 1)
+            VALUE=$(echo "$line" | cut -d '=' -f 2-)
+
+            # 3. Strip 'ENV_' from the beginning of the key
+            STRIPPED_KEY=${ORIG_KEY#ENV_}
+
+            echo "Exposing secret: $STRIPPED_KEY"
+
+            # 4. Write the clean key to the global environment file
+            echo "$STRIPPED_KEY=$VALUE" >> $GITHUB_ENV
+          done
+
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -241,6 +262,27 @@ jobs:
     env: ${{ matrix.env }}
 
     steps:
+      - name: Expose Secrets with ENV_ Prefix
+        shell: bash
+        env:
+          SECRETS_CONTEXT: ${{ toJSON(secrets) }}
+        run: |
+          # 1. Filter secrets starting with ENV_
+          echo "$SECRETS_CONTEXT" | jq -r 'to_entries[] | select(.key | startswith("ENV_")) | "\(.key)=\(.value)"' | while read -r line; do
+
+            # 2. Separate the original key and value
+            ORIG_KEY=$(echo "$line" | cut -d '=' -f 1)
+            VALUE=$(echo "$line" | cut -d '=' -f 2-)
+
+            # 3. Strip 'ENV_' from the beginning of the key
+            STRIPPED_KEY=${ORIG_KEY#ENV_}
+
+            echo "Exposing secret: $STRIPPED_KEY"
+
+            # 4. Write the clean key to the global environment file
+            echo "$STRIPPED_KEY=$VALUE" >> $GITHUB_ENV
+          done
+
       - name: Checkout repository
         uses: actions/checkout@v6
 

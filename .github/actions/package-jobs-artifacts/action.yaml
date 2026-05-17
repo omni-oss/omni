@@ -46,7 +46,7 @@ runs:
               ? process.env.OUTDIR
               : path.join(repoRoot, process.env.OUTDIR);
 
-          const createdZips = [];
+          let createdZips = [];
           await fs.promises.mkdir(outdir, { recursive: true });
 
           const getZipName = (artifact) => target
@@ -77,13 +77,14 @@ runs:
                       const files = await globber.glob();
 
                       if (files.length > 0) {
-                          const relativeFiles = files.map((f) => {
+                          // ensure unique
+                          const relativeFiles = [...new Set(files.map((f) => {
                               if (path.isAbsolute(f)) {
                                   return path.relative(cat.base, f);
                               } else {
                                   return f;
                               }
-                          });
+                          }))];
                           core.info(`Creating ${zipName} from files: \n${relativeFiles.join('\n')}`);
 
                           if (isWindows) {
@@ -106,6 +107,9 @@ runs:
                   }
               }
           }
+
+          // ensure no duplicate file names
+          createdZips = [...new Set(createdZips)];
 
           core.setOutput('artifacts', createdZips.join('\n'));
           core.setOutput('artifacts_count', createdZips.length.toString());
