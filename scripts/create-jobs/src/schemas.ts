@@ -73,7 +73,7 @@ const TaskSchema = z.object({
     task_name: z
         .string()
         .describe("The short name of the task (e.g., 'test', 'build')."),
-    task_command: z.string().describe("The command executed for the task."),
+    task_exec: z.string().describe("The command executed for the task."),
     project_name: z.string().describe("The name of the project."),
     project_dir: z
         .string()
