@@ -25,7 +25,7 @@ tasks:
         env:
           append: [RUST_TEST_ADDITIONAL_ARGS]
         files:
-          append: ["./tests/**/*.rs"]
+          append: ["./tests/**/*.rs", "@workspace/Cross.toml"]
 
   test:x86_64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-unknown-linux-gnu') }}"
@@ -124,7 +124,6 @@ tasks:
           append: ["./tests/**/*.rs"]
 
   test:
-    command: "echo 'test completed'"
     dependencies:
       - ^test
       - test:current
@@ -145,6 +144,9 @@ tasks:
         - "@workspace/target/aarch64-unknown-linux-gnu/release/{{ env.PROJECT_NAME }}"
     cache:
       key:
+        files:
+          append:
+            - "@workspace/Cross.toml"
         env:
           append: [RUST_BUILD_ADDITIONAL_ARGS]
 
@@ -228,7 +230,6 @@ tasks:
           append: [RUST_BUILD_ADDITIONAL_ARGS]
 
   build:
-    command: "echo 'build completed'"
     output:
       files:
         - "@workspace/target/release/{{ env.PROJECT_NAME }}"
