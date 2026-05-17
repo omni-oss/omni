@@ -390,6 +390,20 @@ include = [
 ]
 public_api = false
 
+[packages.omni_lockfile]
+path = "crates/omni_lockfile"
+include = [
+    "crates/omni_lockfile/**",
+]
+public_api = false
+
+[packages.omni_remote_source]
+path = "crates/omni_remote_source"
+include = [
+    "crates/omni_remote_source/**",
+]
+public_api = false
+
 [packages."@omni-oss/async-utils"]
 path = "packages/async-utils"
 include = ["packages/async-utils/**"]

@@ -7158,7 +7158,7 @@ dependencies = [
 
 [[package]]
 name = "omni_lockfile"
-version = "0.13.0"
+version = "0.0.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7350,7 +7350,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_source"
-version = "0.13.0"
+version = "0.0.0"
 dependencies = [
  "bon",
  "derive-new",
