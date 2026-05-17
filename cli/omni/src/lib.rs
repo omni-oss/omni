@@ -144,7 +144,7 @@ pub async fn main() -> eyre::Result<()> {
         trace::trace!(?tracing_config, "tracing_initialized");
     }
 
-    omni_setup::initialize()?;
+    omni_setup::initialize(omni_setup::InitConfig::builder().build())?;
     defer! {
         let res = omni_setup::deinitialize();
 

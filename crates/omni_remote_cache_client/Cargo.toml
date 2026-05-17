@@ -25,6 +25,9 @@ tokio = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 reqwest = { workspace = true }
+tower = { workspace = true }
+reqwest-middleware = { workspace = true }
+reqwest-tracing = { workspace = true }
 
 [dev-dependencies]
 ntest = { workspace = true }

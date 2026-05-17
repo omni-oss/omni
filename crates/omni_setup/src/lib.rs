@@ -1,4 +1,5 @@
 #![feature(decl_macro)]
+#![feature(try_blocks)]
 
 mod crypto;
 mod derive_key;

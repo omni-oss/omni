@@ -3,8 +3,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use derive_new::new;
-use http::{StatusCode, header};
-use reqwest::{Client, redirect::Policy};
+use http::{Extensions, StatusCode, header};
+use reqwest::{Client, Request, Response, redirect::Policy};
+use reqwest_middleware::{
+    ClientBuilder, ClientWithMiddleware, Middleware, Next,
+};
+use reqwest_tracing::TracingMiddleware;
 
 use crate::{
     RemoteAccessArgs, RemoteCacheClient, RemoteCacheClientError,
@@ -13,18 +17,59 @@ use crate::{
 
 #[derive(Debug, Clone, new)]
 pub struct DefaultRemoteCacheClient {
-    client: Client,
+    client: ClientWithMiddleware,
 }
 
 impl Default for DefaultRemoteCacheClient {
     fn default() -> Self {
         Self {
-            client: Client::builder()
-                .redirect(Policy::default())
-                .connect_timeout(Duration::from_secs(30))
-                .build()
-                .expect("must be able to build Client"),
+            client: ClientBuilder::new(
+                Client::builder()
+                    .redirect(Policy::default())
+                    .connect_timeout(Duration::from_secs(30))
+                    .build()
+                    .expect("must be able to build Client"),
+            )
+            .with(TracingMiddleware::default())
+            .with(LogRequestMiddleware)
+            .build(),
         }
+    }
+}
+
+struct LogRequestMiddleware;
+
+#[async_trait]
+impl Middleware for LogRequestMiddleware {
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    async fn handle(
+        &self,
+        req: Request,
+        extensions: &mut Extensions,
+        next: Next<'_>,
+    ) -> reqwest_middleware::Result<Response> {
+        log::trace!(
+            "Request: {:?}\n{} {}\nHeaders:\n{:#?}\n",
+            req.version(),
+            req.method(),
+            req.url(),
+            req.headers(),
+        );
+
+        let res = next.run(req, extensions).await.inspect_err(|e| {
+            trace::error!(error = %e, "response_error");
+        })?;
+
+        log::trace!(
+            "Response: {:?}\n{} {}\nHeaders:\n{:#?}\nContent Length: {:?}\n",
+            res.version(),
+            res.status(),
+            res.url(),
+            res.headers(),
+            res.content_length(),
+        );
+
+        Ok(res)
     }
 }
 
