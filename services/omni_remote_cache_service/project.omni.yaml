@@ -16,7 +16,7 @@ tasks:
       is_publish_task: true
 
   prod:
-    command: >
+    exec: >
       ${WORKSPACE_DIR}/target/release/omni_remote_cache_service
       serve
       -b

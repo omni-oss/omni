@@ -6,7 +6,7 @@ extends:
 
 tasks:
   publish:
-    command: bun publish --tolerate-republish
+    exec: bun publish --tolerate-republish
     dependencies:
       - build
       - ^publish

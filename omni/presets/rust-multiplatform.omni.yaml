@@ -13,7 +13,7 @@ cache:
 tasks:
   test:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cross test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cross test --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:aarch64-unknown-linux-gnu
     env:
@@ -29,7 +29,7 @@ tasks:
 
   test:x86_64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-unknown-linux-gnu') }}"
-    command: cargo test --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:x86_64-unknown-linux-gnu
     env:
@@ -45,7 +45,7 @@ tasks:
 
   test:x86_64-apple-darwin:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-apple-darwin') }}"
-    command: cargo test --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:x86_64-apple-darwin
     env:
@@ -61,7 +61,7 @@ tasks:
 
   test:aarch64-apple-darwin:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-apple-darwin') }}"
-    command: cargo test --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:aarch64-apple-darwin
     env:
@@ -77,7 +77,7 @@ tasks:
 
   test:x86_64-pc-windows-msvc:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-pc-windows-msvc') }}"
-    command: cargo test --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:x86_64-pc-windows-msvc
     env:
@@ -93,7 +93,7 @@ tasks:
 
   test:aarch64-pc-windows-msvc:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-pc-windows-msvc') }}"
-    command: cargo test --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:aarch64-pc-windows-msvc
     env:
@@ -109,7 +109,7 @@ tasks:
 
   test:current:
     enabled: "{{ not env.RUST_TARGET or env.RUST_TARGET == '' }}"
-    command: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test:current
     env:
@@ -136,7 +136,7 @@ tasks:
 
   build:aarch64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-unknown-linux-gnu') }}"
-    command: cross build --release --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cross build --release --target aarch64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-unknown-linux-gnu
     output:
@@ -152,7 +152,7 @@ tasks:
 
   build:x86_64-unknown-linux-gnu:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-unknown-linux-gnu') }}"
-    command: cargo build --release --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release --target x86_64-unknown-linux-gnu -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-unknown-linux-gnu
     output:
@@ -165,7 +165,7 @@ tasks:
 
   build:x86_64-apple-darwin:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-apple-darwin') }}"
-    command: cargo build --release --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release --target x86_64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-apple-darwin
     output:
@@ -178,7 +178,7 @@ tasks:
 
   build:aarch64-apple-darwin:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-apple-darwin') }}"
-    command: cargo build --release --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release --target aarch64-apple-darwin -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-apple-darwin
     output:
@@ -191,7 +191,7 @@ tasks:
 
   build:x86_64-pc-windows-msvc:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('x86_64-pc-windows-msvc') }}"
-    command: cargo build --release --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release --target x86_64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:x86_64-pc-windows-msvc
     output:
@@ -204,7 +204,7 @@ tasks:
 
   build:aarch64-pc-windows-msvc:
     enabled: "{{ env.RUST_TARGET and env.RUST_TARGET is containing('aarch64-pc-windows-msvc') }}"
-    command: cargo build --release --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release --target aarch64-pc-windows-msvc -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:aarch64-pc-windows-msvc
     output:
@@ -217,7 +217,7 @@ tasks:
 
   build:current:
     enabled: "{{ not env.RUST_TARGET or env.RUST_TARGET == '' }}"
-    command: cargo build --release -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --release -p ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     dependencies:
       - ^build:current
     output:

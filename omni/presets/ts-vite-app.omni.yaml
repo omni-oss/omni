@@ -7,7 +7,7 @@ extends:
 
 tasks:
   dev:
-    command: vite dev
+    exec: vite dev
     persistent: true
     cache:
       enabled: false

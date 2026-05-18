@@ -6,7 +6,7 @@ extends:
 
 tasks:
   test:unit:
-    command: bun x vitest --config ./vitest.config.unit.ts run
+    exec: bun x vitest --config ./vitest.config.unit.ts run
     cache:
       key:
         files:
@@ -15,7 +15,7 @@ tasks:
             - "./vitest.config.unit.ts"
 
   test:integration:
-    command: bun run vitest --config ./vitest.config.integration.ts run
+    exec: bun run vitest --config ./vitest.config.integration.ts run
     cache:
       key:
         files:
@@ -24,7 +24,7 @@ tasks:
             - "./vitest.config.integration.ts"
 
   build:
-    command: bun x vite build
+    exec: bun x vite build
     cache:
       key:
         files:

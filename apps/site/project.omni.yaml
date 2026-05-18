@@ -22,7 +22,7 @@ tasks:
     enabled: false
 
   gen:declspec:
-    command: bun run gen:declspec
+    exec: bun run gen:declspec
     output:
       files:
         - ./omni-declspec.json
@@ -37,7 +37,7 @@ tasks:
 
     dependencies:
       - gen:declspec
-    command: bun run gen:refdocs
+    exec: bun run gen:refdocs
     output:
       files:
         - content/docs/references/**/*

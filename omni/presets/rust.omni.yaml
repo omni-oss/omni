@@ -12,7 +12,7 @@ extends:
 
 tasks:
   test:
-    command: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
+    exec: cargo test -p ${PROJECT_NAME} ${RUST_TEST_ADDITIONAL_ARGS:-}
     dependencies:
       - ^test
     env:
@@ -29,7 +29,7 @@ tasks:
           append: ["./tests/**/*.rs"]
 
   bench:
-    command: cargo bench -p ${PROJECT_NAME} ${RUST_BENCH_ADDITIONAL_ARGS:-}
+    exec: cargo bench -p ${PROJECT_NAME} ${RUST_BENCH_ADDITIONAL_ARGS:-}
     dependencies:
       - test
       - ^bench
@@ -39,7 +39,7 @@ tasks:
           append: ["./benches/**/*.rs"]
 
   profile:
-    command: >
+    exec: >
       cargo flamegraph
         --profile=${profile:-bench-with-debug}
         --bench ${bench:-${PROJECT_NAME}_benchmarks}

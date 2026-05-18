@@ -6,7 +6,7 @@ extends:
 
 tasks:
   dev:
-    command: bun run dev
+    exec: bun run dev
     persistent: true
 
 meta:

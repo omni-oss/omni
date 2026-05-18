@@ -11,10 +11,10 @@ cache:
 
 tasks:
   test:unit:
-    command: bun run test:unit
+    exec: bun run test:unit
 
   test:integration:
-    command: bun run test:integration
+    exec: bun run test:integration
     dependencies:
       - test:unit
 
@@ -25,7 +25,7 @@ tasks:
       - test:integration
 
   build:
-    command: bun run build
+    exec: bun run build
     dependencies:
       - test
       - ^build

@@ -2,6 +2,6 @@ name: project-2
 
 tasks:
   list:
-    command: ls -la
+    exec: ls -la
 
   build: echo "build"
