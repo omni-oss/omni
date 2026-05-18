@@ -119,6 +119,7 @@ jobs:
       - plan
     if: ${{ needs.plan.outputs.jobs_test_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_rust }}
       cache-key-prefix: test_rust
@@ -133,6 +134,7 @@ jobs:
       - test-rust
     if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_test_typescript }}
       cache-key-prefix: test_typescript
@@ -147,6 +149,7 @@ jobs:
       - plan
     if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_rust }}
       cache-key-prefix: build_rust
@@ -162,6 +165,7 @@ jobs:
       - test-typescript
     if: ${{ needs.plan.outputs.jobs_build_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_build_typescript }}
       cache-key-prefix: build_typescript
@@ -178,6 +182,7 @@ jobs:
       - build-typescript
     if: ${{ needs.plan.outputs.jobs_publish_generic_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_generic }}
       cache-key-prefix: publish_generic
@@ -190,20 +195,20 @@ jobs:
         test_rust
         test_typescript
 
-  # publish-npm:
-  #   needs:
-  #     - plan
-  #     - build-typescript
-  #   if: ${{ needs.plan.outputs.jobs_publish_npm_count > 0 && startsWith(github.ref, 'refs/tags/') }}
-  #   uses: ./.github/workflows/run-omni-jobs.yaml
-  #   secrets: inherit
-  #   with:
-  #     jobs: ${{ needs.plan.outputs.jobs_publish_npm }}
-  #     cache-key-prefix: publish_npm
-  #     cache-restore-key-prefixes: |
-  #       publish_npm
-  #       build_rust
-  #       build_typescript
+  publish-npm:
+    needs:
+      - plan
+      - build-typescript
+    if: ${{ needs.plan.outputs.jobs_publish_npm_count > 0 && startsWith(github.ref, 'refs/tags/') }}
+    uses: ./.github/workflows/run-omni-jobs.yaml
+    secrets: inherit
+    with:
+      jobs: ${{ needs.plan.outputs.jobs_publish_npm }}
+      cache-key-prefix: publish_npm
+      cache-restore-key-prefixes: |
+        publish_npm
+        build_rust
+        build_typescript
 
   publish-rust-github:
     needs:
@@ -214,6 +219,7 @@ jobs:
     permissions:
       actions: read
       contents: write
+    secrets: inherit
     with:
       jobs: ${{ needs.plan.outputs.jobs_publish_rust_github }}
       artifacts_pattern: build-rust-*
@@ -225,6 +231,7 @@ jobs:
       - publish-rust-github
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-json-schemas.yaml
+    secrets: inherit
     permissions:
       actions: read
       contents: write
