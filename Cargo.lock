@@ -2809,7 +2809,7 @@ dependencies = [
 
 [[package]]
 name = "dir_walker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "derive-new",
@@ -6251,7 +6251,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6275,7 +6275,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cache"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6316,7 +6316,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6399,7 +6399,7 @@ dependencies = [
 
 [[package]]
 name = "omni_collector"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bs58",
  "derive-new",
@@ -6457,7 +6457,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -6493,7 +6493,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6541,7 +6541,7 @@ dependencies = [
 
 [[package]]
 name = "omni_core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -6593,7 +6593,7 @@ dependencies = [
 
 [[package]]
 name = "omni_execution_plan"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ahash 0.8.12",
  "bs58",
@@ -6656,7 +6656,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "derive-new",
@@ -6696,7 +6696,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator_configurations"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -6729,7 +6729,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -6777,7 +6777,7 @@ dependencies = [
 
 [[package]]
 name = "omni_lockfile"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -6838,7 +6838,7 @@ dependencies = [
 
 [[package]]
 name = "omni_prompt"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "derive-new",
  "either",
@@ -6865,7 +6865,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_cache_client"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "bytes 1.11.1",
@@ -6892,7 +6892,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_cache_service"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -6969,7 +6969,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_source"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "bon",
  "derive-new",
@@ -7022,7 +7022,7 @@ dependencies = [
 
 [[package]]
 name = "omni_setup"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "apple-native-keyring-store",
  "base64",
@@ -7080,7 +7080,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -7129,7 +7129,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tera"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "cruet",
  "derive-new",
@@ -7176,7 +7176,7 @@ dependencies = [
 
 [[package]]
 name = "omni_test_utils"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bs58",
  "config_utils",
@@ -7194,7 +7194,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tracing_subscriber"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "atty",
  "derive-new",

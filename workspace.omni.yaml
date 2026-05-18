@@ -12,4 +12,5 @@ projects:
   - tests/**
 
 generators:
-  - generators/**
+  - source: local
+    path: generators/**
