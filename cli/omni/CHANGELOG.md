@@ -2,6 +2,33 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.14.0 - 2026-05-18
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+- update init command to require primary generator config - (a035443) - Clarence Manuel
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Bug Fixes
+- swap db-keystore with internal fallback implementation - (f9bb15b) - Clarence Manuel
+- add keyring fallback to platforms without pre-installed dependencies - (4c85102) - Clarence Manuel
+- tera error due to name mismatch - (b004de8) - Clarence Manuel
+- ignore not found io errors - (7e78bd4) - Clarence Manuel
+- improve trace formatting - (0d468d8) - Clarence Manuel
+- rename command to exec - (7384f6e) - Clarence Manuel
+#### Continuous Integration
+- add new projects to cog.toml - (f469997) - Clarence Manuel
+#### Refactoring
+- swap git2 with gix - (80758d4) - Clarence Manuel
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- fix flaky tests - (8717b2f) - Clarence Manuel
+- add vendored-opennssl feature to omni binary crate - (2d2bead) - Clarence Manuel
+- fix compile errors - (7979672) - Clarence Manuel
+- fix omni_setup compilation error - (e046ebd) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni-v0.13.0 - 2026-03-21
 #### Features
 - implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel

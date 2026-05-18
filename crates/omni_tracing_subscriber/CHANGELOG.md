@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tracing_subscriber-v0.1.1 - 2026-05-18
+#### Bug Fixes
+- improve trace formatting - (0d468d8) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_tracing_subscriber-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_task_executor**) utilize omni_tracing_subscriber ad-hoc writer for TUI mode - (413a3f1) - Clarence Manuel

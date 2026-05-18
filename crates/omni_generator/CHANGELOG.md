@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.7.0 - 2026-05-18
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+- update init command to require primary generator config - (a035443) - Clarence Manuel
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Bug Fixes
+- tera error due to name mismatch - (b004de8) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.6.0 - 2026-03-21
 #### Features
 - implement --use-defaults flag for generator - (57e8255) - Clarence Manuel

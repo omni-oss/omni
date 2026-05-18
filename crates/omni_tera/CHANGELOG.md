@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.5.0 - 2026-05-18
+#### Features
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Bug Fixes
+- tera error due to name mismatch - (b004de8) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.4.0 - 2026-02-16
 #### Features
 - (**omni_tera**) add more inflection tera filterss - (d306802) - Clarence Manuel

@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_service-v0.1.2 - 2026-05-18
+#### Bug Fixes
+- improve trace formatting - (0d468d8) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_service-v0.1.1 - 2026-02-12
 #### Bug Fixes
 - (**omni_remote_cache_service**) openapi server url - (9ac06e2) - Clarence Manuel

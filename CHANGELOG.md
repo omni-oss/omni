@@ -2,6 +2,72 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.0 - 2026-05-18
+### Package updates
+- omni_remote_source bumped to omni_remote_source-v0.1.0
+- omni bumped to omni-v0.14.0
+- omni_cli_core bumped to omni_cli_core-v0.14.0
+- omni_setup bumped to omni_setup-v0.1.1
+- omni_task_executor bumped to omni_task_executor-v0.8.1
+- omni_prompt bumped to omni_prompt-v0.4.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.7.0
+- omni_tera bumped to omni_tera-v0.5.0
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.10
+- omni_collector bumped to omni_collector-v0.3.1
+- omni_tracing_subscriber bumped to omni_tracing_subscriber-v0.1.1
+- dir_walker bumped to dir_walker-v0.1.1
+- omni_lockfile bumped to omni_lockfile-v0.1.0
+- omni_execution_plan bumped to omni_execution_plan-v0.4.1
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.1.2
+- omni_test_utils bumped to omni_test_utils-v0.4.0
+- omni_core bumped to omni_core-v0.3.1
+- omni_cache bumped to omni_cache-v0.5.1
+- omni_configurations bumped to omni_configurations-v0.8.0
+- omni_context bumped to omni_context-v0.3.1
+- omni_generator bumped to omni_generator-v0.7.0
+- omni_remote_cache_client bumped to omni_remote_cache_client-v0.2.1
+- root bumped to root-v0.9.0
+### Global changes
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Bug Fixes
+- swap db-keystore with internal fallback implementation - (f9bb15b) - Clarence Manuel
+- remove unused field - (261c88e) - Clarence Manuel
+- add keyring fallback to platforms without pre-installed dependencies - (4c85102) - Clarence Manuel
+- ignore not found io errors - (7e78bd4) - Clarence Manuel
+- runtime error due to running multiple tokio runtimes - (d9258e3) - Clarence Manuel
+#### Continuous Integration
+- temporary disable publish npm [skip ci] - (01728f3) - Clarence Manuel
+- update github actions - (cfe880b) - Clarence Manuel
+- update github actions - (ab57cb1) - Clarence Manuel
+- add new projects to cog.toml - (f469997) - Clarence Manuel
+- add MSVC dependencies - (f6e0b80) - Clarence Manuel
+- update main ci workflow [skip ci] - (b58b696) - Clarence Manuel
+- update publish json schemas workflow [skip ci] - (99225f2) - Clarence Manuel
+- update setup-omni version [skip ci] - (2aea308) - Clarence Manuel
+#### Refactoring
+- swap git2 with gix - (80758d4) - Clarence Manuel
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/site**) fix paths - (8b95f82) - Clarence Manuel
+- update rust dependency versions - (544bf14) - Clarence Manuel
+- customize Cross configuration for aarch64-unknown-linux-gnu - (833978b) - Clarence Manuel
+- add node, bun, deno types to tsconfig - (dab875e) - Clarence Manuel
+- update rust-multiplatform preset - (de02b52) - Clarence Manuel
+- update rust-multiplatform preset - (4fe317b) - Clarence Manuel
+- update test tsconfig - (419b14f) - Clarence Manuel
+- fix compile errors - (7979672) - Clarence Manuel
+- fix omni_setup compilation error - (e046ebd) - Clarence Manuel
+- remove deprecated typescript config flags - (9cd3b55) - Clarence Manuel
+- update node dependencies - (2ec398f) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update rust toolchain - (8afe9a6) - Clarence Manuel
+- update rust toolchain - (8799999) - Clarence Manuel
+
+- - -
+
 ## v0.13.0 - 2026-03-21
 ### Package updates
 - omni_task_executor bumped to omni_task_executor-v0.8.0

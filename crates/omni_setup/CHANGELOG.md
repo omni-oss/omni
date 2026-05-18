@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_setup-v0.1.1 - 2026-05-18
+#### Bug Fixes
+- swap db-keystore with internal fallback implementation - (f9bb15b) - Clarence Manuel
+- add keyring fallback to platforms without pre-installed dependencies - (4c85102) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- fix flaky tests - (8717b2f) - Clarence Manuel
+- fix compile errors - (7979672) - Clarence Manuel
+- fix omni_setup compilation error - (e046ebd) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update dependencies - (cbdbb59) - Clarence Manuel
+
+- - -
+
 ## omni_setup-v0.1.0 - 2026-01-31
 #### Features
 - secure storage for remote cache config - (9d9317b) - Clarence Manuel

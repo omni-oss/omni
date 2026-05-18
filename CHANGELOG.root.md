@@ -2,6 +2,32 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.9.0 - 2026-05-18
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Bug Fixes
+- swap db-keystore with internal fallback implementation - (f9bb15b) - Clarence Manuel
+- add keyring fallback to platforms without pre-installed dependencies - (4c85102) - Clarence Manuel
+- ignore not found io errors - (7e78bd4) - Clarence Manuel
+- runtime error due to running multiple tokio runtimes - (d9258e3) - Clarence Manuel
+#### Continuous Integration
+- add new projects to cog.toml - (f469997) - Clarence Manuel
+#### Refactoring
+- swap git2 with gix - (80758d4) - Clarence Manuel
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+- utilize new rust dependency APIs - (5191bfb) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust dependency versions - (544bf14) - Clarence Manuel
+- fix compile errors - (7979672) - Clarence Manuel
+- fix omni_setup compilation error - (e046ebd) - Clarence Manuel
+- update node dependencies - (2ec398f) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update rust toolchain - (8afe9a6) - Clarence Manuel
+- update rust toolchain - (8799999) - Clarence Manuel
+
+- - -
+
 ## root-v0.8.0 - 2026-03-21
 #### Features
 - implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel

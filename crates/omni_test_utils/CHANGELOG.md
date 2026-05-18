@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_test_utils-v0.4.0 - 2026-05-18
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+#### Bug Fixes
+- rename command to exec - (7384f6e) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_test_utils-v0.3.0 - 2026-03-21
 #### Features
 - implement retry_command - (d2f1b3a) - Clarence Manuel

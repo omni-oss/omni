@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.10 - 2026-05-18
+#### Bug Fixes
+- schema mismatch - (e9162ab) - Clarence Manuel
+- error due to incorrect field name - (e713001) - Clarence Manuel
+#### Miscellaneous Chores
+- add node, bun, deno types to tsconfig - (dab875e) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update vite configs - (e326f27) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.9 - 2026-02-14
 #### Bug Fixes
 - (**@omni-oss/create-jobs**) improve artifact name escaping - (4eb9d91) - Clarence Manuel

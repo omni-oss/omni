@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.7.0 - 2026-05-18
+#### Features
+- support remote git generator sources - (c83d835) - Clarence Manuel
+- implement init subcommand - (ba0e005) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.6.0 - 2026-03-21
 #### Features
 - implement retry_command - (d2f1b3a) - Clarence Manuel

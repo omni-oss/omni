@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.8.1 - 2026-05-18
+#### Bug Fixes
+- rename command to exec - (7384f6e) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.8.0 - 2026-03-21
 #### Features
 - implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel
