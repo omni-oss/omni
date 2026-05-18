@@ -1,26 +1,24 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Once};
+use std::sync::{Arc, LazyLock};
 
 use dashmap::DashMap;
+use keyring_core::api::CredentialStoreApi as _;
 use uuid::Uuid;
 
 use super::credential::{CredId, CredKey};
 use super::store::{CredValue, Store};
-use keyring_core::{
-    CredentialStore, Entry, Error, api::CredentialPersistence,
-    get_default_store,
-};
+use keyring_core::{CredentialStore, Entry, Error, api::CredentialPersistence};
 
-static SET_STORE: Once = Once::new();
+static GLOBAL_STORE: LazyLock<Arc<Store>> =
+    LazyLock::new(|| Store::new().unwrap());
 
-fn usually_goes_in_main() {
-    keyring_core::set_default_store(Store::new().unwrap());
+fn get_store() -> &'static Store {
+    &GLOBAL_STORE
 }
 
 #[test]
 fn test_store_methods() {
-    SET_STORE.call_once(usually_goes_in_main);
-    let store = get_default_store().unwrap();
+    let store = get_store();
     let vendor1 = store.vendor();
     let id1 = store.id();
     let vendor2 = store.vendor();
@@ -35,8 +33,7 @@ fn test_store_methods() {
 }
 
 fn entry_new(service: &str, user: &str) -> Entry {
-    SET_STORE.call_once(usually_goes_in_main);
-    Entry::new(service, user).unwrap_or_else(|err| {
+    get_store().build(service, user, None).unwrap_or_else(|err| {
         panic!(
             "Couldn't create entry (service: {service}, user: {user}): {err:?}"
         )
@@ -48,8 +45,7 @@ fn entry_new_with_modifiers(
     user: &str,
     mods: &HashMap<&str, &str>,
 ) -> Entry {
-    SET_STORE.call_once(usually_goes_in_main);
-    Entry::new_with_modifiers(service, user, mods).unwrap_or_else(|err| {
+    get_store().build(service, user, Some(mods)).unwrap_or_else(|err| {
         panic!(
             "Couldn't create entry (service: {service}, user: {user}): {err:?}"
         )

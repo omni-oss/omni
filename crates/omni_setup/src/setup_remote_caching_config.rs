@@ -69,7 +69,12 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
 
     if encrypt {
         let (service, user) = get_service_and_user(None, Some(user))?;
-        let secret_key = get_secret_key(&service, &user)?;
+        let secret_key = get_secret_key(
+            &service,
+            &user,
+            keyring_core::get_default_store()
+                .expect("default store is not set"),
+        )?;
         let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
         let derived_key = derive_key_from_seed(&secret_key, salt.as_bytes());
 

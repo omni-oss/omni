@@ -24,7 +24,12 @@ pub async fn get_remote_caching_config_async(
         let file = sys.fs_read_async(remote_config_path).await?;
 
         let (service, user) = get_service_and_user(None, Some(user))?;
-        let key = get_secret_key(&service, &user)?;
+        let key = get_secret_key(
+            &service,
+            &user,
+            keyring_core::get_default_store()
+                .expect("default store is not set"),
+        )?;
         let decrypted = crypto::decrypt(&file[..], key.as_bytes())?;
 
         rmp_serde::from_read(&decrypted[..])?
@@ -44,7 +49,12 @@ pub fn get_remote_caching_config(
     let remote_config: RemoteCacheConfiguration = if decrypt {
         let file = sys.fs_read(remote_config_path)?;
         let (service, user) = get_service_and_user(None, Some(user))?;
-        let key = get_secret_key(&service, &user)?;
+        let key = get_secret_key(
+            &service,
+            &user,
+            keyring_core::get_default_store()
+                .expect("default store is not set"),
+        )?;
         let salt = env!("OMNI_SECRET_SALT", "remote-cache")?;
         let derived_key = derive_key_from_seed(&key, salt.as_bytes());
         let decrypted = crypto::decrypt(&file[..], &derived_key[..])?;

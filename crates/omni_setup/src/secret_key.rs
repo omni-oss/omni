@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use base64::Engine;
 use derive_new::new;
-use keyring_core::Entry;
+use keyring_core::api::CredentialStoreApi;
 use rand::Rng;
 use ring::digest;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
@@ -8,6 +10,7 @@ use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 pub fn get_secret_key(
     service: &str,
     user: &str,
+    store: Arc<dyn CredentialStoreApi>,
 ) -> Result<String, SecretKeyError> {
     let service = if service.is_empty() {
         "omni-remote-cache-client"
@@ -22,7 +25,7 @@ pub fn get_secret_key(
     let user = digest::digest(&digest::SHA256, user.as_bytes());
     let user = base64::engine::general_purpose::STANDARD.encode(user.as_ref());
 
-    let entry = Entry::new(&service, &user)?;
+    let entry = store.build(&service, &user, None)?;
 
     let entry_result = entry.get_password();
 
@@ -88,25 +91,11 @@ mod tests {
 
     use super::*;
 
-    fn with_mock_keyring_store<T>(test: impl FnOnce() -> T) -> T {
-        keyring_core::set_default_store(
-            mock::Store::new().expect("failed to create mock keyring store"),
-        );
-
-        let result = test();
-
-        keyring_core::unset_default_store()
-            .expect("should be able to unset keyring store");
-
-        result
-    }
-
     #[test]
     fn test_get_secret_key() {
-        with_mock_keyring_store(|| {
-            let key = get_secret_key("test-service", "test-user")
-                .expect("can't get secret key");
-            assert!(!key.is_empty(), "key should not be empty");
-        });
+        let mock = mock::Store::new().unwrap();
+        let key = get_secret_key("test-service", "test-user", mock)
+            .expect("can't get secret key");
+        assert!(!key.is_empty(), "key should not be empty");
     }
 }
