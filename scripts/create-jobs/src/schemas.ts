@@ -75,7 +75,7 @@ const TaskSchema = z.object({
         .describe("The short name of the task (e.g., 'test', 'build')."),
     task_exec: z
         .string()
-        .nullable()
+        .nullish()
         .describe("The command executed for the task."),
     project_name: z.string().describe("The name of the project."),
     project_dir: z
