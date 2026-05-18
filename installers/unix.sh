@@ -81,8 +81,10 @@ else
 fi
 
 # Check if omni is already installed and matches the target version
-if [ -f "$HOME/.omni/bin/omni" ]; then
-    INSTALLED_VERSION=$("$HOME/.omni/bin/omni" --version | cut -d' ' -f2)
+OMNI_BIN_DIR="$HOME/.omni/bin"
+OMNI_BIN="$OMNI_BIN_DIR/omni"
+if [ -f $OMNI_BIN ]; then
+    INSTALLED_VERSION=$($OMNI_BIN --version | cut -d' ' -f2)
     echo "Found installed version: v$INSTALLED_VERSION"
 
     if [ "$TO_INSTALL_VERSION" = "v$INSTALLED_VERSION" ]; then
@@ -98,14 +100,18 @@ fi
 echo "Downloading omni $TO_INSTALL_VERSION..."
 
 DOWNLOAD_URL="https://github.com/$OWNER/$REPO/releases/download/omni-$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
-mkdir -p "$HOME/.omni/bin"
+mkdir -p $OMNI_BIN_DIR
 
 FILENAME="omni-$TO_INSTALL_VERSION-$TARGET.zip"
+
+TMP="$HOME/.omni/.tmp"
+
+mkdir -p $TMP
 
 # Retry function for downloads
 i=1
 while [ $i -le 3 ]; do
-    if curl -L -o "$HOME/.omni/bin/$FILENAME" "$DOWNLOAD_URL"; then
+    if curl -L -o "$TMP/$FILENAME" "$DOWNLOAD_URL"; then
         break
     fi
     echo "Attempt ${i}: Download failed. Retrying in 2 seconds..."
@@ -114,14 +120,48 @@ while [ $i -le 3 ]; do
 done
 
 # Final validation of download
-if [ ! -f "$HOME/.omni/bin/$FILENAME" ]; then
+if [ ! -f "$TMP/$FILENAME" ]; then
     echo "❌ Failed to download file after 3 attempts: $DOWNLOAD_URL"
     exit 1
 fi
 
-unzip -o "$HOME/.omni/bin/$FILENAME" -d "$HOME/.omni/bin"
-chmod +x "$HOME/.omni/bin/omni"
-rm "$HOME/.omni/bin/$FILENAME"
+EXTRACTED_PATH="$TMP/extracted"
+unzip -o "$TMP/$FILENAME" -d "$EXTRACTED_PATH"
+
+longest_path=""
+longest_len=0
+
+# Use find to locate all files named 'omni'
+# We use a while loop to read paths safely line-by-line
+find $EXTRACTED_PATH -type f -name omni | while read -r file; do
+    # Count characters in the path using wc
+    current_len=$(echo "$file" | wc -c)
+
+    # Check if this path is longer than the current maximum
+    if [ "$current_len" -gt "$longest_len" ]; then
+        longest_len=$current_len
+        longest_path=$file
+
+        # Write the current winner to a temporary file because
+        # changes inside a while-pipe loop are lost to the parent shell
+        echo "$longest_path" > /tmp/omni_longest_path.tmp
+    fi
+done
+
+# Read the result from the temporary file
+if [ -f /tmp/omni_longest_path.tmp ]; then
+    final_path=$(cat /tmp/omni_longest_path.tmp)
+    rm /tmp/omni_longest_path.tmp
+
+    echo "Found longest path: $final_path"
+    echo "Copying to $OMNI_BIN_DIR..."
+    cp "$final_path" "$OMNI_BIN_DIR/"
+else
+    echo "No files matching 'omni' were found."
+fi
+
+chmod +x $OMNI_BIN
+rm -rf "$TMP"
 
 # Setup PATH env
 if [ -n "${ZSH_VERSION:-}" ] || [ -n "${BASH_VERSION:-}" ]; then

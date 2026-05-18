@@ -29,7 +29,24 @@ $env:TARGET = $TARGET
 
 Write-Host "Target: $env:TARGET"
 
-$BinDir = "$HOME\AppData\Local\omni\bin"
+if ($IsWindows -or $env:OS -eq "Windows_NT") {
+    $OmniDir = "$HOME\AppData\Local\omni"
+} elseif ($IsLinux -or $IsMacOs) {
+    $OmniDir = Join-Path $Home ".omni"
+} else {
+    throw "Unsupported OS $env:OS"
+}
+
+Write-Output "Install Dir: $OmniDir"
+
+$TmpDir = Join-Path $OmniDir ".tmp"
+$ExtractedDir = Join-Path $TmpDir "extracted"
+$BinDir = Join-Path $OmniDir "bin"
+
+$OmniDir, $TmpDir, $ExtractedDir, $BinDir | ForEach-Object {
+    New-Item -ItemType Directory -Path $_ -Force | Out-Null
+}
+
 $OmniPath = Join-Path $BinDir "omni.exe"
 $UpdateUrl = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 
@@ -99,9 +116,9 @@ if (Test-Path $OmniPath) {
 
 Write-Output "Downloading omni $TO_INSTALL_VERSION..."
 
-$DOWNLOAD_URL = "https://github.com/$OWNER/$REPO/releases/download/omni-$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
-$FILENAME = "omni-$TO_INSTALL_VERSION-$TARGET.zip"
-$ZipFile = Join-Path $BinDir $FILENAME
+$DownloadUrl = "https://github.com/$OWNER/$REPO/releases/download/omni-$TO_INSTALL_VERSION/omni-$TO_INSTALL_VERSION-$TARGET.zip"
+$FileName = "omni-$TO_INSTALL_VERSION-$TARGET.zip"
+$ZipFile = Join-Path $TmpDir $FileName
 
 # Ensure directory exists
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -127,11 +144,34 @@ function Invoke-Download {
     throw "Failed to download file after $Retries attempts: $Uri"
 }
 
-Invoke-Download -Uri $DOWNLOAD_URL -OutFile $ZipFile
+Invoke-Download -Uri $DownloadUrl -OutFile $ZipFile
 
 # Extract zip
-Expand-Archive -Path $ZipFile -DestinationPath $BinDir -Force
-Remove-Item $ZipFile
+Expand-Archive -Path $ZipFile -DestinationPath $ExtractedDir -Force
+
+# Ensure the destination folder exists
+if (-not (Test-Path -Path $ExtractedDir)) {
+    New-Item -ItemType Directory -Path $ExtractedDir -Force | Out-Null
+}
+
+# 1. Get all files named 'omni.exe' recursively
+# 2. Filter out directories (ensuring it is a file)
+# 3. Sort by the length of the FullName (path string) in descending order
+# 4. Select the very first one (the longest)
+$LongestFile = Get-ChildItem -Path $ExtractedDir -Filter "omni.exe" -Recurse -File -ErrorAction SilentlyContinue |
+    Sort-Object { $_.FullName.Length } -Descending |
+    Select-Object -First 1
+
+# Copy the file if a match was found
+if ($LongestFile) {
+    Write-Host "Found longest path ($($LongestFile.FullName.Length) chars): $($LongestFile.FullName)"
+    Write-Host "Copying to $BinDir..."
+    Copy-Item -Path $LongestFile.FullName -Destination $BinDir -Force
+} else {
+    throw "No files matching 'omni.exe' were found."
+}
+
+Remove-Item -Path $TmpDir -Recurse -Force
 
 # Add to PATH (User environment variable)
 $CurrentPath = [Environment]::GetEnvironmentVariable("Path", "User")
