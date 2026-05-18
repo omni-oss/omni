@@ -266,7 +266,6 @@ jobs:
                 return normalizedFile;
             }
 
-
             function pathSafe(str) {
                 // 1. Standard encoding (handles / \ : * ? " < > |)
                 let encoded = encodeURIComponent(str);
@@ -310,14 +309,14 @@ jobs:
                     if (fs.existsSync(projectArtifactPath)) {
                         fs.mkdirSync(fullProjectTmpDir, { recursive: true });
                         core.info(`Extracting ${projectArtifactPath} to ${fullProjectTmpDir}`);
-                        execSync(`unzip -q ${projectArtifactPath} -d ${fullProjectTmpDir}`, { stdio: 'inherit' });
+                        execSync(`unzip -qo ${projectArtifactPath} -d ${fullProjectTmpDir}`, { stdio: 'inherit' });
                     } else {
                         core.info(`No project artifact found at ${projectArtifactPath}`);
                     }
                     if (fs.existsSync(workspaceArtifactPath)) {
                         fs.mkdirSync(tmpDir, { recursive: true });
                         core.info(`Exracting ${workspaceArtifactPath} to ${tmpDir}`);
-                        execSync(`unzip -q ${workspaceArtifactPath} -d ${tmpDir}`, { stdio: 'inherit' });
+                        execSync(`unzip -qo ${workspaceArtifactPath} -d ${tmpDir}`, { stdio: 'inherit' });
                     } else {
                         core.info(`No workspace artifact found at ${workspaceArtifactPath}`);
                     }

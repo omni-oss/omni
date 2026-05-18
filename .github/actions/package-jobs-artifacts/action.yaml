@@ -88,11 +88,10 @@ runs:
                           core.info(`Creating ${zipName} from files: \n${relativeFiles.join('\n')}`);
 
                           if (isWindows) {
-                              // Windows: Use PowerShell Compress-Archive
-                              // We join files with commas for the PowerShell array syntax
-                              const filesList = relativeFiles.join(',');
-                              const psCommand = `Compress-Archive -Path ${filesList} -DestinationPath '${zipPath}' -Force`;
-                              await exec.exec('powershell', ['-Command', psCommand], { cwd: cat.base });
+                              // Windows: Use pre-installed 7-Zip to create the zip file.
+                              // '7z' is globally available on the PATH in GitHub Actions Windows runners.
+                              // 'a' adds files to an archive, '-aoa' overwrites existing files without asking.
+                              await exec.exec('7z', ['a', zipPath, ...relativeFiles, '-aoa'], { cwd: cat.base });
                           } else {
                               // Unix: Use standard zip utility
                               await exec.exec('zip', ['-r9', zipPath, ...relativeFiles], { cwd: cat.base });
