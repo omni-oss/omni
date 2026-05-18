@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.11 - 2026-05-18
+#### Bug Fixes
+- schema mismatch - (fc1835a) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.10 - 2026-05-18
 #### Bug Fixes
 - schema mismatch - (e9162ab) - Clarence Manuel

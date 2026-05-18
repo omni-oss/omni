@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.14.1 - 2026-05-18
+### Package updates
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.11
+### Global changes
+#### Continuous Integration
+- update workflows [skip ci] - (d764898) - Clarence Manuel
+#### Miscellaneous Chores
+- update installers [skip ci] - (9c0a39f) - Clarence Manuel
+
+- - -
+
 ## v0.14.0 - 2026-05-18
 ### Package updates
 - omni_remote_source bumped to omni_remote_source-v0.1.0
