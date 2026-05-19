@@ -87,15 +87,18 @@ impl ChildProcessGuard {
             vec![default_path]
         };
 
-        for target_path in lookup_paths {
+        for target_path in &lookup_paths {
             if Path::new(&target_path).exists() {
-                path = target_path;
+                path = target_path.clone();
                 break;
             }
         }
 
         if path.is_empty() {
-            panic!("Could not find omni_remote_cache_service binary");
+            panic!(
+                "Could not find omni_remote_cache_service binary. Lookup paths: \n{:#?}",
+                &lookup_paths
+            );
         }
 
         log::trace!("Starting omni_remote_cache_service at {}", path);
