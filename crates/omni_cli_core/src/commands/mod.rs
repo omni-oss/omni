@@ -9,6 +9,7 @@ use exec::ExecCommand;
 use omni_tracing_subscriber::TraceLevel;
 use run::RunCommand;
 mod common_args;
+mod common_types;
 mod generator_common_args;
 mod parser;
 mod utils;
@@ -18,6 +19,7 @@ use crate::{
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
         generator::GeneratorCommand, hash::HashCommand, init::InitCommand,
+        project::ProjectCommand,
     },
 };
 
@@ -31,6 +33,7 @@ pub mod generator;
 mod generator_utils;
 pub mod hash;
 pub mod init;
+pub mod project;
 pub mod run;
 
 const ABOUT: &str = "omni is development workflow orchestration tool";
@@ -170,4 +173,7 @@ pub enum CliSubcommands {
 
     #[command(about = "Initialize a new workspace in the current directory")]
     Init(InitCommand),
+
+    #[command(about = "Project related commands")]
+    Project(ProjectCommand),
 }

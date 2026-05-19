@@ -23,7 +23,7 @@ pub struct HashArgs {
         action = clap::ArgAction::SetTrue,
         help = "Only output the raw string representation of the hash, no trailing newline, and no traces"
     )]
-    raw_value: bool,
+    raw: bool,
 }
 
 #[derive(Subcommand)]
@@ -50,7 +50,7 @@ pub struct HashProjectCommand {
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
     let ctx = ctx.clone();
 
-    let ctx = if command.args.raw_value {
+    let ctx = if command.args.raw {
         ctx.into_loaded().with_subscriber(noop_subscriber()).await?
     } else {
         ctx.into_loaded().await?
@@ -60,7 +60,7 @@ pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
         HashSubcommands::Workspace => {
             let hashstring = ctx.get_workspace_hash_string().await?;
 
-            if command.args.raw_value {
+            if command.args.raw {
                 print!("{hashstring}");
             } else {
                 println!("{hashstring}");
@@ -81,7 +81,7 @@ pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
                 )
                 .await?;
 
-            if command.args.raw_value {
+            if command.args.raw {
                 print!("{hashstring}");
             } else {
                 println!("{hashstring}");

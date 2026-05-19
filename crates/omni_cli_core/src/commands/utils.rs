@@ -1,14 +1,12 @@
-use std::{
-    fs::OpenOptions, io::Write as _, path::PathBuf, process::ExitCode,
-    time::Duration,
-};
+use std::{fs::OpenOptions, path::PathBuf, process::ExitCode, time::Duration};
 
 use eyre::OptionExt;
 use owo_colors::OwoColorize as _;
+use serde::Serialize;
 use tiny_gradient::{Gradient, GradientStr};
 
 use crate::{
-    commands::common_args::{ResultFormat, RunArgs},
+    commands::{common_args::RunArgs, common_types::SerializationFormat},
     executor::TaskExecutionResult,
 };
 
@@ -84,10 +82,10 @@ pub fn report_execution_results(results: &[TaskExecutionResult]) {
     }
 }
 
-pub fn get_result_format(
+pub fn get_serialization_format(
     results: PathBuf,
-    format: Option<ResultFormat>,
-) -> eyre::Result<ResultFormat> {
+    format: Option<SerializationFormat>,
+) -> eyre::Result<SerializationFormat> {
     let fmt = match format {
         Some(r) => r,
         None => {
@@ -96,9 +94,9 @@ pub fn get_result_format(
                 .ok_or_eyre("results file has no extension")?;
 
             match ext.to_string_lossy().as_ref() {
-                "json" => ResultFormat::Json,
-                "yaml" | "yml" => ResultFormat::Yaml,
-                "toml" => ResultFormat::Toml,
+                "json" => SerializationFormat::Json,
+                "yaml" | "yml" => SerializationFormat::Yaml,
+                "toml" => SerializationFormat::Toml,
                 _ => {
                     eyre::bail!(
                         "results file has an unsupported extension '{ext:?}'"
@@ -113,21 +111,22 @@ pub fn get_result_format(
 
 pub fn get_results_settings(
     args: &RunArgs,
-) -> eyre::Result<Option<(ResultFormat, PathBuf)>> {
+) -> eyre::Result<Option<(SerializationFormat, PathBuf)>> {
     if let Some(results) = &args.result {
-        let fmt = get_result_format(results.clone(), args.result_format)?;
+        let fmt =
+            get_serialization_format(results.clone(), args.result_format)?;
         Ok(Some((fmt, results.clone())))
     } else {
         Ok(None)
     }
 }
 
-pub fn write_results(
-    results: &Vec<TaskExecutionResult>,
-    fmt: ResultFormat,
+pub fn write_serialized_to_file<V: Serialize>(
+    value: V,
+    fmt: SerializationFormat,
     results_file: PathBuf,
 ) -> eyre::Result<()> {
-    let mut f = OpenOptions::new()
+    let f = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
@@ -136,16 +135,24 @@ pub fn write_results(
             eyre::eyre!("failed to open results file '{results_file:?}': {e}")
         })?;
 
+    write_serialized_to(value, fmt, f)
+}
+
+pub fn write_serialized_to<V: Serialize, W: std::io::Write>(
+    value: V,
+    fmt: SerializationFormat,
+    mut writer: W,
+) -> eyre::Result<()> {
     match fmt {
-        ResultFormat::Json => {
-            serde_json::to_writer_pretty(&mut f, results)?;
+        SerializationFormat::Json => {
+            serde_json::to_writer_pretty(&mut writer, &value)?;
         }
-        ResultFormat::Yaml => {
-            serde_norway::to_writer(&mut f, results)?;
+        SerializationFormat::Yaml => {
+            serde_norway::to_writer(&mut writer, &value)?;
         }
-        ResultFormat::Toml => {
-            let text = toml::ser::to_string(results)?;
-            f.write_all(text.as_bytes())?;
+        SerializationFormat::Toml => {
+            let text = toml::ser::to_string_pretty(&value)?;
+            writer.write_all(text.as_bytes())?;
         }
     }
 

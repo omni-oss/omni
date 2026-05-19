@@ -49,6 +49,16 @@ impl ExtractedDataValidator {
         }
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(
+            skip_all,
+            fields(
+                fail_fast = self.fail_fast,
+                projects_count = extractions.projects.len()
+            )
+        )
+    )]
     pub fn validate(
         &self,
         extractions: &ProjectDataExtractions,

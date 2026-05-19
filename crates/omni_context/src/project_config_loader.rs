@@ -37,6 +37,7 @@ impl PartialOrd for RelatedPath {
 }
 
 impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip(self)))]
     pub async fn load_project_configs(
         &self,
         project_paths: &[PathBuf],

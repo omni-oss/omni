@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
-use clap::{Args, ValueEnum};
+use clap::Args;
 use clap_utils::EnumValueAdapter;
 use maps::UnorderedMap;
 use omni_configurations::{Ui, WorkspaceConfiguration};
@@ -8,7 +8,9 @@ use omni_execution_plan::ScmAffectedFilter;
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
 
-use crate::commands::parser::parse_key_value;
+use crate::commands::{
+    common_types::SerializationFormat, parser::parse_key_value,
+};
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
@@ -55,7 +57,7 @@ pub struct RunArgs {
         help = "Output the results of the execution in the specified format, if not specified, the format will be inferred from the file extension",
         value_enum
     )]
-    pub result_format: Option<ResultFormat>,
+    pub result_format: Option<SerializationFormat>,
 
     #[arg(
         long,
@@ -113,13 +115,6 @@ pub struct RunArgs {
         value_parser = parse_key_value::<String, String>,
     )]
     pub args: Vec<(String, String)>,
-}
-
-#[derive(ValueEnum, Debug, Clone, Copy)]
-pub enum ResultFormat {
-    Json,
-    Yaml,
-    Toml,
 }
 
 impl RunArgs {

@@ -8,7 +8,7 @@ use crate::{
         common_args::RunArgs,
         utils::{
             exit_code, get_results_settings, report_execution_results,
-            write_results,
+            write_serialized_to_file,
         },
     },
     context::Context,
@@ -59,7 +59,7 @@ pub async fn run(
     report_execution_results(&results);
 
     if let Some((fmt, results_file_path)) = output_settings {
-        write_results(&results, fmt, results_file_path)?;
+        write_serialized_to_file(&results, fmt, results_file_path)?;
     }
 
     Ok(exit_code(&results))

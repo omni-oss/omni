@@ -63,6 +63,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         Ok((ws_vars, ws_vars_os))
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
     pub fn extract_all(
         &mut self,
         project_configs: &[ProjectConfiguration],

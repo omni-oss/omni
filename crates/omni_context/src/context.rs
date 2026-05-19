@@ -9,7 +9,6 @@ use omni_remote_cache_client::{DefaultRemoteCacheClient, RemoteCacheClient};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
-use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
@@ -28,7 +27,8 @@ use omni_core::{ExtensionGraph, ExtensionGraphError};
 use system_traits::impls::RealSys as RealSysSync;
 
 use omni_configurations::{
-    LoadConfigError, RemoteCacheConfiguration, WorkspaceConfiguration,
+    LoadConfigError, ProjectConfiguration, RemoteCacheConfiguration,
+    WorkspaceConfiguration,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -148,7 +148,44 @@ impl<TSys: ContextSys> Context<TSys> {
         self.remote_cache.as_ref()
     }
 
-    #[tracing::instrument(level = Level::DEBUG, skip_all)]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    pub async fn load_project_configurations(
+        &self,
+    ) -> Result<Vec<ProjectConfiguration>, ContextError> {
+        let start = std::time::Instant::now();
+        let project_paths = ProjectDiscovery::new(
+            self.root_dir(),
+            self.workspace.projects.as_slice(),
+        )
+        .discover_project_files()
+        .await?;
+
+        let project_paths = project_paths
+            .into_iter()
+            .filter_map(|p| match p {
+                DiscoveredPath::Real { file } => Some(file),
+                DiscoveredPath::Virtual { .. } => None,
+            })
+            .collect::<Vec<_>>();
+
+        let project_configs =
+            ProjectConfigLoader::<TSys>::new(&self.sys, self.root_dir())
+                .load_project_configs(&project_paths)
+                .await?;
+
+        let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
+        let project_configs = xt_graph.get_or_process_all_nodes()?;
+
+        log::info!(
+            "{}",
+            format!("Loaded project configurations in {:?}", start.elapsed())
+                .bold()
+        );
+
+        Ok(project_configs)
+    }
+
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
     pub async fn into_loaded(
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
@@ -170,7 +207,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
-    #[tracing::instrument(level = Level::DEBUG, skip_all)]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
     pub async fn into_loaded_with_walker<TDirWalker: DirWalker>(
         self,
         walker: &TDirWalker,
@@ -193,6 +230,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip(self)))]
     async fn into_loaded_impl(
         self,
         project_paths: Vec<DiscoveredPath>,
