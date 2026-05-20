@@ -143,6 +143,7 @@ fn get_value<TExtra: PromptExtras>(
     pre_exec_value: Option<&OwnedValueBag>,
 ) -> Result<OwnedValueBag, Error> {
     let value = if let Some(pre_exec_value) = pre_exec_value {
+        log::debug!("using pre-exec value for prompt {key}: {pre_exec_value}");
         process_pre_filled_value(
             config,
             ctx_vals,
@@ -155,10 +156,14 @@ fn get_value<TExtra: PromptExtras>(
     } else if config.use_defaults
         && let Some(value) = prompt.default_value()
     {
+        log::debug!("using default value for prompt {key}: {value}");
         process_pre_filled_value(
             config, ctx_vals, prompt, validators, key, &value, true,
         )?
     } else {
+        log::debug!(
+            "no pre-exec or default value for prompt {key}, prompting user"
+        );
         get_prompt_value(prompt, ctx_vals, config)?
     };
     Ok(value)
@@ -204,7 +209,7 @@ fn process_pre_filled_value<TExtra: PromptExtras>(
     };
 
     let value = if expand_str_value {
-        if let Some(template) = value.by_ref().to_borrowed_str() {
+        if let Some(template) = value.by_ref().to_str() {
             let expanded = omni_tera::one_off(
                 template,
                 format!("default value for {key}"),
@@ -212,6 +217,9 @@ fn process_pre_filled_value<TExtra: PromptExtras>(
             )?;
             ValueBag::from_str(&expanded).to_owned()
         } else {
+            log::warn!(
+                "Failed to expand default value for prompt {key} because it's not a string, using the original value: {value}"
+            );
             value
         }
     } else {
