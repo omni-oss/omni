@@ -131,7 +131,6 @@ jobs:
   test-typescript:
     needs:
       - plan
-      - test-rust
     if: ${{ needs.plan.outputs.jobs_test_typescript_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
     secrets: inherit
@@ -145,7 +144,7 @@ jobs:
 
   build-rust:
     needs:
-      - test-typescript
+      - test-rust
       - plan
     if: ${{ needs.plan.outputs.jobs_build_rust_count > 0 }}
     uses: ./.github/workflows/run-omni-jobs.yaml
