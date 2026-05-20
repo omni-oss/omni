@@ -113,13 +113,23 @@ pub fn relative_path(
     args: &HashMap<String, Value>,
 ) -> Result<Value> {
     let s = try_get_value!("relative_path", "value", String, value);
-    let path = Path::new(&s);
-    let root = Path::new(args["root"].as_str().ok_or_else(|| {
+    let path = omni_utils::path::clean(Path::new(&s));
+    let root = omni_utils::path::clean(Path::new(args["root"].as_str().ok_or_else(|| {
         tera::Error::msg("missing root argument or invalid type, must be present and be a string")
-    })?);
-    let relative_path = pathdiff::diff_paths(path, root).ok_or_else(|| {
-        tera::Error::msg("unable to find relative path between root and path")
-    })?;
+    })?));
+
+    let relative_path =
+        pathdiff::diff_paths(&path, &root).ok_or_else(|| {
+            tera::Error::msg(
+                "unable to find relative path between root and path",
+            )
+        })?;
+    log::debug!(
+        "calculating relative path between root {:?} and value {:?}, result: {:?}",
+        root,
+        path,
+        relative_path,
+    );
 
     Ok(to_value(relative_path).unwrap())
 }

@@ -96,6 +96,40 @@ pub fn path_safe(text: &str) -> String {
     bs58::encode(text).into_string()
 }
 
+pub fn clean(path: impl AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+    let mut components = path.components();
+
+    if cfg!(windows) {
+        use std::path::{Component, Prefix};
+
+        path_clean::clean(match components.next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(drive) | Prefix::Disk(drive) => {
+                    let drive = (drive as char).to_ascii_uppercase();
+                    let mut out = PathBuf::from(format!("{drive}:\\"));
+                    out.extend(components);
+                    out
+                }
+                Prefix::VerbatimUNC(server, share)
+                | Prefix::UNC(server, share) => {
+                    let mut out = PathBuf::from(format!(
+                        r"\\{}\{}",
+                        server.to_string_lossy(),
+                        share.to_string_lossy()
+                    ));
+                    out.extend(components);
+                    out
+                }
+                _ => path.to_path_buf(),
+            },
+            _ => path.to_path_buf(),
+        })
+    } else {
+        path_clean::clean(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use system_traits::{FsCreateDirAll as _, impls::InMemorySys};
@@ -235,5 +269,20 @@ mod tests {
         let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
         assert_eq!(result, &[Path::new("/root")]);
+    }
+
+    #[test]
+    fn test_clean() {
+        let path = Path::new("/foo/./bar/../baz");
+        let cleaned = clean(path);
+        assert_eq!(cleaned, Path::new("/foo/baz"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_clean_windows() {
+        let path = Path::new("\\\\?\\C:\\foo\\.\\bar\\..\\baz");
+        let cleaned = clean(path);
+        assert_eq!(cleaned, Path::new("C:\\foo\\baz"));
     }
 }
