@@ -9,8 +9,8 @@ export class BunProcess implements Process {
         return this.fallbackProc.currentDir();
     }
 
-    setCurrentDir(dir: string): void {
-        this.fallbackProc.setCurrentDir(dir);
+    setCurrentDir(dir: string): Promise<void> {
+        return this.fallbackProc.setCurrentDir(dir);
     }
 
     args(): string[] {

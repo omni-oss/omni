@@ -38,7 +38,7 @@ export function declareSysTests(args: SystemTestDeclarationsArgs): void {
             async function expectAbleToCreateFileInCurrentDirectory(
                 dir: string,
             ) {
-                args.sys.proc.setCurrentDir(dir);
+                await args.sys.proc.setCurrentDir(dir);
                 await args.sys.fs.writeStringToFile(
                     path.join(dir, "test.txt"),
                     "test",

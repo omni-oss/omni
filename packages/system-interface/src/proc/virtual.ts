@@ -15,8 +15,9 @@ export class VirtualProcess implements Process {
         return this.cwd;
     }
 
-    setCurrentDir(dir: string): void {
+    setCurrentDir(dir: string): Promise<void> {
         this.cwd = dir;
+        return Promise.resolve();
     }
 
     args(): string[] {

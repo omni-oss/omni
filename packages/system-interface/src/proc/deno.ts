@@ -8,10 +8,11 @@ export class DenoProcess implements Process {
         return Deno.cwd();
     }
 
-    setCurrentDir(dir: string): void {
+    setCurrentDir(dir: string): Promise<void> {
         throwIfDenoNotAvailable();
 
         Deno.chdir(dir);
+        return Promise.resolve();
     }
 
     args(): string[] {

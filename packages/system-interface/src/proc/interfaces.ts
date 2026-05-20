@@ -1,6 +1,6 @@
 export interface Process {
     currentDir(): string;
-    setCurrentDir(dir: string): void;
+    setCurrentDir(dir: string): Promise<void>;
     args(): string[];
     env(): ProcessEnv;
 }

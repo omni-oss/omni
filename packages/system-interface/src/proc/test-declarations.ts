@@ -17,8 +17,8 @@ export function declareProcTests(args: ProcessTestDeclarationsArgs): void {
             expect(args.proc.currentDir()).toBe(args.currentDir);
         });
 
-        it("setCurrentDir should set cwd", () => {
-            args.proc.setCurrentDir(args.newCurrentDir);
+        it("setCurrentDir should set cwd", async () => {
+            await args.proc.setCurrentDir(args.newCurrentDir);
             expect(args.proc.currentDir()).toBe(args.newCurrentDir);
         });
 

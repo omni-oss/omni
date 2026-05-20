@@ -6,8 +6,9 @@ export class NodeProcess implements Process {
         return process.cwd();
     }
 
-    setCurrentDir(dir: string): void {
+    setCurrentDir(dir: string): Promise<void> {
         process.chdir(dir);
+        return Promise.resolve();
     }
 
     args(): string[] {
