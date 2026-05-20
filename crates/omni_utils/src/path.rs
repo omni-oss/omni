@@ -8,10 +8,22 @@ pub fn relpath<'a>(path: &'a Path, base: &Path) -> &'a Path {
 }
 
 pub fn has_globs(path: &str) -> bool {
-    path.contains("*")
-        || path.contains("?")
+    if path.contains("*")
         || path.contains("[")
         || path.contains("{")
+        || (!cfg!(windows) && path.contains("?"))
+    {
+        return true;
+    }
+
+    if cfg!(windows)
+        && (path.starts_with("//?/") || path.starts_with("\\\\?\\"))
+        && path.chars().filter(|c| *c == '?').count() > 1
+    {
+        return true;
+    }
+
+    return false;
 }
 
 pub fn remove_globs(path: &Path) -> &Path {

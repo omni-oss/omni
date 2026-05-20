@@ -138,11 +138,21 @@ impl DirWalkerBase for IgnoreRealDirWalker {
                         && let Some(err) = err.io_error()
                         && err.kind() == std::io::ErrorKind::NotFound
                     {
-                        log::trace!("not found error, ignoring");
+                        log::trace!("Not found error, ignoring");
                         return WalkState::Continue;
                     }
 
-                    tx.send(entry.map(IgnoreRealDirEntry)).unwrap();
+                    let result = tx.send(entry.map(IgnoreRealDirEntry));
+
+                    if let Err(err) = result {
+                        let path = err.0.as_ref().ok().map(|f| f.path());
+                        log::error!(
+                            "Encountered during traversal: {err}, path: {path:?}",
+                        );
+
+                        return WalkState::Quit;
+                    }
+
                     WalkState::Continue
                 })
             });

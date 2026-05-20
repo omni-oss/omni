@@ -26,3 +26,4 @@ derive-new = { workspace = true }
 maps = { workspace = true }
 bs58 = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }

@@ -9,6 +9,7 @@ use omni_remote_cache_client::{DefaultRemoteCacheClient, RemoteCacheClient};
 use omni_tracing_subscriber::TracingConfig;
 use owo_colors::OwoColorize as _;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
+use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
@@ -148,7 +149,7 @@ impl<TSys: ContextSys> Context<TSys> {
         self.remote_cache.as_ref()
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     pub async fn load_project_configurations(
         &self,
     ) -> Result<Vec<ProjectConfiguration>, ContextError> {
@@ -185,7 +186,7 @@ impl<TSys: ContextSys> Context<TSys> {
         Ok(project_configs)
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     pub async fn into_loaded(
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
@@ -207,7 +208,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     pub async fn into_loaded_with_walker<TDirWalker: DirWalker>(
         self,
         walker: &TDirWalker,
@@ -230,7 +231,7 @@ impl<TSys: ContextSys> Context<TSys> {
         result
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip(self)))]
     async fn into_loaded_impl(
         self,
         project_paths: Vec<DiscoveredPath>,

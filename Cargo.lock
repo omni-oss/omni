@@ -6407,6 +6407,7 @@ dependencies = [
  "enum-map",
  "eyre",
  "globset",
+ "log",
  "maps",
  "omni_hasher",
  "omni_types",

@@ -372,6 +372,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let topmost =
                 topmost.iter().map(|p| p.as_path()).collect::<Vec<_>>();
 
+            log::trace!("topmost: {topmost:?}");
+
             trace::trace!(
                 forced_includes = ?forced_includes,
                 topmost = ?topmost,
@@ -389,6 +391,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             for res in dirwalker.walk_dir(&topmost)? {
                 let res = res?;
                 let original_file_abs_path = res.path();
+
+                log::trace!("walked path {original_file_abs_path:?}");
 
                 if !self.sys.fs_is_file_async(original_file_abs_path).await? {
                     continue;
