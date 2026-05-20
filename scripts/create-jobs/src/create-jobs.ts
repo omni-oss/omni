@@ -67,6 +67,10 @@ export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
             continue;
         }
 
+        if (result.status === "completed" && result.cache_hit) {
+            continue;
+        }
+
         const task = result.task;
         if (task.task_name === "test" || result.details.meta?.is_test_task) {
             if (result.details.meta?.language === "rust") {

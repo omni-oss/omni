@@ -29,6 +29,23 @@ describe("createJobs", () => {
         expect(jobs.test.rust).toHaveLength(0);
     });
 
+    it('should skip tasks with status "completed" and cache_hit true', () => {
+        const results: any[] = [
+            {
+                status: "completed",
+                cache_hit: true,
+                task: {
+                    task_name: "test",
+                    project_name: "p1",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: { meta: { language: "rust" } },
+            },
+        ];
+        const jobs = createJobs(results);
+        expect(jobs.test.rust).toHaveLength(0);
+    });
+
     it("should categorize test and build tasks by language", () => {
         const results: any[] = [
             {
