@@ -3,6 +3,7 @@ import fsSync from "node:fs";
 import { test as baseTest } from "vitest";
 import { getHost, sleep, withTimeout } from "./utils";
 import path from "node:path";
+import os from "node:os"
 
 const ports = new Set<number>();
 
@@ -56,7 +57,7 @@ export const test = baseTest.extend<{
             const target = process.env.RUST_TARGET ?? "";
 
             const ext =
-                target && target !== "" && target.includes("windows")
+                os.platform() === "win32"
                     ? ".exe"
                     : "";
 

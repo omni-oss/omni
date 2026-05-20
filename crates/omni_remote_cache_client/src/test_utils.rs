@@ -56,11 +56,7 @@ impl ChildProcessGuard {
             env::var("RUST_TARGET").unwrap_or_else(|_| String::default());
         let api_base_url = format!("http://localhost:{}/api", port);
 
-        let ext = if target.contains("windows") {
-            ".exe"
-        } else {
-            ""
-        };
+        let ext = if cfg!(windows) { ".exe" } else { "" };
 
         let mut path: Option<&Path> = None;
         log::info!("Host: {}", host);
