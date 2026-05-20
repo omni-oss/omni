@@ -404,6 +404,8 @@ include = [
 ]
 public_api = false
 
+# @anchor:new-rust-package
+
 [packages."@omni-oss/async-utils"]
 path = "packages/async-utils"
 include = ["packages/async-utils/**"]

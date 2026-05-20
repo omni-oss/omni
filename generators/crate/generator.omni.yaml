@@ -12,6 +12,7 @@ prompts:
   - type: select
     name: crate_type
     message: Crate type
+    default: lib
     options:
       - name: Library
         value: lib
@@ -55,13 +56,24 @@ prompts:
 
   - type: confirm
     name: add_error_type
-    message: Add error type
+    message: Add crate level error type
     default: true
+
+  - if: "{{ prompts.add_error_type }}"
+    type: text
+    name: error_name
+    message: Error type name
+    default: "Error"
 
 targets:
   root: .
-  src: ./src
+  src: "@output/src"
+  lib: "@output/src/lib.rs"
   root_cargo_toml: "@workspace/Cargo.toml"
+  cog_config: "@workspace/cog.toml"
+
+vars:
+  error_mod_name: "{{ prompts.error_name | snake_case }}"
 
 actions:
   - type: add-many
@@ -85,13 +97,39 @@ actions:
     prompt_values:
       forward: all
 
+  - if: "{{ prompts.add_error_type }}"
+    type: prepend-content
+    target: lib
+    entries:
+      - content: |
+          {% if vars.error_mod_name == 'error' %}
+          pub mod {{ vars.error_mod_name }};
+          {% else %}
+          pub mod {{ vars.error_mod_name }} as error;
+          {% endif %}
+        pattern: "@anchor:mods"
+
   - type: prepend-content
     target: root_cargo_toml
     entries:
-      - content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir | relative_path(root=workspace_dir) }}" }'
+      - content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir }}" }'
         pattern: "@anchor:new-crate"
     data:
-      generated_dir: "{{ current_dir ~ '/' ~ output_dir }}"
+      generated_dir: "{{ output_dir | relative_path(root=workspace_dir)}}"
+
+  - type: prepend-content
+    target: cog_config
+    entries:
+      - content: |
+          [packages.{{ prompts.crate_name }}]
+          path = "{{ data.generated_dir }}"
+          include = [
+              "{{ data.generated_dir }}/**",
+          ]
+          public_api = false
+        pattern: "@anchor:new-rust-package"
+    data:
+      generated_dir: "{{ output_dir | relative_path(root=workspace_dir) }}"
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}
