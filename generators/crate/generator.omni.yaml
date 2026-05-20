@@ -115,7 +115,7 @@ actions:
       - content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir }}" }'
         pattern: "@anchor:new-crate"
     data:
-      generated_dir: "{{ output_dir | relative_path(root=workspace_dir)}}"
+      generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\', to='/') }}"
 
   - type: prepend-content
     target: cog_config
@@ -129,7 +129,7 @@ actions:
           public_api = false
         pattern: "@anchor:new-rust-package"
     data:
-      generated_dir: "{{ output_dir | relative_path(root=workspace_dir) }}"
+      generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\', to='/') }}"
 
   - type: run-command
     command: cargo fmt -p {{ prompts.crate_name }}
