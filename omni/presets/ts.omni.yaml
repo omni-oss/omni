@@ -19,6 +19,7 @@ tasks:
       - test:unit
 
   test:
+    exec: ""
     dependencies:
       - ^test
       - test:unit
