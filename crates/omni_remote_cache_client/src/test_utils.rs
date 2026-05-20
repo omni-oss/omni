@@ -51,6 +51,7 @@ impl ChildProcessGuard {
 
         let ws_dir =
             env::var("WORKSPACE_DIR").expect("WORKSPACE_DIR is not set");
+        let ws_dir = Path::new(&ws_dir);
         let target =
             env::var("RUST_TARGET").unwrap_or_else(|_| String::default());
         let api_base_url = format!("http://localhost:{}/api", port);
@@ -61,18 +62,16 @@ impl ChildProcessGuard {
             ""
         };
 
-        let mut path = String::new();
+        let mut path: Option<&Path> = None;
         log::info!("Host: {}", host);
-        let default_path = format!(
-            "{}/target/release/omni_remote_cache_service{}",
-            ws_dir, ext
-        );
+        let default_path = ws_dir
+            .join(format!("target/release/omni_remote_cache_service{}", ext));
         let lookup_paths = if !target.is_empty() {
             let split = target.split(';').map(|s| {
-                format!(
-                    "{}/target/{}/release/omni_remote_cache_service{}",
-                    ws_dir, s, ext
-                )
+                ws_dir.join(format!(
+                    "target/{}/release/omni_remote_cache_service{}",
+                    s, ext
+                ))
             });
 
             let mut paths = if target.contains(&host) {
@@ -89,21 +88,24 @@ impl ChildProcessGuard {
 
         for target_path in &lookup_paths {
             if Path::new(&target_path).exists() {
-                path = target_path.clone();
+                path = Some(target_path.as_path());
                 break;
             }
         }
 
-        if path.is_empty() {
+        if path.is_none() {
             panic!(
                 "Could not find omni_remote_cache_service binary. Lookup paths: \n{:#?}",
                 &lookup_paths
             );
         }
 
-        log::trace!("Starting omni_remote_cache_service at {}", path);
+        log::trace!(
+            "Starting omni_remote_cache_service at {}",
+            path.unwrap().display()
+        );
 
-        let child = Command::new(&path)
+        let child = Command::new(path.unwrap())
             .args([
                 "serve",
                 "--listen",
@@ -168,12 +170,21 @@ impl ChildProcessGuard {
             if let Some(e) = error {
                 panic!(
                     "Failed to connect to server ({}) after {} tries\nHost: {}\nPath: {}\n{}\n{:#?}",
-                    api_base_url, current_try, host, path, output, e
+                    api_base_url,
+                    current_try,
+                    host,
+                    path.unwrap().display(),
+                    output,
+                    e
                 );
             } else {
                 panic!(
                     "Failed to connect to server ({}) after {} tries\nHost: {}\nPath: {}\n{}",
-                    api_base_url, current_try, host, path, output
+                    api_base_url,
+                    current_try,
+                    host,
+                    path.unwrap().display(),
+                    output
                 );
             }
         } else {
