@@ -1,4 +1,4 @@
-import { z } from "zod";
+import z from "zod";
 import { Id } from "@/id";
 import { HeadersSchema, TrailersSchema } from "./dyn-map";
 import { RequestErrorCode, ResponseErrorCode } from "./error-code";

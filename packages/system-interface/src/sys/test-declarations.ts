@@ -33,9 +33,8 @@ export function declareSysTests(args: SystemTestDeclarationsArgs): void {
         }
     }
 
-    describe
-        .skipIf(args.skip ?? false)
-        .sequential(`System ${args.name}`, () => {
+    describe.skipIf(args.skip ?? false)
+        (`System ${args.name}`, { concurrent: false }, () => {
             async function expectAbleToCreateFileInCurrentDirectory(
                 dir: string,
             ) {
@@ -52,16 +51,16 @@ export function declareSysTests(args: SystemTestDeclarationsArgs): void {
 
             if (isRealSystem) {
                 it(`should create file in current directory`, async ({
-                    realDir,
+                    tempDir,
                 }) => {
-                    await expectAbleToCreateFileInCurrentDirectory(realDir);
+                    await expectAbleToCreateFileInCurrentDirectory(tempDir);
                 });
             } else {
                 it(`should create file in current directory`, async ({
-                    tempDir,
+                    tempDirPath,
                 }) => {
-                    await withFixture(tempDir, () =>
-                        expectAbleToCreateFileInCurrentDirectory(tempDir),
+                    await withFixture(tempDirPath, () =>
+                        expectAbleToCreateFileInCurrentDirectory(tempDirPath),
                     );
                 });
             }

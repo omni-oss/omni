@@ -45,7 +45,7 @@ export class DenoFileSystem implements FileSystem {
     ): Promise<void> {
         throwIfDenoNotAvailable();
 
-        return Deno.mkdir(path, { recursive: options?.recursive ?? false });
+        return Deno.mkdir(path, options);
     }
 
     async readDirectory(path: string): Promise<string[]> {

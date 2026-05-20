@@ -1,6 +1,7 @@
 import { VirtualSystem } from "@omni-oss/system-interface";
 import JSONC from "comment-json";
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import XMLParser from "@nodable/flexible-xml-parser";
+import XMLBuilder from "fast-xml-builder";
 import TOML from "smol-toml";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";

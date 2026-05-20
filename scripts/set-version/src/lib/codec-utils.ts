@@ -1,19 +1,20 @@
 import path from "node:path";
 import JSONC from "comment-json";
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import XMLBuilder  from "fast-xml-builder"
+import { XMLParser } from "fast-xml-parser";
 import TOML from "smol-toml";
 import YAML from "yaml";
 import { Format } from "./format";
 
-const xmlOptions = {
+const options = {
     preserveOrder: true, // Required to keep comments near their tags
     commentPropName: "#comment", // Captures comments into this key
     ignoreAttributes: false,
 };
 
 const XML = {
-    __$$parser: new XMLParser(xmlOptions),
-    __$$builder: new XMLBuilder(xmlOptions),
+    __$$parser: new XMLParser(options),
+    __$$builder: new XMLBuilder(options),
     parse: (content: string) => XML.__$$parser.parse(content) as unknown,
     stringify: (object: unknown) => XML.__$$builder.build(object),
 };

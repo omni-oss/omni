@@ -32,7 +32,7 @@ export class BunFileSystem implements FileSystem {
     pathExists(path: string): Promise<boolean> {
         throwIfBunNotAvailable();
 
-        return Bun.file(path).exists();
+        return this.fallbackFs.pathExists(path);
     }
 
     createDirectory(

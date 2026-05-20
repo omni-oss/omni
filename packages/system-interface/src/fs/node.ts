@@ -9,7 +9,8 @@ export class NodeFileSystem implements FileSystem {
 
     async readFileAsBytes(path: string): Promise<Uint8Array> {
         const fs = await loadNodeFs();
-        return fs.readFile(path);
+        const buffer = await fs.readFile(path);
+        return new Uint8Array(buffer);
     }
 
     async writeStringToFile(path: string, content: string): Promise<void> {
@@ -34,7 +35,7 @@ export class NodeFileSystem implements FileSystem {
     ): Promise<void> {
         const fs = await loadNodeFs();
 
-        await fs.mkdir(path, { recursive: options?.recursive ?? false });
+        await fs.mkdir(path, options);
     }
 
     async readDirectory(path: string): Promise<string[]> {

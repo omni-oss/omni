@@ -39,9 +39,9 @@ export class VirtualFileSystem implements FileSystem {
             encoding: "binary",
         });
         if (typeof data === "string") {
-            return Buffer.from(data, "utf-8");
+            return new Uint8Array(Buffer.from(data, "utf-8"));
         } else {
-            return data;
+            return new Uint8Array(data);
         }
     }
 

@@ -1,6 +1,7 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: test file */
 import { describe, expect, it } from "vitest";
 import { createJobs } from "./create-jobs"; // Update with actual path
+import os from "node:os"
 
 describe("createJobs", () => {
     it("should return an empty structure when given an empty array", () => {
@@ -152,7 +153,11 @@ describe("createJobs", () => {
             task_name: "test",
             artifacts: {
                 project: {
-                    files: ["target/debug/minimal"],
+                    files: [
+                        os.platform() === "win32"
+                            ? "target\\debug\\minimal"
+                            : "target/debug/minimal"
+                    ],
                 },
             },
         });
@@ -181,7 +186,11 @@ describe("createJobs", () => {
             task_name: "test",
             artifacts: {
                 workspace: {
-                    files: ["target/debug/minimal"],
+                    files: [
+                        os.platform() === "win32"
+                            ? "target\\debug\\minimal"
+                            : "target/debug/minimal"
+                    ],
                 },
             },
         });

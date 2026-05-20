@@ -11,7 +11,7 @@ export type FileSystemTestDeclarationsArgs = {
 };
 
 export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
-    const useRealDir = args.useRealDir ?? true;
+    const createTempDir = args.useRealDir ?? true;
 
     async function withFixture(
         dir: string,
@@ -41,18 +41,18 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("test");
         }
 
-        if (useRealDir) {
-            it("should be able to write string to file", async ({
-                realDir,
-            }) => {
-                await expectAbleToWriteStringFile(realDir);
-            });
-        } else {
+        if (createTempDir) {
             it("should be able to write string to file", async ({
                 tempDir,
             }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToWriteStringFile(tempDir),
+                await expectAbleToWriteStringFile(tempDir);
+            });
+        } else {
+            it("should be able to write string to file", async ({
+                tempDirPath,
+            }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToWriteStringFile(tempDirPath),
                 );
             });
         }
@@ -64,14 +64,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("test");
         }
 
-        if (useRealDir) {
-            it("should be able to write bytes to file", async ({ realDir }) => {
-                await expectAbleToWriteBytesFile(realDir);
+        if (createTempDir) {
+            it("should be able to write bytes to file", async ({ tempDir }) => {
+                await expectAbleToWriteBytesFile(tempDir);
             });
         } else {
-            it("should be able to write bytes to file", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToWriteBytesFile(tempDir),
+            it("should be able to write bytes to file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToWriteBytesFile(tempDirPath),
                 );
             });
         }
@@ -83,18 +83,18 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("test");
         }
 
-        if (useRealDir) {
-            it("should be able to read a file as string", async ({
-                realDir,
-            }) => {
-                await expectAbleToReadFileAsString(realDir);
-            });
-        } else {
+        if (createTempDir) {
             it("should be able to read a file as string", async ({
                 tempDir,
             }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToReadFileAsString(tempDir),
+                await expectAbleToReadFileAsString(tempDir);
+            });
+        } else {
+            it("should be able to read a file as string", async ({
+                tempDirPath,
+            }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToReadFileAsString(tempDirPath),
                 );
             });
         }
@@ -103,21 +103,21 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             const p = path.join(dir, "test.txt");
             await args.fs.writeStringToFile(p, "test");
             const contents = await args.fs.readFileAsBytes(p);
-            expect(contents).toEqual(Buffer.from("test"));
+            expect(contents).toEqual(new Uint8Array(Buffer.from("test")));
         }
 
-        if (useRealDir) {
-            it("should be able to read a file as bytes", async ({
-                realDir,
-            }) => {
-                await expectAbleToReadFileAsBytes(realDir);
-            });
-        } else {
+        if (createTempDir) {
             it("should be able to read a file as bytes", async ({
                 tempDir,
             }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToReadFileAsBytes(tempDir),
+                await expectAbleToReadFileAsBytes(tempDir);
+            });
+        } else {
+            it("should be able to read a file as bytes", async ({
+                tempDirPath,
+            }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToReadFileAsBytes(tempDirPath),
                 );
             });
         }
@@ -130,14 +130,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("testtest");
         }
 
-        if (useRealDir) {
-            it("should be able to append to a file", async ({ realDir }) => {
-                await expectAbleToAppendToFile(realDir);
+        if (createTempDir) {
+            it("should be able to append to a file", async ({ tempDir }) => {
+                await expectAbleToAppendToFile(tempDir);
             });
         } else {
-            it("should be able to append to a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToAppendToFile(tempDir),
+            it("should be able to append to a file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToAppendToFile(tempDirPath),
                 );
             });
         }
@@ -149,32 +149,32 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(await args.fs.pathExists(p)).toBe(false);
         }
 
-        if (useRealDir) {
-            it("should be able to remove a file", async ({ realDir }) => {
-                await expectAbleToRemoveAFile(realDir);
+        if (createTempDir) {
+            it("should be able to remove a file", async ({ tempDir }) => {
+                await expectAbleToRemoveAFile(tempDir);
             });
         } else {
-            it("should be able to remove a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToRemoveAFile(tempDir),
+            it("should be able to remove a file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToRemoveAFile(tempDirPath),
                 );
             });
         }
 
         async function expectAbleToCreateDirectory(dir: string) {
             const p = path.join(dir, "test");
-            await args.fs.createDirectory(p);
+            await args.fs.createDirectory(p, { recursive: true });
             expect(await args.fs.pathExists(p)).toBe(true);
         }
 
-        if (useRealDir) {
-            it("should be able to create a directory", async ({ realDir }) => {
-                await expectAbleToCreateDirectory(realDir);
+        if (createTempDir) {
+            it("should be able to create a directory", async ({ tempDir }) => {
+                await expectAbleToCreateDirectory(tempDir);
             });
         } else {
-            it("should be able to create a directory", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToCreateDirectory(tempDir),
+            it("should be able to create a directory", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToCreateDirectory(tempDirPath),
                 );
             });
         }
@@ -188,14 +188,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(await args.fs.pathExists(p)).toBe(false);
         }
 
-        if (useRealDir) {
-            it("should be able to remove a directory", async ({ realDir }) => {
-                await expectAbleToRemoveADirectory(realDir);
+        if (createTempDir) {
+            it("should be able to remove a directory", async ({ tempDir }) => {
+                await expectAbleToRemoveADirectory(tempDir);
             });
         } else {
-            it("should be able to remove a directory", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToRemoveADirectory(tempDir),
+            it("should be able to remove a directory", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToRemoveADirectory(tempDirPath),
                 );
             });
         }
@@ -207,14 +207,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toEqual([]);
         }
 
-        if (useRealDir) {
-            it("should be able to read a directory", async ({ realDir }) => {
-                await expectAbleToReadDirectory(realDir);
+        if (createTempDir) {
+            it("should be able to read a directory", async ({ tempDir }) => {
+                await expectAbleToReadDirectory(tempDir);
             });
         } else {
-            it("should be able to read a directory", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToReadDirectory(tempDir),
+            it("should be able to read a directory", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToReadDirectory(tempDirPath),
                 );
             });
         }
@@ -227,18 +227,18 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toEqual(["test.txt"]);
         }
 
-        if (useRealDir) {
-            it("should be able to read a directory with files", async ({
-                realDir,
-            }) => {
-                await expectAbleToReadDirectoryWithFiles(realDir);
-            });
-        } else {
+        if (createTempDir) {
             it("should be able to read a directory with files", async ({
                 tempDir,
             }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToReadDirectoryWithFiles(tempDir),
+                await expectAbleToReadDirectoryWithFiles(tempDir);
+            });
+        } else {
+            it("should be able to read a directory with files", async ({
+                tempDirPath,
+            }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToReadDirectoryWithFiles(tempDirPath),
                 );
             });
         }
@@ -251,18 +251,18 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toEqual(["test"]);
         }
 
-        if (useRealDir) {
-            it("should be able to read a directory with directories", async ({
-                realDir,
-            }) => {
-                await expectAbleToReadDirectoryWithDirectories(realDir);
-            });
-        } else {
+        if (createTempDir) {
             it("should be able to read a directory with directories", async ({
                 tempDir,
             }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToReadDirectoryWithDirectories(tempDir),
+                await expectAbleToReadDirectoryWithDirectories(tempDir);
+            });
+        } else {
+            it("should be able to read a directory with directories", async ({
+                tempDirPath,
+            }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToReadDirectoryWithDirectories(tempDirPath),
                 );
             });
         }
@@ -277,13 +277,13 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("test");
         }
 
-        if (useRealDir) {
-            it("should be able to copy a file", async ({ realDir }) => {
-                await expectAbleToCopyFile(realDir);
+        if (createTempDir) {
+            it("should be able to copy a file", async ({ tempDir }) => {
+                await expectAbleToCopyFile(tempDir);
             });
         } else {
-            it("should be able to copy a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () => expectAbleToCopyFile(tempDir));
+            it("should be able to copy a file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () => expectAbleToCopyFile(tempDirPath));
             });
         }
 
@@ -297,14 +297,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(contents).toBe("test");
         }
 
-        if (useRealDir) {
-            it("should be able to rename a file", async ({ realDir }) => {
-                await expectAbleToRenameFile(realDir);
+        if (createTempDir) {
+            it("should be able to rename a file", async ({ tempDir }) => {
+                await expectAbleToRenameFile(tempDir);
             });
         } else {
-            it("should be able to rename a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToRenameFile(tempDir),
+            it("should be able to rename a file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToRenameFile(tempDirPath),
                 );
             });
         }
@@ -316,13 +316,13 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(stats.isFile()).toBe(true);
         }
 
-        if (useRealDir) {
-            it("should be able to stat a file", async ({ realDir }) => {
-                await expectAbleToStatFile(realDir);
+        if (createTempDir) {
+            it("should be able to stat a file", async ({ tempDir }) => {
+                await expectAbleToStatFile(tempDir);
             });
         } else {
-            it("should be able to stat a file", async ({ tempDir }) => {
-                await withFixture(tempDir, () => expectAbleToStatFile(tempDir));
+            it("should be able to stat a file", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () => expectAbleToStatFile(tempDirPath));
             });
         }
 
@@ -333,14 +333,14 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             expect(stats.isDirectory()).toBe(true);
         }
 
-        if (useRealDir) {
-            it("should be able to stat a directory", async ({ realDir }) => {
-                await expectAbleToStatDirectory(realDir);
+        if (createTempDir) {
+            it("should be able to stat a directory", async ({ tempDir }) => {
+                await expectAbleToStatDirectory(tempDir);
             });
         } else {
-            it("should be able to stat a directory", async ({ tempDir }) => {
-                await withFixture(tempDir, () =>
-                    expectAbleToStatDirectory(tempDir),
+            it("should be able to stat a directory", async ({ tempDirPath }) => {
+                await withFixture(tempDirPath, () =>
+                    expectAbleToStatDirectory(tempDirPath),
                 );
             });
         }

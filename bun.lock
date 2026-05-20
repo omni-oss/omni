@@ -188,10 +188,12 @@
       "bin": "./dist/set-version.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "catalog:",
+        "@nodable/compact-builder": "^1.0.8",
         "@omni-oss/system-interface": "workspace:^",
         "commander": "catalog:",
         "comment-json": "^5.0.0",
-        "fast-xml-parser": "^5.7.2",
+        "fast-xml-builder": "^1.2.0",
+        "fast-xml-parser": "^5.8.0",
         "picomatch": "^4.0.4",
         "smol-toml": "^1.6.1",
         "yaml": "^2.8.3",
@@ -443,6 +445,10 @@
     "@msgpack/msgpack": ["@msgpack/msgpack@3.1.3", "", {}, "sha512-47XIizs9XZXvuJgoaJUIE2lFoID8ugvc0jzSHP+Ptfk8nTbnR8g788wv48N03Kx0UkAv559HWRQ3yzOgzlRNUA=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.1.4", "", { "dependencies": { "@tybys/wasm-util": "^0.10.1" }, "peerDependencies": { "@emnapi/core": "^1.7.1", "@emnapi/runtime": "^1.7.1" } }, "sha512-3NQNNgA1YSlJb/kMH1ildASP9HW7/7kYnRI2szWJaofaS1hWmbGI4H+d3+22aGzXXN9IJ+n+GiFVcGipJP18ow=="],
+
+    "@nodable/base-output-builder": ["@nodable/base-output-builder@1.0.5", "", { "dependencies": { "@nodable/entities": "^2.1.0", "strnum": "^2.2.2" } }, "sha512-3q3YM7r/CLtVBREUPmWoPAqjK4d8amNHqP558SLJT0dC9VDRKvCMxhmapzfl0gfoBuPL6NlyYSlr53bOmRY38Q=="],
+
+    "@nodable/compact-builder": ["@nodable/compact-builder@1.0.8", "", { "dependencies": { "@nodable/base-output-builder": "^1.0.5", "path-expression-matcher": "^1.5.0" } }, "sha512-YV2WQm7uK7uIMds6fcXma0jC0UWHCFuZyrdP+oAboLaeK9T25ebzZkDosWD0duH9dMZrfofSitOM5BFgCWnm/w=="],
 
     "@nodable/entities": ["@nodable/entities@2.1.0", "", {}, "sha512-nyT7T3nbMyBI/lvr6L5TyWbFJAI9FTgVRakNoBqCD+PmID8DzFrrNdLLtHMwMszOtqZa8PAOV24ZqDnQrhQINA=="],
 

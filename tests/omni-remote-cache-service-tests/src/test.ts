@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import fsSync from "node:fs";
 import { test as baseTest } from "vitest";
 import { getHost, sleep, withTimeout } from "./utils";
+import path from "node:path";
 
 const ports = new Set<number>();
 
@@ -64,7 +65,7 @@ export const test = baseTest.extend<{
             const host = await getHost().catch(() => "");
             let compileInfo = `Host: ${host}\nTarget: ${target}`;
 
-            const defaultPath = `${wsDir}/target/release/omni_remote_cache_service${ext}`;
+            const defaultPath = path.join(wsDir, `target/release/omni_remote_cache_service${ext}`);
             const lookupPaths =
                 target !== ""
                     ? [
@@ -75,7 +76,7 @@ export const test = baseTest.extend<{
                               .split(";")
                               .map(
                                   (target) =>
-                                      `${wsDir}/target/${target}/release/omni_remote_cache_service${ext}`,
+                                    path.join(wsDir, `target/${target}/release/omni_remote_cache_service${ext}`)
                               ),
                       ]
                     : [defaultPath];
