@@ -67,7 +67,11 @@ export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
             continue;
         }
 
-        if (result.status === "completed" && result.cache_hit) {
+        if (
+            result.status === "completed"
+            && result.cache_hit
+            && result.exit_code === 0
+        ) {
             continue;
         }
 

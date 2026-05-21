@@ -29,11 +29,48 @@ describe("createJobs", () => {
         expect(jobs.test.rust).toHaveLength(0);
     });
 
-    it('should skip tasks with status "completed" and cache_hit true', () => {
+    it('should skip tasks that indicates success', () => {
+        // fully skip
+        const shouldSkip = {
+            status: "completed",
+            cache_hit: true,
+            exit_code: 0,
+            task: {
+                task_name: "test",
+                project_name: "p1",
+                project_dir: "/mnt/c/Users/user/project",
+            },
+            details: { meta: { language: "rust" } },
+        };
         const results: any[] = [
+            shouldSkip,
+            // error
+            {
+                status: "errored",
+                task: {
+                    task_name: "test",
+                    project_name: "p1",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: { meta: { language: "rust" } },
+            },
+            // exit code is error
             {
                 status: "completed",
                 cache_hit: true,
+                exit_code: 1,
+                task: {
+                    task_name: "test",
+                    project_name: "p1",
+                    project_dir: "/mnt/c/Users/user/project",
+                },
+                details: { meta: { language: "rust" } },
+            },
+            // no cache hit
+            {
+                status: "completed",
+                cache_hit: false,
+                exit_code: 0,
                 task: {
                     task_name: "test",
                     project_name: "p1",
@@ -43,7 +80,8 @@ describe("createJobs", () => {
             },
         ];
         const jobs = createJobs(results);
-        expect(jobs.test.rust).toHaveLength(0);
+        expect(jobs.test.rust).toHaveLength(3);
+        expect(jobs.test.rust).not.toContain(shouldSkip)
     });
 
     it("should categorize test and build tasks by language", () => {
