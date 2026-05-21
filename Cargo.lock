@@ -6661,6 +6661,7 @@ name = "omni_generator"
 version = "0.7.0"
 dependencies = [
  "async-trait",
+ "bon",
  "derive-new",
  "dir_walker",
  "either",
@@ -6687,7 +6688,6 @@ dependencies = [
  "sets",
  "strum 0.28.0",
  "system_traits",
- "tera",
  "thiserror 2.0.18",
  "tokio 1.52.1",
  "trace",
@@ -6858,7 +6858,6 @@ dependencies = [
  "sets",
  "strum 0.28.0",
  "system_traits",
- "tera",
  "thiserror 2.0.18",
  "trace",
  "tracing",
@@ -7141,7 +7140,9 @@ dependencies = [
  "log",
  "omni_utils",
  "pathdiff",
+ "serde",
  "strum 0.28.0",
+ "target-lexicon",
  "tera",
  "thiserror 2.0.18",
  "trace",

@@ -43,7 +43,7 @@ pub(crate) enum ErrorInner {
     LoadConfig(#[from] omni_file_data_serde::Error),
 
     #[error(transparent)]
-    Tera(#[from] tera::Error),
+    Tera(#[from] omni_tera::Error),
 
     #[error(
         "expression '{expr}' in '{expr_name}' did not evaluate to a boolean, result: {result}"

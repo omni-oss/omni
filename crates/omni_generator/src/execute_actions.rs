@@ -155,7 +155,7 @@ pub async fn execute_actions<'a>(
 fn skip(
     name: &str,
     action: &ActionConfiguration,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<bool, Error> {
     let if_expr = get_if_expr(action);
 
@@ -226,7 +226,7 @@ fn validate_bool_result(
 fn render_text(
     message: &str,
     name: &str,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
     let result = omni_tera::one_off(message, name, tera_context)?;
 
@@ -237,7 +237,7 @@ fn get_error_message(
     action_name: &str,
     error: &Error,
     action: &ActionConfiguration,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
     let message = match action {
         ActionConfiguration::Add { action } => {
@@ -298,7 +298,7 @@ fn get_error_message(
 fn get_in_progress_message(
     action_name: &str,
     action: &ActionConfiguration,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
     let message = match action {
         ActionConfiguration::Add { action } => {
@@ -353,7 +353,7 @@ fn get_in_progress_message(
 fn get_success_message(
     action_name: &str,
     action: &ActionConfiguration,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
     let message = match action {
         ActionConfiguration::Add { action } => {
@@ -408,7 +408,7 @@ fn get_success_message(
 fn get_action_name(
     index: usize,
     action: &ActionConfiguration,
-    tera_context: &tera::Context,
+    tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
     let name = match action {
         ActionConfiguration::Add { action } => action.base.base.name.as_deref(),

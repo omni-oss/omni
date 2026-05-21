@@ -36,7 +36,7 @@ pub(crate) enum ErrorInner {
     DuplicatePromptName(String),
 
     #[error(transparent)]
-    Tera(#[from] tera::Error),
+    Tera(#[from] omni_tera::Error),
 
     #[error(
         "value '{value}' is invalid for prompt {prompt_name}: {error_message}"

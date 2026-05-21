@@ -417,9 +417,9 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
 }
 
 pub fn augment_tera_context<'a>(
-    tera_ctx: &'a tera::Context,
+    tera_ctx: &'a omni_tera::Context,
     data: Option<&UnorderedMap<String, serde_json::Value>>,
-) -> Result<Cow<'a, tera::Context>, Error> {
+) -> Result<Cow<'a, omni_tera::Context>, Error> {
     if data.is_none() || data.is_some_and(|d| d.is_empty()) {
         return Ok(Cow::Borrowed(tera_ctx));
     }
@@ -446,9 +446,9 @@ pub fn get_bases<'a>(
 
 #[allow(unused)]
 pub fn add_data(
-    tera_ctx: &tera::Context,
+    tera_ctx: &omni_tera::Context,
     data: &UnorderedMap<String, serde_json::Value>,
-) -> Result<tera::Context, Error> {
+) -> Result<omni_tera::Context, Error> {
     let mut tera_ctx_with_data = tera_ctx.clone();
 
     add_data_internal(&mut tera_ctx_with_data, data)?;
@@ -457,7 +457,7 @@ pub fn add_data(
 }
 
 fn add_data_internal(
-    tera_ctx: &mut tera::Context,
+    tera_ctx: &mut omni_tera::Context,
     data: &UnorderedMap<String, serde_json::Value>,
 ) -> Result<(), Error> {
     let mut expanded_data = unordered_map!(cap: data.len());

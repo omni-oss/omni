@@ -7,8 +7,8 @@ use crate::error::Error;
 
 pub fn get_tera_context(
     context_values: &UnorderedMap<String, OwnedValueBag>,
-) -> tera::Context {
-    let mut context = tera::Context::new();
+) -> omni_tera::Context {
+    let mut context = omni_tera::context::STANDARD.clone();
 
     for (key, value) in context_values.iter() {
         context.insert(key, value);
@@ -18,13 +18,13 @@ pub fn get_tera_context(
 }
 
 pub fn expand_json_value<'v>(
-    tera_ctx: &tera::Context,
+    tera_ctx: &omni_tera::Context,
     parent_key: Option<&str>,
     key: &str,
-    value: &'v tera::Value,
-) -> Result<Cow<'v, tera::Value>, Error> {
+    value: &'v omni_tera::Value,
+) -> Result<Cow<'v, omni_tera::Value>, Error> {
     Ok(match value {
-        tera::Value::String(s) => {
+        omni_tera::Value::String(s) => {
             let expanded = omni_tera::one_off(
                 &s,
                 &(if let Some(parent_key) = parent_key {
@@ -35,9 +35,9 @@ pub fn expand_json_value<'v>(
                 tera_ctx,
             )?;
 
-            Cow::Owned(tera::Value::String(expanded))
+            Cow::Owned(omni_tera::Value::String(expanded))
         }
-        tera::Value::Array(values) => {
+        omni_tera::Value::Array(values) => {
             let mut result = Vec::<serde_json::Value>::new();
             for (idx, value) in values.iter().enumerate() {
                 let idx_key = idx.to_string();
@@ -56,9 +56,9 @@ pub fn expand_json_value<'v>(
                 result.push(value);
             }
 
-            Cow::Owned(tera::Value::Array(result))
+            Cow::Owned(omni_tera::Value::Array(result))
         }
-        tera::Value::Object(map) => {
+        omni_tera::Value::Object(map) => {
             let mut result = serde_json::Map::new();
             for (map_key, value) in map {
                 let value = (*if let Some(parent) = parent_key {
@@ -75,7 +75,7 @@ pub fn expand_json_value<'v>(
                 result.insert(map_key.to_string(), value);
             }
 
-            Cow::Owned(tera::Value::Object(result))
+            Cow::Owned(omni_tera::Value::Object(result))
         }
         value @ _ => Cow::Borrowed(value),
     })

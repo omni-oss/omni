@@ -20,7 +20,7 @@ use crate::{
 
 pub fn confirm<'a>(
     prompt: &'a ConfirmPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.name.as_str();
@@ -44,7 +44,7 @@ pub fn confirm<'a>(
 
 pub fn password<'a>(
     prompt: &'a PasswordPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
@@ -67,7 +67,7 @@ pub fn password<'a>(
 
 pub fn text<'a>(
     prompt: &'a TextPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
@@ -99,7 +99,7 @@ pub fn text<'a>(
 
 pub fn select<'a>(
     prompt: &'a SelectPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.name.as_str();
@@ -134,7 +134,7 @@ pub fn select<'a>(
 
 pub fn multi_select<'a>(
     prompt: &'a MultiSelectPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
@@ -213,7 +213,7 @@ fn get_option_text<'a>(option: &'a OptionConfiguration) -> Cow<'a, str> {
 
 pub fn float_number<'a>(
     prompt: &'a FloatNumberPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
@@ -250,7 +250,7 @@ pub fn float_number<'a>(
 
 pub fn integer_number<'a>(
     prompt: &'a IntegerNumberPromptConfiguration,
-    context_values: &'a tera::Context,
+    context_values: &'a omni_tera::Context,
     config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
     let name = prompt.base.base.name.as_str();
@@ -289,7 +289,7 @@ fn try_parse_or_expand_default_value<T: FromStr + Clone>(
     prompt_name: &str,
     expected_type: &str,
     value: &Either<T, String>,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
 ) -> Result<T, Error> {
     match value {
         Either::Left(value) => Ok(value.clone()),
@@ -324,7 +324,7 @@ fn try_parse_or_expand_default_value<T: FromStr + Clone>(
 fn expand_default_value(
     template: &str,
     name: &str,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
 ) -> Result<String, Error> {
     let expanded = omni_tera::one_off(
         template,
@@ -337,7 +337,7 @@ fn expand_default_value(
 fn validate<T: Serialize + 'static>(
     value: &T,
     name: &str,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     config: &PromptingConfiguration,
 ) -> Result<(), String> {

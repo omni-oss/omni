@@ -9,7 +9,7 @@ use crate::{
 pub fn validate_value(
     prompt_name: &str,
     value: &OwnedValueBag,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     validators: &[ValidateConfiguration],
     value_name: Option<&str>,
 ) -> Result<(), Error> {
@@ -40,7 +40,7 @@ pub fn validate_value(
             let error_message = validator
                 .error_message
                 .as_ref()
-                .map(|e| tera::Tera::one_off(&e, &ctx, true))
+                .map(|e| omni_tera::Tera::one_off(&e, &ctx, true))
                 .unwrap_or_else(|| {
                     Ok(format!(
                         "condition '{}' evaluated to false",
@@ -89,7 +89,7 @@ mod tests {
             condition: Right("{{ value == 'value' }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         let result =
             validate_value(&prompt_name, &value, &ctx_vals, &validators, None);
@@ -108,7 +108,7 @@ mod tests {
             condition: Right("{{ value == 'value' }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         let result =
             validate_value(&prompt_name, &value, &ctx_vals, &validators, None);
@@ -135,7 +135,7 @@ mod tests {
             condition: Right("{{ value }}".to_string()),
             error_message: Some("error message".to_string()),
         }];
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         let result =
             validate_value(&prompt_name, &value, &ctx_vals, &validators, None);

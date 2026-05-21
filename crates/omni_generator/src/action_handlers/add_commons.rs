@@ -24,8 +24,10 @@ pub async fn add_one<'a, TRender, TSys>(
     sys: &'a TSys,
 ) -> Result<(), Error>
 where
-    TRender:
-        FnOnce(&str, &tera::Context) -> tera::Result<String> + Send + Sync + 'a,
+    TRender: FnOnce(&str, &omni_tera::Context) -> omni_tera::Result<String>
+        + Send
+        + Sync
+        + 'a,
     TSys: GeneratorSys,
 {
     let output_path = get_output_path(

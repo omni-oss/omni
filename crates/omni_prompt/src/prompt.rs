@@ -53,7 +53,7 @@ pub fn prompt<TExtra: PromptExtras>(
     validate_prompt_configurations(prompts)?;
     let mut values = UnorderedMap::default();
 
-    let mut ctx_vals = tera::Context::new();
+    let mut ctx_vals = omni_tera::Context::new();
 
     for (key, value) in context_values {
         ctx_vals.insert(key, value);
@@ -98,7 +98,7 @@ pub fn prompt_one<TExtra: PromptExtras>(
     context_values: &UnorderedMap<String, OwnedValueBag>,
     config: &PromptingConfiguration,
 ) -> Result<Option<OwnedValueBag>, Error> {
-    let mut ctx_vals = tera::Context::new();
+    let mut ctx_vals = omni_tera::Context::new();
 
     for (key, value) in context_values {
         ctx_vals.insert(key, value);
@@ -136,7 +136,7 @@ pub fn prompt_one<TExtra: PromptExtras>(
 
 fn get_value<TExtra: PromptExtras>(
     config: &PromptingConfiguration<'_>,
-    ctx_vals: &tera::Context,
+    ctx_vals: &omni_tera::Context,
     prompt: &PromptConfiguration<TExtra>,
     validators: &[ValidateConfiguration],
     key: &String,
@@ -171,7 +171,7 @@ fn get_value<TExtra: PromptExtras>(
 
 fn process_pre_filled_value<TExtra: PromptExtras>(
     config: &PromptingConfiguration<'_>,
-    ctx_vals: &tera::Context,
+    ctx_vals: &omni_tera::Context,
     prompt: &PromptConfiguration<TExtra>,
     validators: &[ValidateConfiguration],
     key: &String,
@@ -295,7 +295,7 @@ fn make_prompt_type_error<'a>(
 
 fn get_prompt_value<TExtra: PromptExtras>(
     prompt: &PromptConfiguration<TExtra>,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration<'_>,
 ) -> Result<OwnedValueBag, Error> {
     let value = match prompt {
@@ -358,7 +358,7 @@ fn get_if_expression<TExtra: PromptExtras>(
 fn skip(
     if_expr: &Either<bool, String>,
     values: &UnorderedMap<String, OwnedValueBag>,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     if_expressions_root_property: Option<&str>,
 ) -> Result<bool, Error> {
     Ok(match if_expr {
@@ -370,7 +370,7 @@ fn skip(
                 values,
             );
 
-            let tera_result = tera::Tera::one_off(if_expr, &ctx, true)?;
+            let tera_result = omni_tera::Tera::one_off(if_expr, &ctx, true)?;
             let tera_result = tera_result.trim();
 
             validate_boolean_expression_result(&tera_result, if_expr)?;
@@ -418,7 +418,7 @@ fn get_prompt_name<TExtra: PromptExtras>(
 
 fn prompt_checkbox(
     prompt: &ConfirmPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let prompt = make::confirm(prompt, context_values, config)?;
@@ -434,7 +434,7 @@ fn prompt_checkbox(
 
 fn prompt_password(
     prompt: &PasswordPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::password(prompt, context_values, config)?;
@@ -453,7 +453,7 @@ fn prompt_password(
 
 fn prompt_float_number(
     prompt: &FloatNumberPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::float_number(prompt, context_values, config)?;
@@ -469,7 +469,7 @@ fn prompt_float_number(
 
 fn prompt_integer_number(
     prompt: &IntegerNumberPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::integer_number(prompt, context_values, config)?;
@@ -485,7 +485,7 @@ fn prompt_integer_number(
 
 fn prompt_text(
     prompt: &TextPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::text(prompt, context_values, config)?;
@@ -504,7 +504,7 @@ fn prompt_text(
 
 fn prompt_select(
     prompt: &SelectPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::select(prompt, context_values, config)?;
@@ -523,7 +523,7 @@ fn prompt_select(
 
 fn prompt_multi_select(
     prompt: &MultiSelectPromptConfiguration,
-    context_values: &tera::Context,
+    context_values: &omni_tera::Context,
     config: &PromptingConfiguration,
 ) -> Result<OwnedValueBag, Error> {
     let question = make::multi_select(prompt, context_values, config)?;
@@ -558,7 +558,7 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"value").to_owned(),
         )]);
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         assert_eq!(
             skip(&Right(if_expr.to_string()), &values, &ctx_vals, None)
@@ -576,7 +576,7 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"other_value").to_owned(),
         )]);
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         assert_eq!(
             skip(&Right(if_expr.to_string()), &values, &ctx_vals, None)
@@ -594,7 +594,7 @@ mod test {
             "name".to_string(),
             ValueBag::capture_serde1(&"other_value").to_owned(),
         )]);
-        let ctx_vals = tera::Context::new();
+        let ctx_vals = omni_tera::Context::new();
 
         let result =
             skip(&Right(if_expr.to_string()), &values, &ctx_vals, None);

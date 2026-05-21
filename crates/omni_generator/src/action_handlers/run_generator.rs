@@ -170,7 +170,7 @@ fn resolve_prompt_values<'a>(
 fn to_owned_value_bag(
     key: &str,
     prompt_value: &PromptValue,
-    tera_ctx: &tera::Context,
+    tera_ctx: &omni_tera::Context,
 ) -> Result<OwnedValueBag, Error> {
     Ok(match prompt_value {
         PromptValue::Integer(i) => ValueBag::capture_serde1(i).to_owned(),

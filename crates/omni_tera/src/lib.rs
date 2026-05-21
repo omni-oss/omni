@@ -1,9 +1,10 @@
 use std::path::Path;
 
-pub use tera::{Context, Error, ErrorKind, Result, Tera};
+pub use tera::{Context, Error, ErrorKind, Result, Tera, Value};
 
 use crate::preset::FULL;
 
+pub mod context;
 pub mod preset;
 
 pub fn new(dir: &str) -> Result<Tera> {

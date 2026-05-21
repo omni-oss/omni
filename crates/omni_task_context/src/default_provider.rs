@@ -84,7 +84,7 @@ fn create_template_context<'a>(
     args: Option<&'a Map<String, serde_json::Value>>,
     override_args: Option<&'a UnorderedMap<String, serde_json::Value>>,
 ) -> omni_tera::Context {
-    let mut context = omni_tera::Context::new();
+    let mut context = omni_tera::context::STANDARD.clone();
 
     context.insert("env", env_vars);
     if let Some(meta) = meta {

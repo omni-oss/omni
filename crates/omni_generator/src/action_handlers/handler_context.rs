@@ -18,7 +18,7 @@ pub struct HandlerContext<'a> {
     pub scope_id: Option<&'a str>,
     pub current_dir: &'a Path,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
-    pub tera_context_values: &'a tera::Context,
+    pub tera_context_values: &'a omni_tera::Context,
     pub generator_targets: &'a UnorderedMap<String, OmniPath>,
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
     pub overwrite: Option<OverwriteConfiguration>,

@@ -27,3 +27,5 @@ tera = { workspace = true }
 heck = { workspace = true }
 cruet = { workspace = true }
 pathdiff = { workspace = true }
+serde = { workspace = true }
+target-lexicon = { workspace = true }
