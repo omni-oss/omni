@@ -92,6 +92,17 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 )
         });
 
+        let ws_extras = maps::map![
+            "WORKSPACE_DIR".to_string() => root_dir.clone(),
+            "OMNI_VERSION".to_string() => build::PKG_VERSION.to_string(),
+            "PLATFORM_HOST".to_string() => target_lexicon::HOST.to_string(),
+            "PLATFORM_OS".to_string() => target_lexicon::HOST.operating_system.to_string(),
+            "PLATFORM_ARCH".to_string() => target_lexicon::HOST.architecture.to_string(),
+            "PLATFORM_ENV".to_string() => target_lexicon::HOST.environment.to_string(),
+            "PLATFORM_VENDOR".to_string() => target_lexicon::HOST.vendor.to_string(),
+            "PLATFORM_BINARY_FORMAT".to_string() => target_lexicon::HOST.binary_format.to_string(),
+        ];
+
         for project_config in filtered {
             trace::debug!(
                 project_configuration = ?project_config,
@@ -100,35 +111,36 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
             let dir =
                 project_config.dir.path().expect("path should be resolved");
-            let mut extras = maps::map![
-                "WORKSPACE_DIR".to_string() => root_dir.clone(),
+
+            let mut project_extras = maps::map![
                 "PROJECT_NAME".to_string() => project_config.name.to_string(),
                 "PROJECT_DIR".to_string() => dir.to_string_lossy().to_string(),
-                "OMNI_VERSION".to_string() => build::PKG_VERSION.to_string(),
             ];
+
+            project_extras.extend(ws_extras.clone());
 
             let overrides = &project_config.env.vars;
             if !overrides.as_map().is_empty() {
-                extras.extend(overrides.to_map_to_inner());
+                project_extras.extend(overrides.to_map_to_inner());
                 if !ws_vars_os.is_empty() {
                     let cfg = CommandExpansionConfig::new_enabled(
                         project_config.dir.path()?,
                         &ws_vars_os,
                     );
                     expand_into_with_command_config(
-                        &mut extras,
+                        &mut project_extras,
                         &self.workspace_configuration.env.vars,
                         &cfg,
                     )?;
 
-                    extras.extend(ws_vars.clone());
+                    project_extras.extend(ws_vars.clone());
                 }
             }
 
             // load the env vars for the project
             _ = self.env_loader.get(&GetVarsArgs {
                 start_dir: Some(dir),
-                project_env_var_overrides: Some(&extras),
+                project_env_var_overrides: Some(&project_extras),
                 inherit_env_vars: self.inherit_env_vars,
             })?;
 

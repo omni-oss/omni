@@ -256,6 +256,7 @@ rstest = { version = "^0.26.1" }
 rstest_reuse = { version = "^0.7.0" }
 fastrand = { version = "^2.4.1" }
 directories = { version = "^6.0.0" }
+target-lexicon = { version = "^0.13.5" }
 # nom = { version = "^8.0.0" }
 
 
