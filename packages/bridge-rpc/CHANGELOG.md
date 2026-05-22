@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-rpc-v0.1.2 - 2026-05-22
+#### Bug Fixes
+- path error on windows - (8c75e42) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update vite configs - (e326f27) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-rpc-v0.1.1 - 2026-02-03
 #### Bug Fixes
 - (**@omni-oss/bridge-rpc**) remove console logs - (0ded265) - Clarence Manuel

@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_utils-v0.1.1 - 2026-05-22
+#### Bug Fixes
+- relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_utils-v0.1.0 - 2026-01-31
 #### Features
 - (**omni_tracing_subscriber**) support for custom ad-hoc writers - (f584f1f) - Clarence Manuel

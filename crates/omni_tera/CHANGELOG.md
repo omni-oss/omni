@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.6.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+#### Bug Fixes
+- relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.5.0 - 2026-05-18
 #### Features
 - implement init subcommand - (ba0e005) - Clarence Manuel

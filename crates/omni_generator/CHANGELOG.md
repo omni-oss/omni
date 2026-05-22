@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.8.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.7.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel

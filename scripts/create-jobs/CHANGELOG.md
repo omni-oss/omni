@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/create-jobs-v0.1.12 - 2026-05-22
+#### Bug Fixes
+- (**@omni-oss/create-jobs**) remove cache hit determination - (cb32459) - Clarence Manuel
+- only skip completed task when exit_code is indicates success - (fd8a11e) - Clarence Manuel
+- create-jobs not respecting cache_hit - (e23ed9f) - Clarence Manuel
+- path error on windows - (8c75e42) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/create-jobs-v0.1.11 - 2026-05-18
 #### Bug Fixes
 - schema mismatch - (fc1835a) - Clarence Manuel

@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.15.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+- add platform environmantl variables - (2fc88d0) - Clarence Manuel
+- add project command - (8d0c325) - Clarence Manuel
+#### Bug Fixes
+- failure to expand default values - (6a8e45d) - Clarence Manuel
+- relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests on windows - (ede15e6) - Clarence Manuel
+- fix tests not finding the correct binary for windows - (ccecf25) - Clarence Manuel
+- improve diagnostics messages during test failures - (6403c3c) - Clarence Manuel
+- update omni project configs - (d4f4be9) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.14.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel

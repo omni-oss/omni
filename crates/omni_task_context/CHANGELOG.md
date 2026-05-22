@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_context-v0.6.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_task_context-v0.5.0 - 2026-03-21
 #### Features
 - implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel

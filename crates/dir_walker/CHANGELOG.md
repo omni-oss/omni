@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## dir_walker-v0.1.2 - 2026-05-22
+#### Bug Fixes
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+
+- - -
+
 ## dir_walker-v0.1.1 - 2026-05-18
 #### Bug Fixes
 - ignore not found io errors - (7e78bd4) - Clarence Manuel

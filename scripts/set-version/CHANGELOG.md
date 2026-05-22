@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/set-version-v0.2.1 - 2026-05-22
+#### Bug Fixes
+- path error on windows - (8c75e42) - Clarence Manuel
+#### Miscellaneous Chores
+- fix set-version import error - (a78d2f1) - Clarence Manuel
+- add node, bun, deno types to tsconfig - (dab875e) - Clarence Manuel
+- update node dependencies - (2ec398f) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/set-version-v0.2.0 - 2026-03-21
 #### Features
 - implement --arg flag for passing custom args - (25d09a9) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_collector-v0.3.2 - 2026-05-22
+#### Bug Fixes
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+
+- - -
+
 ## omni_collector-v0.3.1 - 2026-05-18
 #### Bug Fixes
 - rename command to exec - (7384f6e) - Clarence Manuel

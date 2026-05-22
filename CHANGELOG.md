@@ -2,6 +2,46 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.0 - 2026-05-22
+### Package updates
+- omni_generator bumped to omni_generator-v0.8.0
+- @omni-oss/system-interface bumped to @omni-oss/system-interface-v0.1.1
+- omni_prompt bumped to omni_prompt-v0.5.0
+- omni_tera bumped to omni_tera-v0.6.0
+- omni_cli_core bumped to omni_cli_core-v0.15.0
+- dir_walker bumped to dir_walker-v0.1.2
+- @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.12
+- omni_utils bumped to omni_utils-v0.1.1
+- omni_collector bumped to omni_collector-v0.3.2
+- omni_context bumped to omni_context-v0.4.0
+- @omni-oss/set-version bumped to @omni-oss/set-version-v0.2.1
+- @omni-oss/bridge-rpc bumped to @omni-oss/bridge-rpc-v0.1.2
+- omni_task_context bumped to omni_task_context-v0.6.0
+- omni bumped to omni-v0.15.0
+- root bumped to root-v0.10.0
+### Global changes
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+- add platform environmantl variables - (2fc88d0) - Clarence Manuel
+#### Bug Fixes
+- path error on windows - (8c75e42) - Clarence Manuel
+- relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+#### Continuous Integration
+- update workflow - (f0ae726) - Clarence Manuel
+- update ci workflow - (abf2c10) - Clarence Manuel
+- always cache result - (27baaaf) - Clarence Manuel
+- update omni version - (ebc2f0f) - Clarence Manuel
+- update workflows [skip ci] - (29390c8) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests on windows - (ede15e6) - Clarence Manuel
+- update typescript and rust presents - (1ed65bf) - Clarence Manuel
+- update crate generator - (2681983) - Clarence Manuel
+- update crate generator - (6f24ccf) - Clarence Manuel
+- update omni project configs - (d4f4be9) - Clarence Manuel
+
+- - -
+
 ## v0.14.1 - 2026-05-18
 ### Package updates
 - @omni-oss/create-jobs bumped to @omni-oss/create-jobs-v0.1.11

@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_prompt-v0.5.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+#### Bug Fixes
+- failure to expand default values - (6a8e45d) - Clarence Manuel
+
+- - -
+
 ## omni_prompt-v0.4.0 - 2026-05-18
 #### Features
 - implement init subcommand - (ba0e005) - Clarence Manuel

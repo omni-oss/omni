@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.10.0 - 2026-05-22
+#### Features
+- add and utilize standard values for tera context - (92c8e38) - Clarence Manuel
+- add platform environmantl variables - (2fc88d0) - Clarence Manuel
+#### Bug Fixes
+- path error on windows - (8c75e42) - Clarence Manuel
+- relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel
+- bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel
+#### Continuous Integration
+- update omni version - (ebc2f0f) - Clarence Manuel
+#### Miscellaneous Chores
+- (**version**) v0.14.1 - (51fe945) - Clarence Manuel
+
+- - -
+
 ## root-v0.9.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel
