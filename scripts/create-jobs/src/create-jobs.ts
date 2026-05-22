@@ -67,13 +67,14 @@ export function createJobs(results: TaskResultArray, rootDir?: string): Jobs {
             continue;
         }
 
-        if (
-            result.status === "completed"
-            && result.cache_hit
-            && result.exit_code === 0
-        ) {
-            continue;
-        }
+        // // we want to replay cached tasks so cached tasks must not be skipped
+        // if (
+        //     result.status === "completed"
+        //     && result.cache_hit
+        //     && result.exit_code === 0
+        // ) {
+        //     continue;
+        // }
 
         const task = result.task;
         if (task.task_name === "test" || result.details.meta?.is_test_task) {
