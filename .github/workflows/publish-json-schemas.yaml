@@ -26,7 +26,7 @@ jobs:
       - name: Setup Omni
         uses: omni-oss/setup-omni@v2
         with:
-          version: ${{ github.event.inputs.version || 'latest' }}
+          version: ${{ inputs.version || 'latest' }}
           github-token: ${{ github.token }}
 
       - name: Generate JSON Schemas
@@ -53,5 +53,5 @@ jobs:
           publish_dir: ./json-schemas
           destination_dir: .
           keep_files: true
-          tag_name: ${{ github.event.inputs.version || 'latest' }}
-          tag_message: "Publish version ${{ github.event.inputs.version || 'latest' }}"
+          tag_name: ${{ inputs.version || 'latest' }}
+          tag_message: "Publish version ${{ inputs.version || 'latest' }}"
