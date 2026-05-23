@@ -26,6 +26,7 @@ omni_lockfile = { workspace = true }
 omni_git_utils = { workspace = true }
 system_traits = { workspace = true }
 url = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

@@ -6982,6 +6982,7 @@ dependencies = [
  "system_traits",
  "test-log",
  "thiserror 2.0.18",
+ "tokio 1.52.1",
  "trace",
  "tracing",
  "url",

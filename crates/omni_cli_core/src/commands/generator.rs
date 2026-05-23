@@ -479,6 +479,8 @@ async fn get_generators(
 
     let mut retrieval_tasks = JoinSet::new();
 
+    let mut git_sources = vec![];
+
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()
     {
@@ -510,6 +512,8 @@ async fn get_generators(
             GeneratorSourceConfiguration::Git(git) => {
                 let remote_sources = remote_sources.clone();
 
+                git_sources.push((&git.uri, git.rev.as_str()));
+
                 let sys = sys.clone();
                 let git = git.clone();
 
@@ -535,6 +539,7 @@ async fn get_generators(
         configurations.extend(configs?);
     }
 
+    remote_sources.retain_git_sources(&git_sources).await?;
     remote_sources.lock().await?;
 
     Ok(configurations)
