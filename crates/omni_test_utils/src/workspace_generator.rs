@@ -75,7 +75,9 @@ impl WorkspaceGenerator {
         let ws = WorkspaceConfiguration {
             projects: vec!["./projects/*".to_string()],
             generators: vec![GeneratorSourceConfiguration::new_local(
-                LocalGeneratorSourceConfiguration::new("./generators/*"),
+                LocalGeneratorSourceConfiguration::new(
+                    "./generators/*".to_string(),
+                ),
             )],
             name: self.name.clone(),
             env: Default::default(),

@@ -17,6 +17,7 @@ mod workspace_configuration;
 pub use cache_configuration::*;
 pub use generator_source_configuration::*;
 pub use meta_configuration::*;
+pub use omni_config_types as types;
 pub use project_configuration::*;
 pub use remote_cache_configuration::*;
 pub use task_configuration::*;

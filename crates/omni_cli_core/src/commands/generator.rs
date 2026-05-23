@@ -13,7 +13,7 @@ use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
 use either::Left;
 use maps::{Map, UnorderedMap, unordered_map};
-use omni_configurations::GeneratorSourceConfiguration;
+use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::{GenSession, GeneratorSys, RunConfig};
@@ -477,7 +477,7 @@ async fn get_generators(
         .await?,
     );
 
-    let mut git_clone_tasks = JoinSet::new();
+    let mut retrieval_tasks = JoinSet::new();
 
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()
@@ -490,13 +490,17 @@ async fn get_generators(
                 let local = local.clone();
                 let root_dir = ctx.root_dir().to_path_buf();
                 let sys = sys.clone();
-                git_clone_tasks.spawn(async move {
-                    let configurations = omni_generator::discover(
-                        &root_dir,
-                        &[local.path.as_str()],
-                        &sys,
-                    )
-                    .await?;
+                retrieval_tasks.spawn(async move {
+                    let configurations = match local.path {
+                        SingleOrMany::Single(item) => {
+                            omni_generator::discover(&root_dir, &[item], &sys)
+                                .await?
+                        }
+                        SingleOrMany::Many(items) => {
+                            omni_generator::discover(&root_dir, &items, &sys)
+                                .await?
+                        }
+                    };
                     Ok::<_, eyre::Report>(omni_generator::assign_scope_id(
                         scope_id,
                         configurations,
@@ -509,7 +513,7 @@ async fn get_generators(
                 let sys = sys.clone();
                 let git = git.clone();
 
-                git_clone_tasks.spawn(async move {
+                retrieval_tasks.spawn(async move {
                     let dir = remote_sources
                         .pull_git_repo(&git.uri, &git.rev)
                         .await?;
@@ -527,7 +531,7 @@ async fn get_generators(
 
     let mut configurations = vec![];
 
-    for configs in git_clone_tasks.join_all().await {
+    for configs in retrieval_tasks.join_all().await {
         configurations.extend(configs?);
     }
 

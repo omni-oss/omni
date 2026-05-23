@@ -1,5 +1,6 @@
 use derive_new::new;
 use garde::Validate;
+use omni_config_types::SingleOrMany;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -36,7 +37,7 @@ pub enum GeneratorSourceConfiguration {
 #[garde(allow_unvalidated)]
 pub struct LocalGeneratorSourceConfiguration {
     #[new(into)]
-    pub path: String,
+    pub path: SingleOrMany<String>,
 }
 
 #[derive(
