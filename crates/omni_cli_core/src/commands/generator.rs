@@ -462,7 +462,6 @@ async fn get_generators(
     ctx: &Context,
     sys: &impl GeneratorSys,
 ) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>> {
-    let mut local_paths = vec![];
     let omni_path = ctx.omni_dir();
     let generator_sources_path = omni_path.join("./sources/generator");
     let lockfile_path = generator_sources_path.join("lock.json");
@@ -483,17 +482,32 @@ async fn get_generators(
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()
     {
+        // remote generator scopes should start at 100, reserve 0-99 for future uses
+        let scope_id = idx + 100;
+
         match config {
             GeneratorSourceConfiguration::Local(local) => {
-                local_paths.push(local.path.as_str());
+                let local = local.clone();
+                let root_dir = ctx.root_dir().to_path_buf();
+                let sys = sys.clone();
+                git_clone_tasks.spawn(async move {
+                    let configurations = omni_generator::discover(
+                        &root_dir,
+                        &[local.path.as_str()],
+                        &sys,
+                    )
+                    .await?;
+                    Ok::<_, eyre::Report>(omni_generator::assign_scope_id(
+                        scope_id,
+                        configurations,
+                    ))
+                });
             }
             GeneratorSourceConfiguration::Git(git) => {
                 let remote_sources = remote_sources.clone();
 
                 let sys = sys.clone();
                 let git = git.clone();
-                // remote generator scopes should start at 100, reserve 0-99 for future uses
-                let scope_id = idx + 100;
 
                 git_clone_tasks.spawn(async move {
                     let dir = remote_sources
@@ -511,11 +525,7 @@ async fn get_generators(
         }
     }
 
-    let mut configurations = omni_generator::assign_scope_id(
-        0,
-        omni_generator::discover(ctx.root_dir(), local_paths.as_slice(), sys)
-            .await?,
-    );
+    let mut configurations = vec![];
 
     for configs in git_clone_tasks.join_all().await {
         configurations.extend(configs?);
