@@ -8,7 +8,7 @@ pub struct TeraExprValidator;
 
 pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
     let result =
-        tera::Template::new("__validate_template__", None, value.borrow());
+        omni_tera::Template::new("__validate_template__", None, value.borrow());
 
     if let Err(error) = result {
         return Err(error.to_string());
@@ -19,7 +19,7 @@ pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
 
 pub fn validate_string<V: Borrow<String>>(value: &V) -> Result<(), String> {
     let result =
-        tera::Template::new("__validate_template__", None, value.borrow());
+        omni_tera::Template::new("__validate_template__", None, value.borrow());
 
     if let Err(error) = result {
         return Err(error.to_string());
