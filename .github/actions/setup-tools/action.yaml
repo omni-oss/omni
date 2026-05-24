@@ -73,7 +73,7 @@ runs:
 
     - name: Install Node
       if: ${{ inputs.install-all == 'true' || inputs.install-node == 'true' }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6.4.0
       with:
         check-latest: true
         node-version: ${{ inputs.node-version }}
