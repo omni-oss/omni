@@ -120,7 +120,7 @@ pub async fn main() -> eyre::Result<()> {
         .args
         .file_trace_output
         .clone()
-        .or_else(|| Some(PathBuf::from("./omni/trace/logs")));
+        .or_else(|| Some(PathBuf::from("./.omni/trace/omni.log")));
 
     let trace_file_path = if let Some(path) = trace_file_path {
         Some(

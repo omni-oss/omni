@@ -101,7 +101,7 @@ pub struct CliArgs {
     #[arg(
         long = "file-trace-output",
         help = "The file to write traces to",
-        default_value = "./.omni/trace/logs"
+        default_value = "./.omni/trace/omni.log"
     )]
     pub file_trace_output: Option<PathBuf>,
 
