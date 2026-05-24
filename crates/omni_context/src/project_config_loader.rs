@@ -13,6 +13,7 @@ use omni_types::Root;
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use thiserror::Error;
+use trace::Level;
 
 use crate::ContextSys;
 
@@ -37,7 +38,10 @@ impl PartialOrd for RelatedPath {
 }
 
 impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip(self)))]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip(self))
+    )]
     pub async fn load_project_configs(
         &self,
         project_paths: &[PathBuf],

@@ -1,5 +1,6 @@
 use bon::Builder;
 use directories::ProjectDirs;
+use trace::Level;
 
 use crate::fallback_store;
 
@@ -9,7 +10,7 @@ pub struct InitConfig {
     pub use_fallback_store: bool,
 }
 
-#[cfg_attr(feature = "enable-tracing", tracing::instrument())]
+#[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG))]
 pub fn initialize(config: InitConfig) -> eyre::Result<()> {
     trace::trace!("initializing_omni_setup");
 

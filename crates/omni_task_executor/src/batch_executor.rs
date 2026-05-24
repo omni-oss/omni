@@ -19,6 +19,7 @@ use omni_term_ui::mux_output_presenter::{
 use omni_types::{OmniPath, Root, RootMap, enum_map};
 use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use trace::Level;
 
 use crate::{
     OnFailure, SkipReason, TaskDetails, TaskExecutionResult, TaskExecutorSys,
@@ -128,6 +129,8 @@ where
                 .open(logs_path)
                 .await?;
 
+            log::debug!("replaying logs from {:?}", logs_path);
+
             let handle = self
                 .presenter
                 .add_stream_output(
@@ -146,6 +149,9 @@ where
                     file.original_path.path().expect("should be resolved");
 
                 if self.sys.fs_exists_async(original_path).await? {
+                    log::debug!(
+                        "file already exists {original_path:?}, skipping cache restore"
+                    );
                     continue;
                 }
 
@@ -161,16 +167,19 @@ where
                         original_path,
                     )
                     .await?;
+
+                log::debug!(
+                    "restore cached file {:?} to {:?}",
+                    file.cached_path,
+                    original_path
+                );
             }
         }
 
         Ok(())
     }
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, task_contexts))
-    )]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     fn expand_templates<'a>(
         &self,
         task_contexts: impl IntoIterator<Item = &'a TaskContext<'a>>,
@@ -534,6 +543,14 @@ where
         Ok(new_results)
     }
 
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(
+            level = Level::DEBUG,
+            skip_all,
+            fields(batch_size = batch.len(), overall_results_count = overall_results.len())
+        )
+    )]
     pub async fn execute_batch<'a>(
         &mut self,
         batch: &'a [TaskExecutionNode],

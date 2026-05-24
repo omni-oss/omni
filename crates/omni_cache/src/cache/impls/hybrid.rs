@@ -37,6 +37,7 @@ use system_traits::{
 };
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
+use trace::Level;
 
 use crate::{
     CacheStats, CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
@@ -122,7 +123,7 @@ fn hashtext(text: &str) -> String {
 impl HybridTaskExecutionCacheStore {
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, tasks, config))
+        tracing::instrument(level = Level::DEBUG, skip(self, tasks, config))
     )]
     async fn collect<'a>(
         &'a self,
@@ -189,10 +190,7 @@ const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
 impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
     type Error = LocalTaskExecutionCacheStoreError;
 
-    #[cfg_attr(
-        feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, cache_infos))
-    )]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     async fn cache_many<'a>(
         &'a self,
         cache_infos: &[crate::NewCacheInfo<'a>],
@@ -276,10 +274,8 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     )
                     .await?;
 
-                trace::debug!(
-                    original_path = ?original_abs_path,
-                    cache_path = ?cache_abs_file_path,
-                    "hard linked file"
+                log::debug!(
+                    "cache file hard link {original_abs_path:?} to {cache_abs_file_path:?}"
                 );
 
                 cache_output_files.push(CachedFileOutput {
@@ -390,7 +386,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, projects))
+        tracing::instrument(level = Level::DEBUG, skip(self, projects))
     )]
     async fn get_many(
         &self,

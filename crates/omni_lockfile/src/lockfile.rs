@@ -6,6 +6,7 @@ use std::{
 use derive_new::new;
 use maps::map;
 use parking_lot::Mutex;
+use trace::Level;
 use url::Url;
 
 use crate::{
@@ -68,7 +69,10 @@ impl Lockfile {
         Ok(())
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all)
+    )]
     pub async fn lock_git_commit(
         &self,
         uri: &Url,

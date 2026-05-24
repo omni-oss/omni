@@ -14,6 +14,7 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant};
+use trace::Level;
 
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
@@ -804,7 +805,7 @@ impl TaskExecutionGraph {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "trace", skip_all)
+        tracing::instrument(level = Level::DEBUG, skip_all)
     )]
     pub fn get_batched_execution_plan(
         &self,
@@ -815,7 +816,7 @@ impl TaskExecutionGraph {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "trace", skip_all)
+        tracing::instrument(level = Level::DEBUG, skip_all)
     )]
     pub fn get_batched_execution_plan_with_dependents(
         &self,

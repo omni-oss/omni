@@ -41,7 +41,10 @@ struct LogRequestMiddleware;
 
 #[async_trait]
 impl Middleware for LogRequestMiddleware {
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all)
+    )]
     async fn handle(
         &self,
         req: Request,

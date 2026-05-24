@@ -8,7 +8,7 @@ use omni_execution_plan::{
     ExecutionPlanProvider as _, ExecutionPlanProviderError,
 };
 use omni_tracing_subscriber::{
-    TraceLevel, TracingConfig,
+    Level, TracingConfig,
     custom_output::{
         CustomOutput, CustomOutputConfig, FormatOptions, OutputType,
     },
@@ -118,11 +118,10 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
         ),
         TaskExecutorError,
     > {
-        let stdout_trace_level =
-            self.context.tracing_config().stdout_trace_level;
+        let stdout_trace_level = self.context.tracing_config().stdout_level;
         let config = TracingConfig {
-            stderr_trace_enabled: false,
-            stdout_trace_level: TraceLevel::Off,
+            stderr_enabled: false,
+            stdout_level: Level::Off,
             ..self.context.tracing_config().clone()
         };
         trace::debug!(

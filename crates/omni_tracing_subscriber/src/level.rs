@@ -14,7 +14,7 @@ use tracing_core::LevelFilter;
     VariantArray,
 )]
 #[repr(u8)]
-pub enum TraceLevel {
+pub enum Level {
     #[strum(serialize = "off")]
     Off = 0,
     #[strum(serialize = "error")]
@@ -30,15 +30,15 @@ pub enum TraceLevel {
     Trace = 5,
 }
 
-impl From<TraceLevel> for LevelFilter {
-    fn from(value: TraceLevel) -> Self {
+impl From<Level> for LevelFilter {
+    fn from(value: Level) -> Self {
         match value {
-            TraceLevel::Off => LevelFilter::OFF,
-            TraceLevel::Error => LevelFilter::ERROR,
-            TraceLevel::Warn => LevelFilter::WARN,
-            TraceLevel::Info => LevelFilter::INFO,
-            TraceLevel::Debug => LevelFilter::DEBUG,
-            TraceLevel::Trace => LevelFilter::TRACE,
+            Level::Off => LevelFilter::OFF,
+            Level::Error => LevelFilter::ERROR,
+            Level::Warn => LevelFilter::WARN,
+            Level::Info => LevelFilter::INFO,
+            Level::Debug => LevelFilter::DEBUG,
+            Level::Trace => LevelFilter::TRACE,
         }
     }
 }

@@ -7,6 +7,7 @@ use env::{CommandExpansionConfig, expand_into_with_command_config};
 use env_loader::{EnvCache as _, EnvCacheExt, EnvLoaderError, EnvLoaderSys};
 use maps::Map;
 use system_traits::{EnvCurrentDir, EnvVars, auto_impl};
+use trace::Level;
 
 use crate::utils::{EnvVarsMap, vars_os};
 
@@ -46,7 +47,7 @@ impl<T: EnvCacheSys> EnvLoader<T> {
         self.env_cache.get(path).clone()
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = tracing::Level::DEBUG, skip_all))]
+    #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
     pub fn get(
         &mut self,
         args: &GetVarsArgs,

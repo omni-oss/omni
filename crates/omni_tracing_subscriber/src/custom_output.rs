@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::TraceLevel;
+use crate::Level;
 
 #[derive(Clone)]
 pub struct CustomOutput {
@@ -39,7 +39,7 @@ impl CustomOutput {
 #[derive(Debug, Clone, Copy, Builder)]
 #[builder(setter(into, strip_option))]
 pub struct CustomOutputConfig {
-    pub trace_level: TraceLevel,
+    pub trace_level: Level,
     pub output_type: OutputType,
 }
 

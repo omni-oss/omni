@@ -1,10 +1,10 @@
 mod config;
 pub mod custom_output;
+mod level;
 mod log_handling;
-mod trace_level;
 
 pub use config::*;
-pub use trace_level::*;
+pub use level::*;
 use tracing_subscriber::Layer;
 use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::fmt::FormatEvent;
@@ -35,9 +35,11 @@ pub fn noop_subscriber() -> TracingSubscriber {
     TracingSubscriber::new(
         &TracingConfig {
             file_path: None,
-            file_trace_level: TraceLevel::Off,
-            stderr_trace_enabled: false,
-            stdout_trace_level: TraceLevel::Off,
+            file_level: Level::Off,
+            stderr_enabled: false,
+            stdout_level: Level::Off,
+            stderr_show_traces: false,
+            stdout_show_traces: false,
         },
         vec![],
     )
@@ -60,8 +62,8 @@ impl TracingSubscriber {
             .with_target("mio", LevelFilter::OFF)
             .with_target("ignore", LevelFilter::OFF);
 
-        if !config.stdout_trace_level.is_off() {
-            let filter: LevelFilter = config.stdout_trace_level.into();
+        if !config.stdout_level.is_off() {
+            let filter: LevelFilter = config.stdout_level.into();
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .pretty()
                 .compact()
@@ -73,31 +75,33 @@ impl TracingSubscriber {
                 .with_target(false)
                 .with_line_number(false)
                 .with_filter(
-                    main_filters.clone().with_default(filter).and(LogFilter),
+                    main_filters
+                        .clone()
+                        .with_default(filter)
+                        .and(LogFilter::new(config.stdout_show_traces)),
                 )
                 .boxed();
 
             layers.push(stdout_layer);
         }
 
-        if config.stderr_trace_enabled {
+        if config.stderr_enabled {
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(atty::is(atty::Stream::Stderr))
                 .with_ansi_sanitization(false)
                 .with_writer(std::io::stderr)
-                .with_filter(LogFilter)
                 .with_filter(
                     main_filters
                         .clone()
                         .with_default(LevelFilter::ERROR)
-                        .and(LogFilter),
+                        .and(LogFilter::new(config.stderr_show_traces)),
                 )
                 .boxed();
 
             layers.push(stderr_layer);
         }
 
-        if !config.file_trace_level.is_off() {
+        if !config.file_level.is_off() {
             let file_path = config
                 .file_path
                 .as_ref()
@@ -107,7 +111,7 @@ impl TracingSubscriber {
                 file_path.parent().ok_or_eyre("Can't get parent")?,
             )?;
 
-            let filter: LevelFilter = config.file_trace_level.into();
+            let filter: LevelFilter = config.file_level.into();
 
             let file_layer = tracing_subscriber::fmt::layer()
                 .with_ansi_sanitization(true)

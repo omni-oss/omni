@@ -13,6 +13,7 @@ use tokio::io::{
     AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader,
 };
+use trace::Level;
 
 use crate::{Child, ChildError};
 
@@ -140,7 +141,10 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
         self
     }
 
-    #[tracing::instrument(skip_all)]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all)
+    )]
     pub async fn exec(
         mut self,
     ) -> Result<ChildProcessResult, ChildProcessError> {

@@ -2,6 +2,7 @@ use std::{collections::HashSet, path::PathBuf};
 
 use derive_new::new;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
+use trace::Level;
 
 use crate::project_data_extractor::ProjectDataExtractions;
 
@@ -52,6 +53,7 @@ impl ExtractedDataValidator {
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(
+            level = Level::DEBUG,
             skip_all,
             fields(
                 fail_fast = self.fail_fast,

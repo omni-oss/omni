@@ -11,6 +11,7 @@ use omni_cli_core::{
 use omni_tracing_subscriber::TracingConfig;
 use scopeguard::defer;
 use system_traits::impls::RealSys;
+use trace::Level;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -106,7 +107,7 @@ pub async fn run(
 }
 
 #[tokio::main(flavor = "multi_thread")]
-#[cfg_attr(feature = "enable-tracing", tracing::instrument(err))]
+#[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, err))]
 pub async fn main() -> eyre::Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_location_section(cfg!(debug_assertions))
@@ -136,10 +137,12 @@ pub async fn main() -> eyre::Result<()> {
     };
 
     let tracing_config = TracingConfig {
-        stderr_trace_enabled: cli.args.stderr_trace,
         file_path: trace_file_path,
-        file_trace_level: cli.args.file_trace_level.value(),
-        stdout_trace_level: cli.args.stdout_trace_level.value(),
+        file_level: cli.args.file_trace_level.value(),
+        stdout_level: cli.args.stdout_log_level.value(),
+        stdout_show_traces: cli.args.stdout_show_traces,
+        stderr_enabled: cli.args.stderr_log,
+        stderr_show_traces: cli.args.stderr_show_traces,
     };
 
     #[cfg(feature = "enable-tracing")]

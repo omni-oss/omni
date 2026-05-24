@@ -17,6 +17,7 @@ use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 use system_traits::{FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys};
+use trace::Level;
 
 use crate::error::{Error, ErrorInner};
 
@@ -227,9 +228,11 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
     #[cfg_attr(
         feature = "enable-tracing",
-        tracing::instrument(level = "debug", skip(self, config, project_tasks),
-            fields(project_tasks_count = project_tasks.len()
-        ))
+        tracing::instrument(
+            level = Level::DEBUG,
+            skip_all,
+            fields(project_tasks_count = project_tasks.len()),
+        )
     )]
     pub async fn collect(
         &self,

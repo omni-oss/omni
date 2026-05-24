@@ -6,7 +6,7 @@ use completion::CompletionCommand;
 use config::ConfigCommand;
 use env::EnvCommand;
 use exec::ExecCommand;
-use omni_tracing_subscriber::TraceLevel;
+use omni_tracing_subscriber::Level;
 use run::RunCommand;
 mod common_args;
 mod common_types;
@@ -60,24 +60,43 @@ pub struct Cli {
 #[command()]
 pub struct CliArgs {
     #[arg(
-        short = 't',
-        long = "stdout-trace-level",
-        help = "Print traces to stdout",
+        short = 'l',
+        long = "stdout-logs-level",
+        help = "Max level of logs to stdout",
         value_enum,
         default_value = "info",
-        env = "OMNI_STDOUT_TRACE_LEVEL"
+        env = "OMNI_STDOUT_LOG_LEVEL"
     )]
-    pub stdout_trace_level: EnumValueAdapter<TraceLevel>,
+    pub stdout_log_level: EnumValueAdapter<Level>,
+
+    #[arg(
+        short = 't',
+        long = "stdout-show-traces",
+        help = "Include traces to stdout",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue,
+        env = "OMNI_STDOUT_SHOW_TRACES"
+    )]
+    pub stdout_show_traces: bool,
 
     #[arg(
         long,
-        group = "stderr-trace",
-        help = "Output Error traces to stderr",
-        env = "OMNI_STDERR_TRACE_ENABLED",
+        group = "stderr-log",
+        help = "Output Error log to stderr",
+        env = "OMNI_STDERR_LOG_ENABLED",
         default_value_t = false,
         action = clap::ArgAction::SetTrue,
     )]
-    pub stderr_trace: bool,
+    pub stderr_log: bool,
+
+    #[arg(
+        long = "stderr-show-traces",
+        help = "Include error traces to stderr",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue,
+        env = "OMNI_STDERR_SHOW_TRACES"
+    )]
+    pub stderr_show_traces: bool,
 
     #[arg(
         long = "file-trace-output",
@@ -94,7 +113,7 @@ pub struct CliArgs {
         default_value = "off",
         env = "OMNI_FILE_TRACE_LEVEL"
     )]
-    pub file_trace_level: EnumValueAdapter<TraceLevel>,
+    pub file_trace_level: EnumValueAdapter<Level>,
 
     #[arg(
         short = 'r',
@@ -129,14 +148,16 @@ pub struct CliArgs {
 impl Default for CliArgs {
     fn default() -> Self {
         Self {
-            stdout_trace_level: EnumValueAdapter::new(TraceLevel::Off),
-            stderr_trace: false,
+            stdout_log_level: EnumValueAdapter::new(Level::Off),
+            stderr_log: false,
             file_trace_output: None,
-            file_trace_level: EnumValueAdapter::new(TraceLevel::Off),
+            file_trace_level: EnumValueAdapter::new(Level::Off),
             env_root_dir_marker: None,
             env_file: None,
             env: None,
             inherit_env_vars: false,
+            stdout_show_traces: false,
+            stderr_show_traces: false,
         }
     }
 }

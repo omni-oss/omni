@@ -11,6 +11,7 @@ use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _},
     task::JoinHandle,
 };
+use trace::Level;
 use tracing::{dispatcher, field};
 
 use crate::utils::{get_pty_size, should_use_pty};
@@ -30,8 +31,8 @@ pub struct Child {
 
 impl Child {
     #[cfg_attr(
-        feature="enable-tracing",
-        tracing::instrument(skip_all, fields(command = field::Empty, args = field::Empty))
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all, fields(command = field::Empty, args = field::Empty))
     )]
     pub fn spawn(
         command: impl Into<String>,
@@ -248,7 +249,10 @@ impl Child {
         self.pid
     }
 
-    #[tracing::instrument(skip_all)]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all)
+    )]
     pub async fn wait(self) -> Result<u32, ChildError> {
         match self.inner {
             ChildInner::Pty {

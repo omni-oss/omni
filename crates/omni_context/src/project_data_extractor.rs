@@ -20,6 +20,7 @@ use omni_types::OmniPathError;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
+use trace::Level;
 
 use crate::{
     EnvLoader, EnvVarsMap, GetVarsArgs, build,
@@ -63,7 +64,10 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         Ok((ws_vars, ws_vars_os))
     }
 
-    #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all))]
+    #[cfg_attr(
+        feature = "enable-tracing",
+        tracing::instrument(level = Level::DEBUG, skip_all)
+    )]
     pub fn extract_all(
         &mut self,
         project_configs: &[ProjectConfiguration],
