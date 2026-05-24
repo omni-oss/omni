@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_service-v0.1.3 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni project configs - (d4f4be9) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_service-v0.1.2 - 2026-05-18
 #### Bug Fixes
 - improve trace formatting - (0d468d8) - Clarence Manuel

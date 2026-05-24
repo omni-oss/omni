@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.6.1 - 2026-05-24
+#### Bug Fixes
+- generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.6.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

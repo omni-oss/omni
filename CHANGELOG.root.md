@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.10.1 - 2026-05-24
+#### Bug Fixes
+- generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel
+- generator sources lock not removing stale git sources - (905b8dc) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust dependencies - (426a26c) - Clarence Manuel
+- update Cargo.lock - (368e0ba) - Clarence Manuel
+
+- - -
+
 ## root-v0.10.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

@@ -2,6 +2,39 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.15.1 - 2026-05-24
+### Package updates
+- omni_core bumped to omni_core-v0.3.2
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.1.3
+- omni_serde_validators bumped to omni_serde_validators-v0.2.1
+- omni_test_utils bumped to omni_test_utils-v0.4.1
+- omni_cli_core bumped to omni_cli_core-v0.15.1
+- omni_process bumped to omni_process-v0.3.1
+- omni_cache bumped to omni_cache-v0.5.2
+- omni_lockfile bumped to omni_lockfile-v0.1.1
+- omni bumped to omni-v0.15.1
+- omni_context bumped to omni_context-v0.4.1
+- omni_setup bumped to omni_setup-v0.1.2
+- omni_configurations bumped to omni_configurations-v0.8.1
+- omni_remote_cache_client bumped to omni_remote_cache_client-v0.2.2
+- omni_tracing_subscriber bumped to omni_tracing_subscriber-v0.1.2
+- omni_remote_source bumped to omni_remote_source-v0.1.1
+- omni_config_types bumped to omni_config_types-v0.1.1
+- omni_task_executor bumped to omni_task_executor-v0.8.2
+- omni_collector bumped to omni_collector-v0.3.3
+- omni_tera bumped to omni_tera-v0.6.1
+- root bumped to root-v0.10.1
+### Global changes
+#### Bug Fixes
+- generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel
+- generator sources lock not removing stale git sources - (905b8dc) - Clarence Manuel
+#### Miscellaneous Chores
+- update typescript generator - (8dd9d9a) - Clarence Manuel
+- update rust dependencies - (426a26c) - Clarence Manuel
+- update Cargo.lock - (368e0ba) - Clarence Manuel
+
+- - -
+
 ## v0.15.0 - 2026-05-22
 ### Package updates
 - omni_generator bumped to omni_generator-v0.8.0

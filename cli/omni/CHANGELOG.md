@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.15.1 - 2026-05-24
+#### Bug Fixes
+- generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel
+- update omni logs path - (3be2dd2) - Clarence Manuel
+- update trace and log handling - (7d46766) - Clarence Manuel
+- generator sources lock not removing stale git sources - (905b8dc) - Clarence Manuel
+- support multiple paths for local generator source - (8757b00) - Clarence Manuel
+- local generator source entries sharing the same scope - (7fc821f) - Clarence Manuel
+
+- - -
+
 ## omni-v0.15.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

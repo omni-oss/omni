@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_config_types-v0.1.1 - 2026-05-24
+#### Bug Fixes
+- support multiple paths for local generator source - (8757b00) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_config_types-v0.1.0 - 2026-02-03
 #### Features
 - support if expressions for task condition - (cb1c87d) - Clarence Manuel

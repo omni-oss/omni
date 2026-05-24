@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.4.1 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.4.0 - 2026-05-22
 #### Features
 - add platform environmantl variables - (2fc88d0) - Clarence Manuel

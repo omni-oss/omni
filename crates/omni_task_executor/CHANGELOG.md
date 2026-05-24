@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.8.2 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.8.1 - 2026-05-18
 #### Bug Fixes
 - rename command to exec - (7384f6e) - Clarence Manuel

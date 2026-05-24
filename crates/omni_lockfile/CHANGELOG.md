@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_lockfile-v0.1.1 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+- generator sources lock not removing stale git sources - (905b8dc) - Clarence Manuel
+
+- - -
+
 ## omni_lockfile-v0.1.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel

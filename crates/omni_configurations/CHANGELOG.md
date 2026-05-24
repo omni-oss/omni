@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.8.1 - 2026-05-24
+#### Bug Fixes
+- support multiple paths for local generator source - (8757b00) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.8.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel

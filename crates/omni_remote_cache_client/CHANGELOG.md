@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_client-v0.2.2 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+#### Miscellaneous Chores
+- fix tests on windows - (ede15e6) - Clarence Manuel
+- fix tests not finding the correct binary for windows - (ccecf25) - Clarence Manuel
+- improve diagnostics messages during test failures - (6403c3c) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_client-v0.2.1 - 2026-05-18
 #### Bug Fixes
 - add keyring fallback to platforms without pre-installed dependencies - (4c85102) - Clarence Manuel

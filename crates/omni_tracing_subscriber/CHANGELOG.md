@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tracing_subscriber-v0.1.2 - 2026-05-24
+#### Bug Fixes
+- update trace and log handling - (7d46766) - Clarence Manuel
+
+- - -
+
 ## omni_tracing_subscriber-v0.1.1 - 2026-05-18
 #### Bug Fixes
 - improve trace formatting - (0d468d8) - Clarence Manuel
