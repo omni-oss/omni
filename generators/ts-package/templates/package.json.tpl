@@ -1,5 +1,5 @@
 {
-    "name": "@omni-oss/{{ prompts.package_name }}",
+    "name": "{{ vars.full_package_name }}",
     "description": "{{ prompts.package_description }}",
     "version": "{{ prompts.package_version }}",
     {% if prompts.package_type == 'script' %}

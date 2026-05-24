@@ -88,6 +88,13 @@ prompts:
         value: restricted
     default: public
 
+targets:
+  cog_config: "@workspace/cog.toml"
+
+vars:
+  full_package_name: "@omni-oss/{{ prompts.package_name }}"
+  generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\', to='/') }}"
+
 actions:
   - type: add-many
     base_path: templates
@@ -118,3 +125,15 @@ actions:
     files:
       - templates/vitest.config.unit.ts.tpl
       - templates/src/add.spec.ts.tpl
+
+  - type: prepend-content
+    target: cog_config
+    entries:
+      - content: |
+          [packages."{{ vars.full_package_name }}"]
+          path = "{{ vars.generated_dir }}"
+          include = [
+              "{{ vars.generated_dir }}/**",
+          ]
+          public_api = false
+        pattern: "@anchor:new-typescript-package"

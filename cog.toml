@@ -461,6 +461,8 @@ path = "packages/vitest-config"
 include = ["packages/vitest-config/**"]
 public_api = false
 
+# @anchor:new-typescript-package
+
 [packages.root]
 bump_order = 10000
 path = "."
