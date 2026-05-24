@@ -33,7 +33,7 @@ export abstract class AbstractTransport implements Transport {
         });
     }
 
-    onReceive(callback: (data: Uint8Array) => void): void {
+    onReceive(callback: (data: Uint8Array) => MaybePromise<void>): void {
         this.onReceiveCallbacks.push(callback);
     }
 }
