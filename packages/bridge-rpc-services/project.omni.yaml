@@ -2,9 +2,11 @@
 name: "@omni-oss/bridge-js-services"
 
 extends:
-
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
+dependencies:
+  - "@omni-oss/bridge-rpc-core"
+  - "@omni-oss/bridge-rpc-utils"
 
 tasks:
   test:unit:

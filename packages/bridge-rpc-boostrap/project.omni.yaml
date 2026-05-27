@@ -4,6 +4,10 @@ name: "@omni-oss/bridge-js-boostrap"
 extends:
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
+dependencies:
+  - "@omni-oss/bridge-rpc-core"
+  - "@omni-oss/bridge-rpc-router"
+
 tasks:
   test:unit:
     enabled: true
