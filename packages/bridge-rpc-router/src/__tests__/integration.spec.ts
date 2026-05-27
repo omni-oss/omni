@@ -3,7 +3,7 @@ import {
     ResponseStatusCode,
     type Service,
     StreamTransport,
-} from "@omni-oss/bridge-rpc";
+} from "@omni-oss/bridge-rpc-core";
 import { describe, expect, it } from "vitest";
 import { Router } from "@/index";
 

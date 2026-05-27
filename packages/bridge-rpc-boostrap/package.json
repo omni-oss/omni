@@ -1,6 +1,7 @@
 {
-    "name": "@omni-oss/bridge-rpc-router",
-    "version": "0.1.0",
+    "name": "@omni-oss/bridge-rpc-boostrap",
+    "description": "A TypeScript Package",
+    "version": "0.0.0-semantically-released",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -15,16 +16,13 @@
         }
     },
     "dependencies": {
-        "@omni-oss/channels": "catalog:",
-        "@omni-oss/bridge-rpc-core": "workspace:^"
-    },
-    "publishConfig": {
-        "access": "public"
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-router": "workspace:^"
     },
     "devDependencies": {
-        "@omni-oss/tsconfig": "catalog:",
-        "@omni-oss/vite-config": "catalog:",
-        "@omni-oss/vitest-config": "catalog:",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
         "typescript": "catalog:",

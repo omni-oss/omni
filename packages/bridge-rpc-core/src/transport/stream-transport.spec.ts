@@ -60,7 +60,7 @@ describe("Stream", () => {
         // Delay is required to ensure the data is received
         // before we start expecting it
         await delay(1); // 1ms is enough
-        expect(fn).toBeCalledTimes(1);
-        expect(fn).toBeCalledWith(data);
+        expect(fn).toHaveBeenCalledTimes(1);
+        expect(fn).toHaveBeenCalledWith(data);
     });
 });

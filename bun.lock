@@ -59,8 +59,25 @@
       "name": "@omni-oss/biome-config",
       "version": "0.1.0",
     },
-    "packages/bridge-rpc": {
-      "name": "@omni-oss/bridge-rpc",
+    "packages/bridge-rpc-boostrap": {
+      "name": "@omni-oss/bridge-rpc-boostrap",
+      "version": "0.0.0-semantically-released",
+      "dependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-router": "workspace:^",
+      },
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/bridge-rpc-core": {
+      "name": "@omni-oss/bridge-rpc-core",
       "version": "0.1.2",
       "dependencies": {
         "@msgpack/msgpack": "^3.1.3",
@@ -83,7 +100,7 @@
       "name": "@omni-oss/bridge-rpc-router",
       "version": "0.1.0",
       "dependencies": {
-        "@omni-oss/bridge-rpc": "workspace:^",
+        "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/channels": "catalog:",
       },
       "devDependencies": {
@@ -94,6 +111,45 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "packages/bridge-rpc-services": {
+      "name": "@omni-oss/bridge-rpc-services",
+      "version": "0.0.0-semantically-released",
+      "dependencies": {
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@omni-oss/channels": "workspace:^",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/bun": "catalog:",
+        "@types/deno": "catalog:",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-utils": "workspace:^",
+      },
+    },
+    "packages/bridge-rpc-utils": {
+      "name": "@omni-oss/bridge-rpc-utils",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+      "peerDependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/channels": "workspace:^",
       },
     },
     "packages/channels": {
@@ -464,9 +520,15 @@
 
     "@omni-oss/biome-config": ["@omni-oss/biome-config@workspace:packages/biome-config"],
 
-    "@omni-oss/bridge-rpc": ["@omni-oss/bridge-rpc@workspace:packages/bridge-rpc"],
+    "@omni-oss/bridge-rpc-boostrap": ["@omni-oss/bridge-rpc-boostrap@workspace:packages/bridge-rpc-boostrap"],
+
+    "@omni-oss/bridge-rpc-core": ["@omni-oss/bridge-rpc-core@workspace:packages/bridge-rpc-core"],
 
     "@omni-oss/bridge-rpc-router": ["@omni-oss/bridge-rpc-router@workspace:packages/bridge-rpc-router"],
+
+    "@omni-oss/bridge-rpc-services": ["@omni-oss/bridge-rpc-services@workspace:packages/bridge-rpc-services"],
+
+    "@omni-oss/bridge-rpc-utils": ["@omni-oss/bridge-rpc-utils@workspace:packages/bridge-rpc-utils"],
 
     "@omni-oss/channels": ["@omni-oss/channels@workspace:packages/channels"],
 

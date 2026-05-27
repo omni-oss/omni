@@ -1,15 +1,15 @@
-import { Id, ResponseStatusCode } from "@omni-oss/bridge-rpc";
+import { Id, ResponseStatusCode } from "@omni-oss/bridge-rpc-core";
 import {
     type Frame,
     FrameType,
     type RequestError,
-} from "@omni-oss/bridge-rpc/frame";
+} from "@omni-oss/bridge-rpc-core/frame";
 import {
     PendingResponse,
     Request,
     type RequestFrameEvent,
     RequestFrameEventType,
-} from "@omni-oss/bridge-rpc/server";
+} from "@omni-oss/bridge-rpc-core/server";
 import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it, vi } from "vitest";
 import { Router } from "./router";

@@ -1,0 +1,45 @@
+{
+    "name": "@omni-oss/bridge-rpc-utils",
+    "description": "A TypeScript Package",
+    "version": "0.0.0-semantically-released",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.cjs"
+            }
+        },
+        "./body": {
+            "types": "./dist/body.d.ts",
+            "import": {
+                "development": "./src/body/index.ts",
+                "default": "./dist/body.mjs"
+            },
+            "require": {
+                "development": "./src/body/index.ts",
+                "default": "./dist/body.cjs"
+            }
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {},
+    "peerDependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/channels": "workspace:^"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+        "typescript": "catalog:"
+    }
+}

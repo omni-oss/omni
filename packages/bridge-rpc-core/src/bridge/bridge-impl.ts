@@ -57,6 +57,7 @@ export class BridgeRpc {
     private serviceTaskBackgroundProcessor = new BackgroundProcessor();
     private id: Id = Id.create();
     private mutex = new Mutex();
+    private _clientHandle: ClientHandle;
 
     constructor(
         private transport: Transport,
@@ -65,6 +66,11 @@ export class BridgeRpc {
         this.frameTransporter = new FrameTransporter((bytes) =>
             transport.send(bytes),
         );
+
+        this._clientHandle = {
+            requestWithId: this.requestWithId.bind(this),
+            request: this.request.bind(this),
+        };
     }
 
     public async requestWithId(id: Id, path: string) {
@@ -89,9 +95,7 @@ export class BridgeRpc {
     }
 
     public get clientHandle(): ClientHandle {
-        return {
-            requestWithId: this.requestWithId.bind(this),
-        };
+        return this._clientHandle;
     }
 
     public request(path: string) {

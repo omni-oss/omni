@@ -4,6 +4,17 @@ export class ResponseStatusCode {
 
     constructor(private readonly _value: number) {}
 
+    public static from(value: number): ResponseStatusCode {
+        switch (value) {
+            case 0:
+                return ResponseStatusCode.SUCCESS;
+            case 100:
+                return ResponseStatusCode.NO_HANDLER_FOR_PATH;
+            default:
+                return new ResponseStatusCode(value);
+        }
+    }
+
     public toString(): string {
         return this._value.toString();
     }

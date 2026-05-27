@@ -1,5 +1,5 @@
 {
-    "name": "@omni-oss/bridge-rpc",
+    "name": "@omni-oss/bridge-rpc-core",
     "version": "0.1.2",
     "exports": {
         ".": {

@@ -2,7 +2,7 @@ import {
     ResponseStatusCode,
     type Service,
     type ServiceContext,
-} from "@omni-oss/bridge-rpc";
+} from "@omni-oss/bridge-rpc-core";
 
 export type HandlerContext = ServiceContext;
 

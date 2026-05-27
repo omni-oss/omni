@@ -416,9 +416,9 @@ path = "packages/channels"
 include = ["packages/channels/**"]
 public_api = true
 
-[packages."@omni-oss/bridge-rpc"]
-path = "packages/bridge-rpc"
-include = ["packages/bridge-rpc/**"]
+[packages."@omni-oss/bridge-rpc-core"]
+path = "packages/bridge-rpc-core"
+include = ["packages/bridge-rpc-core/**"]
 public_api = true
 
 [packages."@omni-oss/bridge-rpc-router"]
@@ -459,6 +459,27 @@ public_api = false
 [packages."@omni-oss/vitest-config"]
 path = "packages/vitest-config"
 include = ["packages/vitest-config/**"]
+public_api = false
+
+[packages."@omni-oss/bridge-rpc-boostrap"]
+path = "packages/bridge-rpc-boostrap"
+include = [
+    "packages/bridge-rpc-boostrap/**",
+]
+public_api = false
+
+[packages."@omni-oss/bridge-rpc-services"]
+path = "packages/bridge-rpc-services"
+include = [
+    "packages/bridge-rpc-services/**",
+]
+public_api = false
+
+[packages."@omni-oss/bridge-rpc-utils"]
+path = "packages/bridge-rpc-utils"
+include = [
+    "packages/bridge-rpc-utils/**",
+]
 public_api = false
 
 # @anchor:new-typescript-package
