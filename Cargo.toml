@@ -234,7 +234,7 @@ linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }
-gix = { version = "^0.83.0", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
+gix = { version = "^0.84.0", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
 requestty = { version = "^0.6.3", features = ["crossterm", "smallvec", "macros"] }
 value-bag = { version = "^1.12.0", features = ["serde", "error", "seq", "owned"] }
 serde_validate = { path = "./crates/serde_validate" }
