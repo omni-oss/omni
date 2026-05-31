@@ -65,6 +65,7 @@
       "dependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/bridge-rpc-router": "workspace:^",
+        "@omni-oss/bridge-rpc-services": "workspace:^",
       },
       "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",

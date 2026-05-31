@@ -27,9 +27,6 @@ export type RpcConfig = {
 };
 
 export function createStdioRpcInstance(config?: RpcConfig) {
-    config ??= {};
-    config.services ??= [];
-
     const transport = new StreamTransport({
         input: Readable.toWeb(process.stdin, {
             type: "bytes",
@@ -40,7 +37,7 @@ export function createStdioRpcInstance(config?: RpcConfig) {
     return createRpcInstance(transport, config);
 }
 
-function createRpcInstance(transport: Transport, config?: RpcConfig) {
+export function createRpcInstance(transport: Transport, config?: RpcConfig) {
     config ??= {};
     config.services ??= [];
 

@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: "@omni-oss/bridge-js-boostrap"
+name: "@omni-oss/bridge-rpc-boostrap"
 
 extends:
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"

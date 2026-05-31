@@ -1,22 +1,19 @@
-
 import { createConfig } from "@omni-oss/vite-config/library";
-
 
 import packageJson from "./package.json";
 
 export default createConfig({
     package: packageJson,
-    
+
     overrides: {
         build: {
             lib: {
-                
                 entry: "src/index.ts",
-                
+
                 formats: ["es", "cjs"],
                 fileName: (format, entryName) =>
-                    `${entryName || "bridge-js-boostrap"}.${format === "cjs" ? "cjs" : "mjs"}`,
-                name: "BridgeJsBoostrap",
+                    `${entryName || "bridge-rpc-boostrap"}.${format === "cjs" ? "cjs" : "mjs"}`,
+                name: "BridgeRpcBoostrap",
             },
         },
     },

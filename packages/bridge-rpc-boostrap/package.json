@@ -17,6 +17,7 @@
     },
     "dependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-services": "workspace:^",
         "@omni-oss/bridge-rpc-router": "workspace:^"
     },
     "devDependencies": {
