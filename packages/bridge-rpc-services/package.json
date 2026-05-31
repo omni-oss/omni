@@ -13,6 +13,17 @@
                 "development": "./src/index.ts",
                 "default": "./dist/index.cjs"
             }
+        },
+        "./*": {
+            "types": "./dist/*/index.d.ts",
+            "import": {
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.mjs"
+            },
+            "require": {
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.cjs"
+            }
         }
     },
     "dependencies": {

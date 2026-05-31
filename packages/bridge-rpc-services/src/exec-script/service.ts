@@ -28,9 +28,16 @@ export class ExecScript implements Service {
     run = async (context: ServiceContext): Promise<void> => {
         let paths: string[];
         try {
-            paths = parsePaths(await readBodyAsJson<unknown>(context.request));
+            const p = parsePaths(
+                await readBodyAsJson<unknown>(context.request),
+            );
+            if (typeof p === "string") {
+                paths = [p];
+            } else {
+                paths = p;
+            }
         } catch (err) {
-            await this.fail(context, STATUS_BAD_REQUEST, err);
+            await fail(context, STATUS_BAD_REQUEST, err);
             return;
         }
 
@@ -53,14 +60,14 @@ export class ExecScript implements Service {
                 }),
             );
         } catch (err) {
-            await this.fail(context, STATUS_INTERNAL_ERROR, err);
+            await fail(context, STATUS_INTERNAL_ERROR, err);
             return;
         }
 
         try {
             await this.config.postImportAll?.(loaded);
         } catch (err) {
-            await this.fail(context, STATUS_INTERNAL_ERROR, err);
+            await fail(context, STATUS_INTERNAL_ERROR, err);
             return;
         }
 
@@ -69,23 +76,23 @@ export class ExecScript implements Service {
         );
         await response.end();
     };
-
-    private async fail(
-        context: ServiceContext,
-        status: ResponseStatusCode,
-        err: unknown,
-    ): Promise<void> {
-        const response = await context.response.start(status);
-        await response.writeBodyChunk(TEXT_ENCODER.encode(messageOf(err)));
-        await response.end();
-    }
 }
 
-const PathsSchema = z.array(z.string());
+async function fail(
+    context: ServiceContext,
+    status: ResponseStatusCode,
+    err: unknown,
+): Promise<void> {
+    const response = await context.response.start(status);
+    await response.writeBodyChunk(TEXT_ENCODER.encode(messageOf(err)));
+    await response.end();
+}
 
-function parsePaths(body: unknown): string[] {
+const PathsSchema = z.union([z.array(z.string()), z.string()]);
+
+function parsePaths(body: unknown): z.infer<typeof PathsSchema> {
     const data = PathsSchema.parse(body);
-    return data as string[];
+    return data;
 }
 
 function messageOf(err: unknown): string {

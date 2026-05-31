@@ -168,6 +168,19 @@ describe("ExecScript", () => {
             expect(seen).toEqual([namedPath, defaultPath, cjsPath]);
         });
 
+        test("loads single script when passed a single path as string", async () => {
+            const service = new ExecScript();
+            const harness = makeJsonHarness(namedPath);
+
+            const result = await runService(harness, service);
+            expect(result.status).toBe(Number(ResponseStatusCode.SUCCESS));
+            expect(result.body).toBe("");
+            expect(result.frames.map((f) => f.type)).toEqual([
+                FrameType.RESPONSE_START,
+                FrameType.RESPONSE_END,
+            ]);
+        });
+
         test("treats an empty paths array as a no-op success", async () => {
             const postImportAll = vi.fn<(m: LoadedScript[]) => void>();
             const service = new ExecScript({ postImportAll });
@@ -345,7 +358,7 @@ describe("ExecScript", () => {
         test("does not invoke postImport on a bad request", async () => {
             const postImport = vi.fn();
             const service = new ExecScript({ postImport });
-            const harness = makeJsonHarness("not an array");
+            const harness = makeJsonHarness(1);
 
             const result = await runService(harness, service);
 
