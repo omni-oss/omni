@@ -1,8 +1,8 @@
-{% if prompts.shebang_executor == "node" %}
+{%- if prompts.shebang_executor == "node" %}
 #!/usr/bin/env node
-{% elif prompts.shebang_executor == "bun" %}
+{%- elif prompts.shebang_executor == "bun" %}
 #!/usr/bin/env bun
-{% elif prompts.shebang_executor == "deno" %}
+{%- elif prompts.shebang_executor == "deno" %}
 #!/usr/bin/env deno
 {% endif %}
 
@@ -23,4 +23,8 @@ program
         console.log(`result ${add(Number(a), Number(b))}`);
     });
 
+{%- if prompts.shebang_executor == "node" %}
 program.parseAsync();
+{%- elif prompts.shebang_executor == "bun" or prompts.shebang_executor == "deno" %}
+await program.parseAsync();
+{% endif %}
