@@ -12,15 +12,15 @@ const config: UserConfig = {
 export default config;
 
 export type ExternalizeOption =
-    | boolean
-    | string[]
-    | ((id: string) => boolean)
+    | DependencyOption
     | ExternalizeDependencyTypesOption;
 
+type DependencyOption = boolean | string[] | ((id: string) => boolean);
+
 export type ExternalizeDependencyTypesOption = {
-    dependencies?: boolean;
-    devDependencies?: boolean;
-    peerDependencies?: boolean;
+    dependencies?: DependencyOption;
+    devDependencies?: DependencyOption;
+    peerDependencies?: DependencyOption;
     nodeBuiltIns?: boolean;
     bunBuiltIns?: boolean;
     denoBuiltIns?: boolean;
@@ -91,16 +91,19 @@ function createExternalizeDependenciesPredicate(
     options: ExternalizeDependencyTypesOption,
     pkg: PackageJson,
 ): (id: string) => boolean {
-    const deps = new Set<string>(
-        Object.keys(options.dependencies ? pkg.dependencies || {} : {}),
+    const depsPredicate = createPredicateFromDependencyOption(
+        options.dependencies ?? false,
+        pkg.dependencies || {},
     );
 
-    const devDeps = new Set<string>(
-        Object.keys(options.devDependencies ? pkg.devDependencies || {} : {}),
+    const devDepsPredicate = createPredicateFromDependencyOption(
+        options.devDependencies ?? false,
+        pkg.devDependencies || {},
     );
 
-    const peerDeps = new Set<string>(
-        Object.keys(options.peerDependencies ? pkg.peerDependencies || {} : {}),
+    const peerDepsPredicate = createPredicateFromDependencyOption(
+        options.peerDependencies ?? false,
+        pkg.peerDependencies || {},
     );
 
     const nodeBuiltIns = new Set<string>(
@@ -125,18 +128,36 @@ function createExternalizeDependenciesPredicate(
             return true;
         }
 
-        if (options.dependencies && deps.has(id)) {
+        if (options.dependencies && depsPredicate(id)) {
             return true;
         }
 
-        if (options.devDependencies && devDeps.has(id)) {
+        if (options.devDependencies && devDepsPredicate(id)) {
             return true;
         }
 
-        if (options.peerDependencies && peerDeps.has(id)) {
+        if (options.peerDependencies && peerDepsPredicate(id)) {
             return true;
         }
 
         return false;
     };
+}
+
+function createPredicateFromDependencyOption(
+    option: DependencyOption,
+    dependencies: Record<string, string>,
+) {
+    if (typeof option === "boolean") {
+        const keys = new Set(Object.keys(dependencies));
+        return (id: string) => option && keys.has(id);
+    }
+
+    if (Array.isArray(option)) {
+        const set = new Set(option);
+
+        return (id: string) => set.has(id);
+    }
+
+    return option;
 }
