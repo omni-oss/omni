@@ -208,7 +208,11 @@ fn process_pre_filled_value<TExtra: PromptExtras>(
         | crate::configuration::PromptType::Password => value.clone(),
     };
 
-    let value = if expand_str_value {
+    let mut is_string_convertible = IsStringConvertible::default();
+
+    value.by_ref().visit(&mut is_string_convertible)?;
+
+    let value = if expand_str_value && is_string_convertible.value {
         if let Some(template) = value.by_ref().to_str() {
             let expanded = omni_tera::one_off(
                 template,
@@ -218,7 +222,7 @@ fn process_pre_filled_value<TExtra: PromptExtras>(
             ValueBag::from_str(&expanded).to_owned()
         } else {
             log::warn!(
-                "Failed to expand default value for prompt {key} because it's not a string, using the original value: {value}"
+                "Failed to expand default value for prompt {key} because it's not a string, using the original value: {value:#?}"
             );
             value
         }
@@ -540,6 +544,31 @@ fn prompt_multi_select(
         .collect::<Vec<_>>();
 
     Ok(ValueBag::capture_serde1(&value).to_owned())
+}
+
+#[derive(Default)]
+struct IsStringConvertible {
+    pub value: bool,
+}
+
+impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
+    fn visit_borrowed_str(
+        &mut self,
+        _value: &'v str,
+    ) -> Result<(), value_bag::Error> {
+        self.value = true;
+        Ok(())
+    }
+
+    fn visit_str(&mut self, _value: &str) -> Result<(), value_bag::Error> {
+        self.value = true;
+        Ok(())
+    }
+
+    fn visit_any(&mut self, _value: ValueBag) -> Result<(), value_bag::Error> {
+        self.value = false;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

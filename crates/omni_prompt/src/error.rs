@@ -38,6 +38,9 @@ pub(crate) enum ErrorInner {
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),
 
+    #[error(transparent)]
+    ValueBag(#[from] value_bag::Error),
+
     #[error(
         "value '{value}' is invalid for prompt {prompt_name}: {error_message}"
     )]
