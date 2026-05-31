@@ -1,10 +1,14 @@
+import { Uint16Schema } from "./int-schema";
+
 /**
  * Represents specific error conditions that can occur during a Response lifecycle.
  */
 export class ResponseErrorCode {
     public static readonly UNEXPECTED_FRAME = new ResponseErrorCode(0);
 
-    constructor(private readonly _value: number) {}
+    constructor(private readonly _value: number) {
+        _value = Uint16Schema.parse(_value);
+    }
 
     public toString(): string {
         return this._value.toString();
@@ -26,7 +30,9 @@ export class RequestErrorCode {
     public static readonly UNEXPECTED_FRAME = new RequestErrorCode(0);
     public static readonly TIMED_OUT = new RequestErrorCode(1);
 
-    constructor(private readonly _value: number) {}
+    constructor(private readonly _value: number) {
+        _value = Uint16Schema.parse(_value);
+    }
 
     public toString(): string {
         return this._value.toString();
