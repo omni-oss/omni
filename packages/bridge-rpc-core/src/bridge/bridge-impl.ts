@@ -18,7 +18,7 @@ import {
     type ResponseFrameEvent,
     ResponseFrameEventType,
 } from "./client/response";
-import type { ClientHandle } from "./client-handle";
+import { ClientHandle } from "./client-handle";
 import { decode, encode } from "./codec-utils";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";
 import type { Headers } from "./dyn-map";
@@ -55,7 +55,6 @@ export class BridgeRpc {
     private pendingPing: Deferred<void> | undefined = undefined;
     private frameTransporter: FrameTransporter;
     private serviceTaskBackgroundProcessor = new BackgroundProcessor();
-    private id: Id = Id.create();
     private mutex = new Mutex();
     private _clientHandle: ClientHandle;
 
@@ -67,10 +66,13 @@ export class BridgeRpc {
             transport.send(bytes),
         );
 
-        this._clientHandle = {
-            requestWithId: this.requestWithId.bind(this),
-            request: this.request.bind(this),
-        };
+        const requestWithId = this.requestWithId.bind(this);
+        const request = this.request.bind(this);
+
+        this._clientHandle = new (class extends ClientHandle {
+            requestWithId = requestWithId;
+            request = request;
+        })();
     }
 
     public async requestWithId(id: Id, path: string) {
@@ -470,7 +472,11 @@ export class BridgeRpc {
 
         const response = new PendingResponse(id, this.frameTransporter.sender);
 
-        const serviceContext = new ServiceContext(request, response);
+        const serviceContext = new ServiceContext(
+            request,
+            response,
+            this._clientHandle,
+        );
 
         this.serviceTaskBackgroundProcessor.queue(
             this.service.run(serviceContext),
