@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-pub use bridge_rpc::service::Service;
-use bridge_rpc::{
+pub use bridge_rpc_core::service::Service;
+use bridge_rpc_core::{
     ResponseStatusCode, service::ServiceContext, service_error::ServiceError,
 };
 use dashmap::DashMap;
@@ -65,7 +65,8 @@ impl Service for Router {
 
 #[cfg(test)]
 mod tests {
-    use bridge_rpc::{
+
+    use bridge_rpc_core::{
         DynMap, Id,
         frame::Frame,
         server::{
@@ -189,7 +190,10 @@ mod tests {
             .expect("failed to send request frame");
 
         (
-            ServiceContext::new(request, pending_response),
+            ServiceContext::from_request_and_response(
+                request,
+                pending_response,
+            ),
             ResponseAwaiter::new(response_bytes_rx),
         )
     }

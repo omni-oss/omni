@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use bridge_rpc::{
+use bridge_rpc_core::{
     server::{request::Request, response::PendingResponse},
     service::{Service, ServiceContext},
     service_error::ServiceError,
@@ -40,7 +40,7 @@ impl<T: Handler> Service for HandlerService<T> {
     async fn run(
         &self,
         context: ServiceContext,
-    ) -> Result<(), bridge_rpc::service_error::ServiceError> {
+    ) -> Result<(), bridge_rpc_core::service_error::ServiceError> {
         self.handler
             .run(HandlerContext::new(context.request, context.response))
             .await

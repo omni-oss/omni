@@ -49,6 +49,7 @@ pub struct BridgeRpc<TTransport: Transport, TService: Service> {
     session_manager:
         SessionManager<RequestSessionContext, ResponseSessionContext>,
     stop_signal_sender: Arc<Mutex<Option<watch::Sender<bool>>>>,
+    client_handle: Arc<ClientHandle>,
 }
 
 impl<TTransport: Transport, TService: Service> Clone
@@ -64,6 +65,7 @@ impl<TTransport: Transport, TService: Service> Clone
             service_tasks: self.service_tasks.clone(),
             session_manager: self.session_manager.clone(),
             stop_signal_sender: self.stop_signal_sender.clone(),
+            client_handle: self.client_handle.clone(),
         }
     }
 }
@@ -76,15 +78,23 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
 impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     pub fn new(transport: TTransport, service: TService) -> Self {
+        let id = Id::new();
+        let session_manager = SessionManager::new();
+        let frame_transporter = Arc::new(Mutex::new(None));
         Self {
-            id: Id::new(),
+            id,
             transport: Arc::new(transport),
             service: Arc::new(service),
             pending_ping: Arc::new(Mutex::new(None)),
-            frame_transporter: Arc::new(Mutex::new(None)),
             service_tasks: Arc::new(Mutex::new(None)),
-            session_manager: SessionManager::new(),
+            frame_transporter: frame_transporter.clone(),
+            session_manager: session_manager.clone(),
             stop_signal_sender: Arc::new(Mutex::new(None)),
+            client_handle: Arc::new(ClientHandle::new(
+                id,
+                session_manager,
+                frame_transporter,
+            )),
         }
     }
 }
@@ -129,12 +139,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     }
 
     #[inline(always)]
-    pub async fn create_client_handle(&self) -> BridgeRpcResult<ClientHandle> {
-        Ok(ClientHandle::new(
-            self.id,
-            self.session_manager.clone(),
-            self.frame_transporter.clone(),
-        ))
+    pub fn get_client_handle(&self) -> Arc<ClientHandle> {
+        self.client_handle.clone()
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, ret, fields(rpc_id = ?self.id)))]
@@ -607,9 +613,11 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         let response = server::response::PendingResponse::new(id, frame_sender);
 
+        let client_handle = self.client_handle.clone();
+
         self.spawn_service_task(async move {
             trace::trace!("running_service");
-            let context = ServiceContext::new(request, response);
+            let context = ServiceContext::new(request, response, client_handle);
 
             let result = service.run(context).await;
 
@@ -1233,39 +1241,6 @@ mod tests {
         let rpc = rpc_with_service(transport, service);
 
         rpc.run().await.expect("Failed to run RPC");
-    }
-
-    #[tokio::test]
-    #[test_log::test]
-    #[timeout(1000)]
-    async fn test_create_client_handle() {
-        let empty_rpc = empty_rpc(MockTransport::new());
-
-        let run = {
-            let empty_rpc = empty_rpc.clone();
-            tokio::spawn(async move {
-                empty_rpc.run().await.expect("Failed to run RPC");
-            })
-        };
-
-        let create = {
-            let empty_rpc = empty_rpc.clone();
-            tokio::spawn(async move {
-                let client_handle_result =
-                    empty_rpc.create_client_handle().await;
-
-                assert!(client_handle_result.is_ok());
-            })
-        };
-
-        let close = {
-            let empty_rpc = empty_rpc.clone();
-            tokio::spawn(async move {
-                empty_rpc.close().await.expect("Failed to close RPC");
-            })
-        };
-
-        _ = tokio::join!(run, create, close);
     }
 
     #[tokio::test]

@@ -21,7 +21,7 @@ trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 derive_builder = { workspace = true }
 derive-new = { workspace = true }
-bridge_rpc = { workspace = true }
+bridge_rpc_core = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }

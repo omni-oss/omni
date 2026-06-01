@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use bridge_rpc::{
+use bridge_rpc_core::{
     service::{Service, ServiceContext},
     service_error::ServiceError,
 };

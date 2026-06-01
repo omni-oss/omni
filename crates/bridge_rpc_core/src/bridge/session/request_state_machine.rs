@@ -4,7 +4,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 #[derive(Debug, Default)]
-pub(crate) struct RequestStateMachine {
+pub struct RequestStateMachine {
     id: Option<Id>,
     state: RequestState,
 }
@@ -124,7 +124,7 @@ pub enum RequestStateTransitionOutput {
     name(RequestEventType)
 )]
 #[repr(u8)]
-pub(crate) enum RequestEvent {
+pub enum RequestEvent {
     Start(RequestStart) = 0, // only create a request state machine with start frame
     BodyChunk(RequestBodyChunk),
     End(RequestEnd),

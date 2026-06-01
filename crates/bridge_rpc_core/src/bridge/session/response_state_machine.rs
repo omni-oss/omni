@@ -6,7 +6,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 #[derive(Debug)]
-pub(crate) struct ResponseStateMachine {
+pub struct ResponseStateMachine {
     id: Option<Id>,
     state: ResponseState,
 }
@@ -128,7 +128,7 @@ pub enum ResponseStateTransitionOutput {
     name(ResponseEventType)
 )]
 #[repr(u8)]
-pub(crate) enum ResponseEvent {
+pub enum ResponseEvent {
     Start(ResponseStart) = 0, // only create a Response state machine with start frame
     BodyChunk(ResponseBodyChunk),
     End(ResponseEnd),

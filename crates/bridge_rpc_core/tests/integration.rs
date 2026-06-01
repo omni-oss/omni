@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bridge_rpc::{
+use bridge_rpc_core::{
     BridgeRpc, DynMap, ResponseStatusCode, StreamTransport,
     service::{Service, ServiceContext},
     service_error::ServiceError,
@@ -305,7 +305,7 @@ fn create_data() -> RpcData {
     }
 }
 
-async fn consume_request(request: bridge_rpc::server::request::Request) {
+async fn consume_request(request: bridge_rpc_core::server::request::Request) {
     let mut reader = request.into_reader();
 
     while let Some(_) = reader
@@ -316,11 +316,11 @@ async fn consume_request(request: bridge_rpc::server::request::Request) {
 }
 
 async fn write_response<TData: Serialize>(
-    response: bridge_rpc::server::response::PendingResponse,
-    headers: Option<bridge_rpc::DynMap>,
-    status: bridge_rpc::ResponseStatusCode,
+    response: bridge_rpc_core::server::response::PendingResponse,
+    headers: Option<bridge_rpc_core::DynMap>,
+    status: bridge_rpc_core::ResponseStatusCode,
     data: TData,
-    trailers: Option<bridge_rpc::DynMap>,
+    trailers: Option<bridge_rpc_core::DynMap>,
 ) {
     let mut response = if let Some(headers) = headers {
         response
@@ -368,7 +368,7 @@ macro_rules! run_rpcs {
                 result?;
             }
 
-            Ok::<_, bridge_rpc::BridgeRpcError>(())
+            Ok::<_, bridge_rpc_core::BridgeRpcError>(())
         }
     }};
 }

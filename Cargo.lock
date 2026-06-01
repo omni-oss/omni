@@ -1569,7 +1569,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridge_rpc"
+name = "bridge_rpc_core"
 version = "0.1.2"
 dependencies = [
  "async-trait",
@@ -1606,7 +1606,7 @@ name = "bridge_rpc_router"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "bridge_rpc",
+ "bridge_rpc_core",
  "dashmap",
  "derive-new",
  "derive_builder",

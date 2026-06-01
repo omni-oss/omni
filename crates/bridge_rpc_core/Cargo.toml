@@ -1,5 +1,5 @@
 [package]
-name = "bridge_rpc"
+name = "bridge_rpc_core"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true

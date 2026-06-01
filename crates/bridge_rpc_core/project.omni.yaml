@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: bridge_rpc
+name: bridge_rpc_core
 
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"

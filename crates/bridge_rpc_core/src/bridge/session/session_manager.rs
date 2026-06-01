@@ -10,8 +10,8 @@ use super::*;
 
 pub type Concurrent<T> = Arc<Mutex<T>>;
 
-#[derive(Clone)]
-pub(crate) struct SessionManager<TRequestContext = (), TResponseContext = ()> {
+#[derive(Clone, Default)]
+pub struct SessionManager<TRequestContext = (), TResponseContext = ()> {
     request_sessions:
         Arc<DashMap<Id, Concurrent<RequestSession<TRequestContext>>>>,
     response_sessions:

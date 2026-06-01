@@ -1,22 +1,23 @@
-use super::{super::super::Id, RequestStateMachine};
+use super::{super::super::Id, ResponseStateMachine};
 
-pub(crate) struct RequestSession<TContext = ()> {
+pub struct ResponseSession<TContext = ()> {
     id: Id,
-    state_machine: RequestStateMachine,
+    state_machine: ResponseStateMachine,
     context: TContext,
 }
 
-impl<TContext> RequestSession<TContext> {
+impl<TContext> ResponseSession<TContext> {
     pub fn new(id: Id, context: TContext) -> Self {
         Self {
             id,
-            state_machine: RequestStateMachine::new(),
+            state_machine: ResponseStateMachine::new(),
             context,
         }
     }
 }
 
-impl<TContext> RequestSession<TContext> {
+impl<TContext> ResponseSession<TContext> {
+    #[allow(unused)]
     pub fn id(&self) -> Id {
         self.id
     }
@@ -31,11 +32,11 @@ impl<TContext> RequestSession<TContext> {
     }
 
     #[allow(unused)]
-    pub fn state(&self) -> &RequestStateMachine {
+    pub fn state(&self) -> &ResponseStateMachine {
         &self.state_machine
     }
 
-    pub fn state_mut(&mut self) -> &mut RequestStateMachine {
+    pub fn state_mut(&mut self) -> &mut ResponseStateMachine {
         &mut self.state_machine
     }
 

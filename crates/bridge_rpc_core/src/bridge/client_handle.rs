@@ -26,6 +26,16 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
+    pub(crate) fn dummy() -> Self {
+        Self {
+            id: Id::new(),
+            session_manager: SessionManager::new(),
+            frame_transporter: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl ClientHandle {
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id, request_id = ?request_id, path = path.as_ref())))]
     pub(crate) async fn request_with_id(
         &self,
