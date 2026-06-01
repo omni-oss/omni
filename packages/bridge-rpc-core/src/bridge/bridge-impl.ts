@@ -470,7 +470,11 @@ export class BridgeRpc {
 
         const response = new PendingResponse(id, this.frameTransporter.sender);
 
-        const serviceContext = new ServiceContext(request, response);
+        const serviceContext = new ServiceContext(
+            request,
+            response,
+            this._clientHandle,
+        );
 
         this.serviceTaskBackgroundProcessor.queue(
             this.service.run(serviceContext),
