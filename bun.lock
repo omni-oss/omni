@@ -59,8 +59,8 @@
       "name": "@omni-oss/biome-config",
       "version": "0.1.0",
     },
-    "packages/bridge-rpc-boostrap": {
-      "name": "@omni-oss/bridge-rpc-boostrap",
+    "packages/bridge-rpc-bootstrap": {
+      "name": "@omni-oss/bridge-rpc-bootstrap",
       "version": "0.0.0-semantically-released",
       "dependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
@@ -280,6 +280,27 @@
         "commander": "catalog:",
         "typescript": "catalog:",
         "zod": "catalog:",
+      },
+    },
+    "services/bridge-services": {
+      "name": "@omni-oss/bridge-services",
+      "version": "0.0.0-semantically-released",
+      "dependencies": {
+        "@commander-js/extra-typings": "catalog:",
+        "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-services": "workspace:^",
+        "commander": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "tests/omni-remote-cache-service-tests": {
@@ -521,7 +542,7 @@
 
     "@omni-oss/biome-config": ["@omni-oss/biome-config@workspace:packages/biome-config"],
 
-    "@omni-oss/bridge-rpc-boostrap": ["@omni-oss/bridge-rpc-boostrap@workspace:packages/bridge-rpc-boostrap"],
+    "@omni-oss/bridge-rpc-bootstrap": ["@omni-oss/bridge-rpc-bootstrap@workspace:packages/bridge-rpc-bootstrap"],
 
     "@omni-oss/bridge-rpc-core": ["@omni-oss/bridge-rpc-core@workspace:packages/bridge-rpc-core"],
 
@@ -530,6 +551,8 @@
     "@omni-oss/bridge-rpc-services": ["@omni-oss/bridge-rpc-services@workspace:packages/bridge-rpc-services"],
 
     "@omni-oss/bridge-rpc-utils": ["@omni-oss/bridge-rpc-utils@workspace:packages/bridge-rpc-utils"],
+
+    "@omni-oss/bridge-services": ["@omni-oss/bridge-services@workspace:services/bridge-services"],
 
     "@omni-oss/channels": ["@omni-oss/channels@workspace:packages/channels"],
 

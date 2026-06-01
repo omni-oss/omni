@@ -461,10 +461,10 @@ path = "packages/vitest-config"
 include = ["packages/vitest-config/**"]
 public_api = false
 
-[packages."@omni-oss/bridge-rpc-boostrap"]
-path = "packages/bridge-rpc-boostrap"
+[packages."@omni-oss/bridge-rpc-bootstrap"]
+path = "packages/bridge-rpc-bootstrap"
 include = [
-    "packages/bridge-rpc-boostrap/**",
+    "packages/bridge-rpc-bootstrap/**",
 ]
 public_api = false
 
@@ -481,6 +481,13 @@ include = [
     "packages/bridge-rpc-utils/**",
 ]
 public_api = false
+
+# [packages."@omni-oss/bridge-service"]
+# path = "services/bridge-service"
+# include = [
+#     "services/bridge-service/**",
+# ]
+# public_api = false
 
 # @anchor:new-typescript-package
 

@@ -1,5 +1,5 @@
 {
-    "name": "@omni-oss/bridge-rpc-boostrap",
+    "name": "@omni-oss/bridge-rpc-bootstrap",
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
     "exports": {
