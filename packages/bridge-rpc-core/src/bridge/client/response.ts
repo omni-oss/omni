@@ -5,6 +5,8 @@ import type { ResponseError, ResponseStart } from "../frame";
 import type { ResponseStatusCode } from "../status-code";
 
 export class PendingResponse {
+    private _isStarted = false;
+
     constructor(
         private readonly id: Id,
         private readonly responseStartReceiver: OneshotReceiver<ResponseStart>,
@@ -13,7 +15,13 @@ export class PendingResponse {
     ) {}
 
     public async wait() {
+        if (this._isStarted) {
+            throw new Error("Response already started");
+        }
+
         const responseStart = await this.responseStartReceiver.receive();
+
+        this._isStarted = true;
 
         return new Response(
             this.id,
@@ -23,11 +31,15 @@ export class PendingResponse {
             this.responseErrorReceiver,
         );
     }
+
+    public get isStarted() {
+        return this._isStarted;
+    }
 }
 
 export class Response {
-    private isBodyRead = false;
-    private isBodyReading = false;
+    private _isBodyRead = false;
+    private _isBodyReading = false;
     private _trailers?: Trailers | undefined;
 
     constructor(
@@ -39,11 +51,11 @@ export class Response {
     ) {}
 
     public get trailers(): Trailers | undefined {
-        if (!this.isBodyRead) {
+        if (!this._isBodyRead) {
             throw new Error("Body has not been read");
         }
 
-        if (this.isBodyReading) {
+        if (this._isBodyReading) {
             throw new Error(
                 "Body is being read, cannot access trailers until read is complete",
             );
@@ -53,15 +65,15 @@ export class Response {
     }
 
     async *readBody(): AsyncIterable<Uint8Array> {
-        if (this.isBodyRead) {
+        if (this._isBodyRead) {
             throw new Error("Body has already been read");
         }
 
-        if (this.isBodyReading) {
+        if (this._isBodyReading) {
             throw new Error("Body is already being read");
         }
 
-        this.isBodyReading = true;
+        this._isBodyReading = true;
 
         for await (const event of this.responseFrameReceiver) {
             if (this.responseErrorReceiver.hasValue()) {
@@ -76,8 +88,8 @@ export class Response {
                 yield event.chunk;
             } else if (ResponseFrameEvent.isEnd(event)) {
                 this._trailers = event.trailers;
-                this.isBodyRead = true;
-                this.isBodyReading = false;
+                this._isBodyRead = true;
+                this._isBodyReading = false;
                 break;
             } else {
                 throw new Error("Invalid RequestFrameEvent");

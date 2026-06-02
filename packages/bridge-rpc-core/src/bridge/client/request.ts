@@ -9,6 +9,8 @@ export type PendingResponseFactory = (
 ) => Promise<PendingResponse> | PendingResponse;
 
 export class PendingRequest {
+    private _isStarted = false;
+
     constructor(
         private readonly id: Id,
         private readonly path: string,
@@ -17,7 +19,15 @@ export class PendingRequest {
     ) {}
 
     public async start(headers?: Headers | undefined) {
+        if (this._isStarted) {
+            throw new Error("Request already started");
+        }
+
         this.frameSender.send(Frame.requestStart(this.id, this.path, headers));
+
+        if (!this._isStarted) {
+            this._isStarted = true;
+        }
 
         return new ActiveRequest(
             this.id,
@@ -25,10 +35,14 @@ export class PendingRequest {
             this.pendingResponseFactory,
         );
     }
+
+    public get isStarted() {
+        return this._isStarted;
+    }
 }
 
 export class ActiveRequest {
-    private isEnded = false;
+    private _isEnded = false;
     constructor(
         private readonly id: Id,
         private readonly frameSender: MpscSender<Frame>,
@@ -36,19 +50,24 @@ export class ActiveRequest {
     ) {}
 
     public async writeBodyChunk(chunk: Uint8Array) {
-        this.ensureNotEnded();
+        await this.ensureNotEnded();
         this.frameSender.send(Frame.requestBodyChunk(this.id, chunk));
     }
 
     public async end(trailers?: Trailers | undefined) {
-        this.ensureNotEnded();
+        await this.ensureNotEnded();
         this.frameSender.send(Frame.requestEnd(this.id, trailers));
+        this._isEnded = true;
 
         return await this.pendingResponseFactory(this.id);
     }
 
-    private ensureNotEnded() {
-        if (this.isEnded) {
+    public get isEnded() {
+        return this._isEnded;
+    }
+
+    private async ensureNotEnded() {
+        if (this._isEnded) {
             throw new Error("request is already ended");
         }
     }

@@ -26,6 +26,25 @@ describe("PendingRequest", () => {
         const expectedFrame = Frame.requestStart(id, "test", headers);
         expect(frame).toEqual(expectedFrame);
     });
+
+    it("should not allow starting request twice", async () => {
+        const { request } = createPendingRequest("test");
+
+        await request.start();
+        await expect(request.start()).rejects.toThrow(
+            "Request already started",
+        );
+    });
+
+    it("isStarted should reflect whether request is started", async () => {
+        const { request } = createPendingRequest("test");
+
+        expect(request.isStarted).toBe(false);
+
+        await request.start();
+
+        expect(request.isStarted).toBe(true);
+    });
 });
 
 describe("ActiveRequest", () => {
@@ -53,6 +72,33 @@ describe("ActiveRequest", () => {
         expect(frame).toBeDefined();
         const expectedFrame = Frame.requestEnd(id, trailers);
         expect(frame).toEqual(expectedFrame);
+    });
+
+    it("should not allow writing body chunk after request is ended", async () => {
+        const { request } = createActiveRequest();
+        await request.end();
+
+        const data = new Uint8Array([1, 2, 3]);
+        await expect(request.writeBodyChunk(data)).rejects.toThrow(
+            "request is already ended",
+        );
+    });
+
+    it("should not allow ending request twice", async () => {
+        const { request } = createActiveRequest();
+        await request.end();
+
+        await expect(request.end()).rejects.toThrow("request is already ended");
+    });
+
+    it("isEnded should reflect whether request is ended", async () => {
+        const { request } = createActiveRequest();
+
+        expect(request.isEnded).toBe(false);
+
+        await request.end();
+
+        expect(request.isEnded).toBe(true);
     });
 });
 

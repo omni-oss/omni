@@ -22,6 +22,25 @@ describe("PendingResponse", () => {
         );
         expect(frame).toEqual(expectedFrame);
     });
+
+    it("should not allow starting response twice", async () => {
+        const { request } = createPendingResponse();
+
+        await request.start(ResponseStatusCode.SUCCESS);
+        await expect(request.start(ResponseStatusCode.SUCCESS)).rejects.toThrow(
+            "Response already started",
+        );
+    });
+
+    it("isStarted should reflect whether response is started", async () => {
+        const { request } = createPendingResponse();
+
+        expect(request.isStarted).toBe(false);
+
+        await request.start(ResponseStatusCode.SUCCESS);
+
+        expect(request.isStarted).toBe(true);
+    });
 });
 
 describe("ActiveResponse", () => {
@@ -48,6 +67,33 @@ describe("ActiveResponse", () => {
         expect(frame).toBeDefined();
         const expectedFrame = Frame.responseEnd(id, trailers);
         expect(frame).toEqual(expectedFrame);
+    });
+
+    it("should not allow writing body chunk after response is ended", async () => {
+        const { request } = createActiveResponse();
+        await request.end();
+
+        const data = new Uint8Array([1, 2, 3]);
+        await expect(request.writeBodyChunk(data)).rejects.toThrow(
+            "Response already ended",
+        );
+    });
+
+    it("should not allow ending response twice", async () => {
+        const { request } = createActiveResponse();
+        await request.end();
+
+        await expect(request.end()).rejects.toThrow("Response already ended");
+    });
+
+    it("isEnded should reflect whether response is ended", async () => {
+        const { request } = createActiveResponse();
+
+        expect(request.isEnded).toBe(false);
+
+        await request.end();
+
+        expect(request.isEnded).toBe(true);
     });
 });
 

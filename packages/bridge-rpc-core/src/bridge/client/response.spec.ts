@@ -31,6 +31,23 @@ describe("PendingResponse", () => {
         expect(response.status).toBe(ResponseStatusCode.SUCCESS);
         expect(response.headers).toEqual({});
     });
+
+    it("should not allow waiting for response twice", async () => {
+        const pendingResponse = createPendingResponse(
+            {
+                status: ResponseStatusCode.SUCCESS,
+                headers: {},
+            },
+            {
+                chunks: [new Uint8Array([1, 2, 3])],
+                trailers: {},
+            },
+        );
+
+        await pendingResponse.response.wait();
+
+        await expect(pendingResponse.response.wait()).rejects.toThrow();
+    });
 });
 
 describe("Respnse", () => {

@@ -5,8 +5,8 @@ import type { RequestError } from "../frame";
 
 export class Request {
     private _trailers: Trailers | undefined;
-    private isBodyRead = false;
-    private isBodyReading = false;
+    private _isBodyRead = false;
+    private _isBodyReading = false;
 
     constructor(
         public readonly id: Id,
@@ -17,11 +17,11 @@ export class Request {
     ) {}
 
     public get trailers(): Trailers | undefined {
-        if (!this.isBodyRead) {
+        if (!this._isBodyRead) {
             throw new Error("Body has not been read");
         }
 
-        if (this.isBodyReading) {
+        if (this._isBodyReading) {
             throw new Error(
                 "Body is being read, cannot access trailers until read is complete",
             );
@@ -31,15 +31,15 @@ export class Request {
     }
 
     async *readBody(): AsyncIterable<Uint8Array> {
-        if (this.isBodyRead) {
+        if (this._isBodyRead) {
             throw new Error("Body has already been read");
         }
 
-        if (this.isBodyReading) {
+        if (this._isBodyReading) {
             throw new Error("Body is already being read");
         }
 
-        this.isBodyReading = true;
+        this._isBodyReading = true;
 
         for await (const event of this.requestFrameEvents) {
             if (this.requestError.hasValue()) {
@@ -54,8 +54,8 @@ export class Request {
                 yield event.chunk;
             } else if (RequestFrameEvent.isEnd(event)) {
                 this._trailers = event.trailers;
-                this.isBodyRead = true;
-                this.isBodyReading = false;
+                this._isBodyRead = true;
+                this._isBodyReading = false;
                 break;
             } else {
                 throw new Error("Invalid RequestFrameEvent");
