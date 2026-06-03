@@ -1,11 +1,12 @@
 import {
+    type ClientHandle,
     ResponseStatusCode,
     type Service,
     type ServiceContext,
 } from "@omni-oss/bridge-rpc-core";
 import { readBodyAsJson } from "@omni-oss/bridge-rpc-utils/body";
 import z from "zod";
-import { loadScript, type ScriptModule } from "./loader";
+import { importScript, type ScriptModule } from "./import";
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -13,8 +14,18 @@ const STATUS_BAD_REQUEST = ResponseStatusCode.from(400);
 const STATUS_INTERNAL_ERROR = ResponseStatusCode.from(500);
 
 export type ExecScriptConfig = {
-    postImport?: (module: LoadedScript) => Promise<void> | void;
-    postImportAll?: (modules: LoadedScript[]) => Promise<void> | void;
+    postImport?: (
+        module: LoadedScript,
+        client: ClientHandle,
+    ) => Promise<void> | void;
+    postImportAll?: (
+        modules: LoadedScript[],
+        client: ClientHandle,
+    ) => Promise<void> | void;
+    import?: (
+        spec: string,
+        original: typeof importScript,
+    ) => Promise<ScriptModule>;
 };
 
 export type LoadedScript = {
@@ -46,8 +57,13 @@ export class ExecScript implements Service {
             loaded = await Promise.all(
                 paths.map(async (path) => {
                     try {
-                        const script = { path, module: await loadScript(path) };
-                        await this.config?.postImport?.(script);
+                        const script = {
+                            path,
+                            module: this.config.import
+                                ? await this.config.import(path, importScript)
+                                : await importScript(path),
+                        };
+                        await this.config?.postImport?.(script, context.client);
 
                         return script;
                     } catch (err) {
@@ -65,7 +81,7 @@ export class ExecScript implements Service {
         }
 
         try {
-            await this.config.postImportAll?.(loaded);
+            await this.config.postImportAll?.(loaded, context.client);
         } catch (err) {
             await fail(context, STATUS_INTERNAL_ERROR, err);
             return;

@@ -2,7 +2,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 
-import { loadScript, RUNTIME, type Runtime } from "./loader";
+import { importScript } from "./import";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(__dirname, "__fixtures__");
@@ -12,43 +12,24 @@ const defaultPath = join(FIXTURES, "default.mjs");
 const factoryPath = join(FIXTURES, "factory.mjs");
 const cjsPath = join(FIXTURES, "cjs.cjs");
 
-describe("loader", () => {
-    describe("RUNTIME", () => {
-        test("is one of the supported runtime tags", () => {
-            const allowed: Runtime[] = ["node", "bun", "deno"];
-            expect(allowed).toContain(RUNTIME);
-        });
-
-        test("matches the host runtime detected via globals", () => {
-            // The test process either has Deno, Bun, or neither as a global.
-            const g = globalThis as Record<string, unknown>;
-            const expected: Runtime =
-                typeof g.Deno !== "undefined"
-                    ? "deno"
-                    : typeof g.Bun !== "undefined"
-                      ? "bun"
-                      : "node";
-            expect(RUNTIME).toBe(expected);
-        });
-    });
-
-    describe("loadScript() argument validation", () => {
+describe("import", () => {
+    describe("importScript() argument validation", () => {
         test("throws TypeError on an empty spec", async () => {
-            await expect(loadScript("")).rejects.toBeInstanceOf(TypeError);
+            await expect(importScript("")).rejects.toBeInstanceOf(TypeError);
         });
 
         test("throws TypeError on a non-string spec", async () => {
             // Force a runtime check that the type guard wouldn't normally
             // allow — covers the defensive `typeof` branch.
             await expect(
-                loadScript(undefined as unknown as string),
+                importScript(undefined as unknown as string),
             ).rejects.toBeInstanceOf(TypeError);
         });
     });
 
-    describe("loadScript() specifier handling", () => {
+    describe("importScript() specifier handling", () => {
         test("loads from an absolute filesystem path", async () => {
-            const mod = await loadScript<{
+            const mod = await importScript<{
                 greeting: string;
                 value: number;
                 add: (a: number, b: number) => number;
@@ -61,7 +42,7 @@ describe("loader", () => {
 
         test("loads from a file:// URL", async () => {
             const url = pathToFileURL(namedPath).href;
-            const mod = await loadScript<{ greeting: string }>(url);
+            const mod = await importScript<{ greeting: string }>(url);
             expect(mod.greeting).toBe("hello");
         });
 
@@ -71,7 +52,7 @@ describe("loader", () => {
             // independent of where vitest was invoked from.
             const relSpec = `./${relative(process.cwd(), namedPath).replace(/\\/g, "/")}`;
 
-            const mod = await loadScript<{ value: number }>(relSpec);
+            const mod = await importScript<{ value: number }>(relSpec);
             expect(mod.value).toBe(42);
         });
 
@@ -80,7 +61,7 @@ describe("loader", () => {
             // resolves. This proves toImportSpecifier doesn't try to turn
             // it into a file URL.
             const mod =
-                await loadScript<typeof import("node:path")>("node:path");
+                await importScript<typeof import("node:path")>("node:path");
             expect(typeof mod.join).toBe("function");
             expect(mod.join("a", "b")).toBe(join("a", "b"));
         });
@@ -88,17 +69,17 @@ describe("loader", () => {
         test("treats Windows-style absolute paths as paths, not URLs", async () => {
             // On non-Windows platforms there is no C:\ path, so we synthesize
             // the assertion: any absolute filesystem path that the OS knows
-            // about must round-trip through loadScript without being mistaken
+            // about must round-trip through importScript without being mistaken
             // for a URL with a one-letter scheme.
             const absolute = resolve(namedPath);
-            const mod = await loadScript<{ value: number }>(absolute);
+            const mod = await importScript<{ value: number }>(absolute);
             expect(mod.value).toBe(42);
         });
     });
 
-    describe("loadScript() returns module exports as-is", () => {
+    describe("importScript() returns module exports as-is", () => {
         test("preserves named exports without normalization", async () => {
-            const mod = await loadScript<{
+            const mod = await importScript<{
                 greeting: string;
                 value: number;
                 add: (a: number, b: number) => number;
@@ -114,7 +95,7 @@ describe("loader", () => {
         });
 
         test("preserves the default export under `default`", async () => {
-            const mod = await loadScript<{
+            const mod = await importScript<{
                 default: { kind: string; id: number };
                 meta: string;
             }>(defaultPath);
@@ -124,7 +105,7 @@ describe("loader", () => {
         });
 
         test("does not invoke factory-style default exports", async () => {
-            const mod = await loadScript<{
+            const mod = await importScript<{
                 default: (opts: unknown) => unknown;
             }>(factoryPath);
 
@@ -137,7 +118,7 @@ describe("loader", () => {
         });
 
         test("loads CommonJS modules via Node's ESM interop", async () => {
-            const mod = await loadScript<{
+            const mod = await importScript<{
                 default: { kind: string; id: number };
             }>(cjsPath);
 
@@ -146,17 +127,17 @@ describe("loader", () => {
         });
     });
 
-    describe("loadScript() module identity", () => {
+    describe("importScript() module identity", () => {
         test("returns the same module instance for the same spec (URL cache)", async () => {
-            const a = await loadScript(namedPath);
-            const b = await loadScript(namedPath);
+            const a = await importScript(namedPath);
+            const b = await importScript(namedPath);
             // Dynamic import caches by resolved URL.
             expect(a).toBe(b);
         });
 
         test("returns the same module for path and equivalent file URL", async () => {
-            const viaPath = await loadScript(namedPath);
-            const viaUrl = await loadScript(pathToFileURL(namedPath).href);
+            const viaPath = await importScript(namedPath);
+            const viaUrl = await importScript(pathToFileURL(namedPath).href);
             expect(viaPath).toBe(viaUrl);
         });
     });

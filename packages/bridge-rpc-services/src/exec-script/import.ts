@@ -2,18 +2,6 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // ──────────────────────────────────────────────────────────────────────────
-// Runtime detection
-// ──────────────────────────────────────────────────────────────────────────
-export type Runtime = "node" | "bun" | "deno";
-
-export const RUNTIME: Runtime =
-    typeof (globalThis as Record<string, unknown>).Deno !== "undefined"
-        ? "deno"
-        : typeof (globalThis as Record<string, unknown>).Bun !== "undefined"
-          ? "bun"
-          : "node";
-
-// ──────────────────────────────────────────────────────────────────────────
 // Specifier normalization
 //
 // Accepted script specs:
@@ -79,7 +67,7 @@ export type ScriptModule = Record<string, unknown> & {
  * @param spec  Path, URL, or bare specifier.
  * @returns The imported module's namespace object.
  */
-export async function loadScript<T extends ScriptModule = ScriptModule>(
+export async function importScript<T extends ScriptModule = ScriptModule>(
     spec: string,
 ): Promise<T> {
     if (typeof spec !== "string" || spec.length === 0) {

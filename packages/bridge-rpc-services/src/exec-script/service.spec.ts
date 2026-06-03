@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
+    ClientHandle,
     Id,
     ResponseStatusCode,
     ServiceContext,
@@ -64,7 +65,7 @@ function makeHarness(bodyBytes: Uint8Array): Harness {
     const response = new PendingResponse(id, responseChannel.sender);
 
     return {
-        context: new ServiceContext(request, response),
+        context: ServiceContext.fromRequestAndResponse(request, response),
         responseFrames: responseChannel.receiver,
     };
 }
@@ -182,7 +183,8 @@ describe("ExecScript", () => {
         });
 
         test("treats an empty paths array as a no-op success", async () => {
-            const postImportAll = vi.fn<(m: LoadedScript[]) => void>();
+            const postImportAll =
+                vi.fn<(m: LoadedScript[], c: ClientHandle) => void>();
             const service = new ExecScript({ postImportAll });
 
             const harness = makeJsonHarness([]);
@@ -190,7 +192,7 @@ describe("ExecScript", () => {
 
             expect(result.status).toBe(Number(ResponseStatusCode.SUCCESS));
             expect(postImportAll).toHaveBeenCalledTimes(1);
-            expect(postImportAll).toHaveBeenCalledWith([]);
+            expect(postImportAll).toHaveBeenCalledWith([], ClientHandle.DUMMY);
         });
 
         test("works without any config", async () => {
@@ -205,7 +207,9 @@ describe("ExecScript", () => {
     describe("postImportAll hook", () => {
         test("is called once with the loaded modules", async () => {
             const postImportAll =
-                vi.fn<(m: LoadedScript[]) => void | Promise<void>>();
+                vi.fn<
+                    (m: LoadedScript[], c: ClientHandle) => void | Promise<void>
+                >();
             const service = new ExecScript({ postImportAll });
 
             const harness = makeJsonHarness([namedPath, defaultPath]);
