@@ -43,6 +43,7 @@ export class ActiveResponse {
         await this.ensureNotEnded();
         const frame = Frame.responseBodyChunk(this.id, chunk);
         this.frameSender.send(frame);
+        return this;
     }
 
     public async end(trailers?: Headers | undefined) {

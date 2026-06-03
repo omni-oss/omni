@@ -56,6 +56,18 @@ describe("ActiveResponse", () => {
         expect(frame).toEqual(expectedFrame);
     });
 
+    it("should return this from writeBodyChunk for chaining", async () => {
+        const { request } = createActiveResponse();
+        const data1 = new Uint8Array([1, 2, 3]);
+        const data2 = new Uint8Array([4, 5, 6]);
+
+        const result = await request
+            .writeBodyChunk(data1)
+            .then((x) => x.writeBodyChunk(data2));
+
+        expect(result).toBe(request);
+    });
+
     it("should be able to end response", async () => {
         const { request, receiver, id } = createActiveResponse();
 

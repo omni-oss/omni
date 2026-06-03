@@ -52,6 +52,7 @@ export class ActiveRequest {
     public async writeBodyChunk(chunk: Uint8Array) {
         await this.ensureNotEnded();
         this.frameSender.send(Frame.requestBodyChunk(this.id, chunk));
+        return this;
     }
 
     public async end(trailers?: Trailers | undefined) {
