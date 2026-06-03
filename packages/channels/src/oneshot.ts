@@ -46,6 +46,8 @@ type OneshotState = {
 };
 
 export class OneshotReceiver<T> {
+    private _receiveCalled = false;
+
     constructor(
         private readonly promise: Promise<T>,
         private readonly closerFn: () => void,
@@ -53,6 +55,10 @@ export class OneshotReceiver<T> {
     ) {}
 
     public receive(): Promise<T> {
+        if (this._receiveCalled) {
+            throw new OneshotReceiveCalledError();
+        }
+        this._receiveCalled = true;
         return this.promise;
     }
 
@@ -113,6 +119,13 @@ export class OneshotClosedError extends Error {
     constructor() {
         super("Oneshot is closed");
         this.name = "OneshotClosedError";
+    }
+}
+
+export class OneshotReceiveCalledError extends Error {
+    constructor() {
+        super("Receive can only be called once");
+        this.name = "OneshotReceiveCalledError";
     }
 }
 

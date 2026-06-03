@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Oneshot, OneshotClosedError, OneshotValueSentError } from "./oneshot";
+import {
+    Oneshot,
+    OneshotClosedError,
+    OneshotReceiveCalledError,
+    OneshotValueSentError,
+} from "./oneshot";
 
 describe("Oneshot", () => {
     it("should not have value by default", async () => {
@@ -36,9 +41,7 @@ describe("Oneshot", () => {
 
         expect(oneshot.receiver.hasValue()).toBeTruthy();
         await expect(oneshot.receiver.receive()).resolves.toBe(1);
-        expect(() => oneshot.sender.send(1)).toThrowError(
-            OneshotValueSentError,
-        );
+        expect(() => oneshot.sender.send(1)).toThrow(OneshotValueSentError);
     });
 
     it("should error on send if it is closed", async () => {
@@ -46,8 +49,8 @@ describe("Oneshot", () => {
 
         oneshot.receiver.close();
 
-        expect(() => oneshot.sender.send(1)).toThrowError(OneshotClosedError);
-        await expect(oneshot.receiver.receive()).rejects.toThrowError(
+        expect(() => oneshot.sender.send(1)).toThrow(OneshotClosedError);
+        await expect(oneshot.receiver.receive()).rejects.toThrow(
             OneshotClosedError,
         );
     });
@@ -57,7 +60,7 @@ describe("Oneshot", () => {
 
         oneshot.receiver.close();
 
-        await expect(oneshot.receiver.receive()).rejects.toThrowError(
+        await expect(oneshot.receiver.receive()).rejects.toThrow(
             OneshotClosedError,
         );
     });
@@ -67,9 +70,20 @@ describe("Oneshot", () => {
 
         oneshot.receiver.close();
 
-        expect(() => oneshot.receiver.close()).toThrowError(OneshotClosedError);
-        await expect(oneshot.receiver.receive()).rejects.toThrowError(
+        expect(() => oneshot.receiver.close()).toThrow(OneshotClosedError);
+        await expect(oneshot.receiver.receive()).rejects.toThrow(
             OneshotClosedError,
+        );
+    });
+
+    it("should error when receive is called twice", async () => {
+        const oneshot = new Oneshot<number>();
+
+        oneshot.sender.send(1);
+        await oneshot.receiver.receive();
+
+        expect(() => oneshot.receiver.receive()).toThrow(
+            OneshotReceiveCalledError,
         );
     });
 });
