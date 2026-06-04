@@ -1,16 +1,12 @@
 {
-    "name": "@omni-oss/bridge-service",
+    "name": "@omni-oss/bridge-service-tests",
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
     "dependencies": {
         "zod": "catalog:",
-        "commander": "catalog:",
-        "@commander-js/extra-typings": "catalog:",
         "@omni-oss/bridge-rpc-core": "workspace:^",
-        "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
-        "@omni-oss/bridge-rpc-services": "workspace:^",
-        "@omni-oss/system-interface": "workspace:^",
-        "@omni-oss/runtime-utils": "workspace:^"
+        "@omni-oss/runtime-utils": "workspace:^",
+        "@omni-oss/bridge-rpc-bootstrap": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
@@ -18,7 +14,7 @@
         "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
-        "@types/node": "catalog:",
-        "typescript": "catalog:"
+        "typescript": "catalog:",
+        "@types/node": "catalog:"
     }
 }

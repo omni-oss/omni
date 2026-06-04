@@ -496,6 +496,13 @@ include = [
 ]
 public_api = false
 
+[packages."@omni-oss/bridge-service-tests"]
+path = "tests/bridge-service-tests"
+include = [
+    "tests/bridge-service-tests/**",
+]
+public_api = false
+
 #@anchor:new-typescript-package
 
 [packages.root]

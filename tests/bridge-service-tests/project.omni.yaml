@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/bridge-service-tests"
+
+extends:
+  - "@workspace/omni/presets/ts-vite-test.omni.yaml"
+
+dependencies:
+  append:
+    - "@omni-oss/bridge-rpc-core"
+    - "@omni-oss/runtime-utils"
+    - "@omni-oss/bridge-rpc-bootstrap"
+
+tasks:
+  test:service:
+    enabled: true
+    dependencies:
+      append:
+        - "@omni-oss/bridge-service#build"

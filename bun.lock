@@ -304,7 +304,27 @@
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/bridge-rpc-services": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
+        "@omni-oss/system-interface": "workspace:^",
         "commander": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "tests/bridge-service-tests": {
+      "name": "@omni-oss/bridge-service-tests",
+      "version": "0.0.0-semantically-released",
+      "dependencies": {
+        "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/runtime-utils": "workspace:^",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -567,6 +587,8 @@
     "@omni-oss/bridge-rpc-utils": ["@omni-oss/bridge-rpc-utils@workspace:packages/bridge-rpc-utils"],
 
     "@omni-oss/bridge-service": ["@omni-oss/bridge-service@workspace:services/bridge-service"],
+
+    "@omni-oss/bridge-service-tests": ["@omni-oss/bridge-service-tests@workspace:tests/bridge-service-tests"],
 
     "@omni-oss/channels": ["@omni-oss/channels@workspace:packages/channels"],
 
