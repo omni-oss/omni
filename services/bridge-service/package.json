@@ -2,9 +2,6 @@
     "name": "@omni-oss/bridge-service",
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
-    "imports": {
-        "#/*": "./src/*"
-    },
     "dependencies": {
         "zod": "catalog:",
         "commander": "catalog:",
