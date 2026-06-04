@@ -482,14 +482,21 @@ include = [
 ]
 public_api = false
 
-# [packages."@omni-oss/bridge-service"]
-# path = "services/bridge-service"
-# include = [
-#     "services/bridge-service/**",
-# ]
-# public_api = false
+[packages."@omni-oss/bridge-service"]
+path = "services/bridge-service"
+include = [
+    "services/bridge-service/**",
+]
+public_api = false
 
-# @anchor:new-typescript-package
+[packages."@omni-oss/runtime-utils"]
+path = "packages/runtime-utils"
+include = [
+    "packages/runtime-utils/**",
+]
+public_api = false
+
+#@anchor:new-typescript-package
 
 [packages.root]
 bump_order = 10000

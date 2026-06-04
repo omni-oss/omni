@@ -135,6 +135,7 @@
       "peerDependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
+        "@omni-oss/runtime-utils": "workspace:^",
       },
     },
     "packages/bridge-rpc-utils": {
@@ -161,6 +162,18 @@
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
         "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
+    "packages/runtime-utils": {
+      "name": "@omni-oss/runtime-utils",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
         "typescript": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
@@ -282,14 +295,15 @@
         "zod": "catalog:",
       },
     },
-    "services/bridge-services": {
-      "name": "@omni-oss/bridge-services",
+    "services/bridge-service": {
+      "name": "@omni-oss/bridge-service",
       "version": "0.0.0-semantically-released",
       "dependencies": {
         "@commander-js/extra-typings": "catalog:",
         "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/bridge-rpc-services": "workspace:^",
+        "@omni-oss/runtime-utils": "workspace:^",
         "commander": "catalog:",
         "zod": "catalog:",
       },
@@ -552,13 +566,15 @@
 
     "@omni-oss/bridge-rpc-utils": ["@omni-oss/bridge-rpc-utils@workspace:packages/bridge-rpc-utils"],
 
-    "@omni-oss/bridge-services": ["@omni-oss/bridge-services@workspace:services/bridge-services"],
+    "@omni-oss/bridge-service": ["@omni-oss/bridge-service@workspace:services/bridge-service"],
 
     "@omni-oss/channels": ["@omni-oss/channels@workspace:packages/channels"],
 
     "@omni-oss/create-jobs": ["@omni-oss/create-jobs@workspace:scripts/create-jobs"],
 
     "@omni-oss/omni-remote-cache-service-tests": ["@omni-oss/omni-remote-cache-service-tests@workspace:tests/omni-remote-cache-service-tests"],
+
+    "@omni-oss/runtime-utils": ["@omni-oss/runtime-utils@workspace:packages/runtime-utils"],
 
     "@omni-oss/set-version": ["@omni-oss/set-version@workspace:scripts/set-version"],
 
