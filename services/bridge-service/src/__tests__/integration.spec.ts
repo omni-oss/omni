@@ -1,4 +1,4 @@
-import { join } from "node:path/win32";
+import { join } from "node:path";
 import {
     type BridgeRpc,
     ResponseStatusCode,
@@ -26,7 +26,6 @@ describe("integration test", {
             const end = await request.end().then((x) => x.wait());
 
             const body = await readAll(end.readBody());
-
             if (end.status !== ResponseStatusCode.SUCCESS) {
                 console.error(
                     "Error response body:",
