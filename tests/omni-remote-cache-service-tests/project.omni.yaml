@@ -8,8 +8,8 @@ tasks:
   build:
     enabled: false
 
-  test:api:
-    exec: bun x vitest --config ./vitest.config.api.ts run
+  test:service:
+    exec: bun x vitest --config ./vitest.config.service.ts run
     max_retries: 3
     retry_interval: 2s
     dependencies:
@@ -17,7 +17,7 @@ tasks:
 
   test:
     dependencies:
-      - test:api
+      - test:service
 
   publish:
     enabled: false

@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import fsSync from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test as baseTest } from "vitest";
 import { getHost, sleep, withTimeout } from "./utils";
-import path from "node:path";
-import os from "node:os"
 
 const ports = new Set<number>();
 
@@ -56,17 +56,17 @@ export const test = baseTest.extend<{
 
             const target = process.env.RUST_TARGET ?? "";
 
-            const ext =
-                os.platform() === "win32"
-                    ? ".exe"
-                    : "";
+            const ext = os.platform() === "win32" ? ".exe" : "";
 
             let omniPath = "";
 
             const host = await getHost().catch(() => "");
             let compileInfo = `Host: ${host}\nTarget: ${target}`;
 
-            const defaultPath = path.join(wsDir, `target/release/omni_remote_cache_service${ext}`);
+            const defaultPath = path.join(
+                wsDir,
+                `target/release/omni_remote_cache_service${ext}`,
+            );
             const lookupPaths =
                 target !== ""
                     ? [
@@ -75,9 +75,11 @@ export const test = baseTest.extend<{
                               : []),
                           ...target
                               .split(";")
-                              .map(
-                                  (target) =>
-                                    path.join(wsDir, `target/${target}/release/omni_remote_cache_service${ext}`)
+                              .map((target) =>
+                                  path.join(
+                                      wsDir,
+                                      `target/${target}/release/omni_remote_cache_service${ext}`,
+                                  ),
                               ),
                       ]
                     : [defaultPath];
