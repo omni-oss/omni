@@ -89,7 +89,9 @@ describe("Rpc to Rpc Integration", () => {
             const { rpc1, rpc2, start, stop } = createRpcs();
             try {
                 await start();
+                await delay(10);
                 await action(rpc1, rpc2);
+                await delay(10);
             } finally {
                 await stop();
             }
@@ -99,9 +101,7 @@ describe("Rpc to Rpc Integration", () => {
     it(
         "should be able to handle ping/pong cycle",
         withRpcs(async (rpc) => {
-            await delay(10);
             const pingResult = await rpc.ping(100);
-            await delay(10);
 
             expect(pingResult).toBe(true);
         }),
