@@ -4,6 +4,8 @@ import { createConfig } from "@omni-oss/vite-config/library";
 import { createConfig } from "@omni-oss/vite-config/script";
 {% elif prompts.package_type == "app" %}
 import { createConfig } from "@omni-oss/vite-config/app";
+{% elif prompts.package_type == "e2e-tests" or prompts.package_type == "service-tests" %}
+import { createConfig } from "@omni-oss/vite-config/test";
 {% endif %}
 {% set exclude_deps_from_bundle = prompts.package_type == "lib" or (prompts.package_type == "script" and prompts.script_can_be_used_as_lib) %}
 import packageJson from "./package.json";

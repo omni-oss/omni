@@ -26,6 +26,10 @@ prompts:
         value: app
       - name: Script
         value: script
+      - name: Service Tests
+        value: service-tests
+      - name: E2E Tests
+        value: e2e-tests
     default: lib
 
   - if: "{{ prompts.package_type == 'script' }}"
@@ -52,12 +56,14 @@ prompts:
     message: What is the description of your package?
     default: A TypeScript Package
 
-  - name: unit_test
+  - if: "{{ prompts.package_type != 'e2e-tests' and prompts.package_type != 'service-tests' }}"
+    name: unit_test
     type: confirm
     message: Do you want to add unit tests?
     default: true
 
-  - name: integration_test
+  - if: "{{ prompts.package_type != 'e2e-tests' and prompts.package_type != 'service-tests' }}"
+    name: integration_test
     type: confirm
     message: Do you want to add integration tests?
     default: true
@@ -100,11 +106,17 @@ actions:
     base_path: templates
     files:
       - templates/**/*
+      - "!templates/src/add.ts.tpl"
       - "!templates/src/cli/index.ts.tpl"
-      - "!templates/vitest.config.unit.ts.tpl"
-      - "!templates/vitest.config.integration.ts.tpl"
+      - "!templates/vitest.config.*.ts.tpl"
       - "!templates/src/__tests__/integration.spec.ts.tpl"
       - "!templates/src/add.spec.ts.tpl"
+
+  - if: "{{ prompts.package_type == 'lib' or prompts.package_type == 'script' }}"
+    type: add-many
+    base_path: templates
+    files:
+      - templates/src/add.ts.tpl
 
   - if: "{{ prompts.package_type == 'script' }}"
     type: add-many
@@ -112,14 +124,26 @@ actions:
     files:
       - templates/src/cli/index.ts.tpl
 
-  - if: "{{ prompts.integration_test }}"
+  - if: "{{ prompts.package_type == 'e2e-tests' }}"
+    type: add-many
+    base_path: templates
+    files:
+      - "templates/vitest.config.e2e.ts.tpl"
+
+  - if: "{{ prompts.package_type == 'service-tests' }}"
+    type: add-many
+    base_path: templates
+    files:
+      - "templates/vitest.config.service.ts.tpl"
+
+  - if: "{{ prompts.integration_test | default(value=false) }}"
     type: add-many
     base_path: templates
     files:
       - templates/vitest.config.integration.ts.tpl
       - templates/src/__tests__/integration.spec.ts.tpl
 
-  - if: "{{ prompts.unit_test }}"
+  - if: "{{ prompts.unit_test | default(value=false) }}"
     type: add-many
     base_path: templates
     files:
@@ -135,5 +159,5 @@ actions:
           include = [
               "{{ vars.generated_dir }}/**",
           ]
-          public_api = false
+          public_api = {{ prompts.published }}
         pattern: "@anchor:new-typescript-package"

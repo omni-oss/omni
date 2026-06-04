@@ -27,10 +27,10 @@
     {% endif %}
     "dependencies": {
         {% if prompts.package_type == "script" %}
-        "zod": "catalog:",
         "commander": "catalog:",
-        "@commander-js/extra-typings": "catalog:"
+        "@commander-js/extra-typings": "catalog:",
         {% endif %}
+        "zod": "catalog:"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
@@ -38,7 +38,7 @@
         "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
-        {% if prompts.package_type == "script" %}
+        {% if prompts.package_type == 'script' %}
         "@types/node": "catalog:",
             {% if prompts.shebang_executor == 'bun' %}
         "@types/bun": "catalog:",

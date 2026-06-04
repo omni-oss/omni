@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: ts-vite-lib
+
+extends:
+  - "./ts-lib.omni.yaml"
+  - "./ts-vite.omni.yaml"
+
+tasks:
+  test:e2e:
+    enabled: false
+    exec: bun x vitest --config ./vitest.config.e2e.ts run
+    cache:
+      key:
+        files:
+          append:
+            - "./vite.config.ts"
+            - "./vitest.config.e2e.ts"
+
+  test:service:
+    enabled: false
+    exec: bun run vitest --config ./vitest.config.service.ts run
+    cache:
+      key:
+        files:
+          append:
+            - "./vite.config.ts"
+            - "./vitest.config.service.ts"
+
+  test:unit:
+    enabled: false
+
+  test:integration:
+    enabled: false
+
+  test:
+    enabled: true
+    dependencies:
+      append:
+        - test:unit
+        - test:e2e
+
+  build:
+    enabled: false
+
+  publish:
+    enabled: false
