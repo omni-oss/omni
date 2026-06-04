@@ -36,8 +36,8 @@ tasks:
     enabled: true
     dependencies:
       append:
-        - test:unit
-        - test:e2e
+        - test:integration
+        - test:service
 
   build:
     enabled: false
