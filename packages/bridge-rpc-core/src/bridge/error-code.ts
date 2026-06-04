@@ -21,6 +21,10 @@ export class ResponseErrorCode {
     public valueOf(): number {
         return this._value;
     }
+
+    public equals(other: ResponseErrorCode): boolean {
+        return this._value === other._value;
+    }
 }
 
 /**
@@ -44,5 +48,9 @@ export class RequestErrorCode {
 
     public valueOf(): number {
         return this._value;
+    }
+
+    public equals(other: RequestErrorCode): boolean {
+        return this._value === other._value;
     }
 }

@@ -30,4 +30,8 @@ export class ResponseStatusCode {
     public valueOf(): number {
         return this._value;
     }
+
+    public equals(other: ResponseStatusCode): boolean {
+        return this._value === other._value;
+    }
 }
