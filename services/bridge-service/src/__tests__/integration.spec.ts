@@ -26,7 +26,7 @@ describe("integration test", {
             const end = await request.end().then((x) => x.wait());
 
             const body = await readAll(end.readBody());
-            if (end.status !== ResponseStatusCode.SUCCESS) {
+            if (!end.status.equals(ResponseStatusCode.SUCCESS)) {
                 console.error(
                     "Error response body:",
                     TEXT_DECODER.decode(body),
