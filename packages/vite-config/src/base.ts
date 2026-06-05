@@ -1,4 +1,5 @@
 import { builtinModules } from "node:module";
+import { esmExternalRequirePlugin } from "rolldown/plugins";
 import { mergeConfig, type Rolldown, type UserConfig } from "vite";
 import type { PackageJson } from "./types";
 
@@ -36,6 +37,7 @@ export function createConfig(options?: BaseConfigOptions) {
     const rolldownOptions: Rolldown.RolldownOptions = options?.externalizeDeps
         ? {
               external: createExternalizePredicate(options),
+              plugins: [esmExternalRequirePlugin()],
           }
         : {};
 
