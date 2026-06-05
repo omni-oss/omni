@@ -23,8 +23,8 @@ export class OptimizedProcess implements Process {
         return this.proc.currentDir();
     }
 
-    setCurrentDir(dir: string): void {
-        this.proc.setCurrentDir(dir);
+    setCurrentDir(dir: string): Promise<void> {
+        return this.proc.setCurrentDir(dir);
     }
 
     args(): string[] {
