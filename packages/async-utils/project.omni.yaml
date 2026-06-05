@@ -4,6 +4,12 @@ name: "@omni-oss/async-utils"
 extends:
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
+dependencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+
 tasks:
   build:
     enabled: true
@@ -13,9 +19,3 @@ tasks:
 
   test:integration:
     enabled: false
-
-
-dependencies:
-  - "@omni-oss/tsconfig"
-  - "@omni-oss/vite-config"
-  - "@omni-oss/vitest-config"

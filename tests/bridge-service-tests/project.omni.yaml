@@ -6,6 +6,9 @@ extends:
 
 dependencies:
   append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
     - "@omni-oss/bridge-rpc-core"
     - "@omni-oss/runtime-utils"
     - "@omni-oss/bridge-rpc-bootstrap"

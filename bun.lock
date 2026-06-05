@@ -218,6 +218,7 @@
         "unplugin-dts": "catalog:",
       },
       "peerDependencies": {
+        "rolldown": "^1.1.0",
         "vite": "^6.3.2",
       },
     },

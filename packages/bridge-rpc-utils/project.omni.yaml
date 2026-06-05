@@ -5,7 +5,11 @@ extends:
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
 dependencies:
-  - "@omni-oss/bridge-rpc-core"
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+    - "@omni-oss/bridge-rpc-core"
 
 tasks:
   test:unit:

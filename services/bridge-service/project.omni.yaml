@@ -5,10 +5,14 @@ extends:
   - "@workspace/omni/presets/ts-vite-script.omni.yaml"
 
 dependencies:
-  - "@omni-oss/bridge-rpc-core"
-  - "@omni-oss/bridge-rpc-bootstrap"
-  - "@omni-oss/bridge-rpc-services"
-  - "@omni-oss/runtime-utils"
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+    - "@omni-oss/bridge-rpc-core"
+    - "@omni-oss/bridge-rpc-bootstrap"
+    - "@omni-oss/bridge-rpc-services"
+    - "@omni-oss/runtime-utils"
 
 tasks:
   test:unit:

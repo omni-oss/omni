@@ -1,9 +1,23 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
 name: "@omni-oss/vitest-config"
 
-tasks:
-  publish: bun publish --tolerate-republish
+extends:
+  - "@workspace/omni/presets/base.omni.yaml"
+
+cache:
+  key:
+    files:
+      append:
+        - package.json
+        - ./src/**
 
 dependencies:
   - "@omni-oss/vite-config"
   - "@omni-oss/tsconfig"
+
+tasks:
+  publish: bun publish --tolerate-republish
+  test:
+    exec: ''
+    dependencies:
+      - passthrough

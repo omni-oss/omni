@@ -15,6 +15,7 @@ tasks:
     enabled: false
 
 dependencies:
-  - "@omni-oss/tsconfig"
-  - "@omni-oss/vite-config"
-  - "@omni-oss/vitest-config"
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
