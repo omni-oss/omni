@@ -17,6 +17,6 @@ export class ServiceContext {
     }
 }
 
-export type Service = {
-    run: (context: ServiceContext) => Promise<void>;
-};
+export interface Service {
+    run(context: ServiceContext): Promise<void>;
+}
