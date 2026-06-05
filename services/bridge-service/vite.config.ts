@@ -11,6 +11,9 @@ export default createConfig({
     },
     overrides: {
         build: {
+            rolldownOptions: {
+                platform: "node",
+            },
             lib: {
                 entry: {
                     "bridge-service-cli": "src/entrypoint/cli.ts",
