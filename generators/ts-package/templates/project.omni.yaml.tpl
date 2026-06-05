@@ -12,6 +12,12 @@ extends:
   - "@workspace/omni/presets/ts-vite-test.omni.yaml"
 {% endif %}
 
+depedencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+
 tasks:
 {% if prompts.package_type == 'lib' or prompts.package_type == 'script' or prompts.package_type == 'app' %}
   test:unit:
