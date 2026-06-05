@@ -36,7 +36,7 @@ export type LoadedScript = {
 export class ExecScript implements Service {
     constructor(private readonly config: ExecScriptConfig = {}) {}
 
-    run = async (context: ServiceContext): Promise<void> => {
+    public async run(context: ServiceContext) {
         let paths: string[];
         try {
             const p = parsePaths(
@@ -91,7 +91,7 @@ export class ExecScript implements Service {
             ResponseStatusCode.SUCCESS,
         );
         await response.end();
-    };
+    }
 }
 
 async function fail(
