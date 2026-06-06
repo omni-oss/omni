@@ -11,6 +11,7 @@ export default createConfig({
                 entry: {
                     index: "./src/index.ts",
                     body: "./src/body/index.ts",
+                    server: "./src/server/index.ts",
                 },
                 formats: ["es", "cjs"],
                 fileName: (format, entryName) =>

@@ -14,15 +14,15 @@
                 "default": "./dist/index.cjs"
             }
         },
-        "./body": {
-            "types": "./dist/body.d.ts",
+        "./*": {
+            "types": "./dist/*.d.ts",
             "import": {
-                "development": "./src/body/index.ts",
-                "default": "./dist/body.mjs"
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.mjs"
             },
             "require": {
-                "development": "./src/body/index.ts",
-                "default": "./dist/body.cjs"
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.cjs"
             }
         }
     },
