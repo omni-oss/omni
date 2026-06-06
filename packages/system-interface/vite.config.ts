@@ -6,7 +6,13 @@ export default createConfig({
     overrides: {
         build: {
             lib: {
-                entry: "src/index.ts",
+                entry: {
+                    index: "./src/index.ts",
+                    bun: "./src/bun.ts",
+                    virtual: "./src/virtual.ts",
+                    deno: "./src/deno.ts",
+                    node: "./src/node.ts",
+                },
                 formats: ["es", "cjs"],
                 fileName: (format, entryName) =>
                     `${entryName || "system-interface"}.${format === "cjs" ? "cjs" : "mjs"}`,
