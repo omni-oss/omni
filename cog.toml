@@ -503,6 +503,20 @@ include = [
 ]
 public_api = false
 
+[packages."@omni-oss/log"]
+path = "packages/log"
+include = [
+    "packages/log/**",
+]
+public_api = true
+
+# [packages."@omni-oss/log-interceptor"]
+# path = "packages/log-interceptor"
+# include = [
+#     "packages/log-interceptor/**",
+# ]
+# public_api = true
+
 #@anchor:new-typescript-package
 
 [packages.root]

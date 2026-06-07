@@ -1,0 +1,45 @@
+{
+    "name": "@omni-oss/log",
+    "description": "Logger package",
+    "version": "0.0.0-semantically-released",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            }
+        },
+        "./*": {
+            "types": "./dist/*.d.ts",
+            "import": {
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.mjs"
+            },
+            "require": {
+                "development": "./src/*/index.ts",
+                "default": "./dist/*.mjs"
+            }
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "zod": "catalog:",
+        "@logtape/logtape": "catalog:"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+        "typescript": "catalog:",
+        "@types/node": "catalog:"
+    }
+}

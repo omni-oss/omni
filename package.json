@@ -36,6 +36,7 @@
         "vite": "^8.0.10",
         "vitest": "^4.1.7",
         "zod": "^4.4.3",
-        "@commander-js/extra-typings": "^14.0.0"
+        "@commander-js/extra-typings": "^14.0.0",
+        "@logtape/logtape": "^2.1.1"
     }
 }
