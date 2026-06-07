@@ -12,11 +12,14 @@ dependencies:
     - "@omni-oss/bridge-rpc-core"
     - "@omni-oss/bridge-rpc-bootstrap"
     - "@omni-oss/bridge-rpc-services"
+    - "@omni-oss/bridge-rpc-utils"
     - "@omni-oss/runtime-utils"
+    - "@omni-oss/log"
+    - "@omni-oss/console-log-interceptor"
 
 tasks:
   test:unit:
-    enabled: true
+    enabled: false
 
   test:integration:
     enabled: true

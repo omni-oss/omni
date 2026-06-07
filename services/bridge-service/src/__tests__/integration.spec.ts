@@ -4,7 +4,17 @@ import {
     ResponseStatusCode,
     StreamTransport,
 } from "@omni-oss/bridge-rpc-core";
-import { describe, expect, it } from "vitest";
+import { readBody } from "@omni-oss/bridge-rpc-utils/body";
+import {
+    type ChildFunction,
+    type EnabledFunction,
+    type LeveledLogFunction,
+    Log,
+    type LogFunction,
+    type Logger,
+    type WithFunction,
+} from "@omni-oss/log";
+import { describe, expect, it, vi } from "vitest";
 import { createRpcInstance } from "..";
 
 const __dirname = import.meta.dirname;
@@ -16,16 +26,23 @@ describe("integration test", {
     timeout: 10_000,
 }, () => {
     it(
-        "should respond to /exec-script requests",
-        withRpcs(async (rpc) => {
+        "should respond to /exec-generator-script requests",
+        withRpcs(async ({ rpc1: rpc, logger }) => {
             const request = await rpc.clientHandle
-                .request("/exec-script")
+                .request("/exec-generator-script")
                 .then((req) => req.start());
             const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
-            await request.writeBodyChunk(json(scriptPath));
+            await request.writeBodyChunk(
+                json({
+                    paths: [scriptPath],
+                    params: {
+                        dry_run: true,
+                    },
+                }),
+            );
             const end = await request.end().then((x) => x.wait());
 
-            const body = await readAll(end.readBody());
+            const body = await readBody(end);
             if (!end.status.equals(ResponseStatusCode.SUCCESS)) {
                 console.error(
                     "Error response body:",
@@ -34,6 +51,9 @@ describe("integration test", {
             }
 
             expect(end.status).toEqual(ResponseStatusCode.SUCCESS);
+            expect(logger.info).toHaveBeenCalledWith(
+                "Hello from the generator script!",
+            );
         }),
     );
 });
@@ -52,6 +72,8 @@ function createRpcs(): Rpcs {
         output: rctSide.writable,
     });
 
+    const mLogger = mockLogger();
+
     const rpc1 = createRpcInstance(rct);
     const rpc2 = createRpcInstance(rst);
 
@@ -61,17 +83,30 @@ function createRpcs(): Rpcs {
         start: () =>
             Promise.all([rpc1.start(), rpc2.start()]).then(() => void 0),
         stop: () => Promise.all([rpc1.stop(), rpc2.stop()]).then(() => void 0),
+        logger: mLogger,
     };
 }
 
-function withRpcs(action: (rpc1: BridgeRpc, rpc2: BridgeRpc) => Promise<void>) {
+type ActionContext = {
+    rpc1: BridgeRpc;
+    rpc2: BridgeRpc;
+    logger: ReturnType<typeof mockLogger>;
+};
+
+function withRpcs(action: (ctx: ActionContext) => Promise<void>) {
     return async () => {
-        const { rpc1, rpc2, start, stop } = createRpcs();
+        const { rpc1, rpc2, start, stop, logger } = createRpcs();
         try {
-            await start();
-            await delay(10); // wait for the rpcs to be ready
-            await action(rpc1, rpc2);
-            await delay(10);
+            await Log.withRoot(
+                { get: (_) => logger as unknown as Logger },
+                ["bridge-service"],
+                async () => {
+                    await start();
+                    await delay(10); // wait for the rpcs to be ready
+                    await action({ rpc1, rpc2, logger });
+                    await delay(10);
+                },
+            );
         } finally {
             await stop();
         }
@@ -83,6 +118,7 @@ type Rpcs = {
     rpc2: BridgeRpc;
     start: () => Promise<void>;
     stop: () => Promise<void>;
+    logger: ReturnType<typeof mockLogger>;
 };
 
 function json(unknown: unknown) {
@@ -93,18 +129,17 @@ function delay(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readAll(gen: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of gen) {
-        chunks.push(chunk);
-    }
-    const wholeChunk = new Uint8Array(
-        chunks.reduce((acc, c) => acc + c.length, 0),
-    );
-
-    for (const chunk of chunks) {
-        wholeChunk.set(chunk, wholeChunk.length - chunk.length);
-    }
-
-    return wholeChunk;
+function mockLogger() {
+    return {
+        error: vi.fn<LeveledLogFunction>(),
+        warn: vi.fn<LeveledLogFunction>(),
+        info: vi.fn<LeveledLogFunction>(),
+        debug: vi.fn<LeveledLogFunction>(),
+        trace: vi.fn<LeveledLogFunction>(),
+        log: vi.fn<LogFunction>(),
+        child: vi.fn<ChildFunction>(),
+        parent: null as unknown as Logger | null,
+        enabled: vi.fn<EnabledFunction>((_) => true),
+        with: vi.fn<WithFunction>().mockReturnThis(),
+    };
 }

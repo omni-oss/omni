@@ -20,7 +20,7 @@ export default createConfig({
                     index: "src/index.ts",
                 },
 
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-service"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeService",
