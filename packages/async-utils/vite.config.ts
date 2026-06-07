@@ -7,7 +7,7 @@ export default createConfig({
         build: {
             lib: {
                 entry: "src/index.ts",
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "async-utils"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "AsyncUtils",
