@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/console-log-interceptor"
+
+extends:
+
+  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
+
+
+depedencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+
+tasks:
+
+  test:unit:
+    enabled: true
+
+  test:integration:
+    enabled: true
+
+  test:
+    enabled: true
+
+  build:
+    enabled: true
+
+  publish:
+    enabled: true
+
+
+
+
+meta:
+  publish: true

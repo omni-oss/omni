@@ -510,12 +510,12 @@ include = [
 ]
 public_api = true
 
-# [packages."@omni-oss/log-interceptor"]
-# path = "packages/log-interceptor"
-# include = [
-#     "packages/log-interceptor/**",
-# ]
-# public_api = true
+[packages."@omni-oss/console-log-interceptor"]
+path = "packages/console-log-interceptor"
+include = [
+    "packages/console-log-interceptor/**",
+]
+public_api = true
 
 #@anchor:new-typescript-package
 
