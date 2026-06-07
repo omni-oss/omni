@@ -184,7 +184,9 @@ describe("ExecScript", () => {
 
         test("treats an empty paths array as a no-op success", async () => {
             const postImportAll =
-                vi.fn<(m: LoadedScript[], c: ClientHandle) => void>();
+                vi.fn<
+                    (m: LoadedScript[], c: ClientHandle, p: unknown) => void
+                >();
             const service = new ExecScript({ postImportAll });
 
             const harness = makeJsonHarness([]);
@@ -192,7 +194,11 @@ describe("ExecScript", () => {
 
             expect(result.status).toBe(Number(ResponseStatusCode.SUCCESS));
             expect(postImportAll).toHaveBeenCalledTimes(1);
-            expect(postImportAll).toHaveBeenCalledWith([], ClientHandle.DUMMY);
+            expect(postImportAll).toHaveBeenCalledWith(
+                [],
+                ClientHandle.DUMMY,
+                {},
+            );
         });
 
         test("works without any config", async () => {

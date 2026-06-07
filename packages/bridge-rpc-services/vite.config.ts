@@ -11,9 +11,11 @@ export default createConfig({
                 entry: {
                     index: "./src/index.ts",
                     "exec-script": "./src/exec-script/index.ts",
+                    "exec-generator-script":
+                        "./src/exec-generator-script/index.ts",
                 },
 
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-rpc-services"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeRpcServices",

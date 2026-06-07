@@ -12,6 +12,9 @@ dependencies:
     - "@omni-oss/bridge-rpc-core"
     - "@omni-oss/bridge-rpc-utils"
     - "@omni-oss/runtime-utils"
+    - "@omni-oss/channels"
+    - "@omni-oss/async-utils"
+    - "@omni-oss/log"
 
 tasks:
   test:unit:

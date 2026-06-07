@@ -11,7 +11,7 @@
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/index.cjs"
+                "default": "./dist/index.mjs"
             }
         },
         "./*": {
@@ -22,7 +22,7 @@
             },
             "require": {
                 "development": "./src/*/index.ts",
-                "default": "./dist/*.cjs"
+                "default": "./dist/*.mjs"
             }
         }
     },
@@ -32,7 +32,11 @@
     "peerDependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
-        "@omni-oss/bridge-rpc-utils": "workspace:^"
+        "@omni-oss/system-interface": "workspace:^",
+        "@omni-oss/channels": "workspace:^",
+        "@omni-oss/bridge-rpc-utils": "workspace:^",
+        "@omni-oss/async-utils": "workspace:^",
+        "@omni-oss/log": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/channels": "workspace:^",
