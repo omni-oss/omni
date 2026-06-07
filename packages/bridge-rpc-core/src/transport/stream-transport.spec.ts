@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { describe, expect, it, vi } from "vitest";
 import { delay } from "@/promise-utils";
 import { StreamTransport } from "./stream-transport";
@@ -63,4 +64,39 @@ describe("Stream", () => {
         expect(fn).toHaveBeenCalledTimes(1);
         expect(fn).toHaveBeenCalledWith(data);
     });
+
+    it(
+        "propagates the AsyncLocalStorage store from the registration site " +
+            "into a callback that fires from the stream pump set up before run()",
+        async () => {
+            // Reproduces the production wiring in `services/bridge-service`:
+            // the transport (and therefore its `pipeTo`-based stream pump)
+            // is constructed *outside* any `als.run(...)` scope, but the
+            // `onReceive` callback is registered *inside* `als.run(...)`.
+            // Without `bindAsyncContext`, the chunk's microtask traces back
+            // to the empty async context the transport was constructed in,
+            // and the callback observes `getStore() === undefined`.
+            const { lengthPrefix, data } = createData();
+            const streams = createStreams([lengthPrefix, data]);
+            const transport = new StreamTransport(streams);
+
+            const als = new AsyncLocalStorage<string>();
+            const seenStores: Array<string | undefined> = [];
+
+            await als.run("scoped-store", async () => {
+                transport.onReceive(() => {
+                    seenStores.push(als.getStore());
+                });
+            });
+
+            // We are now back outside the `als.run(...)` scope.
+            expect(als.getStore()).toBeUndefined();
+
+            // Wait for the stream pump to deliver the chunk to the
+            // (now-bound) callback.
+            await delay(1);
+
+            expect(seenStores).toEqual(["scoped-store"]);
+        },
+    );
 });
