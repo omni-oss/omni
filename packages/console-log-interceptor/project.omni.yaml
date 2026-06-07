@@ -11,6 +11,7 @@ depedencies:
     - "@omni-oss/tsconfig"
     - "@omni-oss/vite-config"
     - "@omni-oss/vitest-config"
+    - "@omni-oss/log"
 
 tasks:
 

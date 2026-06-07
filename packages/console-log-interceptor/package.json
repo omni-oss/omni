@@ -19,7 +19,8 @@
         "access": "public"
     },
     "dependencies": {
-        "zod": "catalog:"
+        "zod": "catalog:",
+        "@omni-oss/log": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
