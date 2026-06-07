@@ -30,7 +30,8 @@
         "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
         {% endif %}
-        "zod": "catalog:"
+        "@omni-oss/log": "workspace:^",
+        "zod": "catalog:",
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
