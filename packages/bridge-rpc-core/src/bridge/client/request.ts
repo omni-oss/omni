@@ -72,4 +72,10 @@ export class ActiveRequest {
             throw new Error("request is already ended");
         }
     }
+
+    async [Symbol.asyncDispose]() {
+        if (!this._isEnded) {
+            await this.end();
+        }
+    }
 }

@@ -107,6 +107,52 @@ describe("ActiveResponse", () => {
 
         expect(request.isEnded).toBe(true);
     });
+
+    describe("[Symbol.asyncDispose]", () => {
+        it("should end the response when not already ended", async () => {
+            const { request, receiver, id } = createActiveResponse();
+
+            expect(request.isEnded).toBe(false);
+
+            await request[Symbol.asyncDispose]();
+
+            expect(request.isEnded).toBe(true);
+
+            const frame = await receiver.receive();
+            expect(frame).toEqual(Frame.responseEnd(id, undefined));
+        });
+
+        it("should be a no-op when the response is already ended", async () => {
+            const { request, receiver, id } = createActiveResponse();
+
+            const trailers = { foo: "bar" };
+            await request.end(trailers);
+
+            // Drain the end frame produced by end()
+            const endFrame = await receiver.receive();
+            expect(endFrame).toEqual(Frame.responseEnd(id, trailers));
+
+            // Should not throw and should not send another frame
+            await expect(
+                request[Symbol.asyncDispose](),
+            ).resolves.toBeUndefined();
+
+            expect(request.isEnded).toBe(true);
+        });
+
+        it("should work with `await using` syntax", async () => {
+            const id = Id.create();
+            const mpsc = new Mpsc<Frame>();
+
+            {
+                await using response = new ActiveResponse(id, mpsc.sender);
+                expect(response.isEnded).toBe(false);
+            }
+
+            const frame = await mpsc.receiver.receive();
+            expect(frame).toEqual(Frame.responseEnd(id, undefined));
+        });
+    });
 });
 
 function createPendingResponse() {

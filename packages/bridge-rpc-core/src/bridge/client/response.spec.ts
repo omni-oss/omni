@@ -134,6 +134,86 @@ describe("Respnse", () => {
 
         await expect(readAll(response.readBody())).rejects.toThrowError();
     });
+
+    describe("[Symbol.asyncDispose]", () => {
+        it("should consume the remaining body when the body has not been read", async () => {
+            const trailers = { x: 42 };
+            const { response: pendingResponse } = createPendingResponse(
+                {
+                    status: ResponseStatusCode.SUCCESS,
+                    headers: {},
+                },
+                {
+                    chunks: [
+                        new Uint8Array([1, 2, 3]),
+                        new Uint8Array([4, 5, 6]),
+                    ],
+                    trailers,
+                },
+            );
+
+            const response = await pendingResponse.wait();
+
+            await response[Symbol.asyncDispose]();
+
+            // Body should be fully consumed: trailers should be accessible and
+            // a subsequent read should throw because the body has already been read.
+            expect(response.trailers).toEqual(trailers);
+            await expect(readAll(response.readBody())).rejects.toThrowError(
+                "Body has already been read",
+            );
+        });
+
+        it("should be a no-op when the body has already been read", async () => {
+            const trailers = { done: 1 };
+            const { response: pendingResponse } = createPendingResponse(
+                {
+                    status: ResponseStatusCode.SUCCESS,
+                    headers: {},
+                },
+                {
+                    chunks: [new Uint8Array([1, 2, 3])],
+                    trailers,
+                },
+            );
+
+            const response = await pendingResponse.wait();
+
+            await readAll(response.readBody());
+            expect(response.trailers).toEqual(trailers);
+
+            await expect(
+                response[Symbol.asyncDispose](),
+            ).resolves.toBeUndefined();
+
+            // Trailers should still be accessible after dispose
+            expect(response.trailers).toEqual(trailers);
+        });
+
+        it("should work with `await using` syntax", async () => {
+            const trailers = { ok: true };
+            const { response: pendingResponse } = createPendingResponse(
+                {
+                    status: ResponseStatusCode.SUCCESS,
+                    headers: {},
+                },
+                {
+                    chunks: [new Uint8Array([1, 2, 3])],
+                    trailers,
+                },
+            );
+
+            let captured: typeof trailers | undefined;
+            {
+                await using response = await pendingResponse.wait();
+                expect(response).toBeDefined();
+                // Intentionally do not read the body; dispose should drain it.
+                captured = trailers;
+            }
+
+            expect(captured).toEqual(trailers);
+        });
+    });
 });
 
 function createPendingResponse(

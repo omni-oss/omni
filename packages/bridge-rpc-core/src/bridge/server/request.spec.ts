@@ -79,6 +79,75 @@ describe("Response", () => {
 
         await expect(readAll(request.readBody())).rejects.toThrowError();
     });
+
+    describe("[Symbol.asyncDispose]", () => {
+        it("should consume the remaining body when the body has not been read", async () => {
+            const trailers = { final: "yes" };
+            const { request } = createRequest(
+                "/test",
+                {},
+                {
+                    chunks: [
+                        new Uint8Array([1, 2, 3]),
+                        new Uint8Array([4, 5, 6]),
+                    ],
+                    trailers,
+                },
+            );
+
+            await request[Symbol.asyncDispose]();
+
+            // Body should be fully consumed: trailers should be accessible and
+            // a subsequent read should throw because the body has already been read.
+            expect(request.trailers).toEqual(trailers);
+            await expect(readAll(request.readBody())).rejects.toThrowError(
+                "Body has already been read",
+            );
+        });
+
+        it("should be a no-op when the body has already been read", async () => {
+            const trailers = { done: 1 };
+            const { request } = createRequest(
+                "/test",
+                {},
+                {
+                    chunks: [new Uint8Array([1, 2, 3])],
+                    trailers,
+                },
+            );
+
+            await readAll(request.readBody());
+            expect(request.trailers).toEqual(trailers);
+
+            await expect(
+                request[Symbol.asyncDispose](),
+            ).resolves.toBeUndefined();
+
+            // Trailers should still be accessible after dispose
+            expect(request.trailers).toEqual(trailers);
+        });
+
+        it("should work with `await using` syntax", async () => {
+            const trailers = { ok: true };
+            const { request } = createRequest(
+                "/test",
+                {},
+                {
+                    chunks: [new Uint8Array([1, 2, 3])],
+                    trailers,
+                },
+            );
+
+            {
+                await using r = request;
+                expect(r).toBeDefined();
+                // Intentionally do not read the body; dispose should drain it.
+            }
+
+            // After the block exits, trailers should be available
+            expect(request.trailers).toEqual(trailers);
+        });
+    });
 });
 
 function createRequest(

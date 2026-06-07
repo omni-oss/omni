@@ -63,4 +63,10 @@ export class ActiveResponse {
             throw new Error("Response already ended");
         }
     }
+
+    async [Symbol.asyncDispose]() {
+        if (!this._isEnded) {
+            await this.end();
+        }
+    }
 }

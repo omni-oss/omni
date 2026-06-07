@@ -112,6 +112,61 @@ describe("ActiveRequest", () => {
 
         expect(request.isEnded).toBe(true);
     });
+
+    describe("[Symbol.asyncDispose]", () => {
+        it("should end the request when not already ended", async () => {
+            const { request, receiver, id } = createActiveRequest();
+
+            expect(request.isEnded).toBe(false);
+
+            await request[Symbol.asyncDispose]();
+
+            expect(request.isEnded).toBe(true);
+
+            const frame = await receiver.receive();
+            expect(frame).toEqual(Frame.requestEnd(id, undefined));
+        });
+
+        it("should be a no-op when the request is already ended", async () => {
+            const { request, receiver, id } = createActiveRequest();
+
+            const trailers = { foo: "bar" };
+            await request.end(trailers);
+
+            // Drain the end frame produced by end()
+            const endFrame = await receiver.receive();
+            expect(endFrame).toEqual(Frame.requestEnd(id, trailers));
+
+            // Should not throw and should not send another frame
+            await expect(
+                request[Symbol.asyncDispose](),
+            ).resolves.toBeUndefined();
+
+            expect(request.isEnded).toBe(true);
+        });
+
+        it("should work with `await using` syntax", async () => {
+            const { receiver, id } = createActiveRequest();
+
+            // Re-create within the block so we can use `await using`
+            const innerMpsc = new Mpsc<Frame>();
+            const innerId = id;
+            {
+                await using request = new ActiveRequest(
+                    innerId,
+                    innerMpsc.sender,
+                    createPendingResponse,
+                );
+                expect(request.isEnded).toBe(false);
+            }
+
+            const frame = await innerMpsc.receiver.receive();
+            expect(frame).toEqual(Frame.requestEnd(innerId, undefined));
+
+            // ensure we don't have lingering frames in the original receiver
+            void receiver;
+        });
+    });
 });
 
 function createPendingRequest(

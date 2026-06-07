@@ -96,6 +96,16 @@ export class Response {
             }
         }
     }
+
+    async [Symbol.asyncDispose]() {
+        // If the body has not been fully read, we need to consume the remaining body to ensure proper disposal
+        if (!this._isBodyRead) {
+            this._isBodyReading = false;
+            for await (const _ of this.readBody()) {
+                // Consume the body to ensure proper disposal
+            }
+        }
+    }
 }
 
 export enum ResponseFrameEventType {
