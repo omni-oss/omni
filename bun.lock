@@ -175,6 +175,7 @@
       "name": "@omni-oss/console-log-interceptor",
       "version": "0.0.0-semantically-released",
       "dependencies": {
+        "@omni-oss/log": "workspace:^",
         "zod": "catalog:",
       },
       "devDependencies": {
