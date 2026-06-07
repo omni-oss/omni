@@ -7,6 +7,7 @@ import {
     ResponseStatusCode,
     StreamTransport,
 } from "@omni-oss/bridge-rpc-core";
+import { readBody } from "@omni-oss/bridge-rpc-utils";
 import { RUNTIME } from "@omni-oss/runtime-utils";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -83,18 +84,25 @@ beforeAll(async () => {
 
 afterAll(() => rpc.stop());
 
-describe("/exec-script", {
+describe("/exec-generator-script", {
     timeout: 10_000,
 }, () => {
     it("should respond to requests", async () => {
         const request = await rpc.clientHandle
-            .request("/exec-script")
+            .request("/exec-generator-script")
             .then((req) => req.start());
         const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
-        await request.writeBodyChunk(json(scriptPath));
+        await request.writeBodyChunk(
+            json({
+                paths: [scriptPath],
+                params: {
+                    dry_run: true,
+                },
+            }),
+        );
         const end = await request.end().then((x) => x.wait());
 
-        const body = await readAll(end.readBody());
+        const body = await readBody(end);
         if (!end.status.equals(ResponseStatusCode.SUCCESS)) {
             console.error("Error response body:", TEXT_DECODER.decode(body));
         }
@@ -109,20 +117,4 @@ function json(unknown: unknown) {
 
 function delay(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function readAll(gen: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
-    const chunks: Uint8Array[] = [];
-    for await (const chunk of gen) {
-        chunks.push(chunk);
-    }
-    const wholeChunk = new Uint8Array(
-        chunks.reduce((acc, c) => acc + c.length, 0),
-    );
-
-    for (const chunk of chunks) {
-        wholeChunk.set(chunk, wholeChunk.length - chunk.length);
-    }
-
-    return wholeChunk;
 }

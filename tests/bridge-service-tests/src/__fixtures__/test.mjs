@@ -1,3 +1,6 @@
-// Fixture for loader.spec.ts — default + named exports.
-export default { kind: "default-export", id: 1 };
-export const meta = "side-info";
+// biome-ignore lint/suspicious/noTsIgnore: test fixture
+// @ts-ignore
+
+export default function (ctx) {
+    ctx.log.info("Hello from the generator script!");
+}

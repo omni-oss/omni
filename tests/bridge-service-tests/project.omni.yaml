@@ -12,6 +12,7 @@ dependencies:
     - "@omni-oss/bridge-rpc-core"
     - "@omni-oss/runtime-utils"
     - "@omni-oss/bridge-rpc-bootstrap"
+    - "@omni-oss/bridge-rpc-utils"
 
 tasks:
   test:service:

@@ -6,7 +6,8 @@
         "zod": "catalog:",
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
-        "@omni-oss/bridge-rpc-bootstrap": "workspace:^"
+        "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
+        "@omni-oss/bridge-rpc-utils": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
