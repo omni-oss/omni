@@ -27,7 +27,7 @@ export default createConfig({
                 {% else %}
                 entry: "src/index.ts",
                 {% endif %}
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "{{ prompts.package_name }}"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "{{ prompts.package_name | upper_camel_case }}",
