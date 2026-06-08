@@ -404,12 +404,12 @@ include = [
 ]
 public_api = false
 
-# [packages.bridge_rpc_services]
-# path = "crates/bridge_rpc_services"
-# include = [
-#     "crates/bridge_rpc_services/**",
-# ]
-# public_api = false
+[packages.bridge_rpc_services]
+path = "crates/bridge_rpc_services"
+include = [
+    "crates/bridge_rpc_services/**",
+]
+public_api = false
 
 [packages.bridge_rpc_utils]
 path = "crates/bridge_rpc_utils"
