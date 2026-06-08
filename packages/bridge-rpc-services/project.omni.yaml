@@ -15,6 +15,7 @@ dependencies:
     - "@omni-oss/channels"
     - "@omni-oss/async-utils"
     - "@omni-oss/log"
+    - "@omni-oss/system-interface"
 
 tasks:
   test:unit:
