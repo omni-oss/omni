@@ -74,7 +74,26 @@ function createRpcs(): Rpcs {
 
     const mLogger = mockLogger();
 
-    const rpc1 = createRpcInstance(rct);
+    const rpc1 = createRpcInstance(rct, {
+        services: [
+            {
+                path: "/proc/snapshot",
+                handler: async (ctx) => {
+                    await readBody(ctx.request);
+
+                    await ctx.response
+                        .start(ResponseStatusCode.SUCCESS, {
+                            returns: {
+                                current_dir: "/home/user/test",
+                                args: [],
+                                env: {},
+                            },
+                        })
+                        .then((res) => res.end());
+                },
+            },
+        ],
+    });
     const rpc2 = createRpcInstance(rst);
 
     return {
