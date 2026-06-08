@@ -117,7 +117,7 @@ mod tests {
     async fn read_request_returns_trailers() {
         let (reader, sender, _err) = make_reader();
         let mut trailers = DynMap::new();
-        trailers.insert("x-trace", "abc");
+        trailers.insert_raw("x-trace", "abc");
 
         feed_body(&sender, [b"payload".to_vec()], Some(trailers)).await;
 
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(bytes, b"payload");
         let trailers = trailers.expect("trailers should be present");
         assert!(
-            trailers.get("x-trace").is_some(),
+            trailers.has_key("x-trace"),
             "x-trace trailer should be present",
         );
     }
@@ -239,7 +239,7 @@ mod tests {
 
         let (reader, sender, _err) = make_reader();
         let mut trailers = DynMap::new();
-        trailers.insert("x-status", "done");
+        trailers.insert_raw("x-status", "done");
 
         feed_body(&sender, [bytes], Some(trailers)).await;
 
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(decoded, payload);
         let trailers = trailers.expect("trailers should be present");
         assert!(
-            trailers.get("x-status").is_some(),
+            trailers.get_raw("x-status").is_some(),
             "x-status trailer should be present",
         );
     }
