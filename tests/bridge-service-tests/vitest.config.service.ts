@@ -4,6 +4,7 @@ import baseConfig from "./vite.config";
 
 export default mergeConfig(mergeConfig(baseConfig, serviceTestConfig), {
     test: {
+        setupFiles: ["./src/setup/hooks.ts"],
         include: [
             "./src/**/*.service.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
         ],
