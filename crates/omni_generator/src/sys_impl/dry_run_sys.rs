@@ -6,12 +6,12 @@ use std::{
 
 use derive_new::new;
 use system_traits::{
-    BaseFsCreateDir, BaseFsCreateDirAsync, BaseFsMetadataAsync,
-    BaseFsReadAsync, BaseFsRemoveDir as _, BaseFsRemoveDirAll as _,
-    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
-    BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync, FileType,
-    FsCreateDirAll as _, FsMetadataAsync as _, FsMetadataValue,
-    FsRemoveFile as _,
+    BaseFsAppendAsync, BaseFsCopyAsync, BaseFsCreateDir, BaseFsCreateDirAsync,
+    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync,
+    BaseFsRemoveDir as _, BaseFsRemoveDirAll as _, BaseFsRemoveDirAllAsync,
+    BaseFsRemoveDirAsync, BaseFsRemoveFileAsync, BaseFsWriteAsync,
+    CreateDirOptions, EnvCurrentDirAsync, FileType, FsCreateDirAll as _,
+    FsMetadataAsync as _, FsMetadataValue, FsRemoveFile as _,
     boxed::BoxedFsMetadataValue,
     impls::{InMemorySys, RealSys},
 };
@@ -170,5 +170,110 @@ impl BaseFsRemoveFileAsync for DryRunSys {
 impl EnvCurrentDirAsync for DryRunSys {
     async fn env_current_dir_async(&self) -> io::Result<PathBuf> {
         self.real.env_current_dir_async().await
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsCopyAsync for DryRunSys {
+    async fn base_fs_copy_async(
+        &self,
+        from: &Path,
+        to: &Path,
+    ) -> io::Result<u64> {
+        log::info!(
+            "Dry run: copying file: {} -> {}",
+            from.display(),
+            to.display()
+        );
+
+        // Materialize the source contents in the in-memory layer first so
+        // that the copy is observable even if it originated on the real
+        // file system. `base_fs_read_async` already mirrors content from
+        // the real fs into the in-memory layer when needed.
+        let data = self.base_fs_read_async(from).await?;
+
+        // Make sure the destination directory exists in the in-memory
+        // layer before writing.
+        if let Some(dir) = to.parent()
+            && !self.in_memory.fs_exists_async(dir).await?
+        {
+            log::info!("Dry run: creating directory: {}", dir.display());
+            self.in_memory.fs_create_dir_all(dir)?;
+        }
+
+        self.in_memory.base_fs_write_async(to, &data).await?;
+        Ok(data.len() as u64)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsReadDirAsync for DryRunSys {
+    async fn base_fs_read_dir_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<Vec<PathBuf>> {
+        // Merge entries from both the in-memory and real layers, preferring
+        // the in-memory state when an entry exists in both (so dry-run
+        // additions and removals are reflected).
+        use std::collections::BTreeMap;
+
+        let mut entries: BTreeMap<PathBuf, ()> = BTreeMap::new();
+
+        if self.in_memory.fs_exists_async(path).await? {
+            let in_memory_entries =
+                self.in_memory.base_fs_read_dir_async(path).await?;
+            for entry in in_memory_entries {
+                entries.insert(entry, ());
+            }
+        }
+
+        match self.real.base_fs_read_dir_async(path).await {
+            Ok(real_entries) => {
+                for entry in real_entries {
+                    entries.insert(entry, ());
+                }
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                // The directory may exist only in the in-memory layer.
+                if entries.is_empty() {
+                    return Err(err);
+                }
+            }
+            Err(err) => return Err(err),
+        }
+
+        Ok(entries.into_keys().collect())
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsAppendAsync for DryRunSys {
+    async fn base_fs_append_async(
+        &self,
+        path: &Path,
+        data: &[u8],
+    ) -> io::Result<()> {
+        log::info!("Dry run: appending to path: {}", path.display());
+
+        // Make sure the in-memory layer has the existing contents to
+        // append to (mirrored from the real fs if necessary).
+        let mut existing = if self.in_memory.fs_exists_no_err_async(path).await
+        {
+            self.in_memory.base_fs_read_async(path).await?.into_owned()
+        } else if self.real.fs_exists_no_err_async(path).await {
+            self.real.base_fs_read_async(path).await?.into_owned()
+        } else {
+            Vec::new()
+        };
+
+        if let Some(dir) = path.parent()
+            && !self.in_memory.fs_exists_async(dir).await?
+        {
+            log::info!("Dry run: creating directory: {}", dir.display());
+            self.in_memory.fs_create_dir_all(dir)?;
+        }
+
+        existing.extend_from_slice(data);
+        self.in_memory.base_fs_write_async(path, &existing).await
     }
 }
