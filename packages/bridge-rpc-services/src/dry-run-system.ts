@@ -1,4 +1,5 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
+import { Log } from "@omni-oss/log";
 import type {
     FileStat,
     FileSystem,
@@ -9,8 +10,8 @@ import type {
 
 export class DryRunSystem implements System {
     private constructor(
-        private readonly _fs: DryRunFileSystem,
-        private readonly _proc: DryRunProcess,
+        public readonly fs: DryRunFileSystem,
+        public readonly proc: DryRunProcess,
     ) {}
 
     public static async create(client: ClientHandle): Promise<DryRunSystem> {
@@ -19,19 +20,11 @@ export class DryRunSystem implements System {
             new DryRunProcess(client, "", [], {}),
         );
     }
-
-    public get fs(): FileSystem {
-        return this._fs;
-    }
-
-    public get proc(): Process {
-        return this._proc;
-    }
 }
 
 export class DryRunFileSystem implements FileSystem {
     constructor(_client: ClientHandle) {
-        console.warn(
+        Log.warn(
             "DryRunFileSystem instantiated. All file system operations will throw an error.",
         );
     }
@@ -97,7 +90,7 @@ export class DryRunProcess implements Process {
         private argsList: string[],
         private envVars: ProcessEnv,
     ) {
-        console.warn(
+        Log.warn(
             "DryRunProcess instantiated. All process operations will throw an error.",
         );
     }
