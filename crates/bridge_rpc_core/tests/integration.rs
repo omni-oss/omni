@@ -286,7 +286,7 @@ fn create_mirror_rpcs() -> (
 fn create_headers() -> DynMap {
     let mut headers = DynMap::new();
 
-    headers.insert("test_header_item".to_string(), "value".to_string());
+    headers.insert_raw("test_header_item".to_string(), "value");
 
     headers
 }
@@ -294,7 +294,7 @@ fn create_headers() -> DynMap {
 fn create_trailers() -> DynMap {
     let mut trailers = DynMap::new();
 
-    trailers.insert("test_trailer_item".to_string(), "value".to_string());
+    trailers.insert_raw("test_trailer_item".to_string(), "value");
 
     trailers
 }
