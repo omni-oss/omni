@@ -9,13 +9,13 @@ import { ResponseStatusCode } from "./status-code";
 const IdSchema = z.bigint().transform((v) => Id.fromBigInt(v));
 const RequestErrorCodeSchema = z
     .number()
-    .transform((v) => new RequestErrorCode(v));
+    .transform((v) => RequestErrorCode.from(v));
 const ResponseErrorCodeSchema = z
     .number()
-    .transform((v) => new ResponseErrorCode(v));
+    .transform((v) => ResponseErrorCode.from(v));
 const ResponseStatusCodeSchema = z
     .number()
-    .transform((v) => new ResponseStatusCode(v));
+    .transform((v) => ResponseStatusCode.from(v));
 
 export const FrameType = {
     REQUEST_START: 0,
