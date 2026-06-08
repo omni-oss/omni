@@ -404,6 +404,20 @@ include = [
 ]
 public_api = false
 
+# [packages.bridge_rpc_services]
+# path = "crates/bridge_rpc_services"
+# include = [
+#     "crates/bridge_rpc_services/**",
+# ]
+# public_api = false
+
+[packages.bridge_rpc_utils]
+path = "crates/bridge_rpc_utils"
+include = [
+    "crates/bridge_rpc_utils/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [packages."@omni-oss/async-utils"]
