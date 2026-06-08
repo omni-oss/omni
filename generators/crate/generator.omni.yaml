@@ -73,7 +73,7 @@ targets:
   cog_config: "@workspace/cog.toml"
 
 vars:
-  error_mod_name: "{{ prompts.error_name | snake_case }}"
+  error_mod_name: "{% if prompts.error_name %}{{ prompts.error_name | snake_case }}{% endif %}"
 
 actions:
   - type: add-many
