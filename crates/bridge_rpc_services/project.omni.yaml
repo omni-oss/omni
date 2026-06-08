@@ -6,3 +6,6 @@ extends:
 dependencies:
   - trace
   - bridge_rpc_core
+  - bridge_rpc_utils
+  - bridge_rpc_router
+  - system_traits

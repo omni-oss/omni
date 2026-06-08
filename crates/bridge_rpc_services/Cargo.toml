@@ -26,10 +26,15 @@ bridge_rpc_core = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rmpv = { workspace = true }
+rmp-serde = { workspace = true }
 bridge_rpc_utils = { workspace = true }
+bridge_rpc_router = { workspace = true }
+system_traits = { workspace = true, features = ["real-async-tokio", "real-sync"] }
 
 [dev-dependencies]
 test-log = { workspace = true }
 rstest = { workspace = true }
 rstest_reuse = { workspace = true }
 tokio = { workspace = true }
+tempfile = { workspace = true }
