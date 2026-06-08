@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { createRpcInstance } from "@omni-oss/bridge-rpc-bootstrap";
 import { ResponseStatusCode, StreamTransport } from "@omni-oss/bridge-rpc-core";
-import { readBodyAsJson } from "@omni-oss/bridge-rpc-utils";
+import { readBody, readBodyAsJson } from "@omni-oss/bridge-rpc-utils/body";
 import type { LogLevel } from "@omni-oss/log";
 import { RUNTIME } from "@omni-oss/runtime-utils";
 import { afterAll, beforeAll } from "vitest";
@@ -96,6 +96,22 @@ beforeAll(async () => {
                         .then((res) => res.end());
                 },
             },
+            {
+                path: "/proc/snapshot",
+                handler: async (ctx) => {
+                    await readBody(ctx.request);
+
+                    await ctx.response
+                        .start(ResponseStatusCode.SUCCESS, {
+                            returns: {
+                                current_dir: "/home/user/test",
+                                args: [],
+                                env: {},
+                            },
+                        })
+                        .then((res) => res.end());
+                },
+            },
         ],
     });
 
@@ -106,6 +122,14 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    await delay(10);
-    await Rpc.stop();
+    try {
+        await delay(10);
+        await Rpc.stop();
+    } catch (err) {
+        console.error("Error stopping RPC:", err);
+    } finally {
+        if (RpcProcess) {
+            RpcProcess.kill();
+        }
+    }
 });
