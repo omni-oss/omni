@@ -367,6 +367,7 @@
         "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
+        "@omni-oss/log": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
         "zod": "catalog:",
       },

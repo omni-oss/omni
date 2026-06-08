@@ -4,6 +4,7 @@ import { interceptLogs } from "@omni-oss/console-log-interceptor";
 import { Log } from "@omni-oss/log";
 import { withLogTapeRoot } from "@omni-oss/log/logtape";
 import { createStudioRpcInstance } from "@/index";
+import { getBridgeRpcSink } from "@/logging";
 import { description, name, version } from "../../package.json";
 
 const program = new Command();
@@ -15,14 +16,20 @@ program.command("run").action(async () => {
     await withLogTapeRoot(
         ["bridge-service"],
         {
+            sinks: {
+                "bridge-rpc": getBridgeRpcSink({ client: rpc.clientHandle }),
+            },
             loggers: [
                 {
                     category: ["logtape", "meta"],
-                    sinks: [],
+                    sinks: ["bridge-rpc"],
                     lowestLevel: "warning",
                 },
+                {
+                    category: "bridge-service",
+                    sinks: ["bridge-rpc"],
+                },
             ],
-            sinks: {},
             contextLocalStorage: new AsyncLocalStorage(),
         },
         async () => {
