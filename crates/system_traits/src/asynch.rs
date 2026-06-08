@@ -432,3 +432,87 @@ pub trait FsHardLinkAsync: BaseFsHardLinkAsync {
 }
 
 impl<T: BaseFsHardLinkAsync> FsHardLinkAsync for T {}
+
+// == FsCopy ==
+
+#[async_trait]
+pub trait BaseFsCopyAsync {
+    #[doc(hidden)]
+    async fn base_fs_copy_async(
+        &self,
+        from: &Path,
+        to: &Path,
+    ) -> io::Result<u64>;
+}
+
+#[async_trait]
+pub trait FsCopyAsync: BaseFsCopyAsync {
+    async fn fs_copy_async(
+        &self,
+        from: impl AsRef<Path> + Send,
+        to: impl AsRef<Path> + Send,
+    ) -> io::Result<u64> {
+        self.base_fs_copy_async(from.as_ref(), to.as_ref()).await
+    }
+}
+
+impl<T: BaseFsCopyAsync> FsCopyAsync for T {}
+
+// == FsReadDir ==
+
+/// Async, simplified read-dir trait.
+///
+/// Returns the full paths of the entries within the given directory.
+/// This intentionally returns owned paths (rather than streaming
+/// [`FsDirEntry`](sys_traits::FsDirEntry) values) to keep the trait object
+/// safe across async boundaries.
+#[async_trait]
+pub trait BaseFsReadDirAsync {
+    #[doc(hidden)]
+    async fn base_fs_read_dir_async(
+        &self,
+        path: &Path,
+    ) -> io::Result<Vec<PathBuf>>;
+}
+
+#[async_trait]
+pub trait FsReadDirAsync: BaseFsReadDirAsync {
+    async fn fs_read_dir_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+    ) -> io::Result<Vec<PathBuf>> {
+        self.base_fs_read_dir_async(path.as_ref()).await
+    }
+}
+
+impl<T: BaseFsReadDirAsync> FsReadDirAsync for T {}
+
+// == FsAppend ==
+
+/// Async append-to-file trait.
+///
+/// Implementations should create the file if it doesn't already exist and
+/// append the given bytes to its contents.
+#[async_trait]
+pub trait BaseFsAppendAsync {
+    #[doc(hidden)]
+    async fn base_fs_append_async(
+        &self,
+        path: &Path,
+        data: &[u8],
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsAppendAsync: BaseFsAppendAsync {
+    async fn fs_append_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+        data: impl AsRef<[u8]> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_append_async(path.as_ref(), data.as_ref())
+            .await
+    }
+}
+
+impl<T: BaseFsAppendAsync> FsAppendAsync for T {}

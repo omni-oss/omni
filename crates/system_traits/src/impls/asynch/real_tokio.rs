@@ -3,8 +3,9 @@ use std::{borrow::Cow, io};
 use async_trait::async_trait;
 
 use crate::{
-    BaseEnvSetCurrentDirAsync, BaseFsCanonicalizeAsync, BaseFsCreateDirAsync,
-    BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
+    BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
+    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsHardLinkAsync,
+    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync,
     BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
     BaseFsRenameAsync, BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
     impls::{RealFsMetadata, RealSys},
@@ -179,5 +180,49 @@ impl BaseFsRemoveFileAsync for RealSys {
         path: &std::path::Path,
     ) -> io::Result<()> {
         tokio::fs::remove_file(path).await
+    }
+}
+
+#[async_trait]
+impl BaseFsCopyAsync for RealSys {
+    async fn base_fs_copy_async(
+        &self,
+        from: &std::path::Path,
+        to: &std::path::Path,
+    ) -> io::Result<u64> {
+        tokio::fs::copy(from, to).await
+    }
+}
+
+#[async_trait]
+impl BaseFsReadDirAsync for RealSys {
+    async fn base_fs_read_dir_async(
+        &self,
+        path: &std::path::Path,
+    ) -> io::Result<Vec<std::path::PathBuf>> {
+        let mut read_dir = tokio::fs::read_dir(path).await?;
+        let mut entries = Vec::new();
+        while let Some(entry) = read_dir.next_entry().await? {
+            entries.push(entry.path());
+        }
+        Ok(entries)
+    }
+}
+
+#[async_trait]
+impl BaseFsAppendAsync for RealSys {
+    async fn base_fs_append_async(
+        &self,
+        path: &std::path::Path,
+        data: &[u8],
+    ) -> io::Result<()> {
+        use tokio::io::AsyncWriteExt;
+        let mut file = tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)
+            .await?;
+        file.write_all(data).await?;
+        file.flush().await
     }
 }
