@@ -101,6 +101,16 @@ impl RequestReader {
             Err(RequestErrorInner::TrailersNotAvailable.into())
         }
     }
+
+    pub fn into_trailers(
+        self,
+    ) -> Result<Option<Trailers>, super::request_error::RequestError> {
+        if self.ended {
+            Ok(self.trailers)
+        } else {
+            Err(RequestErrorInner::TrailersNotAvailable.into())
+        }
+    }
 }
 
 #[derive(Debug, Clone, EnumIs, EnumDiscriminants, new)]

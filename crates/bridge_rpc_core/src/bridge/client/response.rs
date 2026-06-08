@@ -135,6 +135,16 @@ impl ResponseReader {
             Err(ResponseErrorInner::TrailersNotAvailable.into())
         }
     }
+
+    pub fn into_trailers(
+        self,
+    ) -> Result<Option<Trailers>, super::response_error::ResponseError> {
+        if self.ended {
+            Ok(self.trailers)
+        } else {
+            Err(ResponseErrorInner::TrailersNotAvailable.into())
+        }
+    }
 }
 
 async fn return_if_error(
