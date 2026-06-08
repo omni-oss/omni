@@ -1,4 +1,8 @@
-import { Id, ResponseStatusCode } from "@omni-oss/bridge-rpc-core";
+import {
+    ClientHandle,
+    Id,
+    ResponseStatusCode,
+} from "@omni-oss/bridge-rpc-core";
 import {
     type Frame,
     FrameType,
@@ -105,6 +109,7 @@ function createTestContext<T = unknown>(
                 requestError.receiver,
             ),
             response: new PendingResponse(id, frameMpsc.sender),
+            client: ClientHandle.DUMMY,
         },
         responseFrameReceiver: frameMpsc.receiver,
         requestErrorSender: requestError.sender,

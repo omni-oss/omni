@@ -8,6 +8,7 @@ export type HandlerContext = ServiceContext;
 
 export type HandlerFn = (context: HandlerContext) => Promise<void>;
 
+const textEncoder = new TextEncoder();
 export class Router implements Service {
     private _services: Map<string, Service> = new Map();
 
@@ -27,9 +28,26 @@ export class Router implements Service {
         const service = this._services.get(path);
 
         if (service) {
-            return await service.run(context);
+            try {
+                return await service.run(context);
+            } catch (err) {
+                const errString =
+                    err instanceof Error
+                        ? err.stack || err.message
+                        : String(err);
+
+                if (!context.response.isStarted) {
+                    await using response = await context.response.start(
+                        ResponseStatusCode.from(500),
+                    );
+                    await response.writeBodyChunk(
+                        textEncoder.encode(errString),
+                    );
+                    await response.end();
+                }
+            }
         } else {
-            const response = await context.response.start(
+            await using response = await context.response.start(
                 ResponseStatusCode.NO_HANDLER_FOR_PATH,
             );
             await response.end();
