@@ -1,3 +1,4 @@
+import { getOrSet } from "./code-utils";
 import { Uint16Schema } from "./int-schema";
 
 /**
@@ -5,9 +6,24 @@ import { Uint16Schema } from "./int-schema";
  */
 export class ResponseErrorCode {
     public static readonly UNEXPECTED_FRAME = new ResponseErrorCode(0);
+    private static readonly _customCodes = new Map<number, ResponseErrorCode>();
 
-    constructor(private readonly _value: number) {
+    private constructor(private readonly _value: number) {
         _value = Uint16Schema.parse(_value);
+    }
+
+    public static from(value: number): ResponseErrorCode {
+        switch (value) {
+            case 0:
+                return ResponseErrorCode.UNEXPECTED_FRAME;
+            default: {
+                return getOrSet(
+                    ResponseErrorCode._customCodes,
+                    value,
+                    () => new ResponseErrorCode(value),
+                );
+            }
+        }
     }
 
     public toString(): string {
@@ -33,9 +49,26 @@ export class ResponseErrorCode {
 export class RequestErrorCode {
     public static readonly UNEXPECTED_FRAME = new RequestErrorCode(0);
     public static readonly TIMED_OUT = new RequestErrorCode(1);
+    private static readonly _customCodes = new Map<number, RequestErrorCode>();
 
-    constructor(private readonly _value: number) {
+    private constructor(private readonly _value: number) {
         _value = Uint16Schema.parse(_value);
+    }
+
+    public static from(value: number): RequestErrorCode {
+        switch (value) {
+            case 0:
+                return RequestErrorCode.UNEXPECTED_FRAME;
+            case 1:
+                return RequestErrorCode.TIMED_OUT;
+            default: {
+                return getOrSet(
+                    RequestErrorCode._customCodes,
+                    value,
+                    () => new RequestErrorCode(value),
+                );
+            }
+        }
     }
 
     public toString(): string {

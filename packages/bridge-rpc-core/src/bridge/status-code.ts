@@ -1,10 +1,16 @@
+import { getOrSet } from "./code-utils";
 import { Uint16Schema } from "./int-schema";
 
 export class ResponseStatusCode {
     public static readonly SUCCESS = new ResponseStatusCode(0);
     public static readonly NO_HANDLER_FOR_PATH = new ResponseStatusCode(100);
 
-    constructor(private readonly _value: number) {
+    private static readonly _customCodes = new Map<
+        number,
+        ResponseStatusCode
+    >();
+
+    private constructor(private readonly _value: number) {
         _value = Uint16Schema.parse(_value);
     }
 
@@ -14,8 +20,13 @@ export class ResponseStatusCode {
                 return ResponseStatusCode.SUCCESS;
             case 100:
                 return ResponseStatusCode.NO_HANDLER_FOR_PATH;
-            default:
-                return new ResponseStatusCode(value);
+            default: {
+                return getOrSet(
+                    ResponseStatusCode._customCodes,
+                    value,
+                    () => new ResponseStatusCode(value),
+                );
+            }
         }
     }
 
