@@ -124,11 +124,14 @@ export class BridgeRpc {
                 return;
             }
 
-            await this.frameTransporter.stop();
-            await this.serviceTaskBackgroundProcessor.awaitAll();
-            await this.sendFrame(Frame.close());
-            // console.info(`rpc ${this.id} stopped`);
-            this.isStarted = false;
+            try {
+                await this.frameTransporter.stop();
+                await this.serviceTaskBackgroundProcessor.awaitAll();
+            } finally {
+                await this.sendFrame(Frame.close());
+                // console.info(`rpc ${this.id} stopped`);
+                this.isStarted = false;
+            }
         });
     }
 
