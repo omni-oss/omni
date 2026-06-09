@@ -24,7 +24,7 @@ beforeAll(async () => {
             "run",
         ],
         {
-            stdio: "pipe",
+            stdio: ["pipe", "pipe", "inherit"],
         },
     );
 
@@ -38,32 +38,6 @@ beforeAll(async () => {
             `RPC process exited prematurely with code ${RpcProcess.exitCode}`,
         );
     }
-
-    RpcProcess.on("error", (err) => {
-        console.error("RPC process error:", err);
-    });
-
-    RpcProcess.on("exit", (code, signal) => {
-        console.log(
-            `RPC process exited with code ${code} and signal ${signal}`,
-        );
-    });
-
-    RpcProcess.stderr?.on("data", (data) => {
-        console.error(`RPC process stderr: ${data}`);
-    });
-
-    RpcProcess.stderr?.on("error", (err) => {
-        console.error("Error reading RPC process stderr:", err);
-    });
-
-    RpcProcess.stdout?.on("error", (err) => {
-        console.error("Error reading RPC process stdout:", err);
-    });
-
-    RpcProcess.stdin?.on("error", (err) => {
-        console.error("Error writing to RPC process stdin:", err);
-    });
 
     const transport = new StreamTransport({
         input: Readable.toWeb(RpcProcess.stdout) as ReadableStream<Uint8Array>,
