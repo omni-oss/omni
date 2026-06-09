@@ -1,3 +1,4 @@
+import { stderr } from "node:process";
 import {
     type ClientHandle,
     ResponseStatusCode,
@@ -17,13 +18,9 @@ export function getBridgeRpcSink(options: BridgeRpcSinkOptions): AsyncSink {
 
 const textEncoder = new TextEncoder();
 export class BridgeRpcSink {
-    private static error = console.error;
-
     constructor(private client: ClientHandle) {}
 
     async log(entry: LogRecord) {
-        const Self = this.constructor as typeof BridgeRpcSink;
-
         try {
             const payload = {
                 level: convertLevel(entry.level),
@@ -45,16 +42,13 @@ export class BridgeRpcSink {
                 .then((res) => res.wait());
 
             if (!response.status.equals(ResponseStatusCode.SUCCESS)) {
-                Self.error(
-                    "Failed to send log entry via Bridge RPC: Non-success status code",
-                    {
-                        status: response.status,
-                    },
+                stderr.write(
+                    `Failed to send log entry via Bridge RPC: Non-success status code ${response.status}\n`,
                 );
                 return;
             }
         } catch (error) {
-            Self.error("Failed to send log entry via Bridge RPC:", error);
+            stderr.write(`Failed to send log entry via Bridge RPC: ${error}\n`);
         }
     }
 }
