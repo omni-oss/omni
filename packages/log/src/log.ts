@@ -5,6 +5,7 @@ import type {
     Logger,
     LoggerFactory,
 } from "./core";
+import { NoopLoggerFactory } from "./core/loggers";
 import { createLeveledForwarders } from "./log-helpers";
 
 /**
@@ -25,12 +26,23 @@ interface AmbientLogState {
 
 const ambient = createAmbientContext<AmbientLogState>();
 
-function requireState(operation: string): AmbientLogState {
+let noopState: AmbientLogState;
+
+function getOrInitNoopState(): AmbientLogState {
+    if (noopState === undefined) {
+        const factory = new NoopLoggerFactory();
+        noopState = {
+            factory,
+            logger: factory.get("noop"),
+        };
+    }
+    return noopState;
+}
+
+function getState(): AmbientLogState {
     const state = ambient.getStore();
     if (state === undefined) {
-        throw new Error(
-            `Logger is not initialized. Wrap your code with Log.withRoot(factory, category, ...) before calling ${operation}.`,
-        );
+        return getOrInitNoopState();
     }
     return state;
 }
@@ -90,7 +102,7 @@ export namespace Log {
      * outside a `Log.withRoot(...)` block.
      */
     export function instance(): Logger {
-        return requireState("Log.instance()").logger;
+        return getState().logger;
     }
 
     /**
@@ -101,7 +113,7 @@ export namespace Log {
      * passed wherever a `LoggerFactory` is expected.
      */
     export function get(category: CategoryParam): Logger {
-        return requireState("Log.get(...)").factory.get(category);
+        return getState().factory.get(category);
     }
 
     /**
@@ -144,7 +156,7 @@ export namespace Log {
      * async callbacks scope correctly across `await`s.
      */
     export function withChild<R>(category: CategoryParam, fn: () => R): R {
-        const state = requireState("Log.withChild(...)");
+        const state = getState();
         const child = state.logger.child(category);
         return ambient.run({ factory: state.factory, logger: child }, fn);
     }

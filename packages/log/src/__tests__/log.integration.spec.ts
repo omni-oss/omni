@@ -300,14 +300,6 @@ describe("Log.withChild", () => {
         expect(recordAt(cap).category).toEqual(["app", "a"]);
     });
 
-    it("throws when called outside withRoot", () => {
-        expect(() =>
-            Log.withChild("auth", () => {
-                /* unreachable */
-            }),
-        ).toThrow(/not initialized/);
-    });
-
     it("removes its scope after a synchronous throw", () => {
         Log.withRoot(factory, ["app"], () => {
             const root = Log.instance();
@@ -444,10 +436,6 @@ describe("Log.get (LoggerFactory forwarding)", () => {
         expect(calls).toEqual([["app"], ["app"]]);
     });
 
-    it("throws when called outside withRoot", () => {
-        expect(() => Log.get(["app"])).toThrow(/not initialized/);
-    });
-
     it("Log can be passed wherever a LoggerFactory is expected", () => {
         Log.withRoot(factory, ["app"], () => {
             // Structural compatibility with LoggerFactory: `{ get(category) }`.
@@ -481,10 +469,6 @@ describe("Log namespace (ambient context, real end-to-end)", () => {
         Log.withRoot(factory, ["app"], () => {
             expect(Log.isInitialized()).toBe(true);
         });
-    });
-
-    it("instance() throws when called outside withRoot", () => {
-        expect(() => Log.instance()).toThrow(/not initialized/);
     });
 
     it("instance() returns the active logger inside withRoot", () => {
