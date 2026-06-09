@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: omni_bridge_test_service
+extends:
+  - "@workspace/omni/presets/rust-service.omni.yaml"
+
+tasks:
+  test:
+    dependencies:
+      append:
+        - "@omni-oss/bridge-service#build"
+
+dependencies:
+  - trace
+  - bridge_rpc_core
+  - bridge_rpc_router
+  - bridge_rpc_services
+  - bridge_rpc_utils
+  - system_traits

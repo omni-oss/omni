@@ -4,6 +4,7 @@ members = [
     "cli/omni",
     "crates/*",
     "services/omni_remote_cache_service",
+    "services/omni_bridge_test_service",
 ]
 # default-members = ["cli/omni"]
 
@@ -155,6 +156,7 @@ omni_lockfile = { path = "crates/omni_lockfile" }
 omni_remote_source = { path = "crates/omni_remote_source" }
 bridge_rpc_services = { path = "crates/bridge_rpc_services" }
 bridge_rpc_utils = { path = "crates/bridge_rpc_utils" }
+omni_bridge_test_service = { path = "services/omni_bridge_test_service" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

@@ -6265,6 +6265,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_bridge_test_service"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "atty",
+ "bon",
+ "bridge_rpc_core",
+ "bridge_rpc_router",
+ "bridge_rpc_services",
+ "bridge_rpc_utils",
+ "clap",
+ "derive-new",
+ "eyre",
+ "log",
+ "ntest",
+ "omni_utils",
+ "os_pipe",
+ "pathdiff",
+ "rstest",
+ "rstest_reuse",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "system_traits",
+ "test-log",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "omni_cache"
 version = "0.5.2"
 dependencies = [
@@ -7287,6 +7321,16 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "os_pipe"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

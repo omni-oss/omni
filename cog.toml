@@ -418,6 +418,13 @@ include = [
 ]
 public_api = false
 
+[packages.omni_bridge_test_service]
+path = "services/omni_bridge_test_service"
+include = [
+    "services/omni_bridge_test_service/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [packages."@omni-oss/async-utils"]
