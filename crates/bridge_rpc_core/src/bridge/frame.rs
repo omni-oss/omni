@@ -35,50 +35,11 @@ pub enum Frame {
 }
 
 impl Frame {
-    pub(crate) fn to_repr(
-        &self,
-    ) -> Result<FrameRepr<'static, rmpv::Value>, rmpv::ext::Error> {
-        let ty = self.discriminant();
-        let data = match self {
-            Frame::RequestStart(request_start) => {
-                rmpv::ext::to_value(request_start)?
-            }
-            Frame::RequestBodyChunk(request_data) => {
-                rmpv::ext::to_value(request_data)?
-            }
-            Frame::RequestEnd(request_end) => rmpv::ext::to_value(request_end)?,
-            Frame::RequestError(request_error) => {
-                rmpv::ext::to_value(request_error)?
-            }
-            Frame::ResponseStart(response_start) => {
-                rmpv::ext::to_value(response_start)?
-            }
-            Frame::ResponseBodyChunk(response_data) => {
-                rmpv::ext::to_value(response_data)?
-            }
-            Frame::ResponseEnd(response_end) => {
-                rmpv::ext::to_value(response_end)?
-            }
-            Frame::ResponseError(response_error) => {
-                rmpv::ext::to_value(response_error)?
-            }
-            Frame::Close => rmpv::Value::Nil,
-            Frame::Ping => rmpv::Value::Nil,
-            Frame::Pong => rmpv::Value::Nil,
-        };
-
-        Ok(FrameRepr {
-            r#type: ty,
-            data,
-            _data: std::marker::PhantomData,
-        })
-    }
-
     pub(crate) fn from_repr(
         repr: FrameRepr<'static, rmpv::Value>,
     ) -> Result<Self, rmpv::ext::Error> {
-        let ty = repr.r#type;
-        let data = repr.data;
+        let ty = repr.0;
+        let data = repr.1;
 
         Ok(match ty {
             FrameType::RequestStart => {
@@ -129,14 +90,23 @@ impl serde::Serialize for Frame {
     where
         S: serde::Serializer,
     {
-        let repr = self.to_repr().map_err(|e| {
-            serde::ser::Error::custom(format!(
-                "failed to serialize frame: {}",
-                e
-            ))
-        })?;
-
-        repr.serialize(serializer)
+        use serde::ser::SerializeSeq;
+        let mut state = serializer.serialize_seq(Some(2))?;
+        state.serialize_element(&self.discriminant())?;
+        match self {
+            Frame::RequestStart(v) => state.serialize_element(v)?,
+            Frame::RequestBodyChunk(v) => state.serialize_element(v)?,
+            Frame::RequestEnd(v) => state.serialize_element(v)?,
+            Frame::RequestError(v) => state.serialize_element(v)?,
+            Frame::ResponseStart(v) => state.serialize_element(v)?,
+            Frame::ResponseBodyChunk(v) => state.serialize_element(v)?,
+            Frame::ResponseEnd(v) => state.serialize_element(v)?,
+            Frame::ResponseError(v) => state.serialize_element(v)?,
+            Frame::Close | Frame::Ping | Frame::Pong => {
+                state.serialize_element::<Option<()>>(&None)?;
+            }
+        }
+        state.end()
     }
 }
 
@@ -224,15 +194,14 @@ impl Frame {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct FrameRepr<'a, TData>
+pub(crate) struct FrameRepr<'a, TData>(
+    FrameType,
+    TData,
+    // Consume the lifetime parameter to prevent compiler from complaining about unused lifetime in `TData`.
+    #[serde(skip, default)] std::marker::PhantomData<&'a ()>,
+)
 where
-    TData: 'a,
-{
-    #[serde(rename = "type")]
-    pub r#type: FrameType,
-    pub data: TData,
-    _data: std::marker::PhantomData<&'a ()>,
-}
+    TData: 'a;
 
 // Request structures
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
@@ -245,7 +214,14 @@ pub struct RequestStart {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
 pub struct RequestBodyChunk {
     pub id: Id,
-    pub chunk: Vec<u8>, // Consider bytes::Bytes for zero-copy
+    // `serde_bytes` is required so that `Vec<u8>` is encoded as a
+    // msgpack *binary* blob (`bin8`/`bin16`/`bin32`) rather than as a
+    // sequence of small integers. Peer implementations (notably the
+    // TypeScript `@omni-oss/bridge-rpc-core` package) decode the chunk
+    // straight into a `Uint8Array`, which only works for the binary
+    // encoding.
+    #[serde(with = "serde_bytes")]
+    pub chunk: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, new)]
