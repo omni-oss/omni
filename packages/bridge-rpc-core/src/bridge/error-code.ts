@@ -43,6 +43,10 @@ export class ResponseErrorCode {
     }
 }
 
+export const ResponseErrorCodeConstructor = ResponseErrorCode as unknown as {
+    new (value: number): ResponseErrorCode;
+};
+
 /**
  * Represents specific error conditions that can occur during a Request lifecycle.
  */
@@ -87,3 +91,7 @@ export class RequestErrorCode {
         return this._value === other._value;
     }
 }
+
+export const RequestErrorCodeConstructor = RequestErrorCode as unknown as {
+    new (value: number): RequestErrorCode;
+};

@@ -126,9 +126,11 @@ export class RequestStateMachine {
         expected: RequestEventType[],
         actual: RequestEventType,
     ): RequestStateMachineError {
+        const expectedText =
+            expected.length === 1 ? expected[0] : `[${expected.join(", or ")}]`;
         return new RequestStateMachineError(
             "InvalidFrame",
-            `invalid frame type: expected: ${expected.join(", ")}, actual: ${actual}`,
+            `invalid frame type: expected: ${expectedText}; actual: ${actual}`,
         );
     }
 

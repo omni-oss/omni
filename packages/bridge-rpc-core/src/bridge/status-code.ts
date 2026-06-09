@@ -46,3 +46,7 @@ export class ResponseStatusCode {
         return this._value === other._value;
     }
 }
+
+export const ResponseStatusCodeConstructor = ResponseStatusCode as unknown as {
+    new (value: number): ResponseStatusCode;
+};

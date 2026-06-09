@@ -1,6 +1,7 @@
 import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it } from "vitest";
 import { Id } from "@/id";
+import { ResponseErrorCode } from "../error-code";
 import { Frame, type ResponseError, type ResponseStart } from "../frame";
 import {
     ActiveRequest,
@@ -44,6 +45,21 @@ describe("PendingRequest", () => {
         await request.start();
 
         expect(request.isStarted).toBe(true);
+    });
+
+    it("should throw if error is received while starting", async () => {
+        const { request, errorSender } = createPendingRequest("test");
+
+        const error: ResponseError = {
+            id: Id.create(),
+            code: ResponseErrorCode.UNEXPECTED_FRAME,
+            message: "Test error",
+        };
+        errorSender.send(error);
+
+        await expect(request.start()).rejects.toThrow(
+            `Request failed with error code ${error.code.toString()}, ${error.message}`,
+        );
     });
 });
 
@@ -113,6 +129,22 @@ describe("ActiveRequest", () => {
         expect(request.isEnded).toBe(true);
     });
 
+    it("should throw if error is received while writing body chunk", async () => {
+        const { request, errorSender } = createActiveRequest();
+
+        const error: ResponseError = {
+            id: Id.create(),
+            code: ResponseErrorCode.UNEXPECTED_FRAME,
+            message: "Test error",
+        };
+        errorSender.send(error);
+
+        const data = new Uint8Array([1, 2, 3]);
+        await expect(request.writeBodyChunk(data)).rejects.toThrow(
+            `Request failed with error code ${error.code.toString()}, ${error.message}`,
+        );
+    });
+
     describe("[Symbol.asyncDispose]", () => {
         it("should end the request when not already ended", async () => {
             const { request, receiver, id } = createActiveRequest();
@@ -150,11 +182,13 @@ describe("ActiveRequest", () => {
 
             // Re-create within the block so we can use `await using`
             const innerMpsc = new Mpsc<Frame>();
+            const error = new Oneshot<ResponseError>();
             const innerId = id;
             {
                 await using request = new ActiveRequest(
                     innerId,
                     innerMpsc.sender,
+                    error.receiver,
                     createPendingResponse,
                 );
                 expect(request.isEnded).toBe(false);
@@ -175,13 +209,16 @@ function createPendingRequest(
 ) {
     const id = Id.create();
     const mpsc = new Mpsc<Frame>();
+    const error = new Oneshot<ResponseError>();
     return {
         id,
         receiver: mpsc.receiver,
+        errorSender: error.sender,
         request: new PendingRequest(
             id,
             path,
             mpsc.sender,
+            error.receiver,
             pendingResponseFactory ?? createPendingResponse,
         ),
     };
@@ -190,12 +227,15 @@ function createPendingRequest(
 function createActiveRequest(pendingResponseFactory?: PendingResponseFactory) {
     const id = Id.create();
     const mpsc = new Mpsc<Frame>();
+    const error = new Oneshot<ResponseError>();
     return {
         id,
         receiver: mpsc.receiver,
+        errorSender: error.sender,
         request: new ActiveRequest(
             id,
             mpsc.sender,
+            error.receiver,
             pendingResponseFactory ?? createPendingResponse,
         ),
     };

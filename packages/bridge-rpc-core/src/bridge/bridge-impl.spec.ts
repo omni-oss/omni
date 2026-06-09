@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Id } from "@/id";
 import type { Transport } from "@/transport";
 import { BridgeRpc } from "./bridge-impl";
-import { decode, encode } from "./codec-utils";
+import { decodeFrame, encodeFrame } from "./codec-utils";
 import { Frame } from "./frame";
 import { FrameType } from "./frame-schema";
 import type { ServiceContext } from "./service";
@@ -11,7 +11,7 @@ import { ResponseStatusCode } from "./status-code";
 // Mock Constants
 const TEST_DATA = "test_data";
 const TEST_PATH = "test_path";
-const testDataBytes = encode(TEST_DATA);
+const testDataBytes = new TextEncoder().encode(TEST_DATA);
 
 describe("BridgeRpc", () => {
     // Helper to create a Mock Transport
@@ -21,13 +21,23 @@ describe("BridgeRpc", () => {
             onReceive: vi.fn(),
         } satisfies Transport;
 
-        const onReceiveHandlers = [] as ((data: Uint8Array) => void)[];
+        const onReceiveHandlers = [] as ((
+            data: Uint8Array,
+        ) => void | Promise<void>)[];
 
         mockTransport.onReceive.mockImplementation((cb) => {
             onReceiveHandlers.push(cb);
         });
 
-        return { onReceiveHandlers, ...mockTransport };
+        return {
+            onReceiveHandlers,
+            ...mockTransport,
+            sendToHandlers: async (data: Uint8Array) => {
+                for (const handler of onReceiveHandlers) {
+                    await handler(data);
+                }
+            },
+        };
     }
 
     // Helper to create a Mock Service
@@ -60,7 +70,7 @@ describe("BridgeRpc", () => {
         expect(transport.send).toHaveBeenCalled();
         // biome-ignore lint/style/noNonNullAssertion: should have value
         const lastCallBytes = transport.send.mock.calls[0]![0];
-        const decodedFrame = decode(lastCallBytes) as Frame;
+        const decodedFrame = decodeFrame(lastCallBytes);
 
         expect(decodedFrame).toEqual(Frame.close());
     });
@@ -72,15 +82,13 @@ describe("BridgeRpc", () => {
 
         // When RPC sends a PING, we simulate the other side sending a PONG back
         transport.send.mockImplementation(async (bytes: Uint8Array) => {
-            const frame = decode(bytes) as Frame;
+            const frame = decodeFrame(bytes);
             if (frame.type === FrameType.PING) {
                 // Simulate network delay then send PONG
-                setTimeout(() => {
-                    const pongFrame = Frame.pong();
-                    // biome-ignore lint/style/noNonNullAssertion: should have value
-                    const receiveHandler = transport.onReceiveHandlers[0]!;
-                    receiveHandler(encode(pongFrame));
-                }, 10);
+                const pongFrame = Frame.pong();
+                const encoded = encodeFrame(pongFrame);
+                await transport.sendToHandlers(encoded);
+                await sleep(1);
             }
         });
 
@@ -101,12 +109,10 @@ describe("BridgeRpc", () => {
 
         // 1. Setup transport to simulate a server response when it receives request frames
         transport.send.mockImplementation(async (bytes: Uint8Array) => {
-            const frame = decode(bytes) as Frame;
+            const frame = decodeFrame(bytes);
 
             // If we see the end of the request, simulate the server's response
             if (frame.type === FrameType.REQUEST_END) {
-                // biome-ignore lint/style/noNonNullAssertion: should have value
-                const receiveHandler = transport.onReceiveHandlers[0]!;
                 const frames = [
                     Frame.responseStart(reqId, ResponseStatusCode.SUCCESS),
                     Frame.responseBodyChunk(reqId, testDataBytes),
@@ -114,7 +120,9 @@ describe("BridgeRpc", () => {
                 ];
 
                 for (const frame of frames) {
-                    receiveHandler(encode(frame));
+                    const encoded = encodeFrame(frame);
+                    await transport.sendToHandlers(encoded);
+                    await sleep(1); // simulate network delay
                 }
             }
         });
@@ -122,7 +130,7 @@ describe("BridgeRpc", () => {
         const pendingRequest = await rpc.requestWithId(reqId, TEST_PATH);
         const requestHandle = await pendingRequest.start();
         await requestHandle.writeBodyChunk(testDataBytes);
-        const response = await (await requestHandle.end()).wait();
+        const response = await requestHandle.end().then((x) => x.wait());
 
         expect(response.status).toEqual(ResponseStatusCode.SUCCESS);
         const body = await readAll(response.readBody());
@@ -157,10 +165,6 @@ describe("BridgeRpc", () => {
         const rpc = new BridgeRpc(transport, service);
         await rpc.start();
 
-        // Simulate incoming request frames from the "network"
-        // biome-ignore lint/style/noNonNullAssertion: should have value
-        const receiveHandler = transport.onReceiveHandlers[0]!;
-
         const frames = [
             Frame.requestStart(reqId, TEST_PATH),
             Frame.requestBodyChunk(reqId, testDataBytes),
@@ -168,7 +172,8 @@ describe("BridgeRpc", () => {
         ];
 
         for (const frame of frames) {
-            receiveHandler(encode(frame));
+            const encoded = encodeFrame(frame);
+            await transport.sendToHandlers(encoded);
         }
 
         // Allow microtasks to process (service.run is called in background)
@@ -176,12 +181,12 @@ describe("BridgeRpc", () => {
 
         // Verify transport sent response frames back
         const sentFrameTypes = transport.send.mock.calls.map(
-            (call) => (decode(call[0]) as Frame).type,
+            (call) => decodeFrame(call[0]).type,
         );
 
-        expect(sentFrameTypes).toContain(FrameType.RESPONSE_START);
-        expect(sentFrameTypes).toContain(FrameType.RESPONSE_BODY_CHUNK);
-        expect(sentFrameTypes).toContain(FrameType.RESPONSE_END);
+        expect(sentFrameTypes[0]).toEqual(FrameType.RESPONSE_START);
+        expect(sentFrameTypes[1]).toEqual(FrameType.RESPONSE_BODY_CHUNK);
+        expect(sentFrameTypes[2]).toEqual(FrameType.RESPONSE_END);
 
         await expect(rpc.stop()).resolves.toBeUndefined();
     });

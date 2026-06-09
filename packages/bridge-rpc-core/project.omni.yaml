@@ -11,6 +11,7 @@ dependencies:
     - "@omni-oss/vitest-config"
     - "@omni-oss/async-utils"
     - "@omni-oss/channels"
+    - "@omni-oss/log"
 
 tasks:
   build:

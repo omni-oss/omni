@@ -1,37 +1,67 @@
 import z from "zod";
-import { Id } from "@/id";
+import { Id, IdConstructor } from "@/id";
 import { HeadersSchema, TrailersSchema } from "./dyn-map";
-import { RequestErrorCode, ResponseErrorCode } from "./error-code";
-import { ResponseStatusCode } from "./status-code";
+import {
+    RequestErrorCode,
+    RequestErrorCodeConstructor,
+    ResponseErrorCode,
+    ResponseErrorCodeConstructor,
+} from "./error-code";
+import {
+    ResponseStatusCode,
+    ResponseStatusCodeConstructor,
+} from "./status-code";
 
 // --- External Type Placeholders ---
 // Replace these with your actual imported schemas
-const IdSchema = z.bigint().transform((v) => Id.fromBigInt(v));
+const IdSchema = z
+    .union([z.bigint(), z.instanceof(IdConstructor)])
+    .transform((v) => {
+        if (v instanceof Id) {
+            return v;
+        }
+        return Id.fromBigInt(v);
+    });
 const RequestErrorCodeSchema = z
-    .number()
-    .transform((v) => RequestErrorCode.from(v));
+    .union([z.number(), z.instanceof(RequestErrorCodeConstructor)])
+    .transform((v) => {
+        if (v instanceof RequestErrorCode) {
+            return v;
+        }
+        return RequestErrorCode.from(v);
+    });
 const ResponseErrorCodeSchema = z
-    .number()
-    .transform((v) => ResponseErrorCode.from(v));
+    .union([z.number(), z.instanceof(ResponseErrorCodeConstructor)])
+    .transform((v) => {
+        if (v instanceof ResponseErrorCode) {
+            return v;
+        }
+        return ResponseErrorCode.from(v);
+    });
 const ResponseStatusCodeSchema = z
-    .number()
-    .transform((v) => ResponseStatusCode.from(v));
+    .union([z.number(), z.instanceof(ResponseStatusCodeConstructor)])
+    .transform((v) => {
+        if (v instanceof ResponseStatusCode) {
+            return v;
+        }
+        return ResponseStatusCode.from(v);
+    });
 
-export const FrameType = {
-    REQUEST_START: 0,
-    REQUEST_BODY_CHUNK: 1,
-    REQUEST_END: 2,
-    REQUEST_ERROR: 3,
+export enum FrameType {
+    REQUEST_START = 0,
+    REQUEST_BODY_CHUNK = 1,
+    REQUEST_END = 2,
+    REQUEST_ERROR = 3,
 
-    RESPONSE_START: 20,
-    RESPONSE_BODY_CHUNK: 21,
-    RESPONSE_END: 22,
-    RESPONSE_ERROR: 23,
+    RESPONSE_START = 20,
+    RESPONSE_BODY_CHUNK = 21,
+    RESPONSE_END = 22,
+    RESPONSE_ERROR = 23,
 
-    CLOSE: 40,
-    PING: 41,
-    PONG: 42,
-} as const;
+    CLOSE = 40,
+    PING = 41,
+    PONG = 42,
+}
 
 export const FrameTypeSchema = z.enum(FrameType);
 

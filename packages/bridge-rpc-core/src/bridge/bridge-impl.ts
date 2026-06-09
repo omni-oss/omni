@@ -5,6 +5,7 @@ import {
     Oneshot,
     type OneshotReceiver,
 } from "@omni-oss/channels";
+import { Log, type Logger } from "@omni-oss/log";
 import { Mutex } from "async-mutex";
 import { Id } from "@/id";
 import { TimeoutError, withTimeout } from "@/promise-utils";
@@ -19,7 +20,7 @@ import {
     ResponseFrameEventType,
 } from "./client/response";
 import { ClientHandle } from "./client-handle";
-import { decode, encode } from "./codec-utils";
+import { decodeFrame, encodeFrame } from "./codec-utils";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";
 import type { Headers } from "./dyn-map";
 import {
@@ -57,6 +58,7 @@ export class BridgeRpc {
     private serviceTaskBackgroundProcessor = new BackgroundProcessor();
     private mutex = new Mutex();
     private _clientHandle: ClientHandle;
+    private _logger: Logger | undefined = undefined;
 
     constructor(
         private transport: Transport,
@@ -84,6 +86,7 @@ export class BridgeRpc {
             id,
             path,
             this.frameTransporter.sender,
+            responseSession.responseErrorReceiver,
             (id) =>
                 new ClientPendingResponse(
                     id,
@@ -107,14 +110,14 @@ export class BridgeRpc {
     public async start() {
         return await this.runExclusive(async () => {
             if (this.isStarted) {
-                // console.info(`rpc ${this.id} is already started`);
+                this.logger.warn(`rpc is already started`);
                 return;
             }
 
             this.transport.onReceive(this.handle.bind(this));
             await this.frameTransporter.start();
             this.isStarted = true;
-            // console.info(`rpc ${this.id} started`);
+            this.logger.trace("rpc started");
         });
     }
 
@@ -129,7 +132,7 @@ export class BridgeRpc {
                 await this.serviceTaskBackgroundProcessor.awaitAll();
             } finally {
                 await this.sendFrame(Frame.close());
-                // console.info(`rpc ${this.id} stopped`);
+                this.logger.trace("rpc stoppped");
                 this.isStarted = false;
             }
         });
@@ -166,7 +169,7 @@ export class BridgeRpc {
     private async handle(frameBytes: Uint8Array) {
         this.ensureStarted();
 
-        const frame = decode(frameBytes);
+        const frame = decodeFrame(frameBytes);
         const parsed = FrameSchema.safeParse(frame);
         if (parsed.success) {
             await this.handleFrame(parsed.data);
@@ -181,18 +184,16 @@ export class BridgeRpc {
         }
     }
 
-    private async handleInvalidFrame(_frame: unknown, _errorMessage: string) {
-        // console.error(
-        //     `invalid frame received (frame type: ${(frame as Frame).type}): ${errorMessage}`,
-        // );
+    private async handleInvalidFrame(frame: unknown, errorMessage: string) {
+        this.logger.error(
+            `invalid frame received (frame type: ${(frame as Frame).type}): ${errorMessage}`,
+        );
     }
 
     private async handleFrame(frame: Frame) {
         let event: Event;
 
-        // console.log(
-        //     `[rpc_id: ${this.id}]: received frame: ${frame.type} with id: ${frame.data?.id}`,
-        // );
+        this.logger.trace(`received frame of type: ${frame.type}`);
 
         switch (frame.type) {
             case FrameType.REQUEST_START:
@@ -240,9 +241,9 @@ export class BridgeRpc {
                 return;
 
             default:
-                // console.error(
-                //     `unsupported frame type: ${(frame as unknown as { type: number }).type}`,
-                // );
+                this.logger.error(
+                    `unsupported frame type: ${(frame as unknown as { type: number }).type}`,
+                );
                 return;
         }
 
@@ -389,9 +390,9 @@ export class BridgeRpc {
     }
 
     private startResponseSession(id: Id) {
-        // console.info(
-        //     `[rpc_id: ${this.id}]: starting response session with id: ${id}`,
-        // );
+        this.logger.trace("starting response session with id: {id}", {
+            id,
+        });
         const responseStart = new Oneshot<ResponseStart>();
         const responseFrame = new Mpsc<ResponseFrameEvent>();
         const responseError = new Oneshot<ResponseError>();
@@ -404,9 +405,9 @@ export class BridgeRpc {
             id,
             responseSessionContext,
         );
-        // console.info(
-        //     `[rpc_id: ${this.id}]: started response session with id: ${id}`,
-        // );
+        this.logger.trace("started response session with id: {id}", {
+            id,
+        });
         return {
             session,
             responseStartReceiver: responseStart.receiver,
@@ -432,9 +433,7 @@ export class BridgeRpc {
     }
 
     private startRequestSession(id: Id) {
-        // console.info(
-        //     `[rpc_id: ${this.id}]: starting request session with id: ${id}`,
-        // );
+        this.logger.trace("starting request session with id: {id}", { id });
         const requestFrame = new Mpsc<RequestFrameEvent>();
         const requestError = new Oneshot<RequestError>();
         const requestSessionContext = new RequestSessionContext(
@@ -447,9 +446,7 @@ export class BridgeRpc {
             requestSessionContext,
         );
 
-        // console.info(
-        //     `[rpc_id: ${this.id}]: started request session with id: ${id}`,
-        // );
+        this.logger.trace("started request session with id: {id}", { id });
 
         return {
             session,
@@ -570,11 +567,19 @@ export class BridgeRpc {
     }
 
     private sendFrame(frame: Frame) {
-        return this.transport.send(encode(frame));
+        return this.transport.send(encodeFrame(frame));
     }
 
     private runExclusive<T>(fn: () => T): Promise<T> {
         return this.mutex.runExclusive(fn);
+    }
+
+    private get logger(): Logger {
+        if (!this._logger) {
+            this._logger = Log.get("BridgeRpc");
+        }
+
+        return this._logger;
     }
 }
 

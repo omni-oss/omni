@@ -43,10 +43,13 @@ export class Request {
 
         for await (const event of this.requestFrameEvents) {
             if (this.requestError.hasValue()) {
-                const value = await this.requestError.receive();
+                const error = await this.requestError.receive();
 
                 throw new Error(
-                    `Error from server: ${value.message}, error code: ${value.code}`,
+                    `Error from server with error code: ${error.code}, message: ${error.message}`,
+                    {
+                        cause: error,
+                    },
                 );
             }
 

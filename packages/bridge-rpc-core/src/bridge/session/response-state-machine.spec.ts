@@ -70,7 +70,7 @@ describe("ResponseStateMachine", () => {
         });
 
         // Subsequent transition should throw "Ended"
-        expect(() => rsm.transition(finalEvent)).toThrowError(
+        expect(() => rsm.transition(finalEvent)).toThrow(
             expect.objectContaining({ kind: "Ended" }),
         );
     });
@@ -87,9 +87,9 @@ describe("ResponseStateMachine", () => {
         );
 
         // Fail to add body after end
-        expect(() =>
-            rsm.transition(bodyChunkEvent(id, [1, 2, 3])),
-        ).toThrowError(expect.objectContaining({ kind: "Ended" }));
+        expect(() => rsm.transition(bodyChunkEvent(id, [1, 2, 3]))).toThrow(
+            expect.objectContaining({ kind: "Ended" }),
+        );
     });
 
     it("should support error event", () => {
@@ -114,7 +114,7 @@ describe("ResponseStateMachine", () => {
         });
 
         // Cannot transition after Error state
-        expect(() => rsm.transition(endEvent(id))).toThrowError(
+        expect(() => rsm.transition(endEvent(id))).toThrow(
             expect.objectContaining({ kind: "Errored" }),
         );
     });
@@ -129,7 +129,7 @@ describe("ResponseStateMachine", () => {
         // Attempting a transition with a different ID
         expect(() =>
             rsm.transition(bodyChunkEvent(incorrectId, [1, 2, 3])),
-        ).toThrowError(expect.objectContaining({ kind: "InvalidId" }));
+        ).toThrow(expect.objectContaining({ kind: "InvalidId" }));
 
         // Machine should NOT be corrupted and still accept the original ID
         expect(rsm.transition(bodyChunkEvent(id, [1, 2, 3]))).toEqual({

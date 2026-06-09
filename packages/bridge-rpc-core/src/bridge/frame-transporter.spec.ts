@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Id } from "@/id";
-import { encode } from "./codec-utils";
+import { encodeFrame } from "./codec-utils";
 import { Frame } from "./frame";
 import { FrameTransporter } from "./frame-transporter";
 
@@ -31,6 +31,6 @@ describe("FrameTransporter", () => {
         await expect(transporter.stop()).resolves.toBeUndefined();
         expect(transporter.isRunning).toBeFalsy();
 
-        expect(senderFn).toHaveBeenCalledWith(encode(frame));
+        expect(senderFn).toHaveBeenCalledWith(encodeFrame(frame));
     });
 });

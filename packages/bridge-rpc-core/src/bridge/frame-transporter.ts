@@ -1,6 +1,6 @@
 import { Mpsc, type MpscReceiver } from "@omni-oss/channels";
 import { Mutex } from "async-mutex";
-import { encode } from "./codec-utils";
+import { encodeFrame } from "./codec-utils";
 import type { Frame } from "./frame";
 
 type SendBytesFn = (chunk: Uint8Array) => Promise<void>;
@@ -56,7 +56,7 @@ export class FrameTransporter {
         frameReceiver: MpscReceiver<Frame>,
     ) {
         for await (const bytes of frameReceiver) {
-            await sendBytesFn(encode(bytes));
+            await sendBytesFn(encodeFrame(bytes));
         }
     }
 

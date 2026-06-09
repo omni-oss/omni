@@ -65,7 +65,7 @@ describe("RequestStateMachine", () => {
         });
 
         // Should not transition after End
-        expect(() => rsm.transition(finalEvent)).toThrowError(
+        expect(() => rsm.transition(finalEvent)).toThrow(
             expect.objectContaining({ kind: "Ended" }),
         );
     });
@@ -82,9 +82,9 @@ describe("RequestStateMachine", () => {
         );
 
         // Transition after End should fail
-        expect(() =>
-            rsm.transition(bodyChunkEvent(id, [1, 2, 3])),
-        ).toThrowError(expect.objectContaining({ kind: "Ended" }));
+        expect(() => rsm.transition(bodyChunkEvent(id, [1, 2, 3]))).toThrow(
+            expect.objectContaining({ kind: "Ended" }),
+        );
     });
 
     it("should not allow transitions after errored", () => {
@@ -110,7 +110,7 @@ describe("RequestStateMachine", () => {
 
         // Should not transition after Errored state
         const endAfterError = endEvent(id);
-        expect(() => rsm.transition(endAfterError)).toThrowError(
+        expect(() => rsm.transition(endAfterError)).toThrow(
             expect.objectContaining({ kind: "Errored" }),
         );
     });
@@ -125,7 +125,7 @@ describe("RequestStateMachine", () => {
         // Transition with mismatching ID should throw InvalidId
         expect(() =>
             rsm.transition(bodyChunkEvent(incorrectId, [1, 2, 3])),
-        ).toThrowError(expect.objectContaining({ kind: "InvalidId" }));
+        ).toThrow(expect.objectContaining({ kind: "InvalidId" }));
 
         // Machine should still function correctly for the original ID
         expect(rsm.transition(bodyChunkEvent(id, [1, 2, 3]))).toEqual({

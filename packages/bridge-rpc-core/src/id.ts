@@ -73,6 +73,11 @@ export class Id {
     }
 }
 
+export const IdConstructor = Id as unknown as {
+    new (value: bigint | number | string): Id;
+    prototype: Id;
+};
+
 // Zod schema for Id
 export const IdSchema = z.bigint().transform((b) => Id.fromBigInt(b));
 

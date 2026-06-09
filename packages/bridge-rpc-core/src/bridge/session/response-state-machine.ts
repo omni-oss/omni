@@ -136,9 +136,11 @@ export class ResponseStateMachine {
         expected: ResponseEventType[],
         actual: ResponseEventType,
     ): ResponseStateMachineError {
+        const expectedText =
+            expected.length === 1 ? expected[0] : `[${expected.join(", or ")}]`;
         return new ResponseStateMachineError(
             "InvalidFrame",
-            `invalid frame type: expected: ${expected}, actual: ${actual}`,
+            `invalid frame type: expected: ${expectedText}; actual: ${actual}`,
         );
     }
 
