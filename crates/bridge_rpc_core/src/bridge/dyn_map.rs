@@ -2,6 +2,38 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Serialize `value` to [`rmpv::Value`] using **named-field (map) encoding**
+/// for structs.
+///
+/// [`rmpv::ext::to_value`] delegates `serialize_struct` directly to
+/// `serialize_tuple_struct`, which means every struct becomes a positional
+/// [`rmpv::Value::Array`] – field names are silently dropped.  That compact
+/// representation is incompatible with the JS `@msgpack/msgpack` library,
+/// which decodes msgpack maps as plain objects and msgpack arrays as `Array`
+/// instances.
+///
+/// This function serialises through [`rmp_serde::to_vec_named`] (which emits
+/// structs as msgpack maps with string keys) and then reads the resulting
+/// bytes back into a [`rmpv::Value`] via [`rmpv::decode::read_value`].  The
+/// round-trip is cheap for the small payloads carried in bridge RPC headers.
+///
+/// # Errors
+///
+/// Returns [`rmpv::ext::Error::Syntax`] wrapping a human-readable message if
+/// either the `rmp_serde` encode step or the `rmpv` decode step fails.
+fn to_value_named<T: serde::Serialize>(
+    value: &T,
+) -> Result<rmpv::Value, rmpv::ext::Error> {
+    // Encode with rmp_serde's named map format so struct fields become
+    // string-keyed map entries rather than positional array elements.
+    let bytes = rmp_serde::to_vec_named(value)
+        .map_err(|e| rmpv::ext::Error::Syntax(e.to_string()))?;
+
+    // Decode the raw msgpack bytes back into a rmpv::Value.
+    rmpv::decode::read_value(&mut &bytes[..])
+        .map_err(|e| rmpv::ext::Error::Syntax(e.to_string()))
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct DynMap(HashMap<String, rmpv::Value>);
@@ -24,7 +56,7 @@ impl DynMap {
         key: impl Into<String>,
         value: T,
     ) -> Result<(), rmpv::ext::Error> {
-        let rmpv = rmpv::ext::to_value(&value)?;
+        let rmpv = to_value_named(&value)?;
         self.insert_raw(key, rmpv);
         Ok(())
     }
@@ -287,6 +319,132 @@ mod tests {
         let inner_bytes = rmp_serde::to_vec(&inner).expect("serialize inner");
 
         assert_eq!(map_bytes, inner_bytes);
+    }
+
+    #[test]
+    fn insert_struct_produces_named_map_not_array() {
+        // Regression test: DynMap::insert must use named-field (map) encoding
+        // so that the JS `@msgpack/msgpack` decoder receives a plain object
+        // with string keys rather than a positional array.
+        let mut map = DynMap::new();
+        let sample = Sample {
+            name: "alice".to_string(),
+            count: 7,
+        };
+
+        map.insert("sample", &sample)
+            .expect("insert should succeed");
+
+        let raw = map.get_raw("sample").expect("value should be stored");
+
+        // Must be a Map, NOT an Array.
+        assert!(
+            matches!(raw, rmpv::Value::Map(_)),
+            "struct should be stored as a named map; got {raw:?}"
+        );
+        assert!(
+            !matches!(raw, rmpv::Value::Array(_)),
+            "struct must not use positional/tuple array encoding; got {raw:?}"
+        );
+    }
+
+    #[test]
+    fn insert_struct_map_has_string_field_name_keys() {
+        let mut map = DynMap::new();
+        map.insert(
+            "item",
+            &Sample {
+                name: "bob".to_string(),
+                count: 3,
+            },
+        )
+        .expect("insert should succeed");
+
+        let raw = map.get_raw("item").expect("value should be stored");
+        let rmpv::Value::Map(entries) = raw else {
+            panic!("expected Map, got {raw:?}");
+        };
+
+        let has_name_key = entries.iter().any(|(k, v)| {
+            k == &rmpv::Value::String("name".into())
+                && *v == rmpv::Value::String("bob".into())
+        });
+        let has_count_key = entries.iter().any(|(k, v)| {
+            k == &rmpv::Value::String("count".into())
+                && *v == rmpv::Value::Integer(3.into())
+        });
+
+        assert!(has_name_key, "expected 'name' key with value 'bob'");
+        assert!(has_count_key, "expected 'count' key with value 3");
+    }
+
+    #[test]
+    fn to_value_named_produces_map_for_named_struct() {
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct Point {
+            x: f64,
+            y: f64,
+        }
+
+        let v = to_value_named(&Point { x: 1.0, y: 2.0 })
+            .expect("to_value_named should succeed");
+
+        assert!(
+            matches!(v, rmpv::Value::Map(_)),
+            "Point should encode as a Map; got {v:?}"
+        );
+    }
+
+    #[test]
+    fn to_value_named_passes_through_primitives_unchanged() {
+        assert_eq!(
+            to_value_named(&42i64).unwrap(),
+            rmpv::Value::Integer(42.into())
+        );
+        assert_eq!(to_value_named(&true).unwrap(), rmpv::Value::Boolean(true));
+        assert_eq!(
+            to_value_named(&"hello").unwrap(),
+            rmpv::Value::String("hello".into())
+        );
+    }
+
+    #[test]
+    fn to_value_named_round_trips_nested_struct() {
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct Outer {
+            inner: Inner,
+            tag: String,
+        }
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct Inner {
+            value: u32,
+        }
+
+        let original = Outer {
+            inner: Inner { value: 99 },
+            tag: "test".to_string(),
+        };
+
+        let encoded = to_value_named(&original).expect("encode");
+        let decoded: Outer = rmpv::ext::from_value(encoded).expect("decode");
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn insert_and_get_round_trip_still_works_with_named_encoding() {
+        // Ensure the change to named encoding does not break the Rust-side
+        // round-trip via DynMap::insert + DynMap::get.
+        let mut map = DynMap::new();
+        let original = Sample {
+            name: "carol".to_string(),
+            count: 42,
+        };
+
+        map.insert("s", &original).expect("insert");
+
+        let retrieved: Sample =
+            map.get("s").expect("get ok").expect("value present");
+        assert_eq!(retrieved, original);
     }
 
     #[test]
