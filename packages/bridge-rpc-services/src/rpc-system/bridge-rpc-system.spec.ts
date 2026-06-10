@@ -62,13 +62,13 @@ function makeHarness(service: Service) {
     );
 
     return {
-        client,
+        client: client as ClientHandle,
         start: () => Promise.all([client.start(), server.start()]),
         stop: () => Promise.all([client.stop(), server.stop()]),
     };
 }
 
-function withHarness(
+function harness(
     handlers: Record<string, Handler>,
     action: (client: ClientHandle) => Promise<void>,
 ) {
@@ -77,7 +77,7 @@ function withHarness(
         const harness = makeHarness(router);
         try {
             await harness.start();
-            await action(harness.client.clientHandle);
+            await action(harness.client);
         } finally {
             await harness.stop();
         }
@@ -103,8 +103,7 @@ async function respondWithReturns(
 }
 
 async function respondEmpty(ctx: ServiceContext): Promise<void> {
-    const start = await ctx.response.start(ResponseStatusCode.SUCCESS);
-    await start.end();
+    await ctx.response.start(ResponseStatusCode.SUCCESS).then((r) => r.end());
 }
 
 async function respondWithBody(
@@ -126,7 +125,7 @@ const TEXT_DECODER = new TextDecoder();
 const SNAPSHOT_PATH = joinRoute("/proc", PROC_ROUTES.SNAPSHOT);
 
 /** A small handler set for `BridgeRpcSystem.create` to succeed. */
-function snapshotHandlers(
+function withSnapshot(
     extra: Record<string, Handler> = {},
 ): Record<string, Handler> {
     return {
@@ -148,7 +147,7 @@ function snapshotHandlers(
 describe("BridgeRpcSystem", () => {
     test(
         "create populates the proc snapshot",
-        withHarness(snapshotHandlers(), async (client) => {
+        harness(withSnapshot(), async (client) => {
             const sys = await BridgeRpcSystem.create(client);
             expect(sys.proc.currentDir()).toBe("/cwd");
             expect(sys.proc.args()).toEqual(["argv0"]);
@@ -158,8 +157,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.pathExists puts path in parameters and reads value from response",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.PATH_EXISTS)]: async (ctx) => {
                     const params = getParameters<{ path: string }>(
                         ctx.request.headers,
@@ -179,8 +178,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.readFileAsString reads body and decodes UTF-8",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.READ_FILE_AS_STRING)]: async (
                     ctx,
                 ) => {
@@ -205,8 +204,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.writeStringToFile sends path in parameters and content as chunked body",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.WRITE_STRING_TO_FILE)]: async (
                     ctx,
                 ) => {
@@ -228,8 +227,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.writeBytesToFile chunks bodies larger than maxChunkSize",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.WRITE_BYTES_TO_FILE)]: async (
                     ctx,
                 ) => {
@@ -256,8 +255,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.readDirectory returns entries from response parameters",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.READ_DIRECTORY)]: async (ctx) => {
                     await respondWithReturns(ctx, {
                         entries: ["a.txt", "b.txt"],
@@ -274,8 +273,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.rename sends old_path / new_path in parameters",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.RENAME)]: async (ctx) => {
                     const params = getParameters<{
                         old_path: string;
@@ -295,8 +294,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.stat decodes StatResponse and exposes FileStat methods",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.STAT)]: async (ctx) => {
                     await respondWithReturns(ctx, {
                         is_file: true,
@@ -322,8 +321,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "fs.copy forwards both paths and the options object",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.COPY)]: async (ctx) => {
                     const params = getParameters<{
                         src: string;
@@ -347,8 +346,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "proc.setCurrentDir updates the cached snapshot on success",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/proc", PROC_ROUTES.SET_CURRENT_DIR)]: async (
                     ctx,
                 ) => {
@@ -370,8 +369,8 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "RPC failure surfaces as a thrown error",
-        withHarness(
-            snapshotHandlers({
+        harness(
+            withSnapshot({
                 [joinRoute("/fs", FS_ROUTES.PATH_EXISTS)]: async (ctx) => {
                     const start = await ctx.response.start(
                         ResponseStatusCode.from(500),
@@ -390,7 +389,7 @@ describe("BridgeRpcSystem", () => {
 
     test(
         "custom prefixes route requests to the configured paths",
-        withHarness(
+        harness(
             {
                 [joinRoute("/api/proc", PROC_ROUTES.SNAPSHOT)]: async (ctx) => {
                     await respondWithReturns(ctx, {

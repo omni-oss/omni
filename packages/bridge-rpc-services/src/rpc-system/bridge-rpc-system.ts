@@ -1,5 +1,6 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
 import type {
+    ArgsList,
     FileStat,
     FileSystem,
     Process,
@@ -286,7 +287,9 @@ export class BridgeRpcProcess implements Process {
         private readonly options: BridgeRpcSystemOptions,
         private currentDirSnapshot: string,
         private readonly argsList: string[],
-        private readonly envVars: ProcessEnv,
+        private readonly envVars: {
+            [key: string]: string | undefined;
+        },
     ) {}
 
     /**
@@ -301,8 +304,7 @@ export class BridgeRpcProcess implements Process {
     ): Promise<BridgeRpcProcess> {
         const route = joinRoute(options.procPrefix, PROC_ROUTES.SNAPSHOT);
         const response = await callWithParameters(client, route);
-        const snapshot =
-            readResponseReturns<ProcessSnapshotResponse>(response);
+        const snapshot = readResponseReturns<ProcessSnapshotResponse>(response);
 
         return new BridgeRpcProcess(
             client,
@@ -328,8 +330,8 @@ export class BridgeRpcProcess implements Process {
         this.currentDirSnapshot = dir;
     }
 
-    args(): string[] {
-        return this.argsList;
+    args(): ArgsList {
+        return this.argsList as readonly string[];
     }
 
     env(): ProcessEnv {
@@ -346,8 +348,7 @@ export class BridgeRpcProcess implements Process {
     public async refreshSnapshot(): Promise<void> {
         const route = this.path(PROC_ROUTES.SNAPSHOT);
         const response = await callWithParameters(this.client, route);
-        const snapshot =
-            readResponseReturns<ProcessSnapshotResponse>(response);
+        const snapshot = readResponseReturns<ProcessSnapshotResponse>(response);
 
         this.currentDirSnapshot = snapshot.current_dir;
         // Mutate in place so existing references (returned by `args()` /
