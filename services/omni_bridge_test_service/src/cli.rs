@@ -140,6 +140,21 @@ impl HostArgs {
     }
 }
 
+/// Which system implementation the `client` mode should use for FS and
+/// process services.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SysKind {
+    /// Use the real operating-system file system and process state.
+    /// This is the default and suitable for integration testing against a
+    /// real environment.
+    Real,
+    /// Use a fully in-memory virtual file system and process state that is
+    /// isolated from the host operating system.  All FS writes are
+    /// discarded when the process exits.  Suitable for dry-run tests and
+    /// unit-level end-to-end checks.
+    InMemory,
+}
+
 /// Arguments for the `client` subcommand.
 #[derive(Args, Debug, Clone)]
 pub struct ClientArgs {
@@ -169,6 +184,16 @@ pub struct ClientArgs {
         help = "Path of the log service",
     )]
     pub log_path: String,
+
+    /// System implementation used for FS and process services.
+    #[arg(
+        long,
+        default_value = "real",
+        value_enum,
+        value_name = "IMPL",
+        help = "System backend: `real` (default) uses the OS; `in-memory` uses a virtual FS"
+    )]
+    pub sys: SysKind,
 }
 
 impl Default for ClientArgs {
@@ -177,6 +202,7 @@ impl Default for ClientArgs {
             fs_prefix: DEFAULT_FS_PREFIX.to_string(),
             proc_prefix: DEFAULT_PROC_PREFIX.to_string(),
             log_path: DEFAULT_LOG_PATH.to_string(),
+            sys: SysKind::Real,
         }
     }
 }

@@ -321,9 +321,7 @@ impl Host {
 /// 4. Cleanly shuts the bridge down and propagates the child's exit
 ///    status.
 pub async fn run_host(args: HostArgs) -> Result<()> {
-    crate::tracing_setup::install_host_tracing(&args.log_level).map_err(
-        |e| Error::from(ErrorInner::Custom(eyre::Report::msg(e.to_string()))),
-    )?;
+    crate::tracing_setup::install_host_tracing(&args.log_level)?;
 
     log::info!(
         "starting omni_bridge_test_service host (child={:?}, ping={})",

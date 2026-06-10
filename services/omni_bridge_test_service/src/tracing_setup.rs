@@ -62,9 +62,36 @@ pub fn install_host_tracing(level: &str) -> eyre::Result<()> {
             .with(fmt_layer);
 
         if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
-            error = Some(eyre::eyre!(
-                "failed to set tracing subscriber: {e}"
-            ));
+            error = Some(eyre::eyre!("failed to set tracing subscriber: {e}"));
+        }
+    });
+
+    if let Some(error) = error {
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+/// Install client-side tracing. It only logs warn and above, and writes to stderr, so it won't interfere with the bridge transport on stdout.
+pub fn install_client_tracing() -> eyre::Result<()> {
+    static INIT: Once = Once::new();
+
+    let mut error: Option<eyre::Report> = None;
+
+    INIT.call_once(|| {
+        let fmt_layer = fmt::layer()
+            .with_writer(std::io::stderr)
+            .with_target(false)
+            .with_ansi(atty::is(atty::Stream::Stderr))
+            .compact();
+
+        let subscriber = tracing_subscriber::registry()
+            .with(LevelFilter::WARN)
+            .with(fmt_layer);
+
+        if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+            error = Some(eyre::eyre!("failed to set tracing subscriber: {e}"));
         }
     });
 

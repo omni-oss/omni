@@ -51,9 +51,10 @@ pub mod host;
 pub mod tracing_setup;
 // @anchor:mods
 
-pub use cli::{Cli, ClientArgs, HostArgs, Mode};
+pub use cli::{Cli, ClientArgs, HostArgs, Mode, SysKind};
 pub use client::{
-    StdioTransport, build_default_router, build_stdio_bridge, run_client,
+    StdioTransport, build_default_router, build_inmemory_router,
+    build_stdio_bridge, run_client,
 };
 pub use error::{Error, ErrorKind, Result};
 pub use host::{Host, HostSpawnOptions, HostTransport, run_host};
@@ -81,9 +82,9 @@ pub fn main_entry() -> Result<()> {
         .enable_all()
         .build()
         .map_err(|e| {
-            Error::from(error::ErrorInner::Custom(eyre::Report::msg(
-                format!("failed to build tokio runtime: {e}"),
-            )))
+            Error::from(error::ErrorInner::Custom(eyre::Report::msg(format!(
+                "failed to build tokio runtime: {e}"
+            ))))
         })?;
 
     runtime.block_on(run(cli))
@@ -112,6 +113,7 @@ mod tests {
                 assert_eq!(args.fs_prefix, cli::DEFAULT_FS_PREFIX);
                 assert_eq!(args.proc_prefix, cli::DEFAULT_PROC_PREFIX);
                 assert_eq!(args.log_path, cli::DEFAULT_LOG_PATH);
+                assert_eq!(args.sys, cli::SysKind::Real);
             }
             other => panic!("expected Mode::Client, got {other:?}"),
         }
@@ -146,9 +148,6 @@ mod tests {
         let opts = HostSpawnOptions::from(&args);
         assert!(opts.skip_client_subcommand);
         assert_eq!(opts.child_args, vec!["--foo", "bar"]);
-        assert_eq!(
-            opts.warmup,
-            Some(std::time::Duration::from_millis(50)),
-        );
+        assert_eq!(opts.warmup, Some(std::time::Duration::from_millis(50)),);
     }
 }

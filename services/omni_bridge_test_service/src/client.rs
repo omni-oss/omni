@@ -36,6 +36,7 @@ use bridge_rpc_router::Router;
 use bridge_rpc_services::{
     RegisterServicesOptions, register_services_with_defaults,
 };
+use system_traits::impls::InMemorySys;
 use system_traits::impls::RealSys;
 use tokio::fs::File as TokioFile;
 
@@ -58,6 +59,26 @@ pub type StdioTransport = StreamTransport<TokioFile, TokioFile>;
 pub fn build_default_router(options: RegisterServicesOptions) -> Router {
     let mut router = Router::new();
     let sys = Arc::new(RealSys);
+    register_services_with_defaults(&mut router, sys, options);
+    router
+}
+
+/// Build a [`Router`] backed by [`InMemorySys`] – all FS operations are
+/// performed against a fully in-memory virtual filesystem that is isolated
+/// from the host operating system.
+///
+/// The in-memory system is initialised with its CWD set to `"/"` so that
+/// proc services (e.g. `/proc/current-dir`) return a non-empty path.
+pub fn build_inmemory_router(options: RegisterServicesOptions) -> Router {
+    use system_traits::EnvSetCurrentDir as _;
+
+    let sys = InMemorySys::default();
+    // Give the in-memory process a sensible initial working directory so
+    // that `/proc/current-dir` always returns a non-empty string.
+    let _ = sys.env_set_current_dir(std::path::Path::new("/"));
+
+    let mut router = Router::new();
+    let sys = Arc::new(sys);
     register_services_with_defaults(&mut router, sys, options);
     router
 }
@@ -109,9 +130,7 @@ fn pipe_writer_into_file(pipe: os_pipe::PipeWriter) -> std::fs::File {
 ///
 /// Returns an error if the OS handles for stdin or stdout cannot be
 /// duplicated.
-pub fn build_stdio_bridge<S>(
-    service: S,
-) -> Result<BridgeRpc<StdioTransport, S>>
+pub fn build_stdio_bridge<S>(service: S) -> Result<BridgeRpc<StdioTransport, S>>
 where
     S: bridge_rpc_core::service::Service,
 {
@@ -134,15 +153,20 @@ where
 /// dispatchers are no-ops, so log/tracing emissions from the dependent
 /// crates will simply be discarded.
 pub async fn run_client(args: ClientArgs) -> Result<()> {
-    let router = build_default_router(args.to_register_options());
+    crate::tracing_setup::install_client_tracing()?;
+
+    let router = match args.sys {
+        crate::cli::SysKind::Real => {
+            build_default_router(args.to_register_options())
+        }
+        crate::cli::SysKind::InMemory => {
+            build_inmemory_router(args.to_register_options())
+        }
+    };
     let bridge = build_stdio_bridge(router)?;
 
     match bridge.run().await {
         Ok(()) => Ok(()),
-        // The host signals shutdown by either sending a `Close` frame or
-        // by closing its end of the stdin pipe. In the latter case the
-        // transport surfaces an end-of-stream error, which we treat as a
-        // clean exit so the child process returns success.
         Err(err) if is_eof_transport_error(&err) => Ok(()),
         Err(err) => Err(err.into()),
     }

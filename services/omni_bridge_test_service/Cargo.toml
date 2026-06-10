@@ -24,7 +24,7 @@ bridge_rpc_services = { workspace = true }
 bridge_rpc_utils = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
-system_traits = { workspace = true, features = ["real-async-tokio", "real-sync"] }
+system_traits = { workspace = true, features = ["real-async-tokio", "real-sync", "memory-async", "memory-sync"] }
 tracing-subscriber = { workspace = true }
 tracing-log = { workspace = true }
 atty = { workspace = true }
