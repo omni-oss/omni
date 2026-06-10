@@ -1,0 +1,33 @@
+{
+    "name": "@omni-oss/bridge-rpc-system-interface",
+    "description": "A TypeScript Package",
+    "version": "0.0.0-semantically-released",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            }
+        }
+    },
+    "dependencies": {
+        "@omni-oss/log": "workspace:^",
+        "zod": "catalog:",
+        "@omni-oss/system-interface": "workspace:^",
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-utils": "workspace:^"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+        "typescript": "catalog:"
+    }
+}

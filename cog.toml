@@ -538,6 +538,13 @@ include = [
 ]
 public_api = true
 
+[packages."@omni-oss/bridge-rpc-system-interface"]
+path = "packages/bridge-rpc-system-interface"
+include = [
+    "packages/bridge-rpc-system-interface/**",
+]
+public_api = false
+
 #@anchor:new-typescript-package
 
 [packages.root]

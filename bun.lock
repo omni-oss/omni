@@ -136,11 +136,31 @@
       "peerDependencies": {
         "@omni-oss/async-utils": "workspace:^",
         "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-system-interface": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
         "@omni-oss/channels": "workspace:^",
         "@omni-oss/log": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
         "@omni-oss/system-interface": "workspace:^",
+      },
+    },
+    "packages/bridge-rpc-system-interface": {
+      "name": "@omni-oss/bridge-rpc-system-interface",
+      "version": "0.0.0-semantically-released",
+      "dependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/bridge-rpc-utils": "workspace:^",
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/system-interface": "workspace:^",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "packages/bridge-rpc-utils": {
@@ -631,6 +651,8 @@
     "@omni-oss/bridge-rpc-router": ["@omni-oss/bridge-rpc-router@workspace:packages/bridge-rpc-router"],
 
     "@omni-oss/bridge-rpc-services": ["@omni-oss/bridge-rpc-services@workspace:packages/bridge-rpc-services"],
+
+    "@omni-oss/bridge-rpc-system-interface": ["@omni-oss/bridge-rpc-system-interface@workspace:packages/bridge-rpc-system-interface"],
 
     "@omni-oss/bridge-rpc-utils": ["@omni-oss/bridge-rpc-utils@workspace:packages/bridge-rpc-utils"],
 
