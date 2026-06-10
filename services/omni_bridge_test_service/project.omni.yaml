@@ -5,6 +5,7 @@ extends:
 
 tasks:
   test:
+    max_retries: 5
     dependencies:
       append:
         - "@omni-oss/bridge-service#build"

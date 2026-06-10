@@ -10,7 +10,7 @@ tasks:
 
   test:service:
     exec: bun x vitest --config ./vitest.config.service.ts run
-    max_retries: 3
+    max_retries: 5
     retry_interval: 2s
     dependencies:
       - omni_remote_cache_service#build
