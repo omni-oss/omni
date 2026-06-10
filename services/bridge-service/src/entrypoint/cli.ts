@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Command } from "@commander-js/extra-typings";
-import type { BridgeRpc } from "@omni-oss/bridge-rpc-core";
 import { interceptLogs } from "@omni-oss/console-log-interceptor";
 import { Log } from "@omni-oss/log";
 import { withLogTapeRoot } from "@omni-oss/log/logtape";
@@ -13,14 +12,14 @@ const program = new Command();
 program.name(name).version(version).description(description);
 
 program.command("run").action(async () => {
-    let rpc: BridgeRpc;
+    const rpc = createStudioRpcInstance();
     await withLogTapeRoot(
         ["bridge-service"],
         {
             sinks: {
                 "bridge-rpc": getBridgeRpcSink({
                     get client() {
-                        return rpc?.clientHandle;
+                        return rpc.clientHandle;
                     },
                 }),
             },
@@ -43,7 +42,6 @@ program.command("run").action(async () => {
             contextLocalStorage: new AsyncLocalStorage(),
         },
         async () => {
-            rpc = createStudioRpcInstance();
             const logger = Log.instance();
             const { logs: _l, result: _r } = await interceptLogs(
                 async () => await rpc.start(),
