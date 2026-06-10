@@ -356,7 +356,7 @@ describe("Production-readiness scenarios", () => {
         await rpc2.start();
         await delay(10);
 
-        const N = 20;
+        const N = 100;
         const results = await Promise.all(
             Array.from({ length: N }, async (_, i) => {
                 const payload = encode({ index: i, msg: `payload_${i}` });

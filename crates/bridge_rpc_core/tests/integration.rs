@@ -468,7 +468,7 @@ async fn test_concurrent_requests() {
     let runner = run_rpcs!(rpc1, rpc2);
     sleep(Duration::from_millis(5)).await;
 
-    const N: usize = 20;
+    const N: usize = 100;
 
     let handles: Vec<_> = (0..N)
         .map(|i| {
