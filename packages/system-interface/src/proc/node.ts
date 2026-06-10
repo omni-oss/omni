@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { Process, ProcessEnv } from ".";
+import type { ArgsList, Process, ProcessEnv } from ".";
 
 export class NodeProcess implements Process {
     currentDir(): string {
@@ -11,7 +11,7 @@ export class NodeProcess implements Process {
         return Promise.resolve();
     }
 
-    args(): string[] {
+    args(): ArgsList {
         return process.argv;
     }
 

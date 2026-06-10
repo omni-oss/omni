@@ -1,5 +1,5 @@
 import { throwIfDenoNotAvailable } from "@/platform-helpers";
-import type { Process, ProcessEnv } from ".";
+import type { ArgsList, Process, ProcessEnv } from ".";
 
 export class DenoProcess implements Process {
     currentDir(): string {
@@ -15,7 +15,7 @@ export class DenoProcess implements Process {
         return Promise.resolve();
     }
 
-    args(): string[] {
+    args(): ArgsList {
         throwIfDenoNotAvailable();
 
         return Deno.args;

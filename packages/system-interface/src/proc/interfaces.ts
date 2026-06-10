@@ -1,10 +1,12 @@
 export interface Process {
     currentDir(): string;
     setCurrentDir(dir: string): Promise<void>;
-    args(): string[];
+    args(): ArgsList;
     env(): ProcessEnv;
 }
 
 export interface ProcessEnv {
-    [key: string]: string | undefined;
+    readonly [key: string]: string | undefined;
 }
+
+export type ArgsList = readonly string[];

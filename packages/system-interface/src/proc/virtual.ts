@@ -1,4 +1,4 @@
-import type { Process, ProcessEnv } from "./interfaces";
+import type { ArgsList, Process, ProcessEnv } from "./interfaces";
 
 export class VirtualProcess implements Process {
     constructor(
@@ -20,7 +20,7 @@ export class VirtualProcess implements Process {
         return Promise.resolve();
     }
 
-    args(): string[] {
+    args(): ArgsList {
         return this.argsValues;
     }
 
