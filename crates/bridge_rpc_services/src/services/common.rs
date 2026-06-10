@@ -89,10 +89,10 @@ pub fn encode_parameters<T>(value: &T) -> Result<Headers, ServiceError>
 where
     T: serde::Serialize,
 {
-    let rmpv =
-        rmpv::ext::to_value(value).map_err(ServiceError::custom_error)?;
     let mut headers = DynMap::new();
-    headers.insert_raw(PARAMETERS_HEADER, rmpv);
+    headers
+        .insert(PARAMETERS_HEADER, value)
+        .map_err(ServiceError::custom_error)?;
     Ok(headers)
 }
 
@@ -144,10 +144,10 @@ pub fn encode_returns<T>(value: &T) -> Result<Headers, ServiceError>
 where
     T: serde::Serialize,
 {
-    let rmpv =
-        rmpv::ext::to_value(value).map_err(ServiceError::custom_error)?;
     let mut headers = DynMap::new();
-    headers.insert_raw(RETURNS_HEADER, rmpv);
+    headers
+        .insert(RETURNS_HEADER, value)
+        .map_err(ServiceError::custom_error)?;
     Ok(headers)
 }
 
