@@ -36,7 +36,8 @@
         "@omni-oss/channels": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
         "@omni-oss/async-utils": "workspace:^",
-        "@omni-oss/log": "workspace:^"
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/bridge-rpc-system-interface": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/channels": "workspace:^",

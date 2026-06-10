@@ -1,7 +1,7 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
+import { BridgeRpcSystem } from "@omni-oss/bridge-rpc-system-interface";
 import { Log, type Logger } from "@omni-oss/log";
 import { OptimizedSystem, type System } from "@omni-oss/system-interface";
-import { BridgeRpcSystem } from "../rpc-system";
 
 export type GeneratorScriptContextOptions = {
     dryRun: boolean;

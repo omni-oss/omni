@@ -13,7 +13,6 @@ export default createConfig({
                     "exec-script": "./src/exec-script/index.ts",
                     "exec-generator-script":
                         "./src/exec-generator-script/index.ts",
-                    "rpc-system": "./src/rpc-system/index.ts",
                 },
 
                 formats: ["es"],

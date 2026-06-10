@@ -16,6 +16,7 @@ dependencies:
     - "@omni-oss/async-utils"
     - "@omni-oss/log"
     - "@omni-oss/system-interface"
+    - "@omni-oss/bridge-rpc-system-interface"
 
 tasks:
   test:unit:
