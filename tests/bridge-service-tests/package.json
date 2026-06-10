@@ -8,6 +8,7 @@
         "@omni-oss/runtime-utils": "workspace:^",
         "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
+        "@omni-oss/bridge-rpc-system-interface": "workspace:^",
         "@omni-oss/log": "workspace:^"
     },
     "devDependencies": {

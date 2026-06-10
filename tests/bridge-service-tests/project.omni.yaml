@@ -15,6 +15,7 @@ dependencies:
     - "@omni-oss/bridge-rpc-utils"
     - "@omni-oss/bridge-service"
     - "@omni-oss/log"
+    - "@omni-oss/bridge-rpc-system-interface"
 
 tasks:
   test:service:
