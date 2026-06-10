@@ -23,6 +23,7 @@ import { ClientHandle } from "./client-handle";
 import { decodeFrame, encodeFrame } from "./codec-utils";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";
 import type { Headers } from "./dyn-map";
+import { ResponseErrorCode } from "./error-code";
 import {
     Frame,
     type RequestError,
@@ -41,8 +42,10 @@ import { type Service, ServiceContext } from "./service";
 import {
     type RequestEvent,
     RequestEventType,
+    type RequestStateTransitionOutput,
     type ResponseEvent,
     ResponseEventType,
+    type ResponseStateTransitionOutput,
     SessionManager,
 } from "./session";
 import type { ResponseStatusCode } from "./status-code";
@@ -172,7 +175,13 @@ export class BridgeRpc {
         const frame = decodeFrame(frameBytes);
         const parsed = FrameSchema.safeParse(frame);
         if (parsed.success) {
-            await this.handleFrame(parsed.data);
+            try {
+                await this.handleFrame(parsed.data);
+            } catch (error) {
+                this.logger.error(
+                    `unexpected error while handling frame: ${error}`,
+                );
+            }
         } else {
             await this.handleInvalidFrame(frame as Frame, parsed.error.message);
         }
@@ -250,52 +259,85 @@ export class BridgeRpc {
         switch (event.type) {
             case EventType.REQUEST:
                 {
-                    const requestSession =
-                        event.event.type === RequestEventType.START
-                            ? this.startRequestSession(event.event.data.id)
-                            : {
-                                  session: this.getRequestSession(
-                                      event.event.data.id,
-                                  ),
-                                  requestFrameReceiver: undefined,
-                                  requestErrorReceiver: undefined,
-                              };
+                    // For START events: create new session with frame receivers
+                    // For other events: look up the existing session mutex directly
+                    let sessionResult:
+                        | ReturnType<typeof this.startRequestSession>
+                        | undefined;
 
-                    if (!requestSession.session) {
-                        throw new Error(
-                            `cannot find request session for id: ${event.event.data.id}, this should never happen, please report this bug`,
-                        );
+                    if (event.event.type === RequestEventType.START) {
+                        try {
+                            sessionResult = this.startRequestSession(
+                                event.event.data.id,
+                            );
+                        } catch (e) {
+                            this.logger.warn(
+                                `failed to start request session for id ${event.event.data.id}: ${e}`,
+                            );
+                            this.sendResponseErrorFrame(
+                                event.event.data.id,
+                                `cannot start session: ${e}`,
+                            );
+                            break;
+                        }
                     }
 
-                    const { output, context } =
-                        await requestSession.session.runExclusive(
-                            (session) => ({
-                                output: session.state.transition(event.event),
-                                context: session.context,
-                            }),
+                    const sessionMutex =
+                        sessionResult?.session ??
+                        this.getRequestSession(event.event.data.id);
+
+                    if (!sessionMutex) {
+                        this.logger.warn(
+                            `no request session found for id: ${event.event.data.id}`,
                         );
+                        this.sendResponseErrorFrame(
+                            event.event.data.id,
+                            `no request session for id: ${event.event.data.id}`,
+                        );
+                        break;
+                    }
+
+                    let result:
+                        | {
+                              output: RequestStateTransitionOutput;
+                              context: RequestSessionContext;
+                          }
+                        | undefined;
+                    try {
+                        result = await sessionMutex.runExclusive((session) => ({
+                            output: session.state.transition(event.event),
+                            context: session.context,
+                        }));
+                    } catch (e) {
+                        this.logger.warn(
+                            `request state machine error for id ${event.event.data.id}: ${e}`,
+                        );
+                        this.sendResponseErrorFrame(
+                            event.event.data.id,
+                            `protocol error: ${e}`,
+                        );
+                        await this.closeRequestSession(event.event.data.id);
+                        break;
+                    }
+
+                    // biome-ignore lint/style/noNonNullAssertion: should be appropriate to assert given the checks above and the state machine contract
+                    const { output, context } = result!;
 
                     switch (output.type) {
                         case "Start":
-                            if (
-                                requestSession.requestFrameReceiver ===
-                                    undefined ||
-                                requestSession.requestErrorReceiver ===
-                                    undefined
-                            ) {
-                                throw new Error(
-                                    `no request frame receiver or error receiver found for request session with id: ${event.event.data.id}, this should never happen, please report this bug`,
+                            if (!sessionResult) {
+                                this.logger.error(
+                                    `no request frame receiver or error receiver found for request session with id: ${event.event.data.id}`,
                                 );
+                                break;
                             }
 
                             await this.handleRequestStart(
                                 event.event.data.id,
                                 output.path,
                                 output.headers,
-                                // biome-ignore lint/style/noNonNullAssertion: should have value here
-                                requestSession.requestFrameReceiver!,
-                                // biome-ignore lint/style/noNonNullAssertion: should have value here
-                                requestSession.requestErrorReceiver!,
+                                sessionResult.requestFrameReceiver,
+                                sessionResult.requestErrorReceiver,
                             );
                             break;
                         case "BodyChunk":
@@ -320,7 +362,9 @@ export class BridgeRpc {
                             // do nothing
                             break;
                         default:
-                            throw new Error("invalid request event type");
+                            this.logger.error(
+                                `unexpected request transition output type`,
+                            );
                     }
 
                     if (output.type === "End" || output.type === "Error") {
@@ -335,57 +379,83 @@ export class BridgeRpc {
                     );
 
                     if (!responseSession) {
-                        throw new Error(
-                            `cannot find response session for id: ${event.event.data.id}, this should never happen, please report this bug`,
+                        this.logger.warn(
+                            `no response session found for id: ${event.event.data.id}, ignoring`,
                         );
+                        break;
                     }
 
-                    const { output, context } =
-                        await responseSession.runExclusive((session) => ({
-                            output: session.state.transition(event.event),
-                            context: session.context,
-                        }));
-                    switch (output.type) {
+                    let responseResult:
+                        | {
+                              output: ResponseStateTransitionOutput;
+                              context: ResponseSessionContext;
+                          }
+                        | undefined;
+                    try {
+                        responseResult = await responseSession.runExclusive(
+                            (session) => ({
+                                output: session.state.transition(event.event),
+                                context: session.context,
+                            }),
+                        );
+                    } catch (e) {
+                        this.logger.warn(
+                            `response state machine error for id ${event.event.data.id}: ${e}`,
+                        );
+                        await this.closeResponseSession(event.event.data.id);
+                        break;
+                    }
+
+                    const { output: responseOutput, context: responseContext } =
+                        // biome-ignore lint/style/noNonNullAssertion: should be appropriate to assert given the checks above and the state machine contract
+                        responseResult!;
+
+                    switch (responseOutput.type) {
                         case "Start":
                             await this.handleResponseStart(
-                                context,
-                                output.id,
-                                output.status,
-                                output.headers,
+                                responseContext,
+                                responseOutput.id,
+                                responseOutput.status,
+                                responseOutput.headers,
                             );
                             break;
                         case "BodyChunk":
                             await this.handleResponseBodyChunk(
-                                context,
-                                output.chunk,
+                                responseContext,
+                                responseOutput.chunk,
                             );
                             break;
                         case "End":
                             await this.handleResponseEnd(
-                                context,
-                                output.trailers,
+                                responseContext,
+                                responseOutput.trailers,
                             );
                             break;
                         case "Error":
                             await this.handleResponseError(
-                                context,
-                                output.error,
+                                responseContext,
+                                responseOutput.error,
                             );
                             break;
                         case "Wait":
                             // do nothing
                             break;
                         default:
-                            throw new Error("invalid response event type");
+                            this.logger.error(
+                                `unexpected response transition output type`,
+                            );
                     }
 
-                    if (output.type === "End" || output.type === "Error") {
+                    if (
+                        responseOutput.type === "End" ||
+                        responseOutput.type === "Error"
+                    ) {
                         await this.closeResponseSession(event.event.data.id);
                     }
                 }
                 break;
             default:
-                throw new Error("invalid event type");
+                this.logger.error(`unexpected event type`);
         }
     }
 
@@ -564,6 +634,15 @@ export class BridgeRpc {
         } else {
             this.pendingPing.resolve(undefined);
         }
+    }
+
+    private sendResponseErrorFrame(id: Id, message: string): void {
+        const frame = Frame.responseError(
+            id,
+            ResponseErrorCode.UNEXPECTED_FRAME,
+            message,
+        );
+        this.frameTransporter.sender.send(frame);
     }
 
     private sendFrame(frame: Frame) {

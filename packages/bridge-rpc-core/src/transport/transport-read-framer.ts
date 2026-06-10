@@ -34,7 +34,9 @@ export class TransportReadFramer {
                     this.currentExpectedFrameLengthBytes = [];
                     this.prefixBufferedLength = 0;
                 } else {
-                    return false;
+                    // Not enough bytes for the prefix yet; stop here but do
+                    // NOT discard frames already completed in this call.
+                    break;
                 }
             }
 
@@ -54,6 +56,8 @@ export class TransportReadFramer {
                     this.currentFrameBytes = [];
                     this.currentExpectedFrameLength = null;
                     this.frameBufferedLength = 0;
+                } else {
+                    break;
                 }
             }
         }
