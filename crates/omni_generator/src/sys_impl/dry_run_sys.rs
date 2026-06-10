@@ -89,7 +89,7 @@ impl BaseFsMetadataAsync for DryRunSys {
             && let Ok(metadata) =
                 self.in_memory.base_fs_metadata_async(path).await
         {
-            return Ok(metadata);
+            return Ok(BoxedFsMetadataValue::new(metadata));
         }
 
         let result = self
@@ -114,7 +114,7 @@ impl BaseFsMetadataAsync for DryRunSys {
             && let Ok(metadata) =
                 self.in_memory.base_fs_symlink_metadata_async(path).await
         {
-            return Ok(metadata);
+            return Ok(BoxedFsMetadataValue::new(metadata));
         }
 
         self.real
