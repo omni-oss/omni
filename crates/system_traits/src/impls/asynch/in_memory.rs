@@ -1,14 +1,22 @@
 use sys_traits::{
-    FsCopy as _, FsDirEntry as _, FsHardLink as _, FsMetadata as _,
-    FsRead as _, FsReadDir as _, FsWrite as _, boxed::BoxedFsMetadataValue,
-    impls::InMemorySys,
+    BaseFsCreateDir as _, BaseFsRemoveDir as _, BaseFsRemoveDirAll as _,
+    EnvCurrentDir as _, EnvSetCurrentDir as _, FsCopy as _, FsDirEntry as _,
+    FsHardLink as _, FsMetadata as _, FsRead as _, FsReadDir as _,
+    FsRemoveFile as _, FsRename as _, FsWrite as _,
+    impls::{InMemoryMetadata, InMemorySys},
 };
 
 use crate::{
-    BaseFsAppendAsync, BaseFsCanonicalizeAsync, BaseFsCopyAsync,
-    BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
-    BaseFsReadDirAsync, BaseFsWriteAsync,
+    BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
+    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsHardLinkAsync,
+    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync,
+    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
+    BaseFsRenameAsync, BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync,
 };
+
+// ---------------------------------------------------------------------------
+// Existing impls (kept as-is)
+// ---------------------------------------------------------------------------
 
 #[async_trait::async_trait]
 impl BaseFsCanonicalizeAsync for InMemorySys {
@@ -33,20 +41,20 @@ impl BaseFsHardLinkAsync for InMemorySys {
 
 #[async_trait::async_trait]
 impl BaseFsMetadataAsync for InMemorySys {
-    type Metadata = BoxedFsMetadataValue;
+    type Metadata = InMemoryMetadata;
 
     async fn base_fs_metadata_async(
         &self,
         path: &std::path::Path,
     ) -> std::io::Result<Self::Metadata> {
-        Ok(BoxedFsMetadataValue::new(self.fs_metadata(path)?))
+        self.fs_metadata(path)
     }
 
     async fn base_fs_symlink_metadata_async(
         &self,
         path: &std::path::Path,
     ) -> std::io::Result<Self::Metadata> {
-        Ok(BoxedFsMetadataValue::new(self.fs_symlink_metadata(path)?))
+        self.fs_symlink_metadata(path)
     }
 }
 
@@ -118,5 +126,82 @@ impl BaseFsAppendAsync for InMemorySys {
         let mut combined = existing;
         combined.extend_from_slice(data);
         Ok(self.fs_write(path, &combined)?)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// New impls – required for InMemorySys to satisfy FsSys + ProcSys
+// ---------------------------------------------------------------------------
+
+#[async_trait::async_trait]
+impl BaseFsCreateDirAsync for InMemorySys {
+    async fn base_fs_create_dir_async(
+        &self,
+        path: &std::path::Path,
+        options: &CreateDirOptions,
+    ) -> std::io::Result<()> {
+        Ok(self.base_fs_create_dir(path, options)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsRemoveDirAsync for InMemorySys {
+    async fn base_fs_remove_dir_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.base_fs_remove_dir(path)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsRemoveDirAllAsync for InMemorySys {
+    async fn base_fs_remove_dir_all_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.base_fs_remove_dir_all(path)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsRemoveFileAsync for InMemorySys {
+    async fn base_fs_remove_file_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.fs_remove_file(path)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsRenameAsync for InMemorySys {
+    async fn base_fs_rename_async(
+        &self,
+        from: &std::path::Path,
+        to: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.fs_rename(from, to)?)
+    }
+}
+
+/// Returns the in-memory working directory tracked by [`InMemorySys`].
+#[async_trait::async_trait]
+impl EnvCurrentDirAsync for InMemorySys {
+    async fn env_current_dir_async(
+        &self,
+    ) -> std::io::Result<std::path::PathBuf> {
+        self.env_current_dir()
+    }
+}
+
+/// Changes the in-memory working directory tracked by [`InMemorySys`].
+#[async_trait::async_trait]
+impl BaseEnvSetCurrentDirAsync for InMemorySys {
+    async fn base_env_set_current_dir_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.env_set_current_dir(path)?)
     }
 }
