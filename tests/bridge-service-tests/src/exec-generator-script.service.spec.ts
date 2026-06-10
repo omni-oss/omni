@@ -8,9 +8,9 @@ describe("/exec-generator-script", {
     timeout: 10_000,
 }, () => {
     it("should respond to requests", async () => {
-        const request = await RpcClient.request("/exec-generator-script").then(
-            (req) => req.start(),
-        );
+        const request = await TsRpcClient.request(
+            "/exec-generator-script",
+        ).then((req) => req.start());
         const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
         await request.writeBodyChunk(
             json({

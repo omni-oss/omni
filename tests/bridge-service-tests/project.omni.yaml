@@ -22,3 +22,4 @@ tasks:
     dependencies:
       append:
         - "@omni-oss/bridge-service#build"
+        - "omni_bridge_test_service#build"
