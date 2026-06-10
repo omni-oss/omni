@@ -6,10 +6,12 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 pub struct ServiceError(pub(crate) ServiceErrorInner);
 
 impl ServiceError {
+    #[inline(always)]
     pub fn custom(message: impl Into<String>) -> Self {
         Self(ServiceErrorInner::Custom(eyre::Report::msg(message.into())))
     }
 
+    #[inline(always)]
     pub fn custom_error(error: impl Into<eyre::Report>) -> Self {
         Self(ServiceErrorInner::Custom(error.into()))
     }

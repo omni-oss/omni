@@ -18,6 +18,7 @@ use super::super::Id;
 use super::BridgeRpcError;
 use super::BridgeRpcErrorInner;
 use super::BridgeRpcResult;
+use super::ResponseErrorCode;
 use super::ResponseStatusCode;
 use super::client::request::*;
 use super::client::response::ResponseFrameEvent;
@@ -350,9 +351,12 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             let results = stream_handler_tasks.join_all().await;
 
             for result in results {
-                result.inspect_err(|e| {
-                    trace::error!(error = ?e, "stream_handler_task_failed");
-                })?;
+                match result {
+                    Ok(()) => {}
+                    Err(e) => {
+                        trace::error!(error = ?e, "service_task_failed");
+                    }
+                }
             }
         }
 
@@ -382,18 +386,15 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         let ev = match incoming {
             Frame::Close => {
-                self.handle_close().await?;
-
+                self.handle_close().await;
                 return Ok(ControlFlow::Break(()));
             }
             Frame::Ping => {
-                self.handle_ping(frame_sender).await?;
-
+                self.handle_ping(frame_sender).await;
                 return Ok(ControlFlow::Continue(()));
             }
             Frame::Pong => {
-                self.handle_pong().await?;
-
+                self.handle_pong().await;
                 return Ok(ControlFlow::Continue(()));
             }
             Frame::RequestStart(request_start) => {
@@ -424,43 +425,87 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
 
         match ev {
             Event::Request(request_event) => {
+                let event_id = request_event.id();
+
+                // Get or create the request session; on failure send a
+                // protocol-level error back and keep running.
                 let (session, request_receiver, request_error_receiver) =
                     if let RequestEvent::Start(ref request_start) =
                         request_event
                     {
-                        let (session, request_receiver, request_error_receiver) =
-                            self.start_request_session(request_start.id).await?;
-
-                        (
-                            session,
-                            Some(request_receiver),
-                            Some(request_error_receiver),
-                        )
+                        match self.start_request_session(request_start.id).await
+                        {
+                            Ok((session, req_rx, err_rx)) => {
+                                (session, Some(req_rx), Some(err_rx))
+                            }
+                            Err(e) => {
+                                trace::warn!(
+                                    error = ?e,
+                                    id = ?event_id,
+                                    "failed_to_start_request_session"
+                                );
+                                // Close the existing session so its
+                                // service task can observe the EOF and
+                                // exit cleanly instead of hanging.
+                                self.close_request_session(event_id).await;
+                                Self::send_response_error_frame(
+                                    frame_sender,
+                                    event_id,
+                                    format!("cannot start session: {e}"),
+                                )
+                                .await;
+                                return Ok(ControlFlow::Continue(()));
+                            }
+                        }
                     } else {
-                        (
-                            self.get_request_session(request_event.id())
-                                .await
-                                .ok_or_else(|| {
-                                    BridgeRpcErrorInner::Unknown(eyre::eyre!(
-                                        "no request session found for id: {}",
-                                        request_event.id()
-                                    ))
-                                })?,
-                            None,
-                            None,
-                        )
+                        match self.get_request_session(event_id).await {
+                            Some(session) => (session, None, None),
+                            None => {
+                                trace::warn!(
+                                    id = ?event_id,
+                                    "no_request_session_found"
+                                );
+                                Self::send_response_error_frame(
+                                    frame_sender,
+                                    event_id,
+                                    format!(
+                                        "no request session for id: \
+                                         {event_id}"
+                                    ),
+                                )
+                                .await;
+                                return Ok(ControlFlow::Continue(()));
+                            }
+                        }
                     };
 
                 let id = session.lock().await.id();
-
                 let should_close_session =
                     request_event.is_error() || request_event.is_end();
 
-                let output = session
-                    .lock()
-                    .await
-                    .state_mut()
-                    .transition(request_event)?;
+                let transition_result =
+                    session.lock().await.state_mut().transition(request_event);
+
+                let output = match transition_result {
+                    Ok(output) => output,
+                    Err(e) => {
+                        trace::warn!(
+                            error = ?e,
+                            id = ?id,
+                            "request_state_machine_error"
+                        );
+                        // Lock is NOT held here — close_request_session
+                        // can safely re-acquire it.
+                        Self::send_response_error_frame(
+                            frame_sender,
+                            id,
+                            format!("protocol error: {e}"),
+                        )
+                        .await;
+                        self.close_request_session(id).await;
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                };
 
                 match output {
                     RequestStateTransitionOutput::Wait => {
@@ -471,23 +516,31 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                         path,
                         headers,
                     } => {
-                        self.handle_request_start(
-                            id,
-                            path,
-                            headers,
-                            request_receiver.expect("should be set"),
-                            request_error_receiver.expect("should be set"),
-                        )
-                        .await?;
+                        if let Err(e) = self
+                            .handle_request_start(
+                                id,
+                                path,
+                                headers,
+                                request_receiver.expect("should be set"),
+                                request_error_receiver.expect("should be set"),
+                            )
+                            .await
+                        {
+                            trace::error!(
+                                error = ?e,
+                                id = ?id,
+                                "failed_to_handle_request_start"
+                            );
+                        }
                     }
                     RequestStateTransitionOutput::BodyChunk { chunk } => {
-                        self.handle_request_body_chunk(session, chunk).await?;
+                        self.handle_request_body_chunk(session, chunk).await;
                     }
                     RequestStateTransitionOutput::End { trailers } => {
-                        self.handle_request_end(session, trailers).await?;
+                        self.handle_request_end(session, trailers).await;
                     }
                     RequestStateTransitionOutput::Error { error } => {
-                        self.handle_request_error(session, error).await?;
+                        self.handle_request_error(session, error).await;
                     }
                 }
 
@@ -499,21 +552,40 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             }
             Event::Response(response_event) => {
                 let id = response_event.id();
-                let session =
-                    self.get_response_session(id).await.ok_or_else(|| {
-                        BridgeRpcErrorInner::Unknown(eyre::eyre!(
-                            "no response session found for id: {}",
-                            id
-                        ))
-                    })?;
+
+                // If there is no session it may be a late/spurious frame
+                // (e.g. the session was already closed) — log and ignore.
+                let session = match self.get_response_session(id).await {
+                    Some(session) => session,
+                    None => {
+                        trace::warn!(
+                            id = ?id,
+                            "no_response_session_found_ignoring"
+                        );
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                };
 
                 let should_close_session =
                     response_event.is_error() || response_event.is_end();
-                let output = session
-                    .lock()
-                    .await
-                    .state_mut()
-                    .transition(response_event)?;
+
+                let transition_result =
+                    session.lock().await.state_mut().transition(response_event);
+
+                let output = match transition_result {
+                    Ok(output) => output,
+                    Err(e) => {
+                        trace::warn!(
+                            error = ?e,
+                            id = ?id,
+                            "response_state_machine_error"
+                        );
+                        // Lock is NOT held here — close_response_session
+                        // can safely re-acquire it.
+                        self.close_response_session(id).await;
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                };
 
                 match output {
                     ResponseStateTransitionOutput::Wait => {
@@ -527,16 +599,16 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
                         self.handle_response_start(
                             session, id, status, headers,
                         )
-                        .await?;
+                        .await;
                     }
                     ResponseStateTransitionOutput::BodyChunk { chunk } => {
-                        self.handle_response_body_chunk(session, chunk).await?;
+                        self.handle_response_body_chunk(session, chunk).await;
                     }
                     ResponseStateTransitionOutput::End { trailers } => {
-                        self.handle_response_end(session, trailers).await?;
+                        self.handle_response_end(session, trailers).await;
                     }
                     ResponseStateTransitionOutput::Error { error } => {
-                        self.handle_response_error(session, error).await?;
+                        self.handle_response_error(session, error).await;
                     }
                 }
 
@@ -549,45 +621,34 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         }
     }
 
-    async fn handle_close(&self) -> Result<(), BridgeRpcError> {
+    async fn handle_close(&self) {
         trace::trace!("received_close_frame");
         if let Some(stop_signal_) = self.stop_signal_sender.lock().await.take()
         {
-            stop_signal_.send(true).map_err(|e| {
-                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                    "failed to send stop signal: {e}"
-                ))
-            })?
+            if let Err(e) = stop_signal_.send(true) {
+                trace::warn!(error = ?e, "failed_to_send_stop_signal");
+            }
         }
-        Ok(())
     }
 
-    async fn handle_ping(
-        &self,
-        frame_sender: &mpsc::Sender<Frame>,
-    ) -> Result<(), BridgeRpcError> {
+    async fn handle_ping(&self, frame_sender: &mpsc::Sender<Frame>) {
         trace::debug!("received_ping");
-        frame_sender.send(Frame::pong()).await.map_err(|_| {
-            trace::error!("failed_to_send_pong");
-            BridgeRpcErrorInner::new_send(eyre::eyre!(
-                "failed to send probe ack"
-            ))
-        })?;
-        trace::trace!("sent_pong");
-        Ok(())
+        if let Err(e) = frame_sender.send(Frame::pong()).await {
+            trace::warn!(error = ?e, "failed_to_send_pong");
+        } else {
+            trace::trace!("sent_pong");
+        }
     }
 
-    async fn handle_pong(&self) -> Result<(), BridgeRpcError> {
+    async fn handle_pong(&self) {
         trace::debug!("received_pong");
         if let Some(rx) = self.pending_ping.lock().await.take() {
-            rx.send(()).map_err(|_| {
-                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                    "failed to send probe ack"
-                ))
-            })?;
-            trace::trace!("removed_pending_ping_receiver");
-        };
-        Ok(())
+            if let Err(_) = rx.send(()) {
+                trace::warn!("failed_to_send_probe_ack");
+            } else {
+                trace::trace!("removed_pending_ping_receiver");
+            }
+        }
     }
 
     async fn handle_request_start(
@@ -648,48 +709,48 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         &self,
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         chunk: Vec<u8>,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_request_body_chunk");
-        session
+        if let Err(e) = session
             .lock()
             .await
             .context_mut()
             .request_frame_sender
             .send(RequestFrameEvent::new_body_chunk(chunk))
             .await
-            .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
-        trace::trace!("sent_request_body_chunk_to_session");
-
-        Ok(())
+        {
+            trace::warn!(error = ?e, "failed_to_forward_request_body_chunk");
+        } else {
+            trace::trace!("sent_request_body_chunk_to_session");
+        }
     }
 
     async fn handle_request_end(
         &self,
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         trailers: Option<Trailers>,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_request_end");
-        trace::trace!("forwarding_request_end");
-        session
+        if let Err(e) = session
             .lock()
             .await
             .context_mut()
             .request_frame_sender
             .send(RequestFrameEvent::new_end(trailers))
             .await
-            .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
-
-        trace::trace!("forwarded_request_end");
-        Ok(())
+        {
+            trace::warn!(error = ?e, "failed_to_forward_request_end");
+        } else {
+            trace::trace!("forwarded_request_end");
+        }
     }
 
     async fn handle_request_error(
         &self,
         session: Arc<Mutex<RequestSession<RequestSessionContext>>>,
         error: RequestError,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_request_error");
-        trace::trace!("forwarding_request_error");
         let sender = session
             .lock()
             .await
@@ -699,15 +760,12 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .take();
         if let Some(sender) = sender {
-            sender.send(error).map_err(|_| {
-                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                    "failed to send request error",
-                ))
-            })?;
-            trace::trace!("forwarded_request_error");
+            if let Err(_) = sender.send(error) {
+                trace::warn!("failed_to_forward_request_error");
+            } else {
+                trace::trace!("forwarded_request_error");
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_response_start(
@@ -716,9 +774,8 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         id: Id,
         status: ResponseStatusCode,
         headers: Option<Headers>,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_response_start");
-        trace::trace!("forwarding_response_start");
         let start = response_session
             .lock()
             .await
@@ -731,66 +788,60 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
         let response_start = ResponseStart::new(id, status, headers);
 
         if let Some(start) = start {
-            start.send(response_start).map_err(|e| {
-                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                    "can't send response start (id: {})",
-                    e.id
-                ))
-            })?;
-            trace::trace!("forwarded_response_start");
+            if let Err(e) = start.send(response_start) {
+                trace::warn!(id = ?e.id, "failed_to_forward_response_start");
+            } else {
+                trace::trace!("forwarded_response_start");
+            }
         }
-
-        Ok(())
     }
 
     async fn handle_response_body_chunk(
         &self,
         response_session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         chunk: Vec<u8>,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_response_body_chunk");
-        trace::trace!("forwarding_response_body_chunk");
-        response_session
+        if let Err(e) = response_session
             .lock()
             .await
             .context_mut()
             .response_frame_sender
             .send(ResponseFrameEvent::new_body_chunk(chunk))
             .await
-            .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
-
-        trace::trace!("forwarded_response_body_chunk");
-
-        Ok(())
+        {
+            trace::warn!(error = ?e, "failed_to_forward_response_body_chunk");
+        } else {
+            trace::trace!("forwarded_response_body_chunk");
+        }
     }
 
     async fn handle_response_end(
         &self,
         session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         trailers: Option<Trailers>,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_response_end");
-        trace::trace!("forwarding_response_end");
-        session
+        if let Err(e) = session
             .lock()
             .await
             .context_mut()
             .response_frame_sender
             .send(ResponseFrameEvent::new_end(trailers))
             .await
-            .map_err(|e| BridgeRpcErrorInner::new_send(eyre::Report::new(e)))?;
-        trace::trace!("forwarded_response_end");
-
-        Ok(())
+        {
+            trace::warn!(error = ?e, "failed_to_forward_response_end");
+        } else {
+            trace::trace!("forwarded_response_end");
+        }
     }
 
     async fn handle_response_error(
         &self,
         session: Arc<Mutex<ResponseSession<ResponseSessionContext>>>,
         response_error: ResponseError,
-    ) -> Result<(), BridgeRpcError> {
+    ) {
         trace::trace!("received_response_error");
-        trace::trace!("forwarding_response_error");
         let error = session
             .lock()
             .await
@@ -800,15 +851,27 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .take();
         if let Some(error) = error {
-            error.send(response_error).map_err(|_| {
-                BridgeRpcErrorInner::new_send(eyre::eyre!(
-                    "failed to send response error",
-                ))
-            })?;
-            trace::trace!("forwarded_response_error");
+            if let Err(_) = error.send(response_error) {
+                trace::warn!("failed_to_forward_response_error");
+            } else {
+                trace::trace!("forwarded_response_error");
+            }
         }
+    }
 
-        Ok(())
+    async fn send_response_error_frame(
+        frame_sender: &mpsc::Sender<Frame>,
+        id: Id,
+        message: impl Into<String>,
+    ) {
+        let frame = Frame::response_error(
+            id,
+            ResponseErrorCode::UNEXPECTED_FRAME,
+            message.into(),
+        );
+        if let Err(e) = frame_sender.send(frame).await {
+            trace::warn!(error = ?e, id = ?id, "failed_to_send_response_error_frame");
+        }
     }
 
     async fn clone_frame_sender(&self) -> BridgeRpcResult<mpsc::Sender<Frame>> {

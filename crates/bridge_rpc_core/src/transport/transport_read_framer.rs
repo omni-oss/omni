@@ -67,9 +67,9 @@ impl TransportReadFramer {
                     self.current_expected_frame_length = Some(length);
                     self.prefix_buffered_length = 0;
                 } else {
-                    // Not enough bytes for the prefix yet, return and wait for more.
-                    // The collected bytes remain in `current_frame_bytes`
-                    return None; // No complete frame can be formed yet
+                    // Not enough bytes for the prefix yet; stop here but do
+                    // NOT discard frames already completed in this call.
+                    break;
                 }
             }
 
@@ -95,8 +95,11 @@ impl TransportReadFramer {
                     self.current_expected_frame_length = None;
                     self.frame_buffered_length = 0;
                 } else {
-                    // Not enough bytes for the frame body yet, return and wait for more.
-                    return None; // No complete frame can be formed yet
+                    // Not enough bytes for the frame body yet; stop here
+                    // but do NOT return None – any frames that were
+                    // already completed in this call must still be
+                    // returned to the caller.
+                    break;
                 }
             }
         }
@@ -283,5 +286,45 @@ mod tests {
 
         let framed = framer.frame(combined).unwrap();
         assert_eq!(framed, vec![data]);
+    }
+
+    /// Regression test for the prefix-incomplete early-return bug.
+    ///
+    /// When a byte buffer contains a *complete* frame followed by a *partial*
+    /// length prefix for the next frame, the complete frame must still be
+    /// returned.  Before the fix, both the prefix-incomplete and the
+    /// body-incomplete branches used `return None` which silently discarded
+    /// any frames already collected during that call.
+    #[test]
+    fn test_complete_frames_not_dropped_when_next_prefix_is_partial() {
+        let mut framer = TransportReadFramer::new();
+        let frame1_data = Bytes::from_static(&[1, 2, 3, 4]);
+
+        // Build a single buffer: [complete frame 1] + [2 bytes of frame 2's prefix]
+        let mut buf = BytesMut::new();
+        buf.put_u32_le(frame1_data.len() as u32); // 4-byte length = 4
+        buf.put_slice(&frame1_data); // 4-byte body
+        buf.put_u8(0x02); // first 2 bytes of the next frame's
+        buf.put_u8(0x00); //   length prefix (incomplete)
+        let combined = buf.freeze();
+
+        // frame() must return [frame1], not None
+        let result = framer.frame(combined);
+        assert!(
+            result.is_some(),
+            "complete frame must not be dropped when the next prefix is partial"
+        );
+        assert_eq!(result.unwrap(), vec![frame1_data]);
+
+        // Supplying the remaining 2 bytes of the prefix …
+        let mut buf2 = BytesMut::new();
+        buf2.put_u8(0x00);
+        buf2.put_u8(0x00);
+        assert!(framer.frame(buf2.freeze()).is_none()); // prefix complete, body not yet
+
+        // … and then the 2-byte body completes frame 2.
+        let frame2_data = Bytes::from_static(&[0xAA, 0xBB]);
+        let result2 = framer.frame(frame2_data.clone());
+        assert_eq!(result2.unwrap(), vec![frame2_data]);
     }
 }
