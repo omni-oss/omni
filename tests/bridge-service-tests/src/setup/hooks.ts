@@ -29,7 +29,11 @@ beforeAll(async () => {
             "run",
         ],
         {
-            stdio: ["pipe", "pipe", "inherit"],
+            stdio: [
+                "pipe",
+                "pipe",
+                process.env.SHOW_LOG_OUTPUT ? "inherit" : "pipe",
+            ],
         },
     );
 
@@ -194,7 +198,11 @@ beforeAll(async () => {
         testServiceBin,
         ["client", "--sys", "in-memory"],
         {
-            stdio: ["pipe", "pipe", "inherit"],
+            stdio: [
+                "pipe",
+                "pipe",
+                process.env.SHOW_LOG_OUTPUT ? "inherit" : "pipe",
+            ],
         },
     );
 
