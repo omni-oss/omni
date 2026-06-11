@@ -19,13 +19,20 @@ import { delay, getHost } from "@/helpers";
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
+    const wsDir = (process.env.WORKSPACE_DIR ?? "")
+        .replace(/^\\{2}[?.]\\/, "") // strip \\?\\ or \\.\\  (extended-length / device prefix)
+        .replace(/^[A-Za-z]:/, ""); // strip drive letter (e.g. C:)
+    if (!wsDir) {
+        throw new Error(
+            "WORKSPACE_DIR environment variable is not set – " +
+                "it must point to the workspace root",
+        );
+    }
+
     globalThis.TsRpcProcess = spawn(
         RUNTIME,
         [
-            join(
-                __dirname,
-                "../../../../services/bridge-service/dist/bridge-service-cli.mjs",
-            ),
+            join(wsDir, "services/bridge-service/dist/bridge-service-cli.mjs"),
             "run",
         ],
         {
