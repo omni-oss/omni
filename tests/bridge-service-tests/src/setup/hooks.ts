@@ -119,7 +119,7 @@ beforeAll(async () => {
 
     await TsRpc.start();
     await delay(10);
-});
+}, 1000);
 
 afterAll(async () => {
     try {
@@ -132,7 +132,7 @@ afterAll(async () => {
             TsRpcProcess.kill();
         }
     }
-});
+}, 1000);
 
 // ---------------------------------------------------------------------------
 // omni_bridge_test_service global setup
@@ -243,7 +243,7 @@ beforeAll(async () => {
 
     await RsRpc.start();
     await delay(10);
-});
+}, 1000);
 
 afterAll(async () => {
     try {
@@ -256,4 +256,4 @@ afterAll(async () => {
             RsRpcProcess.kill();
         }
     }
-});
+}, 1000);

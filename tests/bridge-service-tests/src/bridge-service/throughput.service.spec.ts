@@ -56,7 +56,8 @@ function logThroughput(label: string, count: number, elapsedMs: number) {
 // ---------------------------------------------------------------------------
 
 describe("bridge-service – throughput (/exec-generator-script)", {
-    timeout: 120_000,
+    timeout: 20_000,
+    concurrent: false,
 }, () => {
     it("handles 50 concurrent requests without errors", async () => {
         const COUNT = 50;

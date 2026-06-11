@@ -1,8 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ResponseStatusCode } from "@omni-oss/bridge-rpc-core";
+import { BridgeRpcSystem } from "@omni-oss/bridge-rpc-system-interface";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { call } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -11,142 +10,70 @@ import { call } from "./helpers";
 describe("bridge_rpc_services – /proc/* (omni_bridge_test_service)", {
     timeout: 15_000,
 }, () => {
-    // ---------------------------------------------------------------
-    // /proc/snapshot
-    // ---------------------------------------------------------------
-    describe("/proc/snapshot", () => {
-        interface Snapshot {
-            current_dir: string;
-            args: string[];
-            env: Record<string, string>;
-        }
+    let system: BridgeRpcSystem;
 
-        it("returns a non-empty current_dir", async () => {
-            const { status, returns } = await call<Snapshot>("/proc/snapshot");
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(typeof returns.current_dir).toBe("string");
-            expect(returns.current_dir.length).toBeGreaterThan(0);
-        });
-
-        it("returns args as an array", async () => {
-            const { status, returns } = await call<Snapshot>("/proc/snapshot");
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(Array.isArray(returns.args)).toBe(true);
-        });
-
-        it("returns env as a non-empty object", async () => {
-            const { status, returns } = await call<Snapshot>("/proc/snapshot");
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(typeof returns.env).toBe("object");
-            expect(returns.env).not.toBeNull();
-            expect(Object.keys(returns.env).length).toBeGreaterThan(0);
-        });
-
-        it("snapshot fields are consistent with individual service calls", async () => {
-            const [snapshot, currentDir] = await Promise.all([
-                call<Snapshot>("/proc/snapshot"),
-                call<{ current_dir: string }>("/proc/current-dir"),
-            ]);
-
-            expect(snapshot.status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(currentDir.status).toEqual(ResponseStatusCode.SUCCESS);
-            // Both should reflect the same working directory.
-            expect(snapshot.returns.current_dir).toBe(
-                currentDir.returns.current_dir,
-            );
-        });
+    beforeAll(async () => {
+        system = await BridgeRpcSystem.create(RsRpcClient);
     });
 
     // ---------------------------------------------------------------
-    // /proc/current-dir
+    // Snapshot (populated via BridgeRpcSystem.create)
     // ---------------------------------------------------------------
-    describe("/proc/current-dir", () => {
-        it("returns a non-empty string path", async () => {
-            const { status, returns } = await call<{
-                current_dir: string;
-            }>("/proc/current-dir");
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(typeof returns.current_dir).toBe("string");
-            expect(returns.current_dir.length).toBeGreaterThan(0);
+    describe("snapshot", () => {
+        it("currentDir() returns a non-empty string", () => {
+            expect(typeof system.proc.currentDir()).toBe("string");
+            expect(system.proc.currentDir().length).toBeGreaterThan(0);
         });
 
-        it("returns the same path on repeated calls", async () => {
-            const [a, b] = await Promise.all([
-                call<{ current_dir: string }>("/proc/current-dir"),
-                call<{ current_dir: string }>("/proc/current-dir"),
-            ]);
-
-            expect(a.returns.current_dir).toBe(b.returns.current_dir);
-        });
-    });
-
-    // ---------------------------------------------------------------
-    // /proc/args
-    // ---------------------------------------------------------------
-    describe("/proc/args", () => {
-        it("returns an array of process arguments", async () => {
-            const { status, returns } = await call<{ args: string[] }>(
-                "/proc/args",
-            );
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(Array.isArray(returns.args)).toBe(true);
-        });
-    });
-
-    // ---------------------------------------------------------------
-    // /proc/env
-    // ---------------------------------------------------------------
-    describe("/proc/env", () => {
-        it("returns an object with at least one environment variable", async () => {
-            const { status, returns } = await call<{
-                env: Record<string, string>;
-            }>("/proc/env");
-
-            expect(status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(typeof returns.env).toBe("object");
-            expect(returns.env).not.toBeNull();
-            expect(Object.keys(returns.env).length).toBeGreaterThan(0);
+        it("args() returns an array of process arguments", () => {
+            expect(Array.isArray(system.proc.args())).toBe(true);
         });
 
-        it("env values are all strings", async () => {
-            const { returns } = await call<{
-                env: Record<string, string>;
-            }>("/proc/env");
+        it("env() returns a non-empty object", () => {
+            const env = system.proc.env();
+            expect(typeof env).toBe("object");
+            expect(env).not.toBeNull();
+            expect(Object.keys(env).length).toBeGreaterThan(0);
+        });
 
-            for (const [key, value] of Object.entries(returns.env)) {
+        it("env values are all strings", () => {
+            for (const [key, value] of Object.entries(system.proc.env())) {
                 expect(typeof value, `env[${key}] should be a string`).toBe(
                     "string",
                 );
             }
         });
 
-        it("snapshot env matches env service", async () => {
-            const [snapshot, env] = await Promise.all([
-                call<{
-                    current_dir: string;
-                    args: string[];
-                    env: Record<string, string>;
-                }>("/proc/snapshot"),
-                call<{ env: Record<string, string> }>("/proc/env"),
-            ]);
-
-            // The env captured by both calls should share the same set of
-            // keys (the child process env doesn't change between calls).
-            const snapshotKeys = Object.keys(snapshot.returns.env).sort();
-            const envKeys = Object.keys(env.returns.env).sort();
-            expect(snapshotKeys).toEqual(envKeys);
+        it("snapshot is consistent with a freshly created system", async () => {
+            const fresh = await BridgeRpcSystem.create(RsRpcClient);
+            // Both should reflect the same working directory.
+            expect(system.proc.currentDir()).toBe(fresh.proc.currentDir());
         });
     });
 
     // ---------------------------------------------------------------
-    // /proc/set-current-dir
+    // refreshSnapshot
     // ---------------------------------------------------------------
-    describe("/proc/set-current-dir", () => {
+    describe("refreshSnapshot", () => {
+        it("re-fetches the snapshot and preserves the current dir", async () => {
+            const before = system.proc.currentDir();
+            await system.proc.refreshSnapshot();
+            expect(system.proc.currentDir()).toBe(before);
+        });
+
+        it("returns the same path on repeated refreshes", async () => {
+            await system.proc.refreshSnapshot();
+            const dir1 = system.proc.currentDir();
+            await system.proc.refreshSnapshot();
+            const dir2 = system.proc.currentDir();
+            expect(dir1).toBe(dir2);
+        });
+    });
+
+    // ---------------------------------------------------------------
+    // setCurrentDir
+    // ---------------------------------------------------------------
+    describe("setCurrentDir", () => {
         let savedDir: string;
         const tempDir = join(
             tmpdir(),
@@ -155,35 +82,14 @@ describe("bridge_rpc_services – /proc/* (omni_bridge_test_service)", {
 
         beforeAll(async () => {
             // Capture the initial CWD so we can restore it after the
-            // test (set-current-dir is process-global in the child).
-            const { returns: r1, status } = await call<{
-                current_dir: string;
-            }>("/proc/current-dir");
-
-            if (status !== ResponseStatusCode.SUCCESS) {
-                throw new Error(
-                    `Failed to get initial current directory: status ${status.toString()}`,
-                );
-            }
-
-            savedDir = r1.current_dir;
-
-            const { returns: _r2, status: s2 } = await call(
-                "/fs/create-directory",
-                {
-                    path: tempDir,
-                    options: { recursive: true },
-                },
-            );
-
-            if (s2 !== ResponseStatusCode.SUCCESS) {
-                throw new Error(
-                    `Failed to create temp directory for set-current-dir tests: status ${s2.toString()}`,
-                );
-            }
+            // test (setCurrentDir is process-global in the child).
+            savedDir = system.proc.currentDir();
+            await system.fs.createDirectory(tempDir, { recursive: true });
+            // Verify the temp directory was actually created.
+            expect(await system.fs.isDirectory(tempDir)).toBe(true);
             if (process.env.SHOW_LOG_OUTPUT) {
                 console.log(
-                    `Saved initial CWD for set-current-dir tests: ${savedDir}, created temp directory: ${tempDir}`,
+                    `Saved initial CWD for setCurrentDir tests: ${savedDir}, created temp directory: ${tempDir}`,
                 );
             }
         });
@@ -191,18 +97,11 @@ describe("bridge_rpc_services – /proc/* (omni_bridge_test_service)", {
         afterAll(async () => {
             // Restore the original CWD so subsequent tests that rely
             // on relative paths are unaffected.
-            await call("/proc/set-current-dir", { dir: savedDir });
+            await system.proc.setCurrentDir(savedDir);
         });
 
-        it("changes the working directory and is reflected by current-dir", async () => {
-            const setResult = await call("/proc/set-current-dir", {
-                dir: tempDir,
-            });
-            expect(setResult.status).toEqual(ResponseStatusCode.SUCCESS);
-
-            const { returns } = await call<{ current_dir: string }>(
-                "/proc/current-dir",
-            );
+        it("changes the working directory and is reflected by currentDir()", async () => {
+            await system.proc.setCurrentDir(tempDir);
 
             // Use a case-insensitive, partial comparison to handle
             // platforms where tmpdir() may resolve symlinks differently.
@@ -210,18 +109,14 @@ describe("bridge_rpc_services – /proc/* (omni_bridge_test_service)", {
             const tmpLeaf =
                 tempDir.split(/[/\\]/).filter(Boolean).at(-1)?.toLowerCase() ??
                 "";
-            expect(normalise(returns.current_dir)).toContain(tmpLeaf);
+            expect(normalise(system.proc.currentDir())).toContain(tmpLeaf);
         });
 
-        it("returns SUCCESS even when the directory is the current directory", async () => {
-            const { returns: beforeReturns } = await call<{
-                current_dir: string;
-            }>("/proc/current-dir");
-
-            const result = await call("/proc/set-current-dir", {
-                dir: beforeReturns.current_dir,
-            });
-            expect(result.status).toEqual(ResponseStatusCode.SUCCESS);
+        it("succeeds even when the directory is already the current directory", async () => {
+            const currentDir = system.proc.currentDir();
+            await expect(
+                system.proc.setCurrentDir(currentDir),
+            ).resolves.toBeUndefined();
         });
     });
 });
