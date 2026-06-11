@@ -29,7 +29,10 @@
     "publishConfig": {
         "access": "public"
     },
-    "dependencies": {},
+    "dependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/channels": "workspace:^"
+    },
     "peerDependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",
         "@omni-oss/channels": "workspace:^"
