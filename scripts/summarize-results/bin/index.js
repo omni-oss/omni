@@ -1,32 +1,4968 @@
-import{createRequire as Jo}from"node:module";var Do=Object.create;var{getPrototypeOf:ko,defineProperty:Ev,getOwnPropertyNames:lo}=Object;var co=Object.prototype.hasOwnProperty;function wo(r){return this[r]}var So,No,zo=(r,n,v)=>{var t=r!=null&&typeof r==="object";if(t){var i=n?So??=new WeakMap:No??=new WeakMap,$=i.get(r);if($)return $}v=r!=null?Do(ko(r)):{};let u=n||!r||!r.__esModule?Ev(v,"default",{value:r,enumerable:!0}):v;for(let g of lo(r))if(!co.call(u,g))Ev(u,g,{get:wo.bind(r,g),enumerable:!0});if(t)i.set(r,u);return u};var Ir=(r,n)=>()=>(n||r((n={exports:{}}).exports,n),n.exports);var jo=(r)=>r;function Po(r,n){this[r]=jo.bind(null,n)}var vr=(r,n)=>{for(var v in n)Ev(r,v,{get:n[v],enumerable:!0,configurable:!0,set:Po.bind(n,v)})};var ti=Jo(import.meta.url);var ui=Ir((Lo)=>{class qv extends Error{constructor(r,n,v){super(v);Error.captureStackTrace(this,this.constructor),this.name=this.constructor.name,this.code=n,this.exitCode=r,this.nestedError=void 0}}class A4 extends qv{constructor(r){super(1,"commander.invalidArgument",r);Error.captureStackTrace(this,this.constructor),this.name=this.constructor.name}}Lo.CommanderError=qv;Lo.InvalidArgumentError=A4});var ei=Ir((Oo)=>{var{InvalidArgumentError:Eo}=ui();class M4{constructor(r,n){switch(this.description=n||"",this.variadic=!1,this.parseArg=void 0,this.defaultValue=void 0,this.defaultValueDescription=void 0,this.argChoices=void 0,r[0]){case"<":this.required=!0,this._name=r.slice(1,-1);break;case"[":this.required=!1,this._name=r.slice(1,-1);break;default:this.required=!0,this._name=r;break}if(this._name.endsWith("..."))this.variadic=!0,this._name=this._name.slice(0,-3)}name(){return this._name}_collectValue(r,n){if(n===this.defaultValue||!Array.isArray(n))return[r];return n.push(r),n}default(r,n){return this.defaultValue=r,this.defaultValueDescription=n,this}argParser(r){return this.parseArg=r,this}choices(r){return this.argChoices=r.slice(),this.parseArg=(n,v)=>{if(!this.argChoices.includes(n))throw new Eo(`Allowed choices are ${this.argChoices.join(", ")}.`);if(this.variadic)return this._collectValue(n,v);return n},this}argRequired(){return this.required=!0,this}argOptional(){return this.required=!1,this}}function qo(r){let n=r.name()+(r.variadic===!0?"...":"");return r.required?"<"+n+">":"["+n+"]"}Oo.Argument=M4;Oo.humanReadableArgName=qo});var Ov=Ir((Ko)=>{var{humanReadableArgName:Vo}=ei();class F4{constructor(){this.helpWidth=void 0,this.minWidthToWrap=40,this.sortSubcommands=!1,this.sortOptions=!1,this.showGlobalOptions=!1}prepareContext(r){this.helpWidth=this.helpWidth??r.helpWidth??80}visibleCommands(r){let n=r.commands.filter((t)=>!t._hidden),v=r._getHelpCommand();if(v&&!v._hidden)n.push(v);if(this.sortSubcommands)n.sort((t,i)=>{return t.name().localeCompare(i.name())});return n}compareOptions(r,n){let v=(t)=>{return t.short?t.short.replace(/^-/,""):t.long.replace(/^--/,"")};return v(r).localeCompare(v(n))}visibleOptions(r){let n=r.options.filter((t)=>!t.hidden),v=r._getHelpOption();if(v&&!v.hidden){let t=v.short&&r._findOption(v.short),i=v.long&&r._findOption(v.long);if(!t&&!i)n.push(v);else if(v.long&&!i)n.push(r.createOption(v.long,v.description));else if(v.short&&!t)n.push(r.createOption(v.short,v.description))}if(this.sortOptions)n.sort(this.compareOptions);return n}visibleGlobalOptions(r){if(!this.showGlobalOptions)return[];let n=[];for(let v=r.parent;v;v=v.parent){let t=v.options.filter((i)=>!i.hidden);n.push(...t)}if(this.sortOptions)n.sort(this.compareOptions);return n}visibleArguments(r){if(r._argsDescription)r.registeredArguments.forEach((n)=>{n.description=n.description||r._argsDescription[n.name()]||""});if(r.registeredArguments.find((n)=>n.description))return r.registeredArguments;return[]}subcommandTerm(r){let n=r.registeredArguments.map((v)=>Vo(v)).join(" ");return r._name+(r._aliases[0]?"|"+r._aliases[0]:"")+(r.options.length?" [options]":"")+(n?" "+n:"")}optionTerm(r){return r.flags}argumentTerm(r){return r.name()}longestSubcommandTermLength(r,n){return n.visibleCommands(r).reduce((v,t)=>{return Math.max(v,this.displayWidth(n.styleSubcommandTerm(n.subcommandTerm(t))))},0)}longestOptionTermLength(r,n){return n.visibleOptions(r).reduce((v,t)=>{return Math.max(v,this.displayWidth(n.styleOptionTerm(n.optionTerm(t))))},0)}longestGlobalOptionTermLength(r,n){return n.visibleGlobalOptions(r).reduce((v,t)=>{return Math.max(v,this.displayWidth(n.styleOptionTerm(n.optionTerm(t))))},0)}longestArgumentTermLength(r,n){return n.visibleArguments(r).reduce((v,t)=>{return Math.max(v,this.displayWidth(n.styleArgumentTerm(n.argumentTerm(t))))},0)}commandUsage(r){let n=r._name;if(r._aliases[0])n=n+"|"+r._aliases[0];let v="";for(let t=r.parent;t;t=t.parent)v=t.name()+" "+v;return v+n+" "+r.usage()}commandDescription(r){return r.description()}subcommandDescription(r){return r.summary()||r.description()}optionDescription(r){let n=[];if(r.argChoices)n.push(`choices: ${r.argChoices.map((v)=>JSON.stringify(v)).join(", ")}`);if(r.defaultValue!==void 0){if(r.required||r.optional||r.isBoolean()&&typeof r.defaultValue==="boolean")n.push(`default: ${r.defaultValueDescription||JSON.stringify(r.defaultValue)}`)}if(r.presetArg!==void 0&&r.optional)n.push(`preset: ${JSON.stringify(r.presetArg)}`);if(r.envVar!==void 0)n.push(`env: ${r.envVar}`);if(n.length>0){let v=`(${n.join(", ")})`;if(r.description)return`${r.description} ${v}`;return v}return r.description}argumentDescription(r){let n=[];if(r.argChoices)n.push(`choices: ${r.argChoices.map((v)=>JSON.stringify(v)).join(", ")}`);if(r.defaultValue!==void 0)n.push(`default: ${r.defaultValueDescription||JSON.stringify(r.defaultValue)}`);if(n.length>0){let v=`(${n.join(", ")})`;if(r.description)return`${r.description} ${v}`;return v}return r.description}formatItemList(r,n,v){if(n.length===0)return[];return[v.styleTitle(r),...n,""]}groupItems(r,n,v){let t=new Map;return r.forEach((i)=>{let $=v(i);if(!t.has($))t.set($,[])}),n.forEach((i)=>{let $=v(i);if(!t.has($))t.set($,[]);t.get($).push(i)}),t}formatHelp(r,n){let v=n.padWidth(r,n),t=n.helpWidth??80;function i(o,D){return n.formatItem(o,v,D,n)}let $=[`${n.styleTitle("Usage:")} ${n.styleUsage(n.commandUsage(r))}`,""],u=n.commandDescription(r);if(u.length>0)$=$.concat([n.boxWrap(n.styleCommandDescription(u),t),""]);let g=n.visibleArguments(r).map((o)=>{return i(n.styleArgumentTerm(n.argumentTerm(o)),n.styleArgumentDescription(n.argumentDescription(o)))});if($=$.concat(this.formatItemList("Arguments:",g,n)),this.groupItems(r.options,n.visibleOptions(r),(o)=>o.helpGroupHeading??"Options:").forEach((o,D)=>{let S=o.map((c)=>{return i(n.styleOptionTerm(n.optionTerm(c)),n.styleOptionDescription(n.optionDescription(c)))});$=$.concat(this.formatItemList(D,S,n))}),n.showGlobalOptions){let o=n.visibleGlobalOptions(r).map((D)=>{return i(n.styleOptionTerm(n.optionTerm(D)),n.styleOptionDescription(n.optionDescription(D)))});$=$.concat(this.formatItemList("Global Options:",o,n))}return this.groupItems(r.commands,n.visibleCommands(r),(o)=>o.helpGroup()||"Commands:").forEach((o,D)=>{let S=o.map((c)=>{return i(n.styleSubcommandTerm(n.subcommandTerm(c)),n.styleSubcommandDescription(n.subcommandDescription(c)))});$=$.concat(this.formatItemList(D,S,n))}),$.join(`
-`)}displayWidth(r){return R4(r).length}styleTitle(r){return r}styleUsage(r){return r.split(" ").map((n)=>{if(n==="[options]")return this.styleOptionText(n);if(n==="[command]")return this.styleSubcommandText(n);if(n[0]==="["||n[0]==="<")return this.styleArgumentText(n);return this.styleCommandText(n)}).join(" ")}styleCommandDescription(r){return this.styleDescriptionText(r)}styleOptionDescription(r){return this.styleDescriptionText(r)}styleSubcommandDescription(r){return this.styleDescriptionText(r)}styleArgumentDescription(r){return this.styleDescriptionText(r)}styleDescriptionText(r){return r}styleOptionTerm(r){return this.styleOptionText(r)}styleSubcommandTerm(r){return r.split(" ").map((n)=>{if(n==="[options]")return this.styleOptionText(n);if(n[0]==="["||n[0]==="<")return this.styleArgumentText(n);return this.styleSubcommandText(n)}).join(" ")}styleArgumentTerm(r){return this.styleArgumentText(r)}styleOptionText(r){return r}styleArgumentText(r){return r}styleSubcommandText(r){return r}styleCommandText(r){return r}padWidth(r,n){return Math.max(n.longestOptionTermLength(r,n),n.longestGlobalOptionTermLength(r,n),n.longestSubcommandTermLength(r,n),n.longestArgumentTermLength(r,n))}preformatted(r){return/\n[^\S\r\n]/.test(r)}formatItem(r,n,v,t){let $=" ".repeat(2);if(!v)return $+r;let u=r.padEnd(n+r.length-t.displayWidth(r)),g=2,I=(this.helpWidth??80)-n-g-2,o;if(I<this.minWidthToWrap||t.preformatted(v))o=v;else o=t.boxWrap(v,I).replace(/\n/g,`
-`+" ".repeat(n+g));return $+u+" ".repeat(g)+o.replace(/\n/g,`
-${$}`)}boxWrap(r,n){if(n<this.minWidthToWrap)return r;let v=r.split(/\r\n|\n/),t=/[\s]*[^\s]+/g,i=[];return v.forEach(($)=>{let u=$.match(t);if(u===null){i.push("");return}let g=[u.shift()],_=this.displayWidth(g[0]);u.forEach((I)=>{let o=this.displayWidth(I);if(_+o<=n){g.push(I),_+=o;return}i.push(g.join(""));let D=I.trimStart();g=[D],_=this.displayWidth(D)}),i.push(g.join(""))}),i.join(`
-`)}}function R4(r){let n=/\x1b\[\d*(;\d*)*m/g;return r.replace(n,"")}Ko.Help=F4;Ko.stripColor=R4});var Wv=Ir((Ao)=>{var{InvalidArgumentError:To}=ui();class e4{constructor(r,n){this.flags=r,this.description=n||"",this.required=r.includes("<"),this.optional=r.includes("["),this.variadic=/\w\.\.\.[>\]]$/.test(r),this.mandatory=!1;let v=Bo(r);if(this.short=v.shortFlag,this.long=v.longFlag,this.negate=!1,this.long)this.negate=this.long.startsWith("--no-");this.defaultValue=void 0,this.defaultValueDescription=void 0,this.presetArg=void 0,this.envVar=void 0,this.parseArg=void 0,this.hidden=!1,this.argChoices=void 0,this.conflictsWith=[],this.implied=void 0,this.helpGroupHeading=void 0}default(r,n){return this.defaultValue=r,this.defaultValueDescription=n,this}preset(r){return this.presetArg=r,this}conflicts(r){return this.conflictsWith=this.conflictsWith.concat(r),this}implies(r){let n=r;if(typeof r==="string")n={[r]:!0};return this.implied=Object.assign(this.implied||{},n),this}env(r){return this.envVar=r,this}argParser(r){return this.parseArg=r,this}makeOptionMandatory(r=!0){return this.mandatory=!!r,this}hideHelp(r=!0){return this.hidden=!!r,this}_collectValue(r,n){if(n===this.defaultValue||!Array.isArray(n))return[r];return n.push(r),n}choices(r){return this.argChoices=r.slice(),this.parseArg=(n,v)=>{if(!this.argChoices.includes(n))throw new To(`Allowed choices are ${this.argChoices.join(", ")}.`);if(this.variadic)return this._collectValue(n,v);return n},this}name(){if(this.long)return this.long.replace(/^--/,"");return this.short.replace(/^-/,"")}attributeName(){if(this.negate)return Z4(this.name().replace(/^no-/,""));return Z4(this.name())}helpGroup(r){return this.helpGroupHeading=r,this}is(r){return this.short===r||this.long===r}isBoolean(){return!this.required&&!this.optional&&!this.negate}}class x4{constructor(r){this.positiveOptions=new Map,this.negativeOptions=new Map,this.dualOptions=new Set,r.forEach((n)=>{if(n.negate)this.negativeOptions.set(n.attributeName(),n);else this.positiveOptions.set(n.attributeName(),n)}),this.negativeOptions.forEach((n,v)=>{if(this.positiveOptions.has(v))this.dualOptions.add(v)})}valueFromOption(r,n){let v=n.attributeName();if(!this.dualOptions.has(v))return!0;let t=this.negativeOptions.get(v).presetArg,i=t!==void 0?t:!1;return n.negate===(i===r)}}function Z4(r){return r.split("-").reduce((n,v)=>{return n+v[0].toUpperCase()+v.slice(1)})}function Bo(r){let n,v,t=/^-[^-]$/,i=/^--[^-]/,$=r.split(/[ |,]+/).concat("guard");if(t.test($[0]))n=$.shift();if(i.test($[0]))v=$.shift();if(!n&&t.test($[0]))n=$.shift();if(!n&&i.test($[0]))n=v,v=$.shift();if($[0].startsWith("-")){let u=$[0],g=`option creation failed due to '${u}' in option flags '${r}'`;if(/^-[^-][^-]/.test(u))throw Error(`${g}
+import { createRequire as Jo } from "node:module";
+var Do = Object.create;
+var {
+    getPrototypeOf: ko,
+    defineProperty: Ev,
+    getOwnPropertyNames: lo,
+} = Object;
+var co = Object.prototype.hasOwnProperty;
+function wo(r) {
+    return this[r];
+}
+var So,
+    No,
+    zo = (r, n, v) => {
+        var t = r != null && typeof r === "object";
+        if (t) {
+            var i = n ? (So ??= new WeakMap()) : (No ??= new WeakMap()),
+                $ = i.get(r);
+            if ($) return $;
+        }
+        v = r != null ? Do(ko(r)) : {};
+        let u =
+            n || !r || !r.__esModule
+                ? Ev(v, "default", { value: r, enumerable: !0 })
+                : v;
+        for (let g of lo(r))
+            if (!co.call(u, g))
+                Ev(u, g, { get: wo.bind(r, g), enumerable: !0 });
+        if (t) i.set(r, u);
+        return u;
+    };
+var Ir = (r, n) => () => (n || r((n = { exports: {} }).exports, n), n.exports);
+var jo = (r) => r;
+function Po(r, n) {
+    this[r] = jo.bind(null, n);
+}
+var vr = (r, n) => {
+    for (var v in n)
+        Ev(r, v, {
+            get: n[v],
+            enumerable: !0,
+            configurable: !0,
+            set: Po.bind(n, v),
+        });
+};
+var ti = Jo(import.meta.url);
+var ui = Ir((Lo) => {
+    class qv extends Error {
+        constructor(r, n, v) {
+            super(v);
+            Error.captureStackTrace(this, this.constructor),
+                (this.name = this.constructor.name),
+                (this.code = n),
+                (this.exitCode = r),
+                (this.nestedError = void 0);
+        }
+    }
+    class A4 extends qv {
+        constructor(r) {
+            super(1, "commander.invalidArgument", r);
+            Error.captureStackTrace(this, this.constructor),
+                (this.name = this.constructor.name);
+        }
+    }
+    Lo.CommanderError = qv;
+    Lo.InvalidArgumentError = A4;
+});
+var ei = Ir((Oo) => {
+    var { InvalidArgumentError: Eo } = ui();
+    class M4 {
+        constructor(r, n) {
+            switch (
+                ((this.description = n || ""),
+                (this.variadic = !1),
+                (this.parseArg = void 0),
+                (this.defaultValue = void 0),
+                (this.defaultValueDescription = void 0),
+                (this.argChoices = void 0),
+                r[0])
+            ) {
+                case "<":
+                    (this.required = !0), (this._name = r.slice(1, -1));
+                    break;
+                case "[":
+                    (this.required = !1), (this._name = r.slice(1, -1));
+                    break;
+                default:
+                    (this.required = !0), (this._name = r);
+                    break;
+            }
+            if (this._name.endsWith("..."))
+                (this.variadic = !0), (this._name = this._name.slice(0, -3));
+        }
+        name() {
+            return this._name;
+        }
+        _collectValue(r, n) {
+            if (n === this.defaultValue || !Array.isArray(n)) return [r];
+            return n.push(r), n;
+        }
+        default(r, n) {
+            return (
+                (this.defaultValue = r),
+                (this.defaultValueDescription = n),
+                this
+            );
+        }
+        argParser(r) {
+            return (this.parseArg = r), this;
+        }
+        choices(r) {
+            return (
+                (this.argChoices = r.slice()),
+                (this.parseArg = (n, v) => {
+                    if (!this.argChoices.includes(n))
+                        throw new Eo(
+                            `Allowed choices are ${this.argChoices.join(", ")}.`,
+                        );
+                    if (this.variadic) return this._collectValue(n, v);
+                    return n;
+                }),
+                this
+            );
+        }
+        argRequired() {
+            return (this.required = !0), this;
+        }
+        argOptional() {
+            return (this.required = !1), this;
+        }
+    }
+    function qo(r) {
+        let n = r.name() + (r.variadic === !0 ? "..." : "");
+        return r.required ? "<" + n + ">" : "[" + n + "]";
+    }
+    Oo.Argument = M4;
+    Oo.humanReadableArgName = qo;
+});
+var Ov = Ir((Ko) => {
+    var { humanReadableArgName: Vo } = ei();
+    class F4 {
+        constructor() {
+            (this.helpWidth = void 0),
+                (this.minWidthToWrap = 40),
+                (this.sortSubcommands = !1),
+                (this.sortOptions = !1),
+                (this.showGlobalOptions = !1);
+        }
+        prepareContext(r) {
+            this.helpWidth = this.helpWidth ?? r.helpWidth ?? 80;
+        }
+        visibleCommands(r) {
+            let n = r.commands.filter((t) => !t._hidden),
+                v = r._getHelpCommand();
+            if (v && !v._hidden) n.push(v);
+            if (this.sortSubcommands)
+                n.sort((t, i) => {
+                    return t.name().localeCompare(i.name());
+                });
+            return n;
+        }
+        compareOptions(r, n) {
+            let v = (t) => {
+                return t.short
+                    ? t.short.replace(/^-/, "")
+                    : t.long.replace(/^--/, "");
+            };
+            return v(r).localeCompare(v(n));
+        }
+        visibleOptions(r) {
+            let n = r.options.filter((t) => !t.hidden),
+                v = r._getHelpOption();
+            if (v && !v.hidden) {
+                let t = v.short && r._findOption(v.short),
+                    i = v.long && r._findOption(v.long);
+                if (!t && !i) n.push(v);
+                else if (v.long && !i)
+                    n.push(r.createOption(v.long, v.description));
+                else if (v.short && !t)
+                    n.push(r.createOption(v.short, v.description));
+            }
+            if (this.sortOptions) n.sort(this.compareOptions);
+            return n;
+        }
+        visibleGlobalOptions(r) {
+            if (!this.showGlobalOptions) return [];
+            let n = [];
+            for (let v = r.parent; v; v = v.parent) {
+                let t = v.options.filter((i) => !i.hidden);
+                n.push(...t);
+            }
+            if (this.sortOptions) n.sort(this.compareOptions);
+            return n;
+        }
+        visibleArguments(r) {
+            if (r._argsDescription)
+                r.registeredArguments.forEach((n) => {
+                    n.description =
+                        n.description || r._argsDescription[n.name()] || "";
+                });
+            if (r.registeredArguments.find((n) => n.description))
+                return r.registeredArguments;
+            return [];
+        }
+        subcommandTerm(r) {
+            let n = r.registeredArguments.map((v) => Vo(v)).join(" ");
+            return (
+                r._name +
+                (r._aliases[0] ? "|" + r._aliases[0] : "") +
+                (r.options.length ? " [options]" : "") +
+                (n ? " " + n : "")
+            );
+        }
+        optionTerm(r) {
+            return r.flags;
+        }
+        argumentTerm(r) {
+            return r.name();
+        }
+        longestSubcommandTermLength(r, n) {
+            return n.visibleCommands(r).reduce((v, t) => {
+                return Math.max(
+                    v,
+                    this.displayWidth(
+                        n.styleSubcommandTerm(n.subcommandTerm(t)),
+                    ),
+                );
+            }, 0);
+        }
+        longestOptionTermLength(r, n) {
+            return n.visibleOptions(r).reduce((v, t) => {
+                return Math.max(
+                    v,
+                    this.displayWidth(n.styleOptionTerm(n.optionTerm(t))),
+                );
+            }, 0);
+        }
+        longestGlobalOptionTermLength(r, n) {
+            return n.visibleGlobalOptions(r).reduce((v, t) => {
+                return Math.max(
+                    v,
+                    this.displayWidth(n.styleOptionTerm(n.optionTerm(t))),
+                );
+            }, 0);
+        }
+        longestArgumentTermLength(r, n) {
+            return n.visibleArguments(r).reduce((v, t) => {
+                return Math.max(
+                    v,
+                    this.displayWidth(n.styleArgumentTerm(n.argumentTerm(t))),
+                );
+            }, 0);
+        }
+        commandUsage(r) {
+            let n = r._name;
+            if (r._aliases[0]) n = n + "|" + r._aliases[0];
+            let v = "";
+            for (let t = r.parent; t; t = t.parent) v = t.name() + " " + v;
+            return v + n + " " + r.usage();
+        }
+        commandDescription(r) {
+            return r.description();
+        }
+        subcommandDescription(r) {
+            return r.summary() || r.description();
+        }
+        optionDescription(r) {
+            let n = [];
+            if (r.argChoices)
+                n.push(
+                    `choices: ${r.argChoices.map((v) => JSON.stringify(v)).join(", ")}`,
+                );
+            if (r.defaultValue !== void 0) {
+                if (
+                    r.required ||
+                    r.optional ||
+                    (r.isBoolean() && typeof r.defaultValue === "boolean")
+                )
+                    n.push(
+                        `default: ${r.defaultValueDescription || JSON.stringify(r.defaultValue)}`,
+                    );
+            }
+            if (r.presetArg !== void 0 && r.optional)
+                n.push(`preset: ${JSON.stringify(r.presetArg)}`);
+            if (r.envVar !== void 0) n.push(`env: ${r.envVar}`);
+            if (n.length > 0) {
+                let v = `(${n.join(", ")})`;
+                if (r.description) return `${r.description} ${v}`;
+                return v;
+            }
+            return r.description;
+        }
+        argumentDescription(r) {
+            let n = [];
+            if (r.argChoices)
+                n.push(
+                    `choices: ${r.argChoices.map((v) => JSON.stringify(v)).join(", ")}`,
+                );
+            if (r.defaultValue !== void 0)
+                n.push(
+                    `default: ${r.defaultValueDescription || JSON.stringify(r.defaultValue)}`,
+                );
+            if (n.length > 0) {
+                let v = `(${n.join(", ")})`;
+                if (r.description) return `${r.description} ${v}`;
+                return v;
+            }
+            return r.description;
+        }
+        formatItemList(r, n, v) {
+            if (n.length === 0) return [];
+            return [v.styleTitle(r), ...n, ""];
+        }
+        groupItems(r, n, v) {
+            let t = new Map();
+            return (
+                r.forEach((i) => {
+                    let $ = v(i);
+                    if (!t.has($)) t.set($, []);
+                }),
+                n.forEach((i) => {
+                    let $ = v(i);
+                    if (!t.has($)) t.set($, []);
+                    t.get($).push(i);
+                }),
+                t
+            );
+        }
+        formatHelp(r, n) {
+            let v = n.padWidth(r, n),
+                t = n.helpWidth ?? 80;
+            function i(o, D) {
+                return n.formatItem(o, v, D, n);
+            }
+            let $ = [
+                    `${n.styleTitle("Usage:")} ${n.styleUsage(n.commandUsage(r))}`,
+                    "",
+                ],
+                u = n.commandDescription(r);
+            if (u.length > 0)
+                $ = $.concat([n.boxWrap(n.styleCommandDescription(u), t), ""]);
+            let g = n.visibleArguments(r).map((o) => {
+                return i(
+                    n.styleArgumentTerm(n.argumentTerm(o)),
+                    n.styleArgumentDescription(n.argumentDescription(o)),
+                );
+            });
+            if (
+                (($ = $.concat(this.formatItemList("Arguments:", g, n))),
+                this.groupItems(
+                    r.options,
+                    n.visibleOptions(r),
+                    (o) => o.helpGroupHeading ?? "Options:",
+                ).forEach((o, D) => {
+                    let S = o.map((c) => {
+                        return i(
+                            n.styleOptionTerm(n.optionTerm(c)),
+                            n.styleOptionDescription(n.optionDescription(c)),
+                        );
+                    });
+                    $ = $.concat(this.formatItemList(D, S, n));
+                }),
+                n.showGlobalOptions)
+            ) {
+                let o = n.visibleGlobalOptions(r).map((D) => {
+                    return i(
+                        n.styleOptionTerm(n.optionTerm(D)),
+                        n.styleOptionDescription(n.optionDescription(D)),
+                    );
+                });
+                $ = $.concat(this.formatItemList("Global Options:", o, n));
+            }
+            return (
+                this.groupItems(
+                    r.commands,
+                    n.visibleCommands(r),
+                    (o) => o.helpGroup() || "Commands:",
+                ).forEach((o, D) => {
+                    let S = o.map((c) => {
+                        return i(
+                            n.styleSubcommandTerm(n.subcommandTerm(c)),
+                            n.styleSubcommandDescription(
+                                n.subcommandDescription(c),
+                            ),
+                        );
+                    });
+                    $ = $.concat(this.formatItemList(D, S, n));
+                }),
+                $.join(`
+`)
+            );
+        }
+        displayWidth(r) {
+            return R4(r).length;
+        }
+        styleTitle(r) {
+            return r;
+        }
+        styleUsage(r) {
+            return r
+                .split(" ")
+                .map((n) => {
+                    if (n === "[options]") return this.styleOptionText(n);
+                    if (n === "[command]") return this.styleSubcommandText(n);
+                    if (n[0] === "[" || n[0] === "<")
+                        return this.styleArgumentText(n);
+                    return this.styleCommandText(n);
+                })
+                .join(" ");
+        }
+        styleCommandDescription(r) {
+            return this.styleDescriptionText(r);
+        }
+        styleOptionDescription(r) {
+            return this.styleDescriptionText(r);
+        }
+        styleSubcommandDescription(r) {
+            return this.styleDescriptionText(r);
+        }
+        styleArgumentDescription(r) {
+            return this.styleDescriptionText(r);
+        }
+        styleDescriptionText(r) {
+            return r;
+        }
+        styleOptionTerm(r) {
+            return this.styleOptionText(r);
+        }
+        styleSubcommandTerm(r) {
+            return r
+                .split(" ")
+                .map((n) => {
+                    if (n === "[options]") return this.styleOptionText(n);
+                    if (n[0] === "[" || n[0] === "<")
+                        return this.styleArgumentText(n);
+                    return this.styleSubcommandText(n);
+                })
+                .join(" ");
+        }
+        styleArgumentTerm(r) {
+            return this.styleArgumentText(r);
+        }
+        styleOptionText(r) {
+            return r;
+        }
+        styleArgumentText(r) {
+            return r;
+        }
+        styleSubcommandText(r) {
+            return r;
+        }
+        styleCommandText(r) {
+            return r;
+        }
+        padWidth(r, n) {
+            return Math.max(
+                n.longestOptionTermLength(r, n),
+                n.longestGlobalOptionTermLength(r, n),
+                n.longestSubcommandTermLength(r, n),
+                n.longestArgumentTermLength(r, n),
+            );
+        }
+        preformatted(r) {
+            return /\n[^\S\r\n]/.test(r);
+        }
+        formatItem(r, n, v, t) {
+            let $ = " ".repeat(2);
+            if (!v) return $ + r;
+            let u = r.padEnd(n + r.length - t.displayWidth(r)),
+                g = 2,
+                I = (this.helpWidth ?? 80) - n - g - 2,
+                o;
+            if (I < this.minWidthToWrap || t.preformatted(v)) o = v;
+            else
+                o = t.boxWrap(v, I).replace(
+                    /\n/g,
+                    `
+` + " ".repeat(n + g),
+                );
+            return (
+                $ +
+                u +
+                " ".repeat(g) +
+                o.replace(
+                    /\n/g,
+                    `
+${$}`,
+                )
+            );
+        }
+        boxWrap(r, n) {
+            if (n < this.minWidthToWrap) return r;
+            let v = r.split(/\r\n|\n/),
+                t = /[\s]*[^\s]+/g,
+                i = [];
+            return (
+                v.forEach(($) => {
+                    let u = $.match(t);
+                    if (u === null) {
+                        i.push("");
+                        return;
+                    }
+                    let g = [u.shift()],
+                        _ = this.displayWidth(g[0]);
+                    u.forEach((I) => {
+                        let o = this.displayWidth(I);
+                        if (_ + o <= n) {
+                            g.push(I), (_ += o);
+                            return;
+                        }
+                        i.push(g.join(""));
+                        let D = I.trimStart();
+                        (g = [D]), (_ = this.displayWidth(D));
+                    }),
+                        i.push(g.join(""));
+                }),
+                i.join(`
+`)
+            );
+        }
+    }
+    function R4(r) {
+        let n = /\x1b\[\d*(;\d*)*m/g;
+        return r.replace(n, "");
+    }
+    Ko.Help = F4;
+    Ko.stripColor = R4;
+});
+var Wv = Ir((Ao) => {
+    var { InvalidArgumentError: To } = ui();
+    class e4 {
+        constructor(r, n) {
+            (this.flags = r),
+                (this.description = n || ""),
+                (this.required = r.includes("<")),
+                (this.optional = r.includes("[")),
+                (this.variadic = /\w\.\.\.[>\]]$/.test(r)),
+                (this.mandatory = !1);
+            let v = Bo(r);
+            if (
+                ((this.short = v.shortFlag),
+                (this.long = v.longFlag),
+                (this.negate = !1),
+                this.long)
+            )
+                this.negate = this.long.startsWith("--no-");
+            (this.defaultValue = void 0),
+                (this.defaultValueDescription = void 0),
+                (this.presetArg = void 0),
+                (this.envVar = void 0),
+                (this.parseArg = void 0),
+                (this.hidden = !1),
+                (this.argChoices = void 0),
+                (this.conflictsWith = []),
+                (this.implied = void 0),
+                (this.helpGroupHeading = void 0);
+        }
+        default(r, n) {
+            return (
+                (this.defaultValue = r),
+                (this.defaultValueDescription = n),
+                this
+            );
+        }
+        preset(r) {
+            return (this.presetArg = r), this;
+        }
+        conflicts(r) {
+            return (this.conflictsWith = this.conflictsWith.concat(r)), this;
+        }
+        implies(r) {
+            let n = r;
+            if (typeof r === "string") n = { [r]: !0 };
+            return (this.implied = Object.assign(this.implied || {}, n)), this;
+        }
+        env(r) {
+            return (this.envVar = r), this;
+        }
+        argParser(r) {
+            return (this.parseArg = r), this;
+        }
+        makeOptionMandatory(r = !0) {
+            return (this.mandatory = !!r), this;
+        }
+        hideHelp(r = !0) {
+            return (this.hidden = !!r), this;
+        }
+        _collectValue(r, n) {
+            if (n === this.defaultValue || !Array.isArray(n)) return [r];
+            return n.push(r), n;
+        }
+        choices(r) {
+            return (
+                (this.argChoices = r.slice()),
+                (this.parseArg = (n, v) => {
+                    if (!this.argChoices.includes(n))
+                        throw new To(
+                            `Allowed choices are ${this.argChoices.join(", ")}.`,
+                        );
+                    if (this.variadic) return this._collectValue(n, v);
+                    return n;
+                }),
+                this
+            );
+        }
+        name() {
+            if (this.long) return this.long.replace(/^--/, "");
+            return this.short.replace(/^-/, "");
+        }
+        attributeName() {
+            if (this.negate) return Z4(this.name().replace(/^no-/, ""));
+            return Z4(this.name());
+        }
+        helpGroup(r) {
+            return (this.helpGroupHeading = r), this;
+        }
+        is(r) {
+            return this.short === r || this.long === r;
+        }
+        isBoolean() {
+            return !this.required && !this.optional && !this.negate;
+        }
+    }
+    class x4 {
+        constructor(r) {
+            (this.positiveOptions = new Map()),
+                (this.negativeOptions = new Map()),
+                (this.dualOptions = new Set()),
+                r.forEach((n) => {
+                    if (n.negate)
+                        this.negativeOptions.set(n.attributeName(), n);
+                    else this.positiveOptions.set(n.attributeName(), n);
+                }),
+                this.negativeOptions.forEach((n, v) => {
+                    if (this.positiveOptions.has(v)) this.dualOptions.add(v);
+                });
+        }
+        valueFromOption(r, n) {
+            let v = n.attributeName();
+            if (!this.dualOptions.has(v)) return !0;
+            let t = this.negativeOptions.get(v).presetArg,
+                i = t !== void 0 ? t : !1;
+            return n.negate === (i === r);
+        }
+    }
+    function Z4(r) {
+        return r.split("-").reduce((n, v) => {
+            return n + v[0].toUpperCase() + v.slice(1);
+        });
+    }
+    function Bo(r) {
+        let n,
+            v,
+            t = /^-[^-]$/,
+            i = /^--[^-]/,
+            $ = r.split(/[ |,]+/).concat("guard");
+        if (t.test($[0])) n = $.shift();
+        if (i.test($[0])) v = $.shift();
+        if (!n && t.test($[0])) n = $.shift();
+        if (!n && i.test($[0])) (n = v), (v = $.shift());
+        if ($[0].startsWith("-")) {
+            let u = $[0],
+                g = `option creation failed due to '${u}' in option flags '${r}'`;
+            if (/^-[^-][^-]/.test(u))
+                throw Error(`${g}
 - a short flag is a single dash and a single character
   - either use a single dash and a single character (for a short flag)
-  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`);if(t.test(u))throw Error(`${g}
-- too many short flags`);if(i.test(u))throw Error(`${g}
-- too many long flags`);throw Error(`${g}
-- unrecognised flag format`)}if(n===void 0&&v===void 0)throw Error(`option creation failed due to no flags found in '${r}'.`);return{shortFlag:n,longFlag:v}}Ao.Option=e4;Ao.DualOptions=x4});var f4=Ir((eo)=>{function Ro(r,n){if(Math.abs(r.length-n.length)>3)return Math.max(r.length,n.length);let v=[];for(let t=0;t<=r.length;t++)v[t]=[t];for(let t=0;t<=n.length;t++)v[0][t]=t;for(let t=1;t<=n.length;t++)for(let i=1;i<=r.length;i++){let $=1;if(r[i-1]===n[t-1])$=0;else $=1;if(v[i][t]=Math.min(v[i-1][t]+1,v[i][t-1]+1,v[i-1][t-1]+$),i>1&&t>1&&r[i-1]===n[t-2]&&r[i-2]===n[t-1])v[i][t]=Math.min(v[i][t],v[i-2][t-2]+1)}return v[r.length][n.length]}function Zo(r,n){if(!n||n.length===0)return"";n=Array.from(new Set(n));let v=r.startsWith("--");if(v)r=r.slice(2),n=n.map((u)=>u.slice(2));let t=[],i=3,$=0.4;if(n.forEach((u)=>{if(u.length<=1)return;let g=Ro(r,u),_=Math.max(r.length,u.length);if((_-g)/_>$){if(g<i)i=g,t=[u];else if(g===i)t.push(u)}}),t.sort((u,g)=>u.localeCompare(g)),v)t=t.map((u)=>`--${u}`);if(t.length>1)return`
-(Did you mean one of ${t.join(", ")}?)`;if(t.length===1)return`
-(Did you mean ${t[0]}?)`;return""}eo.suggestSimilar=Zo});var h4=Ir((ao)=>{var fo=ti("node:events").EventEmitter,Yv=ti("node:child_process"),$r=ti("node:path"),xi=ti("node:fs"),X=ti("node:process"),{Argument:Co,humanReadableArgName:mo}=ei(),{CommanderError:Vv}=ui(),{Help:yo,stripColor:ho}=Ov(),{Option:C4,DualOptions:po}=Wv(),{suggestSimilar:m4}=f4();class Qv extends fo{constructor(r){super();this.commands=[],this.options=[],this.parent=null,this._allowUnknownOption=!1,this._allowExcessArguments=!1,this.registeredArguments=[],this._args=this.registeredArguments,this.args=[],this.rawArgs=[],this.processedArgs=[],this._scriptPath=null,this._name=r||"",this._optionValues={},this._optionValueSources={},this._storeOptionsAsProperties=!1,this._actionHandler=null,this._executableHandler=!1,this._executableFile=null,this._executableDir=null,this._defaultCommandName=null,this._exitCallback=null,this._aliases=[],this._combineFlagAndOptionalValue=!0,this._description="",this._summary="",this._argsDescription=void 0,this._enablePositionalOptions=!1,this._passThroughOptions=!1,this._lifeCycleHooks={},this._showHelpAfterError=!1,this._showSuggestionAfterError=!0,this._savedState=null,this._outputConfiguration={writeOut:(n)=>X.stdout.write(n),writeErr:(n)=>X.stderr.write(n),outputError:(n,v)=>v(n),getOutHelpWidth:()=>X.stdout.isTTY?X.stdout.columns:void 0,getErrHelpWidth:()=>X.stderr.isTTY?X.stderr.columns:void 0,getOutHasColors:()=>Kv()??(X.stdout.isTTY&&X.stdout.hasColors?.()),getErrHasColors:()=>Kv()??(X.stderr.isTTY&&X.stderr.hasColors?.()),stripColor:(n)=>ho(n)},this._hidden=!1,this._helpOption=void 0,this._addImplicitHelpCommand=void 0,this._helpCommand=void 0,this._helpConfiguration={},this._helpGroupHeading=void 0,this._defaultCommandGroup=void 0,this._defaultOptionGroup=void 0}copyInheritedSettings(r){return this._outputConfiguration=r._outputConfiguration,this._helpOption=r._helpOption,this._helpCommand=r._helpCommand,this._helpConfiguration=r._helpConfiguration,this._exitCallback=r._exitCallback,this._storeOptionsAsProperties=r._storeOptionsAsProperties,this._combineFlagAndOptionalValue=r._combineFlagAndOptionalValue,this._allowExcessArguments=r._allowExcessArguments,this._enablePositionalOptions=r._enablePositionalOptions,this._showHelpAfterError=r._showHelpAfterError,this._showSuggestionAfterError=r._showSuggestionAfterError,this}_getCommandAndAncestors(){let r=[];for(let n=this;n;n=n.parent)r.push(n);return r}command(r,n,v){let t=n,i=v;if(typeof t==="object"&&t!==null)i=t,t=null;i=i||{};let[,$,u]=r.match(/([^ ]+) *(.*)/),g=this.createCommand($);if(t)g.description(t),g._executableHandler=!0;if(i.isDefault)this._defaultCommandName=g._name;if(g._hidden=!!(i.noHelp||i.hidden),g._executableFile=i.executableFile||null,u)g.arguments(u);if(this._registerCommand(g),g.parent=this,g.copyInheritedSettings(this),t)return this;return g}createCommand(r){return new Qv(r)}createHelp(){return Object.assign(new yo,this.configureHelp())}configureHelp(r){if(r===void 0)return this._helpConfiguration;return this._helpConfiguration=r,this}configureOutput(r){if(r===void 0)return this._outputConfiguration;return this._outputConfiguration={...this._outputConfiguration,...r},this}showHelpAfterError(r=!0){if(typeof r!=="string")r=!!r;return this._showHelpAfterError=r,this}showSuggestionAfterError(r=!0){return this._showSuggestionAfterError=!!r,this}addCommand(r,n){if(!r._name)throw Error(`Command passed to .addCommand() must have a name
-- specify the name in Command constructor or using .name()`);if(n=n||{},n.isDefault)this._defaultCommandName=r._name;if(n.noHelp||n.hidden)r._hidden=!0;return this._registerCommand(r),r.parent=this,r._checkForBrokenPassThrough(),this}createArgument(r,n){return new Co(r,n)}argument(r,n,v,t){let i=this.createArgument(r,n);if(typeof v==="function")i.default(t).argParser(v);else i.default(v);return this.addArgument(i),this}arguments(r){return r.trim().split(/ +/).forEach((n)=>{this.argument(n)}),this}addArgument(r){let n=this.registeredArguments.slice(-1)[0];if(n?.variadic)throw Error(`only the last argument can be variadic '${n.name()}'`);if(r.required&&r.defaultValue!==void 0&&r.parseArg===void 0)throw Error(`a default value for a required argument is never used: '${r.name()}'`);return this.registeredArguments.push(r),this}helpCommand(r,n){if(typeof r==="boolean"){if(this._addImplicitHelpCommand=r,r&&this._defaultCommandGroup)this._initCommandGroup(this._getHelpCommand());return this}let v=r??"help [command]",[,t,i]=v.match(/([^ ]+) *(.*)/),$=n??"display help for command",u=this.createCommand(t);if(u.helpOption(!1),i)u.arguments(i);if($)u.description($);if(this._addImplicitHelpCommand=!0,this._helpCommand=u,r||n)this._initCommandGroup(u);return this}addHelpCommand(r,n){if(typeof r!=="object")return this.helpCommand(r,n),this;return this._addImplicitHelpCommand=!0,this._helpCommand=r,this._initCommandGroup(r),this}_getHelpCommand(){if(this._addImplicitHelpCommand??(this.commands.length&&!this._actionHandler&&!this._findCommand("help"))){if(this._helpCommand===void 0)this.helpCommand(void 0,void 0);return this._helpCommand}return null}hook(r,n){let v=["preSubcommand","preAction","postAction"];if(!v.includes(r))throw Error(`Unexpected value for event passed to hook : '${r}'.
-Expecting one of '${v.join("', '")}'`);if(this._lifeCycleHooks[r])this._lifeCycleHooks[r].push(n);else this._lifeCycleHooks[r]=[n];return this}exitOverride(r){if(r)this._exitCallback=r;else this._exitCallback=(n)=>{if(n.code!=="commander.executeSubCommandAsync")throw n};return this}_exit(r,n,v){if(this._exitCallback)this._exitCallback(new Vv(r,n,v));X.exit(r)}action(r){let n=(v)=>{let t=this.registeredArguments.length,i=v.slice(0,t);if(this._storeOptionsAsProperties)i[t]=this;else i[t]=this.opts();return i.push(this),r.apply(this,i)};return this._actionHandler=n,this}createOption(r,n){return new C4(r,n)}_callParseArg(r,n,v,t){try{return r.parseArg(n,v)}catch(i){if(i.code==="commander.invalidArgument"){let $=`${t} ${i.message}`;this.error($,{exitCode:i.exitCode,code:i.code})}throw i}}_registerOption(r){let n=r.short&&this._findOption(r.short)||r.long&&this._findOption(r.long);if(n){let v=r.long&&this._findOption(r.long)?r.long:r.short;throw Error(`Cannot add option '${r.flags}'${this._name&&` to command '${this._name}'`} due to conflicting flag '${v}'
--  already used by option '${n.flags}'`)}this._initOptionGroup(r),this.options.push(r)}_registerCommand(r){let n=(t)=>{return[t.name()].concat(t.aliases())},v=n(r).find((t)=>this._findCommand(t));if(v){let t=n(this._findCommand(v)).join("|"),i=n(r).join("|");throw Error(`cannot add command '${i}' as already have command '${t}'`)}this._initCommandGroup(r),this.commands.push(r)}addOption(r){this._registerOption(r);let n=r.name(),v=r.attributeName();if(r.negate){let i=r.long.replace(/^--no-/,"--");if(!this._findOption(i))this.setOptionValueWithSource(v,r.defaultValue===void 0?!0:r.defaultValue,"default")}else if(r.defaultValue!==void 0)this.setOptionValueWithSource(v,r.defaultValue,"default");let t=(i,$,u)=>{if(i==null&&r.presetArg!==void 0)i=r.presetArg;let g=this.getOptionValue(v);if(i!==null&&r.parseArg)i=this._callParseArg(r,i,g,$);else if(i!==null&&r.variadic)i=r._collectValue(i,g);if(i==null)if(r.negate)i=!1;else if(r.isBoolean()||r.optional)i=!0;else i="";this.setOptionValueWithSource(v,i,u)};if(this.on("option:"+n,(i)=>{let $=`error: option '${r.flags}' argument '${i}' is invalid.`;t(i,$,"cli")}),r.envVar)this.on("optionEnv:"+n,(i)=>{let $=`error: option '${r.flags}' value '${i}' from env '${r.envVar}' is invalid.`;t(i,$,"env")});return this}_optionEx(r,n,v,t,i){if(typeof n==="object"&&n instanceof C4)throw Error("To add an Option object use addOption() instead of option() or requiredOption()");let $=this.createOption(n,v);if($.makeOptionMandatory(!!r.mandatory),typeof t==="function")$.default(i).argParser(t);else if(t instanceof RegExp){let u=t;t=(g,_)=>{let I=u.exec(g);return I?I[0]:_},$.default(i).argParser(t)}else $.default(t);return this.addOption($)}option(r,n,v,t){return this._optionEx({},r,n,v,t)}requiredOption(r,n,v,t){return this._optionEx({mandatory:!0},r,n,v,t)}combineFlagAndOptionalValue(r=!0){return this._combineFlagAndOptionalValue=!!r,this}allowUnknownOption(r=!0){return this._allowUnknownOption=!!r,this}allowExcessArguments(r=!0){return this._allowExcessArguments=!!r,this}enablePositionalOptions(r=!0){return this._enablePositionalOptions=!!r,this}passThroughOptions(r=!0){return this._passThroughOptions=!!r,this._checkForBrokenPassThrough(),this}_checkForBrokenPassThrough(){if(this.parent&&this._passThroughOptions&&!this.parent._enablePositionalOptions)throw Error(`passThroughOptions cannot be used for '${this._name}' without turning on enablePositionalOptions for parent command(s)`)}storeOptionsAsProperties(r=!0){if(this.options.length)throw Error("call .storeOptionsAsProperties() before adding options");if(Object.keys(this._optionValues).length)throw Error("call .storeOptionsAsProperties() before setting option values");return this._storeOptionsAsProperties=!!r,this}getOptionValue(r){if(this._storeOptionsAsProperties)return this[r];return this._optionValues[r]}setOptionValue(r,n){return this.setOptionValueWithSource(r,n,void 0)}setOptionValueWithSource(r,n,v){if(this._storeOptionsAsProperties)this[r]=n;else this._optionValues[r]=n;return this._optionValueSources[r]=v,this}getOptionValueSource(r){return this._optionValueSources[r]}getOptionValueSourceWithGlobals(r){let n;return this._getCommandAndAncestors().forEach((v)=>{if(v.getOptionValueSource(r)!==void 0)n=v.getOptionValueSource(r)}),n}_prepareUserArgs(r,n){if(r!==void 0&&!Array.isArray(r))throw Error("first parameter to parse must be array or undefined");if(n=n||{},r===void 0&&n.from===void 0){if(X.versions?.electron)n.from="electron";let t=X.execArgv??[];if(t.includes("-e")||t.includes("--eval")||t.includes("-p")||t.includes("--print"))n.from="eval"}if(r===void 0)r=X.argv;this.rawArgs=r.slice();let v;switch(n.from){case void 0:case"node":this._scriptPath=r[1],v=r.slice(2);break;case"electron":if(X.defaultApp)this._scriptPath=r[1],v=r.slice(2);else v=r.slice(1);break;case"user":v=r.slice(0);break;case"eval":v=r.slice(1);break;default:throw Error(`unexpected parse option { from: '${n.from}' }`)}if(!this._name&&this._scriptPath)this.nameFromFilename(this._scriptPath);return this._name=this._name||"program",v}parse(r,n){this._prepareForParse();let v=this._prepareUserArgs(r,n);return this._parseCommand([],v),this}async parseAsync(r,n){this._prepareForParse();let v=this._prepareUserArgs(r,n);return await this._parseCommand([],v),this}_prepareForParse(){if(this._savedState===null)this.saveStateBeforeParse();else this.restoreStateBeforeParse()}saveStateBeforeParse(){this._savedState={_name:this._name,_optionValues:{...this._optionValues},_optionValueSources:{...this._optionValueSources}}}restoreStateBeforeParse(){if(this._storeOptionsAsProperties)throw Error(`Can not call parse again when storeOptionsAsProperties is true.
-- either make a new Command for each call to parse, or stop storing options as properties`);this._name=this._savedState._name,this._scriptPath=null,this.rawArgs=[],this._optionValues={...this._savedState._optionValues},this._optionValueSources={...this._savedState._optionValueSources},this.args=[],this.processedArgs=[]}_checkForMissingExecutable(r,n,v){if(xi.existsSync(r))return;let t=n?`searched for local subcommand relative to directory '${n}'`:"no directory for search for local subcommand, use .executableDir() to supply a custom directory",i=`'${r}' does not exist
+  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`);
+            if (t.test(u))
+                throw Error(`${g}
+- too many short flags`);
+            if (i.test(u))
+                throw Error(`${g}
+- too many long flags`);
+            throw Error(`${g}
+- unrecognised flag format`);
+        }
+        if (n === void 0 && v === void 0)
+            throw Error(
+                `option creation failed due to no flags found in '${r}'.`,
+            );
+        return { shortFlag: n, longFlag: v };
+    }
+    Ao.Option = e4;
+    Ao.DualOptions = x4;
+});
+var f4 = Ir((eo) => {
+    function Ro(r, n) {
+        if (Math.abs(r.length - n.length) > 3)
+            return Math.max(r.length, n.length);
+        let v = [];
+        for (let t = 0; t <= r.length; t++) v[t] = [t];
+        for (let t = 0; t <= n.length; t++) v[0][t] = t;
+        for (let t = 1; t <= n.length; t++)
+            for (let i = 1; i <= r.length; i++) {
+                let $ = 1;
+                if (r[i - 1] === n[t - 1]) $ = 0;
+                else $ = 1;
+                if (
+                    ((v[i][t] = Math.min(
+                        v[i - 1][t] + 1,
+                        v[i][t - 1] + 1,
+                        v[i - 1][t - 1] + $,
+                    )),
+                    i > 1 &&
+                        t > 1 &&
+                        r[i - 1] === n[t - 2] &&
+                        r[i - 2] === n[t - 1])
+                )
+                    v[i][t] = Math.min(v[i][t], v[i - 2][t - 2] + 1);
+            }
+        return v[r.length][n.length];
+    }
+    function Zo(r, n) {
+        if (!n || n.length === 0) return "";
+        n = Array.from(new Set(n));
+        let v = r.startsWith("--");
+        if (v) (r = r.slice(2)), (n = n.map((u) => u.slice(2)));
+        let t = [],
+            i = 3,
+            $ = 0.4;
+        if (
+            (n.forEach((u) => {
+                if (u.length <= 1) return;
+                let g = Ro(r, u),
+                    _ = Math.max(r.length, u.length);
+                if ((_ - g) / _ > $) {
+                    if (g < i) (i = g), (t = [u]);
+                    else if (g === i) t.push(u);
+                }
+            }),
+            t.sort((u, g) => u.localeCompare(g)),
+            v)
+        )
+            t = t.map((u) => `--${u}`);
+        if (t.length > 1)
+            return `
+(Did you mean one of ${t.join(", ")}?)`;
+        if (t.length === 1)
+            return `
+(Did you mean ${t[0]}?)`;
+        return "";
+    }
+    eo.suggestSimilar = Zo;
+});
+var h4 = Ir((ao) => {
+    var fo = ti("node:events").EventEmitter,
+        Yv = ti("node:child_process"),
+        $r = ti("node:path"),
+        xi = ti("node:fs"),
+        X = ti("node:process"),
+        { Argument: Co, humanReadableArgName: mo } = ei(),
+        { CommanderError: Vv } = ui(),
+        { Help: yo, stripColor: ho } = Ov(),
+        { Option: C4, DualOptions: po } = Wv(),
+        { suggestSimilar: m4 } = f4();
+    class Qv extends fo {
+        constructor(r) {
+            super();
+            (this.commands = []),
+                (this.options = []),
+                (this.parent = null),
+                (this._allowUnknownOption = !1),
+                (this._allowExcessArguments = !1),
+                (this.registeredArguments = []),
+                (this._args = this.registeredArguments),
+                (this.args = []),
+                (this.rawArgs = []),
+                (this.processedArgs = []),
+                (this._scriptPath = null),
+                (this._name = r || ""),
+                (this._optionValues = {}),
+                (this._optionValueSources = {}),
+                (this._storeOptionsAsProperties = !1),
+                (this._actionHandler = null),
+                (this._executableHandler = !1),
+                (this._executableFile = null),
+                (this._executableDir = null),
+                (this._defaultCommandName = null),
+                (this._exitCallback = null),
+                (this._aliases = []),
+                (this._combineFlagAndOptionalValue = !0),
+                (this._description = ""),
+                (this._summary = ""),
+                (this._argsDescription = void 0),
+                (this._enablePositionalOptions = !1),
+                (this._passThroughOptions = !1),
+                (this._lifeCycleHooks = {}),
+                (this._showHelpAfterError = !1),
+                (this._showSuggestionAfterError = !0),
+                (this._savedState = null),
+                (this._outputConfiguration = {
+                    writeOut: (n) => X.stdout.write(n),
+                    writeErr: (n) => X.stderr.write(n),
+                    outputError: (n, v) => v(n),
+                    getOutHelpWidth: () =>
+                        X.stdout.isTTY ? X.stdout.columns : void 0,
+                    getErrHelpWidth: () =>
+                        X.stderr.isTTY ? X.stderr.columns : void 0,
+                    getOutHasColors: () =>
+                        Kv() ?? (X.stdout.isTTY && X.stdout.hasColors?.()),
+                    getErrHasColors: () =>
+                        Kv() ?? (X.stderr.isTTY && X.stderr.hasColors?.()),
+                    stripColor: (n) => ho(n),
+                }),
+                (this._hidden = !1),
+                (this._helpOption = void 0),
+                (this._addImplicitHelpCommand = void 0),
+                (this._helpCommand = void 0),
+                (this._helpConfiguration = {}),
+                (this._helpGroupHeading = void 0),
+                (this._defaultCommandGroup = void 0),
+                (this._defaultOptionGroup = void 0);
+        }
+        copyInheritedSettings(r) {
+            return (
+                (this._outputConfiguration = r._outputConfiguration),
+                (this._helpOption = r._helpOption),
+                (this._helpCommand = r._helpCommand),
+                (this._helpConfiguration = r._helpConfiguration),
+                (this._exitCallback = r._exitCallback),
+                (this._storeOptionsAsProperties = r._storeOptionsAsProperties),
+                (this._combineFlagAndOptionalValue =
+                    r._combineFlagAndOptionalValue),
+                (this._allowExcessArguments = r._allowExcessArguments),
+                (this._enablePositionalOptions = r._enablePositionalOptions),
+                (this._showHelpAfterError = r._showHelpAfterError),
+                (this._showSuggestionAfterError = r._showSuggestionAfterError),
+                this
+            );
+        }
+        _getCommandAndAncestors() {
+            let r = [];
+            for (let n = this; n; n = n.parent) r.push(n);
+            return r;
+        }
+        command(r, n, v) {
+            let t = n,
+                i = v;
+            if (typeof t === "object" && t !== null) (i = t), (t = null);
+            i = i || {};
+            let [, $, u] = r.match(/([^ ]+) *(.*)/),
+                g = this.createCommand($);
+            if (t) g.description(t), (g._executableHandler = !0);
+            if (i.isDefault) this._defaultCommandName = g._name;
+            if (
+                ((g._hidden = !!(i.noHelp || i.hidden)),
+                (g._executableFile = i.executableFile || null),
+                u)
+            )
+                g.arguments(u);
+            if (
+                (this._registerCommand(g),
+                (g.parent = this),
+                g.copyInheritedSettings(this),
+                t)
+            )
+                return this;
+            return g;
+        }
+        createCommand(r) {
+            return new Qv(r);
+        }
+        createHelp() {
+            return Object.assign(new yo(), this.configureHelp());
+        }
+        configureHelp(r) {
+            if (r === void 0) return this._helpConfiguration;
+            return (this._helpConfiguration = r), this;
+        }
+        configureOutput(r) {
+            if (r === void 0) return this._outputConfiguration;
+            return (
+                (this._outputConfiguration = {
+                    ...this._outputConfiguration,
+                    ...r,
+                }),
+                this
+            );
+        }
+        showHelpAfterError(r = !0) {
+            if (typeof r !== "string") r = !!r;
+            return (this._showHelpAfterError = r), this;
+        }
+        showSuggestionAfterError(r = !0) {
+            return (this._showSuggestionAfterError = !!r), this;
+        }
+        addCommand(r, n) {
+            if (!r._name)
+                throw Error(`Command passed to .addCommand() must have a name
+- specify the name in Command constructor or using .name()`);
+            if (((n = n || {}), n.isDefault))
+                this._defaultCommandName = r._name;
+            if (n.noHelp || n.hidden) r._hidden = !0;
+            return (
+                this._registerCommand(r),
+                (r.parent = this),
+                r._checkForBrokenPassThrough(),
+                this
+            );
+        }
+        createArgument(r, n) {
+            return new Co(r, n);
+        }
+        argument(r, n, v, t) {
+            let i = this.createArgument(r, n);
+            if (typeof v === "function") i.default(t).argParser(v);
+            else i.default(v);
+            return this.addArgument(i), this;
+        }
+        arguments(r) {
+            return (
+                r
+                    .trim()
+                    .split(/ +/)
+                    .forEach((n) => {
+                        this.argument(n);
+                    }),
+                this
+            );
+        }
+        addArgument(r) {
+            let n = this.registeredArguments.slice(-1)[0];
+            if (n?.variadic)
+                throw Error(
+                    `only the last argument can be variadic '${n.name()}'`,
+                );
+            if (
+                r.required &&
+                r.defaultValue !== void 0 &&
+                r.parseArg === void 0
+            )
+                throw Error(
+                    `a default value for a required argument is never used: '${r.name()}'`,
+                );
+            return this.registeredArguments.push(r), this;
+        }
+        helpCommand(r, n) {
+            if (typeof r === "boolean") {
+                if (
+                    ((this._addImplicitHelpCommand = r),
+                    r && this._defaultCommandGroup)
+                )
+                    this._initCommandGroup(this._getHelpCommand());
+                return this;
+            }
+            let v = r ?? "help [command]",
+                [, t, i] = v.match(/([^ ]+) *(.*)/),
+                $ = n ?? "display help for command",
+                u = this.createCommand(t);
+            if ((u.helpOption(!1), i)) u.arguments(i);
+            if ($) u.description($);
+            if (
+                ((this._addImplicitHelpCommand = !0),
+                (this._helpCommand = u),
+                r || n)
+            )
+                this._initCommandGroup(u);
+            return this;
+        }
+        addHelpCommand(r, n) {
+            if (typeof r !== "object") return this.helpCommand(r, n), this;
+            return (
+                (this._addImplicitHelpCommand = !0),
+                (this._helpCommand = r),
+                this._initCommandGroup(r),
+                this
+            );
+        }
+        _getHelpCommand() {
+            if (
+                this._addImplicitHelpCommand ??
+                (this.commands.length &&
+                    !this._actionHandler &&
+                    !this._findCommand("help"))
+            ) {
+                if (this._helpCommand === void 0)
+                    this.helpCommand(void 0, void 0);
+                return this._helpCommand;
+            }
+            return null;
+        }
+        hook(r, n) {
+            let v = ["preSubcommand", "preAction", "postAction"];
+            if (!v.includes(r))
+                throw Error(`Unexpected value for event passed to hook : '${r}'.
+Expecting one of '${v.join("', '")}'`);
+            if (this._lifeCycleHooks[r]) this._lifeCycleHooks[r].push(n);
+            else this._lifeCycleHooks[r] = [n];
+            return this;
+        }
+        exitOverride(r) {
+            if (r) this._exitCallback = r;
+            else
+                this._exitCallback = (n) => {
+                    if (n.code !== "commander.executeSubCommandAsync") throw n;
+                };
+            return this;
+        }
+        _exit(r, n, v) {
+            if (this._exitCallback) this._exitCallback(new Vv(r, n, v));
+            X.exit(r);
+        }
+        action(r) {
+            let n = (v) => {
+                let t = this.registeredArguments.length,
+                    i = v.slice(0, t);
+                if (this._storeOptionsAsProperties) i[t] = this;
+                else i[t] = this.opts();
+                return i.push(this), r.apply(this, i);
+            };
+            return (this._actionHandler = n), this;
+        }
+        createOption(r, n) {
+            return new C4(r, n);
+        }
+        _callParseArg(r, n, v, t) {
+            try {
+                return r.parseArg(n, v);
+            } catch (i) {
+                if (i.code === "commander.invalidArgument") {
+                    let $ = `${t} ${i.message}`;
+                    this.error($, { exitCode: i.exitCode, code: i.code });
+                }
+                throw i;
+            }
+        }
+        _registerOption(r) {
+            let n =
+                (r.short && this._findOption(r.short)) ||
+                (r.long && this._findOption(r.long));
+            if (n) {
+                let v = r.long && this._findOption(r.long) ? r.long : r.short;
+                throw Error(`Cannot add option '${r.flags}'${this._name && ` to command '${this._name}'`} due to conflicting flag '${v}'
+-  already used by option '${n.flags}'`);
+            }
+            this._initOptionGroup(r), this.options.push(r);
+        }
+        _registerCommand(r) {
+            let n = (t) => {
+                    return [t.name()].concat(t.aliases());
+                },
+                v = n(r).find((t) => this._findCommand(t));
+            if (v) {
+                let t = n(this._findCommand(v)).join("|"),
+                    i = n(r).join("|");
+                throw Error(
+                    `cannot add command '${i}' as already have command '${t}'`,
+                );
+            }
+            this._initCommandGroup(r), this.commands.push(r);
+        }
+        addOption(r) {
+            this._registerOption(r);
+            let n = r.name(),
+                v = r.attributeName();
+            if (r.negate) {
+                let i = r.long.replace(/^--no-/, "--");
+                if (!this._findOption(i))
+                    this.setOptionValueWithSource(
+                        v,
+                        r.defaultValue === void 0 ? !0 : r.defaultValue,
+                        "default",
+                    );
+            } else if (r.defaultValue !== void 0)
+                this.setOptionValueWithSource(v, r.defaultValue, "default");
+            let t = (i, $, u) => {
+                if (i == null && r.presetArg !== void 0) i = r.presetArg;
+                let g = this.getOptionValue(v);
+                if (i !== null && r.parseArg)
+                    i = this._callParseArg(r, i, g, $);
+                else if (i !== null && r.variadic) i = r._collectValue(i, g);
+                if (i == null)
+                    if (r.negate) i = !1;
+                    else if (r.isBoolean() || r.optional) i = !0;
+                    else i = "";
+                this.setOptionValueWithSource(v, i, u);
+            };
+            if (
+                (this.on("option:" + n, (i) => {
+                    let $ = `error: option '${r.flags}' argument '${i}' is invalid.`;
+                    t(i, $, "cli");
+                }),
+                r.envVar)
+            )
+                this.on("optionEnv:" + n, (i) => {
+                    let $ = `error: option '${r.flags}' value '${i}' from env '${r.envVar}' is invalid.`;
+                    t(i, $, "env");
+                });
+            return this;
+        }
+        _optionEx(r, n, v, t, i) {
+            if (typeof n === "object" && n instanceof C4)
+                throw Error(
+                    "To add an Option object use addOption() instead of option() or requiredOption()",
+                );
+            let $ = this.createOption(n, v);
+            if (($.makeOptionMandatory(!!r.mandatory), typeof t === "function"))
+                $.default(i).argParser(t);
+            else if (t instanceof RegExp) {
+                let u = t;
+                (t = (g, _) => {
+                    let I = u.exec(g);
+                    return I ? I[0] : _;
+                }),
+                    $.default(i).argParser(t);
+            } else $.default(t);
+            return this.addOption($);
+        }
+        option(r, n, v, t) {
+            return this._optionEx({}, r, n, v, t);
+        }
+        requiredOption(r, n, v, t) {
+            return this._optionEx({ mandatory: !0 }, r, n, v, t);
+        }
+        combineFlagAndOptionalValue(r = !0) {
+            return (this._combineFlagAndOptionalValue = !!r), this;
+        }
+        allowUnknownOption(r = !0) {
+            return (this._allowUnknownOption = !!r), this;
+        }
+        allowExcessArguments(r = !0) {
+            return (this._allowExcessArguments = !!r), this;
+        }
+        enablePositionalOptions(r = !0) {
+            return (this._enablePositionalOptions = !!r), this;
+        }
+        passThroughOptions(r = !0) {
+            return (
+                (this._passThroughOptions = !!r),
+                this._checkForBrokenPassThrough(),
+                this
+            );
+        }
+        _checkForBrokenPassThrough() {
+            if (
+                this.parent &&
+                this._passThroughOptions &&
+                !this.parent._enablePositionalOptions
+            )
+                throw Error(
+                    `passThroughOptions cannot be used for '${this._name}' without turning on enablePositionalOptions for parent command(s)`,
+                );
+        }
+        storeOptionsAsProperties(r = !0) {
+            if (this.options.length)
+                throw Error(
+                    "call .storeOptionsAsProperties() before adding options",
+                );
+            if (Object.keys(this._optionValues).length)
+                throw Error(
+                    "call .storeOptionsAsProperties() before setting option values",
+                );
+            return (this._storeOptionsAsProperties = !!r), this;
+        }
+        getOptionValue(r) {
+            if (this._storeOptionsAsProperties) return this[r];
+            return this._optionValues[r];
+        }
+        setOptionValue(r, n) {
+            return this.setOptionValueWithSource(r, n, void 0);
+        }
+        setOptionValueWithSource(r, n, v) {
+            if (this._storeOptionsAsProperties) this[r] = n;
+            else this._optionValues[r] = n;
+            return (this._optionValueSources[r] = v), this;
+        }
+        getOptionValueSource(r) {
+            return this._optionValueSources[r];
+        }
+        getOptionValueSourceWithGlobals(r) {
+            let n;
+            return (
+                this._getCommandAndAncestors().forEach((v) => {
+                    if (v.getOptionValueSource(r) !== void 0)
+                        n = v.getOptionValueSource(r);
+                }),
+                n
+            );
+        }
+        _prepareUserArgs(r, n) {
+            if (r !== void 0 && !Array.isArray(r))
+                throw Error(
+                    "first parameter to parse must be array or undefined",
+                );
+            if (((n = n || {}), r === void 0 && n.from === void 0)) {
+                if (X.versions?.electron) n.from = "electron";
+                let t = X.execArgv ?? [];
+                if (
+                    t.includes("-e") ||
+                    t.includes("--eval") ||
+                    t.includes("-p") ||
+                    t.includes("--print")
+                )
+                    n.from = "eval";
+            }
+            if (r === void 0) r = X.argv;
+            this.rawArgs = r.slice();
+            let v;
+            switch (n.from) {
+                case void 0:
+                case "node":
+                    (this._scriptPath = r[1]), (v = r.slice(2));
+                    break;
+                case "electron":
+                    if (X.defaultApp)
+                        (this._scriptPath = r[1]), (v = r.slice(2));
+                    else v = r.slice(1);
+                    break;
+                case "user":
+                    v = r.slice(0);
+                    break;
+                case "eval":
+                    v = r.slice(1);
+                    break;
+                default:
+                    throw Error(
+                        `unexpected parse option { from: '${n.from}' }`,
+                    );
+            }
+            if (!this._name && this._scriptPath)
+                this.nameFromFilename(this._scriptPath);
+            return (this._name = this._name || "program"), v;
+        }
+        parse(r, n) {
+            this._prepareForParse();
+            let v = this._prepareUserArgs(r, n);
+            return this._parseCommand([], v), this;
+        }
+        async parseAsync(r, n) {
+            this._prepareForParse();
+            let v = this._prepareUserArgs(r, n);
+            return await this._parseCommand([], v), this;
+        }
+        _prepareForParse() {
+            if (this._savedState === null) this.saveStateBeforeParse();
+            else this.restoreStateBeforeParse();
+        }
+        saveStateBeforeParse() {
+            this._savedState = {
+                _name: this._name,
+                _optionValues: { ...this._optionValues },
+                _optionValueSources: { ...this._optionValueSources },
+            };
+        }
+        restoreStateBeforeParse() {
+            if (this._storeOptionsAsProperties)
+                throw Error(`Can not call parse again when storeOptionsAsProperties is true.
+- either make a new Command for each call to parse, or stop storing options as properties`);
+            (this._name = this._savedState._name),
+                (this._scriptPath = null),
+                (this.rawArgs = []),
+                (this._optionValues = { ...this._savedState._optionValues }),
+                (this._optionValueSources = {
+                    ...this._savedState._optionValueSources,
+                }),
+                (this.args = []),
+                (this.processedArgs = []);
+        }
+        _checkForMissingExecutable(r, n, v) {
+            if (xi.existsSync(r)) return;
+            let t = n
+                    ? `searched for local subcommand relative to directory '${n}'`
+                    : "no directory for search for local subcommand, use .executableDir() to supply a custom directory",
+                i = `'${r}' does not exist
  - if '${v}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
  - if the default executable name is not suitable, use the executableFile option to supply a custom name or path
- - ${t}`;throw Error(i)}_executeSubCommand(r,n){n=n.slice();let v=!1,t=[".js",".ts",".tsx",".mjs",".cjs"];function i(I,o){let D=$r.resolve(I,o);if(xi.existsSync(D))return D;if(t.includes($r.extname(o)))return;let S=t.find((c)=>xi.existsSync(`${D}${c}`));if(S)return`${D}${S}`;return}this._checkForMissingMandatoryOptions(),this._checkForConflictingOptions();let $=r._executableFile||`${this._name}-${r._name}`,u=this._executableDir||"";if(this._scriptPath){let I;try{I=xi.realpathSync(this._scriptPath)}catch{I=this._scriptPath}u=$r.resolve($r.dirname(I),u)}if(u){let I=i(u,$);if(!I&&!r._executableFile&&this._scriptPath){let o=$r.basename(this._scriptPath,$r.extname(this._scriptPath));if(o!==this._name)I=i(u,`${o}-${r._name}`)}$=I||$}v=t.includes($r.extname($));let g;if(X.platform!=="win32")if(v)n.unshift($),n=y4(X.execArgv).concat(n),g=Yv.spawn(X.argv[0],n,{stdio:"inherit"});else g=Yv.spawn($,n,{stdio:"inherit"});else this._checkForMissingExecutable($,u,r._name),n.unshift($),n=y4(X.execArgv).concat(n),g=Yv.spawn(X.execPath,n,{stdio:"inherit"});if(!g.killed)["SIGUSR1","SIGUSR2","SIGTERM","SIGINT","SIGHUP"].forEach((o)=>{X.on(o,()=>{if(g.killed===!1&&g.exitCode===null)g.kill(o)})});let _=this._exitCallback;g.on("close",(I)=>{if(I=I??1,!_)X.exit(I);else _(new Vv(I,"commander.executeSubCommandAsync","(close)"))}),g.on("error",(I)=>{if(I.code==="ENOENT")this._checkForMissingExecutable($,u,r._name);else if(I.code==="EACCES")throw Error(`'${$}' not executable`);if(!_)X.exit(1);else{let o=new Vv(1,"commander.executeSubCommandAsync","(error)");o.nestedError=I,_(o)}}),this.runningCommand=g}_dispatchSubcommand(r,n,v){let t=this._findCommand(r);if(!t)this.help({error:!0});t._prepareForParse();let i;return i=this._chainOrCallSubCommandHook(i,t,"preSubcommand"),i=this._chainOrCall(i,()=>{if(t._executableHandler)this._executeSubCommand(t,n.concat(v));else return t._parseCommand(n,v)}),i}_dispatchHelpCommand(r){if(!r)this.help();let n=this._findCommand(r);if(n&&!n._executableHandler)n.help();return this._dispatchSubcommand(r,[],[this._getHelpOption()?.long??this._getHelpOption()?.short??"--help"])}_checkNumberOfArguments(){if(this.registeredArguments.forEach((r,n)=>{if(r.required&&this.args[n]==null)this.missingArgument(r.name())}),this.registeredArguments.length>0&&this.registeredArguments[this.registeredArguments.length-1].variadic)return;if(this.args.length>this.registeredArguments.length)this._excessArguments(this.args)}_processArguments(){let r=(v,t,i)=>{let $=t;if(t!==null&&v.parseArg){let u=`error: command-argument value '${t}' is invalid for argument '${v.name()}'.`;$=this._callParseArg(v,t,i,u)}return $};this._checkNumberOfArguments();let n=[];this.registeredArguments.forEach((v,t)=>{let i=v.defaultValue;if(v.variadic){if(t<this.args.length){if(i=this.args.slice(t),v.parseArg)i=i.reduce(($,u)=>{return r(v,u,$)},v.defaultValue)}else if(i===void 0)i=[]}else if(t<this.args.length){if(i=this.args[t],v.parseArg)i=r(v,i,v.defaultValue)}n[t]=i}),this.processedArgs=n}_chainOrCall(r,n){if(r?.then&&typeof r.then==="function")return r.then(()=>n());return n()}_chainOrCallHooks(r,n){let v=r,t=[];if(this._getCommandAndAncestors().reverse().filter((i)=>i._lifeCycleHooks[n]!==void 0).forEach((i)=>{i._lifeCycleHooks[n].forEach(($)=>{t.push({hookedCommand:i,callback:$})})}),n==="postAction")t.reverse();return t.forEach((i)=>{v=this._chainOrCall(v,()=>{return i.callback(i.hookedCommand,this)})}),v}_chainOrCallSubCommandHook(r,n,v){let t=r;if(this._lifeCycleHooks[v]!==void 0)this._lifeCycleHooks[v].forEach((i)=>{t=this._chainOrCall(t,()=>{return i(this,n)})});return t}_parseCommand(r,n){let v=this.parseOptions(n);if(this._parseOptionsEnv(),this._parseOptionsImplied(),r=r.concat(v.operands),n=v.unknown,this.args=r.concat(n),r&&this._findCommand(r[0]))return this._dispatchSubcommand(r[0],r.slice(1),n);if(this._getHelpCommand()&&r[0]===this._getHelpCommand().name())return this._dispatchHelpCommand(r[1]);if(this._defaultCommandName)return this._outputHelpIfRequested(n),this._dispatchSubcommand(this._defaultCommandName,r,n);if(this.commands.length&&this.args.length===0&&!this._actionHandler&&!this._defaultCommandName)this.help({error:!0});this._outputHelpIfRequested(v.unknown),this._checkForMissingMandatoryOptions(),this._checkForConflictingOptions();let t=()=>{if(v.unknown.length>0)this.unknownOption(v.unknown[0])},i=`command:${this.name()}`;if(this._actionHandler){t(),this._processArguments();let $;if($=this._chainOrCallHooks($,"preAction"),$=this._chainOrCall($,()=>this._actionHandler(this.processedArgs)),this.parent)$=this._chainOrCall($,()=>{this.parent.emit(i,r,n)});return $=this._chainOrCallHooks($,"postAction"),$}if(this.parent?.listenerCount(i))t(),this._processArguments(),this.parent.emit(i,r,n);else if(r.length){if(this._findCommand("*"))return this._dispatchSubcommand("*",r,n);if(this.listenerCount("command:*"))this.emit("command:*",r,n);else if(this.commands.length)this.unknownCommand();else t(),this._processArguments()}else if(this.commands.length)t(),this.help({error:!0});else t(),this._processArguments()}_findCommand(r){if(!r)return;return this.commands.find((n)=>n._name===r||n._aliases.includes(r))}_findOption(r){return this.options.find((n)=>n.is(r))}_checkForMissingMandatoryOptions(){this._getCommandAndAncestors().forEach((r)=>{r.options.forEach((n)=>{if(n.mandatory&&r.getOptionValue(n.attributeName())===void 0)r.missingMandatoryOptionValue(n)})})}_checkForConflictingLocalOptions(){let r=this.options.filter((v)=>{let t=v.attributeName();if(this.getOptionValue(t)===void 0)return!1;return this.getOptionValueSource(t)!=="default"});r.filter((v)=>v.conflictsWith.length>0).forEach((v)=>{let t=r.find((i)=>v.conflictsWith.includes(i.attributeName()));if(t)this._conflictingOption(v,t)})}_checkForConflictingOptions(){this._getCommandAndAncestors().forEach((r)=>{r._checkForConflictingLocalOptions()})}parseOptions(r){let n=[],v=[],t=n;function i(I){return I.length>1&&I[0]==="-"}let $=(I)=>{if(!/^-(\d+|\d*\.\d+)(e[+-]?\d+)?$/.test(I))return!1;return!this._getCommandAndAncestors().some((o)=>o.options.map((D)=>D.short).some((D)=>/^-\d$/.test(D)))},u=null,g=null,_=0;while(_<r.length||g){let I=g??r[_++];if(g=null,I==="--"){if(t===v)t.push(I);t.push(...r.slice(_));break}if(u&&(!i(I)||$(I))){this.emit(`option:${u.name()}`,I);continue}if(u=null,i(I)){let o=this._findOption(I);if(o){if(o.required){let D=r[_++];if(D===void 0)this.optionMissingArgument(o);this.emit(`option:${o.name()}`,D)}else if(o.optional){let D=null;if(_<r.length&&(!i(r[_])||$(r[_])))D=r[_++];this.emit(`option:${o.name()}`,D)}else this.emit(`option:${o.name()}`);u=o.variadic?o:null;continue}}if(I.length>2&&I[0]==="-"&&I[1]!=="-"){let o=this._findOption(`-${I[1]}`);if(o){if(o.required||o.optional&&this._combineFlagAndOptionalValue)this.emit(`option:${o.name()}`,I.slice(2));else this.emit(`option:${o.name()}`),g=`-${I.slice(2)}`;continue}}if(/^--[^=]+=/.test(I)){let o=I.indexOf("="),D=this._findOption(I.slice(0,o));if(D&&(D.required||D.optional)){this.emit(`option:${D.name()}`,I.slice(o+1));continue}}if(t===n&&i(I)&&!(this.commands.length===0&&$(I)))t=v;if((this._enablePositionalOptions||this._passThroughOptions)&&n.length===0&&v.length===0){if(this._findCommand(I)){n.push(I),v.push(...r.slice(_));break}else if(this._getHelpCommand()&&I===this._getHelpCommand().name()){n.push(I,...r.slice(_));break}else if(this._defaultCommandName){v.push(I,...r.slice(_));break}}if(this._passThroughOptions){t.push(I,...r.slice(_));break}t.push(I)}return{operands:n,unknown:v}}opts(){if(this._storeOptionsAsProperties){let r={},n=this.options.length;for(let v=0;v<n;v++){let t=this.options[v].attributeName();r[t]=t===this._versionOptionName?this._version:this[t]}return r}return this._optionValues}optsWithGlobals(){return this._getCommandAndAncestors().reduce((r,n)=>Object.assign(r,n.opts()),{})}error(r,n){if(this._outputConfiguration.outputError(`${r}
-`,this._outputConfiguration.writeErr),typeof this._showHelpAfterError==="string")this._outputConfiguration.writeErr(`${this._showHelpAfterError}
-`);else if(this._showHelpAfterError)this._outputConfiguration.writeErr(`
-`),this.outputHelp({error:!0});let v=n||{},t=v.exitCode||1,i=v.code||"commander.error";this._exit(t,i,r)}_parseOptionsEnv(){this.options.forEach((r)=>{if(r.envVar&&r.envVar in X.env){let n=r.attributeName();if(this.getOptionValue(n)===void 0||["default","config","env"].includes(this.getOptionValueSource(n)))if(r.required||r.optional)this.emit(`optionEnv:${r.name()}`,X.env[r.envVar]);else this.emit(`optionEnv:${r.name()}`)}})}_parseOptionsImplied(){let r=new po(this.options),n=(v)=>{return this.getOptionValue(v)!==void 0&&!["default","implied"].includes(this.getOptionValueSource(v))};this.options.filter((v)=>v.implied!==void 0&&n(v.attributeName())&&r.valueFromOption(this.getOptionValue(v.attributeName()),v)).forEach((v)=>{Object.keys(v.implied).filter((t)=>!n(t)).forEach((t)=>{this.setOptionValueWithSource(t,v.implied[t],"implied")})})}missingArgument(r){let n=`error: missing required argument '${r}'`;this.error(n,{code:"commander.missingArgument"})}optionMissingArgument(r){let n=`error: option '${r.flags}' argument missing`;this.error(n,{code:"commander.optionMissingArgument"})}missingMandatoryOptionValue(r){let n=`error: required option '${r.flags}' not specified`;this.error(n,{code:"commander.missingMandatoryOptionValue"})}_conflictingOption(r,n){let v=($)=>{let u=$.attributeName(),g=this.getOptionValue(u),_=this.options.find((o)=>o.negate&&u===o.attributeName()),I=this.options.find((o)=>!o.negate&&u===o.attributeName());if(_&&(_.presetArg===void 0&&g===!1||_.presetArg!==void 0&&g===_.presetArg))return _;return I||$},t=($)=>{let u=v($),g=u.attributeName();if(this.getOptionValueSource(g)==="env")return`environment variable '${u.envVar}'`;return`option '${u.flags}'`},i=`error: ${t(r)} cannot be used with ${t(n)}`;this.error(i,{code:"commander.conflictingOption"})}unknownOption(r){if(this._allowUnknownOption)return;let n="";if(r.startsWith("--")&&this._showSuggestionAfterError){let t=[],i=this;do{let $=i.createHelp().visibleOptions(i).filter((u)=>u.long).map((u)=>u.long);t=t.concat($),i=i.parent}while(i&&!i._enablePositionalOptions);n=m4(r,t)}let v=`error: unknown option '${r}'${n}`;this.error(v,{code:"commander.unknownOption"})}_excessArguments(r){if(this._allowExcessArguments)return;let n=this.registeredArguments.length,v=n===1?"":"s",i=`error: too many arguments${this.parent?` for '${this.name()}'`:""}. Expected ${n} argument${v} but got ${r.length}.`;this.error(i,{code:"commander.excessArguments"})}unknownCommand(){let r=this.args[0],n="";if(this._showSuggestionAfterError){let t=[];this.createHelp().visibleCommands(this).forEach((i)=>{if(t.push(i.name()),i.alias())t.push(i.alias())}),n=m4(r,t)}let v=`error: unknown command '${r}'${n}`;this.error(v,{code:"commander.unknownCommand"})}version(r,n,v){if(r===void 0)return this._version;this._version=r,n=n||"-V, --version",v=v||"output the version number";let t=this.createOption(n,v);return this._versionOptionName=t.attributeName(),this._registerOption(t),this.on("option:"+t.name(),()=>{this._outputConfiguration.writeOut(`${r}
-`),this._exit(0,"commander.version",r)}),this}description(r,n){if(r===void 0&&n===void 0)return this._description;if(this._description=r,n)this._argsDescription=n;return this}summary(r){if(r===void 0)return this._summary;return this._summary=r,this}alias(r){if(r===void 0)return this._aliases[0];let n=this;if(this.commands.length!==0&&this.commands[this.commands.length-1]._executableHandler)n=this.commands[this.commands.length-1];if(r===n._name)throw Error("Command alias can't be the same as its name");let v=this.parent?._findCommand(r);if(v){let t=[v.name()].concat(v.aliases()).join("|");throw Error(`cannot add alias '${r}' to command '${this.name()}' as already have command '${t}'`)}return n._aliases.push(r),this}aliases(r){if(r===void 0)return this._aliases;return r.forEach((n)=>this.alias(n)),this}usage(r){if(r===void 0){if(this._usage)return this._usage;let n=this.registeredArguments.map((v)=>{return mo(v)});return[].concat(this.options.length||this._helpOption!==null?"[options]":[],this.commands.length?"[command]":[],this.registeredArguments.length?n:[]).join(" ")}return this._usage=r,this}name(r){if(r===void 0)return this._name;return this._name=r,this}helpGroup(r){if(r===void 0)return this._helpGroupHeading??"";return this._helpGroupHeading=r,this}commandsGroup(r){if(r===void 0)return this._defaultCommandGroup??"";return this._defaultCommandGroup=r,this}optionsGroup(r){if(r===void 0)return this._defaultOptionGroup??"";return this._defaultOptionGroup=r,this}_initOptionGroup(r){if(this._defaultOptionGroup&&!r.helpGroupHeading)r.helpGroup(this._defaultOptionGroup)}_initCommandGroup(r){if(this._defaultCommandGroup&&!r.helpGroup())r.helpGroup(this._defaultCommandGroup)}nameFromFilename(r){return this._name=$r.basename(r,$r.extname(r)),this}executableDir(r){if(r===void 0)return this._executableDir;return this._executableDir=r,this}helpInformation(r){let n=this.createHelp(),v=this._getOutputContext(r);n.prepareContext({error:v.error,helpWidth:v.helpWidth,outputHasColors:v.hasColors});let t=n.formatHelp(this,n);if(v.hasColors)return t;return this._outputConfiguration.stripColor(t)}_getOutputContext(r){r=r||{};let n=!!r.error,v,t,i;if(n)v=(u)=>this._outputConfiguration.writeErr(u),t=this._outputConfiguration.getErrHasColors(),i=this._outputConfiguration.getErrHelpWidth();else v=(u)=>this._outputConfiguration.writeOut(u),t=this._outputConfiguration.getOutHasColors(),i=this._outputConfiguration.getOutHelpWidth();return{error:n,write:(u)=>{if(!t)u=this._outputConfiguration.stripColor(u);return v(u)},hasColors:t,helpWidth:i}}outputHelp(r){let n;if(typeof r==="function")n=r,r=void 0;let v=this._getOutputContext(r),t={error:v.error,write:v.write,command:this};this._getCommandAndAncestors().reverse().forEach(($)=>$.emit("beforeAllHelp",t)),this.emit("beforeHelp",t);let i=this.helpInformation({error:v.error});if(n){if(i=n(i),typeof i!=="string"&&!Buffer.isBuffer(i))throw Error("outputHelp callback must return a string or a Buffer")}if(v.write(i),this._getHelpOption()?.long)this.emit(this._getHelpOption().long);this.emit("afterHelp",t),this._getCommandAndAncestors().forEach(($)=>$.emit("afterAllHelp",t))}helpOption(r,n){if(typeof r==="boolean"){if(r){if(this._helpOption===null)this._helpOption=void 0;if(this._defaultOptionGroup)this._initOptionGroup(this._getHelpOption())}else this._helpOption=null;return this}if(this._helpOption=this.createOption(r??"-h, --help",n??"display help for command"),r||n)this._initOptionGroup(this._helpOption);return this}_getHelpOption(){if(this._helpOption===void 0)this.helpOption(void 0,void 0);return this._helpOption}addHelpOption(r){return this._helpOption=r,this._initOptionGroup(r),this}help(r){this.outputHelp(r);let n=Number(X.exitCode??0);if(n===0&&r&&typeof r!=="function"&&r.error)n=1;this._exit(n,"commander.help","(outputHelp)")}addHelpText(r,n){let v=["beforeAll","before","after","afterAll"];if(!v.includes(r))throw Error(`Unexpected value for position to addHelpText.
-Expecting one of '${v.join("', '")}'`);let t=`${r}Help`;return this.on(t,(i)=>{let $;if(typeof n==="function")$=n({error:i.error,command:i.command});else $=n;if($)i.write(`${$}
-`)}),this}_outputHelpIfRequested(r){let n=this._getHelpOption();if(n&&r.find((t)=>n.is(t)))this.outputHelp(),this._exit(0,"commander.helpDisplayed","(outputHelp)")}}function y4(r){return r.map((n)=>{if(!n.startsWith("--inspect"))return n;let v,t="127.0.0.1",i="9229",$;if(($=n.match(/^(--inspect(-brk)?)$/))!==null)v=$[1];else if(($=n.match(/^(--inspect(-brk|-port)?)=([^:]+)$/))!==null)if(v=$[1],/^\d+$/.test($[3]))i=$[3];else t=$[3];else if(($=n.match(/^(--inspect(-brk|-port)?)=([^:]+):(\d+)$/))!==null)v=$[1],t=$[3],i=$[4];if(v&&i!=="0")return`${v}=${t}:${parseInt(i)+1}`;return n})}function Kv(){if(X.env.NO_COLOR||X.env.FORCE_COLOR==="0"||X.env.FORCE_COLOR==="false")return!1;if(X.env.FORCE_COLOR||X.env.CLICOLOR_FORCE!==void 0)return!0;return}ao.Command=Qv;ao.useColor=Kv});var s4=Ir((vU)=>{var{Argument:d4}=ei(),{Command:Hv}=h4(),{CommanderError:iU,InvalidArgumentError:p4}=ui(),{Help:nU}=Ov(),{Option:a4}=Wv();vU.program=new Hv;vU.createCommand=(r)=>new Hv(r);vU.createOption=(r,n)=>new a4(r,n);vU.createArgument=(r,n)=>new d4(r,n);vU.Command=Hv;vU.Option=a4;vU.Argument=d4;vU.Help=nU;vU.CommanderError=iU;vU.InvalidArgumentError=p4;vU.InvalidOptionArgumentError=p4});var i6=Ir((f,r6)=>{var h=s4();f=r6.exports={};f.program=new h.Command;f.Argument=h.Argument;f.Command=h.Command;f.CommanderError=h.CommanderError;f.Help=h.Help;f.InvalidArgumentError=h.InvalidArgumentError;f.InvalidOptionArgumentError=h.InvalidArgumentError;f.Option=h.Option;f.createCommand=(r)=>new h.Command(r);f.createOption=(r,n)=>new h.Option(r,n);f.createArgument=(r,n)=>new h.Argument(r,n)});import oo from"node:fs/promises";var n6=zo(i6(),1),{program:zk,createCommand:jk,createArgument:Pk,createOption:Jk,CommanderError:Lk,InvalidArgumentError:Gk,InvalidOptionArgumentError:Xk,Command:v6,Argument:Ek,Option:qk,Help:Ok}=n6.default;var G={};vr(G,{xor:()=>H_,xid:()=>$_,void:()=>O_,uuidv7:()=>d6,uuidv6:()=>h6,uuidv4:()=>y6,uuid:()=>m6,util:()=>w,url:()=>p6,uppercase:()=>Mr,unknown:()=>Xr,union:()=>Nv,undefined:()=>E_,ulid:()=>v_,uint64:()=>G_,uint32:()=>P_,tuple:()=>v4,trim:()=>fr,treeifyError:()=>yv,transform:()=>jv,toUpperCase:()=>mr,toLowerCase:()=>Cr,toJSONSchema:()=>Cn,templateLiteral:()=>h_,symbol:()=>X_,superRefine:()=>Y4,success:()=>f_,stringbool:()=>vo,stringFormat:()=>l_,string:()=>Wi,strictObject:()=>K_,startsWith:()=>Rr,slugify:()=>yr,size:()=>Jr,setErrorMap:()=>yD,set:()=>F_,safeParseAsync:()=>YI,safeParse:()=>WI,safeEncodeAsync:()=>AI,safeEncode:()=>TI,safeDecodeAsync:()=>MI,safeDecode:()=>BI,registry:()=>wn,regexes:()=>C,regex:()=>Br,refine:()=>W4,record:()=>$4,readonly:()=>L4,property:()=>Zn,promise:()=>d_,prettifyError:()=>hv,preprocess:()=>to,prefault:()=>c4,positive:()=>An,pipe:()=>sn,partialRecord:()=>B_,parseAsync:()=>OI,parse:()=>qI,overwrite:()=>d,optional:()=>Vi,object:()=>V_,number:()=>RI,nullish:()=>x_,nullable:()=>Ki,null:()=>CI,normalize:()=>xr,nonpositive:()=>Fn,nonoptional:()=>w4,nonnegative:()=>Rn,never:()=>Sv,negative:()=>Mn,nativeEnum:()=>R_,nanoid:()=>r_,nan:()=>C_,multipleOf:()=>Dr,minSize:()=>ir,minLength:()=>ur,mime:()=>er,meta:()=>io,maxSize:()=>kr,maxLength:()=>Lr,map:()=>M_,mac:()=>g_,lte:()=>m,lt:()=>s,lowercase:()=>Ar,looseRecord:()=>A_,looseObject:()=>Q_,locales:()=>Xi,literal:()=>Z_,length:()=>Gr,lazy:()=>E4,ksuid:()=>t_,keyof:()=>Y_,jwt:()=>k_,json:()=>$o,iso:()=>pr,ipv6:()=>I_,ipv4:()=>u_,invertCodec:()=>y_,intersection:()=>i4,int64:()=>L_,int32:()=>j_,int:()=>an,instanceof:()=>no,includes:()=>Fr,httpUrl:()=>a6,hostname:()=>c_,hex:()=>w_,hash:()=>S_,guid:()=>C6,gte:()=>M,gt:()=>rr,globalRegistry:()=>H,getErrorMap:()=>hD,function:()=>p_,fromJSONSchema:()=>go,formatError:()=>li,float64:()=>z_,float32:()=>N_,flattenError:()=>ki,file:()=>e_,exactOptional:()=>U4,enum:()=>zv,endsWith:()=>Zr,encodeAsync:()=>QI,encode:()=>VI,emoji:()=>s6,email:()=>f6,e164:()=>D_,discriminatedUnion:()=>T_,describe:()=>ro,decodeAsync:()=>HI,decode:()=>KI,date:()=>W_,custom:()=>s_,cuid2:()=>n_,cuid:()=>i_,core:()=>gr,config:()=>V,coerce:()=>K4,codec:()=>m_,clone:()=>B,cidrv6:()=>o_,cidrv4:()=>__,check:()=>a_,catch:()=>z4,boolean:()=>ZI,bigint:()=>J_,base64url:()=>b_,base64:()=>U_,array:()=>Bi,any:()=>q_,_function:()=>p_,_default:()=>k4,_ZodString:()=>rv,ZodXor:()=>aI,ZodXID:()=>gv,ZodVoid:()=>dI,ZodUnknown:()=>yI,ZodUnion:()=>Mi,ZodUndefined:()=>xI,ZodUUID:()=>nr,ZodURL:()=>Hi,ZodULID:()=>uv,ZodType:()=>J,ZodTuple:()=>n4,ZodTransform:()=>_4,ZodTemplateLiteral:()=>G4,ZodSymbol:()=>eI,ZodSuccess:()=>S4,ZodStringFormat:()=>O,ZodString:()=>ri,ZodSet:()=>u4,ZodRecord:()=>ar,ZodRealError:()=>x,ZodReadonly:()=>J4,ZodPromise:()=>q4,ZodPreprocess:()=>P4,ZodPrefault:()=>l4,ZodPipe:()=>Fi,ZodOptional:()=>Pv,ZodObject:()=>Ai,ZodNumberFormat:()=>Er,ZodNumber:()=>ni,ZodNullable:()=>b4,ZodNull:()=>fI,ZodNonOptional:()=>Jv,ZodNever:()=>hI,ZodNanoID:()=>vv,ZodNaN:()=>j4,ZodMap:()=>t4,ZodMAC:()=>FI,ZodLiteral:()=>g4,ZodLazy:()=>X4,ZodKSUID:()=>Iv,ZodJWT:()=>cv,ZodIssueCode:()=>mD,ZodIntersection:()=>r4,ZodISOTime:()=>dn,ZodISODuration:()=>pn,ZodISODateTime:()=>yn,ZodISODate:()=>hn,ZodIPv6:()=>ov,ZodIPv4:()=>_v,ZodGUID:()=>Yi,ZodFunction:()=>O4,ZodFirstPartyTypeKind:()=>V4,ZodFile:()=>I4,ZodExactOptional:()=>o4,ZodError:()=>fD,ZodEnum:()=>sr,ZodEmoji:()=>nv,ZodEmail:()=>iv,ZodE164:()=>lv,ZodDiscriminatedUnion:()=>sI,ZodDefault:()=>D4,ZodDate:()=>Ti,ZodCustomStringFormat:()=>ii,ZodCustom:()=>Zi,ZodCodec:()=>Ri,ZodCatch:()=>N4,ZodCUID2:()=>tv,ZodCUID:()=>$v,ZodCIDRv6:()=>bv,ZodCIDRv4:()=>Uv,ZodBoolean:()=>vi,ZodBigIntFormat:()=>wv,ZodBigInt:()=>$i,ZodBase64URL:()=>kv,ZodBase64:()=>Dv,ZodArray:()=>pI,ZodAny:()=>mI,TimePrecision:()=>vg,NEVER:()=>Tv,$output:()=>pu,$input:()=>au,$brand:()=>Bv});var gr={};vr(gr,{version:()=>f$,util:()=>w,treeifyError:()=>yv,toJSONSchema:()=>Cn,toDotPath:()=>o6,safeParseAsync:()=>pv,safeParse:()=>dv,safeEncodeAsync:()=>mU,safeEncode:()=>fU,safeDecodeAsync:()=>yU,safeDecode:()=>CU,registry:()=>wn,regexes:()=>C,process:()=>E,prettifyError:()=>hv,parseAsync:()=>yi,parse:()=>mi,meta:()=>Bg,locales:()=>Xi,isValidJWT:()=>V6,isValidBase64URL:()=>Y6,isValidBase64:()=>Dt,initializeContext:()=>lr,globalRegistry:()=>H,globalConfig:()=>Sr,formatError:()=>li,flattenError:()=>ki,finalize:()=>wr,extractDefs:()=>cr,encodeAsync:()=>eU,encode:()=>RU,describe:()=>Tg,decodeAsync:()=>xU,decode:()=>ZU,createToJSONSchemaMethod:()=>Mg,createStandardJSONSchemaMethod:()=>dr,config:()=>V,clone:()=>B,_xor:()=>jD,_xid:()=>qn,_void:()=>Eg,_uuidv7:()=>Pn,_uuidv6:()=>jn,_uuidv4:()=>zn,_uuid:()=>Nn,_url:()=>qi,_uppercase:()=>Mr,_unknown:()=>Gg,_union:()=>zD,_undefined:()=>Pg,_ulid:()=>En,_uint64:()=>zg,_uint32:()=>kg,_tuple:()=>LD,_trim:()=>fr,_transform:()=>YD,_toUpperCase:()=>mr,_toLowerCase:()=>Cr,_templateLiteral:()=>FD,_symbol:()=>jg,_superRefine:()=>Hg,_success:()=>TD,_stringbool:()=>Ag,_stringFormat:()=>hr,_string:()=>rg,_startsWith:()=>Rr,_slugify:()=>yr,_size:()=>Jr,_set:()=>ED,_safeParseAsync:()=>Qr,_safeParse:()=>Kr,_safeEncodeAsync:()=>nn,_safeEncode:()=>si,_safeDecodeAsync:()=>vn,_safeDecode:()=>rn,_regex:()=>Br,_refine:()=>Qg,_record:()=>GD,_readonly:()=>MD,_property:()=>Zn,_promise:()=>ZD,_positive:()=>An,_pipe:()=>AD,_parseAsync:()=>Vr,_parse:()=>Yr,_overwrite:()=>d,_optional:()=>VD,_number:()=>Ig,_nullable:()=>KD,_null:()=>Jg,_normalize:()=>xr,_nonpositive:()=>Fn,_nonoptional:()=>HD,_nonnegative:()=>Rn,_never:()=>Xg,_negative:()=>Mn,_nativeEnum:()=>OD,_nanoid:()=>Ln,_nan:()=>Wg,_multipleOf:()=>Dr,_minSize:()=>ir,_minLength:()=>ur,_min:()=>M,_mime:()=>er,_maxSize:()=>kr,_maxLength:()=>Lr,_max:()=>m,_map:()=>XD,_mac:()=>ng,_lte:()=>m,_lt:()=>s,_lowercase:()=>Ar,_literal:()=>WD,_length:()=>Gr,_lazy:()=>RD,_ksuid:()=>On,_jwt:()=>Bn,_isoTime:()=>ug,_isoDuration:()=>gg,_isoDateTime:()=>$g,_isoDate:()=>tg,_ipv6:()=>Yn,_ipv4:()=>Wn,_intersection:()=>JD,_int64:()=>Ng,_int32:()=>Dg,_int:()=>og,_includes:()=>Fr,_guid:()=>Ei,_gte:()=>M,_gt:()=>rr,_float64:()=>bg,_float32:()=>Ug,_file:()=>Vg,_enum:()=>qD,_endsWith:()=>Zr,_encodeAsync:()=>pi,_encode:()=>hi,_emoji:()=>Jn,_email:()=>Sn,_e164:()=>Tn,_discriminatedUnion:()=>PD,_default:()=>QD,_decodeAsync:()=>ai,_decode:()=>di,_date:()=>qg,_custom:()=>Kg,_cuid2:()=>Xn,_cuid:()=>Gn,_coercedString:()=>ig,_coercedNumber:()=>_g,_coercedDate:()=>Og,_coercedBoolean:()=>cg,_coercedBigint:()=>Sg,_cidrv6:()=>Kn,_cidrv4:()=>Vn,_check:()=>R6,_catch:()=>BD,_boolean:()=>lg,_bigint:()=>wg,_base64url:()=>Hn,_base64:()=>Qn,_array:()=>Yg,_any:()=>Lg,TimePrecision:()=>vg,NEVER:()=>Tv,JSONSchemaGenerator:()=>JI,JSONSchema:()=>Z6,Doc:()=>gn,$output:()=>pu,$input:()=>au,$constructor:()=>U,$brand:()=>Bv,$ZodXor:()=>Yt,$ZodXID:()=>nt,$ZodVoid:()=>Et,$ZodUnknown:()=>Gt,$ZodUnion:()=>zi,$ZodUndefined:()=>Pt,$ZodUUID:()=>y$,$ZodURL:()=>d$,$ZodULID:()=>it,$ZodType:()=>P,$ZodTuple:()=>kn,$ZodTransform:()=>Ft,$ZodTemplateLiteral:()=>pt,$ZodSymbol:()=>jt,$ZodSuccess:()=>Ct,$ZodStringFormat:()=>q,$ZodString:()=>Pr,$ZodSet:()=>Tt,$ZodRegistry:()=>su,$ZodRecord:()=>Qt,$ZodRealError:()=>e,$ZodReadonly:()=>dt,$ZodPromise:()=>st,$ZodPreprocess:()=>ht,$ZodPrefault:()=>xt,$ZodPipe:()=>cn,$ZodOptional:()=>ln,$ZodObjectJIT:()=>Wt,$ZodObject:()=>H6,$ZodNumberFormat:()=>Nt,$ZodNumber:()=>bn,$ZodNullable:()=>Zt,$ZodNull:()=>Jt,$ZodNonOptional:()=>ft,$ZodNever:()=>Xt,$ZodNanoID:()=>a$,$ZodNaN:()=>yt,$ZodMap:()=>Ht,$ZodMAC:()=>ot,$ZodLiteral:()=>At,$ZodLazy:()=>ru,$ZodKSUID:()=>vt,$ZodJWT:()=>wt,$ZodIntersection:()=>Kt,$ZodISOTime:()=>ut,$ZodISODuration:()=>gt,$ZodISODateTime:()=>$t,$ZodISODate:()=>tt,$ZodIPv6:()=>_t,$ZodIPv4:()=>It,$ZodGUID:()=>m$,$ZodFunction:()=>at,$ZodFile:()=>Mt,$ZodExactOptional:()=>Rt,$ZodError:()=>Di,$ZodEnum:()=>Bt,$ZodEncodeError:()=>Nr,$ZodEmoji:()=>p$,$ZodEmail:()=>h$,$ZodE164:()=>ct,$ZodDiscriminatedUnion:()=>Vt,$ZodDefault:()=>et,$ZodDate:()=>qt,$ZodCustomStringFormat:()=>St,$ZodCustom:()=>iu,$ZodCodec:()=>ji,$ZodCheckUpperCase:()=>A$,$ZodCheckStringFormat:()=>Hr,$ZodCheckStartsWith:()=>F$,$ZodCheckSizeEquals:()=>V$,$ZodCheckRegex:()=>T$,$ZodCheckProperty:()=>Z$,$ZodCheckOverwrite:()=>x$,$ZodCheckNumberFormat:()=>q$,$ZodCheckMultipleOf:()=>E$,$ZodCheckMinSize:()=>Y$,$ZodCheckMinLength:()=>Q$,$ZodCheckMimeType:()=>e$,$ZodCheckMaxSize:()=>W$,$ZodCheckMaxLength:()=>K$,$ZodCheckLowerCase:()=>B$,$ZodCheckLessThan:()=>tn,$ZodCheckLengthEquals:()=>H$,$ZodCheckIncludes:()=>M$,$ZodCheckGreaterThan:()=>un,$ZodCheckEndsWith:()=>R$,$ZodCheckBigIntFormat:()=>O$,$ZodCheck:()=>W,$ZodCatch:()=>mt,$ZodCUID2:()=>rt,$ZodCUID:()=>s$,$ZodCIDRv6:()=>bt,$ZodCIDRv4:()=>Ut,$ZodBoolean:()=>Ni,$ZodBigIntFormat:()=>zt,$ZodBigInt:()=>Dn,$ZodBase64URL:()=>lt,$ZodBase64:()=>kt,$ZodAsyncError:()=>a,$ZodArray:()=>Ot,$ZodAny:()=>Lt});var $6,Tv=Object.freeze({status:"aborted"});function U(r,n,v){function t(g,_){if(!g._zod)Object.defineProperty(g,"_zod",{value:{def:_,constr:u,traits:new Set},enumerable:!1});if(g._zod.traits.has(r))return;g._zod.traits.add(r),n(g,_);let I=u.prototype,o=Object.keys(I);for(let D=0;D<o.length;D++){let S=o[D];if(!(S in g))g[S]=I[S].bind(g)}}let i=v?.Parent??Object;class $ extends i{}Object.defineProperty($,"name",{value:r});function u(g){var _;let I=v?.Parent?new $:this;t(I,g),(_=I._zod).deferred??(_.deferred=[]);for(let o of I._zod.deferred)o();return I}return Object.defineProperty(u,"init",{value:t}),Object.defineProperty(u,Symbol.hasInstance,{value:(g)=>{if(v?.Parent&&g instanceof v.Parent)return!0;return g?._zod?.traits?.has(r)}}),Object.defineProperty(u,"name",{value:r}),u}var Bv=Symbol("zod_brand");class a extends Error{constructor(){super("Encountered Promise during synchronous parse. Use .parseAsync() instead.")}}class Nr extends Error{constructor(r){super(`Encountered unidirectional transform during encode: ${r}`);this.name="ZodEncodeError"}}($6=globalThis).__zod_globalConfig??($6.__zod_globalConfig={});var Sr=globalThis.__zod_globalConfig;function V(r){if(r)Object.assign(Sr,r);return Sr}var w={};vr(w,{unwrapMessage:()=>gi,uint8ArrayToHex:()=>MU,uint8ArrayToBase64url:()=>BU,uint8ArrayToBase64:()=>g6,stringifyPrimitive:()=>k,slugify:()=>Fv,shallowClone:()=>Zv,safeExtend:()=>YU,required:()=>QU,randomString:()=>LU,propertyKeyTypes:()=>oi,promiseAllObject:()=>JU,primitiveTypes:()=>ev,prefixIssues:()=>Z,pick:()=>qU,partial:()=>KU,parsedType:()=>l,optionalKeys:()=>xv,omit:()=>OU,objectClone:()=>zU,numKeys:()=>GU,nullish:()=>_r,normalizeParams:()=>N,mergeDefs:()=>tr,merge:()=>VU,jsonStringifyReplacer:()=>qr,joinValues:()=>b,issue:()=>Wr,isPlainObject:()=>Ur,isObject:()=>zr,hexToUint8Array:()=>AU,getSizableOrigin:()=>Ui,getParsedType:()=>XU,getLengthableOrigin:()=>bi,getEnumValues:()=>Ii,getElementAtPath:()=>PU,floatSafeRemainder:()=>Mv,finalizeIssue:()=>A,extend:()=>WU,explicitlyAborted:()=>mv,escapeRegex:()=>y,esc:()=>fi,defineLazy:()=>L,createTransparentProxy:()=>EU,cloneDef:()=>jU,clone:()=>B,cleanRegex:()=>_i,cleanEnum:()=>HU,captureStackTrace:()=>Ci,cached:()=>Or,base64urlToUint8Array:()=>TU,base64ToUint8Array:()=>u6,assignProp:()=>or,assertNotEqual:()=>cU,assertNever:()=>SU,assertIs:()=>wU,assertEqual:()=>lU,assert:()=>NU,allowsEval:()=>Rv,aborted:()=>br,NUMBER_FORMAT_RANGES:()=>fv,Class:()=>I6,BIGINT_FORMAT_RANGES:()=>Cv});function lU(r){return r}function cU(r){return r}function wU(r){}function SU(r){throw Error("Unexpected value in exhaustive check")}function NU(r){}function Ii(r){let n=Object.values(r).filter((t)=>typeof t==="number");return Object.entries(r).filter(([t,i])=>n.indexOf(+t)===-1).map(([t,i])=>i)}function b(r,n="|"){return r.map((v)=>k(v)).join(n)}function qr(r,n){if(typeof n==="bigint")return n.toString();return n}function Or(r){return{get value(){{let v=r();return Object.defineProperty(this,"value",{value:v}),v}throw Error("cached value already set")}}}function _r(r){return r===null||r===void 0}function _i(r){let n=r.startsWith("^")?1:0,v=r.endsWith("$")?r.length-1:r.length;return r.slice(n,v)}function Mv(r,n){let v=r/n,t=Math.round(v),i=Number.EPSILON*Math.max(Math.abs(v),1);if(Math.abs(v-t)<i)return 0;return v-t}var t6=Symbol("evaluating");function L(r,n,v){let t=void 0;Object.defineProperty(r,n,{get(){if(t===t6)return;if(t===void 0)t=t6,t=v();return t},set(i){Object.defineProperty(r,n,{value:i})},configurable:!0})}function zU(r){return Object.create(Object.getPrototypeOf(r),Object.getOwnPropertyDescriptors(r))}function or(r,n,v){Object.defineProperty(r,n,{value:v,writable:!0,enumerable:!0,configurable:!0})}function tr(...r){let n={};for(let v of r){let t=Object.getOwnPropertyDescriptors(v);Object.assign(n,t)}return Object.defineProperties({},n)}function jU(r){return tr(r._zod.def)}function PU(r,n){if(!n)return r;return n.reduce((v,t)=>v?.[t],r)}function JU(r){let n=Object.keys(r),v=n.map((t)=>r[t]);return Promise.all(v).then((t)=>{let i={};for(let $=0;$<n.length;$++)i[n[$]]=t[$];return i})}function LU(r=10){let v="";for(let t=0;t<r;t++)v+="abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random()*26)];return v}function fi(r){return JSON.stringify(r)}function Fv(r){return r.toLowerCase().trim().replace(/[^\w\s-]/g,"").replace(/[\s_-]+/g,"-").replace(/^-+|-+$/g,"")}var Ci="captureStackTrace"in Error?Error.captureStackTrace:(...r)=>{};function zr(r){return typeof r==="object"&&r!==null&&!Array.isArray(r)}var Rv=Or(()=>{if(Sr.jitless)return!1;if(typeof navigator<"u"&&navigator?.userAgent?.includes("Cloudflare"))return!1;try{return new Function(""),!0}catch(r){return!1}});function Ur(r){if(zr(r)===!1)return!1;let n=r.constructor;if(n===void 0)return!0;if(typeof n!=="function")return!0;let v=n.prototype;if(zr(v)===!1)return!1;if(Object.prototype.hasOwnProperty.call(v,"isPrototypeOf")===!1)return!1;return!0}function Zv(r){if(Ur(r))return{...r};if(Array.isArray(r))return[...r];if(r instanceof Map)return new Map(r);if(r instanceof Set)return new Set(r);return r}function GU(r){let n=0;for(let v in r)if(Object.prototype.hasOwnProperty.call(r,v))n++;return n}var XU=(r)=>{let n=typeof r;switch(n){case"undefined":return"undefined";case"string":return"string";case"number":return Number.isNaN(r)?"nan":"number";case"boolean":return"boolean";case"function":return"function";case"bigint":return"bigint";case"symbol":return"symbol";case"object":if(Array.isArray(r))return"array";if(r===null)return"null";if(r.then&&typeof r.then==="function"&&r.catch&&typeof r.catch==="function")return"promise";if(typeof Map<"u"&&r instanceof Map)return"map";if(typeof Set<"u"&&r instanceof Set)return"set";if(typeof Date<"u"&&r instanceof Date)return"date";if(typeof File<"u"&&r instanceof File)return"file";return"object";default:throw Error(`Unknown data type: ${n}`)}},oi=new Set(["string","number","symbol"]),ev=new Set(["string","number","bigint","boolean","symbol","undefined"]);function y(r){return r.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}function B(r,n,v){let t=new r._zod.constr(n??r._zod.def);if(!n||v?.parent)t._zod.parent=r;return t}function N(r){let n=r;if(!n)return{};if(typeof n==="string")return{error:()=>n};if(n?.message!==void 0){if(n?.error!==void 0)throw Error("Cannot specify both `message` and `error` params");n.error=n.message}if(delete n.message,typeof n.error==="string")return{...n,error:()=>n.error};return n}function EU(r){let n;return new Proxy({},{get(v,t,i){return n??(n=r()),Reflect.get(n,t,i)},set(v,t,i,$){return n??(n=r()),Reflect.set(n,t,i,$)},has(v,t){return n??(n=r()),Reflect.has(n,t)},deleteProperty(v,t){return n??(n=r()),Reflect.deleteProperty(n,t)},ownKeys(v){return n??(n=r()),Reflect.ownKeys(n)},getOwnPropertyDescriptor(v,t){return n??(n=r()),Reflect.getOwnPropertyDescriptor(n,t)},defineProperty(v,t,i){return n??(n=r()),Reflect.defineProperty(n,t,i)}})}function k(r){if(typeof r==="bigint")return r.toString()+"n";if(typeof r==="string")return`"${r}"`;return`${r}`}function xv(r){return Object.keys(r).filter((n)=>{return r[n]._zod.optin==="optional"&&r[n]._zod.optout==="optional"})}var fv={safeint:[Number.MIN_SAFE_INTEGER,Number.MAX_SAFE_INTEGER],int32:[-2147483648,2147483647],uint32:[0,4294967295],float32:[-340282346638528860000000000000000000000,340282346638528860000000000000000000000],float64:[-Number.MAX_VALUE,Number.MAX_VALUE]},Cv={int64:[BigInt("-9223372036854775808"),BigInt("9223372036854775807")],uint64:[BigInt(0),BigInt("18446744073709551615")]};function qU(r,n){let v=r._zod.def,t=v.checks;if(t&&t.length>0)throw Error(".pick() cannot be used on object schemas containing refinements");let $=tr(r._zod.def,{get shape(){let u={};for(let g in n){if(!(g in v.shape))throw Error(`Unrecognized key: "${g}"`);if(!n[g])continue;u[g]=v.shape[g]}return or(this,"shape",u),u},checks:[]});return B(r,$)}function OU(r,n){let v=r._zod.def,t=v.checks;if(t&&t.length>0)throw Error(".omit() cannot be used on object schemas containing refinements");let $=tr(r._zod.def,{get shape(){let u={...r._zod.def.shape};for(let g in n){if(!(g in v.shape))throw Error(`Unrecognized key: "${g}"`);if(!n[g])continue;delete u[g]}return or(this,"shape",u),u},checks:[]});return B(r,$)}function WU(r,n){if(!Ur(n))throw Error("Invalid input to extend: expected a plain object");let v=r._zod.def.checks;if(v&&v.length>0){let $=r._zod.def.shape;for(let u in n)if(Object.getOwnPropertyDescriptor($,u)!==void 0)throw Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.")}let i=tr(r._zod.def,{get shape(){let $={...r._zod.def.shape,...n};return or(this,"shape",$),$}});return B(r,i)}function YU(r,n){if(!Ur(n))throw Error("Invalid input to safeExtend: expected a plain object");let v=tr(r._zod.def,{get shape(){let t={...r._zod.def.shape,...n};return or(this,"shape",t),t}});return B(r,v)}function VU(r,n){if(r._zod.def.checks?.length)throw Error(".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.");let v=tr(r._zod.def,{get shape(){let t={...r._zod.def.shape,...n._zod.def.shape};return or(this,"shape",t),t},get catchall(){return n._zod.def.catchall},checks:n._zod.def.checks??[]});return B(r,v)}function KU(r,n,v){let i=n._zod.def.checks;if(i&&i.length>0)throw Error(".partial() cannot be used on object schemas containing refinements");let u=tr(n._zod.def,{get shape(){let g=n._zod.def.shape,_={...g};if(v)for(let I in v){if(!(I in g))throw Error(`Unrecognized key: "${I}"`);if(!v[I])continue;_[I]=r?new r({type:"optional",innerType:g[I]}):g[I]}else for(let I in g)_[I]=r?new r({type:"optional",innerType:g[I]}):g[I];return or(this,"shape",_),_},checks:[]});return B(n,u)}function QU(r,n,v){let t=tr(n._zod.def,{get shape(){let i=n._zod.def.shape,$={...i};if(v)for(let u in v){if(!(u in $))throw Error(`Unrecognized key: "${u}"`);if(!v[u])continue;$[u]=new r({type:"nonoptional",innerType:i[u]})}else for(let u in i)$[u]=new r({type:"nonoptional",innerType:i[u]});return or(this,"shape",$),$}});return B(n,t)}function br(r,n=0){if(r.aborted===!0)return!0;for(let v=n;v<r.issues.length;v++)if(r.issues[v]?.continue!==!0)return!0;return!1}function mv(r,n=0){if(r.aborted===!0)return!0;for(let v=n;v<r.issues.length;v++)if(r.issues[v]?.continue===!1)return!0;return!1}function Z(r,n){return n.map((v)=>{var t;return(t=v).path??(t.path=[]),v.path.unshift(r),v})}function gi(r){return typeof r==="string"?r:r?.message}function A(r,n,v){let t=r.message?r.message:gi(r.inst?._zod.def?.error?.(r))??gi(n?.error?.(r))??gi(v.customError?.(r))??gi(v.localeError?.(r))??"Invalid input",{inst:i,continue:$,input:u,...g}=r;if(g.path??(g.path=[]),g.message=t,n?.reportInput)g.input=u;return g}function Ui(r){if(r instanceof Set)return"set";if(r instanceof Map)return"map";if(r instanceof File)return"file";return"unknown"}function bi(r){if(Array.isArray(r))return"array";if(typeof r==="string")return"string";return"unknown"}function l(r){let n=typeof r;switch(n){case"number":return Number.isNaN(r)?"nan":"number";case"object":{if(r===null)return"null";if(Array.isArray(r))return"array";let v=r;if(v&&Object.getPrototypeOf(v)!==Object.prototype&&"constructor"in v&&v.constructor)return v.constructor.name}}return n}function Wr(...r){let[n,v,t]=r;if(typeof n==="string")return{message:n,code:"custom",input:v,inst:t};return{...n}}function HU(r){return Object.entries(r).filter(([n,v])=>{return Number.isNaN(Number.parseInt(n,10))}).map((n)=>n[1])}function u6(r){let n=atob(r),v=new Uint8Array(n.length);for(let t=0;t<n.length;t++)v[t]=n.charCodeAt(t);return v}function g6(r){let n="";for(let v=0;v<r.length;v++)n+=String.fromCharCode(r[v]);return btoa(n)}function TU(r){let n=r.replace(/-/g,"+").replace(/_/g,"/"),v="=".repeat((4-n.length%4)%4);return u6(n+v)}function BU(r){return g6(r).replace(/\+/g,"-").replace(/\//g,"_").replace(/=/g,"")}function AU(r){let n=r.replace(/^0x/,"");if(n.length%2!==0)throw Error("Invalid hex string length");let v=new Uint8Array(n.length/2);for(let t=0;t<n.length;t+=2)v[t/2]=Number.parseInt(n.slice(t,t+2),16);return v}function MU(r){return Array.from(r).map((n)=>n.toString(16).padStart(2,"0")).join("")}class I6{constructor(...r){}}var _6=(r,n)=>{r.name="$ZodError",Object.defineProperty(r,"_zod",{value:r._zod,enumerable:!1}),Object.defineProperty(r,"issues",{value:n,enumerable:!1}),r.message=JSON.stringify(n,qr,2),Object.defineProperty(r,"toString",{value:()=>r.message,enumerable:!1})},Di=U("$ZodError",_6),e=U("$ZodError",_6,{Parent:Error});function ki(r,n=(v)=>v.message){let v={},t=[];for(let i of r.issues)if(i.path.length>0)v[i.path[0]]=v[i.path[0]]||[],v[i.path[0]].push(n(i));else t.push(n(i));return{formErrors:t,fieldErrors:v}}function li(r,n=(v)=>v.message){let v={_errors:[]},t=(i,$=[])=>{for(let u of i.issues)if(u.code==="invalid_union"&&u.errors.length)u.errors.map((g)=>t({issues:g},[...$,...u.path]));else if(u.code==="invalid_key")t({issues:u.issues},[...$,...u.path]);else if(u.code==="invalid_element")t({issues:u.issues},[...$,...u.path]);else{let g=[...$,...u.path];if(g.length===0)v._errors.push(n(u));else{let _=v,I=0;while(I<g.length){let o=g[I];if(I!==g.length-1)_[o]=_[o]||{_errors:[]};else _[o]=_[o]||{_errors:[]},_[o]._errors.push(n(u));_=_[o],I++}}}};return t(r),v}function yv(r,n=(v)=>v.message){let v={errors:[]},t=(i,$=[])=>{var u,g;for(let _ of i.issues)if(_.code==="invalid_union"&&_.errors.length)_.errors.map((I)=>t({issues:I},[...$,..._.path]));else if(_.code==="invalid_key")t({issues:_.issues},[...$,..._.path]);else if(_.code==="invalid_element")t({issues:_.issues},[...$,..._.path]);else{let I=[...$,..._.path];if(I.length===0){v.errors.push(n(_));continue}let o=v,D=0;while(D<I.length){let S=I[D],c=D===I.length-1;if(typeof S==="string")o.properties??(o.properties={}),(u=o.properties)[S]??(u[S]={errors:[]}),o=o.properties[S];else o.items??(o.items=[]),(g=o.items)[S]??(g[S]={errors:[]}),o=o.items[S];if(c)o.errors.push(n(_));D++}}};return t(r),v}function o6(r){let n=[],v=r.map((t)=>typeof t==="object"?t.key:t);for(let t of v)if(typeof t==="number")n.push(`[${t}]`);else if(typeof t==="symbol")n.push(`[${JSON.stringify(String(t))}]`);else if(/[^\w$]/.test(t))n.push(`[${JSON.stringify(t)}]`);else{if(n.length)n.push(".");n.push(t)}return n.join("")}function hv(r){let n=[],v=[...r.issues].sort((t,i)=>(t.path??[]).length-(i.path??[]).length);for(let t of v)if(n.push(`✖ ${t.message}`),t.path?.length)n.push(`  → at ${o6(t.path)}`);return n.join(`
-`)}var Yr=(r)=>(n,v,t,i)=>{let $=t?{...t,async:!1}:{async:!1},u=n._zod.run({value:v,issues:[]},$);if(u instanceof Promise)throw new a;if(u.issues.length){let g=new(i?.Err??r)(u.issues.map((_)=>A(_,$,V())));throw Ci(g,i?.callee),g}return u.value},mi=Yr(e),Vr=(r)=>async(n,v,t,i)=>{let $=t?{...t,async:!0}:{async:!0},u=n._zod.run({value:v,issues:[]},$);if(u instanceof Promise)u=await u;if(u.issues.length){let g=new(i?.Err??r)(u.issues.map((_)=>A(_,$,V())));throw Ci(g,i?.callee),g}return u.value},yi=Vr(e),Kr=(r)=>(n,v,t)=>{let i=t?{...t,async:!1}:{async:!1},$=n._zod.run({value:v,issues:[]},i);if($ instanceof Promise)throw new a;return $.issues.length?{success:!1,error:new(r??Di)($.issues.map((u)=>A(u,i,V())))}:{success:!0,data:$.value}},dv=Kr(e),Qr=(r)=>async(n,v,t)=>{let i=t?{...t,async:!0}:{async:!0},$=n._zod.run({value:v,issues:[]},i);if($ instanceof Promise)$=await $;return $.issues.length?{success:!1,error:new r($.issues.map((u)=>A(u,i,V())))}:{success:!0,data:$.value}},pv=Qr(e),hi=(r)=>(n,v,t)=>{let i=t?{...t,direction:"backward"}:{direction:"backward"};return Yr(r)(n,v,i)},RU=hi(e),di=(r)=>(n,v,t)=>{return Yr(r)(n,v,t)},ZU=di(e),pi=(r)=>async(n,v,t)=>{let i=t?{...t,direction:"backward"}:{direction:"backward"};return Vr(r)(n,v,i)},eU=pi(e),ai=(r)=>async(n,v,t)=>{return Vr(r)(n,v,t)},xU=ai(e),si=(r)=>(n,v,t)=>{let i=t?{...t,direction:"backward"}:{direction:"backward"};return Kr(r)(n,v,i)},fU=si(e),rn=(r)=>(n,v,t)=>{return Kr(r)(n,v,t)},CU=rn(e),nn=(r)=>async(n,v,t)=>{let i=t?{...t,direction:"backward"}:{direction:"backward"};return Qr(r)(n,v,i)},mU=nn(e),vn=(r)=>async(n,v,t)=>{return Qr(r)(n,v,t)},yU=vn(e);var C={};vr(C,{xid:()=>i$,uuid7:()=>aU,uuid6:()=>pU,uuid4:()=>dU,uuid:()=>jr,uppercase:()=>X$,unicodeEmail:()=>U6,undefined:()=>L$,ulid:()=>r$,time:()=>w$,string:()=>N$,sha512_hex:()=>Nb,sha512_base64url:()=>jb,sha512_base64:()=>zb,sha384_hex:()=>cb,sha384_base64url:()=>Sb,sha384_base64:()=>wb,sha256_hex:()=>Db,sha256_base64url:()=>lb,sha256_base64:()=>kb,sha1_hex:()=>ob,sha1_base64url:()=>bb,sha1_base64:()=>Ub,rfc5322Email:()=>rb,number:()=>ci,null:()=>J$,nanoid:()=>v$,md5_hex:()=>gb,md5_base64url:()=>_b,md5_base64:()=>Ib,mac:()=>o$,lowercase:()=>G$,ksuid:()=>n$,ipv6:()=>_$,ipv4:()=>I$,integer:()=>j$,idnEmail:()=>ib,httpProtocol:()=>k$,html5Email:()=>sU,hostname:()=>$b,hex:()=>ub,guid:()=>t$,extendedDuration:()=>hU,emoji:()=>g$,email:()=>u$,e164:()=>l$,duration:()=>$$,domain:()=>tb,datetime:()=>S$,date:()=>c$,cuid2:()=>sv,cuid:()=>av,cidrv6:()=>b$,cidrv4:()=>U$,browserEmail:()=>nb,boolean:()=>P$,bigint:()=>z$,base64url:()=>$n,base64:()=>D$});var av=/^[cC][0-9a-z]{6,}$/,sv=/^[0-9a-z]+$/,r$=/^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/,i$=/^[0-9a-vA-V]{20}$/,n$=/^[A-Za-z0-9]{27}$/,v$=/^[a-zA-Z0-9_-]{21}$/,$$=/^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/,hU=/^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/,t$=/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/,jr=(r)=>{if(!r)return/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${r}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`)},dU=jr(4),pU=jr(6),aU=jr(7),u$=/^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/,sU=/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,rb=/^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,U6=/^[^\s@"]{1,64}@[^\s@]{1,255}$/u,ib=U6,nb=/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,vb="^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$";function g$(){return new RegExp(vb,"u")}var I$=/^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/,_$=/^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/,o$=(r)=>{let n=y(r??":");return new RegExp(`^(?:[0-9A-F]{2}${n}){5}[0-9A-F]{2}$|^(?:[0-9a-f]{2}${n}){5}[0-9a-f]{2}$`)},U$=/^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/,b$=/^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/,D$=/^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/,$n=/^[A-Za-z0-9_-]*$/,$b=/^(?=.{1,253}\.?$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-0-9a-zA-Z]{0,61}[0-9a-zA-Z])?)*\.?$/,tb=/^([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,k$=/^https?$/,l$=/^\+[1-9]\d{6,14}$/,b6="(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))",c$=new RegExp(`^${b6}$`);function D6(r){return typeof r.precision==="number"?r.precision===-1?"(?:[01]\\d|2[0-3]):[0-5]\\d":r.precision===0?"(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d":`(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{${r.precision}}`:"(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?"}function w$(r){return new RegExp(`^${D6(r)}$`)}function S$(r){let n=D6({precision:r.precision}),v=["Z"];if(r.local)v.push("");if(r.offset)v.push("([+-](?:[01]\\d|2[0-3]):[0-5]\\d)");let t=`${n}(?:${v.join("|")})`;return new RegExp(`^${b6}T(?:${t})$`)}var N$=(r)=>{let n=r?`[\\s\\S]{${r?.minimum??0},${r?.maximum??""}}`:"[\\s\\S]*";return new RegExp(`^${n}$`)},z$=/^-?\d+n?$/,j$=/^-?\d+$/,ci=/^-?\d+(?:\.\d+)?$/,P$=/^(?:true|false)$/i,J$=/^null$/i;var L$=/^undefined$/i;var G$=/^[^A-Z]*$/,X$=/^[^a-z]*$/,ub=/^[0-9a-fA-F]*$/;function wi(r,n){return new RegExp(`^[A-Za-z0-9+/]{${r}}${n}$`)}function Si(r){return new RegExp(`^[A-Za-z0-9_-]{${r}}$`)}var gb=/^[0-9a-fA-F]{32}$/,Ib=wi(22,"=="),_b=Si(22),ob=/^[0-9a-fA-F]{40}$/,Ub=wi(27,"="),bb=Si(27),Db=/^[0-9a-fA-F]{64}$/,kb=wi(43,"="),lb=Si(43),cb=/^[0-9a-fA-F]{96}$/,wb=wi(64,""),Sb=Si(64),Nb=/^[0-9a-fA-F]{128}$/,zb=wi(86,"=="),jb=Si(86);var W=U("$ZodCheck",(r,n)=>{var v;r._zod??(r._zod={}),r._zod.def=n,(v=r._zod).onattach??(v.onattach=[])}),l6={number:"number",bigint:"bigint",object:"date"},tn=U("$ZodCheckLessThan",(r,n)=>{W.init(r,n);let v=l6[typeof n.value];r._zod.onattach.push((t)=>{let i=t._zod.bag,$=(n.inclusive?i.maximum:i.exclusiveMaximum)??Number.POSITIVE_INFINITY;if(n.value<$)if(n.inclusive)i.maximum=n.value;else i.exclusiveMaximum=n.value}),r._zod.check=(t)=>{if(n.inclusive?t.value<=n.value:t.value<n.value)return;t.issues.push({origin:v,code:"too_big",maximum:typeof n.value==="object"?n.value.getTime():n.value,input:t.value,inclusive:n.inclusive,inst:r,continue:!n.abort})}}),un=U("$ZodCheckGreaterThan",(r,n)=>{W.init(r,n);let v=l6[typeof n.value];r._zod.onattach.push((t)=>{let i=t._zod.bag,$=(n.inclusive?i.minimum:i.exclusiveMinimum)??Number.NEGATIVE_INFINITY;if(n.value>$)if(n.inclusive)i.minimum=n.value;else i.exclusiveMinimum=n.value}),r._zod.check=(t)=>{if(n.inclusive?t.value>=n.value:t.value>n.value)return;t.issues.push({origin:v,code:"too_small",minimum:typeof n.value==="object"?n.value.getTime():n.value,input:t.value,inclusive:n.inclusive,inst:r,continue:!n.abort})}}),E$=U("$ZodCheckMultipleOf",(r,n)=>{W.init(r,n),r._zod.onattach.push((v)=>{var t;(t=v._zod.bag).multipleOf??(t.multipleOf=n.value)}),r._zod.check=(v)=>{if(typeof v.value!==typeof n.value)throw Error("Cannot mix number and bigint in multiple_of check.");if(typeof v.value==="bigint"?v.value%n.value===BigInt(0):Mv(v.value,n.value)===0)return;v.issues.push({origin:typeof v.value,code:"not_multiple_of",divisor:n.value,input:v.value,inst:r,continue:!n.abort})}}),q$=U("$ZodCheckNumberFormat",(r,n)=>{W.init(r,n),n.format=n.format||"float64";let v=n.format?.includes("int"),t=v?"int":"number",[i,$]=fv[n.format];r._zod.onattach.push((u)=>{let g=u._zod.bag;if(g.format=n.format,g.minimum=i,g.maximum=$,v)g.pattern=j$}),r._zod.check=(u)=>{let g=u.value;if(v){if(!Number.isInteger(g)){u.issues.push({expected:t,format:n.format,code:"invalid_type",continue:!1,input:g,inst:r});return}if(!Number.isSafeInteger(g)){if(g>0)u.issues.push({input:g,code:"too_big",maximum:Number.MAX_SAFE_INTEGER,note:"Integers must be within the safe integer range.",inst:r,origin:t,inclusive:!0,continue:!n.abort});else u.issues.push({input:g,code:"too_small",minimum:Number.MIN_SAFE_INTEGER,note:"Integers must be within the safe integer range.",inst:r,origin:t,inclusive:!0,continue:!n.abort});return}}if(g<i)u.issues.push({origin:"number",input:g,code:"too_small",minimum:i,inclusive:!0,inst:r,continue:!n.abort});if(g>$)u.issues.push({origin:"number",input:g,code:"too_big",maximum:$,inclusive:!0,inst:r,continue:!n.abort})}}),O$=U("$ZodCheckBigIntFormat",(r,n)=>{W.init(r,n);let[v,t]=Cv[n.format];r._zod.onattach.push((i)=>{let $=i._zod.bag;$.format=n.format,$.minimum=v,$.maximum=t}),r._zod.check=(i)=>{let $=i.value;if($<v)i.issues.push({origin:"bigint",input:$,code:"too_small",minimum:v,inclusive:!0,inst:r,continue:!n.abort});if($>t)i.issues.push({origin:"bigint",input:$,code:"too_big",maximum:t,inclusive:!0,inst:r,continue:!n.abort})}}),W$=U("$ZodCheckMaxSize",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.size!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag.maximum??Number.POSITIVE_INFINITY;if(n.maximum<i)t._zod.bag.maximum=n.maximum}),r._zod.check=(t)=>{let i=t.value;if(i.size<=n.maximum)return;t.issues.push({origin:Ui(i),code:"too_big",maximum:n.maximum,inclusive:!0,input:i,inst:r,continue:!n.abort})}}),Y$=U("$ZodCheckMinSize",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.size!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag.minimum??Number.NEGATIVE_INFINITY;if(n.minimum>i)t._zod.bag.minimum=n.minimum}),r._zod.check=(t)=>{let i=t.value;if(i.size>=n.minimum)return;t.issues.push({origin:Ui(i),code:"too_small",minimum:n.minimum,inclusive:!0,input:i,inst:r,continue:!n.abort})}}),V$=U("$ZodCheckSizeEquals",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.size!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag;i.minimum=n.size,i.maximum=n.size,i.size=n.size}),r._zod.check=(t)=>{let i=t.value,$=i.size;if($===n.size)return;let u=$>n.size;t.issues.push({origin:Ui(i),...u?{code:"too_big",maximum:n.size}:{code:"too_small",minimum:n.size},inclusive:!0,exact:!0,input:t.value,inst:r,continue:!n.abort})}}),K$=U("$ZodCheckMaxLength",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.length!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag.maximum??Number.POSITIVE_INFINITY;if(n.maximum<i)t._zod.bag.maximum=n.maximum}),r._zod.check=(t)=>{let i=t.value;if(i.length<=n.maximum)return;let u=bi(i);t.issues.push({origin:u,code:"too_big",maximum:n.maximum,inclusive:!0,input:i,inst:r,continue:!n.abort})}}),Q$=U("$ZodCheckMinLength",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.length!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag.minimum??Number.NEGATIVE_INFINITY;if(n.minimum>i)t._zod.bag.minimum=n.minimum}),r._zod.check=(t)=>{let i=t.value;if(i.length>=n.minimum)return;let u=bi(i);t.issues.push({origin:u,code:"too_small",minimum:n.minimum,inclusive:!0,input:i,inst:r,continue:!n.abort})}}),H$=U("$ZodCheckLengthEquals",(r,n)=>{var v;W.init(r,n),(v=r._zod.def).when??(v.when=(t)=>{let i=t.value;return!_r(i)&&i.length!==void 0}),r._zod.onattach.push((t)=>{let i=t._zod.bag;i.minimum=n.length,i.maximum=n.length,i.length=n.length}),r._zod.check=(t)=>{let i=t.value,$=i.length;if($===n.length)return;let u=bi(i),g=$>n.length;t.issues.push({origin:u,...g?{code:"too_big",maximum:n.length}:{code:"too_small",minimum:n.length},inclusive:!0,exact:!0,input:t.value,inst:r,continue:!n.abort})}}),Hr=U("$ZodCheckStringFormat",(r,n)=>{var v,t;if(W.init(r,n),r._zod.onattach.push((i)=>{let $=i._zod.bag;if($.format=n.format,n.pattern)$.patterns??($.patterns=new Set),$.patterns.add(n.pattern)}),n.pattern)(v=r._zod).check??(v.check=(i)=>{if(n.pattern.lastIndex=0,n.pattern.test(i.value))return;i.issues.push({origin:"string",code:"invalid_format",format:n.format,input:i.value,...n.pattern?{pattern:n.pattern.toString()}:{},inst:r,continue:!n.abort})});else(t=r._zod).check??(t.check=()=>{})}),T$=U("$ZodCheckRegex",(r,n)=>{Hr.init(r,n),r._zod.check=(v)=>{if(n.pattern.lastIndex=0,n.pattern.test(v.value))return;v.issues.push({origin:"string",code:"invalid_format",format:"regex",input:v.value,pattern:n.pattern.toString(),inst:r,continue:!n.abort})}}),B$=U("$ZodCheckLowerCase",(r,n)=>{n.pattern??(n.pattern=G$),Hr.init(r,n)}),A$=U("$ZodCheckUpperCase",(r,n)=>{n.pattern??(n.pattern=X$),Hr.init(r,n)}),M$=U("$ZodCheckIncludes",(r,n)=>{W.init(r,n);let v=y(n.includes),t=new RegExp(typeof n.position==="number"?`^.{${n.position}}${v}`:v);n.pattern=t,r._zod.onattach.push((i)=>{let $=i._zod.bag;$.patterns??($.patterns=new Set),$.patterns.add(t)}),r._zod.check=(i)=>{if(i.value.includes(n.includes,n.position))return;i.issues.push({origin:"string",code:"invalid_format",format:"includes",includes:n.includes,input:i.value,inst:r,continue:!n.abort})}}),F$=U("$ZodCheckStartsWith",(r,n)=>{W.init(r,n);let v=new RegExp(`^${y(n.prefix)}.*`);n.pattern??(n.pattern=v),r._zod.onattach.push((t)=>{let i=t._zod.bag;i.patterns??(i.patterns=new Set),i.patterns.add(v)}),r._zod.check=(t)=>{if(t.value.startsWith(n.prefix))return;t.issues.push({origin:"string",code:"invalid_format",format:"starts_with",prefix:n.prefix,input:t.value,inst:r,continue:!n.abort})}}),R$=U("$ZodCheckEndsWith",(r,n)=>{W.init(r,n);let v=new RegExp(`.*${y(n.suffix)}$`);n.pattern??(n.pattern=v),r._zod.onattach.push((t)=>{let i=t._zod.bag;i.patterns??(i.patterns=new Set),i.patterns.add(v)}),r._zod.check=(t)=>{if(t.value.endsWith(n.suffix))return;t.issues.push({origin:"string",code:"invalid_format",format:"ends_with",suffix:n.suffix,input:t.value,inst:r,continue:!n.abort})}});function k6(r,n,v){if(r.issues.length)n.issues.push(...Z(v,r.issues))}var Z$=U("$ZodCheckProperty",(r,n)=>{W.init(r,n),r._zod.check=(v)=>{let t=n.schema._zod.run({value:v.value[n.property],issues:[]},{});if(t instanceof Promise)return t.then((i)=>k6(i,v,n.property));k6(t,v,n.property);return}}),e$=U("$ZodCheckMimeType",(r,n)=>{W.init(r,n);let v=new Set(n.mime);r._zod.onattach.push((t)=>{t._zod.bag.mime=n.mime}),r._zod.check=(t)=>{if(v.has(t.value.type))return;t.issues.push({code:"invalid_value",values:n.mime,input:t.value.type,inst:r,continue:!n.abort})}}),x$=U("$ZodCheckOverwrite",(r,n)=>{W.init(r,n),r._zod.check=(v)=>{v.value=n.tx(v.value)}});class gn{constructor(r=[]){if(this.content=[],this.indent=0,this)this.args=r}indented(r){this.indent+=1,r(this),this.indent-=1}write(r){if(typeof r==="function"){r(this,{execution:"sync"}),r(this,{execution:"async"});return}let v=r.split(`
-`).filter(($)=>$),t=Math.min(...v.map(($)=>$.length-$.trimStart().length)),i=v.map(($)=>$.slice(t)).map(($)=>" ".repeat(this.indent*2)+$);for(let $ of i)this.content.push($)}compile(){let r=Function,n=this?.args,t=[...(this?.content??[""]).map((i)=>`  ${i}`)];return new r(...n,t.join(`
-`))}}var f$={major:4,minor:4,patch:3};var P=U("$ZodType",(r,n)=>{var v;r??(r={}),r._zod.def=n,r._zod.bag=r._zod.bag||{},r._zod.version=f$;let t=[...r._zod.def.checks??[]];if(r._zod.traits.has("$ZodCheck"))t.unshift(r);for(let i of t)for(let $ of i._zod.onattach)$(r);if(t.length===0)(v=r._zod).deferred??(v.deferred=[]),r._zod.deferred?.push(()=>{r._zod.run=r._zod.parse});else{let i=(u,g,_)=>{let I=br(u),o;for(let D of g){if(D._zod.def.when){if(mv(u))continue;if(!D._zod.def.when(u))continue}else if(I)continue;let S=u.issues.length,c=D._zod.check(u);if(c instanceof Promise&&_?.async===!1)throw new a;if(o||c instanceof Promise)o=(o??Promise.resolve()).then(async()=>{if(await c,u.issues.length===S)return;if(!I)I=br(u,S)});else{if(u.issues.length===S)continue;if(!I)I=br(u,S)}}if(o)return o.then(()=>{return u});return u},$=(u,g,_)=>{if(br(u))return u.aborted=!0,u;let I=i(g,t,_);if(I instanceof Promise){if(_.async===!1)throw new a;return I.then((o)=>r._zod.parse(o,_))}return r._zod.parse(I,_)};r._zod.run=(u,g)=>{if(g.skipChecks)return r._zod.parse(u,g);if(g.direction==="backward"){let I=r._zod.parse({value:u.value,issues:[]},{...g,skipChecks:!0});if(I instanceof Promise)return I.then((o)=>{return $(o,u,g)});return $(I,u,g)}let _=r._zod.parse(u,g);if(_ instanceof Promise){if(g.async===!1)throw new a;return _.then((I)=>i(I,t,g))}return i(_,t,g)}}L(r,"~standard",()=>({validate:(i)=>{try{let $=dv(r,i);return $.success?{value:$.data}:{issues:$.error?.issues}}catch($){return pv(r,i).then((u)=>u.success?{value:u.data}:{issues:u.error?.issues})}},vendor:"zod",version:1}))}),Pr=U("$ZodString",(r,n)=>{P.init(r,n),r._zod.pattern=[...r?._zod.bag?.patterns??[]].pop()??N$(r._zod.bag),r._zod.parse=(v,t)=>{if(n.coerce)try{v.value=String(v.value)}catch(i){}if(typeof v.value==="string")return v;return v.issues.push({expected:"string",code:"invalid_type",input:v.value,inst:r}),v}}),q=U("$ZodStringFormat",(r,n)=>{Hr.init(r,n),Pr.init(r,n)}),m$=U("$ZodGUID",(r,n)=>{n.pattern??(n.pattern=t$),q.init(r,n)}),y$=U("$ZodUUID",(r,n)=>{if(n.version){let t={v1:1,v2:2,v3:3,v4:4,v5:5,v6:6,v7:7,v8:8}[n.version];if(t===void 0)throw Error(`Invalid UUID version: "${n.version}"`);n.pattern??(n.pattern=jr(t))}else n.pattern??(n.pattern=jr());q.init(r,n)}),h$=U("$ZodEmail",(r,n)=>{n.pattern??(n.pattern=u$),q.init(r,n)}),d$=U("$ZodURL",(r,n)=>{q.init(r,n),r._zod.check=(v)=>{try{let t=v.value.trim();if(!n.normalize&&n.protocol?.source===k$.source){if(!/^https?:\/\//i.test(t)){v.issues.push({code:"invalid_format",format:"url",note:"Invalid URL format",input:v.value,inst:r,continue:!n.abort});return}}let i=new URL(t);if(n.hostname){if(n.hostname.lastIndex=0,!n.hostname.test(i.hostname))v.issues.push({code:"invalid_format",format:"url",note:"Invalid hostname",pattern:n.hostname.source,input:v.value,inst:r,continue:!n.abort})}if(n.protocol){if(n.protocol.lastIndex=0,!n.protocol.test(i.protocol.endsWith(":")?i.protocol.slice(0,-1):i.protocol))v.issues.push({code:"invalid_format",format:"url",note:"Invalid protocol",pattern:n.protocol.source,input:v.value,inst:r,continue:!n.abort})}if(n.normalize)v.value=i.href;else v.value=t;return}catch(t){v.issues.push({code:"invalid_format",format:"url",input:v.value,inst:r,continue:!n.abort})}}}),p$=U("$ZodEmoji",(r,n)=>{n.pattern??(n.pattern=g$()),q.init(r,n)}),a$=U("$ZodNanoID",(r,n)=>{n.pattern??(n.pattern=v$),q.init(r,n)}),s$=U("$ZodCUID",(r,n)=>{n.pattern??(n.pattern=av),q.init(r,n)}),rt=U("$ZodCUID2",(r,n)=>{n.pattern??(n.pattern=sv),q.init(r,n)}),it=U("$ZodULID",(r,n)=>{n.pattern??(n.pattern=r$),q.init(r,n)}),nt=U("$ZodXID",(r,n)=>{n.pattern??(n.pattern=i$),q.init(r,n)}),vt=U("$ZodKSUID",(r,n)=>{n.pattern??(n.pattern=n$),q.init(r,n)}),$t=U("$ZodISODateTime",(r,n)=>{n.pattern??(n.pattern=S$(n)),q.init(r,n)}),tt=U("$ZodISODate",(r,n)=>{n.pattern??(n.pattern=c$),q.init(r,n)}),ut=U("$ZodISOTime",(r,n)=>{n.pattern??(n.pattern=w$(n)),q.init(r,n)}),gt=U("$ZodISODuration",(r,n)=>{n.pattern??(n.pattern=$$),q.init(r,n)}),It=U("$ZodIPv4",(r,n)=>{n.pattern??(n.pattern=I$),q.init(r,n),r._zod.bag.format="ipv4"}),_t=U("$ZodIPv6",(r,n)=>{n.pattern??(n.pattern=_$),q.init(r,n),r._zod.bag.format="ipv6",r._zod.check=(v)=>{try{new URL(`http://[${v.value}]`)}catch{v.issues.push({code:"invalid_format",format:"ipv6",input:v.value,inst:r,continue:!n.abort})}}}),ot=U("$ZodMAC",(r,n)=>{n.pattern??(n.pattern=o$(n.delimiter)),q.init(r,n),r._zod.bag.format="mac"}),Ut=U("$ZodCIDRv4",(r,n)=>{n.pattern??(n.pattern=U$),q.init(r,n)}),bt=U("$ZodCIDRv6",(r,n)=>{n.pattern??(n.pattern=b$),q.init(r,n),r._zod.check=(v)=>{let t=v.value.split("/");try{if(t.length!==2)throw Error();let[i,$]=t;if(!$)throw Error();let u=Number($);if(`${u}`!==$)throw Error();if(u<0||u>128)throw Error();new URL(`http://[${i}]`)}catch{v.issues.push({code:"invalid_format",format:"cidrv6",input:v.value,inst:r,continue:!n.abort})}}});function Dt(r){if(r==="")return!0;if(/\s/.test(r))return!1;if(r.length%4!==0)return!1;try{return atob(r),!0}catch{return!1}}var kt=U("$ZodBase64",(r,n)=>{n.pattern??(n.pattern=D$),q.init(r,n),r._zod.bag.contentEncoding="base64",r._zod.check=(v)=>{if(Dt(v.value))return;v.issues.push({code:"invalid_format",format:"base64",input:v.value,inst:r,continue:!n.abort})}});function Y6(r){if(!$n.test(r))return!1;let n=r.replace(/[-_]/g,(t)=>t==="-"?"+":"/"),v=n.padEnd(Math.ceil(n.length/4)*4,"=");return Dt(v)}var lt=U("$ZodBase64URL",(r,n)=>{n.pattern??(n.pattern=$n),q.init(r,n),r._zod.bag.contentEncoding="base64url",r._zod.check=(v)=>{if(Y6(v.value))return;v.issues.push({code:"invalid_format",format:"base64url",input:v.value,inst:r,continue:!n.abort})}}),ct=U("$ZodE164",(r,n)=>{n.pattern??(n.pattern=l$),q.init(r,n)});function V6(r,n=null){try{let v=r.split(".");if(v.length!==3)return!1;let[t]=v;if(!t)return!1;let i=JSON.parse(atob(t));if("typ"in i&&i?.typ!=="JWT")return!1;if(!i.alg)return!1;if(n&&(!("alg"in i)||i.alg!==n))return!1;return!0}catch{return!1}}var wt=U("$ZodJWT",(r,n)=>{q.init(r,n),r._zod.check=(v)=>{if(V6(v.value,n.alg))return;v.issues.push({code:"invalid_format",format:"jwt",input:v.value,inst:r,continue:!n.abort})}}),St=U("$ZodCustomStringFormat",(r,n)=>{q.init(r,n),r._zod.check=(v)=>{if(n.fn(v.value))return;v.issues.push({code:"invalid_format",format:n.format,input:v.value,inst:r,continue:!n.abort})}}),bn=U("$ZodNumber",(r,n)=>{P.init(r,n),r._zod.pattern=r._zod.bag.pattern??ci,r._zod.parse=(v,t)=>{if(n.coerce)try{v.value=Number(v.value)}catch(u){}let i=v.value;if(typeof i==="number"&&!Number.isNaN(i)&&Number.isFinite(i))return v;let $=typeof i==="number"?Number.isNaN(i)?"NaN":!Number.isFinite(i)?"Infinity":void 0:void 0;return v.issues.push({expected:"number",code:"invalid_type",input:i,inst:r,...$?{received:$}:{}}),v}}),Nt=U("$ZodNumberFormat",(r,n)=>{q$.init(r,n),bn.init(r,n)}),Ni=U("$ZodBoolean",(r,n)=>{P.init(r,n),r._zod.pattern=P$,r._zod.parse=(v,t)=>{if(n.coerce)try{v.value=Boolean(v.value)}catch($){}let i=v.value;if(typeof i==="boolean")return v;return v.issues.push({expected:"boolean",code:"invalid_type",input:i,inst:r}),v}}),Dn=U("$ZodBigInt",(r,n)=>{P.init(r,n),r._zod.pattern=z$,r._zod.parse=(v,t)=>{if(n.coerce)try{v.value=BigInt(v.value)}catch(i){}if(typeof v.value==="bigint")return v;return v.issues.push({expected:"bigint",code:"invalid_type",input:v.value,inst:r}),v}}),zt=U("$ZodBigIntFormat",(r,n)=>{O$.init(r,n),Dn.init(r,n)}),jt=U("$ZodSymbol",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(typeof i==="symbol")return v;return v.issues.push({expected:"symbol",code:"invalid_type",input:i,inst:r}),v}}),Pt=U("$ZodUndefined",(r,n)=>{P.init(r,n),r._zod.pattern=L$,r._zod.values=new Set([void 0]),r._zod.parse=(v,t)=>{let i=v.value;if(typeof i>"u")return v;return v.issues.push({expected:"undefined",code:"invalid_type",input:i,inst:r}),v}}),Jt=U("$ZodNull",(r,n)=>{P.init(r,n),r._zod.pattern=J$,r._zod.values=new Set([null]),r._zod.parse=(v,t)=>{let i=v.value;if(i===null)return v;return v.issues.push({expected:"null",code:"invalid_type",input:i,inst:r}),v}}),Lt=U("$ZodAny",(r,n)=>{P.init(r,n),r._zod.parse=(v)=>v}),Gt=U("$ZodUnknown",(r,n)=>{P.init(r,n),r._zod.parse=(v)=>v}),Xt=U("$ZodNever",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{return v.issues.push({expected:"never",code:"invalid_type",input:v.value,inst:r}),v}}),Et=U("$ZodVoid",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(typeof i>"u")return v;return v.issues.push({expected:"void",code:"invalid_type",input:i,inst:r}),v}}),qt=U("$ZodDate",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{if(n.coerce)try{v.value=new Date(v.value)}catch(g){}let i=v.value,$=i instanceof Date;if($&&!Number.isNaN(i.getTime()))return v;return v.issues.push({expected:"date",code:"invalid_type",input:i,...$?{received:"Invalid Date"}:{},inst:r}),v}});function w6(r,n,v){if(r.issues.length)n.issues.push(...Z(v,r.issues));n.value[v]=r.value}var Ot=U("$ZodArray",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(!Array.isArray(i))return v.issues.push({expected:"array",code:"invalid_type",input:i,inst:r}),v;v.value=Array(i.length);let $=[];for(let u=0;u<i.length;u++){let g=i[u],_=n.element._zod.run({value:g,issues:[]},t);if(_ instanceof Promise)$.push(_.then((I)=>w6(I,v,u)));else w6(_,v,u)}if($.length)return Promise.all($).then(()=>v);return v}});function Un(r,n,v,t,i,$){let u=v in t;if(r.issues.length){if(i&&$&&!u)return;n.issues.push(...Z(v,r.issues))}if(!u&&!i){if(!r.issues.length)n.issues.push({code:"invalid_type",expected:"nonoptional",input:void 0,path:[v]});return}if(r.value===void 0){if(u)n.value[v]=void 0}else n.value[v]=r.value}function K6(r){let n=Object.keys(r.shape);for(let t of n)if(!r.shape?.[t]?._zod?.traits?.has("$ZodType"))throw Error(`Invalid element at key "${t}": expected a Zod schema`);let v=xv(r.shape);return{...r,keys:n,keySet:new Set(n),numKeys:n.length,optionalKeys:new Set(v)}}function Q6(r,n,v,t,i,$){let u=[],g=i.keySet,_=i.catchall._zod,I=_.def.type,o=_.optin==="optional",D=_.optout==="optional";for(let S in n){if(S==="__proto__")continue;if(g.has(S))continue;if(I==="never"){u.push(S);continue}let c=_.run({value:n[S],issues:[]},t);if(c instanceof Promise)r.push(c.then((j)=>Un(j,v,S,n,o,D)));else Un(c,v,S,n,o,D)}if(u.length)v.issues.push({code:"unrecognized_keys",keys:u,input:n,inst:$});if(!r.length)return v;return Promise.all(r).then(()=>{return v})}var H6=U("$ZodObject",(r,n)=>{if(P.init(r,n),!Object.getOwnPropertyDescriptor(n,"shape")?.get){let g=n.shape;Object.defineProperty(n,"shape",{get:()=>{let _={...g};return Object.defineProperty(n,"shape",{value:_}),_}})}let t=Or(()=>K6(n));L(r._zod,"propValues",()=>{let g=n.shape,_={};for(let I in g){let o=g[I]._zod;if(o.values){_[I]??(_[I]=new Set);for(let D of o.values)_[I].add(D)}}return _});let i=zr,$=n.catchall,u;r._zod.parse=(g,_)=>{u??(u=t.value);let I=g.value;if(!i(I))return g.issues.push({expected:"object",code:"invalid_type",input:I,inst:r}),g;g.value={};let o=[],D=u.shape;for(let S of u.keys){let c=D[S],j=c._zod.optin==="optional",R=c._zod.optout==="optional",K=c._zod.run({value:I[S],issues:[]},_);if(K instanceof Promise)o.push(K.then((Xv)=>Un(Xv,g,S,I,j,R)));else Un(K,g,S,I,j,R)}if(!$)return o.length?Promise.all(o).then(()=>g):g;return Q6(o,I,g,_,t.value,r)}}),Wt=U("$ZodObjectJIT",(r,n)=>{H6.init(r,n);let v=r._zod.parse,t=Or(()=>K6(n)),i=(S)=>{let c=new gn(["shape","payload","ctx"]),j=t.value,R=(p)=>{let Y=fi(p);return`shape[${Y}]._zod.run({ value: input[${Y}], issues: [] }, ctx)`};c.write("const input = payload.value;");let K=Object.create(null),Xv=0;for(let p of j.keys)K[p]=`key_${Xv++}`;c.write("const newResult = {};");for(let p of j.keys){let Y=K[p],Q=fi(p),T4=S[p],B4=T4?._zod?.optin==="optional",bo=T4?._zod?.optout==="optional";if(c.write(`const ${Y} = ${R(p)};`),B4&&bo)c.write(`
+ - ${t}`;
+            throw Error(i);
+        }
+        _executeSubCommand(r, n) {
+            n = n.slice();
+            let v = !1,
+                t = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
+            function i(I, o) {
+                let D = $r.resolve(I, o);
+                if (xi.existsSync(D)) return D;
+                if (t.includes($r.extname(o))) return;
+                let S = t.find((c) => xi.existsSync(`${D}${c}`));
+                if (S) return `${D}${S}`;
+                return;
+            }
+            this._checkForMissingMandatoryOptions(),
+                this._checkForConflictingOptions();
+            let $ = r._executableFile || `${this._name}-${r._name}`,
+                u = this._executableDir || "";
+            if (this._scriptPath) {
+                let I;
+                try {
+                    I = xi.realpathSync(this._scriptPath);
+                } catch {
+                    I = this._scriptPath;
+                }
+                u = $r.resolve($r.dirname(I), u);
+            }
+            if (u) {
+                let I = i(u, $);
+                if (!I && !r._executableFile && this._scriptPath) {
+                    let o = $r.basename(
+                        this._scriptPath,
+                        $r.extname(this._scriptPath),
+                    );
+                    if (o !== this._name) I = i(u, `${o}-${r._name}`);
+                }
+                $ = I || $;
+            }
+            v = t.includes($r.extname($));
+            let g;
+            if (X.platform !== "win32")
+                if (v)
+                    n.unshift($),
+                        (n = y4(X.execArgv).concat(n)),
+                        (g = Yv.spawn(X.argv[0], n, { stdio: "inherit" }));
+                else g = Yv.spawn($, n, { stdio: "inherit" });
+            else
+                this._checkForMissingExecutable($, u, r._name),
+                    n.unshift($),
+                    (n = y4(X.execArgv).concat(n)),
+                    (g = Yv.spawn(X.execPath, n, { stdio: "inherit" }));
+            if (!g.killed)
+                ["SIGUSR1", "SIGUSR2", "SIGTERM", "SIGINT", "SIGHUP"].forEach(
+                    (o) => {
+                        X.on(o, () => {
+                            if (g.killed === !1 && g.exitCode === null)
+                                g.kill(o);
+                        });
+                    },
+                );
+            let _ = this._exitCallback;
+            g.on("close", (I) => {
+                if (((I = I ?? 1), !_)) X.exit(I);
+                else
+                    _(new Vv(I, "commander.executeSubCommandAsync", "(close)"));
+            }),
+                g.on("error", (I) => {
+                    if (I.code === "ENOENT")
+                        this._checkForMissingExecutable($, u, r._name);
+                    else if (I.code === "EACCES")
+                        throw Error(`'${$}' not executable`);
+                    if (!_) X.exit(1);
+                    else {
+                        let o = new Vv(
+                            1,
+                            "commander.executeSubCommandAsync",
+                            "(error)",
+                        );
+                        (o.nestedError = I), _(o);
+                    }
+                }),
+                (this.runningCommand = g);
+        }
+        _dispatchSubcommand(r, n, v) {
+            let t = this._findCommand(r);
+            if (!t) this.help({ error: !0 });
+            t._prepareForParse();
+            let i;
+            return (
+                (i = this._chainOrCallSubCommandHook(i, t, "preSubcommand")),
+                (i = this._chainOrCall(i, () => {
+                    if (t._executableHandler)
+                        this._executeSubCommand(t, n.concat(v));
+                    else return t._parseCommand(n, v);
+                })),
+                i
+            );
+        }
+        _dispatchHelpCommand(r) {
+            if (!r) this.help();
+            let n = this._findCommand(r);
+            if (n && !n._executableHandler) n.help();
+            return this._dispatchSubcommand(
+                r,
+                [],
+                [
+                    this._getHelpOption()?.long ??
+                        this._getHelpOption()?.short ??
+                        "--help",
+                ],
+            );
+        }
+        _checkNumberOfArguments() {
+            if (
+                (this.registeredArguments.forEach((r, n) => {
+                    if (r.required && this.args[n] == null)
+                        this.missingArgument(r.name());
+                }),
+                this.registeredArguments.length > 0 &&
+                    this.registeredArguments[
+                        this.registeredArguments.length - 1
+                    ].variadic)
+            )
+                return;
+            if (this.args.length > this.registeredArguments.length)
+                this._excessArguments(this.args);
+        }
+        _processArguments() {
+            let r = (v, t, i) => {
+                let $ = t;
+                if (t !== null && v.parseArg) {
+                    let u = `error: command-argument value '${t}' is invalid for argument '${v.name()}'.`;
+                    $ = this._callParseArg(v, t, i, u);
+                }
+                return $;
+            };
+            this._checkNumberOfArguments();
+            let n = [];
+            this.registeredArguments.forEach((v, t) => {
+                let i = v.defaultValue;
+                if (v.variadic) {
+                    if (t < this.args.length) {
+                        if (((i = this.args.slice(t)), v.parseArg))
+                            i = i.reduce(($, u) => {
+                                return r(v, u, $);
+                            }, v.defaultValue);
+                    } else if (i === void 0) i = [];
+                } else if (t < this.args.length) {
+                    if (((i = this.args[t]), v.parseArg))
+                        i = r(v, i, v.defaultValue);
+                }
+                n[t] = i;
+            }),
+                (this.processedArgs = n);
+        }
+        _chainOrCall(r, n) {
+            if (r?.then && typeof r.then === "function")
+                return r.then(() => n());
+            return n();
+        }
+        _chainOrCallHooks(r, n) {
+            let v = r,
+                t = [];
+            if (
+                (this._getCommandAndAncestors()
+                    .reverse()
+                    .filter((i) => i._lifeCycleHooks[n] !== void 0)
+                    .forEach((i) => {
+                        i._lifeCycleHooks[n].forEach(($) => {
+                            t.push({ hookedCommand: i, callback: $ });
+                        });
+                    }),
+                n === "postAction")
+            )
+                t.reverse();
+            return (
+                t.forEach((i) => {
+                    v = this._chainOrCall(v, () => {
+                        return i.callback(i.hookedCommand, this);
+                    });
+                }),
+                v
+            );
+        }
+        _chainOrCallSubCommandHook(r, n, v) {
+            let t = r;
+            if (this._lifeCycleHooks[v] !== void 0)
+                this._lifeCycleHooks[v].forEach((i) => {
+                    t = this._chainOrCall(t, () => {
+                        return i(this, n);
+                    });
+                });
+            return t;
+        }
+        _parseCommand(r, n) {
+            let v = this.parseOptions(n);
+            if (
+                (this._parseOptionsEnv(),
+                this._parseOptionsImplied(),
+                (r = r.concat(v.operands)),
+                (n = v.unknown),
+                (this.args = r.concat(n)),
+                r && this._findCommand(r[0]))
+            )
+                return this._dispatchSubcommand(r[0], r.slice(1), n);
+            if (
+                this._getHelpCommand() &&
+                r[0] === this._getHelpCommand().name()
+            )
+                return this._dispatchHelpCommand(r[1]);
+            if (this._defaultCommandName)
+                return (
+                    this._outputHelpIfRequested(n),
+                    this._dispatchSubcommand(this._defaultCommandName, r, n)
+                );
+            if (
+                this.commands.length &&
+                this.args.length === 0 &&
+                !this._actionHandler &&
+                !this._defaultCommandName
+            )
+                this.help({ error: !0 });
+            this._outputHelpIfRequested(v.unknown),
+                this._checkForMissingMandatoryOptions(),
+                this._checkForConflictingOptions();
+            let t = () => {
+                    if (v.unknown.length > 0) this.unknownOption(v.unknown[0]);
+                },
+                i = `command:${this.name()}`;
+            if (this._actionHandler) {
+                t(), this._processArguments();
+                let $;
+                if (
+                    (($ = this._chainOrCallHooks($, "preAction")),
+                    ($ = this._chainOrCall($, () =>
+                        this._actionHandler(this.processedArgs),
+                    )),
+                    this.parent)
+                )
+                    $ = this._chainOrCall($, () => {
+                        this.parent.emit(i, r, n);
+                    });
+                return ($ = this._chainOrCallHooks($, "postAction")), $;
+            }
+            if (this.parent?.listenerCount(i))
+                t(), this._processArguments(), this.parent.emit(i, r, n);
+            else if (r.length) {
+                if (this._findCommand("*"))
+                    return this._dispatchSubcommand("*", r, n);
+                if (this.listenerCount("command:*"))
+                    this.emit("command:*", r, n);
+                else if (this.commands.length) this.unknownCommand();
+                else t(), this._processArguments();
+            } else if (this.commands.length) t(), this.help({ error: !0 });
+            else t(), this._processArguments();
+        }
+        _findCommand(r) {
+            if (!r) return;
+            return this.commands.find(
+                (n) => n._name === r || n._aliases.includes(r),
+            );
+        }
+        _findOption(r) {
+            return this.options.find((n) => n.is(r));
+        }
+        _checkForMissingMandatoryOptions() {
+            this._getCommandAndAncestors().forEach((r) => {
+                r.options.forEach((n) => {
+                    if (
+                        n.mandatory &&
+                        r.getOptionValue(n.attributeName()) === void 0
+                    )
+                        r.missingMandatoryOptionValue(n);
+                });
+            });
+        }
+        _checkForConflictingLocalOptions() {
+            let r = this.options.filter((v) => {
+                let t = v.attributeName();
+                if (this.getOptionValue(t) === void 0) return !1;
+                return this.getOptionValueSource(t) !== "default";
+            });
+            r.filter((v) => v.conflictsWith.length > 0).forEach((v) => {
+                let t = r.find((i) =>
+                    v.conflictsWith.includes(i.attributeName()),
+                );
+                if (t) this._conflictingOption(v, t);
+            });
+        }
+        _checkForConflictingOptions() {
+            this._getCommandAndAncestors().forEach((r) => {
+                r._checkForConflictingLocalOptions();
+            });
+        }
+        parseOptions(r) {
+            let n = [],
+                v = [],
+                t = n;
+            function i(I) {
+                return I.length > 1 && I[0] === "-";
+            }
+            let $ = (I) => {
+                    if (!/^-(\d+|\d*\.\d+)(e[+-]?\d+)?$/.test(I)) return !1;
+                    return !this._getCommandAndAncestors().some((o) =>
+                        o.options
+                            .map((D) => D.short)
+                            .some((D) => /^-\d$/.test(D)),
+                    );
+                },
+                u = null,
+                g = null,
+                _ = 0;
+            while (_ < r.length || g) {
+                let I = g ?? r[_++];
+                if (((g = null), I === "--")) {
+                    if (t === v) t.push(I);
+                    t.push(...r.slice(_));
+                    break;
+                }
+                if (u && (!i(I) || $(I))) {
+                    this.emit(`option:${u.name()}`, I);
+                    continue;
+                }
+                if (((u = null), i(I))) {
+                    let o = this._findOption(I);
+                    if (o) {
+                        if (o.required) {
+                            let D = r[_++];
+                            if (D === void 0) this.optionMissingArgument(o);
+                            this.emit(`option:${o.name()}`, D);
+                        } else if (o.optional) {
+                            let D = null;
+                            if (_ < r.length && (!i(r[_]) || $(r[_])))
+                                D = r[_++];
+                            this.emit(`option:${o.name()}`, D);
+                        } else this.emit(`option:${o.name()}`);
+                        u = o.variadic ? o : null;
+                        continue;
+                    }
+                }
+                if (I.length > 2 && I[0] === "-" && I[1] !== "-") {
+                    let o = this._findOption(`-${I[1]}`);
+                    if (o) {
+                        if (
+                            o.required ||
+                            (o.optional && this._combineFlagAndOptionalValue)
+                        )
+                            this.emit(`option:${o.name()}`, I.slice(2));
+                        else
+                            this.emit(`option:${o.name()}`),
+                                (g = `-${I.slice(2)}`);
+                        continue;
+                    }
+                }
+                if (/^--[^=]+=/.test(I)) {
+                    let o = I.indexOf("="),
+                        D = this._findOption(I.slice(0, o));
+                    if (D && (D.required || D.optional)) {
+                        this.emit(`option:${D.name()}`, I.slice(o + 1));
+                        continue;
+                    }
+                }
+                if (t === n && i(I) && !(this.commands.length === 0 && $(I)))
+                    t = v;
+                if (
+                    (this._enablePositionalOptions ||
+                        this._passThroughOptions) &&
+                    n.length === 0 &&
+                    v.length === 0
+                ) {
+                    if (this._findCommand(I)) {
+                        n.push(I), v.push(...r.slice(_));
+                        break;
+                    } else if (
+                        this._getHelpCommand() &&
+                        I === this._getHelpCommand().name()
+                    ) {
+                        n.push(I, ...r.slice(_));
+                        break;
+                    } else if (this._defaultCommandName) {
+                        v.push(I, ...r.slice(_));
+                        break;
+                    }
+                }
+                if (this._passThroughOptions) {
+                    t.push(I, ...r.slice(_));
+                    break;
+                }
+                t.push(I);
+            }
+            return { operands: n, unknown: v };
+        }
+        opts() {
+            if (this._storeOptionsAsProperties) {
+                let r = {},
+                    n = this.options.length;
+                for (let v = 0; v < n; v++) {
+                    let t = this.options[v].attributeName();
+                    r[t] =
+                        t === this._versionOptionName ? this._version : this[t];
+                }
+                return r;
+            }
+            return this._optionValues;
+        }
+        optsWithGlobals() {
+            return this._getCommandAndAncestors().reduce(
+                (r, n) => Object.assign(r, n.opts()),
+                {},
+            );
+        }
+        error(r, n) {
+            if (
+                (this._outputConfiguration.outputError(
+                    `${r}
+`,
+                    this._outputConfiguration.writeErr,
+                ),
+                typeof this._showHelpAfterError === "string")
+            )
+                this._outputConfiguration.writeErr(`${this._showHelpAfterError}
+`);
+            else if (this._showHelpAfterError)
+                this._outputConfiguration.writeErr(`
+`),
+                    this.outputHelp({ error: !0 });
+            let v = n || {},
+                t = v.exitCode || 1,
+                i = v.code || "commander.error";
+            this._exit(t, i, r);
+        }
+        _parseOptionsEnv() {
+            this.options.forEach((r) => {
+                if (r.envVar && r.envVar in X.env) {
+                    let n = r.attributeName();
+                    if (
+                        this.getOptionValue(n) === void 0 ||
+                        ["default", "config", "env"].includes(
+                            this.getOptionValueSource(n),
+                        )
+                    )
+                        if (r.required || r.optional)
+                            this.emit(`optionEnv:${r.name()}`, X.env[r.envVar]);
+                        else this.emit(`optionEnv:${r.name()}`);
+                }
+            });
+        }
+        _parseOptionsImplied() {
+            let r = new po(this.options),
+                n = (v) => {
+                    return (
+                        this.getOptionValue(v) !== void 0 &&
+                        !["default", "implied"].includes(
+                            this.getOptionValueSource(v),
+                        )
+                    );
+                };
+            this.options
+                .filter(
+                    (v) =>
+                        v.implied !== void 0 &&
+                        n(v.attributeName()) &&
+                        r.valueFromOption(
+                            this.getOptionValue(v.attributeName()),
+                            v,
+                        ),
+                )
+                .forEach((v) => {
+                    Object.keys(v.implied)
+                        .filter((t) => !n(t))
+                        .forEach((t) => {
+                            this.setOptionValueWithSource(
+                                t,
+                                v.implied[t],
+                                "implied",
+                            );
+                        });
+                });
+        }
+        missingArgument(r) {
+            let n = `error: missing required argument '${r}'`;
+            this.error(n, { code: "commander.missingArgument" });
+        }
+        optionMissingArgument(r) {
+            let n = `error: option '${r.flags}' argument missing`;
+            this.error(n, { code: "commander.optionMissingArgument" });
+        }
+        missingMandatoryOptionValue(r) {
+            let n = `error: required option '${r.flags}' not specified`;
+            this.error(n, { code: "commander.missingMandatoryOptionValue" });
+        }
+        _conflictingOption(r, n) {
+            let v = ($) => {
+                    let u = $.attributeName(),
+                        g = this.getOptionValue(u),
+                        _ = this.options.find(
+                            (o) => o.negate && u === o.attributeName(),
+                        ),
+                        I = this.options.find(
+                            (o) => !o.negate && u === o.attributeName(),
+                        );
+                    if (
+                        _ &&
+                        ((_.presetArg === void 0 && g === !1) ||
+                            (_.presetArg !== void 0 && g === _.presetArg))
+                    )
+                        return _;
+                    return I || $;
+                },
+                t = ($) => {
+                    let u = v($),
+                        g = u.attributeName();
+                    if (this.getOptionValueSource(g) === "env")
+                        return `environment variable '${u.envVar}'`;
+                    return `option '${u.flags}'`;
+                },
+                i = `error: ${t(r)} cannot be used with ${t(n)}`;
+            this.error(i, { code: "commander.conflictingOption" });
+        }
+        unknownOption(r) {
+            if (this._allowUnknownOption) return;
+            let n = "";
+            if (r.startsWith("--") && this._showSuggestionAfterError) {
+                let t = [],
+                    i = this;
+                do {
+                    let $ = i
+                        .createHelp()
+                        .visibleOptions(i)
+                        .filter((u) => u.long)
+                        .map((u) => u.long);
+                    (t = t.concat($)), (i = i.parent);
+                } while (i && !i._enablePositionalOptions);
+                n = m4(r, t);
+            }
+            let v = `error: unknown option '${r}'${n}`;
+            this.error(v, { code: "commander.unknownOption" });
+        }
+        _excessArguments(r) {
+            if (this._allowExcessArguments) return;
+            let n = this.registeredArguments.length,
+                v = n === 1 ? "" : "s",
+                i = `error: too many arguments${this.parent ? ` for '${this.name()}'` : ""}. Expected ${n} argument${v} but got ${r.length}.`;
+            this.error(i, { code: "commander.excessArguments" });
+        }
+        unknownCommand() {
+            let r = this.args[0],
+                n = "";
+            if (this._showSuggestionAfterError) {
+                let t = [];
+                this.createHelp()
+                    .visibleCommands(this)
+                    .forEach((i) => {
+                        if ((t.push(i.name()), i.alias())) t.push(i.alias());
+                    }),
+                    (n = m4(r, t));
+            }
+            let v = `error: unknown command '${r}'${n}`;
+            this.error(v, { code: "commander.unknownCommand" });
+        }
+        version(r, n, v) {
+            if (r === void 0) return this._version;
+            (this._version = r),
+                (n = n || "-V, --version"),
+                (v = v || "output the version number");
+            let t = this.createOption(n, v);
+            return (
+                (this._versionOptionName = t.attributeName()),
+                this._registerOption(t),
+                this.on("option:" + t.name(), () => {
+                    this._outputConfiguration.writeOut(`${r}
+`),
+                        this._exit(0, "commander.version", r);
+                }),
+                this
+            );
+        }
+        description(r, n) {
+            if (r === void 0 && n === void 0) return this._description;
+            if (((this._description = r), n)) this._argsDescription = n;
+            return this;
+        }
+        summary(r) {
+            if (r === void 0) return this._summary;
+            return (this._summary = r), this;
+        }
+        alias(r) {
+            if (r === void 0) return this._aliases[0];
+            let n = this;
+            if (
+                this.commands.length !== 0 &&
+                this.commands[this.commands.length - 1]._executableHandler
+            )
+                n = this.commands[this.commands.length - 1];
+            if (r === n._name)
+                throw Error("Command alias can't be the same as its name");
+            let v = this.parent?._findCommand(r);
+            if (v) {
+                let t = [v.name()].concat(v.aliases()).join("|");
+                throw Error(
+                    `cannot add alias '${r}' to command '${this.name()}' as already have command '${t}'`,
+                );
+            }
+            return n._aliases.push(r), this;
+        }
+        aliases(r) {
+            if (r === void 0) return this._aliases;
+            return r.forEach((n) => this.alias(n)), this;
+        }
+        usage(r) {
+            if (r === void 0) {
+                if (this._usage) return this._usage;
+                let n = this.registeredArguments.map((v) => {
+                    return mo(v);
+                });
+                return []
+                    .concat(
+                        this.options.length || this._helpOption !== null
+                            ? "[options]"
+                            : [],
+                        this.commands.length ? "[command]" : [],
+                        this.registeredArguments.length ? n : [],
+                    )
+                    .join(" ");
+            }
+            return (this._usage = r), this;
+        }
+        name(r) {
+            if (r === void 0) return this._name;
+            return (this._name = r), this;
+        }
+        helpGroup(r) {
+            if (r === void 0) return this._helpGroupHeading ?? "";
+            return (this._helpGroupHeading = r), this;
+        }
+        commandsGroup(r) {
+            if (r === void 0) return this._defaultCommandGroup ?? "";
+            return (this._defaultCommandGroup = r), this;
+        }
+        optionsGroup(r) {
+            if (r === void 0) return this._defaultOptionGroup ?? "";
+            return (this._defaultOptionGroup = r), this;
+        }
+        _initOptionGroup(r) {
+            if (this._defaultOptionGroup && !r.helpGroupHeading)
+                r.helpGroup(this._defaultOptionGroup);
+        }
+        _initCommandGroup(r) {
+            if (this._defaultCommandGroup && !r.helpGroup())
+                r.helpGroup(this._defaultCommandGroup);
+        }
+        nameFromFilename(r) {
+            return (this._name = $r.basename(r, $r.extname(r))), this;
+        }
+        executableDir(r) {
+            if (r === void 0) return this._executableDir;
+            return (this._executableDir = r), this;
+        }
+        helpInformation(r) {
+            let n = this.createHelp(),
+                v = this._getOutputContext(r);
+            n.prepareContext({
+                error: v.error,
+                helpWidth: v.helpWidth,
+                outputHasColors: v.hasColors,
+            });
+            let t = n.formatHelp(this, n);
+            if (v.hasColors) return t;
+            return this._outputConfiguration.stripColor(t);
+        }
+        _getOutputContext(r) {
+            r = r || {};
+            let n = !!r.error,
+                v,
+                t,
+                i;
+            if (n)
+                (v = (u) => this._outputConfiguration.writeErr(u)),
+                    (t = this._outputConfiguration.getErrHasColors()),
+                    (i = this._outputConfiguration.getErrHelpWidth());
+            else
+                (v = (u) => this._outputConfiguration.writeOut(u)),
+                    (t = this._outputConfiguration.getOutHasColors()),
+                    (i = this._outputConfiguration.getOutHelpWidth());
+            return {
+                error: n,
+                write: (u) => {
+                    if (!t) u = this._outputConfiguration.stripColor(u);
+                    return v(u);
+                },
+                hasColors: t,
+                helpWidth: i,
+            };
+        }
+        outputHelp(r) {
+            let n;
+            if (typeof r === "function") (n = r), (r = void 0);
+            let v = this._getOutputContext(r),
+                t = { error: v.error, write: v.write, command: this };
+            this._getCommandAndAncestors()
+                .reverse()
+                .forEach(($) => $.emit("beforeAllHelp", t)),
+                this.emit("beforeHelp", t);
+            let i = this.helpInformation({ error: v.error });
+            if (n) {
+                if (((i = n(i)), typeof i !== "string" && !Buffer.isBuffer(i)))
+                    throw Error(
+                        "outputHelp callback must return a string or a Buffer",
+                    );
+            }
+            if ((v.write(i), this._getHelpOption()?.long))
+                this.emit(this._getHelpOption().long);
+            this.emit("afterHelp", t),
+                this._getCommandAndAncestors().forEach(($) =>
+                    $.emit("afterAllHelp", t),
+                );
+        }
+        helpOption(r, n) {
+            if (typeof r === "boolean") {
+                if (r) {
+                    if (this._helpOption === null) this._helpOption = void 0;
+                    if (this._defaultOptionGroup)
+                        this._initOptionGroup(this._getHelpOption());
+                } else this._helpOption = null;
+                return this;
+            }
+            if (
+                ((this._helpOption = this.createOption(
+                    r ?? "-h, --help",
+                    n ?? "display help for command",
+                )),
+                r || n)
+            )
+                this._initOptionGroup(this._helpOption);
+            return this;
+        }
+        _getHelpOption() {
+            if (this._helpOption === void 0) this.helpOption(void 0, void 0);
+            return this._helpOption;
+        }
+        addHelpOption(r) {
+            return (this._helpOption = r), this._initOptionGroup(r), this;
+        }
+        help(r) {
+            this.outputHelp(r);
+            let n = Number(X.exitCode ?? 0);
+            if (n === 0 && r && typeof r !== "function" && r.error) n = 1;
+            this._exit(n, "commander.help", "(outputHelp)");
+        }
+        addHelpText(r, n) {
+            let v = ["beforeAll", "before", "after", "afterAll"];
+            if (!v.includes(r))
+                throw Error(`Unexpected value for position to addHelpText.
+Expecting one of '${v.join("', '")}'`);
+            let t = `${r}Help`;
+            return (
+                this.on(t, (i) => {
+                    let $;
+                    if (typeof n === "function")
+                        $ = n({ error: i.error, command: i.command });
+                    else $ = n;
+                    if ($)
+                        i.write(`${$}
+`);
+                }),
+                this
+            );
+        }
+        _outputHelpIfRequested(r) {
+            let n = this._getHelpOption();
+            if (n && r.find((t) => n.is(t)))
+                this.outputHelp(),
+                    this._exit(0, "commander.helpDisplayed", "(outputHelp)");
+        }
+    }
+    function y4(r) {
+        return r.map((n) => {
+            if (!n.startsWith("--inspect")) return n;
+            let v,
+                t = "127.0.0.1",
+                i = "9229",
+                $;
+            if (($ = n.match(/^(--inspect(-brk)?)$/)) !== null) v = $[1];
+            else if (
+                ($ = n.match(/^(--inspect(-brk|-port)?)=([^:]+)$/)) !== null
+            )
+                if (((v = $[1]), /^\d+$/.test($[3]))) i = $[3];
+                else t = $[3];
+            else if (
+                ($ = n.match(/^(--inspect(-brk|-port)?)=([^:]+):(\d+)$/)) !==
+                null
+            )
+                (v = $[1]), (t = $[3]), (i = $[4]);
+            if (v && i !== "0") return `${v}=${t}:${parseInt(i) + 1}`;
+            return n;
+        });
+    }
+    function Kv() {
+        if (
+            X.env.NO_COLOR ||
+            X.env.FORCE_COLOR === "0" ||
+            X.env.FORCE_COLOR === "false"
+        )
+            return !1;
+        if (X.env.FORCE_COLOR || X.env.CLICOLOR_FORCE !== void 0) return !0;
+        return;
+    }
+    ao.Command = Qv;
+    ao.useColor = Kv;
+});
+var s4 = Ir((vU) => {
+    var { Argument: d4 } = ei(),
+        { Command: Hv } = h4(),
+        { CommanderError: iU, InvalidArgumentError: p4 } = ui(),
+        { Help: nU } = Ov(),
+        { Option: a4 } = Wv();
+    vU.program = new Hv();
+    vU.createCommand = (r) => new Hv(r);
+    vU.createOption = (r, n) => new a4(r, n);
+    vU.createArgument = (r, n) => new d4(r, n);
+    vU.Command = Hv;
+    vU.Option = a4;
+    vU.Argument = d4;
+    vU.Help = nU;
+    vU.CommanderError = iU;
+    vU.InvalidArgumentError = p4;
+    vU.InvalidOptionArgumentError = p4;
+});
+var i6 = Ir((f, r6) => {
+    var h = s4();
+    f = r6.exports = {};
+    f.program = new h.Command();
+    f.Argument = h.Argument;
+    f.Command = h.Command;
+    f.CommanderError = h.CommanderError;
+    f.Help = h.Help;
+    f.InvalidArgumentError = h.InvalidArgumentError;
+    f.InvalidOptionArgumentError = h.InvalidArgumentError;
+    f.Option = h.Option;
+    f.createCommand = (r) => new h.Command(r);
+    f.createOption = (r, n) => new h.Option(r, n);
+    f.createArgument = (r, n) => new h.Argument(r, n);
+});
+import oo from "node:fs/promises";
+var n6 = zo(i6(), 1),
+    {
+        program: zk,
+        createCommand: jk,
+        createArgument: Pk,
+        createOption: Jk,
+        CommanderError: Lk,
+        InvalidArgumentError: Gk,
+        InvalidOptionArgumentError: Xk,
+        Command: v6,
+        Argument: Ek,
+        Option: qk,
+        Help: Ok,
+    } = n6.default;
+var G = {};
+vr(G, {
+    xor: () => H_,
+    xid: () => $_,
+    void: () => O_,
+    uuidv7: () => d6,
+    uuidv6: () => h6,
+    uuidv4: () => y6,
+    uuid: () => m6,
+    util: () => w,
+    url: () => p6,
+    uppercase: () => Mr,
+    unknown: () => Xr,
+    union: () => Nv,
+    undefined: () => E_,
+    ulid: () => v_,
+    uint64: () => G_,
+    uint32: () => P_,
+    tuple: () => v4,
+    trim: () => fr,
+    treeifyError: () => yv,
+    transform: () => jv,
+    toUpperCase: () => mr,
+    toLowerCase: () => Cr,
+    toJSONSchema: () => Cn,
+    templateLiteral: () => h_,
+    symbol: () => X_,
+    superRefine: () => Y4,
+    success: () => f_,
+    stringbool: () => vo,
+    stringFormat: () => l_,
+    string: () => Wi,
+    strictObject: () => K_,
+    startsWith: () => Rr,
+    slugify: () => yr,
+    size: () => Jr,
+    setErrorMap: () => yD,
+    set: () => F_,
+    safeParseAsync: () => YI,
+    safeParse: () => WI,
+    safeEncodeAsync: () => AI,
+    safeEncode: () => TI,
+    safeDecodeAsync: () => MI,
+    safeDecode: () => BI,
+    registry: () => wn,
+    regexes: () => C,
+    regex: () => Br,
+    refine: () => W4,
+    record: () => $4,
+    readonly: () => L4,
+    property: () => Zn,
+    promise: () => d_,
+    prettifyError: () => hv,
+    preprocess: () => to,
+    prefault: () => c4,
+    positive: () => An,
+    pipe: () => sn,
+    partialRecord: () => B_,
+    parseAsync: () => OI,
+    parse: () => qI,
+    overwrite: () => d,
+    optional: () => Vi,
+    object: () => V_,
+    number: () => RI,
+    nullish: () => x_,
+    nullable: () => Ki,
+    null: () => CI,
+    normalize: () => xr,
+    nonpositive: () => Fn,
+    nonoptional: () => w4,
+    nonnegative: () => Rn,
+    never: () => Sv,
+    negative: () => Mn,
+    nativeEnum: () => R_,
+    nanoid: () => r_,
+    nan: () => C_,
+    multipleOf: () => Dr,
+    minSize: () => ir,
+    minLength: () => ur,
+    mime: () => er,
+    meta: () => io,
+    maxSize: () => kr,
+    maxLength: () => Lr,
+    map: () => M_,
+    mac: () => g_,
+    lte: () => m,
+    lt: () => s,
+    lowercase: () => Ar,
+    looseRecord: () => A_,
+    looseObject: () => Q_,
+    locales: () => Xi,
+    literal: () => Z_,
+    length: () => Gr,
+    lazy: () => E4,
+    ksuid: () => t_,
+    keyof: () => Y_,
+    jwt: () => k_,
+    json: () => $o,
+    iso: () => pr,
+    ipv6: () => I_,
+    ipv4: () => u_,
+    invertCodec: () => y_,
+    intersection: () => i4,
+    int64: () => L_,
+    int32: () => j_,
+    int: () => an,
+    instanceof: () => no,
+    includes: () => Fr,
+    httpUrl: () => a6,
+    hostname: () => c_,
+    hex: () => w_,
+    hash: () => S_,
+    guid: () => C6,
+    gte: () => M,
+    gt: () => rr,
+    globalRegistry: () => H,
+    getErrorMap: () => hD,
+    function: () => p_,
+    fromJSONSchema: () => go,
+    formatError: () => li,
+    float64: () => z_,
+    float32: () => N_,
+    flattenError: () => ki,
+    file: () => e_,
+    exactOptional: () => U4,
+    enum: () => zv,
+    endsWith: () => Zr,
+    encodeAsync: () => QI,
+    encode: () => VI,
+    emoji: () => s6,
+    email: () => f6,
+    e164: () => D_,
+    discriminatedUnion: () => T_,
+    describe: () => ro,
+    decodeAsync: () => HI,
+    decode: () => KI,
+    date: () => W_,
+    custom: () => s_,
+    cuid2: () => n_,
+    cuid: () => i_,
+    core: () => gr,
+    config: () => V,
+    coerce: () => K4,
+    codec: () => m_,
+    clone: () => B,
+    cidrv6: () => o_,
+    cidrv4: () => __,
+    check: () => a_,
+    catch: () => z4,
+    boolean: () => ZI,
+    bigint: () => J_,
+    base64url: () => b_,
+    base64: () => U_,
+    array: () => Bi,
+    any: () => q_,
+    _function: () => p_,
+    _default: () => k4,
+    _ZodString: () => rv,
+    ZodXor: () => aI,
+    ZodXID: () => gv,
+    ZodVoid: () => dI,
+    ZodUnknown: () => yI,
+    ZodUnion: () => Mi,
+    ZodUndefined: () => xI,
+    ZodUUID: () => nr,
+    ZodURL: () => Hi,
+    ZodULID: () => uv,
+    ZodType: () => J,
+    ZodTuple: () => n4,
+    ZodTransform: () => _4,
+    ZodTemplateLiteral: () => G4,
+    ZodSymbol: () => eI,
+    ZodSuccess: () => S4,
+    ZodStringFormat: () => O,
+    ZodString: () => ri,
+    ZodSet: () => u4,
+    ZodRecord: () => ar,
+    ZodRealError: () => x,
+    ZodReadonly: () => J4,
+    ZodPromise: () => q4,
+    ZodPreprocess: () => P4,
+    ZodPrefault: () => l4,
+    ZodPipe: () => Fi,
+    ZodOptional: () => Pv,
+    ZodObject: () => Ai,
+    ZodNumberFormat: () => Er,
+    ZodNumber: () => ni,
+    ZodNullable: () => b4,
+    ZodNull: () => fI,
+    ZodNonOptional: () => Jv,
+    ZodNever: () => hI,
+    ZodNanoID: () => vv,
+    ZodNaN: () => j4,
+    ZodMap: () => t4,
+    ZodMAC: () => FI,
+    ZodLiteral: () => g4,
+    ZodLazy: () => X4,
+    ZodKSUID: () => Iv,
+    ZodJWT: () => cv,
+    ZodIssueCode: () => mD,
+    ZodIntersection: () => r4,
+    ZodISOTime: () => dn,
+    ZodISODuration: () => pn,
+    ZodISODateTime: () => yn,
+    ZodISODate: () => hn,
+    ZodIPv6: () => ov,
+    ZodIPv4: () => _v,
+    ZodGUID: () => Yi,
+    ZodFunction: () => O4,
+    ZodFirstPartyTypeKind: () => V4,
+    ZodFile: () => I4,
+    ZodExactOptional: () => o4,
+    ZodError: () => fD,
+    ZodEnum: () => sr,
+    ZodEmoji: () => nv,
+    ZodEmail: () => iv,
+    ZodE164: () => lv,
+    ZodDiscriminatedUnion: () => sI,
+    ZodDefault: () => D4,
+    ZodDate: () => Ti,
+    ZodCustomStringFormat: () => ii,
+    ZodCustom: () => Zi,
+    ZodCodec: () => Ri,
+    ZodCatch: () => N4,
+    ZodCUID2: () => tv,
+    ZodCUID: () => $v,
+    ZodCIDRv6: () => bv,
+    ZodCIDRv4: () => Uv,
+    ZodBoolean: () => vi,
+    ZodBigIntFormat: () => wv,
+    ZodBigInt: () => $i,
+    ZodBase64URL: () => kv,
+    ZodBase64: () => Dv,
+    ZodArray: () => pI,
+    ZodAny: () => mI,
+    TimePrecision: () => vg,
+    NEVER: () => Tv,
+    $output: () => pu,
+    $input: () => au,
+    $brand: () => Bv,
+});
+var gr = {};
+vr(gr, {
+    version: () => f$,
+    util: () => w,
+    treeifyError: () => yv,
+    toJSONSchema: () => Cn,
+    toDotPath: () => o6,
+    safeParseAsync: () => pv,
+    safeParse: () => dv,
+    safeEncodeAsync: () => mU,
+    safeEncode: () => fU,
+    safeDecodeAsync: () => yU,
+    safeDecode: () => CU,
+    registry: () => wn,
+    regexes: () => C,
+    process: () => E,
+    prettifyError: () => hv,
+    parseAsync: () => yi,
+    parse: () => mi,
+    meta: () => Bg,
+    locales: () => Xi,
+    isValidJWT: () => V6,
+    isValidBase64URL: () => Y6,
+    isValidBase64: () => Dt,
+    initializeContext: () => lr,
+    globalRegistry: () => H,
+    globalConfig: () => Sr,
+    formatError: () => li,
+    flattenError: () => ki,
+    finalize: () => wr,
+    extractDefs: () => cr,
+    encodeAsync: () => eU,
+    encode: () => RU,
+    describe: () => Tg,
+    decodeAsync: () => xU,
+    decode: () => ZU,
+    createToJSONSchemaMethod: () => Mg,
+    createStandardJSONSchemaMethod: () => dr,
+    config: () => V,
+    clone: () => B,
+    _xor: () => jD,
+    _xid: () => qn,
+    _void: () => Eg,
+    _uuidv7: () => Pn,
+    _uuidv6: () => jn,
+    _uuidv4: () => zn,
+    _uuid: () => Nn,
+    _url: () => qi,
+    _uppercase: () => Mr,
+    _unknown: () => Gg,
+    _union: () => zD,
+    _undefined: () => Pg,
+    _ulid: () => En,
+    _uint64: () => zg,
+    _uint32: () => kg,
+    _tuple: () => LD,
+    _trim: () => fr,
+    _transform: () => YD,
+    _toUpperCase: () => mr,
+    _toLowerCase: () => Cr,
+    _templateLiteral: () => FD,
+    _symbol: () => jg,
+    _superRefine: () => Hg,
+    _success: () => TD,
+    _stringbool: () => Ag,
+    _stringFormat: () => hr,
+    _string: () => rg,
+    _startsWith: () => Rr,
+    _slugify: () => yr,
+    _size: () => Jr,
+    _set: () => ED,
+    _safeParseAsync: () => Qr,
+    _safeParse: () => Kr,
+    _safeEncodeAsync: () => nn,
+    _safeEncode: () => si,
+    _safeDecodeAsync: () => vn,
+    _safeDecode: () => rn,
+    _regex: () => Br,
+    _refine: () => Qg,
+    _record: () => GD,
+    _readonly: () => MD,
+    _property: () => Zn,
+    _promise: () => ZD,
+    _positive: () => An,
+    _pipe: () => AD,
+    _parseAsync: () => Vr,
+    _parse: () => Yr,
+    _overwrite: () => d,
+    _optional: () => VD,
+    _number: () => Ig,
+    _nullable: () => KD,
+    _null: () => Jg,
+    _normalize: () => xr,
+    _nonpositive: () => Fn,
+    _nonoptional: () => HD,
+    _nonnegative: () => Rn,
+    _never: () => Xg,
+    _negative: () => Mn,
+    _nativeEnum: () => OD,
+    _nanoid: () => Ln,
+    _nan: () => Wg,
+    _multipleOf: () => Dr,
+    _minSize: () => ir,
+    _minLength: () => ur,
+    _min: () => M,
+    _mime: () => er,
+    _maxSize: () => kr,
+    _maxLength: () => Lr,
+    _max: () => m,
+    _map: () => XD,
+    _mac: () => ng,
+    _lte: () => m,
+    _lt: () => s,
+    _lowercase: () => Ar,
+    _literal: () => WD,
+    _length: () => Gr,
+    _lazy: () => RD,
+    _ksuid: () => On,
+    _jwt: () => Bn,
+    _isoTime: () => ug,
+    _isoDuration: () => gg,
+    _isoDateTime: () => $g,
+    _isoDate: () => tg,
+    _ipv6: () => Yn,
+    _ipv4: () => Wn,
+    _intersection: () => JD,
+    _int64: () => Ng,
+    _int32: () => Dg,
+    _int: () => og,
+    _includes: () => Fr,
+    _guid: () => Ei,
+    _gte: () => M,
+    _gt: () => rr,
+    _float64: () => bg,
+    _float32: () => Ug,
+    _file: () => Vg,
+    _enum: () => qD,
+    _endsWith: () => Zr,
+    _encodeAsync: () => pi,
+    _encode: () => hi,
+    _emoji: () => Jn,
+    _email: () => Sn,
+    _e164: () => Tn,
+    _discriminatedUnion: () => PD,
+    _default: () => QD,
+    _decodeAsync: () => ai,
+    _decode: () => di,
+    _date: () => qg,
+    _custom: () => Kg,
+    _cuid2: () => Xn,
+    _cuid: () => Gn,
+    _coercedString: () => ig,
+    _coercedNumber: () => _g,
+    _coercedDate: () => Og,
+    _coercedBoolean: () => cg,
+    _coercedBigint: () => Sg,
+    _cidrv6: () => Kn,
+    _cidrv4: () => Vn,
+    _check: () => R6,
+    _catch: () => BD,
+    _boolean: () => lg,
+    _bigint: () => wg,
+    _base64url: () => Hn,
+    _base64: () => Qn,
+    _array: () => Yg,
+    _any: () => Lg,
+    TimePrecision: () => vg,
+    NEVER: () => Tv,
+    JSONSchemaGenerator: () => JI,
+    JSONSchema: () => Z6,
+    Doc: () => gn,
+    $output: () => pu,
+    $input: () => au,
+    $constructor: () => U,
+    $brand: () => Bv,
+    $ZodXor: () => Yt,
+    $ZodXID: () => nt,
+    $ZodVoid: () => Et,
+    $ZodUnknown: () => Gt,
+    $ZodUnion: () => zi,
+    $ZodUndefined: () => Pt,
+    $ZodUUID: () => y$,
+    $ZodURL: () => d$,
+    $ZodULID: () => it,
+    $ZodType: () => P,
+    $ZodTuple: () => kn,
+    $ZodTransform: () => Ft,
+    $ZodTemplateLiteral: () => pt,
+    $ZodSymbol: () => jt,
+    $ZodSuccess: () => Ct,
+    $ZodStringFormat: () => q,
+    $ZodString: () => Pr,
+    $ZodSet: () => Tt,
+    $ZodRegistry: () => su,
+    $ZodRecord: () => Qt,
+    $ZodRealError: () => e,
+    $ZodReadonly: () => dt,
+    $ZodPromise: () => st,
+    $ZodPreprocess: () => ht,
+    $ZodPrefault: () => xt,
+    $ZodPipe: () => cn,
+    $ZodOptional: () => ln,
+    $ZodObjectJIT: () => Wt,
+    $ZodObject: () => H6,
+    $ZodNumberFormat: () => Nt,
+    $ZodNumber: () => bn,
+    $ZodNullable: () => Zt,
+    $ZodNull: () => Jt,
+    $ZodNonOptional: () => ft,
+    $ZodNever: () => Xt,
+    $ZodNanoID: () => a$,
+    $ZodNaN: () => yt,
+    $ZodMap: () => Ht,
+    $ZodMAC: () => ot,
+    $ZodLiteral: () => At,
+    $ZodLazy: () => ru,
+    $ZodKSUID: () => vt,
+    $ZodJWT: () => wt,
+    $ZodIntersection: () => Kt,
+    $ZodISOTime: () => ut,
+    $ZodISODuration: () => gt,
+    $ZodISODateTime: () => $t,
+    $ZodISODate: () => tt,
+    $ZodIPv6: () => _t,
+    $ZodIPv4: () => It,
+    $ZodGUID: () => m$,
+    $ZodFunction: () => at,
+    $ZodFile: () => Mt,
+    $ZodExactOptional: () => Rt,
+    $ZodError: () => Di,
+    $ZodEnum: () => Bt,
+    $ZodEncodeError: () => Nr,
+    $ZodEmoji: () => p$,
+    $ZodEmail: () => h$,
+    $ZodE164: () => ct,
+    $ZodDiscriminatedUnion: () => Vt,
+    $ZodDefault: () => et,
+    $ZodDate: () => qt,
+    $ZodCustomStringFormat: () => St,
+    $ZodCustom: () => iu,
+    $ZodCodec: () => ji,
+    $ZodCheckUpperCase: () => A$,
+    $ZodCheckStringFormat: () => Hr,
+    $ZodCheckStartsWith: () => F$,
+    $ZodCheckSizeEquals: () => V$,
+    $ZodCheckRegex: () => T$,
+    $ZodCheckProperty: () => Z$,
+    $ZodCheckOverwrite: () => x$,
+    $ZodCheckNumberFormat: () => q$,
+    $ZodCheckMultipleOf: () => E$,
+    $ZodCheckMinSize: () => Y$,
+    $ZodCheckMinLength: () => Q$,
+    $ZodCheckMimeType: () => e$,
+    $ZodCheckMaxSize: () => W$,
+    $ZodCheckMaxLength: () => K$,
+    $ZodCheckLowerCase: () => B$,
+    $ZodCheckLessThan: () => tn,
+    $ZodCheckLengthEquals: () => H$,
+    $ZodCheckIncludes: () => M$,
+    $ZodCheckGreaterThan: () => un,
+    $ZodCheckEndsWith: () => R$,
+    $ZodCheckBigIntFormat: () => O$,
+    $ZodCheck: () => W,
+    $ZodCatch: () => mt,
+    $ZodCUID2: () => rt,
+    $ZodCUID: () => s$,
+    $ZodCIDRv6: () => bt,
+    $ZodCIDRv4: () => Ut,
+    $ZodBoolean: () => Ni,
+    $ZodBigIntFormat: () => zt,
+    $ZodBigInt: () => Dn,
+    $ZodBase64URL: () => lt,
+    $ZodBase64: () => kt,
+    $ZodAsyncError: () => a,
+    $ZodArray: () => Ot,
+    $ZodAny: () => Lt,
+});
+var $6,
+    Tv = Object.freeze({ status: "aborted" });
+function U(r, n, v) {
+    function t(g, _) {
+        if (!g._zod)
+            Object.defineProperty(g, "_zod", {
+                value: { def: _, constr: u, traits: new Set() },
+                enumerable: !1,
+            });
+        if (g._zod.traits.has(r)) return;
+        g._zod.traits.add(r), n(g, _);
+        let I = u.prototype,
+            o = Object.keys(I);
+        for (let D = 0; D < o.length; D++) {
+            let S = o[D];
+            if (!(S in g)) g[S] = I[S].bind(g);
+        }
+    }
+    let i = v?.Parent ?? Object;
+    class $ extends i {}
+    Object.defineProperty($, "name", { value: r });
+    function u(g) {
+        var _;
+        let I = v?.Parent ? new $() : this;
+        t(I, g), (_ = I._zod).deferred ?? (_.deferred = []);
+        for (let o of I._zod.deferred) o();
+        return I;
+    }
+    return (
+        Object.defineProperty(u, "init", { value: t }),
+        Object.defineProperty(u, Symbol.hasInstance, {
+            value: (g) => {
+                if (v?.Parent && g instanceof v.Parent) return !0;
+                return g?._zod?.traits?.has(r);
+            },
+        }),
+        Object.defineProperty(u, "name", { value: r }),
+        u
+    );
+}
+var Bv = Symbol("zod_brand");
+class a extends Error {
+    constructor() {
+        super(
+            "Encountered Promise during synchronous parse. Use .parseAsync() instead.",
+        );
+    }
+}
+class Nr extends Error {
+    constructor(r) {
+        super(`Encountered unidirectional transform during encode: ${r}`);
+        this.name = "ZodEncodeError";
+    }
+}
+($6 = globalThis).__zod_globalConfig ?? ($6.__zod_globalConfig = {});
+var Sr = globalThis.__zod_globalConfig;
+function V(r) {
+    if (r) Object.assign(Sr, r);
+    return Sr;
+}
+var w = {};
+vr(w, {
+    unwrapMessage: () => gi,
+    uint8ArrayToHex: () => MU,
+    uint8ArrayToBase64url: () => BU,
+    uint8ArrayToBase64: () => g6,
+    stringifyPrimitive: () => k,
+    slugify: () => Fv,
+    shallowClone: () => Zv,
+    safeExtend: () => YU,
+    required: () => QU,
+    randomString: () => LU,
+    propertyKeyTypes: () => oi,
+    promiseAllObject: () => JU,
+    primitiveTypes: () => ev,
+    prefixIssues: () => Z,
+    pick: () => qU,
+    partial: () => KU,
+    parsedType: () => l,
+    optionalKeys: () => xv,
+    omit: () => OU,
+    objectClone: () => zU,
+    numKeys: () => GU,
+    nullish: () => _r,
+    normalizeParams: () => N,
+    mergeDefs: () => tr,
+    merge: () => VU,
+    jsonStringifyReplacer: () => qr,
+    joinValues: () => b,
+    issue: () => Wr,
+    isPlainObject: () => Ur,
+    isObject: () => zr,
+    hexToUint8Array: () => AU,
+    getSizableOrigin: () => Ui,
+    getParsedType: () => XU,
+    getLengthableOrigin: () => bi,
+    getEnumValues: () => Ii,
+    getElementAtPath: () => PU,
+    floatSafeRemainder: () => Mv,
+    finalizeIssue: () => A,
+    extend: () => WU,
+    explicitlyAborted: () => mv,
+    escapeRegex: () => y,
+    esc: () => fi,
+    defineLazy: () => L,
+    createTransparentProxy: () => EU,
+    cloneDef: () => jU,
+    clone: () => B,
+    cleanRegex: () => _i,
+    cleanEnum: () => HU,
+    captureStackTrace: () => Ci,
+    cached: () => Or,
+    base64urlToUint8Array: () => TU,
+    base64ToUint8Array: () => u6,
+    assignProp: () => or,
+    assertNotEqual: () => cU,
+    assertNever: () => SU,
+    assertIs: () => wU,
+    assertEqual: () => lU,
+    assert: () => NU,
+    allowsEval: () => Rv,
+    aborted: () => br,
+    NUMBER_FORMAT_RANGES: () => fv,
+    Class: () => I6,
+    BIGINT_FORMAT_RANGES: () => Cv,
+});
+function lU(r) {
+    return r;
+}
+function cU(r) {
+    return r;
+}
+function wU(r) {}
+function SU(r) {
+    throw Error("Unexpected value in exhaustive check");
+}
+function NU(r) {}
+function Ii(r) {
+    let n = Object.values(r).filter((t) => typeof t === "number");
+    return Object.entries(r)
+        .filter(([t, i]) => n.indexOf(+t) === -1)
+        .map(([t, i]) => i);
+}
+function b(r, n = "|") {
+    return r.map((v) => k(v)).join(n);
+}
+function qr(r, n) {
+    if (typeof n === "bigint") return n.toString();
+    return n;
+}
+function Or(r) {
+    return {
+        get value() {
+            {
+                let v = r();
+                return Object.defineProperty(this, "value", { value: v }), v;
+            }
+            throw Error("cached value already set");
+        },
+    };
+}
+function _r(r) {
+    return r === null || r === void 0;
+}
+function _i(r) {
+    let n = r.startsWith("^") ? 1 : 0,
+        v = r.endsWith("$") ? r.length - 1 : r.length;
+    return r.slice(n, v);
+}
+function Mv(r, n) {
+    let v = r / n,
+        t = Math.round(v),
+        i = Number.EPSILON * Math.max(Math.abs(v), 1);
+    if (Math.abs(v - t) < i) return 0;
+    return v - t;
+}
+var t6 = Symbol("evaluating");
+function L(r, n, v) {
+    let t = void 0;
+    Object.defineProperty(r, n, {
+        get() {
+            if (t === t6) return;
+            if (t === void 0) (t = t6), (t = v());
+            return t;
+        },
+        set(i) {
+            Object.defineProperty(r, n, { value: i });
+        },
+        configurable: !0,
+    });
+}
+function zU(r) {
+    return Object.create(
+        Object.getPrototypeOf(r),
+        Object.getOwnPropertyDescriptors(r),
+    );
+}
+function or(r, n, v) {
+    Object.defineProperty(r, n, {
+        value: v,
+        writable: !0,
+        enumerable: !0,
+        configurable: !0,
+    });
+}
+function tr(...r) {
+    let n = {};
+    for (let v of r) {
+        let t = Object.getOwnPropertyDescriptors(v);
+        Object.assign(n, t);
+    }
+    return Object.defineProperties({}, n);
+}
+function jU(r) {
+    return tr(r._zod.def);
+}
+function PU(r, n) {
+    if (!n) return r;
+    return n.reduce((v, t) => v?.[t], r);
+}
+function JU(r) {
+    let n = Object.keys(r),
+        v = n.map((t) => r[t]);
+    return Promise.all(v).then((t) => {
+        let i = {};
+        for (let $ = 0; $ < n.length; $++) i[n[$]] = t[$];
+        return i;
+    });
+}
+function LU(r = 10) {
+    let v = "";
+    for (let t = 0; t < r; t++)
+        v += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)];
+    return v;
+}
+function fi(r) {
+    return JSON.stringify(r);
+}
+function Fv(r) {
+    return r
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/[\s_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+}
+var Ci = "captureStackTrace" in Error ? Error.captureStackTrace : (...r) => {};
+function zr(r) {
+    return typeof r === "object" && r !== null && !Array.isArray(r);
+}
+var Rv = Or(() => {
+    if (Sr.jitless) return !1;
+    if (typeof navigator < "u" && navigator?.userAgent?.includes("Cloudflare"))
+        return !1;
+    try {
+        return new Function(""), !0;
+    } catch (r) {
+        return !1;
+    }
+});
+function Ur(r) {
+    if (zr(r) === !1) return !1;
+    let n = r.constructor;
+    if (n === void 0) return !0;
+    if (typeof n !== "function") return !0;
+    let v = n.prototype;
+    if (zr(v) === !1) return !1;
+    if (Object.prototype.hasOwnProperty.call(v, "isPrototypeOf") === !1)
+        return !1;
+    return !0;
+}
+function Zv(r) {
+    if (Ur(r)) return { ...r };
+    if (Array.isArray(r)) return [...r];
+    if (r instanceof Map) return new Map(r);
+    if (r instanceof Set) return new Set(r);
+    return r;
+}
+function GU(r) {
+    let n = 0;
+    for (let v in r) if (Object.prototype.hasOwnProperty.call(r, v)) n++;
+    return n;
+}
+var XU = (r) => {
+        let n = typeof r;
+        switch (n) {
+            case "undefined":
+                return "undefined";
+            case "string":
+                return "string";
+            case "number":
+                return Number.isNaN(r) ? "nan" : "number";
+            case "boolean":
+                return "boolean";
+            case "function":
+                return "function";
+            case "bigint":
+                return "bigint";
+            case "symbol":
+                return "symbol";
+            case "object":
+                if (Array.isArray(r)) return "array";
+                if (r === null) return "null";
+                if (
+                    r.then &&
+                    typeof r.then === "function" &&
+                    r.catch &&
+                    typeof r.catch === "function"
+                )
+                    return "promise";
+                if (typeof Map < "u" && r instanceof Map) return "map";
+                if (typeof Set < "u" && r instanceof Set) return "set";
+                if (typeof Date < "u" && r instanceof Date) return "date";
+                if (typeof File < "u" && r instanceof File) return "file";
+                return "object";
+            default:
+                throw Error(`Unknown data type: ${n}`);
+        }
+    },
+    oi = new Set(["string", "number", "symbol"]),
+    ev = new Set([
+        "string",
+        "number",
+        "bigint",
+        "boolean",
+        "symbol",
+        "undefined",
+    ]);
+function y(r) {
+    return r.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function B(r, n, v) {
+    let t = new r._zod.constr(n ?? r._zod.def);
+    if (!n || v?.parent) t._zod.parent = r;
+    return t;
+}
+function N(r) {
+    let n = r;
+    if (!n) return {};
+    if (typeof n === "string") return { error: () => n };
+    if (n?.message !== void 0) {
+        if (n?.error !== void 0)
+            throw Error("Cannot specify both `message` and `error` params");
+        n.error = n.message;
+    }
+    if ((delete n.message, typeof n.error === "string"))
+        return { ...n, error: () => n.error };
+    return n;
+}
+function EU(r) {
+    let n;
+    return new Proxy(
+        {},
+        {
+            get(v, t, i) {
+                return n ?? (n = r()), Reflect.get(n, t, i);
+            },
+            set(v, t, i, $) {
+                return n ?? (n = r()), Reflect.set(n, t, i, $);
+            },
+            has(v, t) {
+                return n ?? (n = r()), Reflect.has(n, t);
+            },
+            deleteProperty(v, t) {
+                return n ?? (n = r()), Reflect.deleteProperty(n, t);
+            },
+            ownKeys(v) {
+                return n ?? (n = r()), Reflect.ownKeys(n);
+            },
+            getOwnPropertyDescriptor(v, t) {
+                return n ?? (n = r()), Reflect.getOwnPropertyDescriptor(n, t);
+            },
+            defineProperty(v, t, i) {
+                return n ?? (n = r()), Reflect.defineProperty(n, t, i);
+            },
+        },
+    );
+}
+function k(r) {
+    if (typeof r === "bigint") return r.toString() + "n";
+    if (typeof r === "string") return `"${r}"`;
+    return `${r}`;
+}
+function xv(r) {
+    return Object.keys(r).filter((n) => {
+        return (
+            r[n]._zod.optin === "optional" && r[n]._zod.optout === "optional"
+        );
+    });
+}
+var fv = {
+        safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+        int32: [-2147483648, 2147483647],
+        uint32: [0, 4294967295],
+        float32: [
+            -340282346638528860000000000000000000000,
+            340282346638528860000000000000000000000,
+        ],
+        float64: [-Number.MAX_VALUE, Number.MAX_VALUE],
+    },
+    Cv = {
+        int64: [BigInt("-9223372036854775808"), BigInt("9223372036854775807")],
+        uint64: [BigInt(0), BigInt("18446744073709551615")],
+    };
+function qU(r, n) {
+    let v = r._zod.def,
+        t = v.checks;
+    if (t && t.length > 0)
+        throw Error(
+            ".pick() cannot be used on object schemas containing refinements",
+        );
+    let $ = tr(r._zod.def, {
+        get shape() {
+            let u = {};
+            for (let g in n) {
+                if (!(g in v.shape)) throw Error(`Unrecognized key: "${g}"`);
+                if (!n[g]) continue;
+                u[g] = v.shape[g];
+            }
+            return or(this, "shape", u), u;
+        },
+        checks: [],
+    });
+    return B(r, $);
+}
+function OU(r, n) {
+    let v = r._zod.def,
+        t = v.checks;
+    if (t && t.length > 0)
+        throw Error(
+            ".omit() cannot be used on object schemas containing refinements",
+        );
+    let $ = tr(r._zod.def, {
+        get shape() {
+            let u = { ...r._zod.def.shape };
+            for (let g in n) {
+                if (!(g in v.shape)) throw Error(`Unrecognized key: "${g}"`);
+                if (!n[g]) continue;
+                delete u[g];
+            }
+            return or(this, "shape", u), u;
+        },
+        checks: [],
+    });
+    return B(r, $);
+}
+function WU(r, n) {
+    if (!Ur(n)) throw Error("Invalid input to extend: expected a plain object");
+    let v = r._zod.def.checks;
+    if (v && v.length > 0) {
+        let $ = r._zod.def.shape;
+        for (let u in n)
+            if (Object.getOwnPropertyDescriptor($, u) !== void 0)
+                throw Error(
+                    "Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.",
+                );
+    }
+    let i = tr(r._zod.def, {
+        get shape() {
+            let $ = { ...r._zod.def.shape, ...n };
+            return or(this, "shape", $), $;
+        },
+    });
+    return B(r, i);
+}
+function YU(r, n) {
+    if (!Ur(n))
+        throw Error("Invalid input to safeExtend: expected a plain object");
+    let v = tr(r._zod.def, {
+        get shape() {
+            let t = { ...r._zod.def.shape, ...n };
+            return or(this, "shape", t), t;
+        },
+    });
+    return B(r, v);
+}
+function VU(r, n) {
+    if (r._zod.def.checks?.length)
+        throw Error(
+            ".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.",
+        );
+    let v = tr(r._zod.def, {
+        get shape() {
+            let t = { ...r._zod.def.shape, ...n._zod.def.shape };
+            return or(this, "shape", t), t;
+        },
+        get catchall() {
+            return n._zod.def.catchall;
+        },
+        checks: n._zod.def.checks ?? [],
+    });
+    return B(r, v);
+}
+function KU(r, n, v) {
+    let i = n._zod.def.checks;
+    if (i && i.length > 0)
+        throw Error(
+            ".partial() cannot be used on object schemas containing refinements",
+        );
+    let u = tr(n._zod.def, {
+        get shape() {
+            let g = n._zod.def.shape,
+                _ = { ...g };
+            if (v)
+                for (let I in v) {
+                    if (!(I in g)) throw Error(`Unrecognized key: "${I}"`);
+                    if (!v[I]) continue;
+                    _[I] = r
+                        ? new r({ type: "optional", innerType: g[I] })
+                        : g[I];
+                }
+            else
+                for (let I in g)
+                    _[I] = r
+                        ? new r({ type: "optional", innerType: g[I] })
+                        : g[I];
+            return or(this, "shape", _), _;
+        },
+        checks: [],
+    });
+    return B(n, u);
+}
+function QU(r, n, v) {
+    let t = tr(n._zod.def, {
+        get shape() {
+            let i = n._zod.def.shape,
+                $ = { ...i };
+            if (v)
+                for (let u in v) {
+                    if (!(u in $)) throw Error(`Unrecognized key: "${u}"`);
+                    if (!v[u]) continue;
+                    $[u] = new r({ type: "nonoptional", innerType: i[u] });
+                }
+            else
+                for (let u in i)
+                    $[u] = new r({ type: "nonoptional", innerType: i[u] });
+            return or(this, "shape", $), $;
+        },
+    });
+    return B(n, t);
+}
+function br(r, n = 0) {
+    if (r.aborted === !0) return !0;
+    for (let v = n; v < r.issues.length; v++)
+        if (r.issues[v]?.continue !== !0) return !0;
+    return !1;
+}
+function mv(r, n = 0) {
+    if (r.aborted === !0) return !0;
+    for (let v = n; v < r.issues.length; v++)
+        if (r.issues[v]?.continue === !1) return !0;
+    return !1;
+}
+function Z(r, n) {
+    return n.map((v) => {
+        var t;
+        return (t = v).path ?? (t.path = []), v.path.unshift(r), v;
+    });
+}
+function gi(r) {
+    return typeof r === "string" ? r : r?.message;
+}
+function A(r, n, v) {
+    let t = r.message
+            ? r.message
+            : (gi(r.inst?._zod.def?.error?.(r)) ??
+              gi(n?.error?.(r)) ??
+              gi(v.customError?.(r)) ??
+              gi(v.localeError?.(r)) ??
+              "Invalid input"),
+        { inst: i, continue: $, input: u, ...g } = r;
+    if ((g.path ?? (g.path = []), (g.message = t), n?.reportInput)) g.input = u;
+    return g;
+}
+function Ui(r) {
+    if (r instanceof Set) return "set";
+    if (r instanceof Map) return "map";
+    if (r instanceof File) return "file";
+    return "unknown";
+}
+function bi(r) {
+    if (Array.isArray(r)) return "array";
+    if (typeof r === "string") return "string";
+    return "unknown";
+}
+function l(r) {
+    let n = typeof r;
+    switch (n) {
+        case "number":
+            return Number.isNaN(r) ? "nan" : "number";
+        case "object": {
+            if (r === null) return "null";
+            if (Array.isArray(r)) return "array";
+            let v = r;
+            if (
+                v &&
+                Object.getPrototypeOf(v) !== Object.prototype &&
+                "constructor" in v &&
+                v.constructor
+            )
+                return v.constructor.name;
+        }
+    }
+    return n;
+}
+function Wr(...r) {
+    let [n, v, t] = r;
+    if (typeof n === "string")
+        return { message: n, code: "custom", input: v, inst: t };
+    return { ...n };
+}
+function HU(r) {
+    return Object.entries(r)
+        .filter(([n, v]) => {
+            return Number.isNaN(Number.parseInt(n, 10));
+        })
+        .map((n) => n[1]);
+}
+function u6(r) {
+    let n = atob(r),
+        v = new Uint8Array(n.length);
+    for (let t = 0; t < n.length; t++) v[t] = n.charCodeAt(t);
+    return v;
+}
+function g6(r) {
+    let n = "";
+    for (let v = 0; v < r.length; v++) n += String.fromCharCode(r[v]);
+    return btoa(n);
+}
+function TU(r) {
+    let n = r.replace(/-/g, "+").replace(/_/g, "/"),
+        v = "=".repeat((4 - (n.length % 4)) % 4);
+    return u6(n + v);
+}
+function BU(r) {
+    return g6(r).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+function AU(r) {
+    let n = r.replace(/^0x/, "");
+    if (n.length % 2 !== 0) throw Error("Invalid hex string length");
+    let v = new Uint8Array(n.length / 2);
+    for (let t = 0; t < n.length; t += 2)
+        v[t / 2] = Number.parseInt(n.slice(t, t + 2), 16);
+    return v;
+}
+function MU(r) {
+    return Array.from(r)
+        .map((n) => n.toString(16).padStart(2, "0"))
+        .join("");
+}
+class I6 {
+    constructor(...r) {}
+}
+var _6 = (r, n) => {
+        (r.name = "$ZodError"),
+            Object.defineProperty(r, "_zod", { value: r._zod, enumerable: !1 }),
+            Object.defineProperty(r, "issues", { value: n, enumerable: !1 }),
+            (r.message = JSON.stringify(n, qr, 2)),
+            Object.defineProperty(r, "toString", {
+                value: () => r.message,
+                enumerable: !1,
+            });
+    },
+    Di = U("$ZodError", _6),
+    e = U("$ZodError", _6, { Parent: Error });
+function ki(r, n = (v) => v.message) {
+    let v = {},
+        t = [];
+    for (let i of r.issues)
+        if (i.path.length > 0)
+            (v[i.path[0]] = v[i.path[0]] || []), v[i.path[0]].push(n(i));
+        else t.push(n(i));
+    return { formErrors: t, fieldErrors: v };
+}
+function li(r, n = (v) => v.message) {
+    let v = { _errors: [] },
+        t = (i, $ = []) => {
+            for (let u of i.issues)
+                if (u.code === "invalid_union" && u.errors.length)
+                    u.errors.map((g) => t({ issues: g }, [...$, ...u.path]));
+                else if (u.code === "invalid_key")
+                    t({ issues: u.issues }, [...$, ...u.path]);
+                else if (u.code === "invalid_element")
+                    t({ issues: u.issues }, [...$, ...u.path]);
+                else {
+                    let g = [...$, ...u.path];
+                    if (g.length === 0) v._errors.push(n(u));
+                    else {
+                        let _ = v,
+                            I = 0;
+                        while (I < g.length) {
+                            let o = g[I];
+                            if (I !== g.length - 1)
+                                _[o] = _[o] || { _errors: [] };
+                            else
+                                (_[o] = _[o] || { _errors: [] }),
+                                    _[o]._errors.push(n(u));
+                            (_ = _[o]), I++;
+                        }
+                    }
+                }
+        };
+    return t(r), v;
+}
+function yv(r, n = (v) => v.message) {
+    let v = { errors: [] },
+        t = (i, $ = []) => {
+            var u, g;
+            for (let _ of i.issues)
+                if (_.code === "invalid_union" && _.errors.length)
+                    _.errors.map((I) => t({ issues: I }, [...$, ..._.path]));
+                else if (_.code === "invalid_key")
+                    t({ issues: _.issues }, [...$, ..._.path]);
+                else if (_.code === "invalid_element")
+                    t({ issues: _.issues }, [...$, ..._.path]);
+                else {
+                    let I = [...$, ..._.path];
+                    if (I.length === 0) {
+                        v.errors.push(n(_));
+                        continue;
+                    }
+                    let o = v,
+                        D = 0;
+                    while (D < I.length) {
+                        let S = I[D],
+                            c = D === I.length - 1;
+                        if (typeof S === "string")
+                            o.properties ?? (o.properties = {}),
+                                (u = o.properties)[S] ??
+                                    (u[S] = { errors: [] }),
+                                (o = o.properties[S]);
+                        else
+                            o.items ?? (o.items = []),
+                                (g = o.items)[S] ?? (g[S] = { errors: [] }),
+                                (o = o.items[S]);
+                        if (c) o.errors.push(n(_));
+                        D++;
+                    }
+                }
+        };
+    return t(r), v;
+}
+function o6(r) {
+    let n = [],
+        v = r.map((t) => (typeof t === "object" ? t.key : t));
+    for (let t of v)
+        if (typeof t === "number") n.push(`[${t}]`);
+        else if (typeof t === "symbol")
+            n.push(`[${JSON.stringify(String(t))}]`);
+        else if (/[^\w$]/.test(t)) n.push(`[${JSON.stringify(t)}]`);
+        else {
+            if (n.length) n.push(".");
+            n.push(t);
+        }
+    return n.join("");
+}
+function hv(r) {
+    let n = [],
+        v = [...r.issues].sort(
+            (t, i) => (t.path ?? []).length - (i.path ?? []).length,
+        );
+    for (let t of v)
+        if ((n.push(`✖ ${t.message}`), t.path?.length))
+            n.push(`  → at ${o6(t.path)}`);
+    return n.join(`
+`);
+}
+var Yr = (r) => (n, v, t, i) => {
+        let $ = t ? { ...t, async: !1 } : { async: !1 },
+            u = n._zod.run({ value: v, issues: [] }, $);
+        if (u instanceof Promise) throw new a();
+        if (u.issues.length) {
+            let g = new (i?.Err ?? r)(u.issues.map((_) => A(_, $, V())));
+            throw (Ci(g, i?.callee), g);
+        }
+        return u.value;
+    },
+    mi = Yr(e),
+    Vr = (r) => async (n, v, t, i) => {
+        let $ = t ? { ...t, async: !0 } : { async: !0 },
+            u = n._zod.run({ value: v, issues: [] }, $);
+        if (u instanceof Promise) u = await u;
+        if (u.issues.length) {
+            let g = new (i?.Err ?? r)(u.issues.map((_) => A(_, $, V())));
+            throw (Ci(g, i?.callee), g);
+        }
+        return u.value;
+    },
+    yi = Vr(e),
+    Kr = (r) => (n, v, t) => {
+        let i = t ? { ...t, async: !1 } : { async: !1 },
+            $ = n._zod.run({ value: v, issues: [] }, i);
+        if ($ instanceof Promise) throw new a();
+        return $.issues.length
+            ? {
+                  success: !1,
+                  error: new (r ?? Di)($.issues.map((u) => A(u, i, V()))),
+              }
+            : { success: !0, data: $.value };
+    },
+    dv = Kr(e),
+    Qr = (r) => async (n, v, t) => {
+        let i = t ? { ...t, async: !0 } : { async: !0 },
+            $ = n._zod.run({ value: v, issues: [] }, i);
+        if ($ instanceof Promise) $ = await $;
+        return $.issues.length
+            ? { success: !1, error: new r($.issues.map((u) => A(u, i, V()))) }
+            : { success: !0, data: $.value };
+    },
+    pv = Qr(e),
+    hi = (r) => (n, v, t) => {
+        let i = t ? { ...t, direction: "backward" } : { direction: "backward" };
+        return Yr(r)(n, v, i);
+    },
+    RU = hi(e),
+    di = (r) => (n, v, t) => {
+        return Yr(r)(n, v, t);
+    },
+    ZU = di(e),
+    pi = (r) => async (n, v, t) => {
+        let i = t ? { ...t, direction: "backward" } : { direction: "backward" };
+        return Vr(r)(n, v, i);
+    },
+    eU = pi(e),
+    ai = (r) => async (n, v, t) => {
+        return Vr(r)(n, v, t);
+    },
+    xU = ai(e),
+    si = (r) => (n, v, t) => {
+        let i = t ? { ...t, direction: "backward" } : { direction: "backward" };
+        return Kr(r)(n, v, i);
+    },
+    fU = si(e),
+    rn = (r) => (n, v, t) => {
+        return Kr(r)(n, v, t);
+    },
+    CU = rn(e),
+    nn = (r) => async (n, v, t) => {
+        let i = t ? { ...t, direction: "backward" } : { direction: "backward" };
+        return Qr(r)(n, v, i);
+    },
+    mU = nn(e),
+    vn = (r) => async (n, v, t) => {
+        return Qr(r)(n, v, t);
+    },
+    yU = vn(e);
+var C = {};
+vr(C, {
+    xid: () => i$,
+    uuid7: () => aU,
+    uuid6: () => pU,
+    uuid4: () => dU,
+    uuid: () => jr,
+    uppercase: () => X$,
+    unicodeEmail: () => U6,
+    undefined: () => L$,
+    ulid: () => r$,
+    time: () => w$,
+    string: () => N$,
+    sha512_hex: () => Nb,
+    sha512_base64url: () => jb,
+    sha512_base64: () => zb,
+    sha384_hex: () => cb,
+    sha384_base64url: () => Sb,
+    sha384_base64: () => wb,
+    sha256_hex: () => Db,
+    sha256_base64url: () => lb,
+    sha256_base64: () => kb,
+    sha1_hex: () => ob,
+    sha1_base64url: () => bb,
+    sha1_base64: () => Ub,
+    rfc5322Email: () => rb,
+    number: () => ci,
+    null: () => J$,
+    nanoid: () => v$,
+    md5_hex: () => gb,
+    md5_base64url: () => _b,
+    md5_base64: () => Ib,
+    mac: () => o$,
+    lowercase: () => G$,
+    ksuid: () => n$,
+    ipv6: () => _$,
+    ipv4: () => I$,
+    integer: () => j$,
+    idnEmail: () => ib,
+    httpProtocol: () => k$,
+    html5Email: () => sU,
+    hostname: () => $b,
+    hex: () => ub,
+    guid: () => t$,
+    extendedDuration: () => hU,
+    emoji: () => g$,
+    email: () => u$,
+    e164: () => l$,
+    duration: () => $$,
+    domain: () => tb,
+    datetime: () => S$,
+    date: () => c$,
+    cuid2: () => sv,
+    cuid: () => av,
+    cidrv6: () => b$,
+    cidrv4: () => U$,
+    browserEmail: () => nb,
+    boolean: () => P$,
+    bigint: () => z$,
+    base64url: () => $n,
+    base64: () => D$,
+});
+var av = /^[cC][0-9a-z]{6,}$/,
+    sv = /^[0-9a-z]+$/,
+    r$ = /^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$/,
+    i$ = /^[0-9a-vA-V]{20}$/,
+    n$ = /^[A-Za-z0-9]{27}$/,
+    v$ = /^[a-zA-Z0-9_-]{21}$/,
+    $$ =
+        /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/,
+    hU =
+        /^[-+]?P(?!$)(?:(?:[-+]?\d+Y)|(?:[-+]?\d+[.,]\d+Y$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:(?:[-+]?\d+W)|(?:[-+]?\d+[.,]\d+W$))?(?:(?:[-+]?\d+D)|(?:[-+]?\d+[.,]\d+D$))?(?:T(?=[\d+-])(?:(?:[-+]?\d+H)|(?:[-+]?\d+[.,]\d+H$))?(?:(?:[-+]?\d+M)|(?:[-+]?\d+[.,]\d+M$))?(?:[-+]?\d+(?:[.,]\d+)?S)?)??$/,
+    t$ =
+        /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/,
+    jr = (r) => {
+        if (!r)
+            return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
+        return new RegExp(
+            `^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${r}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`,
+        );
+    },
+    dU = jr(4),
+    pU = jr(6),
+    aU = jr(7),
+    u$ =
+        /^(?!\.)(?!.*\.\.)([A-Za-z0-9_'+\-\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/,
+    sU =
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+    rb =
+        /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
+    U6 = /^[^\s@"]{1,64}@[^\s@]{1,255}$/u,
+    ib = U6,
+    nb =
+        /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/,
+    vb = "^(\\p{Extended_Pictographic}|\\p{Emoji_Component})+$";
+function g$() {
+    return new RegExp(vb, "u");
+}
+var I$ =
+        /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/,
+    _$ =
+        /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/,
+    o$ = (r) => {
+        let n = y(r ?? ":");
+        return new RegExp(
+            `^(?:[0-9A-F]{2}${n}){5}[0-9A-F]{2}$|^(?:[0-9a-f]{2}${n}){5}[0-9a-f]{2}$`,
+        );
+    },
+    U$ =
+        /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/,
+    b$ =
+        /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|::|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/,
+    D$ =
+        /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/,
+    $n = /^[A-Za-z0-9_-]*$/,
+    $b =
+        /^(?=.{1,253}\.?$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-0-9a-zA-Z]{0,61}[0-9a-zA-Z])?)*\.?$/,
+    tb = /^([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
+    k$ = /^https?$/,
+    l$ = /^\+[1-9]\d{6,14}$/,
+    b6 =
+        "(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))",
+    c$ = new RegExp(`^${b6}$`);
+function D6(r) {
+    return typeof r.precision === "number"
+        ? r.precision === -1
+            ? "(?:[01]\\d|2[0-3]):[0-5]\\d"
+            : r.precision === 0
+              ? "(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d"
+              : `(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{${r.precision}}`
+        : "(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?";
+}
+function w$(r) {
+    return new RegExp(`^${D6(r)}$`);
+}
+function S$(r) {
+    let n = D6({ precision: r.precision }),
+        v = ["Z"];
+    if (r.local) v.push("");
+    if (r.offset) v.push("([+-](?:[01]\\d|2[0-3]):[0-5]\\d)");
+    let t = `${n}(?:${v.join("|")})`;
+    return new RegExp(`^${b6}T(?:${t})$`);
+}
+var N$ = (r) => {
+        let n = r
+            ? `[\\s\\S]{${r?.minimum ?? 0},${r?.maximum ?? ""}}`
+            : "[\\s\\S]*";
+        return new RegExp(`^${n}$`);
+    },
+    z$ = /^-?\d+n?$/,
+    j$ = /^-?\d+$/,
+    ci = /^-?\d+(?:\.\d+)?$/,
+    P$ = /^(?:true|false)$/i,
+    J$ = /^null$/i;
+var L$ = /^undefined$/i;
+var G$ = /^[^A-Z]*$/,
+    X$ = /^[^a-z]*$/,
+    ub = /^[0-9a-fA-F]*$/;
+function wi(r, n) {
+    return new RegExp(`^[A-Za-z0-9+/]{${r}}${n}$`);
+}
+function Si(r) {
+    return new RegExp(`^[A-Za-z0-9_-]{${r}}$`);
+}
+var gb = /^[0-9a-fA-F]{32}$/,
+    Ib = wi(22, "=="),
+    _b = Si(22),
+    ob = /^[0-9a-fA-F]{40}$/,
+    Ub = wi(27, "="),
+    bb = Si(27),
+    Db = /^[0-9a-fA-F]{64}$/,
+    kb = wi(43, "="),
+    lb = Si(43),
+    cb = /^[0-9a-fA-F]{96}$/,
+    wb = wi(64, ""),
+    Sb = Si(64),
+    Nb = /^[0-9a-fA-F]{128}$/,
+    zb = wi(86, "=="),
+    jb = Si(86);
+var W = U("$ZodCheck", (r, n) => {
+        var v;
+        r._zod ?? (r._zod = {}),
+            (r._zod.def = n),
+            (v = r._zod).onattach ?? (v.onattach = []);
+    }),
+    l6 = { number: "number", bigint: "bigint", object: "date" },
+    tn = U("$ZodCheckLessThan", (r, n) => {
+        W.init(r, n);
+        let v = l6[typeof n.value];
+        r._zod.onattach.push((t) => {
+            let i = t._zod.bag,
+                $ =
+                    (n.inclusive ? i.maximum : i.exclusiveMaximum) ??
+                    Number.POSITIVE_INFINITY;
+            if (n.value < $)
+                if (n.inclusive) i.maximum = n.value;
+                else i.exclusiveMaximum = n.value;
+        }),
+            (r._zod.check = (t) => {
+                if (n.inclusive ? t.value <= n.value : t.value < n.value)
+                    return;
+                t.issues.push({
+                    origin: v,
+                    code: "too_big",
+                    maximum:
+                        typeof n.value === "object"
+                            ? n.value.getTime()
+                            : n.value,
+                    input: t.value,
+                    inclusive: n.inclusive,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    un = U("$ZodCheckGreaterThan", (r, n) => {
+        W.init(r, n);
+        let v = l6[typeof n.value];
+        r._zod.onattach.push((t) => {
+            let i = t._zod.bag,
+                $ =
+                    (n.inclusive ? i.minimum : i.exclusiveMinimum) ??
+                    Number.NEGATIVE_INFINITY;
+            if (n.value > $)
+                if (n.inclusive) i.minimum = n.value;
+                else i.exclusiveMinimum = n.value;
+        }),
+            (r._zod.check = (t) => {
+                if (n.inclusive ? t.value >= n.value : t.value > n.value)
+                    return;
+                t.issues.push({
+                    origin: v,
+                    code: "too_small",
+                    minimum:
+                        typeof n.value === "object"
+                            ? n.value.getTime()
+                            : n.value,
+                    input: t.value,
+                    inclusive: n.inclusive,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    E$ = U("$ZodCheckMultipleOf", (r, n) => {
+        W.init(r, n),
+            r._zod.onattach.push((v) => {
+                var t;
+                (t = v._zod.bag).multipleOf ?? (t.multipleOf = n.value);
+            }),
+            (r._zod.check = (v) => {
+                if (typeof v.value !== typeof n.value)
+                    throw Error(
+                        "Cannot mix number and bigint in multiple_of check.",
+                    );
+                if (
+                    typeof v.value === "bigint"
+                        ? v.value % n.value === BigInt(0)
+                        : Mv(v.value, n.value) === 0
+                )
+                    return;
+                v.issues.push({
+                    origin: typeof v.value,
+                    code: "not_multiple_of",
+                    divisor: n.value,
+                    input: v.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    q$ = U("$ZodCheckNumberFormat", (r, n) => {
+        W.init(r, n), (n.format = n.format || "float64");
+        let v = n.format?.includes("int"),
+            t = v ? "int" : "number",
+            [i, $] = fv[n.format];
+        r._zod.onattach.push((u) => {
+            let g = u._zod.bag;
+            if (((g.format = n.format), (g.minimum = i), (g.maximum = $), v))
+                g.pattern = j$;
+        }),
+            (r._zod.check = (u) => {
+                let g = u.value;
+                if (v) {
+                    if (!Number.isInteger(g)) {
+                        u.issues.push({
+                            expected: t,
+                            format: n.format,
+                            code: "invalid_type",
+                            continue: !1,
+                            input: g,
+                            inst: r,
+                        });
+                        return;
+                    }
+                    if (!Number.isSafeInteger(g)) {
+                        if (g > 0)
+                            u.issues.push({
+                                input: g,
+                                code: "too_big",
+                                maximum: Number.MAX_SAFE_INTEGER,
+                                note: "Integers must be within the safe integer range.",
+                                inst: r,
+                                origin: t,
+                                inclusive: !0,
+                                continue: !n.abort,
+                            });
+                        else
+                            u.issues.push({
+                                input: g,
+                                code: "too_small",
+                                minimum: Number.MIN_SAFE_INTEGER,
+                                note: "Integers must be within the safe integer range.",
+                                inst: r,
+                                origin: t,
+                                inclusive: !0,
+                                continue: !n.abort,
+                            });
+                        return;
+                    }
+                }
+                if (g < i)
+                    u.issues.push({
+                        origin: "number",
+                        input: g,
+                        code: "too_small",
+                        minimum: i,
+                        inclusive: !0,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                if (g > $)
+                    u.issues.push({
+                        origin: "number",
+                        input: g,
+                        code: "too_big",
+                        maximum: $,
+                        inclusive: !0,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+            });
+    }),
+    O$ = U("$ZodCheckBigIntFormat", (r, n) => {
+        W.init(r, n);
+        let [v, t] = Cv[n.format];
+        r._zod.onattach.push((i) => {
+            let $ = i._zod.bag;
+            ($.format = n.format), ($.minimum = v), ($.maximum = t);
+        }),
+            (r._zod.check = (i) => {
+                let $ = i.value;
+                if ($ < v)
+                    i.issues.push({
+                        origin: "bigint",
+                        input: $,
+                        code: "too_small",
+                        minimum: v,
+                        inclusive: !0,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                if ($ > t)
+                    i.issues.push({
+                        origin: "bigint",
+                        input: $,
+                        code: "too_big",
+                        maximum: t,
+                        inclusive: !0,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+            });
+    }),
+    W$ = U("$ZodCheckMaxSize", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.size !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
+                if (n.maximum < i) t._zod.bag.maximum = n.maximum;
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value;
+                if (i.size <= n.maximum) return;
+                t.issues.push({
+                    origin: Ui(i),
+                    code: "too_big",
+                    maximum: n.maximum,
+                    inclusive: !0,
+                    input: i,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    Y$ = U("$ZodCheckMinSize", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.size !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
+                if (n.minimum > i) t._zod.bag.minimum = n.minimum;
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value;
+                if (i.size >= n.minimum) return;
+                t.issues.push({
+                    origin: Ui(i),
+                    code: "too_small",
+                    minimum: n.minimum,
+                    inclusive: !0,
+                    input: i,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    V$ = U("$ZodCheckSizeEquals", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.size !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag;
+                (i.minimum = n.size), (i.maximum = n.size), (i.size = n.size);
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value,
+                    $ = i.size;
+                if ($ === n.size) return;
+                let u = $ > n.size;
+                t.issues.push({
+                    origin: Ui(i),
+                    ...(u
+                        ? { code: "too_big", maximum: n.size }
+                        : { code: "too_small", minimum: n.size }),
+                    inclusive: !0,
+                    exact: !0,
+                    input: t.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    K$ = U("$ZodCheckMaxLength", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.length !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag.maximum ?? Number.POSITIVE_INFINITY;
+                if (n.maximum < i) t._zod.bag.maximum = n.maximum;
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value;
+                if (i.length <= n.maximum) return;
+                let u = bi(i);
+                t.issues.push({
+                    origin: u,
+                    code: "too_big",
+                    maximum: n.maximum,
+                    inclusive: !0,
+                    input: i,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    Q$ = U("$ZodCheckMinLength", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.length !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag.minimum ?? Number.NEGATIVE_INFINITY;
+                if (n.minimum > i) t._zod.bag.minimum = n.minimum;
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value;
+                if (i.length >= n.minimum) return;
+                let u = bi(i);
+                t.issues.push({
+                    origin: u,
+                    code: "too_small",
+                    minimum: n.minimum,
+                    inclusive: !0,
+                    input: i,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    H$ = U("$ZodCheckLengthEquals", (r, n) => {
+        var v;
+        W.init(r, n),
+            (v = r._zod.def).when ??
+                (v.when = (t) => {
+                    let i = t.value;
+                    return !_r(i) && i.length !== void 0;
+                }),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag;
+                (i.minimum = n.length),
+                    (i.maximum = n.length),
+                    (i.length = n.length);
+            }),
+            (r._zod.check = (t) => {
+                let i = t.value,
+                    $ = i.length;
+                if ($ === n.length) return;
+                let u = bi(i),
+                    g = $ > n.length;
+                t.issues.push({
+                    origin: u,
+                    ...(g
+                        ? { code: "too_big", maximum: n.length }
+                        : { code: "too_small", minimum: n.length }),
+                    inclusive: !0,
+                    exact: !0,
+                    input: t.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    Hr = U("$ZodCheckStringFormat", (r, n) => {
+        var v, t;
+        if (
+            (W.init(r, n),
+            r._zod.onattach.push((i) => {
+                let $ = i._zod.bag;
+                if ((($.format = n.format), n.pattern))
+                    $.patterns ?? ($.patterns = new Set()),
+                        $.patterns.add(n.pattern);
+            }),
+            n.pattern)
+        )
+            (v = r._zod).check ??
+                (v.check = (i) => {
+                    if (((n.pattern.lastIndex = 0), n.pattern.test(i.value)))
+                        return;
+                    i.issues.push({
+                        origin: "string",
+                        code: "invalid_format",
+                        format: n.format,
+                        input: i.value,
+                        ...(n.pattern ? { pattern: n.pattern.toString() } : {}),
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                });
+        else (t = r._zod).check ?? (t.check = () => {});
+    }),
+    T$ = U("$ZodCheckRegex", (r, n) => {
+        Hr.init(r, n),
+            (r._zod.check = (v) => {
+                if (((n.pattern.lastIndex = 0), n.pattern.test(v.value)))
+                    return;
+                v.issues.push({
+                    origin: "string",
+                    code: "invalid_format",
+                    format: "regex",
+                    input: v.value,
+                    pattern: n.pattern.toString(),
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    B$ = U("$ZodCheckLowerCase", (r, n) => {
+        n.pattern ?? (n.pattern = G$), Hr.init(r, n);
+    }),
+    A$ = U("$ZodCheckUpperCase", (r, n) => {
+        n.pattern ?? (n.pattern = X$), Hr.init(r, n);
+    }),
+    M$ = U("$ZodCheckIncludes", (r, n) => {
+        W.init(r, n);
+        let v = y(n.includes),
+            t = new RegExp(
+                typeof n.position === "number" ? `^.{${n.position}}${v}` : v,
+            );
+        (n.pattern = t),
+            r._zod.onattach.push((i) => {
+                let $ = i._zod.bag;
+                $.patterns ?? ($.patterns = new Set()), $.patterns.add(t);
+            }),
+            (r._zod.check = (i) => {
+                if (i.value.includes(n.includes, n.position)) return;
+                i.issues.push({
+                    origin: "string",
+                    code: "invalid_format",
+                    format: "includes",
+                    includes: n.includes,
+                    input: i.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    F$ = U("$ZodCheckStartsWith", (r, n) => {
+        W.init(r, n);
+        let v = new RegExp(`^${y(n.prefix)}.*`);
+        n.pattern ?? (n.pattern = v),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag;
+                i.patterns ?? (i.patterns = new Set()), i.patterns.add(v);
+            }),
+            (r._zod.check = (t) => {
+                if (t.value.startsWith(n.prefix)) return;
+                t.issues.push({
+                    origin: "string",
+                    code: "invalid_format",
+                    format: "starts_with",
+                    prefix: n.prefix,
+                    input: t.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    R$ = U("$ZodCheckEndsWith", (r, n) => {
+        W.init(r, n);
+        let v = new RegExp(`.*${y(n.suffix)}$`);
+        n.pattern ?? (n.pattern = v),
+            r._zod.onattach.push((t) => {
+                let i = t._zod.bag;
+                i.patterns ?? (i.patterns = new Set()), i.patterns.add(v);
+            }),
+            (r._zod.check = (t) => {
+                if (t.value.endsWith(n.suffix)) return;
+                t.issues.push({
+                    origin: "string",
+                    code: "invalid_format",
+                    format: "ends_with",
+                    suffix: n.suffix,
+                    input: t.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    });
+function k6(r, n, v) {
+    if (r.issues.length) n.issues.push(...Z(v, r.issues));
+}
+var Z$ = U("$ZodCheckProperty", (r, n) => {
+        W.init(r, n),
+            (r._zod.check = (v) => {
+                let t = n.schema._zod.run(
+                    { value: v.value[n.property], issues: [] },
+                    {},
+                );
+                if (t instanceof Promise)
+                    return t.then((i) => k6(i, v, n.property));
+                k6(t, v, n.property);
+                return;
+            });
+    }),
+    e$ = U("$ZodCheckMimeType", (r, n) => {
+        W.init(r, n);
+        let v = new Set(n.mime);
+        r._zod.onattach.push((t) => {
+            t._zod.bag.mime = n.mime;
+        }),
+            (r._zod.check = (t) => {
+                if (v.has(t.value.type)) return;
+                t.issues.push({
+                    code: "invalid_value",
+                    values: n.mime,
+                    input: t.value.type,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    x$ = U("$ZodCheckOverwrite", (r, n) => {
+        W.init(r, n),
+            (r._zod.check = (v) => {
+                v.value = n.tx(v.value);
+            });
+    });
+class gn {
+    constructor(r = []) {
+        if (((this.content = []), (this.indent = 0), this)) this.args = r;
+    }
+    indented(r) {
+        (this.indent += 1), r(this), (this.indent -= 1);
+    }
+    write(r) {
+        if (typeof r === "function") {
+            r(this, { execution: "sync" }), r(this, { execution: "async" });
+            return;
+        }
+        let v = r
+                .split(`
+`)
+                .filter(($) => $),
+            t = Math.min(...v.map(($) => $.length - $.trimStart().length)),
+            i = v
+                .map(($) => $.slice(t))
+                .map(($) => " ".repeat(this.indent * 2) + $);
+        for (let $ of i) this.content.push($);
+    }
+    compile() {
+        let r = Function,
+            n = this?.args,
+            t = [...(this?.content ?? [""]).map((i) => `  ${i}`)];
+        return new r(
+            ...n,
+            t.join(`
+`),
+        );
+    }
+}
+var f$ = { major: 4, minor: 4, patch: 3 };
+var P = U("$ZodType", (r, n) => {
+        var v;
+        r ?? (r = {}),
+            (r._zod.def = n),
+            (r._zod.bag = r._zod.bag || {}),
+            (r._zod.version = f$);
+        let t = [...(r._zod.def.checks ?? [])];
+        if (r._zod.traits.has("$ZodCheck")) t.unshift(r);
+        for (let i of t) for (let $ of i._zod.onattach) $(r);
+        if (t.length === 0)
+            (v = r._zod).deferred ?? (v.deferred = []),
+                r._zod.deferred?.push(() => {
+                    r._zod.run = r._zod.parse;
+                });
+        else {
+            let i = (u, g, _) => {
+                    let I = br(u),
+                        o;
+                    for (let D of g) {
+                        if (D._zod.def.when) {
+                            if (mv(u)) continue;
+                            if (!D._zod.def.when(u)) continue;
+                        } else if (I) continue;
+                        let S = u.issues.length,
+                            c = D._zod.check(u);
+                        if (c instanceof Promise && _?.async === !1)
+                            throw new a();
+                        if (o || c instanceof Promise)
+                            o = (o ?? Promise.resolve()).then(async () => {
+                                if ((await c, u.issues.length === S)) return;
+                                if (!I) I = br(u, S);
+                            });
+                        else {
+                            if (u.issues.length === S) continue;
+                            if (!I) I = br(u, S);
+                        }
+                    }
+                    if (o)
+                        return o.then(() => {
+                            return u;
+                        });
+                    return u;
+                },
+                $ = (u, g, _) => {
+                    if (br(u)) return (u.aborted = !0), u;
+                    let I = i(g, t, _);
+                    if (I instanceof Promise) {
+                        if (_.async === !1) throw new a();
+                        return I.then((o) => r._zod.parse(o, _));
+                    }
+                    return r._zod.parse(I, _);
+                };
+            r._zod.run = (u, g) => {
+                if (g.skipChecks) return r._zod.parse(u, g);
+                if (g.direction === "backward") {
+                    let I = r._zod.parse(
+                        { value: u.value, issues: [] },
+                        { ...g, skipChecks: !0 },
+                    );
+                    if (I instanceof Promise)
+                        return I.then((o) => {
+                            return $(o, u, g);
+                        });
+                    return $(I, u, g);
+                }
+                let _ = r._zod.parse(u, g);
+                if (_ instanceof Promise) {
+                    if (g.async === !1) throw new a();
+                    return _.then((I) => i(I, t, g));
+                }
+                return i(_, t, g);
+            };
+        }
+        L(r, "~standard", () => ({
+            validate: (i) => {
+                try {
+                    let $ = dv(r, i);
+                    return $.success
+                        ? { value: $.data }
+                        : { issues: $.error?.issues };
+                } catch ($) {
+                    return pv(r, i).then((u) =>
+                        u.success
+                            ? { value: u.data }
+                            : { issues: u.error?.issues },
+                    );
+                }
+            },
+            vendor: "zod",
+            version: 1,
+        }));
+    }),
+    Pr = U("$ZodString", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern =
+                [...(r?._zod.bag?.patterns ?? [])].pop() ?? N$(r._zod.bag)),
+            (r._zod.parse = (v, t) => {
+                if (n.coerce)
+                    try {
+                        v.value = String(v.value);
+                    } catch (i) {}
+                if (typeof v.value === "string") return v;
+                return (
+                    v.issues.push({
+                        expected: "string",
+                        code: "invalid_type",
+                        input: v.value,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    q = U("$ZodStringFormat", (r, n) => {
+        Hr.init(r, n), Pr.init(r, n);
+    }),
+    m$ = U("$ZodGUID", (r, n) => {
+        n.pattern ?? (n.pattern = t$), q.init(r, n);
+    }),
+    y$ = U("$ZodUUID", (r, n) => {
+        if (n.version) {
+            let t = { v1: 1, v2: 2, v3: 3, v4: 4, v5: 5, v6: 6, v7: 7, v8: 8 }[
+                n.version
+            ];
+            if (t === void 0)
+                throw Error(`Invalid UUID version: "${n.version}"`);
+            n.pattern ?? (n.pattern = jr(t));
+        } else n.pattern ?? (n.pattern = jr());
+        q.init(r, n);
+    }),
+    h$ = U("$ZodEmail", (r, n) => {
+        n.pattern ?? (n.pattern = u$), q.init(r, n);
+    }),
+    d$ = U("$ZodURL", (r, n) => {
+        q.init(r, n),
+            (r._zod.check = (v) => {
+                try {
+                    let t = v.value.trim();
+                    if (!n.normalize && n.protocol?.source === k$.source) {
+                        if (!/^https?:\/\//i.test(t)) {
+                            v.issues.push({
+                                code: "invalid_format",
+                                format: "url",
+                                note: "Invalid URL format",
+                                input: v.value,
+                                inst: r,
+                                continue: !n.abort,
+                            });
+                            return;
+                        }
+                    }
+                    let i = new URL(t);
+                    if (n.hostname) {
+                        if (
+                            ((n.hostname.lastIndex = 0),
+                            !n.hostname.test(i.hostname))
+                        )
+                            v.issues.push({
+                                code: "invalid_format",
+                                format: "url",
+                                note: "Invalid hostname",
+                                pattern: n.hostname.source,
+                                input: v.value,
+                                inst: r,
+                                continue: !n.abort,
+                            });
+                    }
+                    if (n.protocol) {
+                        if (
+                            ((n.protocol.lastIndex = 0),
+                            !n.protocol.test(
+                                i.protocol.endsWith(":")
+                                    ? i.protocol.slice(0, -1)
+                                    : i.protocol,
+                            ))
+                        )
+                            v.issues.push({
+                                code: "invalid_format",
+                                format: "url",
+                                note: "Invalid protocol",
+                                pattern: n.protocol.source,
+                                input: v.value,
+                                inst: r,
+                                continue: !n.abort,
+                            });
+                    }
+                    if (n.normalize) v.value = i.href;
+                    else v.value = t;
+                    return;
+                } catch (t) {
+                    v.issues.push({
+                        code: "invalid_format",
+                        format: "url",
+                        input: v.value,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                }
+            });
+    }),
+    p$ = U("$ZodEmoji", (r, n) => {
+        n.pattern ?? (n.pattern = g$()), q.init(r, n);
+    }),
+    a$ = U("$ZodNanoID", (r, n) => {
+        n.pattern ?? (n.pattern = v$), q.init(r, n);
+    }),
+    s$ = U("$ZodCUID", (r, n) => {
+        n.pattern ?? (n.pattern = av), q.init(r, n);
+    }),
+    rt = U("$ZodCUID2", (r, n) => {
+        n.pattern ?? (n.pattern = sv), q.init(r, n);
+    }),
+    it = U("$ZodULID", (r, n) => {
+        n.pattern ?? (n.pattern = r$), q.init(r, n);
+    }),
+    nt = U("$ZodXID", (r, n) => {
+        n.pattern ?? (n.pattern = i$), q.init(r, n);
+    }),
+    vt = U("$ZodKSUID", (r, n) => {
+        n.pattern ?? (n.pattern = n$), q.init(r, n);
+    }),
+    $t = U("$ZodISODateTime", (r, n) => {
+        n.pattern ?? (n.pattern = S$(n)), q.init(r, n);
+    }),
+    tt = U("$ZodISODate", (r, n) => {
+        n.pattern ?? (n.pattern = c$), q.init(r, n);
+    }),
+    ut = U("$ZodISOTime", (r, n) => {
+        n.pattern ?? (n.pattern = w$(n)), q.init(r, n);
+    }),
+    gt = U("$ZodISODuration", (r, n) => {
+        n.pattern ?? (n.pattern = $$), q.init(r, n);
+    }),
+    It = U("$ZodIPv4", (r, n) => {
+        n.pattern ?? (n.pattern = I$),
+            q.init(r, n),
+            (r._zod.bag.format = "ipv4");
+    }),
+    _t = U("$ZodIPv6", (r, n) => {
+        n.pattern ?? (n.pattern = _$),
+            q.init(r, n),
+            (r._zod.bag.format = "ipv6"),
+            (r._zod.check = (v) => {
+                try {
+                    new URL(`http://[${v.value}]`);
+                } catch {
+                    v.issues.push({
+                        code: "invalid_format",
+                        format: "ipv6",
+                        input: v.value,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                }
+            });
+    }),
+    ot = U("$ZodMAC", (r, n) => {
+        n.pattern ?? (n.pattern = o$(n.delimiter)),
+            q.init(r, n),
+            (r._zod.bag.format = "mac");
+    }),
+    Ut = U("$ZodCIDRv4", (r, n) => {
+        n.pattern ?? (n.pattern = U$), q.init(r, n);
+    }),
+    bt = U("$ZodCIDRv6", (r, n) => {
+        n.pattern ?? (n.pattern = b$),
+            q.init(r, n),
+            (r._zod.check = (v) => {
+                let t = v.value.split("/");
+                try {
+                    if (t.length !== 2) throw Error();
+                    let [i, $] = t;
+                    if (!$) throw Error();
+                    let u = Number($);
+                    if (`${u}` !== $) throw Error();
+                    if (u < 0 || u > 128) throw Error();
+                    new URL(`http://[${i}]`);
+                } catch {
+                    v.issues.push({
+                        code: "invalid_format",
+                        format: "cidrv6",
+                        input: v.value,
+                        inst: r,
+                        continue: !n.abort,
+                    });
+                }
+            });
+    });
+function Dt(r) {
+    if (r === "") return !0;
+    if (/\s/.test(r)) return !1;
+    if (r.length % 4 !== 0) return !1;
+    try {
+        return atob(r), !0;
+    } catch {
+        return !1;
+    }
+}
+var kt = U("$ZodBase64", (r, n) => {
+    n.pattern ?? (n.pattern = D$),
+        q.init(r, n),
+        (r._zod.bag.contentEncoding = "base64"),
+        (r._zod.check = (v) => {
+            if (Dt(v.value)) return;
+            v.issues.push({
+                code: "invalid_format",
+                format: "base64",
+                input: v.value,
+                inst: r,
+                continue: !n.abort,
+            });
+        });
+});
+function Y6(r) {
+    if (!$n.test(r)) return !1;
+    let n = r.replace(/[-_]/g, (t) => (t === "-" ? "+" : "/")),
+        v = n.padEnd(Math.ceil(n.length / 4) * 4, "=");
+    return Dt(v);
+}
+var lt = U("$ZodBase64URL", (r, n) => {
+        n.pattern ?? (n.pattern = $n),
+            q.init(r, n),
+            (r._zod.bag.contentEncoding = "base64url"),
+            (r._zod.check = (v) => {
+                if (Y6(v.value)) return;
+                v.issues.push({
+                    code: "invalid_format",
+                    format: "base64url",
+                    input: v.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    ct = U("$ZodE164", (r, n) => {
+        n.pattern ?? (n.pattern = l$), q.init(r, n);
+    });
+function V6(r, n = null) {
+    try {
+        let v = r.split(".");
+        if (v.length !== 3) return !1;
+        let [t] = v;
+        if (!t) return !1;
+        let i = JSON.parse(atob(t));
+        if ("typ" in i && i?.typ !== "JWT") return !1;
+        if (!i.alg) return !1;
+        if (n && (!("alg" in i) || i.alg !== n)) return !1;
+        return !0;
+    } catch {
+        return !1;
+    }
+}
+var wt = U("$ZodJWT", (r, n) => {
+        q.init(r, n),
+            (r._zod.check = (v) => {
+                if (V6(v.value, n.alg)) return;
+                v.issues.push({
+                    code: "invalid_format",
+                    format: "jwt",
+                    input: v.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    St = U("$ZodCustomStringFormat", (r, n) => {
+        q.init(r, n),
+            (r._zod.check = (v) => {
+                if (n.fn(v.value)) return;
+                v.issues.push({
+                    code: "invalid_format",
+                    format: n.format,
+                    input: v.value,
+                    inst: r,
+                    continue: !n.abort,
+                });
+            });
+    }),
+    bn = U("$ZodNumber", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern = r._zod.bag.pattern ?? ci),
+            (r._zod.parse = (v, t) => {
+                if (n.coerce)
+                    try {
+                        v.value = Number(v.value);
+                    } catch (u) {}
+                let i = v.value;
+                if (
+                    typeof i === "number" &&
+                    !Number.isNaN(i) &&
+                    Number.isFinite(i)
+                )
+                    return v;
+                let $ =
+                    typeof i === "number"
+                        ? Number.isNaN(i)
+                            ? "NaN"
+                            : !Number.isFinite(i)
+                              ? "Infinity"
+                              : void 0
+                        : void 0;
+                return (
+                    v.issues.push({
+                        expected: "number",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                        ...($ ? { received: $ } : {}),
+                    }),
+                    v
+                );
+            });
+    }),
+    Nt = U("$ZodNumberFormat", (r, n) => {
+        q$.init(r, n), bn.init(r, n);
+    }),
+    Ni = U("$ZodBoolean", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern = P$),
+            (r._zod.parse = (v, t) => {
+                if (n.coerce)
+                    try {
+                        v.value = Boolean(v.value);
+                    } catch ($) {}
+                let i = v.value;
+                if (typeof i === "boolean") return v;
+                return (
+                    v.issues.push({
+                        expected: "boolean",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Dn = U("$ZodBigInt", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern = z$),
+            (r._zod.parse = (v, t) => {
+                if (n.coerce)
+                    try {
+                        v.value = BigInt(v.value);
+                    } catch (i) {}
+                if (typeof v.value === "bigint") return v;
+                return (
+                    v.issues.push({
+                        expected: "bigint",
+                        code: "invalid_type",
+                        input: v.value,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    zt = U("$ZodBigIntFormat", (r, n) => {
+        O$.init(r, n), Dn.init(r, n);
+    }),
+    jt = U("$ZodSymbol", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (typeof i === "symbol") return v;
+                return (
+                    v.issues.push({
+                        expected: "symbol",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Pt = U("$ZodUndefined", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern = L$),
+            (r._zod.values = new Set([void 0])),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (typeof i > "u") return v;
+                return (
+                    v.issues.push({
+                        expected: "undefined",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Jt = U("$ZodNull", (r, n) => {
+        P.init(r, n),
+            (r._zod.pattern = J$),
+            (r._zod.values = new Set([null])),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (i === null) return v;
+                return (
+                    v.issues.push({
+                        expected: "null",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Lt = U("$ZodAny", (r, n) => {
+        P.init(r, n), (r._zod.parse = (v) => v);
+    }),
+    Gt = U("$ZodUnknown", (r, n) => {
+        P.init(r, n), (r._zod.parse = (v) => v);
+    }),
+    Xt = U("$ZodNever", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                return (
+                    v.issues.push({
+                        expected: "never",
+                        code: "invalid_type",
+                        input: v.value,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Et = U("$ZodVoid", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (typeof i > "u") return v;
+                return (
+                    v.issues.push({
+                        expected: "void",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    qt = U("$ZodDate", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                if (n.coerce)
+                    try {
+                        v.value = new Date(v.value);
+                    } catch (g) {}
+                let i = v.value,
+                    $ = i instanceof Date;
+                if ($ && !Number.isNaN(i.getTime())) return v;
+                return (
+                    v.issues.push({
+                        expected: "date",
+                        code: "invalid_type",
+                        input: i,
+                        ...($ ? { received: "Invalid Date" } : {}),
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    });
+function w6(r, n, v) {
+    if (r.issues.length) n.issues.push(...Z(v, r.issues));
+    n.value[v] = r.value;
+}
+var Ot = U("$ZodArray", (r, n) => {
+    P.init(r, n),
+        (r._zod.parse = (v, t) => {
+            let i = v.value;
+            if (!Array.isArray(i))
+                return (
+                    v.issues.push({
+                        expected: "array",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            v.value = Array(i.length);
+            let $ = [];
+            for (let u = 0; u < i.length; u++) {
+                let g = i[u],
+                    _ = n.element._zod.run({ value: g, issues: [] }, t);
+                if (_ instanceof Promise) $.push(_.then((I) => w6(I, v, u)));
+                else w6(_, v, u);
+            }
+            if ($.length) return Promise.all($).then(() => v);
+            return v;
+        });
+});
+function Un(r, n, v, t, i, $) {
+    let u = v in t;
+    if (r.issues.length) {
+        if (i && $ && !u) return;
+        n.issues.push(...Z(v, r.issues));
+    }
+    if (!u && !i) {
+        if (!r.issues.length)
+            n.issues.push({
+                code: "invalid_type",
+                expected: "nonoptional",
+                input: void 0,
+                path: [v],
+            });
+        return;
+    }
+    if (r.value === void 0) {
+        if (u) n.value[v] = void 0;
+    } else n.value[v] = r.value;
+}
+function K6(r) {
+    let n = Object.keys(r.shape);
+    for (let t of n)
+        if (!r.shape?.[t]?._zod?.traits?.has("$ZodType"))
+            throw Error(`Invalid element at key "${t}": expected a Zod schema`);
+    let v = xv(r.shape);
+    return {
+        ...r,
+        keys: n,
+        keySet: new Set(n),
+        numKeys: n.length,
+        optionalKeys: new Set(v),
+    };
+}
+function Q6(r, n, v, t, i, $) {
+    let u = [],
+        g = i.keySet,
+        _ = i.catchall._zod,
+        I = _.def.type,
+        o = _.optin === "optional",
+        D = _.optout === "optional";
+    for (let S in n) {
+        if (S === "__proto__") continue;
+        if (g.has(S)) continue;
+        if (I === "never") {
+            u.push(S);
+            continue;
+        }
+        let c = _.run({ value: n[S], issues: [] }, t);
+        if (c instanceof Promise) r.push(c.then((j) => Un(j, v, S, n, o, D)));
+        else Un(c, v, S, n, o, D);
+    }
+    if (u.length)
+        v.issues.push({
+            code: "unrecognized_keys",
+            keys: u,
+            input: n,
+            inst: $,
+        });
+    if (!r.length) return v;
+    return Promise.all(r).then(() => {
+        return v;
+    });
+}
+var H6 = U("$ZodObject", (r, n) => {
+        if ((P.init(r, n), !Object.getOwnPropertyDescriptor(n, "shape")?.get)) {
+            let g = n.shape;
+            Object.defineProperty(n, "shape", {
+                get: () => {
+                    let _ = { ...g };
+                    return Object.defineProperty(n, "shape", { value: _ }), _;
+                },
+            });
+        }
+        let t = Or(() => K6(n));
+        L(r._zod, "propValues", () => {
+            let g = n.shape,
+                _ = {};
+            for (let I in g) {
+                let o = g[I]._zod;
+                if (o.values) {
+                    _[I] ?? (_[I] = new Set());
+                    for (let D of o.values) _[I].add(D);
+                }
+            }
+            return _;
+        });
+        let i = zr,
+            $ = n.catchall,
+            u;
+        r._zod.parse = (g, _) => {
+            u ?? (u = t.value);
+            let I = g.value;
+            if (!i(I))
+                return (
+                    g.issues.push({
+                        expected: "object",
+                        code: "invalid_type",
+                        input: I,
+                        inst: r,
+                    }),
+                    g
+                );
+            g.value = {};
+            let o = [],
+                D = u.shape;
+            for (let S of u.keys) {
+                let c = D[S],
+                    j = c._zod.optin === "optional",
+                    R = c._zod.optout === "optional",
+                    K = c._zod.run({ value: I[S], issues: [] }, _);
+                if (K instanceof Promise)
+                    o.push(K.then((Xv) => Un(Xv, g, S, I, j, R)));
+                else Un(K, g, S, I, j, R);
+            }
+            if (!$) return o.length ? Promise.all(o).then(() => g) : g;
+            return Q6(o, I, g, _, t.value, r);
+        };
+    }),
+    Wt = U("$ZodObjectJIT", (r, n) => {
+        H6.init(r, n);
+        let v = r._zod.parse,
+            t = Or(() => K6(n)),
+            i = (S) => {
+                let c = new gn(["shape", "payload", "ctx"]),
+                    j = t.value,
+                    R = (p) => {
+                        let Y = fi(p);
+                        return `shape[${Y}]._zod.run({ value: input[${Y}], issues: [] }, ctx)`;
+                    };
+                c.write("const input = payload.value;");
+                let K = Object.create(null),
+                    Xv = 0;
+                for (let p of j.keys) K[p] = `key_${Xv++}`;
+                c.write("const newResult = {};");
+                for (let p of j.keys) {
+                    let Y = K[p],
+                        Q = fi(p),
+                        T4 = S[p],
+                        B4 = T4?._zod?.optin === "optional",
+                        bo = T4?._zod?.optout === "optional";
+                    if ((c.write(`const ${Y} = ${R(p)};`), B4 && bo))
+                        c.write(`
         if (${Y}.issues.length) {
           if (${Q} in input) {
             payload.issues = payload.issues.concat(${Y}.issues.map(iss => ({
@@ -44,7 +4980,9 @@ Expecting one of '${v.join("', '")}'`);let t=`${r}Help`;return this.on(t,(i)=>{l
           newResult[${Q}] = ${Y}.value;
         }
         
-      `);else if(!B4)c.write(`
+      `);
+                    else if (!B4)
+                        c.write(`
         const ${Y}_present = ${Q} in input;
         if (${Y}.issues.length) {
           payload.issues = payload.issues.concat(${Y}.issues.map(iss => ({
@@ -69,7 +5007,9 @@ Expecting one of '${v.join("', '")}'`);let t=`${r}Help`;return this.on(t,(i)=>{l
           }
         }
 
-      `);else c.write(`
+      `);
+                    else
+                        c.write(`
         if (${Y}.issues.length) {
           payload.issues = payload.issues.concat(${Y}.issues.map(iss => ({
             ...iss,
@@ -85,6 +5025,10080 @@ Expecting one of '${v.join("', '")}'`);let t=`${r}Help`;return this.on(t,(i)=>{l
           newResult[${Q}] = ${Y}.value;
         }
         
-      `)}c.write("payload.value = newResult;"),c.write("return payload;");let Uo=c.compile();return(p,Y)=>Uo(S,p,Y)},$,u=zr,g=!Sr.jitless,I=g&&Rv.value,o=n.catchall,D;r._zod.parse=(S,c)=>{D??(D=t.value);let j=S.value;if(!u(j))return S.issues.push({expected:"object",code:"invalid_type",input:j,inst:r}),S;if(g&&I&&c?.async===!1&&c.jitless!==!0){if(!$)$=i(n.shape);if(S=$(S,c),!o)return S;return Q6([],j,S,c,D,r)}return v(S,c)}});function S6(r,n,v,t){for(let $ of r)if($.issues.length===0)return n.value=$.value,n;let i=r.filter(($)=>!br($));if(i.length===1)return n.value=i[0].value,i[0];return n.issues.push({code:"invalid_union",input:n.value,inst:v,errors:r.map(($)=>$.issues.map((u)=>A(u,t,V())))}),n}var zi=U("$ZodUnion",(r,n)=>{P.init(r,n),L(r._zod,"optin",()=>n.options.some((t)=>t._zod.optin==="optional")?"optional":void 0),L(r._zod,"optout",()=>n.options.some((t)=>t._zod.optout==="optional")?"optional":void 0),L(r._zod,"values",()=>{if(n.options.every((t)=>t._zod.values))return new Set(n.options.flatMap((t)=>Array.from(t._zod.values)));return}),L(r._zod,"pattern",()=>{if(n.options.every((t)=>t._zod.pattern)){let t=n.options.map((i)=>i._zod.pattern);return new RegExp(`^(${t.map((i)=>_i(i.source)).join("|")})$`)}return});let v=n.options.length===1?n.options[0]._zod.run:null;r._zod.parse=(t,i)=>{if(v)return v(t,i);let $=!1,u=[];for(let g of n.options){let _=g._zod.run({value:t.value,issues:[]},i);if(_ instanceof Promise)u.push(_),$=!0;else{if(_.issues.length===0)return _;u.push(_)}}if(!$)return S6(u,t,r,i);return Promise.all(u).then((g)=>{return S6(g,t,r,i)})}});function N6(r,n,v,t){let i=r.filter(($)=>$.issues.length===0);if(i.length===1)return n.value=i[0].value,n;if(i.length===0)n.issues.push({code:"invalid_union",input:n.value,inst:v,errors:r.map(($)=>$.issues.map((u)=>A(u,t,V())))});else n.issues.push({code:"invalid_union",input:n.value,inst:v,errors:[],inclusive:!1});return n}var Yt=U("$ZodXor",(r,n)=>{zi.init(r,n),n.inclusive=!1;let v=n.options.length===1?n.options[0]._zod.run:null;r._zod.parse=(t,i)=>{if(v)return v(t,i);let $=!1,u=[];for(let g of n.options){let _=g._zod.run({value:t.value,issues:[]},i);if(_ instanceof Promise)u.push(_),$=!0;else u.push(_)}if(!$)return N6(u,t,r,i);return Promise.all(u).then((g)=>{return N6(g,t,r,i)})}}),Vt=U("$ZodDiscriminatedUnion",(r,n)=>{n.inclusive=!1,zi.init(r,n);let v=r._zod.parse;L(r._zod,"propValues",()=>{let i={};for(let $ of n.options){let u=$._zod.propValues;if(!u||Object.keys(u).length===0)throw Error(`Invalid discriminated union option at index "${n.options.indexOf($)}"`);for(let[g,_]of Object.entries(u)){if(!i[g])i[g]=new Set;for(let I of _)i[g].add(I)}}return i});let t=Or(()=>{let i=n.options,$=new Map;for(let u of i){let g=u._zod.propValues?.[n.discriminator];if(!g||g.size===0)throw Error(`Invalid discriminated union option at index "${n.options.indexOf(u)}"`);for(let _ of g){if($.has(_))throw Error(`Duplicate discriminator value "${String(_)}"`);$.set(_,u)}}return $});r._zod.parse=(i,$)=>{let u=i.value;if(!zr(u))return i.issues.push({code:"invalid_type",expected:"object",input:u,inst:r}),i;let g=t.value.get(u?.[n.discriminator]);if(g)return g._zod.run(i,$);if(n.unionFallback||$.direction==="backward")return v(i,$);return i.issues.push({code:"invalid_union",errors:[],note:"No matching discriminator",discriminator:n.discriminator,options:Array.from(t.value.keys()),input:u,path:[n.discriminator],inst:r}),i}}),Kt=U("$ZodIntersection",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value,$=n.left._zod.run({value:i,issues:[]},t),u=n.right._zod.run({value:i,issues:[]},t);if($ instanceof Promise||u instanceof Promise)return Promise.all([$,u]).then(([_,I])=>{return z6(v,_,I)});return z6(v,$,u)}});function C$(r,n){if(r===n)return{valid:!0,data:r};if(r instanceof Date&&n instanceof Date&&+r===+n)return{valid:!0,data:r};if(Ur(r)&&Ur(n)){let v=Object.keys(n),t=Object.keys(r).filter(($)=>v.indexOf($)!==-1),i={...r,...n};for(let $ of t){let u=C$(r[$],n[$]);if(!u.valid)return{valid:!1,mergeErrorPath:[$,...u.mergeErrorPath]};i[$]=u.data}return{valid:!0,data:i}}if(Array.isArray(r)&&Array.isArray(n)){if(r.length!==n.length)return{valid:!1,mergeErrorPath:[]};let v=[];for(let t=0;t<r.length;t++){let i=r[t],$=n[t],u=C$(i,$);if(!u.valid)return{valid:!1,mergeErrorPath:[t,...u.mergeErrorPath]};v.push(u.data)}return{valid:!0,data:v}}return{valid:!1,mergeErrorPath:[]}}function z6(r,n,v){let t=new Map,i;for(let g of n.issues)if(g.code==="unrecognized_keys"){i??(i=g);for(let _ of g.keys){if(!t.has(_))t.set(_,{});t.get(_).l=!0}}else r.issues.push(g);for(let g of v.issues)if(g.code==="unrecognized_keys")for(let _ of g.keys){if(!t.has(_))t.set(_,{});t.get(_).r=!0}else r.issues.push(g);let $=[...t].filter(([,g])=>g.l&&g.r).map(([g])=>g);if($.length&&i)r.issues.push({...i,keys:$});if(br(r))return r;let u=C$(n.value,v.value);if(!u.valid)throw Error(`Unmergable intersection. Error path: ${JSON.stringify(u.mergeErrorPath)}`);return r.value=u.data,r}var kn=U("$ZodTuple",(r,n)=>{P.init(r,n);let v=n.items;r._zod.parse=(t,i)=>{let $=t.value;if(!Array.isArray($))return t.issues.push({input:$,inst:r,expected:"tuple",code:"invalid_type"}),t;t.value=[];let u=[],g=j6(v,"optin"),_=j6(v,"optout");if(!n.rest){if($.length<g)return t.issues.push({code:"too_small",minimum:g,inclusive:!0,input:$,inst:r,origin:"array"}),t;if($.length>v.length)t.issues.push({code:"too_big",maximum:v.length,inclusive:!0,input:$,inst:r,origin:"array"})}let I=Array(v.length);for(let o=0;o<v.length;o++){let D=v[o]._zod.run({value:$[o],issues:[]},i);if(D instanceof Promise)u.push(D.then((S)=>{I[o]=S}));else I[o]=D}if(n.rest){let o=v.length-1,D=$.slice(v.length);for(let S of D){o++;let c=n.rest._zod.run({value:S,issues:[]},i);if(c instanceof Promise)u.push(c.then((j)=>P6(j,t,o)));else P6(c,t,o)}}if(u.length)return Promise.all(u).then(()=>J6(I,t,v,$,_));return J6(I,t,v,$,_)}});function j6(r,n){for(let v=r.length-1;v>=0;v--)if(r[v]._zod[n]!=="optional")return v+1;return 0}function P6(r,n,v){if(r.issues.length)n.issues.push(...Z(v,r.issues));n.value[v]=r.value}function J6(r,n,v,t,i){for(let $=0;$<v.length;$++){let u=r[$],g=$<t.length;if(u.issues.length){if(!g&&$>=i){n.value.length=$;break}n.issues.push(...Z($,u.issues))}n.value[$]=u.value}for(let $=n.value.length-1;$>=t.length;$--)if(v[$]._zod.optout==="optional"&&n.value[$]===void 0)n.value.length=$;else break;return n}var Qt=U("$ZodRecord",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(!Ur(i))return v.issues.push({expected:"record",code:"invalid_type",input:i,inst:r}),v;let $=[],u=n.keyType._zod.values;if(u){v.value={};let g=new Set;for(let I of u)if(typeof I==="string"||typeof I==="number"||typeof I==="symbol"){g.add(typeof I==="number"?I.toString():I);let o=n.keyType._zod.run({value:I,issues:[]},t);if(o instanceof Promise)throw Error("Async schemas not supported in object keys currently");if(o.issues.length){v.issues.push({code:"invalid_key",origin:"record",issues:o.issues.map((c)=>A(c,t,V())),input:I,path:[I],inst:r});continue}let D=o.value,S=n.valueType._zod.run({value:i[I],issues:[]},t);if(S instanceof Promise)$.push(S.then((c)=>{if(c.issues.length)v.issues.push(...Z(I,c.issues));v.value[D]=c.value}));else{if(S.issues.length)v.issues.push(...Z(I,S.issues));v.value[D]=S.value}}let _;for(let I in i)if(!g.has(I))_=_??[],_.push(I);if(_&&_.length>0)v.issues.push({code:"unrecognized_keys",input:i,inst:r,keys:_})}else{v.value={};for(let g of Reflect.ownKeys(i)){if(g==="__proto__")continue;if(!Object.prototype.propertyIsEnumerable.call(i,g))continue;let _=n.keyType._zod.run({value:g,issues:[]},t);if(_ instanceof Promise)throw Error("Async schemas not supported in object keys currently");if(typeof g==="string"&&ci.test(g)&&_.issues.length){let D=n.keyType._zod.run({value:Number(g),issues:[]},t);if(D instanceof Promise)throw Error("Async schemas not supported in object keys currently");if(D.issues.length===0)_=D}if(_.issues.length){if(n.mode==="loose")v.value[g]=i[g];else v.issues.push({code:"invalid_key",origin:"record",issues:_.issues.map((D)=>A(D,t,V())),input:g,path:[g],inst:r});continue}let o=n.valueType._zod.run({value:i[g],issues:[]},t);if(o instanceof Promise)$.push(o.then((D)=>{if(D.issues.length)v.issues.push(...Z(g,D.issues));v.value[_.value]=D.value}));else{if(o.issues.length)v.issues.push(...Z(g,o.issues));v.value[_.value]=o.value}}}if($.length)return Promise.all($).then(()=>v);return v}}),Ht=U("$ZodMap",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(!(i instanceof Map))return v.issues.push({expected:"map",code:"invalid_type",input:i,inst:r}),v;let $=[];v.value=new Map;for(let[u,g]of i){let _=n.keyType._zod.run({value:u,issues:[]},t),I=n.valueType._zod.run({value:g,issues:[]},t);if(_ instanceof Promise||I instanceof Promise)$.push(Promise.all([_,I]).then(([o,D])=>{L6(o,D,v,u,i,r,t)}));else L6(_,I,v,u,i,r,t)}if($.length)return Promise.all($).then(()=>v);return v}});function L6(r,n,v,t,i,$,u){if(r.issues.length)if(oi.has(typeof t))v.issues.push(...Z(t,r.issues));else v.issues.push({code:"invalid_key",origin:"map",input:i,inst:$,issues:r.issues.map((g)=>A(g,u,V()))});if(n.issues.length)if(oi.has(typeof t))v.issues.push(...Z(t,n.issues));else v.issues.push({origin:"map",code:"invalid_element",input:i,inst:$,key:t,issues:n.issues.map((g)=>A(g,u,V()))});v.value.set(r.value,n.value)}var Tt=U("$ZodSet",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(!(i instanceof Set))return v.issues.push({input:i,inst:r,expected:"set",code:"invalid_type"}),v;let $=[];v.value=new Set;for(let u of i){let g=n.valueType._zod.run({value:u,issues:[]},t);if(g instanceof Promise)$.push(g.then((_)=>G6(_,v)));else G6(g,v)}if($.length)return Promise.all($).then(()=>v);return v}});function G6(r,n){if(r.issues.length)n.issues.push(...r.issues);n.value.add(r.value)}var Bt=U("$ZodEnum",(r,n)=>{P.init(r,n);let v=Ii(n.entries),t=new Set(v);r._zod.values=t,r._zod.pattern=new RegExp(`^(${v.filter((i)=>oi.has(typeof i)).map((i)=>typeof i==="string"?y(i):i.toString()).join("|")})$`),r._zod.parse=(i,$)=>{let u=i.value;if(t.has(u))return i;return i.issues.push({code:"invalid_value",values:v,input:u,inst:r}),i}}),At=U("$ZodLiteral",(r,n)=>{if(P.init(r,n),n.values.length===0)throw Error("Cannot create literal schema with no valid values");let v=new Set(n.values);r._zod.values=v,r._zod.pattern=new RegExp(`^(${n.values.map((t)=>typeof t==="string"?y(t):t?y(t.toString()):String(t)).join("|")})$`),r._zod.parse=(t,i)=>{let $=t.value;if(v.has($))return t;return t.issues.push({code:"invalid_value",values:n.values,input:$,inst:r}),t}}),Mt=U("$ZodFile",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{let i=v.value;if(i instanceof File)return v;return v.issues.push({expected:"file",code:"invalid_type",input:i,inst:r}),v}}),Ft=U("$ZodTransform",(r,n)=>{P.init(r,n),r._zod.optin="optional",r._zod.parse=(v,t)=>{if(t.direction==="backward")throw new Nr(r.constructor.name);let i=n.transform(v.value,v);if(t.async)return(i instanceof Promise?i:Promise.resolve(i)).then((u)=>{return v.value=u,v.fallback=!0,v});if(i instanceof Promise)throw new a;return v.value=i,v.fallback=!0,v}});function X6(r,n){if(n===void 0&&(r.issues.length||r.fallback))return{issues:[],value:void 0};return r}var ln=U("$ZodOptional",(r,n)=>{P.init(r,n),r._zod.optin="optional",r._zod.optout="optional",L(r._zod,"values",()=>{return n.innerType._zod.values?new Set([...n.innerType._zod.values,void 0]):void 0}),L(r._zod,"pattern",()=>{let v=n.innerType._zod.pattern;return v?new RegExp(`^(${_i(v.source)})?$`):void 0}),r._zod.parse=(v,t)=>{if(n.innerType._zod.optin==="optional"){let i=v.value,$=n.innerType._zod.run(v,t);if($ instanceof Promise)return $.then((u)=>X6(u,i));return X6($,i)}if(v.value===void 0)return v;return n.innerType._zod.run(v,t)}}),Rt=U("$ZodExactOptional",(r,n)=>{ln.init(r,n),L(r._zod,"values",()=>n.innerType._zod.values),L(r._zod,"pattern",()=>n.innerType._zod.pattern),r._zod.parse=(v,t)=>{return n.innerType._zod.run(v,t)}}),Zt=U("$ZodNullable",(r,n)=>{P.init(r,n),L(r._zod,"optin",()=>n.innerType._zod.optin),L(r._zod,"optout",()=>n.innerType._zod.optout),L(r._zod,"pattern",()=>{let v=n.innerType._zod.pattern;return v?new RegExp(`^(${_i(v.source)}|null)$`):void 0}),L(r._zod,"values",()=>{return n.innerType._zod.values?new Set([...n.innerType._zod.values,null]):void 0}),r._zod.parse=(v,t)=>{if(v.value===null)return v;return n.innerType._zod.run(v,t)}}),et=U("$ZodDefault",(r,n)=>{P.init(r,n),r._zod.optin="optional",L(r._zod,"values",()=>n.innerType._zod.values),r._zod.parse=(v,t)=>{if(t.direction==="backward")return n.innerType._zod.run(v,t);if(v.value===void 0)return v.value=n.defaultValue,v;let i=n.innerType._zod.run(v,t);if(i instanceof Promise)return i.then(($)=>E6($,n));return E6(i,n)}});function E6(r,n){if(r.value===void 0)r.value=n.defaultValue;return r}var xt=U("$ZodPrefault",(r,n)=>{P.init(r,n),r._zod.optin="optional",L(r._zod,"values",()=>n.innerType._zod.values),r._zod.parse=(v,t)=>{if(t.direction==="backward")return n.innerType._zod.run(v,t);if(v.value===void 0)v.value=n.defaultValue;return n.innerType._zod.run(v,t)}}),ft=U("$ZodNonOptional",(r,n)=>{P.init(r,n),L(r._zod,"values",()=>{let v=n.innerType._zod.values;return v?new Set([...v].filter((t)=>t!==void 0)):void 0}),r._zod.parse=(v,t)=>{let i=n.innerType._zod.run(v,t);if(i instanceof Promise)return i.then(($)=>q6($,r));return q6(i,r)}});function q6(r,n){if(!r.issues.length&&r.value===void 0)r.issues.push({code:"invalid_type",expected:"nonoptional",input:r.value,inst:n});return r}var Ct=U("$ZodSuccess",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{if(t.direction==="backward")throw new Nr("ZodSuccess");let i=n.innerType._zod.run(v,t);if(i instanceof Promise)return i.then(($)=>{return v.value=$.issues.length===0,v});return v.value=i.issues.length===0,v}}),mt=U("$ZodCatch",(r,n)=>{P.init(r,n),r._zod.optin="optional",L(r._zod,"optout",()=>n.innerType._zod.optout),L(r._zod,"values",()=>n.innerType._zod.values),r._zod.parse=(v,t)=>{if(t.direction==="backward")return n.innerType._zod.run(v,t);let i=n.innerType._zod.run(v,t);if(i instanceof Promise)return i.then(($)=>{if(v.value=$.value,$.issues.length)v.value=n.catchValue({...v,error:{issues:$.issues.map((u)=>A(u,t,V()))},input:v.value}),v.issues=[],v.fallback=!0;return v});if(v.value=i.value,i.issues.length)v.value=n.catchValue({...v,error:{issues:i.issues.map(($)=>A($,t,V()))},input:v.value}),v.issues=[],v.fallback=!0;return v}}),yt=U("$ZodNaN",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{if(typeof v.value!=="number"||!Number.isNaN(v.value))return v.issues.push({input:v.value,inst:r,expected:"nan",code:"invalid_type"}),v;return v}}),cn=U("$ZodPipe",(r,n)=>{P.init(r,n),L(r._zod,"values",()=>n.in._zod.values),L(r._zod,"optin",()=>n.in._zod.optin),L(r._zod,"optout",()=>n.out._zod.optout),L(r._zod,"propValues",()=>n.in._zod.propValues),r._zod.parse=(v,t)=>{if(t.direction==="backward"){let $=n.out._zod.run(v,t);if($ instanceof Promise)return $.then((u)=>In(u,n.in,t));return In($,n.in,t)}let i=n.in._zod.run(v,t);if(i instanceof Promise)return i.then(($)=>In($,n.out,t));return In(i,n.out,t)}});function In(r,n,v){if(r.issues.length)return r.aborted=!0,r;return n._zod.run({value:r.value,issues:r.issues,fallback:r.fallback},v)}var ji=U("$ZodCodec",(r,n)=>{P.init(r,n),L(r._zod,"values",()=>n.in._zod.values),L(r._zod,"optin",()=>n.in._zod.optin),L(r._zod,"optout",()=>n.out._zod.optout),L(r._zod,"propValues",()=>n.in._zod.propValues),r._zod.parse=(v,t)=>{if((t.direction||"forward")==="forward"){let $=n.in._zod.run(v,t);if($ instanceof Promise)return $.then((u)=>_n(u,n,t));return _n($,n,t)}else{let $=n.out._zod.run(v,t);if($ instanceof Promise)return $.then((u)=>_n(u,n,t));return _n($,n,t)}}});function _n(r,n,v){if(r.issues.length)return r.aborted=!0,r;if((v.direction||"forward")==="forward"){let i=n.transform(r.value,r);if(i instanceof Promise)return i.then(($)=>on(r,$,n.out,v));return on(r,i,n.out,v)}else{let i=n.reverseTransform(r.value,r);if(i instanceof Promise)return i.then(($)=>on(r,$,n.in,v));return on(r,i,n.in,v)}}function on(r,n,v,t){if(r.issues.length)return r.aborted=!0,r;return v._zod.run({value:n,issues:r.issues},t)}var ht=U("$ZodPreprocess",(r,n)=>{cn.init(r,n)}),dt=U("$ZodReadonly",(r,n)=>{P.init(r,n),L(r._zod,"propValues",()=>n.innerType._zod.propValues),L(r._zod,"values",()=>n.innerType._zod.values),L(r._zod,"optin",()=>n.innerType?._zod?.optin),L(r._zod,"optout",()=>n.innerType?._zod?.optout),r._zod.parse=(v,t)=>{if(t.direction==="backward")return n.innerType._zod.run(v,t);let i=n.innerType._zod.run(v,t);if(i instanceof Promise)return i.then(O6);return O6(i)}});function O6(r){return r.value=Object.freeze(r.value),r}var pt=U("$ZodTemplateLiteral",(r,n)=>{P.init(r,n);let v=[];for(let t of n.parts)if(typeof t==="object"&&t!==null){if(!t._zod.pattern)throw Error(`Invalid template literal part, no pattern found: ${[...t._zod.traits].shift()}`);let i=t._zod.pattern instanceof RegExp?t._zod.pattern.source:t._zod.pattern;if(!i)throw Error(`Invalid template literal part: ${t._zod.traits}`);let $=i.startsWith("^")?1:0,u=i.endsWith("$")?i.length-1:i.length;v.push(i.slice($,u))}else if(t===null||ev.has(typeof t))v.push(y(`${t}`));else throw Error(`Invalid template literal part: ${t}`);r._zod.pattern=new RegExp(`^${v.join("")}$`),r._zod.parse=(t,i)=>{if(typeof t.value!=="string")return t.issues.push({input:t.value,inst:r,expected:"string",code:"invalid_type"}),t;if(r._zod.pattern.lastIndex=0,!r._zod.pattern.test(t.value))return t.issues.push({input:t.value,inst:r,code:"invalid_format",format:n.format??"template_literal",pattern:r._zod.pattern.source}),t;return t}}),at=U("$ZodFunction",(r,n)=>{return P.init(r,n),r._def=n,r._zod.def=n,r.implement=(v)=>{if(typeof v!=="function")throw Error("implement() must be called with a function");return function(...t){let i=r._def.input?mi(r._def.input,t):t,$=Reflect.apply(v,this,i);if(r._def.output)return mi(r._def.output,$);return $}},r.implementAsync=(v)=>{if(typeof v!=="function")throw Error("implementAsync() must be called with a function");return async function(...t){let i=r._def.input?await yi(r._def.input,t):t,$=await Reflect.apply(v,this,i);if(r._def.output)return await yi(r._def.output,$);return $}},r._zod.parse=(v,t)=>{if(typeof v.value!=="function")return v.issues.push({code:"invalid_type",expected:"function",input:v.value,inst:r}),v;if(r._def.output&&r._def.output._zod.def.type==="promise")v.value=r.implementAsync(v.value);else v.value=r.implement(v.value);return v},r.input=(...v)=>{let t=r.constructor;if(Array.isArray(v[0]))return new t({type:"function",input:new kn({type:"tuple",items:v[0],rest:v[1]}),output:r._def.output});return new t({type:"function",input:v[0],output:r._def.output})},r.output=(v)=>{return new r.constructor({type:"function",input:r._def.input,output:v})},r}),st=U("$ZodPromise",(r,n)=>{P.init(r,n),r._zod.parse=(v,t)=>{return Promise.resolve(v.value).then((i)=>n.innerType._zod.run({value:i,issues:[]},t))}}),ru=U("$ZodLazy",(r,n)=>{P.init(r,n),L(r._zod,"innerType",()=>{let v=n;if(!v._cachedInner)v._cachedInner=n.getter();return v._cachedInner}),L(r._zod,"pattern",()=>r._zod.innerType?._zod?.pattern),L(r._zod,"propValues",()=>r._zod.innerType?._zod?.propValues),L(r._zod,"optin",()=>r._zod.innerType?._zod?.optin??void 0),L(r._zod,"optout",()=>r._zod.innerType?._zod?.optout??void 0),r._zod.parse=(v,t)=>{return r._zod.innerType._zod.run(v,t)}}),iu=U("$ZodCustom",(r,n)=>{W.init(r,n),P.init(r,n),r._zod.parse=(v,t)=>{return v},r._zod.check=(v)=>{let t=v.value,i=n.fn(t);if(i instanceof Promise)return i.then(($)=>W6($,v,t,r));W6(i,v,t,r);return}});function W6(r,n,v,t){if(!r){let i={code:"custom",input:v,inst:t,path:[...t._zod.def.path??[]],continue:!t._zod.def.abort};if(t._zod.def.params)i.params=t._zod.def.params;n.issues.push(Wr(i))}}var Xi={};vr(Xi,{zhTW:()=>hu,zhCN:()=>yu,yo:()=>du,vi:()=>mu,uz:()=>Cu,ur:()=>fu,uk:()=>Gi,ua:()=>xu,tr:()=>eu,th:()=>Zu,ta:()=>Ru,sv:()=>Fu,sl:()=>Mu,ru:()=>Au,ro:()=>Bu,pt:()=>Tu,ps:()=>Qu,pl:()=>Hu,ota:()=>Ku,no:()=>Vu,nl:()=>Yu,ms:()=>Wu,mk:()=>Ou,lt:()=>qu,ko:()=>Eu,km:()=>Ji,kh:()=>Xu,ka:()=>Gu,ja:()=>Lu,it:()=>Ju,is:()=>Pu,id:()=>ju,hy:()=>zu,hu:()=>Nu,hr:()=>Su,he:()=>wu,frCA:()=>cu,fr:()=>lu,fi:()=>ku,fa:()=>Du,es:()=>bu,eo:()=>Uu,en:()=>Pi,el:()=>ou,de:()=>_u,da:()=>Iu,cs:()=>gu,ca:()=>uu,bg:()=>tu,be:()=>$u,az:()=>vu,ar:()=>nu});var Jb=()=>{let r={string:{unit:"حرف",verb:"أن يحوي"},file:{unit:"بايت",verb:"أن يحوي"},array:{unit:"عنصر",verb:"أن يحوي"},set:{unit:"عنصر",verb:"أن يحوي"}};function n(i){return r[i]??null}let v={regex:"مدخل",email:"بريد إلكتروني",url:"رابط",emoji:"إيموجي",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"تاريخ ووقت بمعيار ISO",date:"تاريخ بمعيار ISO",time:"وقت بمعيار ISO",duration:"مدة بمعيار ISO",ipv4:"عنوان IPv4",ipv6:"عنوان IPv6",cidrv4:"مدى عناوين بصيغة IPv4",cidrv6:"مدى عناوين بصيغة IPv6",base64:"نَص بترميز base64-encoded",base64url:"نَص بترميز base64url-encoded",json_string:"نَص على هيئة JSON",e164:"رقم هاتف بمعيار E.164",jwt:"JWT",template_literal:"مدخل"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`مدخلات غير مقبولة: يفترض إدخال instanceof ${i.expected}، ولكن تم إدخال ${g}`;return`مدخلات غير مقبولة: يفترض إدخال ${$}، ولكن تم إدخال ${g}`}case"invalid_value":if(i.values.length===1)return`مدخلات غير مقبولة: يفترض إدخال ${k(i.values[0])}`;return`اختيار غير مقبول: يتوقع انتقاء أحد هذه الخيارات: ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return` أكبر من اللازم: يفترض أن تكون ${i.origin??"القيمة"} ${$} ${i.maximum.toString()} ${u.unit??"عنصر"}`;return`أكبر من اللازم: يفترض أن تكون ${i.origin??"القيمة"} ${$} ${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`أصغر من اللازم: يفترض لـ ${i.origin} أن يكون ${$} ${i.minimum.toString()} ${u.unit}`;return`أصغر من اللازم: يفترض لـ ${i.origin} أن يكون ${$} ${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`نَص غير مقبول: يجب أن يبدأ بـ "${i.prefix}"`;if($.format==="ends_with")return`نَص غير مقبول: يجب أن ينتهي بـ "${$.suffix}"`;if($.format==="includes")return`نَص غير مقبول: يجب أن يتضمَّن "${$.includes}"`;if($.format==="regex")return`نَص غير مقبول: يجب أن يطابق النمط ${$.pattern}`;return`${v[$.format]??i.format} غير مقبول`}case"not_multiple_of":return`رقم غير مقبول: يجب أن يكون من مضاعفات ${i.divisor}`;case"unrecognized_keys":return`معرف${i.keys.length>1?"ات":""} غريب${i.keys.length>1?"ة":""}: ${b(i.keys,"، ")}`;case"invalid_key":return`معرف غير مقبول في ${i.origin}`;case"invalid_union":return"مدخل غير مقبول";case"invalid_element":return`مدخل غير مقبول في ${i.origin}`;default:return"مدخل غير مقبول"}}};function nu(){return{localeError:Jb()}}var Lb=()=>{let r={string:{unit:"simvol",verb:"olmalıdır"},file:{unit:"bayt",verb:"olmalıdır"},array:{unit:"element",verb:"olmalıdır"},set:{unit:"element",verb:"olmalıdır"}};function n(i){return r[i]??null}let v={regex:"input",email:"email address",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO datetime",date:"ISO date",time:"ISO time",duration:"ISO duration",ipv4:"IPv4 address",ipv6:"IPv6 address",cidrv4:"IPv4 range",cidrv6:"IPv6 range",base64:"base64-encoded string",base64url:"base64url-encoded string",json_string:"JSON string",e164:"E.164 number",jwt:"JWT",template_literal:"input"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Yanlış dəyər: gözlənilən instanceof ${i.expected}, daxil olan ${g}`;return`Yanlış dəyər: gözlənilən ${$}, daxil olan ${g}`}case"invalid_value":if(i.values.length===1)return`Yanlış dəyər: gözlənilən ${k(i.values[0])}`;return`Yanlış seçim: aşağıdakılardan biri olmalıdır: ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Çox böyük: gözlənilən ${i.origin??"dəyər"} ${$}${i.maximum.toString()} ${u.unit??"element"}`;return`Çox böyük: gözlənilən ${i.origin??"dəyər"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Çox kiçik: gözlənilən ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;return`Çox kiçik: gözlənilən ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Yanlış mətn: "${$.prefix}" ilə başlamalıdır`;if($.format==="ends_with")return`Yanlış mətn: "${$.suffix}" ilə bitməlidir`;if($.format==="includes")return`Yanlış mətn: "${$.includes}" daxil olmalıdır`;if($.format==="regex")return`Yanlış mətn: ${$.pattern} şablonuna uyğun olmalıdır`;return`Yanlış ${v[$.format]??i.format}`}case"not_multiple_of":return`Yanlış ədəd: ${i.divisor} ilə bölünə bilən olmalıdır`;case"unrecognized_keys":return`Tanınmayan açar${i.keys.length>1?"lar":""}: ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} daxilində yanlış açar`;case"invalid_union":return"Yanlış dəyər";case"invalid_element":return`${i.origin} daxilində yanlış dəyər`;default:return"Yanlış dəyər"}}};function vu(){return{localeError:Lb()}}function T6(r,n,v,t){let i=Math.abs(r),$=i%10,u=i%100;if(u>=11&&u<=19)return t;if($===1)return n;if($>=2&&$<=4)return v;return t}var Gb=()=>{let r={string:{unit:{one:"сімвал",few:"сімвалы",many:"сімвалаў"},verb:"мець"},array:{unit:{one:"элемент",few:"элементы",many:"элементаў"},verb:"мець"},set:{unit:{one:"элемент",few:"элементы",many:"элементаў"},verb:"мець"},file:{unit:{one:"байт",few:"байты",many:"байтаў"},verb:"мець"}};function n(i){return r[i]??null}let v={regex:"увод",email:"email адрас",url:"URL",emoji:"эмодзі",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO дата і час",date:"ISO дата",time:"ISO час",duration:"ISO працягласць",ipv4:"IPv4 адрас",ipv6:"IPv6 адрас",cidrv4:"IPv4 дыяпазон",cidrv6:"IPv6 дыяпазон",base64:"радок у фармаце base64",base64url:"радок у фармаце base64url",json_string:"JSON радок",e164:"нумар E.164",jwt:"JWT",template_literal:"увод"},t={nan:"NaN",number:"лік",array:"масіў"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Няправільны ўвод: чакаўся instanceof ${i.expected}, атрымана ${g}`;return`Няправільны ўвод: чакаўся ${$}, атрымана ${g}`}case"invalid_value":if(i.values.length===1)return`Няправільны ўвод: чакалася ${k(i.values[0])}`;return`Няправільны варыянт: чакаўся адзін з ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u){let g=Number(i.maximum),_=T6(g,u.unit.one,u.unit.few,u.unit.many);return`Занадта вялікі: чакалася, што ${i.origin??"значэнне"} павінна ${u.verb} ${$}${i.maximum.toString()} ${_}`}return`Занадта вялікі: чакалася, што ${i.origin??"значэнне"} павінна быць ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u){let g=Number(i.minimum),_=T6(g,u.unit.one,u.unit.few,u.unit.many);return`Занадта малы: чакалася, што ${i.origin} павінна ${u.verb} ${$}${i.minimum.toString()} ${_}`}return`Занадта малы: чакалася, што ${i.origin} павінна быць ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Няправільны радок: павінен пачынацца з "${$.prefix}"`;if($.format==="ends_with")return`Няправільны радок: павінен заканчвацца на "${$.suffix}"`;if($.format==="includes")return`Няправільны радок: павінен змяшчаць "${$.includes}"`;if($.format==="regex")return`Няправільны радок: павінен адпавядаць шаблону ${$.pattern}`;return`Няправільны ${v[$.format]??i.format}`}case"not_multiple_of":return`Няправільны лік: павінен быць кратным ${i.divisor}`;case"unrecognized_keys":return`Нераспазнаны ${i.keys.length>1?"ключы":"ключ"}: ${b(i.keys,", ")}`;case"invalid_key":return`Няправільны ключ у ${i.origin}`;case"invalid_union":return"Няправільны ўвод";case"invalid_element":return`Няправільнае значэнне ў ${i.origin}`;default:return"Няправільны ўвод"}}};function $u(){return{localeError:Gb()}}var Xb=()=>{let r={string:{unit:"символа",verb:"да съдържа"},file:{unit:"байта",verb:"да съдържа"},array:{unit:"елемента",verb:"да съдържа"},set:{unit:"елемента",verb:"да съдържа"}};function n(i){return r[i]??null}let v={regex:"вход",email:"имейл адрес",url:"URL",emoji:"емоджи",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO време",date:"ISO дата",time:"ISO време",duration:"ISO продължителност",ipv4:"IPv4 адрес",ipv6:"IPv6 адрес",cidrv4:"IPv4 диапазон",cidrv6:"IPv6 диапазон",base64:"base64-кодиран низ",base64url:"base64url-кодиран низ",json_string:"JSON низ",e164:"E.164 номер",jwt:"JWT",template_literal:"вход"},t={nan:"NaN",number:"число",array:"масив"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Невалиден вход: очакван instanceof ${i.expected}, получен ${g}`;return`Невалиден вход: очакван ${$}, получен ${g}`}case"invalid_value":if(i.values.length===1)return`Невалиден вход: очакван ${k(i.values[0])}`;return`Невалидна опция: очаквано едно от ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Твърде голямо: очаква се ${i.origin??"стойност"} да съдържа ${$}${i.maximum.toString()} ${u.unit??"елемента"}`;return`Твърде голямо: очаква се ${i.origin??"стойност"} да бъде ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Твърде малко: очаква се ${i.origin} да съдържа ${$}${i.minimum.toString()} ${u.unit}`;return`Твърде малко: очаква се ${i.origin} да бъде ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Невалиден низ: трябва да започва с "${$.prefix}"`;if($.format==="ends_with")return`Невалиден низ: трябва да завършва с "${$.suffix}"`;if($.format==="includes")return`Невалиден низ: трябва да включва "${$.includes}"`;if($.format==="regex")return`Невалиден низ: трябва да съвпада с ${$.pattern}`;let u="Невалиден";if($.format==="emoji")u="Невалидно";if($.format==="datetime")u="Невалидно";if($.format==="date")u="Невалидна";if($.format==="time")u="Невалидно";if($.format==="duration")u="Невалидна";return`${u} ${v[$.format]??i.format}`}case"not_multiple_of":return`Невалидно число: трябва да бъде кратно на ${i.divisor}`;case"unrecognized_keys":return`Неразпознат${i.keys.length>1?"и":""} ключ${i.keys.length>1?"ове":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Невалиден ключ в ${i.origin}`;case"invalid_union":return"Невалиден вход";case"invalid_element":return`Невалидна стойност в ${i.origin}`;default:return"Невалиден вход"}}};function tu(){return{localeError:Xb()}}var Eb=()=>{let r={string:{unit:"caràcters",verb:"contenir"},file:{unit:"bytes",verb:"contenir"},array:{unit:"elements",verb:"contenir"},set:{unit:"elements",verb:"contenir"}};function n(i){return r[i]??null}let v={regex:"entrada",email:"adreça electrònica",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"data i hora ISO",date:"data ISO",time:"hora ISO",duration:"durada ISO",ipv4:"adreça IPv4",ipv6:"adreça IPv6",cidrv4:"rang IPv4",cidrv6:"rang IPv6",base64:"cadena codificada en base64",base64url:"cadena codificada en base64url",json_string:"cadena JSON",e164:"número E.164",jwt:"JWT",template_literal:"entrada"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Tipus invàlid: s'esperava instanceof ${i.expected}, s'ha rebut ${g}`;return`Tipus invàlid: s'esperava ${$}, s'ha rebut ${g}`}case"invalid_value":if(i.values.length===1)return`Valor invàlid: s'esperava ${k(i.values[0])}`;return`Opció invàlida: s'esperava una de ${b(i.values," o ")}`;case"too_big":{let $=i.inclusive?"com a màxim":"menys de",u=n(i.origin);if(u)return`Massa gran: s'esperava que ${i.origin??"el valor"} contingués ${$} ${i.maximum.toString()} ${u.unit??"elements"}`;return`Massa gran: s'esperava que ${i.origin??"el valor"} fos ${$} ${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?"com a mínim":"més de",u=n(i.origin);if(u)return`Massa petit: s'esperava que ${i.origin} contingués ${$} ${i.minimum.toString()} ${u.unit}`;return`Massa petit: s'esperava que ${i.origin} fos ${$} ${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Format invàlid: ha de començar amb "${$.prefix}"`;if($.format==="ends_with")return`Format invàlid: ha d'acabar amb "${$.suffix}"`;if($.format==="includes")return`Format invàlid: ha d'incloure "${$.includes}"`;if($.format==="regex")return`Format invàlid: ha de coincidir amb el patró ${$.pattern}`;return`Format invàlid per a ${v[$.format]??i.format}`}case"not_multiple_of":return`Número invàlid: ha de ser múltiple de ${i.divisor}`;case"unrecognized_keys":return`Clau${i.keys.length>1?"s":""} no reconeguda${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Clau invàlida a ${i.origin}`;case"invalid_union":return"Entrada invàlida";case"invalid_element":return`Element invàlid a ${i.origin}`;default:return"Entrada invàlida"}}};function uu(){return{localeError:Eb()}}var qb=()=>{let r={string:{unit:"znaků",verb:"mít"},file:{unit:"bajtů",verb:"mít"},array:{unit:"prvků",verb:"mít"},set:{unit:"prvků",verb:"mít"}};function n(i){return r[i]??null}let v={regex:"regulární výraz",email:"e-mailová adresa",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"datum a čas ve formátu ISO",date:"datum ve formátu ISO",time:"čas ve formátu ISO",duration:"doba trvání ISO",ipv4:"IPv4 adresa",ipv6:"IPv6 adresa",cidrv4:"rozsah IPv4",cidrv6:"rozsah IPv6",base64:"řetězec zakódovaný ve formátu base64",base64url:"řetězec zakódovaný ve formátu base64url",json_string:"řetězec ve formátu JSON",e164:"číslo E.164",jwt:"JWT",template_literal:"vstup"},t={nan:"NaN",number:"číslo",string:"řetězec",function:"funkce",array:"pole"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Neplatný vstup: očekáváno instanceof ${i.expected}, obdrženo ${g}`;return`Neplatný vstup: očekáváno ${$}, obdrženo ${g}`}case"invalid_value":if(i.values.length===1)return`Neplatný vstup: očekáváno ${k(i.values[0])}`;return`Neplatná možnost: očekávána jedna z hodnot ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Hodnota je příliš velká: ${i.origin??"hodnota"} musí mít ${$}${i.maximum.toString()} ${u.unit??"prvků"}`;return`Hodnota je příliš velká: ${i.origin??"hodnota"} musí být ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Hodnota je příliš malá: ${i.origin??"hodnota"} musí mít ${$}${i.minimum.toString()} ${u.unit??"prvků"}`;return`Hodnota je příliš malá: ${i.origin??"hodnota"} musí být ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Neplatný řetězec: musí začínat na "${$.prefix}"`;if($.format==="ends_with")return`Neplatný řetězec: musí končit na "${$.suffix}"`;if($.format==="includes")return`Neplatný řetězec: musí obsahovat "${$.includes}"`;if($.format==="regex")return`Neplatný řetězec: musí odpovídat vzoru ${$.pattern}`;return`Neplatný formát ${v[$.format]??i.format}`}case"not_multiple_of":return`Neplatné číslo: musí být násobkem ${i.divisor}`;case"unrecognized_keys":return`Neznámé klíče: ${b(i.keys,", ")}`;case"invalid_key":return`Neplatný klíč v ${i.origin}`;case"invalid_union":return"Neplatný vstup";case"invalid_element":return`Neplatná hodnota v ${i.origin}`;default:return"Neplatný vstup"}}};function gu(){return{localeError:qb()}}var Ob=()=>{let r={string:{unit:"tegn",verb:"havde"},file:{unit:"bytes",verb:"havde"},array:{unit:"elementer",verb:"indeholdt"},set:{unit:"elementer",verb:"indeholdt"}};function n(i){return r[i]??null}let v={regex:"input",email:"e-mailadresse",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO dato- og klokkeslæt",date:"ISO-dato",time:"ISO-klokkeslæt",duration:"ISO-varighed",ipv4:"IPv4-område",ipv6:"IPv6-område",cidrv4:"IPv4-spektrum",cidrv6:"IPv6-spektrum",base64:"base64-kodet streng",base64url:"base64url-kodet streng",json_string:"JSON-streng",e164:"E.164-nummer",jwt:"JWT",template_literal:"input"},t={nan:"NaN",string:"streng",number:"tal",boolean:"boolean",array:"liste",object:"objekt",set:"sæt",file:"fil"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ugyldigt input: forventede instanceof ${i.expected}, fik ${g}`;return`Ugyldigt input: forventede ${$}, fik ${g}`}case"invalid_value":if(i.values.length===1)return`Ugyldig værdi: forventede ${k(i.values[0])}`;return`Ugyldigt valg: forventede en af følgende ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`For stor: forventede ${g??"value"} ${u.verb} ${$} ${i.maximum.toString()} ${u.unit??"elementer"}`;return`For stor: forventede ${g??"value"} havde ${$} ${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`For lille: forventede ${g} ${u.verb} ${$} ${i.minimum.toString()} ${u.unit}`;return`For lille: forventede ${g} havde ${$} ${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ugyldig streng: skal starte med "${$.prefix}"`;if($.format==="ends_with")return`Ugyldig streng: skal ende med "${$.suffix}"`;if($.format==="includes")return`Ugyldig streng: skal indeholde "${$.includes}"`;if($.format==="regex")return`Ugyldig streng: skal matche mønsteret ${$.pattern}`;return`Ugyldig ${v[$.format]??i.format}`}case"not_multiple_of":return`Ugyldigt tal: skal være deleligt med ${i.divisor}`;case"unrecognized_keys":return`${i.keys.length>1?"Ukendte nøgler":"Ukendt nøgle"}: ${b(i.keys,", ")}`;case"invalid_key":return`Ugyldig nøgle i ${i.origin}`;case"invalid_union":return"Ugyldigt input: matcher ingen af de tilladte typer";case"invalid_element":return`Ugyldig værdi i ${i.origin}`;default:return"Ugyldigt input"}}};function Iu(){return{localeError:Ob()}}var Wb=()=>{let r={string:{unit:"Zeichen",verb:"zu haben"},file:{unit:"Bytes",verb:"zu haben"},array:{unit:"Elemente",verb:"zu haben"},set:{unit:"Elemente",verb:"zu haben"}};function n(i){return r[i]??null}let v={regex:"Eingabe",email:"E-Mail-Adresse",url:"URL",emoji:"Emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO-Datum und -Uhrzeit",date:"ISO-Datum",time:"ISO-Uhrzeit",duration:"ISO-Dauer",ipv4:"IPv4-Adresse",ipv6:"IPv6-Adresse",cidrv4:"IPv4-Bereich",cidrv6:"IPv6-Bereich",base64:"Base64-codierter String",base64url:"Base64-URL-codierter String",json_string:"JSON-String",e164:"E.164-Nummer",jwt:"JWT",template_literal:"Eingabe"},t={nan:"NaN",number:"Zahl",array:"Array"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ungültige Eingabe: erwartet instanceof ${i.expected}, erhalten ${g}`;return`Ungültige Eingabe: erwartet ${$}, erhalten ${g}`}case"invalid_value":if(i.values.length===1)return`Ungültige Eingabe: erwartet ${k(i.values[0])}`;return`Ungültige Option: erwartet eine von ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Zu groß: erwartet, dass ${i.origin??"Wert"} ${$}${i.maximum.toString()} ${u.unit??"Elemente"} hat`;return`Zu groß: erwartet, dass ${i.origin??"Wert"} ${$}${i.maximum.toString()} ist`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Zu klein: erwartet, dass ${i.origin} ${$}${i.minimum.toString()} ${u.unit} hat`;return`Zu klein: erwartet, dass ${i.origin} ${$}${i.minimum.toString()} ist`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ungültiger String: muss mit "${$.prefix}" beginnen`;if($.format==="ends_with")return`Ungültiger String: muss mit "${$.suffix}" enden`;if($.format==="includes")return`Ungültiger String: muss "${$.includes}" enthalten`;if($.format==="regex")return`Ungültiger String: muss dem Muster ${$.pattern} entsprechen`;return`Ungültig: ${v[$.format]??i.format}`}case"not_multiple_of":return`Ungültige Zahl: muss ein Vielfaches von ${i.divisor} sein`;case"unrecognized_keys":return`${i.keys.length>1?"Unbekannte Schlüssel":"Unbekannter Schlüssel"}: ${b(i.keys,", ")}`;case"invalid_key":return`Ungültiger Schlüssel in ${i.origin}`;case"invalid_union":return"Ungültige Eingabe";case"invalid_element":return`Ungültiger Wert in ${i.origin}`;default:return"Ungültige Eingabe"}}};function _u(){return{localeError:Wb()}}var Yb=()=>{let r={string:{unit:"χαρακτήρες",verb:"να έχει"},file:{unit:"bytes",verb:"να έχει"},array:{unit:"στοιχεία",verb:"να έχει"},set:{unit:"στοιχεία",verb:"να έχει"},map:{unit:"καταχωρήσεις",verb:"να έχει"}};function n(i){return r[i]??null}let v={regex:"είσοδος",email:"διεύθυνση email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO ημερομηνία και ώρα",date:"ISO ημερομηνία",time:"ISO ώρα",duration:"ISO διάρκεια",ipv4:"διεύθυνση IPv4",ipv6:"διεύθυνση IPv6",mac:"διεύθυνση MAC",cidrv4:"εύρος IPv4",cidrv6:"εύρος IPv6",base64:"συμβολοσειρά κωδικοποιημένη σε base64",base64url:"συμβολοσειρά κωδικοποιημένη σε base64url",json_string:"συμβολοσειρά JSON",e164:"αριθμός E.164",jwt:"JWT",template_literal:"είσοδος"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(typeof i.expected==="string"&&/^[A-Z]/.test(i.expected))return`Μη έγκυρη είσοδος: αναμενόταν instanceof ${i.expected}, λήφθηκε ${g}`;return`Μη έγκυρη είσοδος: αναμενόταν ${$}, λήφθηκε ${g}`}case"invalid_value":if(i.values.length===1)return`Μη έγκυρη είσοδος: αναμενόταν ${k(i.values[0])}`;return`Μη έγκυρη επιλογή: αναμενόταν ένα από ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Πολύ μεγάλο: αναμενόταν ${i.origin??"τιμή"} να έχει ${$}${i.maximum.toString()} ${u.unit??"στοιχεία"}`;return`Πολύ μεγάλο: αναμενόταν ${i.origin??"τιμή"} να είναι ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Πολύ μικρό: αναμενόταν ${i.origin} να έχει ${$}${i.minimum.toString()} ${u.unit}`;return`Πολύ μικρό: αναμενόταν ${i.origin} να είναι ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Μη έγκυρη συμβολοσειρά: πρέπει να ξεκινά με "${$.prefix}"`;if($.format==="ends_with")return`Μη έγκυρη συμβολοσειρά: πρέπει να τελειώνει με "${$.suffix}"`;if($.format==="includes")return`Μη έγκυρη συμβολοσειρά: πρέπει να περιέχει "${$.includes}"`;if($.format==="regex")return`Μη έγκυρη συμβολοσειρά: πρέπει να ταιριάζει με το μοτίβο ${$.pattern}`;return`Μη έγκυρο: ${v[$.format]??i.format}`}case"not_multiple_of":return`Μη έγκυρος αριθμός: πρέπει να είναι πολλαπλάσιο του ${i.divisor}`;case"unrecognized_keys":return`Άγνωστ${i.keys.length>1?"α":"ο"} κλειδ${i.keys.length>1?"ιά":"ί"}: ${b(i.keys,", ")}`;case"invalid_key":return`Μη έγκυρο κλειδί στο ${i.origin}`;case"invalid_union":return"Μη έγκυρη είσοδος";case"invalid_element":return`Μη έγκυρη τιμή στο ${i.origin}`;default:return"Μη έγκυρη είσοδος"}}};function ou(){return{localeError:Yb()}}var Vb=()=>{let r={string:{unit:"characters",verb:"to have"},file:{unit:"bytes",verb:"to have"},array:{unit:"items",verb:"to have"},set:{unit:"items",verb:"to have"},map:{unit:"entries",verb:"to have"}};function n(i){return r[i]??null}let v={regex:"input",email:"email address",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO datetime",date:"ISO date",time:"ISO time",duration:"ISO duration",ipv4:"IPv4 address",ipv6:"IPv6 address",mac:"MAC address",cidrv4:"IPv4 range",cidrv6:"IPv6 range",base64:"base64-encoded string",base64url:"base64url-encoded string",json_string:"JSON string",e164:"E.164 number",jwt:"JWT",template_literal:"input"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;return`Invalid input: expected ${$}, received ${g}`}case"invalid_value":if(i.values.length===1)return`Invalid input: expected ${k(i.values[0])}`;return`Invalid option: expected one of ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Too big: expected ${i.origin??"value"} to have ${$}${i.maximum.toString()} ${u.unit??"elements"}`;return`Too big: expected ${i.origin??"value"} to be ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Too small: expected ${i.origin} to have ${$}${i.minimum.toString()} ${u.unit}`;return`Too small: expected ${i.origin} to be ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Invalid string: must start with "${$.prefix}"`;if($.format==="ends_with")return`Invalid string: must end with "${$.suffix}"`;if($.format==="includes")return`Invalid string: must include "${$.includes}"`;if($.format==="regex")return`Invalid string: must match pattern ${$.pattern}`;return`Invalid ${v[$.format]??i.format}`}case"not_multiple_of":return`Invalid number: must be a multiple of ${i.divisor}`;case"unrecognized_keys":return`Unrecognized key${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Invalid key in ${i.origin}`;case"invalid_union":if(i.options&&Array.isArray(i.options)&&i.options.length>0)return`Invalid discriminator value. Expected ${i.options.map((u)=>`'${u}'`).join(" | ")}`;return"Invalid input";case"invalid_element":return`Invalid value in ${i.origin}`;default:return"Invalid input"}}};function Pi(){return{localeError:Vb()}}var Kb=()=>{let r={string:{unit:"karaktrojn",verb:"havi"},file:{unit:"bajtojn",verb:"havi"},array:{unit:"elementojn",verb:"havi"},set:{unit:"elementojn",verb:"havi"}};function n(i){return r[i]??null}let v={regex:"enigo",email:"retadreso",url:"URL",emoji:"emoĝio",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO-datotempo",date:"ISO-dato",time:"ISO-tempo",duration:"ISO-daŭro",ipv4:"IPv4-adreso",ipv6:"IPv6-adreso",cidrv4:"IPv4-rango",cidrv6:"IPv6-rango",base64:"64-ume kodita karaktraro",base64url:"URL-64-ume kodita karaktraro",json_string:"JSON-karaktraro",e164:"E.164-nombro",jwt:"JWT",template_literal:"enigo"},t={nan:"NaN",number:"nombro",array:"tabelo",null:"senvalora"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Nevalida enigo: atendiĝis instanceof ${i.expected}, riceviĝis ${g}`;return`Nevalida enigo: atendiĝis ${$}, riceviĝis ${g}`}case"invalid_value":if(i.values.length===1)return`Nevalida enigo: atendiĝis ${k(i.values[0])}`;return`Nevalida opcio: atendiĝis unu el ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Tro granda: atendiĝis ke ${i.origin??"valoro"} havu ${$}${i.maximum.toString()} ${u.unit??"elementojn"}`;return`Tro granda: atendiĝis ke ${i.origin??"valoro"} havu ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Tro malgranda: atendiĝis ke ${i.origin} havu ${$}${i.minimum.toString()} ${u.unit}`;return`Tro malgranda: atendiĝis ke ${i.origin} estu ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Nevalida karaktraro: devas komenciĝi per "${$.prefix}"`;if($.format==="ends_with")return`Nevalida karaktraro: devas finiĝi per "${$.suffix}"`;if($.format==="includes")return`Nevalida karaktraro: devas inkluzivi "${$.includes}"`;if($.format==="regex")return`Nevalida karaktraro: devas kongrui kun la modelo ${$.pattern}`;return`Nevalida ${v[$.format]??i.format}`}case"not_multiple_of":return`Nevalida nombro: devas esti oblo de ${i.divisor}`;case"unrecognized_keys":return`Nekonata${i.keys.length>1?"j":""} ŝlosilo${i.keys.length>1?"j":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Nevalida ŝlosilo en ${i.origin}`;case"invalid_union":return"Nevalida enigo";case"invalid_element":return`Nevalida valoro en ${i.origin}`;default:return"Nevalida enigo"}}};function Uu(){return{localeError:Kb()}}var Qb=()=>{let r={string:{unit:"caracteres",verb:"tener"},file:{unit:"bytes",verb:"tener"},array:{unit:"elementos",verb:"tener"},set:{unit:"elementos",verb:"tener"}};function n(i){return r[i]??null}let v={regex:"entrada",email:"dirección de correo electrónico",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"fecha y hora ISO",date:"fecha ISO",time:"hora ISO",duration:"duración ISO",ipv4:"dirección IPv4",ipv6:"dirección IPv6",cidrv4:"rango IPv4",cidrv6:"rango IPv6",base64:"cadena codificada en base64",base64url:"URL codificada en base64",json_string:"cadena JSON",e164:"número E.164",jwt:"JWT",template_literal:"entrada"},t={nan:"NaN",string:"texto",number:"número",boolean:"booleano",array:"arreglo",object:"objeto",set:"conjunto",file:"archivo",date:"fecha",bigint:"número grande",symbol:"símbolo",undefined:"indefinido",null:"nulo",function:"función",map:"mapa",record:"registro",tuple:"tupla",enum:"enumeración",union:"unión",literal:"literal",promise:"promesa",void:"vacío",never:"nunca",unknown:"desconocido",any:"cualquiera"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Entrada inválida: se esperaba instanceof ${i.expected}, recibido ${g}`;return`Entrada inválida: se esperaba ${$}, recibido ${g}`}case"invalid_value":if(i.values.length===1)return`Entrada inválida: se esperaba ${k(i.values[0])}`;return`Opción inválida: se esperaba una de ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`Demasiado grande: se esperaba que ${g??"valor"} tuviera ${$}${i.maximum.toString()} ${u.unit??"elementos"}`;return`Demasiado grande: se esperaba que ${g??"valor"} fuera ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`Demasiado pequeño: se esperaba que ${g} tuviera ${$}${i.minimum.toString()} ${u.unit}`;return`Demasiado pequeño: se esperaba que ${g} fuera ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Cadena inválida: debe comenzar con "${$.prefix}"`;if($.format==="ends_with")return`Cadena inválida: debe terminar en "${$.suffix}"`;if($.format==="includes")return`Cadena inválida: debe incluir "${$.includes}"`;if($.format==="regex")return`Cadena inválida: debe coincidir con el patrón ${$.pattern}`;return`Inválido ${v[$.format]??i.format}`}case"not_multiple_of":return`Número inválido: debe ser múltiplo de ${i.divisor}`;case"unrecognized_keys":return`Llave${i.keys.length>1?"s":""} desconocida${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Llave inválida en ${t[i.origin]??i.origin}`;case"invalid_union":return"Entrada inválida";case"invalid_element":return`Valor inválido en ${t[i.origin]??i.origin}`;default:return"Entrada inválida"}}};function bu(){return{localeError:Qb()}}var Hb=()=>{let r={string:{unit:"کاراکتر",verb:"داشته باشد"},file:{unit:"بایت",verb:"داشته باشد"},array:{unit:"آیتم",verb:"داشته باشد"},set:{unit:"آیتم",verb:"داشته باشد"}};function n(i){return r[i]??null}let v={regex:"ورودی",email:"آدرس ایمیل",url:"URL",emoji:"ایموجی",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"تاریخ و زمان ایزو",date:"تاریخ ایزو",time:"زمان ایزو",duration:"مدت زمان ایزو",ipv4:"IPv4 آدرس",ipv6:"IPv6 آدرس",cidrv4:"IPv4 دامنه",cidrv6:"IPv6 دامنه",base64:"base64-encoded رشته",base64url:"base64url-encoded رشته",json_string:"JSON رشته",e164:"E.164 عدد",jwt:"JWT",template_literal:"ورودی"},t={nan:"NaN",number:"عدد",array:"آرایه"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`ورودی نامعتبر: می‌بایست instanceof ${i.expected} می‌بود، ${g} دریافت شد`;return`ورودی نامعتبر: می‌بایست ${$} می‌بود، ${g} دریافت شد`}case"invalid_value":if(i.values.length===1)return`ورودی نامعتبر: می‌بایست ${k(i.values[0])} می‌بود`;return`گزینه نامعتبر: می‌بایست یکی از ${b(i.values,"|")} می‌بود`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`خیلی بزرگ: ${i.origin??"مقدار"} باید ${$}${i.maximum.toString()} ${u.unit??"عنصر"} باشد`;return`خیلی بزرگ: ${i.origin??"مقدار"} باید ${$}${i.maximum.toString()} باشد`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`خیلی کوچک: ${i.origin} باید ${$}${i.minimum.toString()} ${u.unit} باشد`;return`خیلی کوچک: ${i.origin} باید ${$}${i.minimum.toString()} باشد`}case"invalid_format":{let $=i;if($.format==="starts_with")return`رشته نامعتبر: باید با "${$.prefix}" شروع شود`;if($.format==="ends_with")return`رشته نامعتبر: باید با "${$.suffix}" تمام شود`;if($.format==="includes")return`رشته نامعتبر: باید شامل "${$.includes}" باشد`;if($.format==="regex")return`رشته نامعتبر: باید با الگوی ${$.pattern} مطابقت داشته باشد`;return`${v[$.format]??i.format} نامعتبر`}case"not_multiple_of":return`عدد نامعتبر: باید مضرب ${i.divisor} باشد`;case"unrecognized_keys":return`کلید${i.keys.length>1?"های":""} ناشناس: ${b(i.keys,", ")}`;case"invalid_key":return`کلید ناشناس در ${i.origin}`;case"invalid_union":return"ورودی نامعتبر";case"invalid_element":return`مقدار نامعتبر در ${i.origin}`;default:return"ورودی نامعتبر"}}};function Du(){return{localeError:Hb()}}var Tb=()=>{let r={string:{unit:"merkkiä",subject:"merkkijonon"},file:{unit:"tavua",subject:"tiedoston"},array:{unit:"alkiota",subject:"listan"},set:{unit:"alkiota",subject:"joukon"},number:{unit:"",subject:"luvun"},bigint:{unit:"",subject:"suuren kokonaisluvun"},int:{unit:"",subject:"kokonaisluvun"},date:{unit:"",subject:"päivämäärän"}};function n(i){return r[i]??null}let v={regex:"säännöllinen lauseke",email:"sähköpostiosoite",url:"URL-osoite",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO-aikaleima",date:"ISO-päivämäärä",time:"ISO-aika",duration:"ISO-kesto",ipv4:"IPv4-osoite",ipv6:"IPv6-osoite",cidrv4:"IPv4-alue",cidrv6:"IPv6-alue",base64:"base64-koodattu merkkijono",base64url:"base64url-koodattu merkkijono",json_string:"JSON-merkkijono",e164:"E.164-luku",jwt:"JWT",template_literal:"templaattimerkkijono"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Virheellinen tyyppi: odotettiin instanceof ${i.expected}, oli ${g}`;return`Virheellinen tyyppi: odotettiin ${$}, oli ${g}`}case"invalid_value":if(i.values.length===1)return`Virheellinen syöte: täytyy olla ${k(i.values[0])}`;return`Virheellinen valinta: täytyy olla yksi seuraavista: ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Liian suuri: ${u.subject} täytyy olla ${$}${i.maximum.toString()} ${u.unit}`.trim();return`Liian suuri: arvon täytyy olla ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Liian pieni: ${u.subject} täytyy olla ${$}${i.minimum.toString()} ${u.unit}`.trim();return`Liian pieni: arvon täytyy olla ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Virheellinen syöte: täytyy alkaa "${$.prefix}"`;if($.format==="ends_with")return`Virheellinen syöte: täytyy loppua "${$.suffix}"`;if($.format==="includes")return`Virheellinen syöte: täytyy sisältää "${$.includes}"`;if($.format==="regex")return`Virheellinen syöte: täytyy vastata säännöllistä lauseketta ${$.pattern}`;return`Virheellinen ${v[$.format]??i.format}`}case"not_multiple_of":return`Virheellinen luku: täytyy olla luvun ${i.divisor} monikerta`;case"unrecognized_keys":return`${i.keys.length>1?"Tuntemattomat avaimet":"Tuntematon avain"}: ${b(i.keys,", ")}`;case"invalid_key":return"Virheellinen avain tietueessa";case"invalid_union":return"Virheellinen unioni";case"invalid_element":return"Virheellinen arvo joukossa";default:return"Virheellinen syöte"}}};function ku(){return{localeError:Tb()}}var Bb=()=>{let r={string:{unit:"caractères",verb:"avoir"},file:{unit:"octets",verb:"avoir"},array:{unit:"éléments",verb:"avoir"},set:{unit:"éléments",verb:"avoir"}};function n(i){return r[i]??null}let v={regex:"entrée",email:"adresse e-mail",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"date et heure ISO",date:"date ISO",time:"heure ISO",duration:"durée ISO",ipv4:"adresse IPv4",ipv6:"adresse IPv6",cidrv4:"plage IPv4",cidrv6:"plage IPv6",base64:"chaîne encodée en base64",base64url:"chaîne encodée en base64url",json_string:"chaîne JSON",e164:"numéro E.164",jwt:"JWT",template_literal:"entrée"},t={string:"chaîne",number:"nombre",int:"entier",boolean:"booléen",bigint:"grand entier",symbol:"symbole",undefined:"indéfini",null:"null",never:"jamais",void:"vide",date:"date",array:"tableau",object:"objet",tuple:"tuple",record:"enregistrement",map:"carte",set:"ensemble",file:"fichier",nonoptional:"non-optionnel",nan:"NaN",function:"fonction"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Entrée invalide : instanceof ${i.expected} attendu, ${g} reçu`;return`Entrée invalide : ${$} attendu, ${g} reçu`}case"invalid_value":if(i.values.length===1)return`Entrée invalide : ${k(i.values[0])} attendu`;return`Option invalide : une valeur parmi ${b(i.values,"|")} attendue`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Trop grand : ${t[i.origin]??"valeur"} doit ${u.verb} ${$}${i.maximum.toString()} ${u.unit??"élément(s)"}`;return`Trop grand : ${t[i.origin]??"valeur"} doit être ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Trop petit : ${t[i.origin]??"valeur"} doit ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`Trop petit : ${t[i.origin]??"valeur"} doit être ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Chaîne invalide : doit commencer par "${$.prefix}"`;if($.format==="ends_with")return`Chaîne invalide : doit se terminer par "${$.suffix}"`;if($.format==="includes")return`Chaîne invalide : doit inclure "${$.includes}"`;if($.format==="regex")return`Chaîne invalide : doit correspondre au modèle ${$.pattern}`;return`${v[$.format]??i.format} invalide`}case"not_multiple_of":return`Nombre invalide : doit être un multiple de ${i.divisor}`;case"unrecognized_keys":return`Clé${i.keys.length>1?"s":""} non reconnue${i.keys.length>1?"s":""} : ${b(i.keys,", ")}`;case"invalid_key":return`Clé invalide dans ${i.origin}`;case"invalid_union":return"Entrée invalide";case"invalid_element":return`Valeur invalide dans ${i.origin}`;default:return"Entrée invalide"}}};function lu(){return{localeError:Bb()}}var Ab=()=>{let r={string:{unit:"caractères",verb:"avoir"},file:{unit:"octets",verb:"avoir"},array:{unit:"éléments",verb:"avoir"},set:{unit:"éléments",verb:"avoir"}};function n(i){return r[i]??null}let v={regex:"entrée",email:"adresse courriel",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"date-heure ISO",date:"date ISO",time:"heure ISO",duration:"durée ISO",ipv4:"adresse IPv4",ipv6:"adresse IPv6",cidrv4:"plage IPv4",cidrv6:"plage IPv6",base64:"chaîne encodée en base64",base64url:"chaîne encodée en base64url",json_string:"chaîne JSON",e164:"numéro E.164",jwt:"JWT",template_literal:"entrée"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Entrée invalide : attendu instanceof ${i.expected}, reçu ${g}`;return`Entrée invalide : attendu ${$}, reçu ${g}`}case"invalid_value":if(i.values.length===1)return`Entrée invalide : attendu ${k(i.values[0])}`;return`Option invalide : attendu l'une des valeurs suivantes ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"≤":"<",u=n(i.origin);if(u)return`Trop grand : attendu que ${i.origin??"la valeur"} ait ${$}${i.maximum.toString()} ${u.unit}`;return`Trop grand : attendu que ${i.origin??"la valeur"} soit ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?"≥":">",u=n(i.origin);if(u)return`Trop petit : attendu que ${i.origin} ait ${$}${i.minimum.toString()} ${u.unit}`;return`Trop petit : attendu que ${i.origin} soit ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Chaîne invalide : doit commencer par "${$.prefix}"`;if($.format==="ends_with")return`Chaîne invalide : doit se terminer par "${$.suffix}"`;if($.format==="includes")return`Chaîne invalide : doit inclure "${$.includes}"`;if($.format==="regex")return`Chaîne invalide : doit correspondre au motif ${$.pattern}`;return`${v[$.format]??i.format} invalide`}case"not_multiple_of":return`Nombre invalide : doit être un multiple de ${i.divisor}`;case"unrecognized_keys":return`Clé${i.keys.length>1?"s":""} non reconnue${i.keys.length>1?"s":""} : ${b(i.keys,", ")}`;case"invalid_key":return`Clé invalide dans ${i.origin}`;case"invalid_union":return"Entrée invalide";case"invalid_element":return`Valeur invalide dans ${i.origin}`;default:return"Entrée invalide"}}};function cu(){return{localeError:Ab()}}var Mb=()=>{let r={string:{label:"מחרוזת",gender:"f"},number:{label:"מספר",gender:"m"},boolean:{label:"ערך בוליאני",gender:"m"},bigint:{label:"BigInt",gender:"m"},date:{label:"תאריך",gender:"m"},array:{label:"מערך",gender:"m"},object:{label:"אובייקט",gender:"m"},null:{label:"ערך ריק (null)",gender:"m"},undefined:{label:"ערך לא מוגדר (undefined)",gender:"m"},symbol:{label:"סימבול (Symbol)",gender:"m"},function:{label:"פונקציה",gender:"f"},map:{label:"מפה (Map)",gender:"f"},set:{label:"קבוצה (Set)",gender:"f"},file:{label:"קובץ",gender:"m"},promise:{label:"Promise",gender:"m"},NaN:{label:"NaN",gender:"m"},unknown:{label:"ערך לא ידוע",gender:"m"},value:{label:"ערך",gender:"m"}},n={string:{unit:"תווים",shortLabel:"קצר",longLabel:"ארוך"},file:{unit:"בייטים",shortLabel:"קטן",longLabel:"גדול"},array:{unit:"פריטים",shortLabel:"קטן",longLabel:"גדול"},set:{unit:"פריטים",shortLabel:"קטן",longLabel:"גדול"},number:{unit:"",shortLabel:"קטן",longLabel:"גדול"}},v=(I)=>I?r[I]:void 0,t=(I)=>{let o=v(I);if(o)return o.label;return I??r.unknown.label},i=(I)=>`ה${t(I)}`,$=(I)=>{return(v(I)?.gender??"m")==="f"?"צריכה להיות":"צריך להיות"},u=(I)=>{if(!I)return null;return n[I]??null},g={regex:{label:"קלט",gender:"m"},email:{label:"כתובת אימייל",gender:"f"},url:{label:"כתובת רשת",gender:"f"},emoji:{label:"אימוג'י",gender:"m"},uuid:{label:"UUID",gender:"m"},nanoid:{label:"nanoid",gender:"m"},guid:{label:"GUID",gender:"m"},cuid:{label:"cuid",gender:"m"},cuid2:{label:"cuid2",gender:"m"},ulid:{label:"ULID",gender:"m"},xid:{label:"XID",gender:"m"},ksuid:{label:"KSUID",gender:"m"},datetime:{label:"תאריך וזמן ISO",gender:"m"},date:{label:"תאריך ISO",gender:"m"},time:{label:"זמן ISO",gender:"m"},duration:{label:"משך זמן ISO",gender:"m"},ipv4:{label:"כתובת IPv4",gender:"f"},ipv6:{label:"כתובת IPv6",gender:"f"},cidrv4:{label:"טווח IPv4",gender:"m"},cidrv6:{label:"טווח IPv6",gender:"m"},base64:{label:"מחרוזת בבסיס 64",gender:"f"},base64url:{label:"מחרוזת בבסיס 64 לכתובות רשת",gender:"f"},json_string:{label:"מחרוזת JSON",gender:"f"},e164:{label:"מספר E.164",gender:"m"},jwt:{label:"JWT",gender:"m"},ends_with:{label:"קלט",gender:"m"},includes:{label:"קלט",gender:"m"},lowercase:{label:"קלט",gender:"m"},starts_with:{label:"קלט",gender:"m"},uppercase:{label:"קלט",gender:"m"}},_={nan:"NaN"};return(I)=>{switch(I.code){case"invalid_type":{let o=I.expected,D=_[o??""]??t(o),S=l(I.input),c=_[S]??r[S]?.label??S;if(/^[A-Z]/.test(I.expected))return`קלט לא תקין: צריך להיות instanceof ${I.expected}, התקבל ${c}`;return`קלט לא תקין: צריך להיות ${D}, התקבל ${c}`}case"invalid_value":{if(I.values.length===1)return`ערך לא תקין: הערך חייב להיות ${k(I.values[0])}`;let o=I.values.map((c)=>k(c));if(I.values.length===2)return`ערך לא תקין: האפשרויות המתאימות הן ${o[0]} או ${o[1]}`;let D=o[o.length-1];return`ערך לא תקין: האפשרויות המתאימות הן ${o.slice(0,-1).join(", ")} או ${D}`}case"too_big":{let o=u(I.origin),D=i(I.origin??"value");if(I.origin==="string")return`${o?.longLabel??"ארוך"} מדי: ${D} צריכה להכיל ${I.maximum.toString()} ${o?.unit??""} ${I.inclusive?"או פחות":"לכל היותר"}`.trim();if(I.origin==="number"){let j=I.inclusive?`קטן או שווה ל-${I.maximum}`:`קטן מ-${I.maximum}`;return`גדול מדי: ${D} צריך להיות ${j}`}if(I.origin==="array"||I.origin==="set"){let j=I.origin==="set"?"צריכה":"צריך",R=I.inclusive?`${I.maximum} ${o?.unit??""} או פחות`:`פחות מ-${I.maximum} ${o?.unit??""}`;return`גדול מדי: ${D} ${j} להכיל ${R}`.trim()}let S=I.inclusive?"<=":"<",c=$(I.origin??"value");if(o?.unit)return`${o.longLabel} מדי: ${D} ${c} ${S}${I.maximum.toString()} ${o.unit}`;return`${o?.longLabel??"גדול"} מדי: ${D} ${c} ${S}${I.maximum.toString()}`}case"too_small":{let o=u(I.origin),D=i(I.origin??"value");if(I.origin==="string")return`${o?.shortLabel??"קצר"} מדי: ${D} צריכה להכיל ${I.minimum.toString()} ${o?.unit??""} ${I.inclusive?"או יותר":"לפחות"}`.trim();if(I.origin==="number"){let j=I.inclusive?`גדול או שווה ל-${I.minimum}`:`גדול מ-${I.minimum}`;return`קטן מדי: ${D} צריך להיות ${j}`}if(I.origin==="array"||I.origin==="set"){let j=I.origin==="set"?"צריכה":"צריך";if(I.minimum===1&&I.inclusive){let K=I.origin==="set"?"לפחות פריט אחד":"לפחות פריט אחד";return`קטן מדי: ${D} ${j} להכיל ${K}`}let R=I.inclusive?`${I.minimum} ${o?.unit??""} או יותר`:`יותר מ-${I.minimum} ${o?.unit??""}`;return`קטן מדי: ${D} ${j} להכיל ${R}`.trim()}let S=I.inclusive?">=":">",c=$(I.origin??"value");if(o?.unit)return`${o.shortLabel} מדי: ${D} ${c} ${S}${I.minimum.toString()} ${o.unit}`;return`${o?.shortLabel??"קטן"} מדי: ${D} ${c} ${S}${I.minimum.toString()}`}case"invalid_format":{let o=I;if(o.format==="starts_with")return`המחרוזת חייבת להתחיל ב "${o.prefix}"`;if(o.format==="ends_with")return`המחרוזת חייבת להסתיים ב "${o.suffix}"`;if(o.format==="includes")return`המחרוזת חייבת לכלול "${o.includes}"`;if(o.format==="regex")return`המחרוזת חייבת להתאים לתבנית ${o.pattern}`;let D=g[o.format],S=D?.label??o.format,j=(D?.gender??"m")==="f"?"תקינה":"תקין";return`${S} לא ${j}`}case"not_multiple_of":return`מספר לא תקין: חייב להיות מכפלה של ${I.divisor}`;case"unrecognized_keys":return`מפתח${I.keys.length>1?"ות":""} לא מזוה${I.keys.length>1?"ים":"ה"}: ${b(I.keys,", ")}`;case"invalid_key":return"שדה לא תקין באובייקט";case"invalid_union":return"קלט לא תקין";case"invalid_element":return`ערך לא תקין ב${i(I.origin??"array")}`;default:return"קלט לא תקין"}}};function wu(){return{localeError:Mb()}}var Fb=()=>{let r={string:{unit:"znakova",verb:"imati"},file:{unit:"bajtova",verb:"imati"},array:{unit:"stavki",verb:"imati"},set:{unit:"stavki",verb:"imati"}};function n(i){return r[i]??null}let v={regex:"unos",email:"email adresa",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO datum i vrijeme",date:"ISO datum",time:"ISO vrijeme",duration:"ISO trajanje",ipv4:"IPv4 adresa",ipv6:"IPv6 adresa",cidrv4:"IPv4 raspon",cidrv6:"IPv6 raspon",base64:"base64 kodirani tekst",base64url:"base64url kodirani tekst",json_string:"JSON tekst",e164:"E.164 broj",jwt:"JWT",template_literal:"unos"},t={nan:"NaN",string:"tekst",number:"broj",boolean:"boolean",array:"niz",object:"objekt",set:"skup",file:"datoteka",date:"datum",bigint:"bigint",symbol:"simbol",undefined:"undefined",null:"null",function:"funkcija",map:"mapa"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Neispravan unos: očekuje se instanceof ${i.expected}, a primljeno je ${g}`;return`Neispravan unos: očekuje se ${$}, a primljeno je ${g}`}case"invalid_value":if(i.values.length===1)return`Neispravna vrijednost: očekivano ${k(i.values[0])}`;return`Neispravna opcija: očekivano jedno od ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`Preveliko: očekivano da ${g??"vrijednost"} ima ${$}${i.maximum.toString()} ${u.unit??"elemenata"}`;return`Preveliko: očekivano da ${g??"vrijednost"} bude ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin),g=t[i.origin]??i.origin;if(u)return`Premalo: očekivano da ${g} ima ${$}${i.minimum.toString()} ${u.unit}`;return`Premalo: očekivano da ${g} bude ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Neispravan tekst: mora započinjati s "${$.prefix}"`;if($.format==="ends_with")return`Neispravan tekst: mora završavati s "${$.suffix}"`;if($.format==="includes")return`Neispravan tekst: mora sadržavati "${$.includes}"`;if($.format==="regex")return`Neispravan tekst: mora odgovarati uzorku ${$.pattern}`;return`Neispravna ${v[$.format]??i.format}`}case"not_multiple_of":return`Neispravan broj: mora biti višekratnik od ${i.divisor}`;case"unrecognized_keys":return`Neprepoznat${i.keys.length>1?"i ključevi":" ključ"}: ${b(i.keys,", ")}`;case"invalid_key":return`Neispravan ključ u ${t[i.origin]??i.origin}`;case"invalid_union":return"Neispravan unos";case"invalid_element":return`Neispravna vrijednost u ${t[i.origin]??i.origin}`;default:return"Neispravan unos"}}};function Su(){return{localeError:Fb()}}var Rb=()=>{let r={string:{unit:"karakter",verb:"legyen"},file:{unit:"byte",verb:"legyen"},array:{unit:"elem",verb:"legyen"},set:{unit:"elem",verb:"legyen"}};function n(i){return r[i]??null}let v={regex:"bemenet",email:"email cím",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO időbélyeg",date:"ISO dátum",time:"ISO idő",duration:"ISO időintervallum",ipv4:"IPv4 cím",ipv6:"IPv6 cím",cidrv4:"IPv4 tartomány",cidrv6:"IPv6 tartomány",base64:"base64-kódolt string",base64url:"base64url-kódolt string",json_string:"JSON string",e164:"E.164 szám",jwt:"JWT",template_literal:"bemenet"},t={nan:"NaN",number:"szám",array:"tömb"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Érvénytelen bemenet: a várt érték instanceof ${i.expected}, a kapott érték ${g}`;return`Érvénytelen bemenet: a várt érték ${$}, a kapott érték ${g}`}case"invalid_value":if(i.values.length===1)return`Érvénytelen bemenet: a várt érték ${k(i.values[0])}`;return`Érvénytelen opció: valamelyik érték várt ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Túl nagy: ${i.origin??"érték"} mérete túl nagy ${$}${i.maximum.toString()} ${u.unit??"elem"}`;return`Túl nagy: a bemeneti érték ${i.origin??"érték"} túl nagy: ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Túl kicsi: a bemeneti érték ${i.origin} mérete túl kicsi ${$}${i.minimum.toString()} ${u.unit}`;return`Túl kicsi: a bemeneti érték ${i.origin} túl kicsi ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Érvénytelen string: "${$.prefix}" értékkel kell kezdődnie`;if($.format==="ends_with")return`Érvénytelen string: "${$.suffix}" értékkel kell végződnie`;if($.format==="includes")return`Érvénytelen string: "${$.includes}" értéket kell tartalmaznia`;if($.format==="regex")return`Érvénytelen string: ${$.pattern} mintának kell megfelelnie`;return`Érvénytelen ${v[$.format]??i.format}`}case"not_multiple_of":return`Érvénytelen szám: ${i.divisor} többszörösének kell lennie`;case"unrecognized_keys":return`Ismeretlen kulcs${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Érvénytelen kulcs ${i.origin}`;case"invalid_union":return"Érvénytelen bemenet";case"invalid_element":return`Érvénytelen érték: ${i.origin}`;default:return"Érvénytelen bemenet"}}};function Nu(){return{localeError:Rb()}}function B6(r,n,v){return Math.abs(r)===1?n:v}function Tr(r){if(!r)return"";let n=["ա","ե","ը","ի","ո","ու","օ"],v=r[r.length-1];return r+(n.includes(v)?"ն":"ը")}var Zb=()=>{let r={string:{unit:{one:"նշան",many:"նշաններ"},verb:"ունենալ"},file:{unit:{one:"բայթ",many:"բայթեր"},verb:"ունենալ"},array:{unit:{one:"տարր",many:"տարրեր"},verb:"ունենալ"},set:{unit:{one:"տարր",many:"տարրեր"},verb:"ունենալ"}};function n(i){return r[i]??null}let v={regex:"մուտք",email:"էլ. հասցե",url:"URL",emoji:"էմոջի",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO ամսաթիվ և ժամ",date:"ISO ամսաթիվ",time:"ISO ժամ",duration:"ISO տևողություն",ipv4:"IPv4 հասցե",ipv6:"IPv6 հասցե",cidrv4:"IPv4 միջակայք",cidrv6:"IPv6 միջակայք",base64:"base64 ձևաչափով տող",base64url:"base64url ձևաչափով տող",json_string:"JSON տող",e164:"E.164 համար",jwt:"JWT",template_literal:"մուտք"},t={nan:"NaN",number:"թիվ",array:"զանգված"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Սխալ մուտքագրում․ սպասվում էր instanceof ${i.expected}, ստացվել է ${g}`;return`Սխալ մուտքագրում․ սպասվում էր ${$}, ստացվել է ${g}`}case"invalid_value":if(i.values.length===1)return`Սխալ մուտքագրում․ սպասվում էր ${k(i.values[1])}`;return`Սխալ տարբերակ․ սպասվում էր հետևյալներից մեկը՝ ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u){let g=Number(i.maximum),_=B6(g,u.unit.one,u.unit.many);return`Չափազանց մեծ արժեք․ սպասվում է, որ ${Tr(i.origin??"արժեք")} կունենա ${$}${i.maximum.toString()} ${_}`}return`Չափազանց մեծ արժեք․ սպասվում է, որ ${Tr(i.origin??"արժեք")} լինի ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u){let g=Number(i.minimum),_=B6(g,u.unit.one,u.unit.many);return`Չափազանց փոքր արժեք․ սպասվում է, որ ${Tr(i.origin)} կունենա ${$}${i.minimum.toString()} ${_}`}return`Չափազանց փոքր արժեք․ սպասվում է, որ ${Tr(i.origin)} լինի ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Սխալ տող․ պետք է սկսվի "${$.prefix}"-ով`;if($.format==="ends_with")return`Սխալ տող․ պետք է ավարտվի "${$.suffix}"-ով`;if($.format==="includes")return`Սխալ տող․ պետք է պարունակի "${$.includes}"`;if($.format==="regex")return`Սխալ տող․ պետք է համապատասխանի ${$.pattern} ձևաչափին`;return`Սխալ ${v[$.format]??i.format}`}case"not_multiple_of":return`Սխալ թիվ․ պետք է բազմապատիկ լինի ${i.divisor}-ի`;case"unrecognized_keys":return`Չճանաչված բանալի${i.keys.length>1?"ներ":""}. ${b(i.keys,", ")}`;case"invalid_key":return`Սխալ բանալի ${Tr(i.origin)}-ում`;case"invalid_union":return"Սխալ մուտքագրում";case"invalid_element":return`Սխալ արժեք ${Tr(i.origin)}-ում`;default:return"Սխալ մուտքագրում"}}};function zu(){return{localeError:Zb()}}var eb=()=>{let r={string:{unit:"karakter",verb:"memiliki"},file:{unit:"byte",verb:"memiliki"},array:{unit:"item",verb:"memiliki"},set:{unit:"item",verb:"memiliki"}};function n(i){return r[i]??null}let v={regex:"input",email:"alamat email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"tanggal dan waktu format ISO",date:"tanggal format ISO",time:"jam format ISO",duration:"durasi format ISO",ipv4:"alamat IPv4",ipv6:"alamat IPv6",cidrv4:"rentang alamat IPv4",cidrv6:"rentang alamat IPv6",base64:"string dengan enkode base64",base64url:"string dengan enkode base64url",json_string:"string JSON",e164:"angka E.164",jwt:"JWT",template_literal:"input"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Input tidak valid: diharapkan instanceof ${i.expected}, diterima ${g}`;return`Input tidak valid: diharapkan ${$}, diterima ${g}`}case"invalid_value":if(i.values.length===1)return`Input tidak valid: diharapkan ${k(i.values[0])}`;return`Pilihan tidak valid: diharapkan salah satu dari ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Terlalu besar: diharapkan ${i.origin??"value"} memiliki ${$}${i.maximum.toString()} ${u.unit??"elemen"}`;return`Terlalu besar: diharapkan ${i.origin??"value"} menjadi ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Terlalu kecil: diharapkan ${i.origin} memiliki ${$}${i.minimum.toString()} ${u.unit}`;return`Terlalu kecil: diharapkan ${i.origin} menjadi ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`String tidak valid: harus dimulai dengan "${$.prefix}"`;if($.format==="ends_with")return`String tidak valid: harus berakhir dengan "${$.suffix}"`;if($.format==="includes")return`String tidak valid: harus menyertakan "${$.includes}"`;if($.format==="regex")return`String tidak valid: harus sesuai pola ${$.pattern}`;return`${v[$.format]??i.format} tidak valid`}case"not_multiple_of":return`Angka tidak valid: harus kelipatan dari ${i.divisor}`;case"unrecognized_keys":return`Kunci tidak dikenali ${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Kunci tidak valid di ${i.origin}`;case"invalid_union":return"Input tidak valid";case"invalid_element":return`Nilai tidak valid di ${i.origin}`;default:return"Input tidak valid"}}};function ju(){return{localeError:eb()}}var xb=()=>{let r={string:{unit:"stafi",verb:"að hafa"},file:{unit:"bæti",verb:"að hafa"},array:{unit:"hluti",verb:"að hafa"},set:{unit:"hluti",verb:"að hafa"}};function n(i){return r[i]??null}let v={regex:"gildi",email:"netfang",url:"vefslóð",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO dagsetning og tími",date:"ISO dagsetning",time:"ISO tími",duration:"ISO tímalengd",ipv4:"IPv4 address",ipv6:"IPv6 address",cidrv4:"IPv4 range",cidrv6:"IPv6 range",base64:"base64-encoded strengur",base64url:"base64url-encoded strengur",json_string:"JSON strengur",e164:"E.164 tölugildi",jwt:"JWT",template_literal:"gildi"},t={nan:"NaN",number:"númer",array:"fylki"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Rangt gildi: Þú slóst inn ${g} þar sem á að vera instanceof ${i.expected}`;return`Rangt gildi: Þú slóst inn ${g} þar sem á að vera ${$}`}case"invalid_value":if(i.values.length===1)return`Rangt gildi: gert ráð fyrir ${k(i.values[0])}`;return`Ógilt val: má vera eitt af eftirfarandi ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Of stórt: gert er ráð fyrir að ${i.origin??"gildi"} hafi ${$}${i.maximum.toString()} ${u.unit??"hluti"}`;return`Of stórt: gert er ráð fyrir að ${i.origin??"gildi"} sé ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Of lítið: gert er ráð fyrir að ${i.origin} hafi ${$}${i.minimum.toString()} ${u.unit}`;return`Of lítið: gert er ráð fyrir að ${i.origin} sé ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ógildur strengur: verður að byrja á "${$.prefix}"`;if($.format==="ends_with")return`Ógildur strengur: verður að enda á "${$.suffix}"`;if($.format==="includes")return`Ógildur strengur: verður að innihalda "${$.includes}"`;if($.format==="regex")return`Ógildur strengur: verður að fylgja mynstri ${$.pattern}`;return`Rangt ${v[$.format]??i.format}`}case"not_multiple_of":return`Röng tala: verður að vera margfeldi af ${i.divisor}`;case"unrecognized_keys":return`Óþekkt ${i.keys.length>1?"ir lyklar":"ur lykill"}: ${b(i.keys,", ")}`;case"invalid_key":return`Rangur lykill í ${i.origin}`;case"invalid_union":return"Rangt gildi";case"invalid_element":return`Rangt gildi í ${i.origin}`;default:return"Rangt gildi"}}};function Pu(){return{localeError:xb()}}var fb=()=>{let r={string:{unit:"caratteri",verb:"avere"},file:{unit:"byte",verb:"avere"},array:{unit:"elementi",verb:"avere"},set:{unit:"elementi",verb:"avere"}};function n(i){return r[i]??null}let v={regex:"input",email:"indirizzo email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"data e ora ISO",date:"data ISO",time:"ora ISO",duration:"durata ISO",ipv4:"indirizzo IPv4",ipv6:"indirizzo IPv6",cidrv4:"intervallo IPv4",cidrv6:"intervallo IPv6",base64:"stringa codificata in base64",base64url:"URL codificata in base64",json_string:"stringa JSON",e164:"numero E.164",jwt:"JWT",template_literal:"input"},t={nan:"NaN",number:"numero",array:"vettore"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Input non valido: atteso instanceof ${i.expected}, ricevuto ${g}`;return`Input non valido: atteso ${$}, ricevuto ${g}`}case"invalid_value":if(i.values.length===1)return`Input non valido: atteso ${k(i.values[0])}`;return`Opzione non valida: atteso uno tra ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Troppo grande: ${i.origin??"valore"} deve avere ${$}${i.maximum.toString()} ${u.unit??"elementi"}`;return`Troppo grande: ${i.origin??"valore"} deve essere ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Troppo piccolo: ${i.origin} deve avere ${$}${i.minimum.toString()} ${u.unit}`;return`Troppo piccolo: ${i.origin} deve essere ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Stringa non valida: deve iniziare con "${$.prefix}"`;if($.format==="ends_with")return`Stringa non valida: deve terminare con "${$.suffix}"`;if($.format==="includes")return`Stringa non valida: deve includere "${$.includes}"`;if($.format==="regex")return`Stringa non valida: deve corrispondere al pattern ${$.pattern}`;return`Input non valido: ${v[$.format]??i.format}`}case"not_multiple_of":return`Numero non valido: deve essere un multiplo di ${i.divisor}`;case"unrecognized_keys":return`Chiav${i.keys.length>1?"i":"e"} non riconosciut${i.keys.length>1?"e":"a"}: ${b(i.keys,", ")}`;case"invalid_key":return`Chiave non valida in ${i.origin}`;case"invalid_union":return"Input non valido";case"invalid_element":return`Valore non valido in ${i.origin}`;default:return"Input non valido"}}};function Ju(){return{localeError:fb()}}var Cb=()=>{let r={string:{unit:"文字",verb:"である"},file:{unit:"バイト",verb:"である"},array:{unit:"要素",verb:"である"},set:{unit:"要素",verb:"である"}};function n(i){return r[i]??null}let v={regex:"入力値",email:"メールアドレス",url:"URL",emoji:"絵文字",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO日時",date:"ISO日付",time:"ISO時刻",duration:"ISO期間",ipv4:"IPv4アドレス",ipv6:"IPv6アドレス",cidrv4:"IPv4範囲",cidrv6:"IPv6範囲",base64:"base64エンコード文字列",base64url:"base64urlエンコード文字列",json_string:"JSON文字列",e164:"E.164番号",jwt:"JWT",template_literal:"入力値"},t={nan:"NaN",number:"数値",array:"配列"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`無効な入力: instanceof ${i.expected}が期待されましたが、${g}が入力されました`;return`無効な入力: ${$}が期待されましたが、${g}が入力されました`}case"invalid_value":if(i.values.length===1)return`無効な入力: ${k(i.values[0])}が期待されました`;return`無効な選択: ${b(i.values,"、")}のいずれかである必要があります`;case"too_big":{let $=i.inclusive?"以下である":"より小さい",u=n(i.origin);if(u)return`大きすぎる値: ${i.origin??"値"}は${i.maximum.toString()}${u.unit??"要素"}${$}必要があります`;return`大きすぎる値: ${i.origin??"値"}は${i.maximum.toString()}${$}必要があります`}case"too_small":{let $=i.inclusive?"以上である":"より大きい",u=n(i.origin);if(u)return`小さすぎる値: ${i.origin}は${i.minimum.toString()}${u.unit}${$}必要があります`;return`小さすぎる値: ${i.origin}は${i.minimum.toString()}${$}必要があります`}case"invalid_format":{let $=i;if($.format==="starts_with")return`無効な文字列: "${$.prefix}"で始まる必要があります`;if($.format==="ends_with")return`無効な文字列: "${$.suffix}"で終わる必要があります`;if($.format==="includes")return`無効な文字列: "${$.includes}"を含む必要があります`;if($.format==="regex")return`無効な文字列: パターン${$.pattern}に一致する必要があります`;return`無効な${v[$.format]??i.format}`}case"not_multiple_of":return`無効な数値: ${i.divisor}の倍数である必要があります`;case"unrecognized_keys":return`認識されていないキー${i.keys.length>1?"群":""}: ${b(i.keys,"、")}`;case"invalid_key":return`${i.origin}内の無効なキー`;case"invalid_union":return"無効な入力";case"invalid_element":return`${i.origin}内の無効な値`;default:return"無効な入力"}}};function Lu(){return{localeError:Cb()}}var mb=()=>{let r={string:{unit:"სიმბოლო",verb:"უნდა შეიცავდეს"},file:{unit:"ბაიტი",verb:"უნდა შეიცავდეს"},array:{unit:"ელემენტი",verb:"უნდა შეიცავდეს"},set:{unit:"ელემენტი",verb:"უნდა შეიცავდეს"}};function n(i){return r[i]??null}let v={regex:"შეყვანა",email:"ელ-ფოსტის მისამართი",url:"URL",emoji:"ემოჯი",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"თარიღი-დრო",date:"თარიღი",time:"დრო",duration:"ხანგრძლივობა",ipv4:"IPv4 მისამართი",ipv6:"IPv6 მისამართი",cidrv4:"IPv4 დიაპაზონი",cidrv6:"IPv6 დიაპაზონი",base64:"base64-კოდირებული ველი",base64url:"base64url-კოდირებული ველი",json_string:"JSON ველი",e164:"E.164 ნომერი",jwt:"JWT",template_literal:"შეყვანა"},t={nan:"NaN",number:"რიცხვი",string:"ველი",boolean:"ბულეანი",function:"ფუნქცია",array:"მასივი"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`არასწორი შეყვანა: მოსალოდნელი instanceof ${i.expected}, მიღებული ${g}`;return`არასწორი შეყვანა: მოსალოდნელი ${$}, მიღებული ${g}`}case"invalid_value":if(i.values.length===1)return`არასწორი შეყვანა: მოსალოდნელი ${k(i.values[0])}`;return`არასწორი ვარიანტი: მოსალოდნელია ერთ-ერთი ${b(i.values,"|")}-დან`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`ზედმეტად დიდი: მოსალოდნელი ${i.origin??"მნიშვნელობა"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit}`;return`ზედმეტად დიდი: მოსალოდნელი ${i.origin??"მნიშვნელობა"} იყოს ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`ზედმეტად პატარა: მოსალოდნელი ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`ზედმეტად პატარა: მოსალოდნელი ${i.origin} იყოს ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`არასწორი ველი: უნდა იწყებოდეს "${$.prefix}"-ით`;if($.format==="ends_with")return`არასწორი ველი: უნდა მთავრდებოდეს "${$.suffix}"-ით`;if($.format==="includes")return`არასწორი ველი: უნდა შეიცავდეს "${$.includes}"-ს`;if($.format==="regex")return`არასწორი ველი: უნდა შეესაბამებოდეს შაბლონს ${$.pattern}`;return`არასწორი ${v[$.format]??i.format}`}case"not_multiple_of":return`არასწორი რიცხვი: უნდა იყოს ${i.divisor}-ის ჯერადი`;case"unrecognized_keys":return`უცნობი გასაღებ${i.keys.length>1?"ები":"ი"}: ${b(i.keys,", ")}`;case"invalid_key":return`არასწორი გასაღები ${i.origin}-ში`;case"invalid_union":return"არასწორი შეყვანა";case"invalid_element":return`არასწორი მნიშვნელობა ${i.origin}-ში`;default:return"არასწორი შეყვანა"}}};function Gu(){return{localeError:mb()}}var yb=()=>{let r={string:{unit:"តួអក្សរ",verb:"គួរមាន"},file:{unit:"បៃ",verb:"គួរមាន"},array:{unit:"ធាតុ",verb:"គួរមាន"},set:{unit:"ធាតុ",verb:"គួរមាន"}};function n(i){return r[i]??null}let v={regex:"ទិន្នន័យបញ្ចូល",email:"អាសយដ្ឋានអ៊ីមែល",url:"URL",emoji:"សញ្ញាអារម្មណ៍",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"កាលបរិច្ឆេទ និងម៉ោង ISO",date:"កាលបរិច្ឆេទ ISO",time:"ម៉ោង ISO",duration:"រយៈពេល ISO",ipv4:"អាសយដ្ឋាន IPv4",ipv6:"អាសយដ្ឋាន IPv6",cidrv4:"ដែនអាសយដ្ឋាន IPv4",cidrv6:"ដែនអាសយដ្ឋាន IPv6",base64:"ខ្សែអក្សរអ៊ិកូដ base64",base64url:"ខ្សែអក្សរអ៊ិកូដ base64url",json_string:"ខ្សែអក្សរ JSON",e164:"លេខ E.164",jwt:"JWT",template_literal:"ទិន្នន័យបញ្ចូល"},t={nan:"NaN",number:"លេខ",array:"អារេ (Array)",null:"គ្មានតម្លៃ (null)"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ instanceof ${i.expected} ប៉ុន្តែទទួលបាន ${g}`;return`ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ ${$} ប៉ុន្តែទទួលបាន ${g}`}case"invalid_value":if(i.values.length===1)return`ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ ${k(i.values[0])}`;return`ជម្រើសមិនត្រឹមត្រូវ៖ ត្រូវជាមួយក្នុងចំណោម ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`ធំពេក៖ ត្រូវការ ${i.origin??"តម្លៃ"} ${$} ${i.maximum.toString()} ${u.unit??"ធាតុ"}`;return`ធំពេក៖ ត្រូវការ ${i.origin??"តម្លៃ"} ${$} ${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`តូចពេក៖ ត្រូវការ ${i.origin} ${$} ${i.minimum.toString()} ${u.unit}`;return`តូចពេក៖ ត្រូវការ ${i.origin} ${$} ${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវចាប់ផ្តើមដោយ "${$.prefix}"`;if($.format==="ends_with")return`ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវបញ្ចប់ដោយ "${$.suffix}"`;if($.format==="includes")return`ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវមាន "${$.includes}"`;if($.format==="regex")return`ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវតែផ្គូផ្គងនឹងទម្រង់ដែលបានកំណត់ ${$.pattern}`;return`មិនត្រឹមត្រូវ៖ ${v[$.format]??i.format}`}case"not_multiple_of":return`លេខមិនត្រឹមត្រូវ៖ ត្រូវតែជាពហុគុណនៃ ${i.divisor}`;case"unrecognized_keys":return`រកឃើញសោមិនស្គាល់៖ ${b(i.keys,", ")}`;case"invalid_key":return`សោមិនត្រឹមត្រូវនៅក្នុង ${i.origin}`;case"invalid_union":return"ទិន្នន័យមិនត្រឹមត្រូវ";case"invalid_element":return`ទិន្នន័យមិនត្រឹមត្រូវនៅក្នុង ${i.origin}`;default:return"ទិន្នន័យមិនត្រឹមត្រូវ"}}};function Ji(){return{localeError:yb()}}function Xu(){return Ji()}var hb=()=>{let r={string:{unit:"문자",verb:"to have"},file:{unit:"바이트",verb:"to have"},array:{unit:"개",verb:"to have"},set:{unit:"개",verb:"to have"}};function n(i){return r[i]??null}let v={regex:"입력",email:"이메일 주소",url:"URL",emoji:"이모지",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO 날짜시간",date:"ISO 날짜",time:"ISO 시간",duration:"ISO 기간",ipv4:"IPv4 주소",ipv6:"IPv6 주소",cidrv4:"IPv4 범위",cidrv6:"IPv6 범위",base64:"base64 인코딩 문자열",base64url:"base64url 인코딩 문자열",json_string:"JSON 문자열",e164:"E.164 번호",jwt:"JWT",template_literal:"입력"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`잘못된 입력: 예상 타입은 instanceof ${i.expected}, 받은 타입은 ${g}입니다`;return`잘못된 입력: 예상 타입은 ${$}, 받은 타입은 ${g}입니다`}case"invalid_value":if(i.values.length===1)return`잘못된 입력: 값은 ${k(i.values[0])} 이어야 합니다`;return`잘못된 옵션: ${b(i.values,"또는 ")} 중 하나여야 합니다`;case"too_big":{let $=i.inclusive?"이하":"미만",u=$==="미만"?"이어야 합니다":"여야 합니다",g=n(i.origin),_=g?.unit??"요소";if(g)return`${i.origin??"값"}이 너무 큽니다: ${i.maximum.toString()}${_} ${$}${u}`;return`${i.origin??"값"}이 너무 큽니다: ${i.maximum.toString()} ${$}${u}`}case"too_small":{let $=i.inclusive?"이상":"초과",u=$==="이상"?"이어야 합니다":"여야 합니다",g=n(i.origin),_=g?.unit??"요소";if(g)return`${i.origin??"값"}이 너무 작습니다: ${i.minimum.toString()}${_} ${$}${u}`;return`${i.origin??"값"}이 너무 작습니다: ${i.minimum.toString()} ${$}${u}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`잘못된 문자열: "${$.prefix}"(으)로 시작해야 합니다`;if($.format==="ends_with")return`잘못된 문자열: "${$.suffix}"(으)로 끝나야 합니다`;if($.format==="includes")return`잘못된 문자열: "${$.includes}"을(를) 포함해야 합니다`;if($.format==="regex")return`잘못된 문자열: 정규식 ${$.pattern} 패턴과 일치해야 합니다`;return`잘못된 ${v[$.format]??i.format}`}case"not_multiple_of":return`잘못된 숫자: ${i.divisor}의 배수여야 합니다`;case"unrecognized_keys":return`인식할 수 없는 키: ${b(i.keys,", ")}`;case"invalid_key":return`잘못된 키: ${i.origin}`;case"invalid_union":return"잘못된 입력";case"invalid_element":return`잘못된 값: ${i.origin}`;default:return"잘못된 입력"}}};function Eu(){return{localeError:hb()}}var Li=(r)=>{return r.charAt(0).toUpperCase()+r.slice(1)};function A6(r){let n=Math.abs(r),v=n%10,t=n%100;if(t>=11&&t<=19||v===0)return"many";if(v===1)return"one";return"few"}var db=()=>{let r={string:{unit:{one:"simbolis",few:"simboliai",many:"simbolių"},verb:{smaller:{inclusive:"turi būti ne ilgesnė kaip",notInclusive:"turi būti trumpesnė kaip"},bigger:{inclusive:"turi būti ne trumpesnė kaip",notInclusive:"turi būti ilgesnė kaip"}}},file:{unit:{one:"baitas",few:"baitai",many:"baitų"},verb:{smaller:{inclusive:"turi būti ne didesnis kaip",notInclusive:"turi būti mažesnis kaip"},bigger:{inclusive:"turi būti ne mažesnis kaip",notInclusive:"turi būti didesnis kaip"}}},array:{unit:{one:"elementą",few:"elementus",many:"elementų"},verb:{smaller:{inclusive:"turi turėti ne daugiau kaip",notInclusive:"turi turėti mažiau kaip"},bigger:{inclusive:"turi turėti ne mažiau kaip",notInclusive:"turi turėti daugiau kaip"}}},set:{unit:{one:"elementą",few:"elementus",many:"elementų"},verb:{smaller:{inclusive:"turi turėti ne daugiau kaip",notInclusive:"turi turėti mažiau kaip"},bigger:{inclusive:"turi turėti ne mažiau kaip",notInclusive:"turi turėti daugiau kaip"}}}};function n(i,$,u,g){let _=r[i]??null;if(_===null)return _;return{unit:_.unit[$],verb:_.verb[g][u?"inclusive":"notInclusive"]}}let v={regex:"įvestis",email:"el. pašto adresas",url:"URL",emoji:"jaustukas",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO data ir laikas",date:"ISO data",time:"ISO laikas",duration:"ISO trukmė",ipv4:"IPv4 adresas",ipv6:"IPv6 adresas",cidrv4:"IPv4 tinklo prefiksas (CIDR)",cidrv6:"IPv6 tinklo prefiksas (CIDR)",base64:"base64 užkoduota eilutė",base64url:"base64url užkoduota eilutė",json_string:"JSON eilutė",e164:"E.164 numeris",jwt:"JWT",template_literal:"įvestis"},t={nan:"NaN",number:"skaičius",bigint:"sveikasis skaičius",string:"eilutė",boolean:"loginė reikšmė",undefined:"neapibrėžta reikšmė",function:"funkcija",symbol:"simbolis",array:"masyvas",object:"objektas",null:"nulinė reikšmė"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Gautas tipas ${g}, o tikėtasi - instanceof ${i.expected}`;return`Gautas tipas ${g}, o tikėtasi - ${$}`}case"invalid_value":if(i.values.length===1)return`Privalo būti ${k(i.values[0])}`;return`Privalo būti vienas iš ${b(i.values,"|")} pasirinkimų`;case"too_big":{let $=t[i.origin]??i.origin,u=n(i.origin,A6(Number(i.maximum)),i.inclusive??!1,"smaller");if(u?.verb)return`${Li($??i.origin??"reikšmė")} ${u.verb} ${i.maximum.toString()} ${u.unit??"elementų"}`;let g=i.inclusive?"ne didesnis kaip":"mažesnis kaip";return`${Li($??i.origin??"reikšmė")} turi būti ${g} ${i.maximum.toString()} ${u?.unit}`}case"too_small":{let $=t[i.origin]??i.origin,u=n(i.origin,A6(Number(i.minimum)),i.inclusive??!1,"bigger");if(u?.verb)return`${Li($??i.origin??"reikšmė")} ${u.verb} ${i.minimum.toString()} ${u.unit??"elementų"}`;let g=i.inclusive?"ne mažesnis kaip":"didesnis kaip";return`${Li($??i.origin??"reikšmė")} turi būti ${g} ${i.minimum.toString()} ${u?.unit}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Eilutė privalo prasidėti "${$.prefix}"`;if($.format==="ends_with")return`Eilutė privalo pasibaigti "${$.suffix}"`;if($.format==="includes")return`Eilutė privalo įtraukti "${$.includes}"`;if($.format==="regex")return`Eilutė privalo atitikti ${$.pattern}`;return`Neteisingas ${v[$.format]??i.format}`}case"not_multiple_of":return`Skaičius privalo būti ${i.divisor} kartotinis.`;case"unrecognized_keys":return`Neatpažint${i.keys.length>1?"i":"as"} rakt${i.keys.length>1?"ai":"as"}: ${b(i.keys,", ")}`;case"invalid_key":return"Rastas klaidingas raktas";case"invalid_union":return"Klaidinga įvestis";case"invalid_element":{let $=t[i.origin]??i.origin;return`${Li($??i.origin??"reikšmė")} turi klaidingą įvestį`}default:return"Klaidinga įvestis"}}};function qu(){return{localeError:db()}}var pb=()=>{let r={string:{unit:"знаци",verb:"да имаат"},file:{unit:"бајти",verb:"да имаат"},array:{unit:"ставки",verb:"да имаат"},set:{unit:"ставки",verb:"да имаат"}};function n(i){return r[i]??null}let v={regex:"внес",email:"адреса на е-пошта",url:"URL",emoji:"емоџи",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO датум и време",date:"ISO датум",time:"ISO време",duration:"ISO времетраење",ipv4:"IPv4 адреса",ipv6:"IPv6 адреса",cidrv4:"IPv4 опсег",cidrv6:"IPv6 опсег",base64:"base64-енкодирана низа",base64url:"base64url-енкодирана низа",json_string:"JSON низа",e164:"E.164 број",jwt:"JWT",template_literal:"внес"},t={nan:"NaN",number:"број",array:"низа"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Грешен внес: се очекува instanceof ${i.expected}, примено ${g}`;return`Грешен внес: се очекува ${$}, примено ${g}`}case"invalid_value":if(i.values.length===1)return`Invalid input: expected ${k(i.values[0])}`;return`Грешана опција: се очекува една ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Премногу голем: се очекува ${i.origin??"вредноста"} да има ${$}${i.maximum.toString()} ${u.unit??"елементи"}`;return`Премногу голем: се очекува ${i.origin??"вредноста"} да биде ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Премногу мал: се очекува ${i.origin} да има ${$}${i.minimum.toString()} ${u.unit}`;return`Премногу мал: се очекува ${i.origin} да биде ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Неважечка низа: мора да започнува со "${$.prefix}"`;if($.format==="ends_with")return`Неважечка низа: мора да завршува со "${$.suffix}"`;if($.format==="includes")return`Неважечка низа: мора да вклучува "${$.includes}"`;if($.format==="regex")return`Неважечка низа: мора да одгоара на патернот ${$.pattern}`;return`Invalid ${v[$.format]??i.format}`}case"not_multiple_of":return`Грешен број: мора да биде делив со ${i.divisor}`;case"unrecognized_keys":return`${i.keys.length>1?"Непрепознаени клучеви":"Непрепознаен клуч"}: ${b(i.keys,", ")}`;case"invalid_key":return`Грешен клуч во ${i.origin}`;case"invalid_union":return"Грешен внес";case"invalid_element":return`Грешна вредност во ${i.origin}`;default:return"Грешен внес"}}};function Ou(){return{localeError:pb()}}var ab=()=>{let r={string:{unit:"aksara",verb:"mempunyai"},file:{unit:"bait",verb:"mempunyai"},array:{unit:"elemen",verb:"mempunyai"},set:{unit:"elemen",verb:"mempunyai"}};function n(i){return r[i]??null}let v={regex:"input",email:"alamat e-mel",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"tarikh masa ISO",date:"tarikh ISO",time:"masa ISO",duration:"tempoh ISO",ipv4:"alamat IPv4",ipv6:"alamat IPv6",cidrv4:"julat IPv4",cidrv6:"julat IPv6",base64:"string dikodkan base64",base64url:"string dikodkan base64url",json_string:"string JSON",e164:"nombor E.164",jwt:"JWT",template_literal:"input"},t={nan:"NaN",number:"nombor"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Input tidak sah: dijangka instanceof ${i.expected}, diterima ${g}`;return`Input tidak sah: dijangka ${$}, diterima ${g}`}case"invalid_value":if(i.values.length===1)return`Input tidak sah: dijangka ${k(i.values[0])}`;return`Pilihan tidak sah: dijangka salah satu daripada ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Terlalu besar: dijangka ${i.origin??"nilai"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit??"elemen"}`;return`Terlalu besar: dijangka ${i.origin??"nilai"} adalah ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Terlalu kecil: dijangka ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`Terlalu kecil: dijangka ${i.origin} adalah ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`String tidak sah: mesti bermula dengan "${$.prefix}"`;if($.format==="ends_with")return`String tidak sah: mesti berakhir dengan "${$.suffix}"`;if($.format==="includes")return`String tidak sah: mesti mengandungi "${$.includes}"`;if($.format==="regex")return`String tidak sah: mesti sepadan dengan corak ${$.pattern}`;return`${v[$.format]??i.format} tidak sah`}case"not_multiple_of":return`Nombor tidak sah: perlu gandaan ${i.divisor}`;case"unrecognized_keys":return`Kunci tidak dikenali: ${b(i.keys,", ")}`;case"invalid_key":return`Kunci tidak sah dalam ${i.origin}`;case"invalid_union":return"Input tidak sah";case"invalid_element":return`Nilai tidak sah dalam ${i.origin}`;default:return"Input tidak sah"}}};function Wu(){return{localeError:ab()}}var sb=()=>{let r={string:{unit:"tekens",verb:"heeft"},file:{unit:"bytes",verb:"heeft"},array:{unit:"elementen",verb:"heeft"},set:{unit:"elementen",verb:"heeft"}};function n(i){return r[i]??null}let v={regex:"invoer",email:"emailadres",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO datum en tijd",date:"ISO datum",time:"ISO tijd",duration:"ISO duur",ipv4:"IPv4-adres",ipv6:"IPv6-adres",cidrv4:"IPv4-bereik",cidrv6:"IPv6-bereik",base64:"base64-gecodeerde tekst",base64url:"base64 URL-gecodeerde tekst",json_string:"JSON string",e164:"E.164-nummer",jwt:"JWT",template_literal:"invoer"},t={nan:"NaN",number:"getal"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ongeldige invoer: verwacht instanceof ${i.expected}, ontving ${g}`;return`Ongeldige invoer: verwacht ${$}, ontving ${g}`}case"invalid_value":if(i.values.length===1)return`Ongeldige invoer: verwacht ${k(i.values[0])}`;return`Ongeldige optie: verwacht één van ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin),g=i.origin==="date"?"laat":i.origin==="string"?"lang":"groot";if(u)return`Te ${g}: verwacht dat ${i.origin??"waarde"} ${$}${i.maximum.toString()} ${u.unit??"elementen"} ${u.verb}`;return`Te ${g}: verwacht dat ${i.origin??"waarde"} ${$}${i.maximum.toString()} is`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin),g=i.origin==="date"?"vroeg":i.origin==="string"?"kort":"klein";if(u)return`Te ${g}: verwacht dat ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ${u.verb}`;return`Te ${g}: verwacht dat ${i.origin} ${$}${i.minimum.toString()} is`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ongeldige tekst: moet met "${$.prefix}" beginnen`;if($.format==="ends_with")return`Ongeldige tekst: moet op "${$.suffix}" eindigen`;if($.format==="includes")return`Ongeldige tekst: moet "${$.includes}" bevatten`;if($.format==="regex")return`Ongeldige tekst: moet overeenkomen met patroon ${$.pattern}`;return`Ongeldig: ${v[$.format]??i.format}`}case"not_multiple_of":return`Ongeldig getal: moet een veelvoud van ${i.divisor} zijn`;case"unrecognized_keys":return`Onbekende key${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Ongeldige key in ${i.origin}`;case"invalid_union":return"Ongeldige invoer";case"invalid_element":return`Ongeldige waarde in ${i.origin}`;default:return"Ongeldige invoer"}}};function Yu(){return{localeError:sb()}}var rD=()=>{let r={string:{unit:"tegn",verb:"å ha"},file:{unit:"bytes",verb:"å ha"},array:{unit:"elementer",verb:"å inneholde"},set:{unit:"elementer",verb:"å inneholde"}};function n(i){return r[i]??null}let v={regex:"input",email:"e-postadresse",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO dato- og klokkeslett",date:"ISO-dato",time:"ISO-klokkeslett",duration:"ISO-varighet",ipv4:"IPv4-område",ipv6:"IPv6-område",cidrv4:"IPv4-spekter",cidrv6:"IPv6-spekter",base64:"base64-enkodet streng",base64url:"base64url-enkodet streng",json_string:"JSON-streng",e164:"E.164-nummer",jwt:"JWT",template_literal:"input"},t={nan:"NaN",number:"tall",array:"liste"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ugyldig input: forventet instanceof ${i.expected}, fikk ${g}`;return`Ugyldig input: forventet ${$}, fikk ${g}`}case"invalid_value":if(i.values.length===1)return`Ugyldig verdi: forventet ${k(i.values[0])}`;return`Ugyldig valg: forventet en av ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`For stor(t): forventet ${i.origin??"value"} til å ha ${$}${i.maximum.toString()} ${u.unit??"elementer"}`;return`For stor(t): forventet ${i.origin??"value"} til å ha ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`For lite(n): forventet ${i.origin} til å ha ${$}${i.minimum.toString()} ${u.unit}`;return`For lite(n): forventet ${i.origin} til å ha ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ugyldig streng: må starte med "${$.prefix}"`;if($.format==="ends_with")return`Ugyldig streng: må ende med "${$.suffix}"`;if($.format==="includes")return`Ugyldig streng: må inneholde "${$.includes}"`;if($.format==="regex")return`Ugyldig streng: må matche mønsteret ${$.pattern}`;return`Ugyldig ${v[$.format]??i.format}`}case"not_multiple_of":return`Ugyldig tall: må være et multiplum av ${i.divisor}`;case"unrecognized_keys":return`${i.keys.length>1?"Ukjente nøkler":"Ukjent nøkkel"}: ${b(i.keys,", ")}`;case"invalid_key":return`Ugyldig nøkkel i ${i.origin}`;case"invalid_union":return"Ugyldig input";case"invalid_element":return`Ugyldig verdi i ${i.origin}`;default:return"Ugyldig input"}}};function Vu(){return{localeError:rD()}}var iD=()=>{let r={string:{unit:"harf",verb:"olmalıdır"},file:{unit:"bayt",verb:"olmalıdır"},array:{unit:"unsur",verb:"olmalıdır"},set:{unit:"unsur",verb:"olmalıdır"}};function n(i){return r[i]??null}let v={regex:"giren",email:"epostagâh",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO hengâmı",date:"ISO tarihi",time:"ISO zamanı",duration:"ISO müddeti",ipv4:"IPv4 nişânı",ipv6:"IPv6 nişânı",cidrv4:"IPv4 menzili",cidrv6:"IPv6 menzili",base64:"base64-şifreli metin",base64url:"base64url-şifreli metin",json_string:"JSON metin",e164:"E.164 sayısı",jwt:"JWT",template_literal:"giren"},t={nan:"NaN",number:"numara",array:"saf",null:"gayb"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Fâsit giren: umulan instanceof ${i.expected}, alınan ${g}`;return`Fâsit giren: umulan ${$}, alınan ${g}`}case"invalid_value":if(i.values.length===1)return`Fâsit giren: umulan ${k(i.values[0])}`;return`Fâsit tercih: mûteberler ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Fazla büyük: ${i.origin??"value"}, ${$}${i.maximum.toString()} ${u.unit??"elements"} sahip olmalıydı.`;return`Fazla büyük: ${i.origin??"value"}, ${$}${i.maximum.toString()} olmalıydı.`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Fazla küçük: ${i.origin}, ${$}${i.minimum.toString()} ${u.unit} sahip olmalıydı.`;return`Fazla küçük: ${i.origin}, ${$}${i.minimum.toString()} olmalıydı.`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Fâsit metin: "${$.prefix}" ile başlamalı.`;if($.format==="ends_with")return`Fâsit metin: "${$.suffix}" ile bitmeli.`;if($.format==="includes")return`Fâsit metin: "${$.includes}" ihtivâ etmeli.`;if($.format==="regex")return`Fâsit metin: ${$.pattern} nakşına uymalı.`;return`Fâsit ${v[$.format]??i.format}`}case"not_multiple_of":return`Fâsit sayı: ${i.divisor} katı olmalıydı.`;case"unrecognized_keys":return`Tanınmayan anahtar ${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} için tanınmayan anahtar var.`;case"invalid_union":return"Giren tanınamadı.";case"invalid_element":return`${i.origin} için tanınmayan kıymet var.`;default:return"Kıymet tanınamadı."}}};function Ku(){return{localeError:iD()}}var nD=()=>{let r={string:{unit:"توکي",verb:"ولري"},file:{unit:"بایټس",verb:"ولري"},array:{unit:"توکي",verb:"ولري"},set:{unit:"توکي",verb:"ولري"}};function n(i){return r[i]??null}let v={regex:"ورودي",email:"بریښنالیک",url:"یو آر ال",emoji:"ایموجي",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"نیټه او وخت",date:"نېټه",time:"وخت",duration:"موده",ipv4:"د IPv4 پته",ipv6:"د IPv6 پته",cidrv4:"د IPv4 ساحه",cidrv6:"د IPv6 ساحه",base64:"base64-encoded متن",base64url:"base64url-encoded متن",json_string:"JSON متن",e164:"د E.164 شمېره",jwt:"JWT",template_literal:"ورودي"},t={nan:"NaN",number:"عدد",array:"ارې"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`ناسم ورودي: باید instanceof ${i.expected} وای, مګر ${g} ترلاسه شو`;return`ناسم ورودي: باید ${$} وای, مګر ${g} ترلاسه شو`}case"invalid_value":if(i.values.length===1)return`ناسم ورودي: باید ${k(i.values[0])} وای`;return`ناسم انتخاب: باید یو له ${b(i.values,"|")} څخه وای`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`ډیر لوی: ${i.origin??"ارزښت"} باید ${$}${i.maximum.toString()} ${u.unit??"عنصرونه"} ولري`;return`ډیر لوی: ${i.origin??"ارزښت"} باید ${$}${i.maximum.toString()} وي`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`ډیر کوچنی: ${i.origin} باید ${$}${i.minimum.toString()} ${u.unit} ولري`;return`ډیر کوچنی: ${i.origin} باید ${$}${i.minimum.toString()} وي`}case"invalid_format":{let $=i;if($.format==="starts_with")return`ناسم متن: باید د "${$.prefix}" سره پیل شي`;if($.format==="ends_with")return`ناسم متن: باید د "${$.suffix}" سره پای ته ورسيږي`;if($.format==="includes")return`ناسم متن: باید "${$.includes}" ولري`;if($.format==="regex")return`ناسم متن: باید د ${$.pattern} سره مطابقت ولري`;return`${v[$.format]??i.format} ناسم دی`}case"not_multiple_of":return`ناسم عدد: باید د ${i.divisor} مضرب وي`;case"unrecognized_keys":return`ناسم ${i.keys.length>1?"کلیډونه":"کلیډ"}: ${b(i.keys,", ")}`;case"invalid_key":return`ناسم کلیډ په ${i.origin} کې`;case"invalid_union":return"ناسمه ورودي";case"invalid_element":return`ناسم عنصر په ${i.origin} کې`;default:return"ناسمه ورودي"}}};function Qu(){return{localeError:nD()}}var vD=()=>{let r={string:{unit:"znaków",verb:"mieć"},file:{unit:"bajtów",verb:"mieć"},array:{unit:"elementów",verb:"mieć"},set:{unit:"elementów",verb:"mieć"}};function n(i){return r[i]??null}let v={regex:"wyrażenie",email:"adres email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"data i godzina w formacie ISO",date:"data w formacie ISO",time:"godzina w formacie ISO",duration:"czas trwania ISO",ipv4:"adres IPv4",ipv6:"adres IPv6",cidrv4:"zakres IPv4",cidrv6:"zakres IPv6",base64:"ciąg znaków zakodowany w formacie base64",base64url:"ciąg znaków zakodowany w formacie base64url",json_string:"ciąg znaków w formacie JSON",e164:"liczba E.164",jwt:"JWT",template_literal:"wejście"},t={nan:"NaN",number:"liczba",array:"tablica"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Nieprawidłowe dane wejściowe: oczekiwano instanceof ${i.expected}, otrzymano ${g}`;return`Nieprawidłowe dane wejściowe: oczekiwano ${$}, otrzymano ${g}`}case"invalid_value":if(i.values.length===1)return`Nieprawidłowe dane wejściowe: oczekiwano ${k(i.values[0])}`;return`Nieprawidłowa opcja: oczekiwano jednej z wartości ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Za duża wartość: oczekiwano, że ${i.origin??"wartość"} będzie mieć ${$}${i.maximum.toString()} ${u.unit??"elementów"}`;return`Zbyt duż(y/a/e): oczekiwano, że ${i.origin??"wartość"} będzie wynosić ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Za mała wartość: oczekiwano, że ${i.origin??"wartość"} będzie mieć ${$}${i.minimum.toString()} ${u.unit??"elementów"}`;return`Zbyt mał(y/a/e): oczekiwano, że ${i.origin??"wartość"} będzie wynosić ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Nieprawidłowy ciąg znaków: musi zaczynać się od "${$.prefix}"`;if($.format==="ends_with")return`Nieprawidłowy ciąg znaków: musi kończyć się na "${$.suffix}"`;if($.format==="includes")return`Nieprawidłowy ciąg znaków: musi zawierać "${$.includes}"`;if($.format==="regex")return`Nieprawidłowy ciąg znaków: musi odpowiadać wzorcowi ${$.pattern}`;return`Nieprawidłow(y/a/e) ${v[$.format]??i.format}`}case"not_multiple_of":return`Nieprawidłowa liczba: musi być wielokrotnością ${i.divisor}`;case"unrecognized_keys":return`Nierozpoznane klucze${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Nieprawidłowy klucz w ${i.origin}`;case"invalid_union":return"Nieprawidłowe dane wejściowe";case"invalid_element":return`Nieprawidłowa wartość w ${i.origin}`;default:return"Nieprawidłowe dane wejściowe"}}};function Hu(){return{localeError:vD()}}var $D=()=>{let r={string:{unit:"caracteres",verb:"ter"},file:{unit:"bytes",verb:"ter"},array:{unit:"itens",verb:"ter"},set:{unit:"itens",verb:"ter"}};function n(i){return r[i]??null}let v={regex:"padrão",email:"endereço de e-mail",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"data e hora ISO",date:"data ISO",time:"hora ISO",duration:"duração ISO",ipv4:"endereço IPv4",ipv6:"endereço IPv6",cidrv4:"faixa de IPv4",cidrv6:"faixa de IPv6",base64:"texto codificado em base64",base64url:"URL codificada em base64",json_string:"texto JSON",e164:"número E.164",jwt:"JWT",template_literal:"entrada"},t={nan:"NaN",number:"número",null:"nulo"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Tipo inválido: esperado instanceof ${i.expected}, recebido ${g}`;return`Tipo inválido: esperado ${$}, recebido ${g}`}case"invalid_value":if(i.values.length===1)return`Entrada inválida: esperado ${k(i.values[0])}`;return`Opção inválida: esperada uma das ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Muito grande: esperado que ${i.origin??"valor"} tivesse ${$}${i.maximum.toString()} ${u.unit??"elementos"}`;return`Muito grande: esperado que ${i.origin??"valor"} fosse ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Muito pequeno: esperado que ${i.origin} tivesse ${$}${i.minimum.toString()} ${u.unit}`;return`Muito pequeno: esperado que ${i.origin} fosse ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Texto inválido: deve começar com "${$.prefix}"`;if($.format==="ends_with")return`Texto inválido: deve terminar com "${$.suffix}"`;if($.format==="includes")return`Texto inválido: deve incluir "${$.includes}"`;if($.format==="regex")return`Texto inválido: deve corresponder ao padrão ${$.pattern}`;return`${v[$.format]??i.format} inválido`}case"not_multiple_of":return`Número inválido: deve ser múltiplo de ${i.divisor}`;case"unrecognized_keys":return`Chave${i.keys.length>1?"s":""} desconhecida${i.keys.length>1?"s":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Chave inválida em ${i.origin}`;case"invalid_union":return"Entrada inválida";case"invalid_element":return`Valor inválido em ${i.origin}`;default:return"Campo inválido"}}};function Tu(){return{localeError:$D()}}var tD=()=>{let r={string:{unit:"caractere",verb:"să aibă"},file:{unit:"octeți",verb:"să aibă"},array:{unit:"elemente",verb:"să aibă"},set:{unit:"elemente",verb:"să aibă"},map:{unit:"intrări",verb:"să aibă"}};function n(i){return r[i]??null}let v={regex:"intrare",email:"adresă de email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"dată și oră ISO",date:"dată ISO",time:"oră ISO",duration:"durată ISO",ipv4:"adresă IPv4",ipv6:"adresă IPv6",mac:"adresă MAC",cidrv4:"interval IPv4",cidrv6:"interval IPv6",base64:"șir codat base64",base64url:"șir codat base64url",json_string:"șir JSON",e164:"număr E.164",jwt:"JWT",template_literal:"intrare"},t={nan:"NaN",string:"șir",number:"număr",boolean:"boolean",function:"funcție",array:"matrice",object:"obiect",undefined:"nedefinit",symbol:"simbol",bigint:"număr mare",void:"void",never:"never",map:"hartă",set:"set"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;return`Intrare invalidă: așteptat ${$}, primit ${g}`}case"invalid_value":if(i.values.length===1)return`Intrare invalidă: așteptat ${k(i.values[0])}`;return`Opțiune invalidă: așteptat una dintre ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Prea mare: așteptat ca ${i.origin??"valoarea"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit??"elemente"}`;return`Prea mare: așteptat ca ${i.origin??"valoarea"} să fie ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Prea mic: așteptat ca ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`Prea mic: așteptat ca ${i.origin} să fie ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Șir invalid: trebuie să înceapă cu "${$.prefix}"`;if($.format==="ends_with")return`Șir invalid: trebuie să se termine cu "${$.suffix}"`;if($.format==="includes")return`Șir invalid: trebuie să includă "${$.includes}"`;if($.format==="regex")return`Șir invalid: trebuie să se potrivească cu modelul ${$.pattern}`;return`Format invalid: ${v[$.format]??i.format}`}case"not_multiple_of":return`Număr invalid: trebuie să fie multiplu de ${i.divisor}`;case"unrecognized_keys":return`Chei nerecunoscute: ${b(i.keys,", ")}`;case"invalid_key":return`Cheie invalidă în ${i.origin}`;case"invalid_union":return"Intrare invalidă";case"invalid_element":return`Valoare invalidă în ${i.origin}`;default:return"Intrare invalidă"}}};function Bu(){return{localeError:tD()}}function M6(r,n,v,t){let i=Math.abs(r),$=i%10,u=i%100;if(u>=11&&u<=19)return t;if($===1)return n;if($>=2&&$<=4)return v;return t}var uD=()=>{let r={string:{unit:{one:"символ",few:"символа",many:"символов"},verb:"иметь"},file:{unit:{one:"байт",few:"байта",many:"байт"},verb:"иметь"},array:{unit:{one:"элемент",few:"элемента",many:"элементов"},verb:"иметь"},set:{unit:{one:"элемент",few:"элемента",many:"элементов"},verb:"иметь"}};function n(i){return r[i]??null}let v={regex:"ввод",email:"email адрес",url:"URL",emoji:"эмодзи",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO дата и время",date:"ISO дата",time:"ISO время",duration:"ISO длительность",ipv4:"IPv4 адрес",ipv6:"IPv6 адрес",cidrv4:"IPv4 диапазон",cidrv6:"IPv6 диапазон",base64:"строка в формате base64",base64url:"строка в формате base64url",json_string:"JSON строка",e164:"номер E.164",jwt:"JWT",template_literal:"ввод"},t={nan:"NaN",number:"число",array:"массив"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Неверный ввод: ожидалось instanceof ${i.expected}, получено ${g}`;return`Неверный ввод: ожидалось ${$}, получено ${g}`}case"invalid_value":if(i.values.length===1)return`Неверный ввод: ожидалось ${k(i.values[0])}`;return`Неверный вариант: ожидалось одно из ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u){let g=Number(i.maximum),_=M6(g,u.unit.one,u.unit.few,u.unit.many);return`Слишком большое значение: ожидалось, что ${i.origin??"значение"} будет иметь ${$}${i.maximum.toString()} ${_}`}return`Слишком большое значение: ожидалось, что ${i.origin??"значение"} будет ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u){let g=Number(i.minimum),_=M6(g,u.unit.one,u.unit.few,u.unit.many);return`Слишком маленькое значение: ожидалось, что ${i.origin} будет иметь ${$}${i.minimum.toString()} ${_}`}return`Слишком маленькое значение: ожидалось, что ${i.origin} будет ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Неверная строка: должна начинаться с "${$.prefix}"`;if($.format==="ends_with")return`Неверная строка: должна заканчиваться на "${$.suffix}"`;if($.format==="includes")return`Неверная строка: должна содержать "${$.includes}"`;if($.format==="regex")return`Неверная строка: должна соответствовать шаблону ${$.pattern}`;return`Неверный ${v[$.format]??i.format}`}case"not_multiple_of":return`Неверное число: должно быть кратным ${i.divisor}`;case"unrecognized_keys":return`Нераспознанн${i.keys.length>1?"ые":"ый"} ключ${i.keys.length>1?"и":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Неверный ключ в ${i.origin}`;case"invalid_union":return"Неверные входные данные";case"invalid_element":return`Неверное значение в ${i.origin}`;default:return"Неверные входные данные"}}};function Au(){return{localeError:uD()}}var gD=()=>{let r={string:{unit:"znakov",verb:"imeti"},file:{unit:"bajtov",verb:"imeti"},array:{unit:"elementov",verb:"imeti"},set:{unit:"elementov",verb:"imeti"}};function n(i){return r[i]??null}let v={regex:"vnos",email:"e-poštni naslov",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO datum in čas",date:"ISO datum",time:"ISO čas",duration:"ISO trajanje",ipv4:"IPv4 naslov",ipv6:"IPv6 naslov",cidrv4:"obseg IPv4",cidrv6:"obseg IPv6",base64:"base64 kodiran niz",base64url:"base64url kodiran niz",json_string:"JSON niz",e164:"E.164 številka",jwt:"JWT",template_literal:"vnos"},t={nan:"NaN",number:"število",array:"tabela"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Neveljaven vnos: pričakovano instanceof ${i.expected}, prejeto ${g}`;return`Neveljaven vnos: pričakovano ${$}, prejeto ${g}`}case"invalid_value":if(i.values.length===1)return`Neveljaven vnos: pričakovano ${k(i.values[0])}`;return`Neveljavna možnost: pričakovano eno izmed ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Preveliko: pričakovano, da bo ${i.origin??"vrednost"} imelo ${$}${i.maximum.toString()} ${u.unit??"elementov"}`;return`Preveliko: pričakovano, da bo ${i.origin??"vrednost"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Premajhno: pričakovano, da bo ${i.origin} imelo ${$}${i.minimum.toString()} ${u.unit}`;return`Premajhno: pričakovano, da bo ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Neveljaven niz: mora se začeti z "${$.prefix}"`;if($.format==="ends_with")return`Neveljaven niz: mora se končati z "${$.suffix}"`;if($.format==="includes")return`Neveljaven niz: mora vsebovati "${$.includes}"`;if($.format==="regex")return`Neveljaven niz: mora ustrezati vzorcu ${$.pattern}`;return`Neveljaven ${v[$.format]??i.format}`}case"not_multiple_of":return`Neveljavno število: mora biti večkratnik ${i.divisor}`;case"unrecognized_keys":return`Neprepoznan${i.keys.length>1?"i ključi":" ključ"}: ${b(i.keys,", ")}`;case"invalid_key":return`Neveljaven ključ v ${i.origin}`;case"invalid_union":return"Neveljaven vnos";case"invalid_element":return`Neveljavna vrednost v ${i.origin}`;default:return"Neveljaven vnos"}}};function Mu(){return{localeError:gD()}}var ID=()=>{let r={string:{unit:"tecken",verb:"att ha"},file:{unit:"bytes",verb:"att ha"},array:{unit:"objekt",verb:"att innehålla"},set:{unit:"objekt",verb:"att innehålla"}};function n(i){return r[i]??null}let v={regex:"reguljärt uttryck",email:"e-postadress",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO-datum och tid",date:"ISO-datum",time:"ISO-tid",duration:"ISO-varaktighet",ipv4:"IPv4-intervall",ipv6:"IPv6-intervall",cidrv4:"IPv4-spektrum",cidrv6:"IPv6-spektrum",base64:"base64-kodad sträng",base64url:"base64url-kodad sträng",json_string:"JSON-sträng",e164:"E.164-nummer",jwt:"JWT",template_literal:"mall-literal"},t={nan:"NaN",number:"antal",array:"lista"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ogiltig inmatning: förväntat instanceof ${i.expected}, fick ${g}`;return`Ogiltig inmatning: förväntat ${$}, fick ${g}`}case"invalid_value":if(i.values.length===1)return`Ogiltig inmatning: förväntat ${k(i.values[0])}`;return`Ogiltigt val: förväntade en av ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`För stor(t): förväntade ${i.origin??"värdet"} att ha ${$}${i.maximum.toString()} ${u.unit??"element"}`;return`För stor(t): förväntat ${i.origin??"värdet"} att ha ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`För lite(t): förväntade ${i.origin??"värdet"} att ha ${$}${i.minimum.toString()} ${u.unit}`;return`För lite(t): förväntade ${i.origin??"värdet"} att ha ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ogiltig sträng: måste börja med "${$.prefix}"`;if($.format==="ends_with")return`Ogiltig sträng: måste sluta med "${$.suffix}"`;if($.format==="includes")return`Ogiltig sträng: måste innehålla "${$.includes}"`;if($.format==="regex")return`Ogiltig sträng: måste matcha mönstret "${$.pattern}"`;return`Ogiltig(t) ${v[$.format]??i.format}`}case"not_multiple_of":return`Ogiltigt tal: måste vara en multipel av ${i.divisor}`;case"unrecognized_keys":return`${i.keys.length>1?"Okända nycklar":"Okänd nyckel"}: ${b(i.keys,", ")}`;case"invalid_key":return`Ogiltig nyckel i ${i.origin??"värdet"}`;case"invalid_union":return"Ogiltig input";case"invalid_element":return`Ogiltigt värde i ${i.origin??"värdet"}`;default:return"Ogiltig input"}}};function Fu(){return{localeError:ID()}}var _D=()=>{let r={string:{unit:"எழுத்துக்கள்",verb:"கொண்டிருக்க வேண்டும்"},file:{unit:"பைட்டுகள்",verb:"கொண்டிருக்க வேண்டும்"},array:{unit:"உறுப்புகள்",verb:"கொண்டிருக்க வேண்டும்"},set:{unit:"உறுப்புகள்",verb:"கொண்டிருக்க வேண்டும்"}};function n(i){return r[i]??null}let v={regex:"உள்ளீடு",email:"மின்னஞ்சல் முகவரி",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO தேதி நேரம்",date:"ISO தேதி",time:"ISO நேரம்",duration:"ISO கால அளவு",ipv4:"IPv4 முகவரி",ipv6:"IPv6 முகவரி",cidrv4:"IPv4 வரம்பு",cidrv6:"IPv6 வரம்பு",base64:"base64-encoded சரம்",base64url:"base64url-encoded சரம்",json_string:"JSON சரம்",e164:"E.164 எண்",jwt:"JWT",template_literal:"input"},t={nan:"NaN",number:"எண்",array:"அணி",null:"வெறுமை"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது instanceof ${i.expected}, பெறப்பட்டது ${g}`;return`தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது ${$}, பெறப்பட்டது ${g}`}case"invalid_value":if(i.values.length===1)return`தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது ${k(i.values[0])}`;return`தவறான விருப்பம்: எதிர்பார்க்கப்பட்டது ${b(i.values,"|")} இல் ஒன்று`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`மிக பெரியது: எதிர்பார்க்கப்பட்டது ${i.origin??"மதிப்பு"} ${$}${i.maximum.toString()} ${u.unit??"உறுப்புகள்"} ஆக இருக்க வேண்டும்`;return`மிக பெரியது: எதிர்பார்க்கப்பட்டது ${i.origin??"மதிப்பு"} ${$}${i.maximum.toString()} ஆக இருக்க வேண்டும்`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`மிகச் சிறியது: எதிர்பார்க்கப்பட்டது ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ஆக இருக்க வேண்டும்`;return`மிகச் சிறியது: எதிர்பார்க்கப்பட்டது ${i.origin} ${$}${i.minimum.toString()} ஆக இருக்க வேண்டும்`}case"invalid_format":{let $=i;if($.format==="starts_with")return`தவறான சரம்: "${$.prefix}" இல் தொடங்க வேண்டும்`;if($.format==="ends_with")return`தவறான சரம்: "${$.suffix}" இல் முடிவடைய வேண்டும்`;if($.format==="includes")return`தவறான சரம்: "${$.includes}" ஐ உள்ளடக்க வேண்டும்`;if($.format==="regex")return`தவறான சரம்: ${$.pattern} முறைபாட்டுடன் பொருந்த வேண்டும்`;return`தவறான ${v[$.format]??i.format}`}case"not_multiple_of":return`தவறான எண்: ${i.divisor} இன் பலமாக இருக்க வேண்டும்`;case"unrecognized_keys":return`அடையாளம் தெரியாத விசை${i.keys.length>1?"கள்":""}: ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} இல் தவறான விசை`;case"invalid_union":return"தவறான உள்ளீடு";case"invalid_element":return`${i.origin} இல் தவறான மதிப்பு`;default:return"தவறான உள்ளீடு"}}};function Ru(){return{localeError:_D()}}var oD=()=>{let r={string:{unit:"ตัวอักษร",verb:"ควรมี"},file:{unit:"ไบต์",verb:"ควรมี"},array:{unit:"รายการ",verb:"ควรมี"},set:{unit:"รายการ",verb:"ควรมี"}};function n(i){return r[i]??null}let v={regex:"ข้อมูลที่ป้อน",email:"ที่อยู่อีเมล",url:"URL",emoji:"อิโมจิ",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"วันที่เวลาแบบ ISO",date:"วันที่แบบ ISO",time:"เวลาแบบ ISO",duration:"ช่วงเวลาแบบ ISO",ipv4:"ที่อยู่ IPv4",ipv6:"ที่อยู่ IPv6",cidrv4:"ช่วง IP แบบ IPv4",cidrv6:"ช่วง IP แบบ IPv6",base64:"ข้อความแบบ Base64",base64url:"ข้อความแบบ Base64 สำหรับ URL",json_string:"ข้อความแบบ JSON",e164:"เบอร์โทรศัพท์ระหว่างประเทศ (E.164)",jwt:"โทเคน JWT",template_literal:"ข้อมูลที่ป้อน"},t={nan:"NaN",number:"ตัวเลข",array:"อาร์เรย์ (Array)",null:"ไม่มีค่า (null)"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`ประเภทข้อมูลไม่ถูกต้อง: ควรเป็น instanceof ${i.expected} แต่ได้รับ ${g}`;return`ประเภทข้อมูลไม่ถูกต้อง: ควรเป็น ${$} แต่ได้รับ ${g}`}case"invalid_value":if(i.values.length===1)return`ค่าไม่ถูกต้อง: ควรเป็น ${k(i.values[0])}`;return`ตัวเลือกไม่ถูกต้อง: ควรเป็นหนึ่งใน ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"ไม่เกิน":"น้อยกว่า",u=n(i.origin);if(u)return`เกินกำหนด: ${i.origin??"ค่า"} ควรมี${$} ${i.maximum.toString()} ${u.unit??"รายการ"}`;return`เกินกำหนด: ${i.origin??"ค่า"} ควรมี${$} ${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?"อย่างน้อย":"มากกว่า",u=n(i.origin);if(u)return`น้อยกว่ากำหนด: ${i.origin} ควรมี${$} ${i.minimum.toString()} ${u.unit}`;return`น้อยกว่ากำหนด: ${i.origin} ควรมี${$} ${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`รูปแบบไม่ถูกต้อง: ข้อความต้องขึ้นต้นด้วย "${$.prefix}"`;if($.format==="ends_with")return`รูปแบบไม่ถูกต้อง: ข้อความต้องลงท้ายด้วย "${$.suffix}"`;if($.format==="includes")return`รูปแบบไม่ถูกต้อง: ข้อความต้องมี "${$.includes}" อยู่ในข้อความ`;if($.format==="regex")return`รูปแบบไม่ถูกต้อง: ต้องตรงกับรูปแบบที่กำหนด ${$.pattern}`;return`รูปแบบไม่ถูกต้อง: ${v[$.format]??i.format}`}case"not_multiple_of":return`ตัวเลขไม่ถูกต้อง: ต้องเป็นจำนวนที่หารด้วย ${i.divisor} ได้ลงตัว`;case"unrecognized_keys":return`พบคีย์ที่ไม่รู้จัก: ${b(i.keys,", ")}`;case"invalid_key":return`คีย์ไม่ถูกต้องใน ${i.origin}`;case"invalid_union":return"ข้อมูลไม่ถูกต้อง: ไม่ตรงกับรูปแบบยูเนียนที่กำหนดไว้";case"invalid_element":return`ข้อมูลไม่ถูกต้องใน ${i.origin}`;default:return"ข้อมูลไม่ถูกต้อง"}}};function Zu(){return{localeError:oD()}}var UD=()=>{let r={string:{unit:"karakter",verb:"olmalı"},file:{unit:"bayt",verb:"olmalı"},array:{unit:"öğe",verb:"olmalı"},set:{unit:"öğe",verb:"olmalı"}};function n(i){return r[i]??null}let v={regex:"girdi",email:"e-posta adresi",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO tarih ve saat",date:"ISO tarih",time:"ISO saat",duration:"ISO süre",ipv4:"IPv4 adresi",ipv6:"IPv6 adresi",cidrv4:"IPv4 aralığı",cidrv6:"IPv6 aralığı",base64:"base64 ile şifrelenmiş metin",base64url:"base64url ile şifrelenmiş metin",json_string:"JSON dizesi",e164:"E.164 sayısı",jwt:"JWT",template_literal:"Şablon dizesi"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Geçersiz değer: beklenen instanceof ${i.expected}, alınan ${g}`;return`Geçersiz değer: beklenen ${$}, alınan ${g}`}case"invalid_value":if(i.values.length===1)return`Geçersiz değer: beklenen ${k(i.values[0])}`;return`Geçersiz seçenek: aşağıdakilerden biri olmalı: ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Çok büyük: beklenen ${i.origin??"değer"} ${$}${i.maximum.toString()} ${u.unit??"öğe"}`;return`Çok büyük: beklenen ${i.origin??"değer"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Çok küçük: beklenen ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;return`Çok küçük: beklenen ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Geçersiz metin: "${$.prefix}" ile başlamalı`;if($.format==="ends_with")return`Geçersiz metin: "${$.suffix}" ile bitmeli`;if($.format==="includes")return`Geçersiz metin: "${$.includes}" içermeli`;if($.format==="regex")return`Geçersiz metin: ${$.pattern} desenine uymalı`;return`Geçersiz ${v[$.format]??i.format}`}case"not_multiple_of":return`Geçersiz sayı: ${i.divisor} ile tam bölünebilmeli`;case"unrecognized_keys":return`Tanınmayan anahtar${i.keys.length>1?"lar":""}: ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} içinde geçersiz anahtar`;case"invalid_union":return"Geçersiz değer";case"invalid_element":return`${i.origin} içinde geçersiz değer`;default:return"Geçersiz değer"}}};function eu(){return{localeError:UD()}}var bD=()=>{let r={string:{unit:"символів",verb:"матиме"},file:{unit:"байтів",verb:"матиме"},array:{unit:"елементів",verb:"матиме"},set:{unit:"елементів",verb:"матиме"}};function n(i){return r[i]??null}let v={regex:"вхідні дані",email:"адреса електронної пошти",url:"URL",emoji:"емодзі",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"дата та час ISO",date:"дата ISO",time:"час ISO",duration:"тривалість ISO",ipv4:"адреса IPv4",ipv6:"адреса IPv6",cidrv4:"діапазон IPv4",cidrv6:"діапазон IPv6",base64:"рядок у кодуванні base64",base64url:"рядок у кодуванні base64url",json_string:"рядок JSON",e164:"номер E.164",jwt:"JWT",template_literal:"вхідні дані"},t={nan:"NaN",number:"число",array:"масив"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Неправильні вхідні дані: очікується instanceof ${i.expected}, отримано ${g}`;return`Неправильні вхідні дані: очікується ${$}, отримано ${g}`}case"invalid_value":if(i.values.length===1)return`Неправильні вхідні дані: очікується ${k(i.values[0])}`;return`Неправильна опція: очікується одне з ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Занадто велике: очікується, що ${i.origin??"значення"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit??"елементів"}`;return`Занадто велике: очікується, що ${i.origin??"значення"} буде ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Занадто мале: очікується, що ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`Занадто мале: очікується, що ${i.origin} буде ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Неправильний рядок: повинен починатися з "${$.prefix}"`;if($.format==="ends_with")return`Неправильний рядок: повинен закінчуватися на "${$.suffix}"`;if($.format==="includes")return`Неправильний рядок: повинен містити "${$.includes}"`;if($.format==="regex")return`Неправильний рядок: повинен відповідати шаблону ${$.pattern}`;return`Неправильний ${v[$.format]??i.format}`}case"not_multiple_of":return`Неправильне число: повинно бути кратним ${i.divisor}`;case"unrecognized_keys":return`Нерозпізнаний ключ${i.keys.length>1?"і":""}: ${b(i.keys,", ")}`;case"invalid_key":return`Неправильний ключ у ${i.origin}`;case"invalid_union":return"Неправильні вхідні дані";case"invalid_element":return`Неправильне значення у ${i.origin}`;default:return"Неправильні вхідні дані"}}};function Gi(){return{localeError:bD()}}function xu(){return Gi()}var DD=()=>{let r={string:{unit:"حروف",verb:"ہونا"},file:{unit:"بائٹس",verb:"ہونا"},array:{unit:"آئٹمز",verb:"ہونا"},set:{unit:"آئٹمز",verb:"ہونا"}};function n(i){return r[i]??null}let v={regex:"ان پٹ",email:"ای میل ایڈریس",url:"یو آر ایل",emoji:"ایموجی",uuid:"یو یو آئی ڈی",uuidv4:"یو یو آئی ڈی وی 4",uuidv6:"یو یو آئی ڈی وی 6",nanoid:"نینو آئی ڈی",guid:"جی یو آئی ڈی",cuid:"سی یو آئی ڈی",cuid2:"سی یو آئی ڈی 2",ulid:"یو ایل آئی ڈی",xid:"ایکس آئی ڈی",ksuid:"کے ایس یو آئی ڈی",datetime:"آئی ایس او ڈیٹ ٹائم",date:"آئی ایس او تاریخ",time:"آئی ایس او وقت",duration:"آئی ایس او مدت",ipv4:"آئی پی وی 4 ایڈریس",ipv6:"آئی پی وی 6 ایڈریس",cidrv4:"آئی پی وی 4 رینج",cidrv6:"آئی پی وی 6 رینج",base64:"بیس 64 ان کوڈڈ سٹرنگ",base64url:"بیس 64 یو آر ایل ان کوڈڈ سٹرنگ",json_string:"جے ایس او این سٹرنگ",e164:"ای 164 نمبر",jwt:"جے ڈبلیو ٹی",template_literal:"ان پٹ"},t={nan:"NaN",number:"نمبر",array:"آرے",null:"نل"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`غلط ان پٹ: instanceof ${i.expected} متوقع تھا، ${g} موصول ہوا`;return`غلط ان پٹ: ${$} متوقع تھا، ${g} موصول ہوا`}case"invalid_value":if(i.values.length===1)return`غلط ان پٹ: ${k(i.values[0])} متوقع تھا`;return`غلط آپشن: ${b(i.values,"|")} میں سے ایک متوقع تھا`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`بہت بڑا: ${i.origin??"ویلیو"} کے ${$}${i.maximum.toString()} ${u.unit??"عناصر"} ہونے متوقع تھے`;return`بہت بڑا: ${i.origin??"ویلیو"} کا ${$}${i.maximum.toString()} ہونا متوقع تھا`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`بہت چھوٹا: ${i.origin} کے ${$}${i.minimum.toString()} ${u.unit} ہونے متوقع تھے`;return`بہت چھوٹا: ${i.origin} کا ${$}${i.minimum.toString()} ہونا متوقع تھا`}case"invalid_format":{let $=i;if($.format==="starts_with")return`غلط سٹرنگ: "${$.prefix}" سے شروع ہونا چاہیے`;if($.format==="ends_with")return`غلط سٹرنگ: "${$.suffix}" پر ختم ہونا چاہیے`;if($.format==="includes")return`غلط سٹرنگ: "${$.includes}" شامل ہونا چاہیے`;if($.format==="regex")return`غلط سٹرنگ: پیٹرن ${$.pattern} سے میچ ہونا چاہیے`;return`غلط ${v[$.format]??i.format}`}case"not_multiple_of":return`غلط نمبر: ${i.divisor} کا مضاعف ہونا چاہیے`;case"unrecognized_keys":return`غیر تسلیم شدہ کی${i.keys.length>1?"ز":""}: ${b(i.keys,"، ")}`;case"invalid_key":return`${i.origin} میں غلط کی`;case"invalid_union":return"غلط ان پٹ";case"invalid_element":return`${i.origin} میں غلط ویلیو`;default:return"غلط ان پٹ"}}};function fu(){return{localeError:DD()}}var kD=()=>{let r={string:{unit:"belgi",verb:"bo‘lishi kerak"},file:{unit:"bayt",verb:"bo‘lishi kerak"},array:{unit:"element",verb:"bo‘lishi kerak"},set:{unit:"element",verb:"bo‘lishi kerak"},map:{unit:"yozuv",verb:"bo‘lishi kerak"}};function n(i){return r[i]??null}let v={regex:"kirish",email:"elektron pochta manzili",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO sana va vaqti",date:"ISO sana",time:"ISO vaqt",duration:"ISO davomiylik",ipv4:"IPv4 manzil",ipv6:"IPv6 manzil",mac:"MAC manzil",cidrv4:"IPv4 diapazon",cidrv6:"IPv6 diapazon",base64:"base64 kodlangan satr",base64url:"base64url kodlangan satr",json_string:"JSON satr",e164:"E.164 raqam",jwt:"JWT",template_literal:"kirish"},t={nan:"NaN",number:"raqam",array:"massiv"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Noto‘g‘ri kirish: kutilgan instanceof ${i.expected}, qabul qilingan ${g}`;return`Noto‘g‘ri kirish: kutilgan ${$}, qabul qilingan ${g}`}case"invalid_value":if(i.values.length===1)return`Noto‘g‘ri kirish: kutilgan ${k(i.values[0])}`;return`Noto‘g‘ri variant: quyidagilardan biri kutilgan ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Juda katta: kutilgan ${i.origin??"qiymat"} ${$}${i.maximum.toString()} ${u.unit} ${u.verb}`;return`Juda katta: kutilgan ${i.origin??"qiymat"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Juda kichik: kutilgan ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ${u.verb}`;return`Juda kichik: kutilgan ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Noto‘g‘ri satr: "${$.prefix}" bilan boshlanishi kerak`;if($.format==="ends_with")return`Noto‘g‘ri satr: "${$.suffix}" bilan tugashi kerak`;if($.format==="includes")return`Noto‘g‘ri satr: "${$.includes}" ni o‘z ichiga olishi kerak`;if($.format==="regex")return`Noto‘g‘ri satr: ${$.pattern} shabloniga mos kelishi kerak`;return`Noto‘g‘ri ${v[$.format]??i.format}`}case"not_multiple_of":return`Noto‘g‘ri raqam: ${i.divisor} ning karralisi bo‘lishi kerak`;case"unrecognized_keys":return`Noma’lum kalit${i.keys.length>1?"lar":""}: ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} dagi kalit noto‘g‘ri`;case"invalid_union":return"Noto‘g‘ri kirish";case"invalid_element":return`${i.origin} da noto‘g‘ri qiymat`;default:return"Noto‘g‘ri kirish"}}};function Cu(){return{localeError:kD()}}var lD=()=>{let r={string:{unit:"ký tự",verb:"có"},file:{unit:"byte",verb:"có"},array:{unit:"phần tử",verb:"có"},set:{unit:"phần tử",verb:"có"}};function n(i){return r[i]??null}let v={regex:"đầu vào",email:"địa chỉ email",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ngày giờ ISO",date:"ngày ISO",time:"giờ ISO",duration:"khoảng thời gian ISO",ipv4:"địa chỉ IPv4",ipv6:"địa chỉ IPv6",cidrv4:"dải IPv4",cidrv6:"dải IPv6",base64:"chuỗi mã hóa base64",base64url:"chuỗi mã hóa base64url",json_string:"chuỗi JSON",e164:"số E.164",jwt:"JWT",template_literal:"đầu vào"},t={nan:"NaN",number:"số",array:"mảng"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Đầu vào không hợp lệ: mong đợi instanceof ${i.expected}, nhận được ${g}`;return`Đầu vào không hợp lệ: mong đợi ${$}, nhận được ${g}`}case"invalid_value":if(i.values.length===1)return`Đầu vào không hợp lệ: mong đợi ${k(i.values[0])}`;return`Tùy chọn không hợp lệ: mong đợi một trong các giá trị ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Quá lớn: mong đợi ${i.origin??"giá trị"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit??"phần tử"}`;return`Quá lớn: mong đợi ${i.origin??"giá trị"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Quá nhỏ: mong đợi ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;return`Quá nhỏ: mong đợi ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Chuỗi không hợp lệ: phải bắt đầu bằng "${$.prefix}"`;if($.format==="ends_with")return`Chuỗi không hợp lệ: phải kết thúc bằng "${$.suffix}"`;if($.format==="includes")return`Chuỗi không hợp lệ: phải bao gồm "${$.includes}"`;if($.format==="regex")return`Chuỗi không hợp lệ: phải khớp với mẫu ${$.pattern}`;return`${v[$.format]??i.format} không hợp lệ`}case"not_multiple_of":return`Số không hợp lệ: phải là bội số của ${i.divisor}`;case"unrecognized_keys":return`Khóa không được nhận dạng: ${b(i.keys,", ")}`;case"invalid_key":return`Khóa không hợp lệ trong ${i.origin}`;case"invalid_union":return"Đầu vào không hợp lệ";case"invalid_element":return`Giá trị không hợp lệ trong ${i.origin}`;default:return"Đầu vào không hợp lệ"}}};function mu(){return{localeError:lD()}}var cD=()=>{let r={string:{unit:"字符",verb:"包含"},file:{unit:"字节",verb:"包含"},array:{unit:"项",verb:"包含"},set:{unit:"项",verb:"包含"}};function n(i){return r[i]??null}let v={regex:"输入",email:"电子邮件",url:"URL",emoji:"表情符号",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO日期时间",date:"ISO日期",time:"ISO时间",duration:"ISO时长",ipv4:"IPv4地址",ipv6:"IPv6地址",cidrv4:"IPv4网段",cidrv6:"IPv6网段",base64:"base64编码字符串",base64url:"base64url编码字符串",json_string:"JSON字符串",e164:"E.164号码",jwt:"JWT",template_literal:"输入"},t={nan:"NaN",number:"数字",array:"数组",null:"空值(null)"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`无效输入：期望 instanceof ${i.expected}，实际接收 ${g}`;return`无效输入：期望 ${$}，实际接收 ${g}`}case"invalid_value":if(i.values.length===1)return`无效输入：期望 ${k(i.values[0])}`;return`无效选项：期望以下之一 ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`数值过大：期望 ${i.origin??"值"} ${$}${i.maximum.toString()} ${u.unit??"个元素"}`;return`数值过大：期望 ${i.origin??"值"} ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`数值过小：期望 ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;return`数值过小：期望 ${i.origin} ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`无效字符串：必须以 "${$.prefix}" 开头`;if($.format==="ends_with")return`无效字符串：必须以 "${$.suffix}" 结尾`;if($.format==="includes")return`无效字符串：必须包含 "${$.includes}"`;if($.format==="regex")return`无效字符串：必须满足正则表达式 ${$.pattern}`;return`无效${v[$.format]??i.format}`}case"not_multiple_of":return`无效数字：必须是 ${i.divisor} 的倍数`;case"unrecognized_keys":return`出现未知的键(key): ${b(i.keys,", ")}`;case"invalid_key":return`${i.origin} 中的键(key)无效`;case"invalid_union":return"无效输入";case"invalid_element":return`${i.origin} 中包含无效值(value)`;default:return"无效输入"}}};function yu(){return{localeError:cD()}}var wD=()=>{let r={string:{unit:"字元",verb:"擁有"},file:{unit:"位元組",verb:"擁有"},array:{unit:"項目",verb:"擁有"},set:{unit:"項目",verb:"擁有"}};function n(i){return r[i]??null}let v={regex:"輸入",email:"郵件地址",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"ISO 日期時間",date:"ISO 日期",time:"ISO 時間",duration:"ISO 期間",ipv4:"IPv4 位址",ipv6:"IPv6 位址",cidrv4:"IPv4 範圍",cidrv6:"IPv6 範圍",base64:"base64 編碼字串",base64url:"base64url 編碼字串",json_string:"JSON 字串",e164:"E.164 數值",jwt:"JWT",template_literal:"輸入"},t={nan:"NaN"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`無效的輸入值：預期為 instanceof ${i.expected}，但收到 ${g}`;return`無效的輸入值：預期為 ${$}，但收到 ${g}`}case"invalid_value":if(i.values.length===1)return`無效的輸入值：預期為 ${k(i.values[0])}`;return`無效的選項：預期為以下其中之一 ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`數值過大：預期 ${i.origin??"值"} 應為 ${$}${i.maximum.toString()} ${u.unit??"個元素"}`;return`數值過大：預期 ${i.origin??"值"} 應為 ${$}${i.maximum.toString()}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`數值過小：預期 ${i.origin} 應為 ${$}${i.minimum.toString()} ${u.unit}`;return`數值過小：預期 ${i.origin} 應為 ${$}${i.minimum.toString()}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`無效的字串：必須以 "${$.prefix}" 開頭`;if($.format==="ends_with")return`無效的字串：必須以 "${$.suffix}" 結尾`;if($.format==="includes")return`無效的字串：必須包含 "${$.includes}"`;if($.format==="regex")return`無效的字串：必須符合格式 ${$.pattern}`;return`無效的 ${v[$.format]??i.format}`}case"not_multiple_of":return`無效的數字：必須為 ${i.divisor} 的倍數`;case"unrecognized_keys":return`無法識別的鍵值${i.keys.length>1?"們":""}：${b(i.keys,"、")}`;case"invalid_key":return`${i.origin} 中有無效的鍵值`;case"invalid_union":return"無效的輸入值";case"invalid_element":return`${i.origin} 中有無效的值`;default:return"無效的輸入值"}}};function hu(){return{localeError:wD()}}var SD=()=>{let r={string:{unit:"àmi",verb:"ní"},file:{unit:"bytes",verb:"ní"},array:{unit:"nkan",verb:"ní"},set:{unit:"nkan",verb:"ní"}};function n(i){return r[i]??null}let v={regex:"ẹ̀rọ ìbáwọlé",email:"àdírẹ́sì ìmẹ́lì",url:"URL",emoji:"emoji",uuid:"UUID",uuidv4:"UUIDv4",uuidv6:"UUIDv6",nanoid:"nanoid",guid:"GUID",cuid:"cuid",cuid2:"cuid2",ulid:"ULID",xid:"XID",ksuid:"KSUID",datetime:"àkókò ISO",date:"ọjọ́ ISO",time:"àkókò ISO",duration:"àkókò tó pé ISO",ipv4:"àdírẹ́sì IPv4",ipv6:"àdírẹ́sì IPv6",cidrv4:"àgbègbè IPv4",cidrv6:"àgbègbè IPv6",base64:"ọ̀rọ̀ tí a kọ́ ní base64",base64url:"ọ̀rọ̀ base64url",json_string:"ọ̀rọ̀ JSON",e164:"nọ́mbà E.164",jwt:"JWT",template_literal:"ẹ̀rọ ìbáwọlé"},t={nan:"NaN",number:"nọ́mbà",array:"akopọ"};return(i)=>{switch(i.code){case"invalid_type":{let $=t[i.expected]??i.expected,u=l(i.input),g=t[u]??u;if(/^[A-Z]/.test(i.expected))return`Ìbáwọlé aṣìṣe: a ní láti fi instanceof ${i.expected}, àmọ̀ a rí ${g}`;return`Ìbáwọlé aṣìṣe: a ní láti fi ${$}, àmọ̀ a rí ${g}`}case"invalid_value":if(i.values.length===1)return`Ìbáwọlé aṣìṣe: a ní láti fi ${k(i.values[0])}`;return`Àṣàyàn aṣìṣe: yan ọ̀kan lára ${b(i.values,"|")}`;case"too_big":{let $=i.inclusive?"<=":"<",u=n(i.origin);if(u)return`Tó pọ̀ jù: a ní láti jẹ́ pé ${i.origin??"iye"} ${u.verb} ${$}${i.maximum} ${u.unit}`;return`Tó pọ̀ jù: a ní láti jẹ́ ${$}${i.maximum}`}case"too_small":{let $=i.inclusive?">=":">",u=n(i.origin);if(u)return`Kéré ju: a ní láti jẹ́ pé ${i.origin} ${u.verb} ${$}${i.minimum} ${u.unit}`;return`Kéré ju: a ní láti jẹ́ ${$}${i.minimum}`}case"invalid_format":{let $=i;if($.format==="starts_with")return`Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ bẹ̀rẹ̀ pẹ̀lú "${$.prefix}"`;if($.format==="ends_with")return`Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ parí pẹ̀lú "${$.suffix}"`;if($.format==="includes")return`Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ ní "${$.includes}"`;if($.format==="regex")return`Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ bá àpẹẹrẹ mu ${$.pattern}`;return`Aṣìṣe: ${v[$.format]??i.format}`}case"not_multiple_of":return`Nọ́mbà aṣìṣe: gbọ́dọ̀ jẹ́ èyà pípín ti ${i.divisor}`;case"unrecognized_keys":return`Bọtìnì àìmọ̀: ${b(i.keys,", ")}`;case"invalid_key":return`Bọtìnì aṣìṣe nínú ${i.origin}`;case"invalid_union":return"Ìbáwọlé aṣìṣe";case"invalid_element":return`Iye aṣìṣe nínú ${i.origin}`;default:return"Ìbáwọlé aṣìṣe"}}};function du(){return{localeError:SD()}}var F6,pu=Symbol("ZodOutput"),au=Symbol("ZodInput");class su{constructor(){this._map=new WeakMap,this._idmap=new Map}add(r,...n){let v=n[0];if(this._map.set(r,v),v&&typeof v==="object"&&"id"in v)this._idmap.set(v.id,r);return this}clear(){return this._map=new WeakMap,this._idmap=new Map,this}remove(r){let n=this._map.get(r);if(n&&typeof n==="object"&&"id"in n)this._idmap.delete(n.id);return this._map.delete(r),this}get(r){let n=r._zod.parent;if(n){let v={...this.get(n)??{}};delete v.id;let t={...v,...this._map.get(r)};return Object.keys(t).length?t:void 0}return this._map.get(r)}has(r){return this._map.has(r)}}function wn(){return new su}(F6=globalThis).__zod_globalRegistry??(F6.__zod_globalRegistry=wn());var H=globalThis.__zod_globalRegistry;function rg(r,n){return new r({type:"string",...N(n)})}function ig(r,n){return new r({type:"string",coerce:!0,...N(n)})}function Sn(r,n){return new r({type:"string",format:"email",check:"string_format",abort:!1,...N(n)})}function Ei(r,n){return new r({type:"string",format:"guid",check:"string_format",abort:!1,...N(n)})}function Nn(r,n){return new r({type:"string",format:"uuid",check:"string_format",abort:!1,...N(n)})}function zn(r,n){return new r({type:"string",format:"uuid",check:"string_format",abort:!1,version:"v4",...N(n)})}function jn(r,n){return new r({type:"string",format:"uuid",check:"string_format",abort:!1,version:"v6",...N(n)})}function Pn(r,n){return new r({type:"string",format:"uuid",check:"string_format",abort:!1,version:"v7",...N(n)})}function qi(r,n){return new r({type:"string",format:"url",check:"string_format",abort:!1,...N(n)})}function Jn(r,n){return new r({type:"string",format:"emoji",check:"string_format",abort:!1,...N(n)})}function Ln(r,n){return new r({type:"string",format:"nanoid",check:"string_format",abort:!1,...N(n)})}function Gn(r,n){return new r({type:"string",format:"cuid",check:"string_format",abort:!1,...N(n)})}function Xn(r,n){return new r({type:"string",format:"cuid2",check:"string_format",abort:!1,...N(n)})}function En(r,n){return new r({type:"string",format:"ulid",check:"string_format",abort:!1,...N(n)})}function qn(r,n){return new r({type:"string",format:"xid",check:"string_format",abort:!1,...N(n)})}function On(r,n){return new r({type:"string",format:"ksuid",check:"string_format",abort:!1,...N(n)})}function Wn(r,n){return new r({type:"string",format:"ipv4",check:"string_format",abort:!1,...N(n)})}function Yn(r,n){return new r({type:"string",format:"ipv6",check:"string_format",abort:!1,...N(n)})}function ng(r,n){return new r({type:"string",format:"mac",check:"string_format",abort:!1,...N(n)})}function Vn(r,n){return new r({type:"string",format:"cidrv4",check:"string_format",abort:!1,...N(n)})}function Kn(r,n){return new r({type:"string",format:"cidrv6",check:"string_format",abort:!1,...N(n)})}function Qn(r,n){return new r({type:"string",format:"base64",check:"string_format",abort:!1,...N(n)})}function Hn(r,n){return new r({type:"string",format:"base64url",check:"string_format",abort:!1,...N(n)})}function Tn(r,n){return new r({type:"string",format:"e164",check:"string_format",abort:!1,...N(n)})}function Bn(r,n){return new r({type:"string",format:"jwt",check:"string_format",abort:!1,...N(n)})}var vg={Any:null,Minute:-1,Second:0,Millisecond:3,Microsecond:6};function $g(r,n){return new r({type:"string",format:"datetime",check:"string_format",offset:!1,local:!1,precision:null,...N(n)})}function tg(r,n){return new r({type:"string",format:"date",check:"string_format",...N(n)})}function ug(r,n){return new r({type:"string",format:"time",check:"string_format",precision:null,...N(n)})}function gg(r,n){return new r({type:"string",format:"duration",check:"string_format",...N(n)})}function Ig(r,n){return new r({type:"number",checks:[],...N(n)})}function _g(r,n){return new r({type:"number",coerce:!0,checks:[],...N(n)})}function og(r,n){return new r({type:"number",check:"number_format",abort:!1,format:"safeint",...N(n)})}function Ug(r,n){return new r({type:"number",check:"number_format",abort:!1,format:"float32",...N(n)})}function bg(r,n){return new r({type:"number",check:"number_format",abort:!1,format:"float64",...N(n)})}function Dg(r,n){return new r({type:"number",check:"number_format",abort:!1,format:"int32",...N(n)})}function kg(r,n){return new r({type:"number",check:"number_format",abort:!1,format:"uint32",...N(n)})}function lg(r,n){return new r({type:"boolean",...N(n)})}function cg(r,n){return new r({type:"boolean",coerce:!0,...N(n)})}function wg(r,n){return new r({type:"bigint",...N(n)})}function Sg(r,n){return new r({type:"bigint",coerce:!0,...N(n)})}function Ng(r,n){return new r({type:"bigint",check:"bigint_format",abort:!1,format:"int64",...N(n)})}function zg(r,n){return new r({type:"bigint",check:"bigint_format",abort:!1,format:"uint64",...N(n)})}function jg(r,n){return new r({type:"symbol",...N(n)})}function Pg(r,n){return new r({type:"undefined",...N(n)})}function Jg(r,n){return new r({type:"null",...N(n)})}function Lg(r){return new r({type:"any"})}function Gg(r){return new r({type:"unknown"})}function Xg(r,n){return new r({type:"never",...N(n)})}function Eg(r,n){return new r({type:"void",...N(n)})}function qg(r,n){return new r({type:"date",...N(n)})}function Og(r,n){return new r({type:"date",coerce:!0,...N(n)})}function Wg(r,n){return new r({type:"nan",...N(n)})}function s(r,n){return new tn({check:"less_than",...N(n),value:r,inclusive:!1})}function m(r,n){return new tn({check:"less_than",...N(n),value:r,inclusive:!0})}function rr(r,n){return new un({check:"greater_than",...N(n),value:r,inclusive:!1})}function M(r,n){return new un({check:"greater_than",...N(n),value:r,inclusive:!0})}function An(r){return rr(0,r)}function Mn(r){return s(0,r)}function Fn(r){return m(0,r)}function Rn(r){return M(0,r)}function Dr(r,n){return new E$({check:"multiple_of",...N(n),value:r})}function kr(r,n){return new W$({check:"max_size",...N(n),maximum:r})}function ir(r,n){return new Y$({check:"min_size",...N(n),minimum:r})}function Jr(r,n){return new V$({check:"size_equals",...N(n),size:r})}function Lr(r,n){return new K$({check:"max_length",...N(n),maximum:r})}function ur(r,n){return new Q$({check:"min_length",...N(n),minimum:r})}function Gr(r,n){return new H$({check:"length_equals",...N(n),length:r})}function Br(r,n){return new T$({check:"string_format",format:"regex",...N(n),pattern:r})}function Ar(r){return new B$({check:"string_format",format:"lowercase",...N(r)})}function Mr(r){return new A$({check:"string_format",format:"uppercase",...N(r)})}function Fr(r,n){return new M$({check:"string_format",format:"includes",...N(n),includes:r})}function Rr(r,n){return new F$({check:"string_format",format:"starts_with",...N(n),prefix:r})}function Zr(r,n){return new R$({check:"string_format",format:"ends_with",...N(n),suffix:r})}function Zn(r,n,v){return new Z$({check:"property",property:r,schema:n,...N(v)})}function er(r,n){return new e$({check:"mime_type",mime:r,...N(n)})}function d(r){return new x$({check:"overwrite",tx:r})}function xr(r){return d((n)=>n.normalize(r))}function fr(){return d((r)=>r.trim())}function Cr(){return d((r)=>r.toLowerCase())}function mr(){return d((r)=>r.toUpperCase())}function yr(){return d((r)=>Fv(r))}function Yg(r,n,v){return new r({type:"array",element:n,...N(v)})}function zD(r,n,v){return new r({type:"union",options:n,...N(v)})}function jD(r,n,v){return new r({type:"union",options:n,inclusive:!1,...N(v)})}function PD(r,n,v,t){return new r({type:"union",options:v,discriminator:n,...N(t)})}function JD(r,n,v){return new r({type:"intersection",left:n,right:v})}function LD(r,n,v,t){let i=v instanceof P;return new r({type:"tuple",items:n,rest:i?v:null,...N(i?t:v)})}function GD(r,n,v,t){return new r({type:"record",keyType:n,valueType:v,...N(t)})}function XD(r,n,v,t){return new r({type:"map",keyType:n,valueType:v,...N(t)})}function ED(r,n,v){return new r({type:"set",valueType:n,...N(v)})}function qD(r,n,v){let t=Array.isArray(n)?Object.fromEntries(n.map((i)=>[i,i])):n;return new r({type:"enum",entries:t,...N(v)})}function OD(r,n,v){return new r({type:"enum",entries:n,...N(v)})}function WD(r,n,v){return new r({type:"literal",values:Array.isArray(n)?n:[n],...N(v)})}function Vg(r,n){return new r({type:"file",...N(n)})}function YD(r,n){return new r({type:"transform",transform:n})}function VD(r,n){return new r({type:"optional",innerType:n})}function KD(r,n){return new r({type:"nullable",innerType:n})}function QD(r,n,v){return new r({type:"default",innerType:n,get defaultValue(){return typeof v==="function"?v():Zv(v)}})}function HD(r,n,v){return new r({type:"nonoptional",innerType:n,...N(v)})}function TD(r,n){return new r({type:"success",innerType:n})}function BD(r,n,v){return new r({type:"catch",innerType:n,catchValue:typeof v==="function"?v:()=>v})}function AD(r,n,v){return new r({type:"pipe",in:n,out:v})}function MD(r,n){return new r({type:"readonly",innerType:n})}function FD(r,n,v){return new r({type:"template_literal",parts:n,...N(v)})}function RD(r,n){return new r({type:"lazy",getter:n})}function ZD(r,n){return new r({type:"promise",innerType:n})}function Kg(r,n,v){let t=N(v);return t.abort??(t.abort=!0),new r({type:"custom",check:"custom",fn:n,...t})}function Qg(r,n,v){return new r({type:"custom",check:"custom",fn:n,...N(v)})}function Hg(r,n){let v=R6((t)=>{return t.addIssue=(i)=>{if(typeof i==="string")t.issues.push(Wr(i,t.value,v._zod.def));else{let $=i;if($.fatal)$.continue=!1;$.code??($.code="custom"),$.input??($.input=t.value),$.inst??($.inst=v),$.continue??($.continue=!v._zod.def.abort),t.issues.push(Wr($))}},r(t.value,t)},n);return v}function R6(r,n){let v=new W({check:"custom",...N(n)});return v._zod.check=r,v}function Tg(r){let n=new W({check:"describe"});return n._zod.onattach=[(v)=>{let t=H.get(v)??{};H.add(v,{...t,description:r})}],n._zod.check=()=>{},n}function Bg(r){let n=new W({check:"meta"});return n._zod.onattach=[(v)=>{let t=H.get(v)??{};H.add(v,{...t,...r})}],n._zod.check=()=>{},n}function Ag(r,n){let v=N(n),t=v.truthy??["true","1","yes","on","y","enabled"],i=v.falsy??["false","0","no","off","n","disabled"];if(v.case!=="sensitive")t=t.map((c)=>typeof c==="string"?c.toLowerCase():c),i=i.map((c)=>typeof c==="string"?c.toLowerCase():c);let $=new Set(t),u=new Set(i),g=r.Codec??ji,_=r.Boolean??Ni,o=new(r.String??Pr)({type:"string",error:v.error}),D=new _({type:"boolean",error:v.error}),S=new g({type:"pipe",in:o,out:D,transform:(c,j)=>{let R=c;if(v.case!=="sensitive")R=R.toLowerCase();if($.has(R))return!0;else if(u.has(R))return!1;else return j.issues.push({code:"invalid_value",expected:"stringbool",values:[...$,...u],input:j.value,inst:S,continue:!1}),{}},reverseTransform:(c,j)=>{if(c===!0)return t[0]||"true";else return i[0]||"false"},error:v.error});return S}function hr(r,n,v,t={}){let i=N(t),$={...N(t),check:"string_format",type:"string",format:n,fn:typeof v==="function"?v:(g)=>v.test(g),...i};if(v instanceof RegExp)$.pattern=v;return new r($)}function lr(r){let n=r?.target??"draft-2020-12";if(n==="draft-4")n="draft-04";if(n==="draft-7")n="draft-07";return{processors:r.processors??{},metadataRegistry:r?.metadata??H,target:n,unrepresentable:r?.unrepresentable??"throw",override:r?.override??(()=>{}),io:r?.io??"output",counter:0,seen:new Map,cycles:r?.cycles??"ref",reused:r?.reused??"inline",external:r?.external??void 0}}function E(r,n,v={path:[],schemaPath:[]}){var t;let i=r._zod.def,$=n.seen.get(r);if($){if($.count++,v.schemaPath.includes(r))$.cycle=v.path;return $.schema}let u={schema:{},count:1,cycle:void 0,path:v.path};n.seen.set(r,u);let g=r._zod.toJSONSchema?.();if(g)u.schema=g;else{let o={...v,schemaPath:[...v.schemaPath,r],path:v.path};if(r._zod.processJSONSchema)r._zod.processJSONSchema(n,u.schema,o);else{let S=u.schema,c=n.processors[i.type];if(!c)throw Error(`[toJSONSchema]: Non-representable type encountered: ${i.type}`);c(r,n,S,o)}let D=r._zod.parent;if(D){if(!u.ref)u.ref=D;E(D,n,o),n.seen.get(D).isParent=!0}}let _=n.metadataRegistry.get(r);if(_)Object.assign(u.schema,_);if(n.io==="input"&&F(r))delete u.schema.examples,delete u.schema.default;if(n.io==="input"&&"_prefault"in u.schema)(t=u.schema).default??(t.default=u.schema._prefault);return delete u.schema._prefault,n.seen.get(r).schema}function cr(r,n){let v=r.seen.get(n);if(!v)throw Error("Unprocessed schema. This is a bug in Zod.");let t=new Map;for(let u of r.seen.entries()){let g=r.metadataRegistry.get(u[0])?.id;if(g){let _=t.get(g);if(_&&_!==u[0])throw Error(`Duplicate schema id "${g}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);t.set(g,u[0])}}let i=(u)=>{let g=r.target==="draft-2020-12"?"$defs":"definitions";if(r.external){let D=r.external.registry.get(u[0])?.id,S=r.external.uri??((j)=>j);if(D)return{ref:S(D)};let c=u[1].defId??u[1].schema.id??`schema${r.counter++}`;return u[1].defId=c,{defId:c,ref:`${S("__shared")}#/${g}/${c}`}}if(u[1]===v)return{ref:"#"};let I=`${"#"}/${g}/`,o=u[1].schema.id??`__schema${r.counter++}`;return{defId:o,ref:I+o}},$=(u)=>{if(u[1].schema.$ref)return;let g=u[1],{ref:_,defId:I}=i(u);if(g.def={...g.schema},I)g.defId=I;let o=g.schema;for(let D in o)delete o[D];o.$ref=_};if(r.cycles==="throw")for(let u of r.seen.entries()){let g=u[1];if(g.cycle)throw Error(`Cycle detected: #/${g.cycle?.join("/")}/<root>
+      `);
+                }
+                c.write("payload.value = newResult;"),
+                    c.write("return payload;");
+                let Uo = c.compile();
+                return (p, Y) => Uo(S, p, Y);
+            },
+            $,
+            u = zr,
+            g = !Sr.jitless,
+            I = g && Rv.value,
+            o = n.catchall,
+            D;
+        r._zod.parse = (S, c) => {
+            D ?? (D = t.value);
+            let j = S.value;
+            if (!u(j))
+                return (
+                    S.issues.push({
+                        expected: "object",
+                        code: "invalid_type",
+                        input: j,
+                        inst: r,
+                    }),
+                    S
+                );
+            if (g && I && c?.async === !1 && c.jitless !== !0) {
+                if (!$) $ = i(n.shape);
+                if (((S = $(S, c)), !o)) return S;
+                return Q6([], j, S, c, D, r);
+            }
+            return v(S, c);
+        };
+    });
+function S6(r, n, v, t) {
+    for (let $ of r) if ($.issues.length === 0) return (n.value = $.value), n;
+    let i = r.filter(($) => !br($));
+    if (i.length === 1) return (n.value = i[0].value), i[0];
+    return (
+        n.issues.push({
+            code: "invalid_union",
+            input: n.value,
+            inst: v,
+            errors: r.map(($) => $.issues.map((u) => A(u, t, V()))),
+        }),
+        n
+    );
+}
+var zi = U("$ZodUnion", (r, n) => {
+    P.init(r, n),
+        L(r._zod, "optin", () =>
+            n.options.some((t) => t._zod.optin === "optional")
+                ? "optional"
+                : void 0,
+        ),
+        L(r._zod, "optout", () =>
+            n.options.some((t) => t._zod.optout === "optional")
+                ? "optional"
+                : void 0,
+        ),
+        L(r._zod, "values", () => {
+            if (n.options.every((t) => t._zod.values))
+                return new Set(
+                    n.options.flatMap((t) => Array.from(t._zod.values)),
+                );
+            return;
+        }),
+        L(r._zod, "pattern", () => {
+            if (n.options.every((t) => t._zod.pattern)) {
+                let t = n.options.map((i) => i._zod.pattern);
+                return new RegExp(
+                    `^(${t.map((i) => _i(i.source)).join("|")})$`,
+                );
+            }
+            return;
+        });
+    let v = n.options.length === 1 ? n.options[0]._zod.run : null;
+    r._zod.parse = (t, i) => {
+        if (v) return v(t, i);
+        let $ = !1,
+            u = [];
+        for (let g of n.options) {
+            let _ = g._zod.run({ value: t.value, issues: [] }, i);
+            if (_ instanceof Promise) u.push(_), ($ = !0);
+            else {
+                if (_.issues.length === 0) return _;
+                u.push(_);
+            }
+        }
+        if (!$) return S6(u, t, r, i);
+        return Promise.all(u).then((g) => {
+            return S6(g, t, r, i);
+        });
+    };
+});
+function N6(r, n, v, t) {
+    let i = r.filter(($) => $.issues.length === 0);
+    if (i.length === 1) return (n.value = i[0].value), n;
+    if (i.length === 0)
+        n.issues.push({
+            code: "invalid_union",
+            input: n.value,
+            inst: v,
+            errors: r.map(($) => $.issues.map((u) => A(u, t, V()))),
+        });
+    else
+        n.issues.push({
+            code: "invalid_union",
+            input: n.value,
+            inst: v,
+            errors: [],
+            inclusive: !1,
+        });
+    return n;
+}
+var Yt = U("$ZodXor", (r, n) => {
+        zi.init(r, n), (n.inclusive = !1);
+        let v = n.options.length === 1 ? n.options[0]._zod.run : null;
+        r._zod.parse = (t, i) => {
+            if (v) return v(t, i);
+            let $ = !1,
+                u = [];
+            for (let g of n.options) {
+                let _ = g._zod.run({ value: t.value, issues: [] }, i);
+                if (_ instanceof Promise) u.push(_), ($ = !0);
+                else u.push(_);
+            }
+            if (!$) return N6(u, t, r, i);
+            return Promise.all(u).then((g) => {
+                return N6(g, t, r, i);
+            });
+        };
+    }),
+    Vt = U("$ZodDiscriminatedUnion", (r, n) => {
+        (n.inclusive = !1), zi.init(r, n);
+        let v = r._zod.parse;
+        L(r._zod, "propValues", () => {
+            let i = {};
+            for (let $ of n.options) {
+                let u = $._zod.propValues;
+                if (!u || Object.keys(u).length === 0)
+                    throw Error(
+                        `Invalid discriminated union option at index "${n.options.indexOf($)}"`,
+                    );
+                for (let [g, _] of Object.entries(u)) {
+                    if (!i[g]) i[g] = new Set();
+                    for (let I of _) i[g].add(I);
+                }
+            }
+            return i;
+        });
+        let t = Or(() => {
+            let i = n.options,
+                $ = new Map();
+            for (let u of i) {
+                let g = u._zod.propValues?.[n.discriminator];
+                if (!g || g.size === 0)
+                    throw Error(
+                        `Invalid discriminated union option at index "${n.options.indexOf(u)}"`,
+                    );
+                for (let _ of g) {
+                    if ($.has(_))
+                        throw Error(
+                            `Duplicate discriminator value "${String(_)}"`,
+                        );
+                    $.set(_, u);
+                }
+            }
+            return $;
+        });
+        r._zod.parse = (i, $) => {
+            let u = i.value;
+            if (!zr(u))
+                return (
+                    i.issues.push({
+                        code: "invalid_type",
+                        expected: "object",
+                        input: u,
+                        inst: r,
+                    }),
+                    i
+                );
+            let g = t.value.get(u?.[n.discriminator]);
+            if (g) return g._zod.run(i, $);
+            if (n.unionFallback || $.direction === "backward") return v(i, $);
+            return (
+                i.issues.push({
+                    code: "invalid_union",
+                    errors: [],
+                    note: "No matching discriminator",
+                    discriminator: n.discriminator,
+                    options: Array.from(t.value.keys()),
+                    input: u,
+                    path: [n.discriminator],
+                    inst: r,
+                }),
+                i
+            );
+        };
+    }),
+    Kt = U("$ZodIntersection", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value,
+                    $ = n.left._zod.run({ value: i, issues: [] }, t),
+                    u = n.right._zod.run({ value: i, issues: [] }, t);
+                if ($ instanceof Promise || u instanceof Promise)
+                    return Promise.all([$, u]).then(([_, I]) => {
+                        return z6(v, _, I);
+                    });
+                return z6(v, $, u);
+            });
+    });
+function C$(r, n) {
+    if (r === n) return { valid: !0, data: r };
+    if (r instanceof Date && n instanceof Date && +r === +n)
+        return { valid: !0, data: r };
+    if (Ur(r) && Ur(n)) {
+        let v = Object.keys(n),
+            t = Object.keys(r).filter(($) => v.indexOf($) !== -1),
+            i = { ...r, ...n };
+        for (let $ of t) {
+            let u = C$(r[$], n[$]);
+            if (!u.valid)
+                return { valid: !1, mergeErrorPath: [$, ...u.mergeErrorPath] };
+            i[$] = u.data;
+        }
+        return { valid: !0, data: i };
+    }
+    if (Array.isArray(r) && Array.isArray(n)) {
+        if (r.length !== n.length) return { valid: !1, mergeErrorPath: [] };
+        let v = [];
+        for (let t = 0; t < r.length; t++) {
+            let i = r[t],
+                $ = n[t],
+                u = C$(i, $);
+            if (!u.valid)
+                return { valid: !1, mergeErrorPath: [t, ...u.mergeErrorPath] };
+            v.push(u.data);
+        }
+        return { valid: !0, data: v };
+    }
+    return { valid: !1, mergeErrorPath: [] };
+}
+function z6(r, n, v) {
+    let t = new Map(),
+        i;
+    for (let g of n.issues)
+        if (g.code === "unrecognized_keys") {
+            i ?? (i = g);
+            for (let _ of g.keys) {
+                if (!t.has(_)) t.set(_, {});
+                t.get(_).l = !0;
+            }
+        } else r.issues.push(g);
+    for (let g of v.issues)
+        if (g.code === "unrecognized_keys")
+            for (let _ of g.keys) {
+                if (!t.has(_)) t.set(_, {});
+                t.get(_).r = !0;
+            }
+        else r.issues.push(g);
+    let $ = [...t].filter(([, g]) => g.l && g.r).map(([g]) => g);
+    if ($.length && i) r.issues.push({ ...i, keys: $ });
+    if (br(r)) return r;
+    let u = C$(n.value, v.value);
+    if (!u.valid)
+        throw Error(
+            `Unmergable intersection. Error path: ${JSON.stringify(u.mergeErrorPath)}`,
+        );
+    return (r.value = u.data), r;
+}
+var kn = U("$ZodTuple", (r, n) => {
+    P.init(r, n);
+    let v = n.items;
+    r._zod.parse = (t, i) => {
+        let $ = t.value;
+        if (!Array.isArray($))
+            return (
+                t.issues.push({
+                    input: $,
+                    inst: r,
+                    expected: "tuple",
+                    code: "invalid_type",
+                }),
+                t
+            );
+        t.value = [];
+        let u = [],
+            g = j6(v, "optin"),
+            _ = j6(v, "optout");
+        if (!n.rest) {
+            if ($.length < g)
+                return (
+                    t.issues.push({
+                        code: "too_small",
+                        minimum: g,
+                        inclusive: !0,
+                        input: $,
+                        inst: r,
+                        origin: "array",
+                    }),
+                    t
+                );
+            if ($.length > v.length)
+                t.issues.push({
+                    code: "too_big",
+                    maximum: v.length,
+                    inclusive: !0,
+                    input: $,
+                    inst: r,
+                    origin: "array",
+                });
+        }
+        let I = Array(v.length);
+        for (let o = 0; o < v.length; o++) {
+            let D = v[o]._zod.run({ value: $[o], issues: [] }, i);
+            if (D instanceof Promise)
+                u.push(
+                    D.then((S) => {
+                        I[o] = S;
+                    }),
+                );
+            else I[o] = D;
+        }
+        if (n.rest) {
+            let o = v.length - 1,
+                D = $.slice(v.length);
+            for (let S of D) {
+                o++;
+                let c = n.rest._zod.run({ value: S, issues: [] }, i);
+                if (c instanceof Promise) u.push(c.then((j) => P6(j, t, o)));
+                else P6(c, t, o);
+            }
+        }
+        if (u.length) return Promise.all(u).then(() => J6(I, t, v, $, _));
+        return J6(I, t, v, $, _);
+    };
+});
+function j6(r, n) {
+    for (let v = r.length - 1; v >= 0; v--)
+        if (r[v]._zod[n] !== "optional") return v + 1;
+    return 0;
+}
+function P6(r, n, v) {
+    if (r.issues.length) n.issues.push(...Z(v, r.issues));
+    n.value[v] = r.value;
+}
+function J6(r, n, v, t, i) {
+    for (let $ = 0; $ < v.length; $++) {
+        let u = r[$],
+            g = $ < t.length;
+        if (u.issues.length) {
+            if (!g && $ >= i) {
+                n.value.length = $;
+                break;
+            }
+            n.issues.push(...Z($, u.issues));
+        }
+        n.value[$] = u.value;
+    }
+    for (let $ = n.value.length - 1; $ >= t.length; $--)
+        if (v[$]._zod.optout === "optional" && n.value[$] === void 0)
+            n.value.length = $;
+        else break;
+    return n;
+}
+var Qt = U("$ZodRecord", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (!Ur(i))
+                    return (
+                        v.issues.push({
+                            expected: "record",
+                            code: "invalid_type",
+                            input: i,
+                            inst: r,
+                        }),
+                        v
+                    );
+                let $ = [],
+                    u = n.keyType._zod.values;
+                if (u) {
+                    v.value = {};
+                    let g = new Set();
+                    for (let I of u)
+                        if (
+                            typeof I === "string" ||
+                            typeof I === "number" ||
+                            typeof I === "symbol"
+                        ) {
+                            g.add(typeof I === "number" ? I.toString() : I);
+                            let o = n.keyType._zod.run(
+                                { value: I, issues: [] },
+                                t,
+                            );
+                            if (o instanceof Promise)
+                                throw Error(
+                                    "Async schemas not supported in object keys currently",
+                                );
+                            if (o.issues.length) {
+                                v.issues.push({
+                                    code: "invalid_key",
+                                    origin: "record",
+                                    issues: o.issues.map((c) => A(c, t, V())),
+                                    input: I,
+                                    path: [I],
+                                    inst: r,
+                                });
+                                continue;
+                            }
+                            let D = o.value,
+                                S = n.valueType._zod.run(
+                                    { value: i[I], issues: [] },
+                                    t,
+                                );
+                            if (S instanceof Promise)
+                                $.push(
+                                    S.then((c) => {
+                                        if (c.issues.length)
+                                            v.issues.push(...Z(I, c.issues));
+                                        v.value[D] = c.value;
+                                    }),
+                                );
+                            else {
+                                if (S.issues.length)
+                                    v.issues.push(...Z(I, S.issues));
+                                v.value[D] = S.value;
+                            }
+                        }
+                    let _;
+                    for (let I in i) if (!g.has(I)) (_ = _ ?? []), _.push(I);
+                    if (_ && _.length > 0)
+                        v.issues.push({
+                            code: "unrecognized_keys",
+                            input: i,
+                            inst: r,
+                            keys: _,
+                        });
+                } else {
+                    v.value = {};
+                    for (let g of Reflect.ownKeys(i)) {
+                        if (g === "__proto__") continue;
+                        if (!Object.prototype.propertyIsEnumerable.call(i, g))
+                            continue;
+                        let _ = n.keyType._zod.run({ value: g, issues: [] }, t);
+                        if (_ instanceof Promise)
+                            throw Error(
+                                "Async schemas not supported in object keys currently",
+                            );
+                        if (
+                            typeof g === "string" &&
+                            ci.test(g) &&
+                            _.issues.length
+                        ) {
+                            let D = n.keyType._zod.run(
+                                { value: Number(g), issues: [] },
+                                t,
+                            );
+                            if (D instanceof Promise)
+                                throw Error(
+                                    "Async schemas not supported in object keys currently",
+                                );
+                            if (D.issues.length === 0) _ = D;
+                        }
+                        if (_.issues.length) {
+                            if (n.mode === "loose") v.value[g] = i[g];
+                            else
+                                v.issues.push({
+                                    code: "invalid_key",
+                                    origin: "record",
+                                    issues: _.issues.map((D) => A(D, t, V())),
+                                    input: g,
+                                    path: [g],
+                                    inst: r,
+                                });
+                            continue;
+                        }
+                        let o = n.valueType._zod.run(
+                            { value: i[g], issues: [] },
+                            t,
+                        );
+                        if (o instanceof Promise)
+                            $.push(
+                                o.then((D) => {
+                                    if (D.issues.length)
+                                        v.issues.push(...Z(g, D.issues));
+                                    v.value[_.value] = D.value;
+                                }),
+                            );
+                        else {
+                            if (o.issues.length)
+                                v.issues.push(...Z(g, o.issues));
+                            v.value[_.value] = o.value;
+                        }
+                    }
+                }
+                if ($.length) return Promise.all($).then(() => v);
+                return v;
+            });
+    }),
+    Ht = U("$ZodMap", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (!(i instanceof Map))
+                    return (
+                        v.issues.push({
+                            expected: "map",
+                            code: "invalid_type",
+                            input: i,
+                            inst: r,
+                        }),
+                        v
+                    );
+                let $ = [];
+                v.value = new Map();
+                for (let [u, g] of i) {
+                    let _ = n.keyType._zod.run({ value: u, issues: [] }, t),
+                        I = n.valueType._zod.run({ value: g, issues: [] }, t);
+                    if (_ instanceof Promise || I instanceof Promise)
+                        $.push(
+                            Promise.all([_, I]).then(([o, D]) => {
+                                L6(o, D, v, u, i, r, t);
+                            }),
+                        );
+                    else L6(_, I, v, u, i, r, t);
+                }
+                if ($.length) return Promise.all($).then(() => v);
+                return v;
+            });
+    });
+function L6(r, n, v, t, i, $, u) {
+    if (r.issues.length)
+        if (oi.has(typeof t)) v.issues.push(...Z(t, r.issues));
+        else
+            v.issues.push({
+                code: "invalid_key",
+                origin: "map",
+                input: i,
+                inst: $,
+                issues: r.issues.map((g) => A(g, u, V())),
+            });
+    if (n.issues.length)
+        if (oi.has(typeof t)) v.issues.push(...Z(t, n.issues));
+        else
+            v.issues.push({
+                origin: "map",
+                code: "invalid_element",
+                input: i,
+                inst: $,
+                key: t,
+                issues: n.issues.map((g) => A(g, u, V())),
+            });
+    v.value.set(r.value, n.value);
+}
+var Tt = U("$ZodSet", (r, n) => {
+    P.init(r, n),
+        (r._zod.parse = (v, t) => {
+            let i = v.value;
+            if (!(i instanceof Set))
+                return (
+                    v.issues.push({
+                        input: i,
+                        inst: r,
+                        expected: "set",
+                        code: "invalid_type",
+                    }),
+                    v
+                );
+            let $ = [];
+            v.value = new Set();
+            for (let u of i) {
+                let g = n.valueType._zod.run({ value: u, issues: [] }, t);
+                if (g instanceof Promise) $.push(g.then((_) => G6(_, v)));
+                else G6(g, v);
+            }
+            if ($.length) return Promise.all($).then(() => v);
+            return v;
+        });
+});
+function G6(r, n) {
+    if (r.issues.length) n.issues.push(...r.issues);
+    n.value.add(r.value);
+}
+var Bt = U("$ZodEnum", (r, n) => {
+        P.init(r, n);
+        let v = Ii(n.entries),
+            t = new Set(v);
+        (r._zod.values = t),
+            (r._zod.pattern = new RegExp(
+                `^(${v
+                    .filter((i) => oi.has(typeof i))
+                    .map((i) => (typeof i === "string" ? y(i) : i.toString()))
+                    .join("|")})$`,
+            )),
+            (r._zod.parse = (i, $) => {
+                let u = i.value;
+                if (t.has(u)) return i;
+                return (
+                    i.issues.push({
+                        code: "invalid_value",
+                        values: v,
+                        input: u,
+                        inst: r,
+                    }),
+                    i
+                );
+            });
+    }),
+    At = U("$ZodLiteral", (r, n) => {
+        if ((P.init(r, n), n.values.length === 0))
+            throw Error("Cannot create literal schema with no valid values");
+        let v = new Set(n.values);
+        (r._zod.values = v),
+            (r._zod.pattern = new RegExp(
+                `^(${n.values.map((t) => (typeof t === "string" ? y(t) : t ? y(t.toString()) : String(t))).join("|")})$`,
+            )),
+            (r._zod.parse = (t, i) => {
+                let $ = t.value;
+                if (v.has($)) return t;
+                return (
+                    t.issues.push({
+                        code: "invalid_value",
+                        values: n.values,
+                        input: $,
+                        inst: r,
+                    }),
+                    t
+                );
+            });
+    }),
+    Mt = U("$ZodFile", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                let i = v.value;
+                if (i instanceof File) return v;
+                return (
+                    v.issues.push({
+                        expected: "file",
+                        code: "invalid_type",
+                        input: i,
+                        inst: r,
+                    }),
+                    v
+                );
+            });
+    }),
+    Ft = U("$ZodTransform", (r, n) => {
+        P.init(r, n),
+            (r._zod.optin = "optional"),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward")
+                    throw new Nr(r.constructor.name);
+                let i = n.transform(v.value, v);
+                if (t.async)
+                    return (i instanceof Promise ? i : Promise.resolve(i)).then(
+                        (u) => {
+                            return (v.value = u), (v.fallback = !0), v;
+                        },
+                    );
+                if (i instanceof Promise) throw new a();
+                return (v.value = i), (v.fallback = !0), v;
+            });
+    });
+function X6(r, n) {
+    if (n === void 0 && (r.issues.length || r.fallback))
+        return { issues: [], value: void 0 };
+    return r;
+}
+var ln = U("$ZodOptional", (r, n) => {
+        P.init(r, n),
+            (r._zod.optin = "optional"),
+            (r._zod.optout = "optional"),
+            L(r._zod, "values", () => {
+                return n.innerType._zod.values
+                    ? new Set([...n.innerType._zod.values, void 0])
+                    : void 0;
+            }),
+            L(r._zod, "pattern", () => {
+                let v = n.innerType._zod.pattern;
+                return v ? new RegExp(`^(${_i(v.source)})?$`) : void 0;
+            }),
+            (r._zod.parse = (v, t) => {
+                if (n.innerType._zod.optin === "optional") {
+                    let i = v.value,
+                        $ = n.innerType._zod.run(v, t);
+                    if ($ instanceof Promise) return $.then((u) => X6(u, i));
+                    return X6($, i);
+                }
+                if (v.value === void 0) return v;
+                return n.innerType._zod.run(v, t);
+            });
+    }),
+    Rt = U("$ZodExactOptional", (r, n) => {
+        ln.init(r, n),
+            L(r._zod, "values", () => n.innerType._zod.values),
+            L(r._zod, "pattern", () => n.innerType._zod.pattern),
+            (r._zod.parse = (v, t) => {
+                return n.innerType._zod.run(v, t);
+            });
+    }),
+    Zt = U("$ZodNullable", (r, n) => {
+        P.init(r, n),
+            L(r._zod, "optin", () => n.innerType._zod.optin),
+            L(r._zod, "optout", () => n.innerType._zod.optout),
+            L(r._zod, "pattern", () => {
+                let v = n.innerType._zod.pattern;
+                return v ? new RegExp(`^(${_i(v.source)}|null)$`) : void 0;
+            }),
+            L(r._zod, "values", () => {
+                return n.innerType._zod.values
+                    ? new Set([...n.innerType._zod.values, null])
+                    : void 0;
+            }),
+            (r._zod.parse = (v, t) => {
+                if (v.value === null) return v;
+                return n.innerType._zod.run(v, t);
+            });
+    }),
+    et = U("$ZodDefault", (r, n) => {
+        P.init(r, n),
+            (r._zod.optin = "optional"),
+            L(r._zod, "values", () => n.innerType._zod.values),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward")
+                    return n.innerType._zod.run(v, t);
+                if (v.value === void 0) return (v.value = n.defaultValue), v;
+                let i = n.innerType._zod.run(v, t);
+                if (i instanceof Promise) return i.then(($) => E6($, n));
+                return E6(i, n);
+            });
+    });
+function E6(r, n) {
+    if (r.value === void 0) r.value = n.defaultValue;
+    return r;
+}
+var xt = U("$ZodPrefault", (r, n) => {
+        P.init(r, n),
+            (r._zod.optin = "optional"),
+            L(r._zod, "values", () => n.innerType._zod.values),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward")
+                    return n.innerType._zod.run(v, t);
+                if (v.value === void 0) v.value = n.defaultValue;
+                return n.innerType._zod.run(v, t);
+            });
+    }),
+    ft = U("$ZodNonOptional", (r, n) => {
+        P.init(r, n),
+            L(r._zod, "values", () => {
+                let v = n.innerType._zod.values;
+                return v ? new Set([...v].filter((t) => t !== void 0)) : void 0;
+            }),
+            (r._zod.parse = (v, t) => {
+                let i = n.innerType._zod.run(v, t);
+                if (i instanceof Promise) return i.then(($) => q6($, r));
+                return q6(i, r);
+            });
+    });
+function q6(r, n) {
+    if (!r.issues.length && r.value === void 0)
+        r.issues.push({
+            code: "invalid_type",
+            expected: "nonoptional",
+            input: r.value,
+            inst: n,
+        });
+    return r;
+}
+var Ct = U("$ZodSuccess", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward") throw new Nr("ZodSuccess");
+                let i = n.innerType._zod.run(v, t);
+                if (i instanceof Promise)
+                    return i.then(($) => {
+                        return (v.value = $.issues.length === 0), v;
+                    });
+                return (v.value = i.issues.length === 0), v;
+            });
+    }),
+    mt = U("$ZodCatch", (r, n) => {
+        P.init(r, n),
+            (r._zod.optin = "optional"),
+            L(r._zod, "optout", () => n.innerType._zod.optout),
+            L(r._zod, "values", () => n.innerType._zod.values),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward")
+                    return n.innerType._zod.run(v, t);
+                let i = n.innerType._zod.run(v, t);
+                if (i instanceof Promise)
+                    return i.then(($) => {
+                        if (((v.value = $.value), $.issues.length))
+                            (v.value = n.catchValue({
+                                ...v,
+                                error: {
+                                    issues: $.issues.map((u) => A(u, t, V())),
+                                },
+                                input: v.value,
+                            })),
+                                (v.issues = []),
+                                (v.fallback = !0);
+                        return v;
+                    });
+                if (((v.value = i.value), i.issues.length))
+                    (v.value = n.catchValue({
+                        ...v,
+                        error: { issues: i.issues.map(($) => A($, t, V())) },
+                        input: v.value,
+                    })),
+                        (v.issues = []),
+                        (v.fallback = !0);
+                return v;
+            });
+    }),
+    yt = U("$ZodNaN", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                if (typeof v.value !== "number" || !Number.isNaN(v.value))
+                    return (
+                        v.issues.push({
+                            input: v.value,
+                            inst: r,
+                            expected: "nan",
+                            code: "invalid_type",
+                        }),
+                        v
+                    );
+                return v;
+            });
+    }),
+    cn = U("$ZodPipe", (r, n) => {
+        P.init(r, n),
+            L(r._zod, "values", () => n.in._zod.values),
+            L(r._zod, "optin", () => n.in._zod.optin),
+            L(r._zod, "optout", () => n.out._zod.optout),
+            L(r._zod, "propValues", () => n.in._zod.propValues),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward") {
+                    let $ = n.out._zod.run(v, t);
+                    if ($ instanceof Promise)
+                        return $.then((u) => In(u, n.in, t));
+                    return In($, n.in, t);
+                }
+                let i = n.in._zod.run(v, t);
+                if (i instanceof Promise) return i.then(($) => In($, n.out, t));
+                return In(i, n.out, t);
+            });
+    });
+function In(r, n, v) {
+    if (r.issues.length) return (r.aborted = !0), r;
+    return n._zod.run(
+        { value: r.value, issues: r.issues, fallback: r.fallback },
+        v,
+    );
+}
+var ji = U("$ZodCodec", (r, n) => {
+    P.init(r, n),
+        L(r._zod, "values", () => n.in._zod.values),
+        L(r._zod, "optin", () => n.in._zod.optin),
+        L(r._zod, "optout", () => n.out._zod.optout),
+        L(r._zod, "propValues", () => n.in._zod.propValues),
+        (r._zod.parse = (v, t) => {
+            if ((t.direction || "forward") === "forward") {
+                let $ = n.in._zod.run(v, t);
+                if ($ instanceof Promise) return $.then((u) => _n(u, n, t));
+                return _n($, n, t);
+            } else {
+                let $ = n.out._zod.run(v, t);
+                if ($ instanceof Promise) return $.then((u) => _n(u, n, t));
+                return _n($, n, t);
+            }
+        });
+});
+function _n(r, n, v) {
+    if (r.issues.length) return (r.aborted = !0), r;
+    if ((v.direction || "forward") === "forward") {
+        let i = n.transform(r.value, r);
+        if (i instanceof Promise) return i.then(($) => on(r, $, n.out, v));
+        return on(r, i, n.out, v);
+    } else {
+        let i = n.reverseTransform(r.value, r);
+        if (i instanceof Promise) return i.then(($) => on(r, $, n.in, v));
+        return on(r, i, n.in, v);
+    }
+}
+function on(r, n, v, t) {
+    if (r.issues.length) return (r.aborted = !0), r;
+    return v._zod.run({ value: n, issues: r.issues }, t);
+}
+var ht = U("$ZodPreprocess", (r, n) => {
+        cn.init(r, n);
+    }),
+    dt = U("$ZodReadonly", (r, n) => {
+        P.init(r, n),
+            L(r._zod, "propValues", () => n.innerType._zod.propValues),
+            L(r._zod, "values", () => n.innerType._zod.values),
+            L(r._zod, "optin", () => n.innerType?._zod?.optin),
+            L(r._zod, "optout", () => n.innerType?._zod?.optout),
+            (r._zod.parse = (v, t) => {
+                if (t.direction === "backward")
+                    return n.innerType._zod.run(v, t);
+                let i = n.innerType._zod.run(v, t);
+                if (i instanceof Promise) return i.then(O6);
+                return O6(i);
+            });
+    });
+function O6(r) {
+    return (r.value = Object.freeze(r.value)), r;
+}
+var pt = U("$ZodTemplateLiteral", (r, n) => {
+        P.init(r, n);
+        let v = [];
+        for (let t of n.parts)
+            if (typeof t === "object" && t !== null) {
+                if (!t._zod.pattern)
+                    throw Error(
+                        `Invalid template literal part, no pattern found: ${[...t._zod.traits].shift()}`,
+                    );
+                let i =
+                    t._zod.pattern instanceof RegExp
+                        ? t._zod.pattern.source
+                        : t._zod.pattern;
+                if (!i)
+                    throw Error(
+                        `Invalid template literal part: ${t._zod.traits}`,
+                    );
+                let $ = i.startsWith("^") ? 1 : 0,
+                    u = i.endsWith("$") ? i.length - 1 : i.length;
+                v.push(i.slice($, u));
+            } else if (t === null || ev.has(typeof t)) v.push(y(`${t}`));
+            else throw Error(`Invalid template literal part: ${t}`);
+        (r._zod.pattern = new RegExp(`^${v.join("")}$`)),
+            (r._zod.parse = (t, i) => {
+                if (typeof t.value !== "string")
+                    return (
+                        t.issues.push({
+                            input: t.value,
+                            inst: r,
+                            expected: "string",
+                            code: "invalid_type",
+                        }),
+                        t
+                    );
+                if (
+                    ((r._zod.pattern.lastIndex = 0),
+                    !r._zod.pattern.test(t.value))
+                )
+                    return (
+                        t.issues.push({
+                            input: t.value,
+                            inst: r,
+                            code: "invalid_format",
+                            format: n.format ?? "template_literal",
+                            pattern: r._zod.pattern.source,
+                        }),
+                        t
+                    );
+                return t;
+            });
+    }),
+    at = U("$ZodFunction", (r, n) => {
+        return (
+            P.init(r, n),
+            (r._def = n),
+            (r._zod.def = n),
+            (r.implement = (v) => {
+                if (typeof v !== "function")
+                    throw Error("implement() must be called with a function");
+                return function (...t) {
+                    let i = r._def.input ? mi(r._def.input, t) : t,
+                        $ = Reflect.apply(v, this, i);
+                    if (r._def.output) return mi(r._def.output, $);
+                    return $;
+                };
+            }),
+            (r.implementAsync = (v) => {
+                if (typeof v !== "function")
+                    throw Error(
+                        "implementAsync() must be called with a function",
+                    );
+                return async function (...t) {
+                    let i = r._def.input ? await yi(r._def.input, t) : t,
+                        $ = await Reflect.apply(v, this, i);
+                    if (r._def.output) return await yi(r._def.output, $);
+                    return $;
+                };
+            }),
+            (r._zod.parse = (v, t) => {
+                if (typeof v.value !== "function")
+                    return (
+                        v.issues.push({
+                            code: "invalid_type",
+                            expected: "function",
+                            input: v.value,
+                            inst: r,
+                        }),
+                        v
+                    );
+                if (r._def.output && r._def.output._zod.def.type === "promise")
+                    v.value = r.implementAsync(v.value);
+                else v.value = r.implement(v.value);
+                return v;
+            }),
+            (r.input = (...v) => {
+                let t = r.constructor;
+                if (Array.isArray(v[0]))
+                    return new t({
+                        type: "function",
+                        input: new kn({
+                            type: "tuple",
+                            items: v[0],
+                            rest: v[1],
+                        }),
+                        output: r._def.output,
+                    });
+                return new t({
+                    type: "function",
+                    input: v[0],
+                    output: r._def.output,
+                });
+            }),
+            (r.output = (v) => {
+                return new r.constructor({
+                    type: "function",
+                    input: r._def.input,
+                    output: v,
+                });
+            }),
+            r
+        );
+    }),
+    st = U("$ZodPromise", (r, n) => {
+        P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                return Promise.resolve(v.value).then((i) =>
+                    n.innerType._zod.run({ value: i, issues: [] }, t),
+                );
+            });
+    }),
+    ru = U("$ZodLazy", (r, n) => {
+        P.init(r, n),
+            L(r._zod, "innerType", () => {
+                let v = n;
+                if (!v._cachedInner) v._cachedInner = n.getter();
+                return v._cachedInner;
+            }),
+            L(r._zod, "pattern", () => r._zod.innerType?._zod?.pattern),
+            L(r._zod, "propValues", () => r._zod.innerType?._zod?.propValues),
+            L(r._zod, "optin", () => r._zod.innerType?._zod?.optin ?? void 0),
+            L(r._zod, "optout", () => r._zod.innerType?._zod?.optout ?? void 0),
+            (r._zod.parse = (v, t) => {
+                return r._zod.innerType._zod.run(v, t);
+            });
+    }),
+    iu = U("$ZodCustom", (r, n) => {
+        W.init(r, n),
+            P.init(r, n),
+            (r._zod.parse = (v, t) => {
+                return v;
+            }),
+            (r._zod.check = (v) => {
+                let t = v.value,
+                    i = n.fn(t);
+                if (i instanceof Promise) return i.then(($) => W6($, v, t, r));
+                W6(i, v, t, r);
+                return;
+            });
+    });
+function W6(r, n, v, t) {
+    if (!r) {
+        let i = {
+            code: "custom",
+            input: v,
+            inst: t,
+            path: [...(t._zod.def.path ?? [])],
+            continue: !t._zod.def.abort,
+        };
+        if (t._zod.def.params) i.params = t._zod.def.params;
+        n.issues.push(Wr(i));
+    }
+}
+var Xi = {};
+vr(Xi, {
+    zhTW: () => hu,
+    zhCN: () => yu,
+    yo: () => du,
+    vi: () => mu,
+    uz: () => Cu,
+    ur: () => fu,
+    uk: () => Gi,
+    ua: () => xu,
+    tr: () => eu,
+    th: () => Zu,
+    ta: () => Ru,
+    sv: () => Fu,
+    sl: () => Mu,
+    ru: () => Au,
+    ro: () => Bu,
+    pt: () => Tu,
+    ps: () => Qu,
+    pl: () => Hu,
+    ota: () => Ku,
+    no: () => Vu,
+    nl: () => Yu,
+    ms: () => Wu,
+    mk: () => Ou,
+    lt: () => qu,
+    ko: () => Eu,
+    km: () => Ji,
+    kh: () => Xu,
+    ka: () => Gu,
+    ja: () => Lu,
+    it: () => Ju,
+    is: () => Pu,
+    id: () => ju,
+    hy: () => zu,
+    hu: () => Nu,
+    hr: () => Su,
+    he: () => wu,
+    frCA: () => cu,
+    fr: () => lu,
+    fi: () => ku,
+    fa: () => Du,
+    es: () => bu,
+    eo: () => Uu,
+    en: () => Pi,
+    el: () => ou,
+    de: () => _u,
+    da: () => Iu,
+    cs: () => gu,
+    ca: () => uu,
+    bg: () => tu,
+    be: () => $u,
+    az: () => vu,
+    ar: () => nu,
+});
+var Jb = () => {
+    let r = {
+        string: { unit: "حرف", verb: "أن يحوي" },
+        file: { unit: "بايت", verb: "أن يحوي" },
+        array: { unit: "عنصر", verb: "أن يحوي" },
+        set: { unit: "عنصر", verb: "أن يحوي" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "مدخل",
+            email: "بريد إلكتروني",
+            url: "رابط",
+            emoji: "إيموجي",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "تاريخ ووقت بمعيار ISO",
+            date: "تاريخ بمعيار ISO",
+            time: "وقت بمعيار ISO",
+            duration: "مدة بمعيار ISO",
+            ipv4: "عنوان IPv4",
+            ipv6: "عنوان IPv6",
+            cidrv4: "مدى عناوين بصيغة IPv4",
+            cidrv6: "مدى عناوين بصيغة IPv6",
+            base64: "نَص بترميز base64-encoded",
+            base64url: "نَص بترميز base64url-encoded",
+            json_string: "نَص على هيئة JSON",
+            e164: "رقم هاتف بمعيار E.164",
+            jwt: "JWT",
+            template_literal: "مدخل",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `مدخلات غير مقبولة: يفترض إدخال instanceof ${i.expected}، ولكن تم إدخال ${g}`;
+                return `مدخلات غير مقبولة: يفترض إدخال ${$}، ولكن تم إدخال ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `مدخلات غير مقبولة: يفترض إدخال ${k(i.values[0])}`;
+                return `اختيار غير مقبول: يتوقع انتقاء أحد هذه الخيارات: ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return ` أكبر من اللازم: يفترض أن تكون ${i.origin ?? "القيمة"} ${$} ${i.maximum.toString()} ${u.unit ?? "عنصر"}`;
+                return `أكبر من اللازم: يفترض أن تكون ${i.origin ?? "القيمة"} ${$} ${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `أصغر من اللازم: يفترض لـ ${i.origin} أن يكون ${$} ${i.minimum.toString()} ${u.unit}`;
+                return `أصغر من اللازم: يفترض لـ ${i.origin} أن يكون ${$} ${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `نَص غير مقبول: يجب أن يبدأ بـ "${i.prefix}"`;
+                if ($.format === "ends_with")
+                    return `نَص غير مقبول: يجب أن ينتهي بـ "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `نَص غير مقبول: يجب أن يتضمَّن "${$.includes}"`;
+                if ($.format === "regex")
+                    return `نَص غير مقبول: يجب أن يطابق النمط ${$.pattern}`;
+                return `${v[$.format] ?? i.format} غير مقبول`;
+            }
+            case "not_multiple_of":
+                return `رقم غير مقبول: يجب أن يكون من مضاعفات ${i.divisor}`;
+            case "unrecognized_keys":
+                return `معرف${i.keys.length > 1 ? "ات" : ""} غريب${i.keys.length > 1 ? "ة" : ""}: ${b(i.keys, "، ")}`;
+            case "invalid_key":
+                return `معرف غير مقبول في ${i.origin}`;
+            case "invalid_union":
+                return "مدخل غير مقبول";
+            case "invalid_element":
+                return `مدخل غير مقبول في ${i.origin}`;
+            default:
+                return "مدخل غير مقبول";
+        }
+    };
+};
+function nu() {
+    return { localeError: Jb() };
+}
+var Lb = () => {
+    let r = {
+        string: { unit: "simvol", verb: "olmalıdır" },
+        file: { unit: "bayt", verb: "olmalıdır" },
+        array: { unit: "element", verb: "olmalıdır" },
+        set: { unit: "element", verb: "olmalıdır" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "email address",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO datetime",
+            date: "ISO date",
+            time: "ISO time",
+            duration: "ISO duration",
+            ipv4: "IPv4 address",
+            ipv6: "IPv6 address",
+            cidrv4: "IPv4 range",
+            cidrv6: "IPv6 range",
+            base64: "base64-encoded string",
+            base64url: "base64url-encoded string",
+            json_string: "JSON string",
+            e164: "E.164 number",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Yanlış dəyər: gözlənilən instanceof ${i.expected}, daxil olan ${g}`;
+                return `Yanlış dəyər: gözlənilən ${$}, daxil olan ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Yanlış dəyər: gözlənilən ${k(i.values[0])}`;
+                return `Yanlış seçim: aşağıdakılardan biri olmalıdır: ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Çox böyük: gözlənilən ${i.origin ?? "dəyər"} ${$}${i.maximum.toString()} ${u.unit ?? "element"}`;
+                return `Çox böyük: gözlənilən ${i.origin ?? "dəyər"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Çox kiçik: gözlənilən ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Çox kiçik: gözlənilən ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Yanlış mətn: "${$.prefix}" ilə başlamalıdır`;
+                if ($.format === "ends_with")
+                    return `Yanlış mətn: "${$.suffix}" ilə bitməlidir`;
+                if ($.format === "includes")
+                    return `Yanlış mətn: "${$.includes}" daxil olmalıdır`;
+                if ($.format === "regex")
+                    return `Yanlış mətn: ${$.pattern} şablonuna uyğun olmalıdır`;
+                return `Yanlış ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Yanlış ədəd: ${i.divisor} ilə bölünə bilən olmalıdır`;
+            case "unrecognized_keys":
+                return `Tanınmayan açar${i.keys.length > 1 ? "lar" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} daxilində yanlış açar`;
+            case "invalid_union":
+                return "Yanlış dəyər";
+            case "invalid_element":
+                return `${i.origin} daxilində yanlış dəyər`;
+            default:
+                return "Yanlış dəyər";
+        }
+    };
+};
+function vu() {
+    return { localeError: Lb() };
+}
+function T6(r, n, v, t) {
+    let i = Math.abs(r),
+        $ = i % 10,
+        u = i % 100;
+    if (u >= 11 && u <= 19) return t;
+    if ($ === 1) return n;
+    if ($ >= 2 && $ <= 4) return v;
+    return t;
+}
+var Gb = () => {
+    let r = {
+        string: {
+            unit: { one: "сімвал", few: "сімвалы", many: "сімвалаў" },
+            verb: "мець",
+        },
+        array: {
+            unit: { one: "элемент", few: "элементы", many: "элементаў" },
+            verb: "мець",
+        },
+        set: {
+            unit: { one: "элемент", few: "элементы", many: "элементаў" },
+            verb: "мець",
+        },
+        file: {
+            unit: { one: "байт", few: "байты", many: "байтаў" },
+            verb: "мець",
+        },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "увод",
+            email: "email адрас",
+            url: "URL",
+            emoji: "эмодзі",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO дата і час",
+            date: "ISO дата",
+            time: "ISO час",
+            duration: "ISO працягласць",
+            ipv4: "IPv4 адрас",
+            ipv6: "IPv6 адрас",
+            cidrv4: "IPv4 дыяпазон",
+            cidrv6: "IPv6 дыяпазон",
+            base64: "радок у фармаце base64",
+            base64url: "радок у фармаце base64url",
+            json_string: "JSON радок",
+            e164: "нумар E.164",
+            jwt: "JWT",
+            template_literal: "увод",
+        },
+        t = { nan: "NaN", number: "лік", array: "масіў" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Няправільны ўвод: чакаўся instanceof ${i.expected}, атрымана ${g}`;
+                return `Няправільны ўвод: чакаўся ${$}, атрымана ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Няправільны ўвод: чакалася ${k(i.values[0])}`;
+                return `Няправільны варыянт: чакаўся адзін з ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.maximum),
+                        _ = T6(g, u.unit.one, u.unit.few, u.unit.many);
+                    return `Занадта вялікі: чакалася, што ${i.origin ?? "значэнне"} павінна ${u.verb} ${$}${i.maximum.toString()} ${_}`;
+                }
+                return `Занадта вялікі: чакалася, што ${i.origin ?? "значэнне"} павінна быць ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.minimum),
+                        _ = T6(g, u.unit.one, u.unit.few, u.unit.many);
+                    return `Занадта малы: чакалася, што ${i.origin} павінна ${u.verb} ${$}${i.minimum.toString()} ${_}`;
+                }
+                return `Занадта малы: чакалася, што ${i.origin} павінна быць ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Няправільны радок: павінен пачынацца з "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Няправільны радок: павінен заканчвацца на "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Няправільны радок: павінен змяшчаць "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Няправільны радок: павінен адпавядаць шаблону ${$.pattern}`;
+                return `Няправільны ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Няправільны лік: павінен быць кратным ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Нераспазнаны ${i.keys.length > 1 ? "ключы" : "ключ"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Няправільны ключ у ${i.origin}`;
+            case "invalid_union":
+                return "Няправільны ўвод";
+            case "invalid_element":
+                return `Няправільнае значэнне ў ${i.origin}`;
+            default:
+                return "Няправільны ўвод";
+        }
+    };
+};
+function $u() {
+    return { localeError: Gb() };
+}
+var Xb = () => {
+    let r = {
+        string: { unit: "символа", verb: "да съдържа" },
+        file: { unit: "байта", verb: "да съдържа" },
+        array: { unit: "елемента", verb: "да съдържа" },
+        set: { unit: "елемента", verb: "да съдържа" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "вход",
+            email: "имейл адрес",
+            url: "URL",
+            emoji: "емоджи",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO време",
+            date: "ISO дата",
+            time: "ISO време",
+            duration: "ISO продължителност",
+            ipv4: "IPv4 адрес",
+            ipv6: "IPv6 адрес",
+            cidrv4: "IPv4 диапазон",
+            cidrv6: "IPv6 диапазон",
+            base64: "base64-кодиран низ",
+            base64url: "base64url-кодиран низ",
+            json_string: "JSON низ",
+            e164: "E.164 номер",
+            jwt: "JWT",
+            template_literal: "вход",
+        },
+        t = { nan: "NaN", number: "число", array: "масив" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Невалиден вход: очакван instanceof ${i.expected}, получен ${g}`;
+                return `Невалиден вход: очакван ${$}, получен ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Невалиден вход: очакван ${k(i.values[0])}`;
+                return `Невалидна опция: очаквано едно от ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Твърде голямо: очаква се ${i.origin ?? "стойност"} да съдържа ${$}${i.maximum.toString()} ${u.unit ?? "елемента"}`;
+                return `Твърде голямо: очаква се ${i.origin ?? "стойност"} да бъде ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Твърде малко: очаква се ${i.origin} да съдържа ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Твърде малко: очаква се ${i.origin} да бъде ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Невалиден низ: трябва да започва с "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Невалиден низ: трябва да завършва с "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Невалиден низ: трябва да включва "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Невалиден низ: трябва да съвпада с ${$.pattern}`;
+                let u = "Невалиден";
+                if ($.format === "emoji") u = "Невалидно";
+                if ($.format === "datetime") u = "Невалидно";
+                if ($.format === "date") u = "Невалидна";
+                if ($.format === "time") u = "Невалидно";
+                if ($.format === "duration") u = "Невалидна";
+                return `${u} ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Невалидно число: трябва да бъде кратно на ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Неразпознат${i.keys.length > 1 ? "и" : ""} ключ${i.keys.length > 1 ? "ове" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Невалиден ключ в ${i.origin}`;
+            case "invalid_union":
+                return "Невалиден вход";
+            case "invalid_element":
+                return `Невалидна стойност в ${i.origin}`;
+            default:
+                return "Невалиден вход";
+        }
+    };
+};
+function tu() {
+    return { localeError: Xb() };
+}
+var Eb = () => {
+    let r = {
+        string: { unit: "caràcters", verb: "contenir" },
+        file: { unit: "bytes", verb: "contenir" },
+        array: { unit: "elements", verb: "contenir" },
+        set: { unit: "elements", verb: "contenir" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "entrada",
+            email: "adreça electrònica",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "data i hora ISO",
+            date: "data ISO",
+            time: "hora ISO",
+            duration: "durada ISO",
+            ipv4: "adreça IPv4",
+            ipv6: "adreça IPv6",
+            cidrv4: "rang IPv4",
+            cidrv6: "rang IPv6",
+            base64: "cadena codificada en base64",
+            base64url: "cadena codificada en base64url",
+            json_string: "cadena JSON",
+            e164: "número E.164",
+            jwt: "JWT",
+            template_literal: "entrada",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Tipus invàlid: s'esperava instanceof ${i.expected}, s'ha rebut ${g}`;
+                return `Tipus invàlid: s'esperava ${$}, s'ha rebut ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Valor invàlid: s'esperava ${k(i.values[0])}`;
+                return `Opció invàlida: s'esperava una de ${b(i.values, " o ")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "com a màxim" : "menys de",
+                    u = n(i.origin);
+                if (u)
+                    return `Massa gran: s'esperava que ${i.origin ?? "el valor"} contingués ${$} ${i.maximum.toString()} ${u.unit ?? "elements"}`;
+                return `Massa gran: s'esperava que ${i.origin ?? "el valor"} fos ${$} ${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? "com a mínim" : "més de",
+                    u = n(i.origin);
+                if (u)
+                    return `Massa petit: s'esperava que ${i.origin} contingués ${$} ${i.minimum.toString()} ${u.unit}`;
+                return `Massa petit: s'esperava que ${i.origin} fos ${$} ${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Format invàlid: ha de començar amb "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Format invàlid: ha d'acabar amb "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Format invàlid: ha d'incloure "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Format invàlid: ha de coincidir amb el patró ${$.pattern}`;
+                return `Format invàlid per a ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Número invàlid: ha de ser múltiple de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Clau${i.keys.length > 1 ? "s" : ""} no reconeguda${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Clau invàlida a ${i.origin}`;
+            case "invalid_union":
+                return "Entrada invàlida";
+            case "invalid_element":
+                return `Element invàlid a ${i.origin}`;
+            default:
+                return "Entrada invàlida";
+        }
+    };
+};
+function uu() {
+    return { localeError: Eb() };
+}
+var qb = () => {
+    let r = {
+        string: { unit: "znaků", verb: "mít" },
+        file: { unit: "bajtů", verb: "mít" },
+        array: { unit: "prvků", verb: "mít" },
+        set: { unit: "prvků", verb: "mít" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "regulární výraz",
+            email: "e-mailová adresa",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "datum a čas ve formátu ISO",
+            date: "datum ve formátu ISO",
+            time: "čas ve formátu ISO",
+            duration: "doba trvání ISO",
+            ipv4: "IPv4 adresa",
+            ipv6: "IPv6 adresa",
+            cidrv4: "rozsah IPv4",
+            cidrv6: "rozsah IPv6",
+            base64: "řetězec zakódovaný ve formátu base64",
+            base64url: "řetězec zakódovaný ve formátu base64url",
+            json_string: "řetězec ve formátu JSON",
+            e164: "číslo E.164",
+            jwt: "JWT",
+            template_literal: "vstup",
+        },
+        t = {
+            nan: "NaN",
+            number: "číslo",
+            string: "řetězec",
+            function: "funkce",
+            array: "pole",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Neplatný vstup: očekáváno instanceof ${i.expected}, obdrženo ${g}`;
+                return `Neplatný vstup: očekáváno ${$}, obdrženo ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Neplatný vstup: očekáváno ${k(i.values[0])}`;
+                return `Neplatná možnost: očekávána jedna z hodnot ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Hodnota je příliš velká: ${i.origin ?? "hodnota"} musí mít ${$}${i.maximum.toString()} ${u.unit ?? "prvků"}`;
+                return `Hodnota je příliš velká: ${i.origin ?? "hodnota"} musí být ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Hodnota je příliš malá: ${i.origin ?? "hodnota"} musí mít ${$}${i.minimum.toString()} ${u.unit ?? "prvků"}`;
+                return `Hodnota je příliš malá: ${i.origin ?? "hodnota"} musí být ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Neplatný řetězec: musí začínat na "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Neplatný řetězec: musí končit na "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Neplatný řetězec: musí obsahovat "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Neplatný řetězec: musí odpovídat vzoru ${$.pattern}`;
+                return `Neplatný formát ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Neplatné číslo: musí být násobkem ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Neznámé klíče: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Neplatný klíč v ${i.origin}`;
+            case "invalid_union":
+                return "Neplatný vstup";
+            case "invalid_element":
+                return `Neplatná hodnota v ${i.origin}`;
+            default:
+                return "Neplatný vstup";
+        }
+    };
+};
+function gu() {
+    return { localeError: qb() };
+}
+var Ob = () => {
+    let r = {
+        string: { unit: "tegn", verb: "havde" },
+        file: { unit: "bytes", verb: "havde" },
+        array: { unit: "elementer", verb: "indeholdt" },
+        set: { unit: "elementer", verb: "indeholdt" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "e-mailadresse",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO dato- og klokkeslæt",
+            date: "ISO-dato",
+            time: "ISO-klokkeslæt",
+            duration: "ISO-varighed",
+            ipv4: "IPv4-område",
+            ipv6: "IPv6-område",
+            cidrv4: "IPv4-spektrum",
+            cidrv6: "IPv6-spektrum",
+            base64: "base64-kodet streng",
+            base64url: "base64url-kodet streng",
+            json_string: "JSON-streng",
+            e164: "E.164-nummer",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = {
+            nan: "NaN",
+            string: "streng",
+            number: "tal",
+            boolean: "boolean",
+            array: "liste",
+            object: "objekt",
+            set: "sæt",
+            file: "fil",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ugyldigt input: forventede instanceof ${i.expected}, fik ${g}`;
+                return `Ugyldigt input: forventede ${$}, fik ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ugyldig værdi: forventede ${k(i.values[0])}`;
+                return `Ugyldigt valg: forventede en af følgende ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `For stor: forventede ${g ?? "value"} ${u.verb} ${$} ${i.maximum.toString()} ${u.unit ?? "elementer"}`;
+                return `For stor: forventede ${g ?? "value"} havde ${$} ${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `For lille: forventede ${g} ${u.verb} ${$} ${i.minimum.toString()} ${u.unit}`;
+                return `For lille: forventede ${g} havde ${$} ${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ugyldig streng: skal starte med "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Ugyldig streng: skal ende med "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Ugyldig streng: skal indeholde "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Ugyldig streng: skal matche mønsteret ${$.pattern}`;
+                return `Ugyldig ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Ugyldigt tal: skal være deleligt med ${i.divisor}`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Ukendte nøgler" : "Ukendt nøgle"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Ugyldig nøgle i ${i.origin}`;
+            case "invalid_union":
+                return "Ugyldigt input: matcher ingen af de tilladte typer";
+            case "invalid_element":
+                return `Ugyldig værdi i ${i.origin}`;
+            default:
+                return "Ugyldigt input";
+        }
+    };
+};
+function Iu() {
+    return { localeError: Ob() };
+}
+var Wb = () => {
+    let r = {
+        string: { unit: "Zeichen", verb: "zu haben" },
+        file: { unit: "Bytes", verb: "zu haben" },
+        array: { unit: "Elemente", verb: "zu haben" },
+        set: { unit: "Elemente", verb: "zu haben" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "Eingabe",
+            email: "E-Mail-Adresse",
+            url: "URL",
+            emoji: "Emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO-Datum und -Uhrzeit",
+            date: "ISO-Datum",
+            time: "ISO-Uhrzeit",
+            duration: "ISO-Dauer",
+            ipv4: "IPv4-Adresse",
+            ipv6: "IPv6-Adresse",
+            cidrv4: "IPv4-Bereich",
+            cidrv6: "IPv6-Bereich",
+            base64: "Base64-codierter String",
+            base64url: "Base64-URL-codierter String",
+            json_string: "JSON-String",
+            e164: "E.164-Nummer",
+            jwt: "JWT",
+            template_literal: "Eingabe",
+        },
+        t = { nan: "NaN", number: "Zahl", array: "Array" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ungültige Eingabe: erwartet instanceof ${i.expected}, erhalten ${g}`;
+                return `Ungültige Eingabe: erwartet ${$}, erhalten ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ungültige Eingabe: erwartet ${k(i.values[0])}`;
+                return `Ungültige Option: erwartet eine von ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Zu groß: erwartet, dass ${i.origin ?? "Wert"} ${$}${i.maximum.toString()} ${u.unit ?? "Elemente"} hat`;
+                return `Zu groß: erwartet, dass ${i.origin ?? "Wert"} ${$}${i.maximum.toString()} ist`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Zu klein: erwartet, dass ${i.origin} ${$}${i.minimum.toString()} ${u.unit} hat`;
+                return `Zu klein: erwartet, dass ${i.origin} ${$}${i.minimum.toString()} ist`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ungültiger String: muss mit "${$.prefix}" beginnen`;
+                if ($.format === "ends_with")
+                    return `Ungültiger String: muss mit "${$.suffix}" enden`;
+                if ($.format === "includes")
+                    return `Ungültiger String: muss "${$.includes}" enthalten`;
+                if ($.format === "regex")
+                    return `Ungültiger String: muss dem Muster ${$.pattern} entsprechen`;
+                return `Ungültig: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Ungültige Zahl: muss ein Vielfaches von ${i.divisor} sein`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Unbekannte Schlüssel" : "Unbekannter Schlüssel"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Ungültiger Schlüssel in ${i.origin}`;
+            case "invalid_union":
+                return "Ungültige Eingabe";
+            case "invalid_element":
+                return `Ungültiger Wert in ${i.origin}`;
+            default:
+                return "Ungültige Eingabe";
+        }
+    };
+};
+function _u() {
+    return { localeError: Wb() };
+}
+var Yb = () => {
+    let r = {
+        string: { unit: "χαρακτήρες", verb: "να έχει" },
+        file: { unit: "bytes", verb: "να έχει" },
+        array: { unit: "στοιχεία", verb: "να έχει" },
+        set: { unit: "στοιχεία", verb: "να έχει" },
+        map: { unit: "καταχωρήσεις", verb: "να έχει" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "είσοδος",
+            email: "διεύθυνση email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO ημερομηνία και ώρα",
+            date: "ISO ημερομηνία",
+            time: "ISO ώρα",
+            duration: "ISO διάρκεια",
+            ipv4: "διεύθυνση IPv4",
+            ipv6: "διεύθυνση IPv6",
+            mac: "διεύθυνση MAC",
+            cidrv4: "εύρος IPv4",
+            cidrv6: "εύρος IPv6",
+            base64: "συμβολοσειρά κωδικοποιημένη σε base64",
+            base64url: "συμβολοσειρά κωδικοποιημένη σε base64url",
+            json_string: "συμβολοσειρά JSON",
+            e164: "αριθμός E.164",
+            jwt: "JWT",
+            template_literal: "είσοδος",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (typeof i.expected === "string" && /^[A-Z]/.test(i.expected))
+                    return `Μη έγκυρη είσοδος: αναμενόταν instanceof ${i.expected}, λήφθηκε ${g}`;
+                return `Μη έγκυρη είσοδος: αναμενόταν ${$}, λήφθηκε ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Μη έγκυρη είσοδος: αναμενόταν ${k(i.values[0])}`;
+                return `Μη έγκυρη επιλογή: αναμενόταν ένα από ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Πολύ μεγάλο: αναμενόταν ${i.origin ?? "τιμή"} να έχει ${$}${i.maximum.toString()} ${u.unit ?? "στοιχεία"}`;
+                return `Πολύ μεγάλο: αναμενόταν ${i.origin ?? "τιμή"} να είναι ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Πολύ μικρό: αναμενόταν ${i.origin} να έχει ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Πολύ μικρό: αναμενόταν ${i.origin} να είναι ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Μη έγκυρη συμβολοσειρά: πρέπει να ξεκινά με "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Μη έγκυρη συμβολοσειρά: πρέπει να τελειώνει με "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Μη έγκυρη συμβολοσειρά: πρέπει να περιέχει "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Μη έγκυρη συμβολοσειρά: πρέπει να ταιριάζει με το μοτίβο ${$.pattern}`;
+                return `Μη έγκυρο: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Μη έγκυρος αριθμός: πρέπει να είναι πολλαπλάσιο του ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Άγνωστ${i.keys.length > 1 ? "α" : "ο"} κλειδ${i.keys.length > 1 ? "ιά" : "ί"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Μη έγκυρο κλειδί στο ${i.origin}`;
+            case "invalid_union":
+                return "Μη έγκυρη είσοδος";
+            case "invalid_element":
+                return `Μη έγκυρη τιμή στο ${i.origin}`;
+            default:
+                return "Μη έγκυρη είσοδος";
+        }
+    };
+};
+function ou() {
+    return { localeError: Yb() };
+}
+var Vb = () => {
+    let r = {
+        string: { unit: "characters", verb: "to have" },
+        file: { unit: "bytes", verb: "to have" },
+        array: { unit: "items", verb: "to have" },
+        set: { unit: "items", verb: "to have" },
+        map: { unit: "entries", verb: "to have" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "email address",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO datetime",
+            date: "ISO date",
+            time: "ISO time",
+            duration: "ISO duration",
+            ipv4: "IPv4 address",
+            ipv6: "IPv6 address",
+            mac: "MAC address",
+            cidrv4: "IPv4 range",
+            cidrv6: "IPv6 range",
+            base64: "base64-encoded string",
+            base64url: "base64url-encoded string",
+            json_string: "JSON string",
+            e164: "E.164 number",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                return `Invalid input: expected ${$}, received ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Invalid input: expected ${k(i.values[0])}`;
+                return `Invalid option: expected one of ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Too big: expected ${i.origin ?? "value"} to have ${$}${i.maximum.toString()} ${u.unit ?? "elements"}`;
+                return `Too big: expected ${i.origin ?? "value"} to be ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Too small: expected ${i.origin} to have ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Too small: expected ${i.origin} to be ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Invalid string: must start with "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Invalid string: must end with "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Invalid string: must include "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Invalid string: must match pattern ${$.pattern}`;
+                return `Invalid ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Invalid number: must be a multiple of ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Unrecognized key${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Invalid key in ${i.origin}`;
+            case "invalid_union":
+                if (
+                    i.options &&
+                    Array.isArray(i.options) &&
+                    i.options.length > 0
+                )
+                    return `Invalid discriminator value. Expected ${i.options.map((u) => `'${u}'`).join(" | ")}`;
+                return "Invalid input";
+            case "invalid_element":
+                return `Invalid value in ${i.origin}`;
+            default:
+                return "Invalid input";
+        }
+    };
+};
+function Pi() {
+    return { localeError: Vb() };
+}
+var Kb = () => {
+    let r = {
+        string: { unit: "karaktrojn", verb: "havi" },
+        file: { unit: "bajtojn", verb: "havi" },
+        array: { unit: "elementojn", verb: "havi" },
+        set: { unit: "elementojn", verb: "havi" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "enigo",
+            email: "retadreso",
+            url: "URL",
+            emoji: "emoĝio",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO-datotempo",
+            date: "ISO-dato",
+            time: "ISO-tempo",
+            duration: "ISO-daŭro",
+            ipv4: "IPv4-adreso",
+            ipv6: "IPv6-adreso",
+            cidrv4: "IPv4-rango",
+            cidrv6: "IPv6-rango",
+            base64: "64-ume kodita karaktraro",
+            base64url: "URL-64-ume kodita karaktraro",
+            json_string: "JSON-karaktraro",
+            e164: "E.164-nombro",
+            jwt: "JWT",
+            template_literal: "enigo",
+        },
+        t = {
+            nan: "NaN",
+            number: "nombro",
+            array: "tabelo",
+            null: "senvalora",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Nevalida enigo: atendiĝis instanceof ${i.expected}, riceviĝis ${g}`;
+                return `Nevalida enigo: atendiĝis ${$}, riceviĝis ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Nevalida enigo: atendiĝis ${k(i.values[0])}`;
+                return `Nevalida opcio: atendiĝis unu el ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Tro granda: atendiĝis ke ${i.origin ?? "valoro"} havu ${$}${i.maximum.toString()} ${u.unit ?? "elementojn"}`;
+                return `Tro granda: atendiĝis ke ${i.origin ?? "valoro"} havu ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Tro malgranda: atendiĝis ke ${i.origin} havu ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Tro malgranda: atendiĝis ke ${i.origin} estu ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Nevalida karaktraro: devas komenciĝi per "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Nevalida karaktraro: devas finiĝi per "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Nevalida karaktraro: devas inkluzivi "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Nevalida karaktraro: devas kongrui kun la modelo ${$.pattern}`;
+                return `Nevalida ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Nevalida nombro: devas esti oblo de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Nekonata${i.keys.length > 1 ? "j" : ""} ŝlosilo${i.keys.length > 1 ? "j" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Nevalida ŝlosilo en ${i.origin}`;
+            case "invalid_union":
+                return "Nevalida enigo";
+            case "invalid_element":
+                return `Nevalida valoro en ${i.origin}`;
+            default:
+                return "Nevalida enigo";
+        }
+    };
+};
+function Uu() {
+    return { localeError: Kb() };
+}
+var Qb = () => {
+    let r = {
+        string: { unit: "caracteres", verb: "tener" },
+        file: { unit: "bytes", verb: "tener" },
+        array: { unit: "elementos", verb: "tener" },
+        set: { unit: "elementos", verb: "tener" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "entrada",
+            email: "dirección de correo electrónico",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "fecha y hora ISO",
+            date: "fecha ISO",
+            time: "hora ISO",
+            duration: "duración ISO",
+            ipv4: "dirección IPv4",
+            ipv6: "dirección IPv6",
+            cidrv4: "rango IPv4",
+            cidrv6: "rango IPv6",
+            base64: "cadena codificada en base64",
+            base64url: "URL codificada en base64",
+            json_string: "cadena JSON",
+            e164: "número E.164",
+            jwt: "JWT",
+            template_literal: "entrada",
+        },
+        t = {
+            nan: "NaN",
+            string: "texto",
+            number: "número",
+            boolean: "booleano",
+            array: "arreglo",
+            object: "objeto",
+            set: "conjunto",
+            file: "archivo",
+            date: "fecha",
+            bigint: "número grande",
+            symbol: "símbolo",
+            undefined: "indefinido",
+            null: "nulo",
+            function: "función",
+            map: "mapa",
+            record: "registro",
+            tuple: "tupla",
+            enum: "enumeración",
+            union: "unión",
+            literal: "literal",
+            promise: "promesa",
+            void: "vacío",
+            never: "nunca",
+            unknown: "desconocido",
+            any: "cualquiera",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Entrada inválida: se esperaba instanceof ${i.expected}, recibido ${g}`;
+                return `Entrada inválida: se esperaba ${$}, recibido ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Entrada inválida: se esperaba ${k(i.values[0])}`;
+                return `Opción inválida: se esperaba una de ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `Demasiado grande: se esperaba que ${g ?? "valor"} tuviera ${$}${i.maximum.toString()} ${u.unit ?? "elementos"}`;
+                return `Demasiado grande: se esperaba que ${g ?? "valor"} fuera ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `Demasiado pequeño: se esperaba que ${g} tuviera ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Demasiado pequeño: se esperaba que ${g} fuera ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Cadena inválida: debe comenzar con "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Cadena inválida: debe terminar en "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Cadena inválida: debe incluir "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Cadena inválida: debe coincidir con el patrón ${$.pattern}`;
+                return `Inválido ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Número inválido: debe ser múltiplo de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Llave${i.keys.length > 1 ? "s" : ""} desconocida${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Llave inválida en ${t[i.origin] ?? i.origin}`;
+            case "invalid_union":
+                return "Entrada inválida";
+            case "invalid_element":
+                return `Valor inválido en ${t[i.origin] ?? i.origin}`;
+            default:
+                return "Entrada inválida";
+        }
+    };
+};
+function bu() {
+    return { localeError: Qb() };
+}
+var Hb = () => {
+    let r = {
+        string: { unit: "کاراکتر", verb: "داشته باشد" },
+        file: { unit: "بایت", verb: "داشته باشد" },
+        array: { unit: "آیتم", verb: "داشته باشد" },
+        set: { unit: "آیتم", verb: "داشته باشد" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ورودی",
+            email: "آدرس ایمیل",
+            url: "URL",
+            emoji: "ایموجی",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "تاریخ و زمان ایزو",
+            date: "تاریخ ایزو",
+            time: "زمان ایزو",
+            duration: "مدت زمان ایزو",
+            ipv4: "IPv4 آدرس",
+            ipv6: "IPv6 آدرس",
+            cidrv4: "IPv4 دامنه",
+            cidrv6: "IPv6 دامنه",
+            base64: "base64-encoded رشته",
+            base64url: "base64url-encoded رشته",
+            json_string: "JSON رشته",
+            e164: "E.164 عدد",
+            jwt: "JWT",
+            template_literal: "ورودی",
+        },
+        t = { nan: "NaN", number: "عدد", array: "آرایه" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `ورودی نامعتبر: می‌بایست instanceof ${i.expected} می‌بود، ${g} دریافت شد`;
+                return `ورودی نامعتبر: می‌بایست ${$} می‌بود، ${g} دریافت شد`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `ورودی نامعتبر: می‌بایست ${k(i.values[0])} می‌بود`;
+                return `گزینه نامعتبر: می‌بایست یکی از ${b(i.values, "|")} می‌بود`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `خیلی بزرگ: ${i.origin ?? "مقدار"} باید ${$}${i.maximum.toString()} ${u.unit ?? "عنصر"} باشد`;
+                return `خیلی بزرگ: ${i.origin ?? "مقدار"} باید ${$}${i.maximum.toString()} باشد`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `خیلی کوچک: ${i.origin} باید ${$}${i.minimum.toString()} ${u.unit} باشد`;
+                return `خیلی کوچک: ${i.origin} باید ${$}${i.minimum.toString()} باشد`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `رشته نامعتبر: باید با "${$.prefix}" شروع شود`;
+                if ($.format === "ends_with")
+                    return `رشته نامعتبر: باید با "${$.suffix}" تمام شود`;
+                if ($.format === "includes")
+                    return `رشته نامعتبر: باید شامل "${$.includes}" باشد`;
+                if ($.format === "regex")
+                    return `رشته نامعتبر: باید با الگوی ${$.pattern} مطابقت داشته باشد`;
+                return `${v[$.format] ?? i.format} نامعتبر`;
+            }
+            case "not_multiple_of":
+                return `عدد نامعتبر: باید مضرب ${i.divisor} باشد`;
+            case "unrecognized_keys":
+                return `کلید${i.keys.length > 1 ? "های" : ""} ناشناس: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `کلید ناشناس در ${i.origin}`;
+            case "invalid_union":
+                return "ورودی نامعتبر";
+            case "invalid_element":
+                return `مقدار نامعتبر در ${i.origin}`;
+            default:
+                return "ورودی نامعتبر";
+        }
+    };
+};
+function Du() {
+    return { localeError: Hb() };
+}
+var Tb = () => {
+    let r = {
+        string: { unit: "merkkiä", subject: "merkkijonon" },
+        file: { unit: "tavua", subject: "tiedoston" },
+        array: { unit: "alkiota", subject: "listan" },
+        set: { unit: "alkiota", subject: "joukon" },
+        number: { unit: "", subject: "luvun" },
+        bigint: { unit: "", subject: "suuren kokonaisluvun" },
+        int: { unit: "", subject: "kokonaisluvun" },
+        date: { unit: "", subject: "päivämäärän" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "säännöllinen lauseke",
+            email: "sähköpostiosoite",
+            url: "URL-osoite",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO-aikaleima",
+            date: "ISO-päivämäärä",
+            time: "ISO-aika",
+            duration: "ISO-kesto",
+            ipv4: "IPv4-osoite",
+            ipv6: "IPv6-osoite",
+            cidrv4: "IPv4-alue",
+            cidrv6: "IPv6-alue",
+            base64: "base64-koodattu merkkijono",
+            base64url: "base64url-koodattu merkkijono",
+            json_string: "JSON-merkkijono",
+            e164: "E.164-luku",
+            jwt: "JWT",
+            template_literal: "templaattimerkkijono",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Virheellinen tyyppi: odotettiin instanceof ${i.expected}, oli ${g}`;
+                return `Virheellinen tyyppi: odotettiin ${$}, oli ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Virheellinen syöte: täytyy olla ${k(i.values[0])}`;
+                return `Virheellinen valinta: täytyy olla yksi seuraavista: ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Liian suuri: ${u.subject} täytyy olla ${$}${i.maximum.toString()} ${u.unit}`.trim();
+                return `Liian suuri: arvon täytyy olla ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Liian pieni: ${u.subject} täytyy olla ${$}${i.minimum.toString()} ${u.unit}`.trim();
+                return `Liian pieni: arvon täytyy olla ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Virheellinen syöte: täytyy alkaa "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Virheellinen syöte: täytyy loppua "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Virheellinen syöte: täytyy sisältää "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Virheellinen syöte: täytyy vastata säännöllistä lauseketta ${$.pattern}`;
+                return `Virheellinen ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Virheellinen luku: täytyy olla luvun ${i.divisor} monikerta`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Tuntemattomat avaimet" : "Tuntematon avain"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return "Virheellinen avain tietueessa";
+            case "invalid_union":
+                return "Virheellinen unioni";
+            case "invalid_element":
+                return "Virheellinen arvo joukossa";
+            default:
+                return "Virheellinen syöte";
+        }
+    };
+};
+function ku() {
+    return { localeError: Tb() };
+}
+var Bb = () => {
+    let r = {
+        string: { unit: "caractères", verb: "avoir" },
+        file: { unit: "octets", verb: "avoir" },
+        array: { unit: "éléments", verb: "avoir" },
+        set: { unit: "éléments", verb: "avoir" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "entrée",
+            email: "adresse e-mail",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "date et heure ISO",
+            date: "date ISO",
+            time: "heure ISO",
+            duration: "durée ISO",
+            ipv4: "adresse IPv4",
+            ipv6: "adresse IPv6",
+            cidrv4: "plage IPv4",
+            cidrv6: "plage IPv6",
+            base64: "chaîne encodée en base64",
+            base64url: "chaîne encodée en base64url",
+            json_string: "chaîne JSON",
+            e164: "numéro E.164",
+            jwt: "JWT",
+            template_literal: "entrée",
+        },
+        t = {
+            string: "chaîne",
+            number: "nombre",
+            int: "entier",
+            boolean: "booléen",
+            bigint: "grand entier",
+            symbol: "symbole",
+            undefined: "indéfini",
+            null: "null",
+            never: "jamais",
+            void: "vide",
+            date: "date",
+            array: "tableau",
+            object: "objet",
+            tuple: "tuple",
+            record: "enregistrement",
+            map: "carte",
+            set: "ensemble",
+            file: "fichier",
+            nonoptional: "non-optionnel",
+            nan: "NaN",
+            function: "fonction",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Entrée invalide : instanceof ${i.expected} attendu, ${g} reçu`;
+                return `Entrée invalide : ${$} attendu, ${g} reçu`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Entrée invalide : ${k(i.values[0])} attendu`;
+                return `Option invalide : une valeur parmi ${b(i.values, "|")} attendue`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Trop grand : ${t[i.origin] ?? "valeur"} doit ${u.verb} ${$}${i.maximum.toString()} ${u.unit ?? "élément(s)"}`;
+                return `Trop grand : ${t[i.origin] ?? "valeur"} doit être ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Trop petit : ${t[i.origin] ?? "valeur"} doit ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Trop petit : ${t[i.origin] ?? "valeur"} doit être ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Chaîne invalide : doit commencer par "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Chaîne invalide : doit se terminer par "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Chaîne invalide : doit inclure "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Chaîne invalide : doit correspondre au modèle ${$.pattern}`;
+                return `${v[$.format] ?? i.format} invalide`;
+            }
+            case "not_multiple_of":
+                return `Nombre invalide : doit être un multiple de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Clé${i.keys.length > 1 ? "s" : ""} non reconnue${i.keys.length > 1 ? "s" : ""} : ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Clé invalide dans ${i.origin}`;
+            case "invalid_union":
+                return "Entrée invalide";
+            case "invalid_element":
+                return `Valeur invalide dans ${i.origin}`;
+            default:
+                return "Entrée invalide";
+        }
+    };
+};
+function lu() {
+    return { localeError: Bb() };
+}
+var Ab = () => {
+    let r = {
+        string: { unit: "caractères", verb: "avoir" },
+        file: { unit: "octets", verb: "avoir" },
+        array: { unit: "éléments", verb: "avoir" },
+        set: { unit: "éléments", verb: "avoir" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "entrée",
+            email: "adresse courriel",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "date-heure ISO",
+            date: "date ISO",
+            time: "heure ISO",
+            duration: "durée ISO",
+            ipv4: "adresse IPv4",
+            ipv6: "adresse IPv6",
+            cidrv4: "plage IPv4",
+            cidrv6: "plage IPv6",
+            base64: "chaîne encodée en base64",
+            base64url: "chaîne encodée en base64url",
+            json_string: "chaîne JSON",
+            e164: "numéro E.164",
+            jwt: "JWT",
+            template_literal: "entrée",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Entrée invalide : attendu instanceof ${i.expected}, reçu ${g}`;
+                return `Entrée invalide : attendu ${$}, reçu ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Entrée invalide : attendu ${k(i.values[0])}`;
+                return `Option invalide : attendu l'une des valeurs suivantes ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "≤" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Trop grand : attendu que ${i.origin ?? "la valeur"} ait ${$}${i.maximum.toString()} ${u.unit}`;
+                return `Trop grand : attendu que ${i.origin ?? "la valeur"} soit ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? "≥" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Trop petit : attendu que ${i.origin} ait ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Trop petit : attendu que ${i.origin} soit ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Chaîne invalide : doit commencer par "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Chaîne invalide : doit se terminer par "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Chaîne invalide : doit inclure "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Chaîne invalide : doit correspondre au motif ${$.pattern}`;
+                return `${v[$.format] ?? i.format} invalide`;
+            }
+            case "not_multiple_of":
+                return `Nombre invalide : doit être un multiple de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Clé${i.keys.length > 1 ? "s" : ""} non reconnue${i.keys.length > 1 ? "s" : ""} : ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Clé invalide dans ${i.origin}`;
+            case "invalid_union":
+                return "Entrée invalide";
+            case "invalid_element":
+                return `Valeur invalide dans ${i.origin}`;
+            default:
+                return "Entrée invalide";
+        }
+    };
+};
+function cu() {
+    return { localeError: Ab() };
+}
+var Mb = () => {
+    let r = {
+            string: { label: "מחרוזת", gender: "f" },
+            number: { label: "מספר", gender: "m" },
+            boolean: { label: "ערך בוליאני", gender: "m" },
+            bigint: { label: "BigInt", gender: "m" },
+            date: { label: "תאריך", gender: "m" },
+            array: { label: "מערך", gender: "m" },
+            object: { label: "אובייקט", gender: "m" },
+            null: { label: "ערך ריק (null)", gender: "m" },
+            undefined: { label: "ערך לא מוגדר (undefined)", gender: "m" },
+            symbol: { label: "סימבול (Symbol)", gender: "m" },
+            function: { label: "פונקציה", gender: "f" },
+            map: { label: "מפה (Map)", gender: "f" },
+            set: { label: "קבוצה (Set)", gender: "f" },
+            file: { label: "קובץ", gender: "m" },
+            promise: { label: "Promise", gender: "m" },
+            NaN: { label: "NaN", gender: "m" },
+            unknown: { label: "ערך לא ידוע", gender: "m" },
+            value: { label: "ערך", gender: "m" },
+        },
+        n = {
+            string: { unit: "תווים", shortLabel: "קצר", longLabel: "ארוך" },
+            file: { unit: "בייטים", shortLabel: "קטן", longLabel: "גדול" },
+            array: { unit: "פריטים", shortLabel: "קטן", longLabel: "גדול" },
+            set: { unit: "פריטים", shortLabel: "קטן", longLabel: "גדול" },
+            number: { unit: "", shortLabel: "קטן", longLabel: "גדול" },
+        },
+        v = (I) => (I ? r[I] : void 0),
+        t = (I) => {
+            let o = v(I);
+            if (o) return o.label;
+            return I ?? r.unknown.label;
+        },
+        i = (I) => `ה${t(I)}`,
+        $ = (I) => {
+            return (v(I)?.gender ?? "m") === "f" ? "צריכה להיות" : "צריך להיות";
+        },
+        u = (I) => {
+            if (!I) return null;
+            return n[I] ?? null;
+        },
+        g = {
+            regex: { label: "קלט", gender: "m" },
+            email: { label: "כתובת אימייל", gender: "f" },
+            url: { label: "כתובת רשת", gender: "f" },
+            emoji: { label: "אימוג'י", gender: "m" },
+            uuid: { label: "UUID", gender: "m" },
+            nanoid: { label: "nanoid", gender: "m" },
+            guid: { label: "GUID", gender: "m" },
+            cuid: { label: "cuid", gender: "m" },
+            cuid2: { label: "cuid2", gender: "m" },
+            ulid: { label: "ULID", gender: "m" },
+            xid: { label: "XID", gender: "m" },
+            ksuid: { label: "KSUID", gender: "m" },
+            datetime: { label: "תאריך וזמן ISO", gender: "m" },
+            date: { label: "תאריך ISO", gender: "m" },
+            time: { label: "זמן ISO", gender: "m" },
+            duration: { label: "משך זמן ISO", gender: "m" },
+            ipv4: { label: "כתובת IPv4", gender: "f" },
+            ipv6: { label: "כתובת IPv6", gender: "f" },
+            cidrv4: { label: "טווח IPv4", gender: "m" },
+            cidrv6: { label: "טווח IPv6", gender: "m" },
+            base64: { label: "מחרוזת בבסיס 64", gender: "f" },
+            base64url: { label: "מחרוזת בבסיס 64 לכתובות רשת", gender: "f" },
+            json_string: { label: "מחרוזת JSON", gender: "f" },
+            e164: { label: "מספר E.164", gender: "m" },
+            jwt: { label: "JWT", gender: "m" },
+            ends_with: { label: "קלט", gender: "m" },
+            includes: { label: "קלט", gender: "m" },
+            lowercase: { label: "קלט", gender: "m" },
+            starts_with: { label: "קלט", gender: "m" },
+            uppercase: { label: "קלט", gender: "m" },
+        },
+        _ = { nan: "NaN" };
+    return (I) => {
+        switch (I.code) {
+            case "invalid_type": {
+                let o = I.expected,
+                    D = _[o ?? ""] ?? t(o),
+                    S = l(I.input),
+                    c = _[S] ?? r[S]?.label ?? S;
+                if (/^[A-Z]/.test(I.expected))
+                    return `קלט לא תקין: צריך להיות instanceof ${I.expected}, התקבל ${c}`;
+                return `קלט לא תקין: צריך להיות ${D}, התקבל ${c}`;
+            }
+            case "invalid_value": {
+                if (I.values.length === 1)
+                    return `ערך לא תקין: הערך חייב להיות ${k(I.values[0])}`;
+                let o = I.values.map((c) => k(c));
+                if (I.values.length === 2)
+                    return `ערך לא תקין: האפשרויות המתאימות הן ${o[0]} או ${o[1]}`;
+                let D = o[o.length - 1];
+                return `ערך לא תקין: האפשרויות המתאימות הן ${o.slice(0, -1).join(", ")} או ${D}`;
+            }
+            case "too_big": {
+                let o = u(I.origin),
+                    D = i(I.origin ?? "value");
+                if (I.origin === "string")
+                    return `${o?.longLabel ?? "ארוך"} מדי: ${D} צריכה להכיל ${I.maximum.toString()} ${o?.unit ?? ""} ${I.inclusive ? "או פחות" : "לכל היותר"}`.trim();
+                if (I.origin === "number") {
+                    let j = I.inclusive
+                        ? `קטן או שווה ל-${I.maximum}`
+                        : `קטן מ-${I.maximum}`;
+                    return `גדול מדי: ${D} צריך להיות ${j}`;
+                }
+                if (I.origin === "array" || I.origin === "set") {
+                    let j = I.origin === "set" ? "צריכה" : "צריך",
+                        R = I.inclusive
+                            ? `${I.maximum} ${o?.unit ?? ""} או פחות`
+                            : `פחות מ-${I.maximum} ${o?.unit ?? ""}`;
+                    return `גדול מדי: ${D} ${j} להכיל ${R}`.trim();
+                }
+                let S = I.inclusive ? "<=" : "<",
+                    c = $(I.origin ?? "value");
+                if (o?.unit)
+                    return `${o.longLabel} מדי: ${D} ${c} ${S}${I.maximum.toString()} ${o.unit}`;
+                return `${o?.longLabel ?? "גדול"} מדי: ${D} ${c} ${S}${I.maximum.toString()}`;
+            }
+            case "too_small": {
+                let o = u(I.origin),
+                    D = i(I.origin ?? "value");
+                if (I.origin === "string")
+                    return `${o?.shortLabel ?? "קצר"} מדי: ${D} צריכה להכיל ${I.minimum.toString()} ${o?.unit ?? ""} ${I.inclusive ? "או יותר" : "לפחות"}`.trim();
+                if (I.origin === "number") {
+                    let j = I.inclusive
+                        ? `גדול או שווה ל-${I.minimum}`
+                        : `גדול מ-${I.minimum}`;
+                    return `קטן מדי: ${D} צריך להיות ${j}`;
+                }
+                if (I.origin === "array" || I.origin === "set") {
+                    let j = I.origin === "set" ? "צריכה" : "צריך";
+                    if (I.minimum === 1 && I.inclusive) {
+                        let K =
+                            I.origin === "set"
+                                ? "לפחות פריט אחד"
+                                : "לפחות פריט אחד";
+                        return `קטן מדי: ${D} ${j} להכיל ${K}`;
+                    }
+                    let R = I.inclusive
+                        ? `${I.minimum} ${o?.unit ?? ""} או יותר`
+                        : `יותר מ-${I.minimum} ${o?.unit ?? ""}`;
+                    return `קטן מדי: ${D} ${j} להכיל ${R}`.trim();
+                }
+                let S = I.inclusive ? ">=" : ">",
+                    c = $(I.origin ?? "value");
+                if (o?.unit)
+                    return `${o.shortLabel} מדי: ${D} ${c} ${S}${I.minimum.toString()} ${o.unit}`;
+                return `${o?.shortLabel ?? "קטן"} מדי: ${D} ${c} ${S}${I.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let o = I;
+                if (o.format === "starts_with")
+                    return `המחרוזת חייבת להתחיל ב "${o.prefix}"`;
+                if (o.format === "ends_with")
+                    return `המחרוזת חייבת להסתיים ב "${o.suffix}"`;
+                if (o.format === "includes")
+                    return `המחרוזת חייבת לכלול "${o.includes}"`;
+                if (o.format === "regex")
+                    return `המחרוזת חייבת להתאים לתבנית ${o.pattern}`;
+                let D = g[o.format],
+                    S = D?.label ?? o.format,
+                    j = (D?.gender ?? "m") === "f" ? "תקינה" : "תקין";
+                return `${S} לא ${j}`;
+            }
+            case "not_multiple_of":
+                return `מספר לא תקין: חייב להיות מכפלה של ${I.divisor}`;
+            case "unrecognized_keys":
+                return `מפתח${I.keys.length > 1 ? "ות" : ""} לא מזוה${I.keys.length > 1 ? "ים" : "ה"}: ${b(I.keys, ", ")}`;
+            case "invalid_key":
+                return "שדה לא תקין באובייקט";
+            case "invalid_union":
+                return "קלט לא תקין";
+            case "invalid_element":
+                return `ערך לא תקין ב${i(I.origin ?? "array")}`;
+            default:
+                return "קלט לא תקין";
+        }
+    };
+};
+function wu() {
+    return { localeError: Mb() };
+}
+var Fb = () => {
+    let r = {
+        string: { unit: "znakova", verb: "imati" },
+        file: { unit: "bajtova", verb: "imati" },
+        array: { unit: "stavki", verb: "imati" },
+        set: { unit: "stavki", verb: "imati" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "unos",
+            email: "email adresa",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO datum i vrijeme",
+            date: "ISO datum",
+            time: "ISO vrijeme",
+            duration: "ISO trajanje",
+            ipv4: "IPv4 adresa",
+            ipv6: "IPv6 adresa",
+            cidrv4: "IPv4 raspon",
+            cidrv6: "IPv6 raspon",
+            base64: "base64 kodirani tekst",
+            base64url: "base64url kodirani tekst",
+            json_string: "JSON tekst",
+            e164: "E.164 broj",
+            jwt: "JWT",
+            template_literal: "unos",
+        },
+        t = {
+            nan: "NaN",
+            string: "tekst",
+            number: "broj",
+            boolean: "boolean",
+            array: "niz",
+            object: "objekt",
+            set: "skup",
+            file: "datoteka",
+            date: "datum",
+            bigint: "bigint",
+            symbol: "simbol",
+            undefined: "undefined",
+            null: "null",
+            function: "funkcija",
+            map: "mapa",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Neispravan unos: očekuje se instanceof ${i.expected}, a primljeno je ${g}`;
+                return `Neispravan unos: očekuje se ${$}, a primljeno je ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Neispravna vrijednost: očekivano ${k(i.values[0])}`;
+                return `Neispravna opcija: očekivano jedno od ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `Preveliko: očekivano da ${g ?? "vrijednost"} ima ${$}${i.maximum.toString()} ${u.unit ?? "elemenata"}`;
+                return `Preveliko: očekivano da ${g ?? "vrijednost"} bude ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin),
+                    g = t[i.origin] ?? i.origin;
+                if (u)
+                    return `Premalo: očekivano da ${g} ima ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Premalo: očekivano da ${g} bude ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Neispravan tekst: mora započinjati s "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Neispravan tekst: mora završavati s "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Neispravan tekst: mora sadržavati "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Neispravan tekst: mora odgovarati uzorku ${$.pattern}`;
+                return `Neispravna ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Neispravan broj: mora biti višekratnik od ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Neprepoznat${i.keys.length > 1 ? "i ključevi" : " ključ"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Neispravan ključ u ${t[i.origin] ?? i.origin}`;
+            case "invalid_union":
+                return "Neispravan unos";
+            case "invalid_element":
+                return `Neispravna vrijednost u ${t[i.origin] ?? i.origin}`;
+            default:
+                return "Neispravan unos";
+        }
+    };
+};
+function Su() {
+    return { localeError: Fb() };
+}
+var Rb = () => {
+    let r = {
+        string: { unit: "karakter", verb: "legyen" },
+        file: { unit: "byte", verb: "legyen" },
+        array: { unit: "elem", verb: "legyen" },
+        set: { unit: "elem", verb: "legyen" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "bemenet",
+            email: "email cím",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO időbélyeg",
+            date: "ISO dátum",
+            time: "ISO idő",
+            duration: "ISO időintervallum",
+            ipv4: "IPv4 cím",
+            ipv6: "IPv6 cím",
+            cidrv4: "IPv4 tartomány",
+            cidrv6: "IPv6 tartomány",
+            base64: "base64-kódolt string",
+            base64url: "base64url-kódolt string",
+            json_string: "JSON string",
+            e164: "E.164 szám",
+            jwt: "JWT",
+            template_literal: "bemenet",
+        },
+        t = { nan: "NaN", number: "szám", array: "tömb" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Érvénytelen bemenet: a várt érték instanceof ${i.expected}, a kapott érték ${g}`;
+                return `Érvénytelen bemenet: a várt érték ${$}, a kapott érték ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Érvénytelen bemenet: a várt érték ${k(i.values[0])}`;
+                return `Érvénytelen opció: valamelyik érték várt ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Túl nagy: ${i.origin ?? "érték"} mérete túl nagy ${$}${i.maximum.toString()} ${u.unit ?? "elem"}`;
+                return `Túl nagy: a bemeneti érték ${i.origin ?? "érték"} túl nagy: ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Túl kicsi: a bemeneti érték ${i.origin} mérete túl kicsi ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Túl kicsi: a bemeneti érték ${i.origin} túl kicsi ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Érvénytelen string: "${$.prefix}" értékkel kell kezdődnie`;
+                if ($.format === "ends_with")
+                    return `Érvénytelen string: "${$.suffix}" értékkel kell végződnie`;
+                if ($.format === "includes")
+                    return `Érvénytelen string: "${$.includes}" értéket kell tartalmaznia`;
+                if ($.format === "regex")
+                    return `Érvénytelen string: ${$.pattern} mintának kell megfelelnie`;
+                return `Érvénytelen ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Érvénytelen szám: ${i.divisor} többszörösének kell lennie`;
+            case "unrecognized_keys":
+                return `Ismeretlen kulcs${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Érvénytelen kulcs ${i.origin}`;
+            case "invalid_union":
+                return "Érvénytelen bemenet";
+            case "invalid_element":
+                return `Érvénytelen érték: ${i.origin}`;
+            default:
+                return "Érvénytelen bemenet";
+        }
+    };
+};
+function Nu() {
+    return { localeError: Rb() };
+}
+function B6(r, n, v) {
+    return Math.abs(r) === 1 ? n : v;
+}
+function Tr(r) {
+    if (!r) return "";
+    let n = ["ա", "ե", "ը", "ի", "ո", "ու", "օ"],
+        v = r[r.length - 1];
+    return r + (n.includes(v) ? "ն" : "ը");
+}
+var Zb = () => {
+    let r = {
+        string: { unit: { one: "նշան", many: "նշաններ" }, verb: "ունենալ" },
+        file: { unit: { one: "բայթ", many: "բայթեր" }, verb: "ունենալ" },
+        array: { unit: { one: "տարր", many: "տարրեր" }, verb: "ունենալ" },
+        set: { unit: { one: "տարր", many: "տարրեր" }, verb: "ունենալ" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "մուտք",
+            email: "էլ. հասցե",
+            url: "URL",
+            emoji: "էմոջի",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO ամսաթիվ և ժամ",
+            date: "ISO ամսաթիվ",
+            time: "ISO ժամ",
+            duration: "ISO տևողություն",
+            ipv4: "IPv4 հասցե",
+            ipv6: "IPv6 հասցե",
+            cidrv4: "IPv4 միջակայք",
+            cidrv6: "IPv6 միջակայք",
+            base64: "base64 ձևաչափով տող",
+            base64url: "base64url ձևաչափով տող",
+            json_string: "JSON տող",
+            e164: "E.164 համար",
+            jwt: "JWT",
+            template_literal: "մուտք",
+        },
+        t = { nan: "NaN", number: "թիվ", array: "զանգված" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Սխալ մուտքագրում․ սպասվում էր instanceof ${i.expected}, ստացվել է ${g}`;
+                return `Սխալ մուտքագրում․ սպասվում էր ${$}, ստացվել է ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Սխալ մուտքագրում․ սպասվում էր ${k(i.values[1])}`;
+                return `Սխալ տարբերակ․ սպասվում էր հետևյալներից մեկը՝ ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.maximum),
+                        _ = B6(g, u.unit.one, u.unit.many);
+                    return `Չափազանց մեծ արժեք․ սպասվում է, որ ${Tr(i.origin ?? "արժեք")} կունենա ${$}${i.maximum.toString()} ${_}`;
+                }
+                return `Չափազանց մեծ արժեք․ սպասվում է, որ ${Tr(i.origin ?? "արժեք")} լինի ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.minimum),
+                        _ = B6(g, u.unit.one, u.unit.many);
+                    return `Չափազանց փոքր արժեք․ սպասվում է, որ ${Tr(i.origin)} կունենա ${$}${i.minimum.toString()} ${_}`;
+                }
+                return `Չափազանց փոքր արժեք․ սպասվում է, որ ${Tr(i.origin)} լինի ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Սխալ տող․ պետք է սկսվի "${$.prefix}"-ով`;
+                if ($.format === "ends_with")
+                    return `Սխալ տող․ պետք է ավարտվի "${$.suffix}"-ով`;
+                if ($.format === "includes")
+                    return `Սխալ տող․ պետք է պարունակի "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Սխալ տող․ պետք է համապատասխանի ${$.pattern} ձևաչափին`;
+                return `Սխալ ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Սխալ թիվ․ պետք է բազմապատիկ լինի ${i.divisor}-ի`;
+            case "unrecognized_keys":
+                return `Չճանաչված բանալի${i.keys.length > 1 ? "ներ" : ""}. ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Սխալ բանալի ${Tr(i.origin)}-ում`;
+            case "invalid_union":
+                return "Սխալ մուտքագրում";
+            case "invalid_element":
+                return `Սխալ արժեք ${Tr(i.origin)}-ում`;
+            default:
+                return "Սխալ մուտքագրում";
+        }
+    };
+};
+function zu() {
+    return { localeError: Zb() };
+}
+var eb = () => {
+    let r = {
+        string: { unit: "karakter", verb: "memiliki" },
+        file: { unit: "byte", verb: "memiliki" },
+        array: { unit: "item", verb: "memiliki" },
+        set: { unit: "item", verb: "memiliki" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "alamat email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "tanggal dan waktu format ISO",
+            date: "tanggal format ISO",
+            time: "jam format ISO",
+            duration: "durasi format ISO",
+            ipv4: "alamat IPv4",
+            ipv6: "alamat IPv6",
+            cidrv4: "rentang alamat IPv4",
+            cidrv6: "rentang alamat IPv6",
+            base64: "string dengan enkode base64",
+            base64url: "string dengan enkode base64url",
+            json_string: "string JSON",
+            e164: "angka E.164",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Input tidak valid: diharapkan instanceof ${i.expected}, diterima ${g}`;
+                return `Input tidak valid: diharapkan ${$}, diterima ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Input tidak valid: diharapkan ${k(i.values[0])}`;
+                return `Pilihan tidak valid: diharapkan salah satu dari ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Terlalu besar: diharapkan ${i.origin ?? "value"} memiliki ${$}${i.maximum.toString()} ${u.unit ?? "elemen"}`;
+                return `Terlalu besar: diharapkan ${i.origin ?? "value"} menjadi ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Terlalu kecil: diharapkan ${i.origin} memiliki ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Terlalu kecil: diharapkan ${i.origin} menjadi ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `String tidak valid: harus dimulai dengan "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `String tidak valid: harus berakhir dengan "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `String tidak valid: harus menyertakan "${$.includes}"`;
+                if ($.format === "regex")
+                    return `String tidak valid: harus sesuai pola ${$.pattern}`;
+                return `${v[$.format] ?? i.format} tidak valid`;
+            }
+            case "not_multiple_of":
+                return `Angka tidak valid: harus kelipatan dari ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Kunci tidak dikenali ${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Kunci tidak valid di ${i.origin}`;
+            case "invalid_union":
+                return "Input tidak valid";
+            case "invalid_element":
+                return `Nilai tidak valid di ${i.origin}`;
+            default:
+                return "Input tidak valid";
+        }
+    };
+};
+function ju() {
+    return { localeError: eb() };
+}
+var xb = () => {
+    let r = {
+        string: { unit: "stafi", verb: "að hafa" },
+        file: { unit: "bæti", verb: "að hafa" },
+        array: { unit: "hluti", verb: "að hafa" },
+        set: { unit: "hluti", verb: "að hafa" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "gildi",
+            email: "netfang",
+            url: "vefslóð",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO dagsetning og tími",
+            date: "ISO dagsetning",
+            time: "ISO tími",
+            duration: "ISO tímalengd",
+            ipv4: "IPv4 address",
+            ipv6: "IPv6 address",
+            cidrv4: "IPv4 range",
+            cidrv6: "IPv6 range",
+            base64: "base64-encoded strengur",
+            base64url: "base64url-encoded strengur",
+            json_string: "JSON strengur",
+            e164: "E.164 tölugildi",
+            jwt: "JWT",
+            template_literal: "gildi",
+        },
+        t = { nan: "NaN", number: "númer", array: "fylki" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Rangt gildi: Þú slóst inn ${g} þar sem á að vera instanceof ${i.expected}`;
+                return `Rangt gildi: Þú slóst inn ${g} þar sem á að vera ${$}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Rangt gildi: gert ráð fyrir ${k(i.values[0])}`;
+                return `Ógilt val: má vera eitt af eftirfarandi ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Of stórt: gert er ráð fyrir að ${i.origin ?? "gildi"} hafi ${$}${i.maximum.toString()} ${u.unit ?? "hluti"}`;
+                return `Of stórt: gert er ráð fyrir að ${i.origin ?? "gildi"} sé ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Of lítið: gert er ráð fyrir að ${i.origin} hafi ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Of lítið: gert er ráð fyrir að ${i.origin} sé ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ógildur strengur: verður að byrja á "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Ógildur strengur: verður að enda á "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Ógildur strengur: verður að innihalda "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Ógildur strengur: verður að fylgja mynstri ${$.pattern}`;
+                return `Rangt ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Röng tala: verður að vera margfeldi af ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Óþekkt ${i.keys.length > 1 ? "ir lyklar" : "ur lykill"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Rangur lykill í ${i.origin}`;
+            case "invalid_union":
+                return "Rangt gildi";
+            case "invalid_element":
+                return `Rangt gildi í ${i.origin}`;
+            default:
+                return "Rangt gildi";
+        }
+    };
+};
+function Pu() {
+    return { localeError: xb() };
+}
+var fb = () => {
+    let r = {
+        string: { unit: "caratteri", verb: "avere" },
+        file: { unit: "byte", verb: "avere" },
+        array: { unit: "elementi", verb: "avere" },
+        set: { unit: "elementi", verb: "avere" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "indirizzo email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "data e ora ISO",
+            date: "data ISO",
+            time: "ora ISO",
+            duration: "durata ISO",
+            ipv4: "indirizzo IPv4",
+            ipv6: "indirizzo IPv6",
+            cidrv4: "intervallo IPv4",
+            cidrv6: "intervallo IPv6",
+            base64: "stringa codificata in base64",
+            base64url: "URL codificata in base64",
+            json_string: "stringa JSON",
+            e164: "numero E.164",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN", number: "numero", array: "vettore" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Input non valido: atteso instanceof ${i.expected}, ricevuto ${g}`;
+                return `Input non valido: atteso ${$}, ricevuto ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Input non valido: atteso ${k(i.values[0])}`;
+                return `Opzione non valida: atteso uno tra ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Troppo grande: ${i.origin ?? "valore"} deve avere ${$}${i.maximum.toString()} ${u.unit ?? "elementi"}`;
+                return `Troppo grande: ${i.origin ?? "valore"} deve essere ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Troppo piccolo: ${i.origin} deve avere ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Troppo piccolo: ${i.origin} deve essere ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Stringa non valida: deve iniziare con "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Stringa non valida: deve terminare con "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Stringa non valida: deve includere "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Stringa non valida: deve corrispondere al pattern ${$.pattern}`;
+                return `Input non valido: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Numero non valido: deve essere un multiplo di ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Chiav${i.keys.length > 1 ? "i" : "e"} non riconosciut${i.keys.length > 1 ? "e" : "a"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Chiave non valida in ${i.origin}`;
+            case "invalid_union":
+                return "Input non valido";
+            case "invalid_element":
+                return `Valore non valido in ${i.origin}`;
+            default:
+                return "Input non valido";
+        }
+    };
+};
+function Ju() {
+    return { localeError: fb() };
+}
+var Cb = () => {
+    let r = {
+        string: { unit: "文字", verb: "である" },
+        file: { unit: "バイト", verb: "である" },
+        array: { unit: "要素", verb: "である" },
+        set: { unit: "要素", verb: "である" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "入力値",
+            email: "メールアドレス",
+            url: "URL",
+            emoji: "絵文字",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO日時",
+            date: "ISO日付",
+            time: "ISO時刻",
+            duration: "ISO期間",
+            ipv4: "IPv4アドレス",
+            ipv6: "IPv6アドレス",
+            cidrv4: "IPv4範囲",
+            cidrv6: "IPv6範囲",
+            base64: "base64エンコード文字列",
+            base64url: "base64urlエンコード文字列",
+            json_string: "JSON文字列",
+            e164: "E.164番号",
+            jwt: "JWT",
+            template_literal: "入力値",
+        },
+        t = { nan: "NaN", number: "数値", array: "配列" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `無効な入力: instanceof ${i.expected}が期待されましたが、${g}が入力されました`;
+                return `無効な入力: ${$}が期待されましたが、${g}が入力されました`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `無効な入力: ${k(i.values[0])}が期待されました`;
+                return `無効な選択: ${b(i.values, "、")}のいずれかである必要があります`;
+            case "too_big": {
+                let $ = i.inclusive ? "以下である" : "より小さい",
+                    u = n(i.origin);
+                if (u)
+                    return `大きすぎる値: ${i.origin ?? "値"}は${i.maximum.toString()}${u.unit ?? "要素"}${$}必要があります`;
+                return `大きすぎる値: ${i.origin ?? "値"}は${i.maximum.toString()}${$}必要があります`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? "以上である" : "より大きい",
+                    u = n(i.origin);
+                if (u)
+                    return `小さすぎる値: ${i.origin}は${i.minimum.toString()}${u.unit}${$}必要があります`;
+                return `小さすぎる値: ${i.origin}は${i.minimum.toString()}${$}必要があります`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `無効な文字列: "${$.prefix}"で始まる必要があります`;
+                if ($.format === "ends_with")
+                    return `無効な文字列: "${$.suffix}"で終わる必要があります`;
+                if ($.format === "includes")
+                    return `無効な文字列: "${$.includes}"を含む必要があります`;
+                if ($.format === "regex")
+                    return `無効な文字列: パターン${$.pattern}に一致する必要があります`;
+                return `無効な${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `無効な数値: ${i.divisor}の倍数である必要があります`;
+            case "unrecognized_keys":
+                return `認識されていないキー${i.keys.length > 1 ? "群" : ""}: ${b(i.keys, "、")}`;
+            case "invalid_key":
+                return `${i.origin}内の無効なキー`;
+            case "invalid_union":
+                return "無効な入力";
+            case "invalid_element":
+                return `${i.origin}内の無効な値`;
+            default:
+                return "無効な入力";
+        }
+    };
+};
+function Lu() {
+    return { localeError: Cb() };
+}
+var mb = () => {
+    let r = {
+        string: { unit: "სიმბოლო", verb: "უნდა შეიცავდეს" },
+        file: { unit: "ბაიტი", verb: "უნდა შეიცავდეს" },
+        array: { unit: "ელემენტი", verb: "უნდა შეიცავდეს" },
+        set: { unit: "ელემენტი", verb: "უნდა შეიცავდეს" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "შეყვანა",
+            email: "ელ-ფოსტის მისამართი",
+            url: "URL",
+            emoji: "ემოჯი",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "თარიღი-დრო",
+            date: "თარიღი",
+            time: "დრო",
+            duration: "ხანგრძლივობა",
+            ipv4: "IPv4 მისამართი",
+            ipv6: "IPv6 მისამართი",
+            cidrv4: "IPv4 დიაპაზონი",
+            cidrv6: "IPv6 დიაპაზონი",
+            base64: "base64-კოდირებული ველი",
+            base64url: "base64url-კოდირებული ველი",
+            json_string: "JSON ველი",
+            e164: "E.164 ნომერი",
+            jwt: "JWT",
+            template_literal: "შეყვანა",
+        },
+        t = {
+            nan: "NaN",
+            number: "რიცხვი",
+            string: "ველი",
+            boolean: "ბულეანი",
+            function: "ფუნქცია",
+            array: "მასივი",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `არასწორი შეყვანა: მოსალოდნელი instanceof ${i.expected}, მიღებული ${g}`;
+                return `არასწორი შეყვანა: მოსალოდნელი ${$}, მიღებული ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `არასწორი შეყვანა: მოსალოდნელი ${k(i.values[0])}`;
+                return `არასწორი ვარიანტი: მოსალოდნელია ერთ-ერთი ${b(i.values, "|")}-დან`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `ზედმეტად დიდი: მოსალოდნელი ${i.origin ?? "მნიშვნელობა"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit}`;
+                return `ზედმეტად დიდი: მოსალოდნელი ${i.origin ?? "მნიშვნელობა"} იყოს ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `ზედმეტად პატარა: მოსალოდნელი ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `ზედმეტად პატარა: მოსალოდნელი ${i.origin} იყოს ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `არასწორი ველი: უნდა იწყებოდეს "${$.prefix}"-ით`;
+                if ($.format === "ends_with")
+                    return `არასწორი ველი: უნდა მთავრდებოდეს "${$.suffix}"-ით`;
+                if ($.format === "includes")
+                    return `არასწორი ველი: უნდა შეიცავდეს "${$.includes}"-ს`;
+                if ($.format === "regex")
+                    return `არასწორი ველი: უნდა შეესაბამებოდეს შაბლონს ${$.pattern}`;
+                return `არასწორი ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `არასწორი რიცხვი: უნდა იყოს ${i.divisor}-ის ჯერადი`;
+            case "unrecognized_keys":
+                return `უცნობი გასაღებ${i.keys.length > 1 ? "ები" : "ი"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `არასწორი გასაღები ${i.origin}-ში`;
+            case "invalid_union":
+                return "არასწორი შეყვანა";
+            case "invalid_element":
+                return `არასწორი მნიშვნელობა ${i.origin}-ში`;
+            default:
+                return "არასწორი შეყვანა";
+        }
+    };
+};
+function Gu() {
+    return { localeError: mb() };
+}
+var yb = () => {
+    let r = {
+        string: { unit: "តួអក្សរ", verb: "គួរមាន" },
+        file: { unit: "បៃ", verb: "គួរមាន" },
+        array: { unit: "ធាតុ", verb: "គួរមាន" },
+        set: { unit: "ធាតុ", verb: "គួរមាន" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ទិន្នន័យបញ្ចូល",
+            email: "អាសយដ្ឋានអ៊ីមែល",
+            url: "URL",
+            emoji: "សញ្ញាអារម្មណ៍",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "កាលបរិច្ឆេទ និងម៉ោង ISO",
+            date: "កាលបរិច្ឆេទ ISO",
+            time: "ម៉ោង ISO",
+            duration: "រយៈពេល ISO",
+            ipv4: "អាសយដ្ឋាន IPv4",
+            ipv6: "អាសយដ្ឋាន IPv6",
+            cidrv4: "ដែនអាសយដ្ឋាន IPv4",
+            cidrv6: "ដែនអាសយដ្ឋាន IPv6",
+            base64: "ខ្សែអក្សរអ៊ិកូដ base64",
+            base64url: "ខ្សែអក្សរអ៊ិកូដ base64url",
+            json_string: "ខ្សែអក្សរ JSON",
+            e164: "លេខ E.164",
+            jwt: "JWT",
+            template_literal: "ទិន្នន័យបញ្ចូល",
+        },
+        t = {
+            nan: "NaN",
+            number: "លេខ",
+            array: "អារេ (Array)",
+            null: "គ្មានតម្លៃ (null)",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ instanceof ${i.expected} ប៉ុន្តែទទួលបាន ${g}`;
+                return `ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ ${$} ប៉ុន្តែទទួលបាន ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `ទិន្នន័យបញ្ចូលមិនត្រឹមត្រូវ៖ ត្រូវការ ${k(i.values[0])}`;
+                return `ជម្រើសមិនត្រឹមត្រូវ៖ ត្រូវជាមួយក្នុងចំណោម ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `ធំពេក៖ ត្រូវការ ${i.origin ?? "តម្លៃ"} ${$} ${i.maximum.toString()} ${u.unit ?? "ធាតុ"}`;
+                return `ធំពេក៖ ត្រូវការ ${i.origin ?? "តម្លៃ"} ${$} ${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `តូចពេក៖ ត្រូវការ ${i.origin} ${$} ${i.minimum.toString()} ${u.unit}`;
+                return `តូចពេក៖ ត្រូវការ ${i.origin} ${$} ${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវចាប់ផ្តើមដោយ "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវបញ្ចប់ដោយ "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវមាន "${$.includes}"`;
+                if ($.format === "regex")
+                    return `ខ្សែអក្សរមិនត្រឹមត្រូវ៖ ត្រូវតែផ្គូផ្គងនឹងទម្រង់ដែលបានកំណត់ ${$.pattern}`;
+                return `មិនត្រឹមត្រូវ៖ ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `លេខមិនត្រឹមត្រូវ៖ ត្រូវតែជាពហុគុណនៃ ${i.divisor}`;
+            case "unrecognized_keys":
+                return `រកឃើញសោមិនស្គាល់៖ ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `សោមិនត្រឹមត្រូវនៅក្នុង ${i.origin}`;
+            case "invalid_union":
+                return "ទិន្នន័យមិនត្រឹមត្រូវ";
+            case "invalid_element":
+                return `ទិន្នន័យមិនត្រឹមត្រូវនៅក្នុង ${i.origin}`;
+            default:
+                return "ទិន្នន័យមិនត្រឹមត្រូវ";
+        }
+    };
+};
+function Ji() {
+    return { localeError: yb() };
+}
+function Xu() {
+    return Ji();
+}
+var hb = () => {
+    let r = {
+        string: { unit: "문자", verb: "to have" },
+        file: { unit: "바이트", verb: "to have" },
+        array: { unit: "개", verb: "to have" },
+        set: { unit: "개", verb: "to have" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "입력",
+            email: "이메일 주소",
+            url: "URL",
+            emoji: "이모지",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO 날짜시간",
+            date: "ISO 날짜",
+            time: "ISO 시간",
+            duration: "ISO 기간",
+            ipv4: "IPv4 주소",
+            ipv6: "IPv6 주소",
+            cidrv4: "IPv4 범위",
+            cidrv6: "IPv6 범위",
+            base64: "base64 인코딩 문자열",
+            base64url: "base64url 인코딩 문자열",
+            json_string: "JSON 문자열",
+            e164: "E.164 번호",
+            jwt: "JWT",
+            template_literal: "입력",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `잘못된 입력: 예상 타입은 instanceof ${i.expected}, 받은 타입은 ${g}입니다`;
+                return `잘못된 입력: 예상 타입은 ${$}, 받은 타입은 ${g}입니다`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `잘못된 입력: 값은 ${k(i.values[0])} 이어야 합니다`;
+                return `잘못된 옵션: ${b(i.values, "또는 ")} 중 하나여야 합니다`;
+            case "too_big": {
+                let $ = i.inclusive ? "이하" : "미만",
+                    u = $ === "미만" ? "이어야 합니다" : "여야 합니다",
+                    g = n(i.origin),
+                    _ = g?.unit ?? "요소";
+                if (g)
+                    return `${i.origin ?? "값"}이 너무 큽니다: ${i.maximum.toString()}${_} ${$}${u}`;
+                return `${i.origin ?? "값"}이 너무 큽니다: ${i.maximum.toString()} ${$}${u}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? "이상" : "초과",
+                    u = $ === "이상" ? "이어야 합니다" : "여야 합니다",
+                    g = n(i.origin),
+                    _ = g?.unit ?? "요소";
+                if (g)
+                    return `${i.origin ?? "값"}이 너무 작습니다: ${i.minimum.toString()}${_} ${$}${u}`;
+                return `${i.origin ?? "값"}이 너무 작습니다: ${i.minimum.toString()} ${$}${u}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `잘못된 문자열: "${$.prefix}"(으)로 시작해야 합니다`;
+                if ($.format === "ends_with")
+                    return `잘못된 문자열: "${$.suffix}"(으)로 끝나야 합니다`;
+                if ($.format === "includes")
+                    return `잘못된 문자열: "${$.includes}"을(를) 포함해야 합니다`;
+                if ($.format === "regex")
+                    return `잘못된 문자열: 정규식 ${$.pattern} 패턴과 일치해야 합니다`;
+                return `잘못된 ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `잘못된 숫자: ${i.divisor}의 배수여야 합니다`;
+            case "unrecognized_keys":
+                return `인식할 수 없는 키: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `잘못된 키: ${i.origin}`;
+            case "invalid_union":
+                return "잘못된 입력";
+            case "invalid_element":
+                return `잘못된 값: ${i.origin}`;
+            default:
+                return "잘못된 입력";
+        }
+    };
+};
+function Eu() {
+    return { localeError: hb() };
+}
+var Li = (r) => {
+    return r.charAt(0).toUpperCase() + r.slice(1);
+};
+function A6(r) {
+    let n = Math.abs(r),
+        v = n % 10,
+        t = n % 100;
+    if ((t >= 11 && t <= 19) || v === 0) return "many";
+    if (v === 1) return "one";
+    return "few";
+}
+var db = () => {
+    let r = {
+        string: {
+            unit: { one: "simbolis", few: "simboliai", many: "simbolių" },
+            verb: {
+                smaller: {
+                    inclusive: "turi būti ne ilgesnė kaip",
+                    notInclusive: "turi būti trumpesnė kaip",
+                },
+                bigger: {
+                    inclusive: "turi būti ne trumpesnė kaip",
+                    notInclusive: "turi būti ilgesnė kaip",
+                },
+            },
+        },
+        file: {
+            unit: { one: "baitas", few: "baitai", many: "baitų" },
+            verb: {
+                smaller: {
+                    inclusive: "turi būti ne didesnis kaip",
+                    notInclusive: "turi būti mažesnis kaip",
+                },
+                bigger: {
+                    inclusive: "turi būti ne mažesnis kaip",
+                    notInclusive: "turi būti didesnis kaip",
+                },
+            },
+        },
+        array: {
+            unit: { one: "elementą", few: "elementus", many: "elementų" },
+            verb: {
+                smaller: {
+                    inclusive: "turi turėti ne daugiau kaip",
+                    notInclusive: "turi turėti mažiau kaip",
+                },
+                bigger: {
+                    inclusive: "turi turėti ne mažiau kaip",
+                    notInclusive: "turi turėti daugiau kaip",
+                },
+            },
+        },
+        set: {
+            unit: { one: "elementą", few: "elementus", many: "elementų" },
+            verb: {
+                smaller: {
+                    inclusive: "turi turėti ne daugiau kaip",
+                    notInclusive: "turi turėti mažiau kaip",
+                },
+                bigger: {
+                    inclusive: "turi turėti ne mažiau kaip",
+                    notInclusive: "turi turėti daugiau kaip",
+                },
+            },
+        },
+    };
+    function n(i, $, u, g) {
+        let _ = r[i] ?? null;
+        if (_ === null) return _;
+        return {
+            unit: _.unit[$],
+            verb: _.verb[g][u ? "inclusive" : "notInclusive"],
+        };
+    }
+    let v = {
+            regex: "įvestis",
+            email: "el. pašto adresas",
+            url: "URL",
+            emoji: "jaustukas",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO data ir laikas",
+            date: "ISO data",
+            time: "ISO laikas",
+            duration: "ISO trukmė",
+            ipv4: "IPv4 adresas",
+            ipv6: "IPv6 adresas",
+            cidrv4: "IPv4 tinklo prefiksas (CIDR)",
+            cidrv6: "IPv6 tinklo prefiksas (CIDR)",
+            base64: "base64 užkoduota eilutė",
+            base64url: "base64url užkoduota eilutė",
+            json_string: "JSON eilutė",
+            e164: "E.164 numeris",
+            jwt: "JWT",
+            template_literal: "įvestis",
+        },
+        t = {
+            nan: "NaN",
+            number: "skaičius",
+            bigint: "sveikasis skaičius",
+            string: "eilutė",
+            boolean: "loginė reikšmė",
+            undefined: "neapibrėžta reikšmė",
+            function: "funkcija",
+            symbol: "simbolis",
+            array: "masyvas",
+            object: "objektas",
+            null: "nulinė reikšmė",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Gautas tipas ${g}, o tikėtasi - instanceof ${i.expected}`;
+                return `Gautas tipas ${g}, o tikėtasi - ${$}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Privalo būti ${k(i.values[0])}`;
+                return `Privalo būti vienas iš ${b(i.values, "|")} pasirinkimų`;
+            case "too_big": {
+                let $ = t[i.origin] ?? i.origin,
+                    u = n(
+                        i.origin,
+                        A6(Number(i.maximum)),
+                        i.inclusive ?? !1,
+                        "smaller",
+                    );
+                if (u?.verb)
+                    return `${Li($ ?? i.origin ?? "reikšmė")} ${u.verb} ${i.maximum.toString()} ${u.unit ?? "elementų"}`;
+                let g = i.inclusive ? "ne didesnis kaip" : "mažesnis kaip";
+                return `${Li($ ?? i.origin ?? "reikšmė")} turi būti ${g} ${i.maximum.toString()} ${u?.unit}`;
+            }
+            case "too_small": {
+                let $ = t[i.origin] ?? i.origin,
+                    u = n(
+                        i.origin,
+                        A6(Number(i.minimum)),
+                        i.inclusive ?? !1,
+                        "bigger",
+                    );
+                if (u?.verb)
+                    return `${Li($ ?? i.origin ?? "reikšmė")} ${u.verb} ${i.minimum.toString()} ${u.unit ?? "elementų"}`;
+                let g = i.inclusive ? "ne mažesnis kaip" : "didesnis kaip";
+                return `${Li($ ?? i.origin ?? "reikšmė")} turi būti ${g} ${i.minimum.toString()} ${u?.unit}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Eilutė privalo prasidėti "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Eilutė privalo pasibaigti "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Eilutė privalo įtraukti "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Eilutė privalo atitikti ${$.pattern}`;
+                return `Neteisingas ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Skaičius privalo būti ${i.divisor} kartotinis.`;
+            case "unrecognized_keys":
+                return `Neatpažint${i.keys.length > 1 ? "i" : "as"} rakt${i.keys.length > 1 ? "ai" : "as"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return "Rastas klaidingas raktas";
+            case "invalid_union":
+                return "Klaidinga įvestis";
+            case "invalid_element": {
+                let $ = t[i.origin] ?? i.origin;
+                return `${Li($ ?? i.origin ?? "reikšmė")} turi klaidingą įvestį`;
+            }
+            default:
+                return "Klaidinga įvestis";
+        }
+    };
+};
+function qu() {
+    return { localeError: db() };
+}
+var pb = () => {
+    let r = {
+        string: { unit: "знаци", verb: "да имаат" },
+        file: { unit: "бајти", verb: "да имаат" },
+        array: { unit: "ставки", verb: "да имаат" },
+        set: { unit: "ставки", verb: "да имаат" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "внес",
+            email: "адреса на е-пошта",
+            url: "URL",
+            emoji: "емоџи",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO датум и време",
+            date: "ISO датум",
+            time: "ISO време",
+            duration: "ISO времетраење",
+            ipv4: "IPv4 адреса",
+            ipv6: "IPv6 адреса",
+            cidrv4: "IPv4 опсег",
+            cidrv6: "IPv6 опсег",
+            base64: "base64-енкодирана низа",
+            base64url: "base64url-енкодирана низа",
+            json_string: "JSON низа",
+            e164: "E.164 број",
+            jwt: "JWT",
+            template_literal: "внес",
+        },
+        t = { nan: "NaN", number: "број", array: "низа" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Грешен внес: се очекува instanceof ${i.expected}, примено ${g}`;
+                return `Грешен внес: се очекува ${$}, примено ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Invalid input: expected ${k(i.values[0])}`;
+                return `Грешана опција: се очекува една ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Премногу голем: се очекува ${i.origin ?? "вредноста"} да има ${$}${i.maximum.toString()} ${u.unit ?? "елементи"}`;
+                return `Премногу голем: се очекува ${i.origin ?? "вредноста"} да биде ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Премногу мал: се очекува ${i.origin} да има ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Премногу мал: се очекува ${i.origin} да биде ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Неважечка низа: мора да започнува со "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Неважечка низа: мора да завршува со "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Неважечка низа: мора да вклучува "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Неважечка низа: мора да одгоара на патернот ${$.pattern}`;
+                return `Invalid ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Грешен број: мора да биде делив со ${i.divisor}`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Непрепознаени клучеви" : "Непрепознаен клуч"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Грешен клуч во ${i.origin}`;
+            case "invalid_union":
+                return "Грешен внес";
+            case "invalid_element":
+                return `Грешна вредност во ${i.origin}`;
+            default:
+                return "Грешен внес";
+        }
+    };
+};
+function Ou() {
+    return { localeError: pb() };
+}
+var ab = () => {
+    let r = {
+        string: { unit: "aksara", verb: "mempunyai" },
+        file: { unit: "bait", verb: "mempunyai" },
+        array: { unit: "elemen", verb: "mempunyai" },
+        set: { unit: "elemen", verb: "mempunyai" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "alamat e-mel",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "tarikh masa ISO",
+            date: "tarikh ISO",
+            time: "masa ISO",
+            duration: "tempoh ISO",
+            ipv4: "alamat IPv4",
+            ipv6: "alamat IPv6",
+            cidrv4: "julat IPv4",
+            cidrv6: "julat IPv6",
+            base64: "string dikodkan base64",
+            base64url: "string dikodkan base64url",
+            json_string: "string JSON",
+            e164: "nombor E.164",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN", number: "nombor" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Input tidak sah: dijangka instanceof ${i.expected}, diterima ${g}`;
+                return `Input tidak sah: dijangka ${$}, diterima ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Input tidak sah: dijangka ${k(i.values[0])}`;
+                return `Pilihan tidak sah: dijangka salah satu daripada ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Terlalu besar: dijangka ${i.origin ?? "nilai"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit ?? "elemen"}`;
+                return `Terlalu besar: dijangka ${i.origin ?? "nilai"} adalah ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Terlalu kecil: dijangka ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Terlalu kecil: dijangka ${i.origin} adalah ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `String tidak sah: mesti bermula dengan "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `String tidak sah: mesti berakhir dengan "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `String tidak sah: mesti mengandungi "${$.includes}"`;
+                if ($.format === "regex")
+                    return `String tidak sah: mesti sepadan dengan corak ${$.pattern}`;
+                return `${v[$.format] ?? i.format} tidak sah`;
+            }
+            case "not_multiple_of":
+                return `Nombor tidak sah: perlu gandaan ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Kunci tidak dikenali: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Kunci tidak sah dalam ${i.origin}`;
+            case "invalid_union":
+                return "Input tidak sah";
+            case "invalid_element":
+                return `Nilai tidak sah dalam ${i.origin}`;
+            default:
+                return "Input tidak sah";
+        }
+    };
+};
+function Wu() {
+    return { localeError: ab() };
+}
+var sb = () => {
+    let r = {
+        string: { unit: "tekens", verb: "heeft" },
+        file: { unit: "bytes", verb: "heeft" },
+        array: { unit: "elementen", verb: "heeft" },
+        set: { unit: "elementen", verb: "heeft" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "invoer",
+            email: "emailadres",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO datum en tijd",
+            date: "ISO datum",
+            time: "ISO tijd",
+            duration: "ISO duur",
+            ipv4: "IPv4-adres",
+            ipv6: "IPv6-adres",
+            cidrv4: "IPv4-bereik",
+            cidrv6: "IPv6-bereik",
+            base64: "base64-gecodeerde tekst",
+            base64url: "base64 URL-gecodeerde tekst",
+            json_string: "JSON string",
+            e164: "E.164-nummer",
+            jwt: "JWT",
+            template_literal: "invoer",
+        },
+        t = { nan: "NaN", number: "getal" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ongeldige invoer: verwacht instanceof ${i.expected}, ontving ${g}`;
+                return `Ongeldige invoer: verwacht ${$}, ontving ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ongeldige invoer: verwacht ${k(i.values[0])}`;
+                return `Ongeldige optie: verwacht één van ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin),
+                    g =
+                        i.origin === "date"
+                            ? "laat"
+                            : i.origin === "string"
+                              ? "lang"
+                              : "groot";
+                if (u)
+                    return `Te ${g}: verwacht dat ${i.origin ?? "waarde"} ${$}${i.maximum.toString()} ${u.unit ?? "elementen"} ${u.verb}`;
+                return `Te ${g}: verwacht dat ${i.origin ?? "waarde"} ${$}${i.maximum.toString()} is`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin),
+                    g =
+                        i.origin === "date"
+                            ? "vroeg"
+                            : i.origin === "string"
+                              ? "kort"
+                              : "klein";
+                if (u)
+                    return `Te ${g}: verwacht dat ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ${u.verb}`;
+                return `Te ${g}: verwacht dat ${i.origin} ${$}${i.minimum.toString()} is`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ongeldige tekst: moet met "${$.prefix}" beginnen`;
+                if ($.format === "ends_with")
+                    return `Ongeldige tekst: moet op "${$.suffix}" eindigen`;
+                if ($.format === "includes")
+                    return `Ongeldige tekst: moet "${$.includes}" bevatten`;
+                if ($.format === "regex")
+                    return `Ongeldige tekst: moet overeenkomen met patroon ${$.pattern}`;
+                return `Ongeldig: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Ongeldig getal: moet een veelvoud van ${i.divisor} zijn`;
+            case "unrecognized_keys":
+                return `Onbekende key${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Ongeldige key in ${i.origin}`;
+            case "invalid_union":
+                return "Ongeldige invoer";
+            case "invalid_element":
+                return `Ongeldige waarde in ${i.origin}`;
+            default:
+                return "Ongeldige invoer";
+        }
+    };
+};
+function Yu() {
+    return { localeError: sb() };
+}
+var rD = () => {
+    let r = {
+        string: { unit: "tegn", verb: "å ha" },
+        file: { unit: "bytes", verb: "å ha" },
+        array: { unit: "elementer", verb: "å inneholde" },
+        set: { unit: "elementer", verb: "å inneholde" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "input",
+            email: "e-postadresse",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO dato- og klokkeslett",
+            date: "ISO-dato",
+            time: "ISO-klokkeslett",
+            duration: "ISO-varighet",
+            ipv4: "IPv4-område",
+            ipv6: "IPv6-område",
+            cidrv4: "IPv4-spekter",
+            cidrv6: "IPv6-spekter",
+            base64: "base64-enkodet streng",
+            base64url: "base64url-enkodet streng",
+            json_string: "JSON-streng",
+            e164: "E.164-nummer",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN", number: "tall", array: "liste" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ugyldig input: forventet instanceof ${i.expected}, fikk ${g}`;
+                return `Ugyldig input: forventet ${$}, fikk ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ugyldig verdi: forventet ${k(i.values[0])}`;
+                return `Ugyldig valg: forventet en av ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `For stor(t): forventet ${i.origin ?? "value"} til å ha ${$}${i.maximum.toString()} ${u.unit ?? "elementer"}`;
+                return `For stor(t): forventet ${i.origin ?? "value"} til å ha ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `For lite(n): forventet ${i.origin} til å ha ${$}${i.minimum.toString()} ${u.unit}`;
+                return `For lite(n): forventet ${i.origin} til å ha ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ugyldig streng: må starte med "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Ugyldig streng: må ende med "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Ugyldig streng: må inneholde "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Ugyldig streng: må matche mønsteret ${$.pattern}`;
+                return `Ugyldig ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Ugyldig tall: må være et multiplum av ${i.divisor}`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Ukjente nøkler" : "Ukjent nøkkel"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Ugyldig nøkkel i ${i.origin}`;
+            case "invalid_union":
+                return "Ugyldig input";
+            case "invalid_element":
+                return `Ugyldig verdi i ${i.origin}`;
+            default:
+                return "Ugyldig input";
+        }
+    };
+};
+function Vu() {
+    return { localeError: rD() };
+}
+var iD = () => {
+    let r = {
+        string: { unit: "harf", verb: "olmalıdır" },
+        file: { unit: "bayt", verb: "olmalıdır" },
+        array: { unit: "unsur", verb: "olmalıdır" },
+        set: { unit: "unsur", verb: "olmalıdır" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "giren",
+            email: "epostagâh",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO hengâmı",
+            date: "ISO tarihi",
+            time: "ISO zamanı",
+            duration: "ISO müddeti",
+            ipv4: "IPv4 nişânı",
+            ipv6: "IPv6 nişânı",
+            cidrv4: "IPv4 menzili",
+            cidrv6: "IPv6 menzili",
+            base64: "base64-şifreli metin",
+            base64url: "base64url-şifreli metin",
+            json_string: "JSON metin",
+            e164: "E.164 sayısı",
+            jwt: "JWT",
+            template_literal: "giren",
+        },
+        t = { nan: "NaN", number: "numara", array: "saf", null: "gayb" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Fâsit giren: umulan instanceof ${i.expected}, alınan ${g}`;
+                return `Fâsit giren: umulan ${$}, alınan ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Fâsit giren: umulan ${k(i.values[0])}`;
+                return `Fâsit tercih: mûteberler ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Fazla büyük: ${i.origin ?? "value"}, ${$}${i.maximum.toString()} ${u.unit ?? "elements"} sahip olmalıydı.`;
+                return `Fazla büyük: ${i.origin ?? "value"}, ${$}${i.maximum.toString()} olmalıydı.`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Fazla küçük: ${i.origin}, ${$}${i.minimum.toString()} ${u.unit} sahip olmalıydı.`;
+                return `Fazla küçük: ${i.origin}, ${$}${i.minimum.toString()} olmalıydı.`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Fâsit metin: "${$.prefix}" ile başlamalı.`;
+                if ($.format === "ends_with")
+                    return `Fâsit metin: "${$.suffix}" ile bitmeli.`;
+                if ($.format === "includes")
+                    return `Fâsit metin: "${$.includes}" ihtivâ etmeli.`;
+                if ($.format === "regex")
+                    return `Fâsit metin: ${$.pattern} nakşına uymalı.`;
+                return `Fâsit ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Fâsit sayı: ${i.divisor} katı olmalıydı.`;
+            case "unrecognized_keys":
+                return `Tanınmayan anahtar ${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} için tanınmayan anahtar var.`;
+            case "invalid_union":
+                return "Giren tanınamadı.";
+            case "invalid_element":
+                return `${i.origin} için tanınmayan kıymet var.`;
+            default:
+                return "Kıymet tanınamadı.";
+        }
+    };
+};
+function Ku() {
+    return { localeError: iD() };
+}
+var nD = () => {
+    let r = {
+        string: { unit: "توکي", verb: "ولري" },
+        file: { unit: "بایټس", verb: "ولري" },
+        array: { unit: "توکي", verb: "ولري" },
+        set: { unit: "توکي", verb: "ولري" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ورودي",
+            email: "بریښنالیک",
+            url: "یو آر ال",
+            emoji: "ایموجي",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "نیټه او وخت",
+            date: "نېټه",
+            time: "وخت",
+            duration: "موده",
+            ipv4: "د IPv4 پته",
+            ipv6: "د IPv6 پته",
+            cidrv4: "د IPv4 ساحه",
+            cidrv6: "د IPv6 ساحه",
+            base64: "base64-encoded متن",
+            base64url: "base64url-encoded متن",
+            json_string: "JSON متن",
+            e164: "د E.164 شمېره",
+            jwt: "JWT",
+            template_literal: "ورودي",
+        },
+        t = { nan: "NaN", number: "عدد", array: "ارې" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `ناسم ورودي: باید instanceof ${i.expected} وای, مګر ${g} ترلاسه شو`;
+                return `ناسم ورودي: باید ${$} وای, مګر ${g} ترلاسه شو`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `ناسم ورودي: باید ${k(i.values[0])} وای`;
+                return `ناسم انتخاب: باید یو له ${b(i.values, "|")} څخه وای`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `ډیر لوی: ${i.origin ?? "ارزښت"} باید ${$}${i.maximum.toString()} ${u.unit ?? "عنصرونه"} ولري`;
+                return `ډیر لوی: ${i.origin ?? "ارزښت"} باید ${$}${i.maximum.toString()} وي`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `ډیر کوچنی: ${i.origin} باید ${$}${i.minimum.toString()} ${u.unit} ولري`;
+                return `ډیر کوچنی: ${i.origin} باید ${$}${i.minimum.toString()} وي`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `ناسم متن: باید د "${$.prefix}" سره پیل شي`;
+                if ($.format === "ends_with")
+                    return `ناسم متن: باید د "${$.suffix}" سره پای ته ورسيږي`;
+                if ($.format === "includes")
+                    return `ناسم متن: باید "${$.includes}" ولري`;
+                if ($.format === "regex")
+                    return `ناسم متن: باید د ${$.pattern} سره مطابقت ولري`;
+                return `${v[$.format] ?? i.format} ناسم دی`;
+            }
+            case "not_multiple_of":
+                return `ناسم عدد: باید د ${i.divisor} مضرب وي`;
+            case "unrecognized_keys":
+                return `ناسم ${i.keys.length > 1 ? "کلیډونه" : "کلیډ"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `ناسم کلیډ په ${i.origin} کې`;
+            case "invalid_union":
+                return "ناسمه ورودي";
+            case "invalid_element":
+                return `ناسم عنصر په ${i.origin} کې`;
+            default:
+                return "ناسمه ورودي";
+        }
+    };
+};
+function Qu() {
+    return { localeError: nD() };
+}
+var vD = () => {
+    let r = {
+        string: { unit: "znaków", verb: "mieć" },
+        file: { unit: "bajtów", verb: "mieć" },
+        array: { unit: "elementów", verb: "mieć" },
+        set: { unit: "elementów", verb: "mieć" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "wyrażenie",
+            email: "adres email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "data i godzina w formacie ISO",
+            date: "data w formacie ISO",
+            time: "godzina w formacie ISO",
+            duration: "czas trwania ISO",
+            ipv4: "adres IPv4",
+            ipv6: "adres IPv6",
+            cidrv4: "zakres IPv4",
+            cidrv6: "zakres IPv6",
+            base64: "ciąg znaków zakodowany w formacie base64",
+            base64url: "ciąg znaków zakodowany w formacie base64url",
+            json_string: "ciąg znaków w formacie JSON",
+            e164: "liczba E.164",
+            jwt: "JWT",
+            template_literal: "wejście",
+        },
+        t = { nan: "NaN", number: "liczba", array: "tablica" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Nieprawidłowe dane wejściowe: oczekiwano instanceof ${i.expected}, otrzymano ${g}`;
+                return `Nieprawidłowe dane wejściowe: oczekiwano ${$}, otrzymano ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Nieprawidłowe dane wejściowe: oczekiwano ${k(i.values[0])}`;
+                return `Nieprawidłowa opcja: oczekiwano jednej z wartości ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Za duża wartość: oczekiwano, że ${i.origin ?? "wartość"} będzie mieć ${$}${i.maximum.toString()} ${u.unit ?? "elementów"}`;
+                return `Zbyt duż(y/a/e): oczekiwano, że ${i.origin ?? "wartość"} będzie wynosić ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Za mała wartość: oczekiwano, że ${i.origin ?? "wartość"} będzie mieć ${$}${i.minimum.toString()} ${u.unit ?? "elementów"}`;
+                return `Zbyt mał(y/a/e): oczekiwano, że ${i.origin ?? "wartość"} będzie wynosić ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Nieprawidłowy ciąg znaków: musi zaczynać się od "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Nieprawidłowy ciąg znaków: musi kończyć się na "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Nieprawidłowy ciąg znaków: musi zawierać "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Nieprawidłowy ciąg znaków: musi odpowiadać wzorcowi ${$.pattern}`;
+                return `Nieprawidłow(y/a/e) ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Nieprawidłowa liczba: musi być wielokrotnością ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Nierozpoznane klucze${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Nieprawidłowy klucz w ${i.origin}`;
+            case "invalid_union":
+                return "Nieprawidłowe dane wejściowe";
+            case "invalid_element":
+                return `Nieprawidłowa wartość w ${i.origin}`;
+            default:
+                return "Nieprawidłowe dane wejściowe";
+        }
+    };
+};
+function Hu() {
+    return { localeError: vD() };
+}
+var $D = () => {
+    let r = {
+        string: { unit: "caracteres", verb: "ter" },
+        file: { unit: "bytes", verb: "ter" },
+        array: { unit: "itens", verb: "ter" },
+        set: { unit: "itens", verb: "ter" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "padrão",
+            email: "endereço de e-mail",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "data e hora ISO",
+            date: "data ISO",
+            time: "hora ISO",
+            duration: "duração ISO",
+            ipv4: "endereço IPv4",
+            ipv6: "endereço IPv6",
+            cidrv4: "faixa de IPv4",
+            cidrv6: "faixa de IPv6",
+            base64: "texto codificado em base64",
+            base64url: "URL codificada em base64",
+            json_string: "texto JSON",
+            e164: "número E.164",
+            jwt: "JWT",
+            template_literal: "entrada",
+        },
+        t = { nan: "NaN", number: "número", null: "nulo" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Tipo inválido: esperado instanceof ${i.expected}, recebido ${g}`;
+                return `Tipo inválido: esperado ${$}, recebido ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Entrada inválida: esperado ${k(i.values[0])}`;
+                return `Opção inválida: esperada uma das ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Muito grande: esperado que ${i.origin ?? "valor"} tivesse ${$}${i.maximum.toString()} ${u.unit ?? "elementos"}`;
+                return `Muito grande: esperado que ${i.origin ?? "valor"} fosse ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Muito pequeno: esperado que ${i.origin} tivesse ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Muito pequeno: esperado que ${i.origin} fosse ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Texto inválido: deve começar com "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Texto inválido: deve terminar com "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Texto inválido: deve incluir "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Texto inválido: deve corresponder ao padrão ${$.pattern}`;
+                return `${v[$.format] ?? i.format} inválido`;
+            }
+            case "not_multiple_of":
+                return `Número inválido: deve ser múltiplo de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Chave${i.keys.length > 1 ? "s" : ""} desconhecida${i.keys.length > 1 ? "s" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Chave inválida em ${i.origin}`;
+            case "invalid_union":
+                return "Entrada inválida";
+            case "invalid_element":
+                return `Valor inválido em ${i.origin}`;
+            default:
+                return "Campo inválido";
+        }
+    };
+};
+function Tu() {
+    return { localeError: $D() };
+}
+var tD = () => {
+    let r = {
+        string: { unit: "caractere", verb: "să aibă" },
+        file: { unit: "octeți", verb: "să aibă" },
+        array: { unit: "elemente", verb: "să aibă" },
+        set: { unit: "elemente", verb: "să aibă" },
+        map: { unit: "intrări", verb: "să aibă" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "intrare",
+            email: "adresă de email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "dată și oră ISO",
+            date: "dată ISO",
+            time: "oră ISO",
+            duration: "durată ISO",
+            ipv4: "adresă IPv4",
+            ipv6: "adresă IPv6",
+            mac: "adresă MAC",
+            cidrv4: "interval IPv4",
+            cidrv6: "interval IPv6",
+            base64: "șir codat base64",
+            base64url: "șir codat base64url",
+            json_string: "șir JSON",
+            e164: "număr E.164",
+            jwt: "JWT",
+            template_literal: "intrare",
+        },
+        t = {
+            nan: "NaN",
+            string: "șir",
+            number: "număr",
+            boolean: "boolean",
+            function: "funcție",
+            array: "matrice",
+            object: "obiect",
+            undefined: "nedefinit",
+            symbol: "simbol",
+            bigint: "număr mare",
+            void: "void",
+            never: "never",
+            map: "hartă",
+            set: "set",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                return `Intrare invalidă: așteptat ${$}, primit ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Intrare invalidă: așteptat ${k(i.values[0])}`;
+                return `Opțiune invalidă: așteptat una dintre ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Prea mare: așteptat ca ${i.origin ?? "valoarea"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit ?? "elemente"}`;
+                return `Prea mare: așteptat ca ${i.origin ?? "valoarea"} să fie ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Prea mic: așteptat ca ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Prea mic: așteptat ca ${i.origin} să fie ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Șir invalid: trebuie să înceapă cu "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Șir invalid: trebuie să se termine cu "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Șir invalid: trebuie să includă "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Șir invalid: trebuie să se potrivească cu modelul ${$.pattern}`;
+                return `Format invalid: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Număr invalid: trebuie să fie multiplu de ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Chei nerecunoscute: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Cheie invalidă în ${i.origin}`;
+            case "invalid_union":
+                return "Intrare invalidă";
+            case "invalid_element":
+                return `Valoare invalidă în ${i.origin}`;
+            default:
+                return "Intrare invalidă";
+        }
+    };
+};
+function Bu() {
+    return { localeError: tD() };
+}
+function M6(r, n, v, t) {
+    let i = Math.abs(r),
+        $ = i % 10,
+        u = i % 100;
+    if (u >= 11 && u <= 19) return t;
+    if ($ === 1) return n;
+    if ($ >= 2 && $ <= 4) return v;
+    return t;
+}
+var uD = () => {
+    let r = {
+        string: {
+            unit: { one: "символ", few: "символа", many: "символов" },
+            verb: "иметь",
+        },
+        file: {
+            unit: { one: "байт", few: "байта", many: "байт" },
+            verb: "иметь",
+        },
+        array: {
+            unit: { one: "элемент", few: "элемента", many: "элементов" },
+            verb: "иметь",
+        },
+        set: {
+            unit: { one: "элемент", few: "элемента", many: "элементов" },
+            verb: "иметь",
+        },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ввод",
+            email: "email адрес",
+            url: "URL",
+            emoji: "эмодзи",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO дата и время",
+            date: "ISO дата",
+            time: "ISO время",
+            duration: "ISO длительность",
+            ipv4: "IPv4 адрес",
+            ipv6: "IPv6 адрес",
+            cidrv4: "IPv4 диапазон",
+            cidrv6: "IPv6 диапазон",
+            base64: "строка в формате base64",
+            base64url: "строка в формате base64url",
+            json_string: "JSON строка",
+            e164: "номер E.164",
+            jwt: "JWT",
+            template_literal: "ввод",
+        },
+        t = { nan: "NaN", number: "число", array: "массив" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Неверный ввод: ожидалось instanceof ${i.expected}, получено ${g}`;
+                return `Неверный ввод: ожидалось ${$}, получено ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Неверный ввод: ожидалось ${k(i.values[0])}`;
+                return `Неверный вариант: ожидалось одно из ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.maximum),
+                        _ = M6(g, u.unit.one, u.unit.few, u.unit.many);
+                    return `Слишком большое значение: ожидалось, что ${i.origin ?? "значение"} будет иметь ${$}${i.maximum.toString()} ${_}`;
+                }
+                return `Слишком большое значение: ожидалось, что ${i.origin ?? "значение"} будет ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u) {
+                    let g = Number(i.minimum),
+                        _ = M6(g, u.unit.one, u.unit.few, u.unit.many);
+                    return `Слишком маленькое значение: ожидалось, что ${i.origin} будет иметь ${$}${i.minimum.toString()} ${_}`;
+                }
+                return `Слишком маленькое значение: ожидалось, что ${i.origin} будет ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Неверная строка: должна начинаться с "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Неверная строка: должна заканчиваться на "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Неверная строка: должна содержать "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Неверная строка: должна соответствовать шаблону ${$.pattern}`;
+                return `Неверный ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Неверное число: должно быть кратным ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Нераспознанн${i.keys.length > 1 ? "ые" : "ый"} ключ${i.keys.length > 1 ? "и" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Неверный ключ в ${i.origin}`;
+            case "invalid_union":
+                return "Неверные входные данные";
+            case "invalid_element":
+                return `Неверное значение в ${i.origin}`;
+            default:
+                return "Неверные входные данные";
+        }
+    };
+};
+function Au() {
+    return { localeError: uD() };
+}
+var gD = () => {
+    let r = {
+        string: { unit: "znakov", verb: "imeti" },
+        file: { unit: "bajtov", verb: "imeti" },
+        array: { unit: "elementov", verb: "imeti" },
+        set: { unit: "elementov", verb: "imeti" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "vnos",
+            email: "e-poštni naslov",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO datum in čas",
+            date: "ISO datum",
+            time: "ISO čas",
+            duration: "ISO trajanje",
+            ipv4: "IPv4 naslov",
+            ipv6: "IPv6 naslov",
+            cidrv4: "obseg IPv4",
+            cidrv6: "obseg IPv6",
+            base64: "base64 kodiran niz",
+            base64url: "base64url kodiran niz",
+            json_string: "JSON niz",
+            e164: "E.164 številka",
+            jwt: "JWT",
+            template_literal: "vnos",
+        },
+        t = { nan: "NaN", number: "število", array: "tabela" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Neveljaven vnos: pričakovano instanceof ${i.expected}, prejeto ${g}`;
+                return `Neveljaven vnos: pričakovano ${$}, prejeto ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Neveljaven vnos: pričakovano ${k(i.values[0])}`;
+                return `Neveljavna možnost: pričakovano eno izmed ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Preveliko: pričakovano, da bo ${i.origin ?? "vrednost"} imelo ${$}${i.maximum.toString()} ${u.unit ?? "elementov"}`;
+                return `Preveliko: pričakovano, da bo ${i.origin ?? "vrednost"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Premajhno: pričakovano, da bo ${i.origin} imelo ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Premajhno: pričakovano, da bo ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Neveljaven niz: mora se začeti z "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Neveljaven niz: mora se končati z "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Neveljaven niz: mora vsebovati "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Neveljaven niz: mora ustrezati vzorcu ${$.pattern}`;
+                return `Neveljaven ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Neveljavno število: mora biti večkratnik ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Neprepoznan${i.keys.length > 1 ? "i ključi" : " ključ"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Neveljaven ključ v ${i.origin}`;
+            case "invalid_union":
+                return "Neveljaven vnos";
+            case "invalid_element":
+                return `Neveljavna vrednost v ${i.origin}`;
+            default:
+                return "Neveljaven vnos";
+        }
+    };
+};
+function Mu() {
+    return { localeError: gD() };
+}
+var ID = () => {
+    let r = {
+        string: { unit: "tecken", verb: "att ha" },
+        file: { unit: "bytes", verb: "att ha" },
+        array: { unit: "objekt", verb: "att innehålla" },
+        set: { unit: "objekt", verb: "att innehålla" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "reguljärt uttryck",
+            email: "e-postadress",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO-datum och tid",
+            date: "ISO-datum",
+            time: "ISO-tid",
+            duration: "ISO-varaktighet",
+            ipv4: "IPv4-intervall",
+            ipv6: "IPv6-intervall",
+            cidrv4: "IPv4-spektrum",
+            cidrv6: "IPv6-spektrum",
+            base64: "base64-kodad sträng",
+            base64url: "base64url-kodad sträng",
+            json_string: "JSON-sträng",
+            e164: "E.164-nummer",
+            jwt: "JWT",
+            template_literal: "mall-literal",
+        },
+        t = { nan: "NaN", number: "antal", array: "lista" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ogiltig inmatning: förväntat instanceof ${i.expected}, fick ${g}`;
+                return `Ogiltig inmatning: förväntat ${$}, fick ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ogiltig inmatning: förväntat ${k(i.values[0])}`;
+                return `Ogiltigt val: förväntade en av ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `För stor(t): förväntade ${i.origin ?? "värdet"} att ha ${$}${i.maximum.toString()} ${u.unit ?? "element"}`;
+                return `För stor(t): förväntat ${i.origin ?? "värdet"} att ha ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `För lite(t): förväntade ${i.origin ?? "värdet"} att ha ${$}${i.minimum.toString()} ${u.unit}`;
+                return `För lite(t): förväntade ${i.origin ?? "värdet"} att ha ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ogiltig sträng: måste börja med "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Ogiltig sträng: måste sluta med "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Ogiltig sträng: måste innehålla "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Ogiltig sträng: måste matcha mönstret "${$.pattern}"`;
+                return `Ogiltig(t) ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Ogiltigt tal: måste vara en multipel av ${i.divisor}`;
+            case "unrecognized_keys":
+                return `${i.keys.length > 1 ? "Okända nycklar" : "Okänd nyckel"}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Ogiltig nyckel i ${i.origin ?? "värdet"}`;
+            case "invalid_union":
+                return "Ogiltig input";
+            case "invalid_element":
+                return `Ogiltigt värde i ${i.origin ?? "värdet"}`;
+            default:
+                return "Ogiltig input";
+        }
+    };
+};
+function Fu() {
+    return { localeError: ID() };
+}
+var _D = () => {
+    let r = {
+        string: { unit: "எழுத்துக்கள்", verb: "கொண்டிருக்க வேண்டும்" },
+        file: { unit: "பைட்டுகள்", verb: "கொண்டிருக்க வேண்டும்" },
+        array: { unit: "உறுப்புகள்", verb: "கொண்டிருக்க வேண்டும்" },
+        set: { unit: "உறுப்புகள்", verb: "கொண்டிருக்க வேண்டும்" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "உள்ளீடு",
+            email: "மின்னஞ்சல் முகவரி",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO தேதி நேரம்",
+            date: "ISO தேதி",
+            time: "ISO நேரம்",
+            duration: "ISO கால அளவு",
+            ipv4: "IPv4 முகவரி",
+            ipv6: "IPv6 முகவரி",
+            cidrv4: "IPv4 வரம்பு",
+            cidrv6: "IPv6 வரம்பு",
+            base64: "base64-encoded சரம்",
+            base64url: "base64url-encoded சரம்",
+            json_string: "JSON சரம்",
+            e164: "E.164 எண்",
+            jwt: "JWT",
+            template_literal: "input",
+        },
+        t = { nan: "NaN", number: "எண்", array: "அணி", null: "வெறுமை" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது instanceof ${i.expected}, பெறப்பட்டது ${g}`;
+                return `தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது ${$}, பெறப்பட்டது ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `தவறான உள்ளீடு: எதிர்பார்க்கப்பட்டது ${k(i.values[0])}`;
+                return `தவறான விருப்பம்: எதிர்பார்க்கப்பட்டது ${b(i.values, "|")} இல் ஒன்று`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `மிக பெரியது: எதிர்பார்க்கப்பட்டது ${i.origin ?? "மதிப்பு"} ${$}${i.maximum.toString()} ${u.unit ?? "உறுப்புகள்"} ஆக இருக்க வேண்டும்`;
+                return `மிக பெரியது: எதிர்பார்க்கப்பட்டது ${i.origin ?? "மதிப்பு"} ${$}${i.maximum.toString()} ஆக இருக்க வேண்டும்`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `மிகச் சிறியது: எதிர்பார்க்கப்பட்டது ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ஆக இருக்க வேண்டும்`;
+                return `மிகச் சிறியது: எதிர்பார்க்கப்பட்டது ${i.origin} ${$}${i.minimum.toString()} ஆக இருக்க வேண்டும்`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `தவறான சரம்: "${$.prefix}" இல் தொடங்க வேண்டும்`;
+                if ($.format === "ends_with")
+                    return `தவறான சரம்: "${$.suffix}" இல் முடிவடைய வேண்டும்`;
+                if ($.format === "includes")
+                    return `தவறான சரம்: "${$.includes}" ஐ உள்ளடக்க வேண்டும்`;
+                if ($.format === "regex")
+                    return `தவறான சரம்: ${$.pattern} முறைபாட்டுடன் பொருந்த வேண்டும்`;
+                return `தவறான ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `தவறான எண்: ${i.divisor} இன் பலமாக இருக்க வேண்டும்`;
+            case "unrecognized_keys":
+                return `அடையாளம் தெரியாத விசை${i.keys.length > 1 ? "கள்" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} இல் தவறான விசை`;
+            case "invalid_union":
+                return "தவறான உள்ளீடு";
+            case "invalid_element":
+                return `${i.origin} இல் தவறான மதிப்பு`;
+            default:
+                return "தவறான உள்ளீடு";
+        }
+    };
+};
+function Ru() {
+    return { localeError: _D() };
+}
+var oD = () => {
+    let r = {
+        string: { unit: "ตัวอักษร", verb: "ควรมี" },
+        file: { unit: "ไบต์", verb: "ควรมี" },
+        array: { unit: "รายการ", verb: "ควรมี" },
+        set: { unit: "รายการ", verb: "ควรมี" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ข้อมูลที่ป้อน",
+            email: "ที่อยู่อีเมล",
+            url: "URL",
+            emoji: "อิโมจิ",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "วันที่เวลาแบบ ISO",
+            date: "วันที่แบบ ISO",
+            time: "เวลาแบบ ISO",
+            duration: "ช่วงเวลาแบบ ISO",
+            ipv4: "ที่อยู่ IPv4",
+            ipv6: "ที่อยู่ IPv6",
+            cidrv4: "ช่วง IP แบบ IPv4",
+            cidrv6: "ช่วง IP แบบ IPv6",
+            base64: "ข้อความแบบ Base64",
+            base64url: "ข้อความแบบ Base64 สำหรับ URL",
+            json_string: "ข้อความแบบ JSON",
+            e164: "เบอร์โทรศัพท์ระหว่างประเทศ (E.164)",
+            jwt: "โทเคน JWT",
+            template_literal: "ข้อมูลที่ป้อน",
+        },
+        t = {
+            nan: "NaN",
+            number: "ตัวเลข",
+            array: "อาร์เรย์ (Array)",
+            null: "ไม่มีค่า (null)",
+        };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `ประเภทข้อมูลไม่ถูกต้อง: ควรเป็น instanceof ${i.expected} แต่ได้รับ ${g}`;
+                return `ประเภทข้อมูลไม่ถูกต้อง: ควรเป็น ${$} แต่ได้รับ ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `ค่าไม่ถูกต้อง: ควรเป็น ${k(i.values[0])}`;
+                return `ตัวเลือกไม่ถูกต้อง: ควรเป็นหนึ่งใน ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "ไม่เกิน" : "น้อยกว่า",
+                    u = n(i.origin);
+                if (u)
+                    return `เกินกำหนด: ${i.origin ?? "ค่า"} ควรมี${$} ${i.maximum.toString()} ${u.unit ?? "รายการ"}`;
+                return `เกินกำหนด: ${i.origin ?? "ค่า"} ควรมี${$} ${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? "อย่างน้อย" : "มากกว่า",
+                    u = n(i.origin);
+                if (u)
+                    return `น้อยกว่ากำหนด: ${i.origin} ควรมี${$} ${i.minimum.toString()} ${u.unit}`;
+                return `น้อยกว่ากำหนด: ${i.origin} ควรมี${$} ${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `รูปแบบไม่ถูกต้อง: ข้อความต้องขึ้นต้นด้วย "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `รูปแบบไม่ถูกต้อง: ข้อความต้องลงท้ายด้วย "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `รูปแบบไม่ถูกต้อง: ข้อความต้องมี "${$.includes}" อยู่ในข้อความ`;
+                if ($.format === "regex")
+                    return `รูปแบบไม่ถูกต้อง: ต้องตรงกับรูปแบบที่กำหนด ${$.pattern}`;
+                return `รูปแบบไม่ถูกต้อง: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `ตัวเลขไม่ถูกต้อง: ต้องเป็นจำนวนที่หารด้วย ${i.divisor} ได้ลงตัว`;
+            case "unrecognized_keys":
+                return `พบคีย์ที่ไม่รู้จัก: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `คีย์ไม่ถูกต้องใน ${i.origin}`;
+            case "invalid_union":
+                return "ข้อมูลไม่ถูกต้อง: ไม่ตรงกับรูปแบบยูเนียนที่กำหนดไว้";
+            case "invalid_element":
+                return `ข้อมูลไม่ถูกต้องใน ${i.origin}`;
+            default:
+                return "ข้อมูลไม่ถูกต้อง";
+        }
+    };
+};
+function Zu() {
+    return { localeError: oD() };
+}
+var UD = () => {
+    let r = {
+        string: { unit: "karakter", verb: "olmalı" },
+        file: { unit: "bayt", verb: "olmalı" },
+        array: { unit: "öğe", verb: "olmalı" },
+        set: { unit: "öğe", verb: "olmalı" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "girdi",
+            email: "e-posta adresi",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO tarih ve saat",
+            date: "ISO tarih",
+            time: "ISO saat",
+            duration: "ISO süre",
+            ipv4: "IPv4 adresi",
+            ipv6: "IPv6 adresi",
+            cidrv4: "IPv4 aralığı",
+            cidrv6: "IPv6 aralığı",
+            base64: "base64 ile şifrelenmiş metin",
+            base64url: "base64url ile şifrelenmiş metin",
+            json_string: "JSON dizesi",
+            e164: "E.164 sayısı",
+            jwt: "JWT",
+            template_literal: "Şablon dizesi",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Geçersiz değer: beklenen instanceof ${i.expected}, alınan ${g}`;
+                return `Geçersiz değer: beklenen ${$}, alınan ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Geçersiz değer: beklenen ${k(i.values[0])}`;
+                return `Geçersiz seçenek: aşağıdakilerden biri olmalı: ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Çok büyük: beklenen ${i.origin ?? "değer"} ${$}${i.maximum.toString()} ${u.unit ?? "öğe"}`;
+                return `Çok büyük: beklenen ${i.origin ?? "değer"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Çok küçük: beklenen ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Çok küçük: beklenen ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Geçersiz metin: "${$.prefix}" ile başlamalı`;
+                if ($.format === "ends_with")
+                    return `Geçersiz metin: "${$.suffix}" ile bitmeli`;
+                if ($.format === "includes")
+                    return `Geçersiz metin: "${$.includes}" içermeli`;
+                if ($.format === "regex")
+                    return `Geçersiz metin: ${$.pattern} desenine uymalı`;
+                return `Geçersiz ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Geçersiz sayı: ${i.divisor} ile tam bölünebilmeli`;
+            case "unrecognized_keys":
+                return `Tanınmayan anahtar${i.keys.length > 1 ? "lar" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} içinde geçersiz anahtar`;
+            case "invalid_union":
+                return "Geçersiz değer";
+            case "invalid_element":
+                return `${i.origin} içinde geçersiz değer`;
+            default:
+                return "Geçersiz değer";
+        }
+    };
+};
+function eu() {
+    return { localeError: UD() };
+}
+var bD = () => {
+    let r = {
+        string: { unit: "символів", verb: "матиме" },
+        file: { unit: "байтів", verb: "матиме" },
+        array: { unit: "елементів", verb: "матиме" },
+        set: { unit: "елементів", verb: "матиме" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "вхідні дані",
+            email: "адреса електронної пошти",
+            url: "URL",
+            emoji: "емодзі",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "дата та час ISO",
+            date: "дата ISO",
+            time: "час ISO",
+            duration: "тривалість ISO",
+            ipv4: "адреса IPv4",
+            ipv6: "адреса IPv6",
+            cidrv4: "діапазон IPv4",
+            cidrv6: "діапазон IPv6",
+            base64: "рядок у кодуванні base64",
+            base64url: "рядок у кодуванні base64url",
+            json_string: "рядок JSON",
+            e164: "номер E.164",
+            jwt: "JWT",
+            template_literal: "вхідні дані",
+        },
+        t = { nan: "NaN", number: "число", array: "масив" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Неправильні вхідні дані: очікується instanceof ${i.expected}, отримано ${g}`;
+                return `Неправильні вхідні дані: очікується ${$}, отримано ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Неправильні вхідні дані: очікується ${k(i.values[0])}`;
+                return `Неправильна опція: очікується одне з ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Занадто велике: очікується, що ${i.origin ?? "значення"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit ?? "елементів"}`;
+                return `Занадто велике: очікується, що ${i.origin ?? "значення"} буде ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Занадто мале: очікується, що ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Занадто мале: очікується, що ${i.origin} буде ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Неправильний рядок: повинен починатися з "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Неправильний рядок: повинен закінчуватися на "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Неправильний рядок: повинен містити "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Неправильний рядок: повинен відповідати шаблону ${$.pattern}`;
+                return `Неправильний ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Неправильне число: повинно бути кратним ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Нерозпізнаний ключ${i.keys.length > 1 ? "і" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Неправильний ключ у ${i.origin}`;
+            case "invalid_union":
+                return "Неправильні вхідні дані";
+            case "invalid_element":
+                return `Неправильне значення у ${i.origin}`;
+            default:
+                return "Неправильні вхідні дані";
+        }
+    };
+};
+function Gi() {
+    return { localeError: bD() };
+}
+function xu() {
+    return Gi();
+}
+var DD = () => {
+    let r = {
+        string: { unit: "حروف", verb: "ہونا" },
+        file: { unit: "بائٹس", verb: "ہونا" },
+        array: { unit: "آئٹمز", verb: "ہونا" },
+        set: { unit: "آئٹمز", verb: "ہونا" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ان پٹ",
+            email: "ای میل ایڈریس",
+            url: "یو آر ایل",
+            emoji: "ایموجی",
+            uuid: "یو یو آئی ڈی",
+            uuidv4: "یو یو آئی ڈی وی 4",
+            uuidv6: "یو یو آئی ڈی وی 6",
+            nanoid: "نینو آئی ڈی",
+            guid: "جی یو آئی ڈی",
+            cuid: "سی یو آئی ڈی",
+            cuid2: "سی یو آئی ڈی 2",
+            ulid: "یو ایل آئی ڈی",
+            xid: "ایکس آئی ڈی",
+            ksuid: "کے ایس یو آئی ڈی",
+            datetime: "آئی ایس او ڈیٹ ٹائم",
+            date: "آئی ایس او تاریخ",
+            time: "آئی ایس او وقت",
+            duration: "آئی ایس او مدت",
+            ipv4: "آئی پی وی 4 ایڈریس",
+            ipv6: "آئی پی وی 6 ایڈریس",
+            cidrv4: "آئی پی وی 4 رینج",
+            cidrv6: "آئی پی وی 6 رینج",
+            base64: "بیس 64 ان کوڈڈ سٹرنگ",
+            base64url: "بیس 64 یو آر ایل ان کوڈڈ سٹرنگ",
+            json_string: "جے ایس او این سٹرنگ",
+            e164: "ای 164 نمبر",
+            jwt: "جے ڈبلیو ٹی",
+            template_literal: "ان پٹ",
+        },
+        t = { nan: "NaN", number: "نمبر", array: "آرے", null: "نل" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `غلط ان پٹ: instanceof ${i.expected} متوقع تھا، ${g} موصول ہوا`;
+                return `غلط ان پٹ: ${$} متوقع تھا، ${g} موصول ہوا`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `غلط ان پٹ: ${k(i.values[0])} متوقع تھا`;
+                return `غلط آپشن: ${b(i.values, "|")} میں سے ایک متوقع تھا`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `بہت بڑا: ${i.origin ?? "ویلیو"} کے ${$}${i.maximum.toString()} ${u.unit ?? "عناصر"} ہونے متوقع تھے`;
+                return `بہت بڑا: ${i.origin ?? "ویلیو"} کا ${$}${i.maximum.toString()} ہونا متوقع تھا`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `بہت چھوٹا: ${i.origin} کے ${$}${i.minimum.toString()} ${u.unit} ہونے متوقع تھے`;
+                return `بہت چھوٹا: ${i.origin} کا ${$}${i.minimum.toString()} ہونا متوقع تھا`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `غلط سٹرنگ: "${$.prefix}" سے شروع ہونا چاہیے`;
+                if ($.format === "ends_with")
+                    return `غلط سٹرنگ: "${$.suffix}" پر ختم ہونا چاہیے`;
+                if ($.format === "includes")
+                    return `غلط سٹرنگ: "${$.includes}" شامل ہونا چاہیے`;
+                if ($.format === "regex")
+                    return `غلط سٹرنگ: پیٹرن ${$.pattern} سے میچ ہونا چاہیے`;
+                return `غلط ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `غلط نمبر: ${i.divisor} کا مضاعف ہونا چاہیے`;
+            case "unrecognized_keys":
+                return `غیر تسلیم شدہ کی${i.keys.length > 1 ? "ز" : ""}: ${b(i.keys, "، ")}`;
+            case "invalid_key":
+                return `${i.origin} میں غلط کی`;
+            case "invalid_union":
+                return "غلط ان پٹ";
+            case "invalid_element":
+                return `${i.origin} میں غلط ویلیو`;
+            default:
+                return "غلط ان پٹ";
+        }
+    };
+};
+function fu() {
+    return { localeError: DD() };
+}
+var kD = () => {
+    let r = {
+        string: { unit: "belgi", verb: "bo‘lishi kerak" },
+        file: { unit: "bayt", verb: "bo‘lishi kerak" },
+        array: { unit: "element", verb: "bo‘lishi kerak" },
+        set: { unit: "element", verb: "bo‘lishi kerak" },
+        map: { unit: "yozuv", verb: "bo‘lishi kerak" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "kirish",
+            email: "elektron pochta manzili",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO sana va vaqti",
+            date: "ISO sana",
+            time: "ISO vaqt",
+            duration: "ISO davomiylik",
+            ipv4: "IPv4 manzil",
+            ipv6: "IPv6 manzil",
+            mac: "MAC manzil",
+            cidrv4: "IPv4 diapazon",
+            cidrv6: "IPv6 diapazon",
+            base64: "base64 kodlangan satr",
+            base64url: "base64url kodlangan satr",
+            json_string: "JSON satr",
+            e164: "E.164 raqam",
+            jwt: "JWT",
+            template_literal: "kirish",
+        },
+        t = { nan: "NaN", number: "raqam", array: "massiv" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Noto‘g‘ri kirish: kutilgan instanceof ${i.expected}, qabul qilingan ${g}`;
+                return `Noto‘g‘ri kirish: kutilgan ${$}, qabul qilingan ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Noto‘g‘ri kirish: kutilgan ${k(i.values[0])}`;
+                return `Noto‘g‘ri variant: quyidagilardan biri kutilgan ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Juda katta: kutilgan ${i.origin ?? "qiymat"} ${$}${i.maximum.toString()} ${u.unit} ${u.verb}`;
+                return `Juda katta: kutilgan ${i.origin ?? "qiymat"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Juda kichik: kutilgan ${i.origin} ${$}${i.minimum.toString()} ${u.unit} ${u.verb}`;
+                return `Juda kichik: kutilgan ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Noto‘g‘ri satr: "${$.prefix}" bilan boshlanishi kerak`;
+                if ($.format === "ends_with")
+                    return `Noto‘g‘ri satr: "${$.suffix}" bilan tugashi kerak`;
+                if ($.format === "includes")
+                    return `Noto‘g‘ri satr: "${$.includes}" ni o‘z ichiga olishi kerak`;
+                if ($.format === "regex")
+                    return `Noto‘g‘ri satr: ${$.pattern} shabloniga mos kelishi kerak`;
+                return `Noto‘g‘ri ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Noto‘g‘ri raqam: ${i.divisor} ning karralisi bo‘lishi kerak`;
+            case "unrecognized_keys":
+                return `Noma’lum kalit${i.keys.length > 1 ? "lar" : ""}: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} dagi kalit noto‘g‘ri`;
+            case "invalid_union":
+                return "Noto‘g‘ri kirish";
+            case "invalid_element":
+                return `${i.origin} da noto‘g‘ri qiymat`;
+            default:
+                return "Noto‘g‘ri kirish";
+        }
+    };
+};
+function Cu() {
+    return { localeError: kD() };
+}
+var lD = () => {
+    let r = {
+        string: { unit: "ký tự", verb: "có" },
+        file: { unit: "byte", verb: "có" },
+        array: { unit: "phần tử", verb: "có" },
+        set: { unit: "phần tử", verb: "có" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "đầu vào",
+            email: "địa chỉ email",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ngày giờ ISO",
+            date: "ngày ISO",
+            time: "giờ ISO",
+            duration: "khoảng thời gian ISO",
+            ipv4: "địa chỉ IPv4",
+            ipv6: "địa chỉ IPv6",
+            cidrv4: "dải IPv4",
+            cidrv6: "dải IPv6",
+            base64: "chuỗi mã hóa base64",
+            base64url: "chuỗi mã hóa base64url",
+            json_string: "chuỗi JSON",
+            e164: "số E.164",
+            jwt: "JWT",
+            template_literal: "đầu vào",
+        },
+        t = { nan: "NaN", number: "số", array: "mảng" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Đầu vào không hợp lệ: mong đợi instanceof ${i.expected}, nhận được ${g}`;
+                return `Đầu vào không hợp lệ: mong đợi ${$}, nhận được ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Đầu vào không hợp lệ: mong đợi ${k(i.values[0])}`;
+                return `Tùy chọn không hợp lệ: mong đợi một trong các giá trị ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Quá lớn: mong đợi ${i.origin ?? "giá trị"} ${u.verb} ${$}${i.maximum.toString()} ${u.unit ?? "phần tử"}`;
+                return `Quá lớn: mong đợi ${i.origin ?? "giá trị"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Quá nhỏ: mong đợi ${i.origin} ${u.verb} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `Quá nhỏ: mong đợi ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Chuỗi không hợp lệ: phải bắt đầu bằng "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Chuỗi không hợp lệ: phải kết thúc bằng "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Chuỗi không hợp lệ: phải bao gồm "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Chuỗi không hợp lệ: phải khớp với mẫu ${$.pattern}`;
+                return `${v[$.format] ?? i.format} không hợp lệ`;
+            }
+            case "not_multiple_of":
+                return `Số không hợp lệ: phải là bội số của ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Khóa không được nhận dạng: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Khóa không hợp lệ trong ${i.origin}`;
+            case "invalid_union":
+                return "Đầu vào không hợp lệ";
+            case "invalid_element":
+                return `Giá trị không hợp lệ trong ${i.origin}`;
+            default:
+                return "Đầu vào không hợp lệ";
+        }
+    };
+};
+function mu() {
+    return { localeError: lD() };
+}
+var cD = () => {
+    let r = {
+        string: { unit: "字符", verb: "包含" },
+        file: { unit: "字节", verb: "包含" },
+        array: { unit: "项", verb: "包含" },
+        set: { unit: "项", verb: "包含" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "输入",
+            email: "电子邮件",
+            url: "URL",
+            emoji: "表情符号",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO日期时间",
+            date: "ISO日期",
+            time: "ISO时间",
+            duration: "ISO时长",
+            ipv4: "IPv4地址",
+            ipv6: "IPv6地址",
+            cidrv4: "IPv4网段",
+            cidrv6: "IPv6网段",
+            base64: "base64编码字符串",
+            base64url: "base64url编码字符串",
+            json_string: "JSON字符串",
+            e164: "E.164号码",
+            jwt: "JWT",
+            template_literal: "输入",
+        },
+        t = { nan: "NaN", number: "数字", array: "数组", null: "空值(null)" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `无效输入：期望 instanceof ${i.expected}，实际接收 ${g}`;
+                return `无效输入：期望 ${$}，实际接收 ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `无效输入：期望 ${k(i.values[0])}`;
+                return `无效选项：期望以下之一 ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `数值过大：期望 ${i.origin ?? "值"} ${$}${i.maximum.toString()} ${u.unit ?? "个元素"}`;
+                return `数值过大：期望 ${i.origin ?? "值"} ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `数值过小：期望 ${i.origin} ${$}${i.minimum.toString()} ${u.unit}`;
+                return `数值过小：期望 ${i.origin} ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `无效字符串：必须以 "${$.prefix}" 开头`;
+                if ($.format === "ends_with")
+                    return `无效字符串：必须以 "${$.suffix}" 结尾`;
+                if ($.format === "includes")
+                    return `无效字符串：必须包含 "${$.includes}"`;
+                if ($.format === "regex")
+                    return `无效字符串：必须满足正则表达式 ${$.pattern}`;
+                return `无效${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `无效数字：必须是 ${i.divisor} 的倍数`;
+            case "unrecognized_keys":
+                return `出现未知的键(key): ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `${i.origin} 中的键(key)无效`;
+            case "invalid_union":
+                return "无效输入";
+            case "invalid_element":
+                return `${i.origin} 中包含无效值(value)`;
+            default:
+                return "无效输入";
+        }
+    };
+};
+function yu() {
+    return { localeError: cD() };
+}
+var wD = () => {
+    let r = {
+        string: { unit: "字元", verb: "擁有" },
+        file: { unit: "位元組", verb: "擁有" },
+        array: { unit: "項目", verb: "擁有" },
+        set: { unit: "項目", verb: "擁有" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "輸入",
+            email: "郵件地址",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "ISO 日期時間",
+            date: "ISO 日期",
+            time: "ISO 時間",
+            duration: "ISO 期間",
+            ipv4: "IPv4 位址",
+            ipv6: "IPv6 位址",
+            cidrv4: "IPv4 範圍",
+            cidrv6: "IPv6 範圍",
+            base64: "base64 編碼字串",
+            base64url: "base64url 編碼字串",
+            json_string: "JSON 字串",
+            e164: "E.164 數值",
+            jwt: "JWT",
+            template_literal: "輸入",
+        },
+        t = { nan: "NaN" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `無效的輸入值：預期為 instanceof ${i.expected}，但收到 ${g}`;
+                return `無效的輸入值：預期為 ${$}，但收到 ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `無效的輸入值：預期為 ${k(i.values[0])}`;
+                return `無效的選項：預期為以下其中之一 ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `數值過大：預期 ${i.origin ?? "值"} 應為 ${$}${i.maximum.toString()} ${u.unit ?? "個元素"}`;
+                return `數值過大：預期 ${i.origin ?? "值"} 應為 ${$}${i.maximum.toString()}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `數值過小：預期 ${i.origin} 應為 ${$}${i.minimum.toString()} ${u.unit}`;
+                return `數值過小：預期 ${i.origin} 應為 ${$}${i.minimum.toString()}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `無效的字串：必須以 "${$.prefix}" 開頭`;
+                if ($.format === "ends_with")
+                    return `無效的字串：必須以 "${$.suffix}" 結尾`;
+                if ($.format === "includes")
+                    return `無效的字串：必須包含 "${$.includes}"`;
+                if ($.format === "regex")
+                    return `無效的字串：必須符合格式 ${$.pattern}`;
+                return `無效的 ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `無效的數字：必須為 ${i.divisor} 的倍數`;
+            case "unrecognized_keys":
+                return `無法識別的鍵值${i.keys.length > 1 ? "們" : ""}：${b(i.keys, "、")}`;
+            case "invalid_key":
+                return `${i.origin} 中有無效的鍵值`;
+            case "invalid_union":
+                return "無效的輸入值";
+            case "invalid_element":
+                return `${i.origin} 中有無效的值`;
+            default:
+                return "無效的輸入值";
+        }
+    };
+};
+function hu() {
+    return { localeError: wD() };
+}
+var SD = () => {
+    let r = {
+        string: { unit: "àmi", verb: "ní" },
+        file: { unit: "bytes", verb: "ní" },
+        array: { unit: "nkan", verb: "ní" },
+        set: { unit: "nkan", verb: "ní" },
+    };
+    function n(i) {
+        return r[i] ?? null;
+    }
+    let v = {
+            regex: "ẹ̀rọ ìbáwọlé",
+            email: "àdírẹ́sì ìmẹ́lì",
+            url: "URL",
+            emoji: "emoji",
+            uuid: "UUID",
+            uuidv4: "UUIDv4",
+            uuidv6: "UUIDv6",
+            nanoid: "nanoid",
+            guid: "GUID",
+            cuid: "cuid",
+            cuid2: "cuid2",
+            ulid: "ULID",
+            xid: "XID",
+            ksuid: "KSUID",
+            datetime: "àkókò ISO",
+            date: "ọjọ́ ISO",
+            time: "àkókò ISO",
+            duration: "àkókò tó pé ISO",
+            ipv4: "àdírẹ́sì IPv4",
+            ipv6: "àdírẹ́sì IPv6",
+            cidrv4: "àgbègbè IPv4",
+            cidrv6: "àgbègbè IPv6",
+            base64: "ọ̀rọ̀ tí a kọ́ ní base64",
+            base64url: "ọ̀rọ̀ base64url",
+            json_string: "ọ̀rọ̀ JSON",
+            e164: "nọ́mbà E.164",
+            jwt: "JWT",
+            template_literal: "ẹ̀rọ ìbáwọlé",
+        },
+        t = { nan: "NaN", number: "nọ́mbà", array: "akopọ" };
+    return (i) => {
+        switch (i.code) {
+            case "invalid_type": {
+                let $ = t[i.expected] ?? i.expected,
+                    u = l(i.input),
+                    g = t[u] ?? u;
+                if (/^[A-Z]/.test(i.expected))
+                    return `Ìbáwọlé aṣìṣe: a ní láti fi instanceof ${i.expected}, àmọ̀ a rí ${g}`;
+                return `Ìbáwọlé aṣìṣe: a ní láti fi ${$}, àmọ̀ a rí ${g}`;
+            }
+            case "invalid_value":
+                if (i.values.length === 1)
+                    return `Ìbáwọlé aṣìṣe: a ní láti fi ${k(i.values[0])}`;
+                return `Àṣàyàn aṣìṣe: yan ọ̀kan lára ${b(i.values, "|")}`;
+            case "too_big": {
+                let $ = i.inclusive ? "<=" : "<",
+                    u = n(i.origin);
+                if (u)
+                    return `Tó pọ̀ jù: a ní láti jẹ́ pé ${i.origin ?? "iye"} ${u.verb} ${$}${i.maximum} ${u.unit}`;
+                return `Tó pọ̀ jù: a ní láti jẹ́ ${$}${i.maximum}`;
+            }
+            case "too_small": {
+                let $ = i.inclusive ? ">=" : ">",
+                    u = n(i.origin);
+                if (u)
+                    return `Kéré ju: a ní láti jẹ́ pé ${i.origin} ${u.verb} ${$}${i.minimum} ${u.unit}`;
+                return `Kéré ju: a ní láti jẹ́ ${$}${i.minimum}`;
+            }
+            case "invalid_format": {
+                let $ = i;
+                if ($.format === "starts_with")
+                    return `Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ bẹ̀rẹ̀ pẹ̀lú "${$.prefix}"`;
+                if ($.format === "ends_with")
+                    return `Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ parí pẹ̀lú "${$.suffix}"`;
+                if ($.format === "includes")
+                    return `Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ ní "${$.includes}"`;
+                if ($.format === "regex")
+                    return `Ọ̀rọ̀ aṣìṣe: gbọ́dọ̀ bá àpẹẹrẹ mu ${$.pattern}`;
+                return `Aṣìṣe: ${v[$.format] ?? i.format}`;
+            }
+            case "not_multiple_of":
+                return `Nọ́mbà aṣìṣe: gbọ́dọ̀ jẹ́ èyà pípín ti ${i.divisor}`;
+            case "unrecognized_keys":
+                return `Bọtìnì àìmọ̀: ${b(i.keys, ", ")}`;
+            case "invalid_key":
+                return `Bọtìnì aṣìṣe nínú ${i.origin}`;
+            case "invalid_union":
+                return "Ìbáwọlé aṣìṣe";
+            case "invalid_element":
+                return `Iye aṣìṣe nínú ${i.origin}`;
+            default:
+                return "Ìbáwọlé aṣìṣe";
+        }
+    };
+};
+function du() {
+    return { localeError: SD() };
+}
+var F6,
+    pu = Symbol("ZodOutput"),
+    au = Symbol("ZodInput");
+class su {
+    constructor() {
+        (this._map = new WeakMap()), (this._idmap = new Map());
+    }
+    add(r, ...n) {
+        let v = n[0];
+        if ((this._map.set(r, v), v && typeof v === "object" && "id" in v))
+            this._idmap.set(v.id, r);
+        return this;
+    }
+    clear() {
+        return (this._map = new WeakMap()), (this._idmap = new Map()), this;
+    }
+    remove(r) {
+        let n = this._map.get(r);
+        if (n && typeof n === "object" && "id" in n) this._idmap.delete(n.id);
+        return this._map.delete(r), this;
+    }
+    get(r) {
+        let n = r._zod.parent;
+        if (n) {
+            let v = { ...(this.get(n) ?? {}) };
+            delete v.id;
+            let t = { ...v, ...this._map.get(r) };
+            return Object.keys(t).length ? t : void 0;
+        }
+        return this._map.get(r);
+    }
+    has(r) {
+        return this._map.has(r);
+    }
+}
+function wn() {
+    return new su();
+}
+(F6 = globalThis).__zod_globalRegistry ?? (F6.__zod_globalRegistry = wn());
+var H = globalThis.__zod_globalRegistry;
+function rg(r, n) {
+    return new r({ type: "string", ...N(n) });
+}
+function ig(r, n) {
+    return new r({ type: "string", coerce: !0, ...N(n) });
+}
+function Sn(r, n) {
+    return new r({
+        type: "string",
+        format: "email",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Ei(r, n) {
+    return new r({
+        type: "string",
+        format: "guid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Nn(r, n) {
+    return new r({
+        type: "string",
+        format: "uuid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function zn(r, n) {
+    return new r({
+        type: "string",
+        format: "uuid",
+        check: "string_format",
+        abort: !1,
+        version: "v4",
+        ...N(n),
+    });
+}
+function jn(r, n) {
+    return new r({
+        type: "string",
+        format: "uuid",
+        check: "string_format",
+        abort: !1,
+        version: "v6",
+        ...N(n),
+    });
+}
+function Pn(r, n) {
+    return new r({
+        type: "string",
+        format: "uuid",
+        check: "string_format",
+        abort: !1,
+        version: "v7",
+        ...N(n),
+    });
+}
+function qi(r, n) {
+    return new r({
+        type: "string",
+        format: "url",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Jn(r, n) {
+    return new r({
+        type: "string",
+        format: "emoji",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Ln(r, n) {
+    return new r({
+        type: "string",
+        format: "nanoid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Gn(r, n) {
+    return new r({
+        type: "string",
+        format: "cuid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Xn(r, n) {
+    return new r({
+        type: "string",
+        format: "cuid2",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function En(r, n) {
+    return new r({
+        type: "string",
+        format: "ulid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function qn(r, n) {
+    return new r({
+        type: "string",
+        format: "xid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function On(r, n) {
+    return new r({
+        type: "string",
+        format: "ksuid",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Wn(r, n) {
+    return new r({
+        type: "string",
+        format: "ipv4",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Yn(r, n) {
+    return new r({
+        type: "string",
+        format: "ipv6",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function ng(r, n) {
+    return new r({
+        type: "string",
+        format: "mac",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Vn(r, n) {
+    return new r({
+        type: "string",
+        format: "cidrv4",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Kn(r, n) {
+    return new r({
+        type: "string",
+        format: "cidrv6",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Qn(r, n) {
+    return new r({
+        type: "string",
+        format: "base64",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Hn(r, n) {
+    return new r({
+        type: "string",
+        format: "base64url",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Tn(r, n) {
+    return new r({
+        type: "string",
+        format: "e164",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+function Bn(r, n) {
+    return new r({
+        type: "string",
+        format: "jwt",
+        check: "string_format",
+        abort: !1,
+        ...N(n),
+    });
+}
+var vg = { Any: null, Minute: -1, Second: 0, Millisecond: 3, Microsecond: 6 };
+function $g(r, n) {
+    return new r({
+        type: "string",
+        format: "datetime",
+        check: "string_format",
+        offset: !1,
+        local: !1,
+        precision: null,
+        ...N(n),
+    });
+}
+function tg(r, n) {
+    return new r({
+        type: "string",
+        format: "date",
+        check: "string_format",
+        ...N(n),
+    });
+}
+function ug(r, n) {
+    return new r({
+        type: "string",
+        format: "time",
+        check: "string_format",
+        precision: null,
+        ...N(n),
+    });
+}
+function gg(r, n) {
+    return new r({
+        type: "string",
+        format: "duration",
+        check: "string_format",
+        ...N(n),
+    });
+}
+function Ig(r, n) {
+    return new r({ type: "number", checks: [], ...N(n) });
+}
+function _g(r, n) {
+    return new r({ type: "number", coerce: !0, checks: [], ...N(n) });
+}
+function og(r, n) {
+    return new r({
+        type: "number",
+        check: "number_format",
+        abort: !1,
+        format: "safeint",
+        ...N(n),
+    });
+}
+function Ug(r, n) {
+    return new r({
+        type: "number",
+        check: "number_format",
+        abort: !1,
+        format: "float32",
+        ...N(n),
+    });
+}
+function bg(r, n) {
+    return new r({
+        type: "number",
+        check: "number_format",
+        abort: !1,
+        format: "float64",
+        ...N(n),
+    });
+}
+function Dg(r, n) {
+    return new r({
+        type: "number",
+        check: "number_format",
+        abort: !1,
+        format: "int32",
+        ...N(n),
+    });
+}
+function kg(r, n) {
+    return new r({
+        type: "number",
+        check: "number_format",
+        abort: !1,
+        format: "uint32",
+        ...N(n),
+    });
+}
+function lg(r, n) {
+    return new r({ type: "boolean", ...N(n) });
+}
+function cg(r, n) {
+    return new r({ type: "boolean", coerce: !0, ...N(n) });
+}
+function wg(r, n) {
+    return new r({ type: "bigint", ...N(n) });
+}
+function Sg(r, n) {
+    return new r({ type: "bigint", coerce: !0, ...N(n) });
+}
+function Ng(r, n) {
+    return new r({
+        type: "bigint",
+        check: "bigint_format",
+        abort: !1,
+        format: "int64",
+        ...N(n),
+    });
+}
+function zg(r, n) {
+    return new r({
+        type: "bigint",
+        check: "bigint_format",
+        abort: !1,
+        format: "uint64",
+        ...N(n),
+    });
+}
+function jg(r, n) {
+    return new r({ type: "symbol", ...N(n) });
+}
+function Pg(r, n) {
+    return new r({ type: "undefined", ...N(n) });
+}
+function Jg(r, n) {
+    return new r({ type: "null", ...N(n) });
+}
+function Lg(r) {
+    return new r({ type: "any" });
+}
+function Gg(r) {
+    return new r({ type: "unknown" });
+}
+function Xg(r, n) {
+    return new r({ type: "never", ...N(n) });
+}
+function Eg(r, n) {
+    return new r({ type: "void", ...N(n) });
+}
+function qg(r, n) {
+    return new r({ type: "date", ...N(n) });
+}
+function Og(r, n) {
+    return new r({ type: "date", coerce: !0, ...N(n) });
+}
+function Wg(r, n) {
+    return new r({ type: "nan", ...N(n) });
+}
+function s(r, n) {
+    return new tn({ check: "less_than", ...N(n), value: r, inclusive: !1 });
+}
+function m(r, n) {
+    return new tn({ check: "less_than", ...N(n), value: r, inclusive: !0 });
+}
+function rr(r, n) {
+    return new un({ check: "greater_than", ...N(n), value: r, inclusive: !1 });
+}
+function M(r, n) {
+    return new un({ check: "greater_than", ...N(n), value: r, inclusive: !0 });
+}
+function An(r) {
+    return rr(0, r);
+}
+function Mn(r) {
+    return s(0, r);
+}
+function Fn(r) {
+    return m(0, r);
+}
+function Rn(r) {
+    return M(0, r);
+}
+function Dr(r, n) {
+    return new E$({ check: "multiple_of", ...N(n), value: r });
+}
+function kr(r, n) {
+    return new W$({ check: "max_size", ...N(n), maximum: r });
+}
+function ir(r, n) {
+    return new Y$({ check: "min_size", ...N(n), minimum: r });
+}
+function Jr(r, n) {
+    return new V$({ check: "size_equals", ...N(n), size: r });
+}
+function Lr(r, n) {
+    return new K$({ check: "max_length", ...N(n), maximum: r });
+}
+function ur(r, n) {
+    return new Q$({ check: "min_length", ...N(n), minimum: r });
+}
+function Gr(r, n) {
+    return new H$({ check: "length_equals", ...N(n), length: r });
+}
+function Br(r, n) {
+    return new T$({
+        check: "string_format",
+        format: "regex",
+        ...N(n),
+        pattern: r,
+    });
+}
+function Ar(r) {
+    return new B$({ check: "string_format", format: "lowercase", ...N(r) });
+}
+function Mr(r) {
+    return new A$({ check: "string_format", format: "uppercase", ...N(r) });
+}
+function Fr(r, n) {
+    return new M$({
+        check: "string_format",
+        format: "includes",
+        ...N(n),
+        includes: r,
+    });
+}
+function Rr(r, n) {
+    return new F$({
+        check: "string_format",
+        format: "starts_with",
+        ...N(n),
+        prefix: r,
+    });
+}
+function Zr(r, n) {
+    return new R$({
+        check: "string_format",
+        format: "ends_with",
+        ...N(n),
+        suffix: r,
+    });
+}
+function Zn(r, n, v) {
+    return new Z$({ check: "property", property: r, schema: n, ...N(v) });
+}
+function er(r, n) {
+    return new e$({ check: "mime_type", mime: r, ...N(n) });
+}
+function d(r) {
+    return new x$({ check: "overwrite", tx: r });
+}
+function xr(r) {
+    return d((n) => n.normalize(r));
+}
+function fr() {
+    return d((r) => r.trim());
+}
+function Cr() {
+    return d((r) => r.toLowerCase());
+}
+function mr() {
+    return d((r) => r.toUpperCase());
+}
+function yr() {
+    return d((r) => Fv(r));
+}
+function Yg(r, n, v) {
+    return new r({ type: "array", element: n, ...N(v) });
+}
+function zD(r, n, v) {
+    return new r({ type: "union", options: n, ...N(v) });
+}
+function jD(r, n, v) {
+    return new r({ type: "union", options: n, inclusive: !1, ...N(v) });
+}
+function PD(r, n, v, t) {
+    return new r({ type: "union", options: v, discriminator: n, ...N(t) });
+}
+function JD(r, n, v) {
+    return new r({ type: "intersection", left: n, right: v });
+}
+function LD(r, n, v, t) {
+    let i = v instanceof P;
+    return new r({
+        type: "tuple",
+        items: n,
+        rest: i ? v : null,
+        ...N(i ? t : v),
+    });
+}
+function GD(r, n, v, t) {
+    return new r({ type: "record", keyType: n, valueType: v, ...N(t) });
+}
+function XD(r, n, v, t) {
+    return new r({ type: "map", keyType: n, valueType: v, ...N(t) });
+}
+function ED(r, n, v) {
+    return new r({ type: "set", valueType: n, ...N(v) });
+}
+function qD(r, n, v) {
+    let t = Array.isArray(n) ? Object.fromEntries(n.map((i) => [i, i])) : n;
+    return new r({ type: "enum", entries: t, ...N(v) });
+}
+function OD(r, n, v) {
+    return new r({ type: "enum", entries: n, ...N(v) });
+}
+function WD(r, n, v) {
+    return new r({
+        type: "literal",
+        values: Array.isArray(n) ? n : [n],
+        ...N(v),
+    });
+}
+function Vg(r, n) {
+    return new r({ type: "file", ...N(n) });
+}
+function YD(r, n) {
+    return new r({ type: "transform", transform: n });
+}
+function VD(r, n) {
+    return new r({ type: "optional", innerType: n });
+}
+function KD(r, n) {
+    return new r({ type: "nullable", innerType: n });
+}
+function QD(r, n, v) {
+    return new r({
+        type: "default",
+        innerType: n,
+        get defaultValue() {
+            return typeof v === "function" ? v() : Zv(v);
+        },
+    });
+}
+function HD(r, n, v) {
+    return new r({ type: "nonoptional", innerType: n, ...N(v) });
+}
+function TD(r, n) {
+    return new r({ type: "success", innerType: n });
+}
+function BD(r, n, v) {
+    return new r({
+        type: "catch",
+        innerType: n,
+        catchValue: typeof v === "function" ? v : () => v,
+    });
+}
+function AD(r, n, v) {
+    return new r({ type: "pipe", in: n, out: v });
+}
+function MD(r, n) {
+    return new r({ type: "readonly", innerType: n });
+}
+function FD(r, n, v) {
+    return new r({ type: "template_literal", parts: n, ...N(v) });
+}
+function RD(r, n) {
+    return new r({ type: "lazy", getter: n });
+}
+function ZD(r, n) {
+    return new r({ type: "promise", innerType: n });
+}
+function Kg(r, n, v) {
+    let t = N(v);
+    return (
+        t.abort ?? (t.abort = !0),
+        new r({ type: "custom", check: "custom", fn: n, ...t })
+    );
+}
+function Qg(r, n, v) {
+    return new r({ type: "custom", check: "custom", fn: n, ...N(v) });
+}
+function Hg(r, n) {
+    let v = R6((t) => {
+        return (
+            (t.addIssue = (i) => {
+                if (typeof i === "string")
+                    t.issues.push(Wr(i, t.value, v._zod.def));
+                else {
+                    let $ = i;
+                    if ($.fatal) $.continue = !1;
+                    $.code ?? ($.code = "custom"),
+                        $.input ?? ($.input = t.value),
+                        $.inst ?? ($.inst = v),
+                        $.continue ?? ($.continue = !v._zod.def.abort),
+                        t.issues.push(Wr($));
+                }
+            }),
+            r(t.value, t)
+        );
+    }, n);
+    return v;
+}
+function R6(r, n) {
+    let v = new W({ check: "custom", ...N(n) });
+    return (v._zod.check = r), v;
+}
+function Tg(r) {
+    let n = new W({ check: "describe" });
+    return (
+        (n._zod.onattach = [
+            (v) => {
+                let t = H.get(v) ?? {};
+                H.add(v, { ...t, description: r });
+            },
+        ]),
+        (n._zod.check = () => {}),
+        n
+    );
+}
+function Bg(r) {
+    let n = new W({ check: "meta" });
+    return (
+        (n._zod.onattach = [
+            (v) => {
+                let t = H.get(v) ?? {};
+                H.add(v, { ...t, ...r });
+            },
+        ]),
+        (n._zod.check = () => {}),
+        n
+    );
+}
+function Ag(r, n) {
+    let v = N(n),
+        t = v.truthy ?? ["true", "1", "yes", "on", "y", "enabled"],
+        i = v.falsy ?? ["false", "0", "no", "off", "n", "disabled"];
+    if (v.case !== "sensitive")
+        (t = t.map((c) => (typeof c === "string" ? c.toLowerCase() : c))),
+            (i = i.map((c) => (typeof c === "string" ? c.toLowerCase() : c)));
+    let $ = new Set(t),
+        u = new Set(i),
+        g = r.Codec ?? ji,
+        _ = r.Boolean ?? Ni,
+        o = new (r.String ?? Pr)({ type: "string", error: v.error }),
+        D = new _({ type: "boolean", error: v.error }),
+        S = new g({
+            type: "pipe",
+            in: o,
+            out: D,
+            transform: (c, j) => {
+                let R = c;
+                if (v.case !== "sensitive") R = R.toLowerCase();
+                if ($.has(R)) return !0;
+                else if (u.has(R)) return !1;
+                else
+                    return (
+                        j.issues.push({
+                            code: "invalid_value",
+                            expected: "stringbool",
+                            values: [...$, ...u],
+                            input: j.value,
+                            inst: S,
+                            continue: !1,
+                        }),
+                        {}
+                    );
+            },
+            reverseTransform: (c, j) => {
+                if (c === !0) return t[0] || "true";
+                else return i[0] || "false";
+            },
+            error: v.error,
+        });
+    return S;
+}
+function hr(r, n, v, t = {}) {
+    let i = N(t),
+        $ = {
+            ...N(t),
+            check: "string_format",
+            type: "string",
+            format: n,
+            fn: typeof v === "function" ? v : (g) => v.test(g),
+            ...i,
+        };
+    if (v instanceof RegExp) $.pattern = v;
+    return new r($);
+}
+function lr(r) {
+    let n = r?.target ?? "draft-2020-12";
+    if (n === "draft-4") n = "draft-04";
+    if (n === "draft-7") n = "draft-07";
+    return {
+        processors: r.processors ?? {},
+        metadataRegistry: r?.metadata ?? H,
+        target: n,
+        unrepresentable: r?.unrepresentable ?? "throw",
+        override: r?.override ?? (() => {}),
+        io: r?.io ?? "output",
+        counter: 0,
+        seen: new Map(),
+        cycles: r?.cycles ?? "ref",
+        reused: r?.reused ?? "inline",
+        external: r?.external ?? void 0,
+    };
+}
+function E(r, n, v = { path: [], schemaPath: [] }) {
+    var t;
+    let i = r._zod.def,
+        $ = n.seen.get(r);
+    if ($) {
+        if (($.count++, v.schemaPath.includes(r))) $.cycle = v.path;
+        return $.schema;
+    }
+    let u = { schema: {}, count: 1, cycle: void 0, path: v.path };
+    n.seen.set(r, u);
+    let g = r._zod.toJSONSchema?.();
+    if (g) u.schema = g;
+    else {
+        let o = { ...v, schemaPath: [...v.schemaPath, r], path: v.path };
+        if (r._zod.processJSONSchema) r._zod.processJSONSchema(n, u.schema, o);
+        else {
+            let S = u.schema,
+                c = n.processors[i.type];
+            if (!c)
+                throw Error(
+                    `[toJSONSchema]: Non-representable type encountered: ${i.type}`,
+                );
+            c(r, n, S, o);
+        }
+        let D = r._zod.parent;
+        if (D) {
+            if (!u.ref) u.ref = D;
+            E(D, n, o), (n.seen.get(D).isParent = !0);
+        }
+    }
+    let _ = n.metadataRegistry.get(r);
+    if (_) Object.assign(u.schema, _);
+    if (n.io === "input" && F(r))
+        delete u.schema.examples, delete u.schema.default;
+    if (n.io === "input" && "_prefault" in u.schema)
+        (t = u.schema).default ?? (t.default = u.schema._prefault);
+    return delete u.schema._prefault, n.seen.get(r).schema;
+}
+function cr(r, n) {
+    let v = r.seen.get(n);
+    if (!v) throw Error("Unprocessed schema. This is a bug in Zod.");
+    let t = new Map();
+    for (let u of r.seen.entries()) {
+        let g = r.metadataRegistry.get(u[0])?.id;
+        if (g) {
+            let _ = t.get(g);
+            if (_ && _ !== u[0])
+                throw Error(
+                    `Duplicate schema id "${g}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`,
+                );
+            t.set(g, u[0]);
+        }
+    }
+    let i = (u) => {
+            let g = r.target === "draft-2020-12" ? "$defs" : "definitions";
+            if (r.external) {
+                let D = r.external.registry.get(u[0])?.id,
+                    S = r.external.uri ?? ((j) => j);
+                if (D) return { ref: S(D) };
+                let c = u[1].defId ?? u[1].schema.id ?? `schema${r.counter++}`;
+                return (
+                    (u[1].defId = c),
+                    { defId: c, ref: `${S("__shared")}#/${g}/${c}` }
+                );
+            }
+            if (u[1] === v) return { ref: "#" };
+            let I = `${"#"}/${g}/`,
+                o = u[1].schema.id ?? `__schema${r.counter++}`;
+            return { defId: o, ref: I + o };
+        },
+        $ = (u) => {
+            if (u[1].schema.$ref) return;
+            let g = u[1],
+                { ref: _, defId: I } = i(u);
+            if (((g.def = { ...g.schema }), I)) g.defId = I;
+            let o = g.schema;
+            for (let D in o) delete o[D];
+            o.$ref = _;
+        };
+    if (r.cycles === "throw")
+        for (let u of r.seen.entries()) {
+            let g = u[1];
+            if (g.cycle)
+                throw Error(`Cycle detected: #/${g.cycle?.join("/")}/<root>
 
-Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`)}for(let u of r.seen.entries()){let g=u[1];if(n===u[0]){$(u);continue}if(r.external){let I=r.external.registry.get(u[0])?.id;if(n!==u[0]&&I){$(u);continue}}if(r.metadataRegistry.get(u[0])?.id){$(u);continue}if(g.cycle){$(u);continue}if(g.count>1){if(r.reused==="ref"){$(u);continue}}}}function wr(r,n){let v=r.seen.get(n);if(!v)throw Error("Unprocessed schema. This is a bug in Zod.");let t=(g)=>{let _=r.seen.get(g);if(_.ref===null)return;let I=_.def??_.schema,o={...I},D=_.ref;if(_.ref=null,D){t(D);let c=r.seen.get(D),j=c.schema;if(j.$ref&&(r.target==="draft-07"||r.target==="draft-04"||r.target==="openapi-3.0"))I.allOf=I.allOf??[],I.allOf.push(j);else Object.assign(I,j);if(Object.assign(I,o),g._zod.parent===D)for(let K in I){if(K==="$ref"||K==="allOf")continue;if(!(K in o))delete I[K]}if(j.$ref&&c.def)for(let K in I){if(K==="$ref"||K==="allOf")continue;if(K in c.def&&JSON.stringify(I[K])===JSON.stringify(c.def[K]))delete I[K]}}let S=g._zod.parent;if(S&&S!==D){t(S);let c=r.seen.get(S);if(c?.schema.$ref){if(I.$ref=c.schema.$ref,c.def)for(let j in I){if(j==="$ref"||j==="allOf")continue;if(j in c.def&&JSON.stringify(I[j])===JSON.stringify(c.def[j]))delete I[j]}}}r.override({zodSchema:g,jsonSchema:I,path:_.path??[]})};for(let g of[...r.seen.entries()].reverse())t(g[0]);let i={};if(r.target==="draft-2020-12")i.$schema="https://json-schema.org/draft/2020-12/schema";else if(r.target==="draft-07")i.$schema="http://json-schema.org/draft-07/schema#";else if(r.target==="draft-04")i.$schema="http://json-schema.org/draft-04/schema#";else if(r.target==="openapi-3.0");if(r.external?.uri){let g=r.external.registry.get(n)?.id;if(!g)throw Error("Schema is missing an `id` property");i.$id=r.external.uri(g)}Object.assign(i,v.def??v.schema);let $=r.metadataRegistry.get(n)?.id;if($!==void 0&&i.id===$)delete i.id;let u=r.external?.defs??{};for(let g of r.seen.entries()){let _=g[1];if(_.def&&_.defId){if(_.def.id===_.defId)delete _.def.id;u[_.defId]=_.def}}if(r.external);else if(Object.keys(u).length>0)if(r.target==="draft-2020-12")i.$defs=u;else i.definitions=u;try{let g=JSON.parse(JSON.stringify(i));return Object.defineProperty(g,"~standard",{value:{...n["~standard"],jsonSchema:{input:dr(n,"input",r.processors),output:dr(n,"output",r.processors)}},enumerable:!1,writable:!1}),g}catch(g){throw Error("Error converting schema to JSON.")}}function F(r,n){let v=n??{seen:new Set};if(v.seen.has(r))return!1;v.seen.add(r);let t=r._zod.def;if(t.type==="transform")return!0;if(t.type==="array")return F(t.element,v);if(t.type==="set")return F(t.valueType,v);if(t.type==="lazy")return F(t.getter(),v);if(t.type==="promise"||t.type==="optional"||t.type==="nonoptional"||t.type==="nullable"||t.type==="readonly"||t.type==="default"||t.type==="prefault")return F(t.innerType,v);if(t.type==="intersection")return F(t.left,v)||F(t.right,v);if(t.type==="record"||t.type==="map")return F(t.keyType,v)||F(t.valueType,v);if(t.type==="pipe"){if(r._zod.traits.has("$ZodCodec"))return!0;return F(t.in,v)||F(t.out,v)}if(t.type==="object"){for(let i in t.shape)if(F(t.shape[i],v))return!0;return!1}if(t.type==="union"){for(let i of t.options)if(F(i,v))return!0;return!1}if(t.type==="tuple"){for(let i of t.items)if(F(i,v))return!0;if(t.rest&&F(t.rest,v))return!0;return!1}return!1}var Mg=(r,n={})=>(v)=>{let t=lr({...v,processors:n});return E(r,t),cr(t,r),wr(t,r)},dr=(r,n,v={})=>(t)=>{let{libraryOptions:i,target:$}=t??{},u=lr({...i??{},target:$,io:n,processors:v});return E(r,u),cr(u,r),wr(u,r)};var eD={guid:"uuid",url:"uri",datetime:"date-time",json_string:"json-string",regex:""},Fg=(r,n,v,t)=>{let i=v;i.type="string";let{minimum:$,maximum:u,format:g,patterns:_,contentEncoding:I}=r._zod.bag;if(typeof $==="number")i.minLength=$;if(typeof u==="number")i.maxLength=u;if(g){if(i.format=eD[g]??g,i.format==="")delete i.format;if(g==="time")delete i.format}if(I)i.contentEncoding=I;if(_&&_.size>0){let o=[..._];if(o.length===1)i.pattern=o[0].source;else if(o.length>1)i.allOf=[...o.map((D)=>({...n.target==="draft-07"||n.target==="draft-04"||n.target==="openapi-3.0"?{type:"string"}:{},pattern:D.source}))]}},Rg=(r,n,v,t)=>{let i=v,{minimum:$,maximum:u,format:g,multipleOf:_,exclusiveMaximum:I,exclusiveMinimum:o}=r._zod.bag;if(typeof g==="string"&&g.includes("int"))i.type="integer";else i.type="number";let D=typeof o==="number"&&o>=($??Number.NEGATIVE_INFINITY),S=typeof I==="number"&&I<=(u??Number.POSITIVE_INFINITY),c=n.target==="draft-04"||n.target==="openapi-3.0";if(D)if(c)i.minimum=o,i.exclusiveMinimum=!0;else i.exclusiveMinimum=o;else if(typeof $==="number")i.minimum=$;if(S)if(c)i.maximum=I,i.exclusiveMaximum=!0;else i.exclusiveMaximum=I;else if(typeof u==="number")i.maximum=u;if(typeof _==="number")i.multipleOf=_},Zg=(r,n,v,t)=>{v.type="boolean"},eg=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("BigInt cannot be represented in JSON Schema")},xg=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Symbols cannot be represented in JSON Schema")},fg=(r,n,v,t)=>{if(n.target==="openapi-3.0")v.type="string",v.nullable=!0,v.enum=[null];else v.type="null"},Cg=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Undefined cannot be represented in JSON Schema")},mg=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Void cannot be represented in JSON Schema")},yg=(r,n,v,t)=>{v.not={}},hg=(r,n,v,t)=>{},dg=(r,n,v,t)=>{},pg=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Date cannot be represented in JSON Schema")},ag=(r,n,v,t)=>{let i=r._zod.def,$=Ii(i.entries);if($.every((u)=>typeof u==="number"))v.type="number";if($.every((u)=>typeof u==="string"))v.type="string";v.enum=$},sg=(r,n,v,t)=>{let i=r._zod.def,$=[];for(let u of i.values)if(u===void 0){if(n.unrepresentable==="throw")throw Error("Literal `undefined` cannot be represented in JSON Schema")}else if(typeof u==="bigint")if(n.unrepresentable==="throw")throw Error("BigInt literals cannot be represented in JSON Schema");else $.push(Number(u));else $.push(u);if($.length===0);else if($.length===1){let u=$[0];if(v.type=u===null?"null":typeof u,n.target==="draft-04"||n.target==="openapi-3.0")v.enum=[u];else v.const=u}else{if($.every((u)=>typeof u==="number"))v.type="number";if($.every((u)=>typeof u==="string"))v.type="string";if($.every((u)=>typeof u==="boolean"))v.type="boolean";if($.every((u)=>u===null))v.type="null";v.enum=$}},rI=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("NaN cannot be represented in JSON Schema")},iI=(r,n,v,t)=>{let i=v,$=r._zod.pattern;if(!$)throw Error("Pattern not found in template literal");i.type="string",i.pattern=$.source},nI=(r,n,v,t)=>{let i=v,$={type:"string",format:"binary",contentEncoding:"binary"},{minimum:u,maximum:g,mime:_}=r._zod.bag;if(u!==void 0)$.minLength=u;if(g!==void 0)$.maxLength=g;if(_)if(_.length===1)$.contentMediaType=_[0],Object.assign(i,$);else Object.assign(i,$),i.anyOf=_.map((I)=>({contentMediaType:I}));else Object.assign(i,$)},vI=(r,n,v,t)=>{v.type="boolean"},$I=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Custom types cannot be represented in JSON Schema")},tI=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Function types cannot be represented in JSON Schema")},uI=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Transforms cannot be represented in JSON Schema")},gI=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Map cannot be represented in JSON Schema")},II=(r,n,v,t)=>{if(n.unrepresentable==="throw")throw Error("Set cannot be represented in JSON Schema")},_I=(r,n,v,t)=>{let i=v,$=r._zod.def,{minimum:u,maximum:g}=r._zod.bag;if(typeof u==="number")i.minItems=u;if(typeof g==="number")i.maxItems=g;i.type="array",i.items=E($.element,n,{...t,path:[...t.path,"items"]})},oI=(r,n,v,t)=>{let i=v,$=r._zod.def;i.type="object",i.properties={};let u=$.shape;for(let I in u)i.properties[I]=E(u[I],n,{...t,path:[...t.path,"properties",I]});let g=new Set(Object.keys(u)),_=new Set([...g].filter((I)=>{let o=$.shape[I]._zod;if(n.io==="input")return o.optin===void 0;else return o.optout===void 0}));if(_.size>0)i.required=Array.from(_);if($.catchall?._zod.def.type==="never")i.additionalProperties=!1;else if(!$.catchall){if(n.io==="output")i.additionalProperties=!1}else if($.catchall)i.additionalProperties=E($.catchall,n,{...t,path:[...t.path,"additionalProperties"]})},xn=(r,n,v,t)=>{let i=r._zod.def,$=i.inclusive===!1,u=i.options.map((g,_)=>E(g,n,{...t,path:[...t.path,$?"oneOf":"anyOf",_]}));if($)v.oneOf=u;else v.anyOf=u},UI=(r,n,v,t)=>{let i=r._zod.def,$=E(i.left,n,{...t,path:[...t.path,"allOf",0]}),u=E(i.right,n,{...t,path:[...t.path,"allOf",1]}),g=(I)=>("allOf"in I)&&Object.keys(I).length===1,_=[...g($)?$.allOf:[$],...g(u)?u.allOf:[u]];v.allOf=_},bI=(r,n,v,t)=>{let i=v,$=r._zod.def;i.type="array";let u=n.target==="draft-2020-12"?"prefixItems":"items",g=n.target==="draft-2020-12"?"items":n.target==="openapi-3.0"?"items":"additionalItems",_=$.items.map((S,c)=>E(S,n,{...t,path:[...t.path,u,c]})),I=$.rest?E($.rest,n,{...t,path:[...t.path,g,...n.target==="openapi-3.0"?[$.items.length]:[]]}):null;if(n.target==="draft-2020-12"){if(i.prefixItems=_,I)i.items=I}else if(n.target==="openapi-3.0"){if(i.items={anyOf:_},I)i.items.anyOf.push(I);if(i.minItems=_.length,!I)i.maxItems=_.length}else if(i.items=_,I)i.additionalItems=I;let{minimum:o,maximum:D}=r._zod.bag;if(typeof o==="number")i.minItems=o;if(typeof D==="number")i.maxItems=D},DI=(r,n,v,t)=>{let i=v,$=r._zod.def;i.type="object";let u=$.keyType,_=u._zod.bag?.patterns;if($.mode==="loose"&&_&&_.size>0){let o=E($.valueType,n,{...t,path:[...t.path,"patternProperties","*"]});i.patternProperties={};for(let D of _)i.patternProperties[D.source]=o}else{if(n.target==="draft-07"||n.target==="draft-2020-12")i.propertyNames=E($.keyType,n,{...t,path:[...t.path,"propertyNames"]});i.additionalProperties=E($.valueType,n,{...t,path:[...t.path,"additionalProperties"]})}let I=u._zod.values;if(I){let o=[...I].filter((D)=>typeof D==="string"||typeof D==="number");if(o.length>0)i.required=o}},kI=(r,n,v,t)=>{let i=r._zod.def,$=E(i.innerType,n,t),u=n.seen.get(r);if(n.target==="openapi-3.0")u.ref=i.innerType,v.nullable=!0;else v.anyOf=[$,{type:"null"}]},lI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType},cI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType,v.default=JSON.parse(JSON.stringify(i.defaultValue))},wI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);if($.ref=i.innerType,n.io==="input")v._prefault=JSON.parse(JSON.stringify(i.defaultValue))},SI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType;let u;try{u=i.catchValue(void 0)}catch{throw Error("Dynamic catch values are not supported in JSON Schema")}v.default=u},NI=(r,n,v,t)=>{let i=r._zod.def,$=i.in._zod.traits.has("$ZodTransform"),u=n.io==="input"?$?i.out:i.in:i.out;E(u,n,t);let g=n.seen.get(r);g.ref=u},zI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType,v.readOnly=!0},jI=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType},fn=(r,n,v,t)=>{let i=r._zod.def;E(i.innerType,n,t);let $=n.seen.get(r);$.ref=i.innerType},PI=(r,n,v,t)=>{let i=r._zod.innerType;E(i,n,t);let $=n.seen.get(r);$.ref=i},en={string:Fg,number:Rg,boolean:Zg,bigint:eg,symbol:xg,null:fg,undefined:Cg,void:mg,never:yg,any:hg,unknown:dg,date:pg,enum:ag,literal:sg,nan:rI,template_literal:iI,file:nI,success:vI,custom:$I,function:tI,transform:uI,map:gI,set:II,array:_I,object:oI,union:xn,intersection:UI,tuple:bI,record:DI,nullable:kI,nonoptional:lI,default:cI,prefault:wI,catch:SI,pipe:NI,readonly:zI,promise:jI,optional:fn,lazy:PI};function Cn(r,n){if("_idmap"in r){let t=r,i=lr({...n,processors:en}),$={};for(let _ of t._idmap.entries()){let[I,o]=_;E(o,i)}let u={},g={registry:t,uri:n?.uri,defs:$};i.external=g;for(let _ of t._idmap.entries()){let[I,o]=_;cr(i,o),u[I]=wr(i,o)}if(Object.keys($).length>0){let _=i.target==="draft-2020-12"?"$defs":"definitions";u.__shared={[_]:$}}return{schemas:u}}let v=lr({...n,processors:en});return E(r,v),cr(v,r),wr(v,r)}class JI{get metadataRegistry(){return this.ctx.metadataRegistry}get target(){return this.ctx.target}get unrepresentable(){return this.ctx.unrepresentable}get override(){return this.ctx.override}get io(){return this.ctx.io}get counter(){return this.ctx.counter}set counter(r){this.ctx.counter=r}get seen(){return this.ctx.seen}constructor(r){let n=r?.target??"draft-2020-12";if(n==="draft-4")n="draft-04";if(n==="draft-7")n="draft-07";this.ctx=lr({processors:en,target:n,...r?.metadata&&{metadata:r.metadata},...r?.unrepresentable&&{unrepresentable:r.unrepresentable},...r?.override&&{override:r.override},...r?.io&&{io:r.io}})}process(r,n={path:[],schemaPath:[]}){return E(r,this.ctx,n)}emit(r,n){if(n){if(n.cycles)this.ctx.cycles=n.cycles;if(n.reused)this.ctx.reused=n.reused;if(n.external)this.ctx.external=n.external}cr(this.ctx,r);let v=wr(this.ctx,r),{"~standard":t,...i}=v;return i}}var Z6={};var Oi={};vr(Oi,{xor:()=>H_,xid:()=>$_,void:()=>O_,uuidv7:()=>d6,uuidv6:()=>h6,uuidv4:()=>y6,uuid:()=>m6,url:()=>p6,unknown:()=>Xr,union:()=>Nv,undefined:()=>E_,ulid:()=>v_,uint64:()=>G_,uint32:()=>P_,tuple:()=>v4,transform:()=>jv,templateLiteral:()=>h_,symbol:()=>X_,superRefine:()=>Y4,success:()=>f_,stringbool:()=>vo,stringFormat:()=>l_,string:()=>Wi,strictObject:()=>K_,set:()=>F_,refine:()=>W4,record:()=>$4,readonly:()=>L4,promise:()=>d_,preprocess:()=>to,prefault:()=>c4,pipe:()=>sn,partialRecord:()=>B_,optional:()=>Vi,object:()=>V_,number:()=>RI,nullish:()=>x_,nullable:()=>Ki,null:()=>CI,nonoptional:()=>w4,never:()=>Sv,nativeEnum:()=>R_,nanoid:()=>r_,nan:()=>C_,meta:()=>io,map:()=>M_,mac:()=>g_,looseRecord:()=>A_,looseObject:()=>Q_,literal:()=>Z_,lazy:()=>E4,ksuid:()=>t_,keyof:()=>Y_,jwt:()=>k_,json:()=>$o,ipv6:()=>I_,ipv4:()=>u_,invertCodec:()=>y_,intersection:()=>i4,int64:()=>L_,int32:()=>j_,int:()=>an,instanceof:()=>no,httpUrl:()=>a6,hostname:()=>c_,hex:()=>w_,hash:()=>S_,guid:()=>C6,function:()=>p_,float64:()=>z_,float32:()=>N_,file:()=>e_,exactOptional:()=>U4,enum:()=>zv,emoji:()=>s6,email:()=>f6,e164:()=>D_,discriminatedUnion:()=>T_,describe:()=>ro,date:()=>W_,custom:()=>s_,cuid2:()=>n_,cuid:()=>i_,codec:()=>m_,cidrv6:()=>o_,cidrv4:()=>__,check:()=>a_,catch:()=>z4,boolean:()=>ZI,bigint:()=>J_,base64url:()=>b_,base64:()=>U_,array:()=>Bi,any:()=>q_,_function:()=>p_,_default:()=>k4,_ZodString:()=>rv,ZodXor:()=>aI,ZodXID:()=>gv,ZodVoid:()=>dI,ZodUnknown:()=>yI,ZodUnion:()=>Mi,ZodUndefined:()=>xI,ZodUUID:()=>nr,ZodURL:()=>Hi,ZodULID:()=>uv,ZodType:()=>J,ZodTuple:()=>n4,ZodTransform:()=>_4,ZodTemplateLiteral:()=>G4,ZodSymbol:()=>eI,ZodSuccess:()=>S4,ZodStringFormat:()=>O,ZodString:()=>ri,ZodSet:()=>u4,ZodRecord:()=>ar,ZodReadonly:()=>J4,ZodPromise:()=>q4,ZodPreprocess:()=>P4,ZodPrefault:()=>l4,ZodPipe:()=>Fi,ZodOptional:()=>Pv,ZodObject:()=>Ai,ZodNumberFormat:()=>Er,ZodNumber:()=>ni,ZodNullable:()=>b4,ZodNull:()=>fI,ZodNonOptional:()=>Jv,ZodNever:()=>hI,ZodNanoID:()=>vv,ZodNaN:()=>j4,ZodMap:()=>t4,ZodMAC:()=>FI,ZodLiteral:()=>g4,ZodLazy:()=>X4,ZodKSUID:()=>Iv,ZodJWT:()=>cv,ZodIntersection:()=>r4,ZodIPv6:()=>ov,ZodIPv4:()=>_v,ZodGUID:()=>Yi,ZodFunction:()=>O4,ZodFile:()=>I4,ZodExactOptional:()=>o4,ZodEnum:()=>sr,ZodEmoji:()=>nv,ZodEmail:()=>iv,ZodE164:()=>lv,ZodDiscriminatedUnion:()=>sI,ZodDefault:()=>D4,ZodDate:()=>Ti,ZodCustomStringFormat:()=>ii,ZodCustom:()=>Zi,ZodCodec:()=>Ri,ZodCatch:()=>N4,ZodCUID2:()=>tv,ZodCUID:()=>$v,ZodCIDRv6:()=>bv,ZodCIDRv4:()=>Uv,ZodBoolean:()=>vi,ZodBigIntFormat:()=>wv,ZodBigInt:()=>$i,ZodBase64URL:()=>kv,ZodBase64:()=>Dv,ZodArray:()=>pI,ZodAny:()=>mI});var mn={};vr(mn,{uppercase:()=>Mr,trim:()=>fr,toUpperCase:()=>mr,toLowerCase:()=>Cr,startsWith:()=>Rr,slugify:()=>yr,size:()=>Jr,regex:()=>Br,property:()=>Zn,positive:()=>An,overwrite:()=>d,normalize:()=>xr,nonpositive:()=>Fn,nonnegative:()=>Rn,negative:()=>Mn,multipleOf:()=>Dr,minSize:()=>ir,minLength:()=>ur,mime:()=>er,maxSize:()=>kr,maxLength:()=>Lr,lte:()=>m,lt:()=>s,lowercase:()=>Ar,length:()=>Gr,includes:()=>Fr,gte:()=>M,gt:()=>rr,endsWith:()=>Zr});var pr={};vr(pr,{time:()=>XI,duration:()=>EI,datetime:()=>LI,date:()=>GI,ZodISOTime:()=>dn,ZodISODuration:()=>pn,ZodISODateTime:()=>yn,ZodISODate:()=>hn});var yn=U("ZodISODateTime",(r,n)=>{$t.init(r,n),O.init(r,n)});function LI(r){return $g(yn,r)}var hn=U("ZodISODate",(r,n)=>{tt.init(r,n),O.init(r,n)});function GI(r){return tg(hn,r)}var dn=U("ZodISOTime",(r,n)=>{ut.init(r,n),O.init(r,n)});function XI(r){return ug(dn,r)}var pn=U("ZodISODuration",(r,n)=>{gt.init(r,n),O.init(r,n)});function EI(r){return gg(pn,r)}var e6=(r,n)=>{Di.init(r,n),r.name="ZodError",Object.defineProperties(r,{format:{value:(v)=>li(r,v)},flatten:{value:(v)=>ki(r,v)},addIssue:{value:(v)=>{r.issues.push(v),r.message=JSON.stringify(r.issues,qr,2)}},addIssues:{value:(v)=>{r.issues.push(...v),r.message=JSON.stringify(r.issues,qr,2)}},isEmpty:{get(){return r.issues.length===0}}})},fD=U("ZodError",e6),x=U("ZodError",e6,{Parent:Error});var qI=Yr(x),OI=Vr(x),WI=Kr(x),YI=Qr(x),VI=hi(x),KI=di(x),QI=pi(x),HI=ai(x),TI=si(x),BI=rn(x),AI=nn(x),MI=vn(x);var x6=new WeakMap;function Qi(r,n,v){let t=Object.getPrototypeOf(r),i=x6.get(t);if(!i)i=new Set,x6.set(t,i);if(i.has(n))return;i.add(n);for(let $ in v){let u=v[$];Object.defineProperty(t,$,{configurable:!0,enumerable:!1,get(){let g=u.bind(this);return Object.defineProperty(this,$,{configurable:!0,writable:!0,enumerable:!0,value:g}),g},set(g){Object.defineProperty(this,$,{configurable:!0,writable:!0,enumerable:!0,value:g})}})}}var J=U("ZodType",(r,n)=>{return P.init(r,n),Object.assign(r["~standard"],{jsonSchema:{input:dr(r,"input"),output:dr(r,"output")}}),r.toJSONSchema=Mg(r,{}),r.def=n,r.type=n.type,Object.defineProperty(r,"_def",{value:n}),r.parse=(v,t)=>qI(r,v,t,{callee:r.parse}),r.safeParse=(v,t)=>WI(r,v,t),r.parseAsync=async(v,t)=>OI(r,v,t,{callee:r.parseAsync}),r.safeParseAsync=async(v,t)=>YI(r,v,t),r.spa=r.safeParseAsync,r.encode=(v,t)=>VI(r,v,t),r.decode=(v,t)=>KI(r,v,t),r.encodeAsync=async(v,t)=>QI(r,v,t),r.decodeAsync=async(v,t)=>HI(r,v,t),r.safeEncode=(v,t)=>TI(r,v,t),r.safeDecode=(v,t)=>BI(r,v,t),r.safeEncodeAsync=async(v,t)=>AI(r,v,t),r.safeDecodeAsync=async(v,t)=>MI(r,v,t),Qi(r,"ZodType",{check(...v){let t=this.def;return this.clone(w.mergeDefs(t,{checks:[...t.checks??[],...v.map((i)=>typeof i==="function"?{_zod:{check:i,def:{check:"custom"},onattach:[]}}:i)]}),{parent:!0})},with(...v){return this.check(...v)},clone(v,t){return B(this,v,t)},brand(){return this},register(v,t){return v.add(this,t),this},refine(v,t){return this.check(W4(v,t))},superRefine(v,t){return this.check(Y4(v,t))},overwrite(v){return this.check(d(v))},optional(){return Vi(this)},exactOptional(){return U4(this)},nullable(){return Ki(this)},nullish(){return Vi(Ki(this))},nonoptional(v){return w4(this,v)},array(){return Bi(this)},or(v){return Nv([this,v])},and(v){return i4(this,v)},transform(v){return sn(this,jv(v))},default(v){return k4(this,v)},prefault(v){return c4(this,v)},catch(v){return z4(this,v)},pipe(v){return sn(this,v)},readonly(){return L4(this)},describe(v){let t=this.clone();return H.add(t,{description:v}),t},meta(...v){if(v.length===0)return H.get(this);let t=this.clone();return H.add(t,v[0]),t},isOptional(){return this.safeParse(void 0).success},isNullable(){return this.safeParse(null).success},apply(v){return v(this)}}),Object.defineProperty(r,"description",{get(){return H.get(r)?.description},configurable:!0}),r}),rv=U("_ZodString",(r,n)=>{Pr.init(r,n),J.init(r,n),r._zod.processJSONSchema=(t,i,$)=>Fg(r,t,i,$);let v=r._zod.bag;r.format=v.format??null,r.minLength=v.minimum??null,r.maxLength=v.maximum??null,Qi(r,"_ZodString",{regex(...t){return this.check(Br(...t))},includes(...t){return this.check(Fr(...t))},startsWith(...t){return this.check(Rr(...t))},endsWith(...t){return this.check(Zr(...t))},min(...t){return this.check(ur(...t))},max(...t){return this.check(Lr(...t))},length(...t){return this.check(Gr(...t))},nonempty(...t){return this.check(ur(1,...t))},lowercase(t){return this.check(Ar(t))},uppercase(t){return this.check(Mr(t))},trim(){return this.check(fr())},normalize(...t){return this.check(xr(...t))},toLowerCase(){return this.check(Cr())},toUpperCase(){return this.check(mr())},slugify(){return this.check(yr())}})}),ri=U("ZodString",(r,n)=>{Pr.init(r,n),rv.init(r,n),r.email=(v)=>r.check(Sn(iv,v)),r.url=(v)=>r.check(qi(Hi,v)),r.jwt=(v)=>r.check(Bn(cv,v)),r.emoji=(v)=>r.check(Jn(nv,v)),r.guid=(v)=>r.check(Ei(Yi,v)),r.uuid=(v)=>r.check(Nn(nr,v)),r.uuidv4=(v)=>r.check(zn(nr,v)),r.uuidv6=(v)=>r.check(jn(nr,v)),r.uuidv7=(v)=>r.check(Pn(nr,v)),r.nanoid=(v)=>r.check(Ln(vv,v)),r.guid=(v)=>r.check(Ei(Yi,v)),r.cuid=(v)=>r.check(Gn($v,v)),r.cuid2=(v)=>r.check(Xn(tv,v)),r.ulid=(v)=>r.check(En(uv,v)),r.base64=(v)=>r.check(Qn(Dv,v)),r.base64url=(v)=>r.check(Hn(kv,v)),r.xid=(v)=>r.check(qn(gv,v)),r.ksuid=(v)=>r.check(On(Iv,v)),r.ipv4=(v)=>r.check(Wn(_v,v)),r.ipv6=(v)=>r.check(Yn(ov,v)),r.cidrv4=(v)=>r.check(Vn(Uv,v)),r.cidrv6=(v)=>r.check(Kn(bv,v)),r.e164=(v)=>r.check(Tn(lv,v)),r.datetime=(v)=>r.check(LI(v)),r.date=(v)=>r.check(GI(v)),r.time=(v)=>r.check(XI(v)),r.duration=(v)=>r.check(EI(v))});function Wi(r){return rg(ri,r)}var O=U("ZodStringFormat",(r,n)=>{q.init(r,n),rv.init(r,n)}),iv=U("ZodEmail",(r,n)=>{h$.init(r,n),O.init(r,n)});function f6(r){return Sn(iv,r)}var Yi=U("ZodGUID",(r,n)=>{m$.init(r,n),O.init(r,n)});function C6(r){return Ei(Yi,r)}var nr=U("ZodUUID",(r,n)=>{y$.init(r,n),O.init(r,n)});function m6(r){return Nn(nr,r)}function y6(r){return zn(nr,r)}function h6(r){return jn(nr,r)}function d6(r){return Pn(nr,r)}var Hi=U("ZodURL",(r,n)=>{d$.init(r,n),O.init(r,n)});function p6(r){return qi(Hi,r)}function a6(r){return qi(Hi,{protocol:C.httpProtocol,hostname:C.domain,...w.normalizeParams(r)})}var nv=U("ZodEmoji",(r,n)=>{p$.init(r,n),O.init(r,n)});function s6(r){return Jn(nv,r)}var vv=U("ZodNanoID",(r,n)=>{a$.init(r,n),O.init(r,n)});function r_(r){return Ln(vv,r)}var $v=U("ZodCUID",(r,n)=>{s$.init(r,n),O.init(r,n)});function i_(r){return Gn($v,r)}var tv=U("ZodCUID2",(r,n)=>{rt.init(r,n),O.init(r,n)});function n_(r){return Xn(tv,r)}var uv=U("ZodULID",(r,n)=>{it.init(r,n),O.init(r,n)});function v_(r){return En(uv,r)}var gv=U("ZodXID",(r,n)=>{nt.init(r,n),O.init(r,n)});function $_(r){return qn(gv,r)}var Iv=U("ZodKSUID",(r,n)=>{vt.init(r,n),O.init(r,n)});function t_(r){return On(Iv,r)}var _v=U("ZodIPv4",(r,n)=>{It.init(r,n),O.init(r,n)});function u_(r){return Wn(_v,r)}var FI=U("ZodMAC",(r,n)=>{ot.init(r,n),O.init(r,n)});function g_(r){return ng(FI,r)}var ov=U("ZodIPv6",(r,n)=>{_t.init(r,n),O.init(r,n)});function I_(r){return Yn(ov,r)}var Uv=U("ZodCIDRv4",(r,n)=>{Ut.init(r,n),O.init(r,n)});function __(r){return Vn(Uv,r)}var bv=U("ZodCIDRv6",(r,n)=>{bt.init(r,n),O.init(r,n)});function o_(r){return Kn(bv,r)}var Dv=U("ZodBase64",(r,n)=>{kt.init(r,n),O.init(r,n)});function U_(r){return Qn(Dv,r)}var kv=U("ZodBase64URL",(r,n)=>{lt.init(r,n),O.init(r,n)});function b_(r){return Hn(kv,r)}var lv=U("ZodE164",(r,n)=>{ct.init(r,n),O.init(r,n)});function D_(r){return Tn(lv,r)}var cv=U("ZodJWT",(r,n)=>{wt.init(r,n),O.init(r,n)});function k_(r){return Bn(cv,r)}var ii=U("ZodCustomStringFormat",(r,n)=>{St.init(r,n),O.init(r,n)});function l_(r,n,v={}){return hr(ii,r,n,v)}function c_(r){return hr(ii,"hostname",C.hostname,r)}function w_(r){return hr(ii,"hex",C.hex,r)}function S_(r,n){let v=n?.enc??"hex",t=`${r}_${v}`,i=C[t];if(!i)throw Error(`Unrecognized hash format: ${t}`);return hr(ii,t,i,n)}var ni=U("ZodNumber",(r,n)=>{bn.init(r,n),J.init(r,n),r._zod.processJSONSchema=(t,i,$)=>Rg(r,t,i,$),Qi(r,"ZodNumber",{gt(t,i){return this.check(rr(t,i))},gte(t,i){return this.check(M(t,i))},min(t,i){return this.check(M(t,i))},lt(t,i){return this.check(s(t,i))},lte(t,i){return this.check(m(t,i))},max(t,i){return this.check(m(t,i))},int(t){return this.check(an(t))},safe(t){return this.check(an(t))},positive(t){return this.check(rr(0,t))},nonnegative(t){return this.check(M(0,t))},negative(t){return this.check(s(0,t))},nonpositive(t){return this.check(m(0,t))},multipleOf(t,i){return this.check(Dr(t,i))},step(t,i){return this.check(Dr(t,i))},finite(){return this}});let v=r._zod.bag;r.minValue=Math.max(v.minimum??Number.NEGATIVE_INFINITY,v.exclusiveMinimum??Number.NEGATIVE_INFINITY)??null,r.maxValue=Math.min(v.maximum??Number.POSITIVE_INFINITY,v.exclusiveMaximum??Number.POSITIVE_INFINITY)??null,r.isInt=(v.format??"").includes("int")||Number.isSafeInteger(v.multipleOf??0.5),r.isFinite=!0,r.format=v.format??null});function RI(r){return Ig(ni,r)}var Er=U("ZodNumberFormat",(r,n)=>{Nt.init(r,n),ni.init(r,n)});function an(r){return og(Er,r)}function N_(r){return Ug(Er,r)}function z_(r){return bg(Er,r)}function j_(r){return Dg(Er,r)}function P_(r){return kg(Er,r)}var vi=U("ZodBoolean",(r,n)=>{Ni.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>Zg(r,v,t,i)});function ZI(r){return lg(vi,r)}var $i=U("ZodBigInt",(r,n)=>{Dn.init(r,n),J.init(r,n),r._zod.processJSONSchema=(t,i,$)=>eg(r,t,i,$),r.gte=(t,i)=>r.check(M(t,i)),r.min=(t,i)=>r.check(M(t,i)),r.gt=(t,i)=>r.check(rr(t,i)),r.gte=(t,i)=>r.check(M(t,i)),r.min=(t,i)=>r.check(M(t,i)),r.lt=(t,i)=>r.check(s(t,i)),r.lte=(t,i)=>r.check(m(t,i)),r.max=(t,i)=>r.check(m(t,i)),r.positive=(t)=>r.check(rr(BigInt(0),t)),r.negative=(t)=>r.check(s(BigInt(0),t)),r.nonpositive=(t)=>r.check(m(BigInt(0),t)),r.nonnegative=(t)=>r.check(M(BigInt(0),t)),r.multipleOf=(t,i)=>r.check(Dr(t,i));let v=r._zod.bag;r.minValue=v.minimum??null,r.maxValue=v.maximum??null,r.format=v.format??null});function J_(r){return wg($i,r)}var wv=U("ZodBigIntFormat",(r,n)=>{zt.init(r,n),$i.init(r,n)});function L_(r){return Ng(wv,r)}function G_(r){return zg(wv,r)}var eI=U("ZodSymbol",(r,n)=>{jt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>xg(r,v,t,i)});function X_(r){return jg(eI,r)}var xI=U("ZodUndefined",(r,n)=>{Pt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>Cg(r,v,t,i)});function E_(r){return Pg(xI,r)}var fI=U("ZodNull",(r,n)=>{Jt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>fg(r,v,t,i)});function CI(r){return Jg(fI,r)}var mI=U("ZodAny",(r,n)=>{Lt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>hg(r,v,t,i)});function q_(){return Lg(mI)}var yI=U("ZodUnknown",(r,n)=>{Gt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>dg(r,v,t,i)});function Xr(){return Gg(yI)}var hI=U("ZodNever",(r,n)=>{Xt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>yg(r,v,t,i)});function Sv(r){return Xg(hI,r)}var dI=U("ZodVoid",(r,n)=>{Et.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>mg(r,v,t,i)});function O_(r){return Eg(dI,r)}var Ti=U("ZodDate",(r,n)=>{qt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(t,i,$)=>pg(r,t,i,$),r.min=(t,i)=>r.check(M(t,i)),r.max=(t,i)=>r.check(m(t,i));let v=r._zod.bag;r.minDate=v.minimum?new Date(v.minimum):null,r.maxDate=v.maximum?new Date(v.maximum):null});function W_(r){return qg(Ti,r)}var pI=U("ZodArray",(r,n)=>{Ot.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>_I(r,v,t,i),r.element=n.element,Qi(r,"ZodArray",{min(v,t){return this.check(ur(v,t))},nonempty(v){return this.check(ur(1,v))},max(v,t){return this.check(Lr(v,t))},length(v,t){return this.check(Gr(v,t))},unwrap(){return this.element}})});function Bi(r,n){return Yg(pI,r,n)}function Y_(r){let n=r._zod.def.shape;return zv(Object.keys(n))}var Ai=U("ZodObject",(r,n)=>{Wt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>oI(r,v,t,i),w.defineLazy(r,"shape",()=>{return n.shape}),Qi(r,"ZodObject",{keyof(){return zv(Object.keys(this._zod.def.shape))},catchall(v){return this.clone({...this._zod.def,catchall:v})},passthrough(){return this.clone({...this._zod.def,catchall:Xr()})},loose(){return this.clone({...this._zod.def,catchall:Xr()})},strict(){return this.clone({...this._zod.def,catchall:Sv()})},strip(){return this.clone({...this._zod.def,catchall:void 0})},extend(v){return w.extend(this,v)},safeExtend(v){return w.safeExtend(this,v)},merge(v){return w.merge(this,v)},pick(v){return w.pick(this,v)},omit(v){return w.omit(this,v)},partial(...v){return w.partial(Pv,this,v[0])},required(...v){return w.required(Jv,this,v[0])}})});function V_(r,n){let v={type:"object",shape:r??{},...w.normalizeParams(n)};return new Ai(v)}function K_(r,n){return new Ai({type:"object",shape:r,catchall:Sv(),...w.normalizeParams(n)})}function Q_(r,n){return new Ai({type:"object",shape:r,catchall:Xr(),...w.normalizeParams(n)})}var Mi=U("ZodUnion",(r,n)=>{zi.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>xn(r,v,t,i),r.options=n.options});function Nv(r,n){return new Mi({type:"union",options:r,...w.normalizeParams(n)})}var aI=U("ZodXor",(r,n)=>{Mi.init(r,n),Yt.init(r,n),r._zod.processJSONSchema=(v,t,i)=>xn(r,v,t,i),r.options=n.options});function H_(r,n){return new aI({type:"union",options:r,inclusive:!1,...w.normalizeParams(n)})}var sI=U("ZodDiscriminatedUnion",(r,n)=>{Mi.init(r,n),Vt.init(r,n)});function T_(r,n,v){return new sI({type:"union",options:n,discriminator:r,...w.normalizeParams(v)})}var r4=U("ZodIntersection",(r,n)=>{Kt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>UI(r,v,t,i)});function i4(r,n){return new r4({type:"intersection",left:r,right:n})}var n4=U("ZodTuple",(r,n)=>{kn.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>bI(r,v,t,i),r.rest=(v)=>r.clone({...r._zod.def,rest:v})});function v4(r,n,v){let t=n instanceof P,i=t?v:n;return new n4({type:"tuple",items:r,rest:t?n:null,...w.normalizeParams(i)})}var ar=U("ZodRecord",(r,n)=>{Qt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>DI(r,v,t,i),r.keyType=n.keyType,r.valueType=n.valueType});function $4(r,n,v){if(!n||!n._zod)return new ar({type:"record",keyType:Wi(),valueType:r,...w.normalizeParams(n)});return new ar({type:"record",keyType:r,valueType:n,...w.normalizeParams(v)})}function B_(r,n,v){let t=B(r);return t._zod.values=void 0,new ar({type:"record",keyType:t,valueType:n,...w.normalizeParams(v)})}function A_(r,n,v){return new ar({type:"record",keyType:r,valueType:n,mode:"loose",...w.normalizeParams(v)})}var t4=U("ZodMap",(r,n)=>{Ht.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>gI(r,v,t,i),r.keyType=n.keyType,r.valueType=n.valueType,r.min=(...v)=>r.check(ir(...v)),r.nonempty=(v)=>r.check(ir(1,v)),r.max=(...v)=>r.check(kr(...v)),r.size=(...v)=>r.check(Jr(...v))});function M_(r,n,v){return new t4({type:"map",keyType:r,valueType:n,...w.normalizeParams(v)})}var u4=U("ZodSet",(r,n)=>{Tt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>II(r,v,t,i),r.min=(...v)=>r.check(ir(...v)),r.nonempty=(v)=>r.check(ir(1,v)),r.max=(...v)=>r.check(kr(...v)),r.size=(...v)=>r.check(Jr(...v))});function F_(r,n){return new u4({type:"set",valueType:r,...w.normalizeParams(n)})}var sr=U("ZodEnum",(r,n)=>{Bt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(t,i,$)=>ag(r,t,i,$),r.enum=n.entries,r.options=Object.values(n.entries);let v=new Set(Object.keys(n.entries));r.extract=(t,i)=>{let $={};for(let u of t)if(v.has(u))$[u]=n.entries[u];else throw Error(`Key ${u} not found in enum`);return new sr({...n,checks:[],...w.normalizeParams(i),entries:$})},r.exclude=(t,i)=>{let $={...n.entries};for(let u of t)if(v.has(u))delete $[u];else throw Error(`Key ${u} not found in enum`);return new sr({...n,checks:[],...w.normalizeParams(i),entries:$})}});function zv(r,n){let v=Array.isArray(r)?Object.fromEntries(r.map((t)=>[t,t])):r;return new sr({type:"enum",entries:v,...w.normalizeParams(n)})}function R_(r,n){return new sr({type:"enum",entries:r,...w.normalizeParams(n)})}var g4=U("ZodLiteral",(r,n)=>{At.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>sg(r,v,t,i),r.values=new Set(n.values),Object.defineProperty(r,"value",{get(){if(n.values.length>1)throw Error("This schema contains multiple valid literal values. Use `.values` instead.");return n.values[0]}})});function Z_(r,n){return new g4({type:"literal",values:Array.isArray(r)?r:[r],...w.normalizeParams(n)})}var I4=U("ZodFile",(r,n)=>{Mt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>nI(r,v,t,i),r.min=(v,t)=>r.check(ir(v,t)),r.max=(v,t)=>r.check(kr(v,t)),r.mime=(v,t)=>r.check(er(Array.isArray(v)?v:[v],t))});function e_(r){return Vg(I4,r)}var _4=U("ZodTransform",(r,n)=>{Ft.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>uI(r,v,t,i),r._zod.parse=(v,t)=>{if(t.direction==="backward")throw new Nr(r.constructor.name);v.addIssue=($)=>{if(typeof $==="string")v.issues.push(w.issue($,v.value,n));else{let u=$;if(u.fatal)u.continue=!1;u.code??(u.code="custom"),u.input??(u.input=v.value),u.inst??(u.inst=r),v.issues.push(w.issue(u))}};let i=n.transform(v.value,v);if(i instanceof Promise)return i.then(($)=>{return v.value=$,v.fallback=!0,v});return v.value=i,v.fallback=!0,v}});function jv(r){return new _4({type:"transform",transform:r})}var Pv=U("ZodOptional",(r,n)=>{ln.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>fn(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function Vi(r){return new Pv({type:"optional",innerType:r})}var o4=U("ZodExactOptional",(r,n)=>{Rt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>fn(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function U4(r){return new o4({type:"optional",innerType:r})}var b4=U("ZodNullable",(r,n)=>{Zt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>kI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function Ki(r){return new b4({type:"nullable",innerType:r})}function x_(r){return Vi(Ki(r))}var D4=U("ZodDefault",(r,n)=>{et.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>cI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType,r.removeDefault=r.unwrap});function k4(r,n){return new D4({type:"default",innerType:r,get defaultValue(){return typeof n==="function"?n():w.shallowClone(n)}})}var l4=U("ZodPrefault",(r,n)=>{xt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>wI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function c4(r,n){return new l4({type:"prefault",innerType:r,get defaultValue(){return typeof n==="function"?n():w.shallowClone(n)}})}var Jv=U("ZodNonOptional",(r,n)=>{ft.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>lI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function w4(r,n){return new Jv({type:"nonoptional",innerType:r,...w.normalizeParams(n)})}var S4=U("ZodSuccess",(r,n)=>{Ct.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>vI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function f_(r){return new S4({type:"success",innerType:r})}var N4=U("ZodCatch",(r,n)=>{mt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>SI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType,r.removeCatch=r.unwrap});function z4(r,n){return new N4({type:"catch",innerType:r,catchValue:typeof n==="function"?n:()=>n})}var j4=U("ZodNaN",(r,n)=>{yt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>rI(r,v,t,i)});function C_(r){return Wg(j4,r)}var Fi=U("ZodPipe",(r,n)=>{cn.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>NI(r,v,t,i),r.in=n.in,r.out=n.out});function sn(r,n){return new Fi({type:"pipe",in:r,out:n})}var Ri=U("ZodCodec",(r,n)=>{Fi.init(r,n),ji.init(r,n)});function m_(r,n,v){return new Ri({type:"pipe",in:r,out:n,transform:v.decode,reverseTransform:v.encode})}function y_(r){let n=r._zod.def;return new Ri({type:"pipe",in:n.out,out:n.in,transform:n.reverseTransform,reverseTransform:n.transform})}var P4=U("ZodPreprocess",(r,n)=>{Fi.init(r,n),ht.init(r,n)}),J4=U("ZodReadonly",(r,n)=>{dt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>zI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function L4(r){return new J4({type:"readonly",innerType:r})}var G4=U("ZodTemplateLiteral",(r,n)=>{pt.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>iI(r,v,t,i)});function h_(r,n){return new G4({type:"template_literal",parts:r,...w.normalizeParams(n)})}var X4=U("ZodLazy",(r,n)=>{ru.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>PI(r,v,t,i),r.unwrap=()=>r._zod.def.getter()});function E4(r){return new X4({type:"lazy",getter:r})}var q4=U("ZodPromise",(r,n)=>{st.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>jI(r,v,t,i),r.unwrap=()=>r._zod.def.innerType});function d_(r){return new q4({type:"promise",innerType:r})}var O4=U("ZodFunction",(r,n)=>{at.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>tI(r,v,t,i)});function p_(r){return new O4({type:"function",input:Array.isArray(r?.input)?v4(r?.input):r?.input??Bi(Xr()),output:r?.output??Xr()})}var Zi=U("ZodCustom",(r,n)=>{iu.init(r,n),J.init(r,n),r._zod.processJSONSchema=(v,t,i)=>$I(r,v,t,i)});function a_(r){let n=new W({check:"custom"});return n._zod.check=r,n}function s_(r,n){return Kg(Zi,r??(()=>!0),n)}function W4(r,n={}){return Qg(Zi,r,n)}function Y4(r,n){return Hg(r,n)}var ro=Tg,io=Bg;function no(r,n={}){let v=new Zi({type:"custom",check:"custom",fn:(t)=>t instanceof r,abort:!0,...w.normalizeParams(n)});return v._zod.bag.Class=r,v._zod.check=(t)=>{if(!(t.value instanceof r))t.issues.push({code:"invalid_type",expected:r.name,input:t.value,inst:v,path:[...v._zod.def.path??[]]})},v}var vo=(...r)=>Ag({Codec:Ri,Boolean:vi,String:ri},...r);function $o(r){let n=E4(()=>{return Nv([Wi(r),RI(),ZI(),CI(),Bi(n),$4(Wi(),n)])});return n}function to(r,n){return new P4({type:"pipe",in:jv(r),out:n})}var mD={invalid_type:"invalid_type",too_big:"too_big",too_small:"too_small",invalid_format:"invalid_format",not_multiple_of:"not_multiple_of",unrecognized_keys:"unrecognized_keys",invalid_union:"invalid_union",invalid_key:"invalid_key",invalid_element:"invalid_element",invalid_value:"invalid_value",custom:"custom"};function yD(r){V({customError:r})}function hD(){return V().customError}var V4;(function(r){})(V4||(V4={}));var z={...Oi,...mn,iso:pr},dD=new Set(["$schema","$ref","$defs","definitions","$id","id","$comment","$anchor","$vocabulary","$dynamicRef","$dynamicAnchor","type","enum","const","anyOf","oneOf","allOf","not","properties","required","additionalProperties","patternProperties","propertyNames","minProperties","maxProperties","items","prefixItems","additionalItems","minItems","maxItems","uniqueItems","contains","minContains","maxContains","minLength","maxLength","pattern","format","minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","description","default","contentEncoding","contentMediaType","contentSchema","unevaluatedItems","unevaluatedProperties","if","then","else","dependentSchemas","dependentRequired","nullable","readOnly"]);function pD(r,n){let v=r.$schema;if(v==="https://json-schema.org/draft/2020-12/schema")return"draft-2020-12";if(v==="http://json-schema.org/draft-07/schema#")return"draft-7";if(v==="http://json-schema.org/draft-04/schema#")return"draft-4";return n??"draft-2020-12"}function aD(r,n){if(!r.startsWith("#"))throw Error("External $ref is not supported, only local refs (#/...) are allowed");let v=r.slice(1).split("/").filter(Boolean);if(v.length===0)return n.rootSchema;let t=n.version==="draft-2020-12"?"$defs":"definitions";if(v[0]===t){let i=v[1];if(!i||!n.defs[i])throw Error(`Reference not found: ${r}`);return n.defs[i]}throw Error(`Reference not found: ${r}`)}function uo(r,n){if(r.not!==void 0){if(typeof r.not==="object"&&Object.keys(r.not).length===0)return z.never();throw Error("not is not supported in Zod (except { not: {} } for never)")}if(r.unevaluatedItems!==void 0)throw Error("unevaluatedItems is not supported");if(r.unevaluatedProperties!==void 0)throw Error("unevaluatedProperties is not supported");if(r.if!==void 0||r.then!==void 0||r.else!==void 0)throw Error("Conditional schemas (if/then/else) are not supported");if(r.dependentSchemas!==void 0||r.dependentRequired!==void 0)throw Error("dependentSchemas and dependentRequired are not supported");if(r.$ref){let i=r.$ref;if(n.refs.has(i))return n.refs.get(i);if(n.processing.has(i))return z.lazy(()=>{if(!n.refs.has(i))throw Error(`Circular reference not resolved: ${i}`);return n.refs.get(i)});n.processing.add(i);let $=aD(i,n),u=T($,n);return n.refs.set(i,u),n.processing.delete(i),u}if(r.enum!==void 0){let i=r.enum;if(n.version==="openapi-3.0"&&r.nullable===!0&&i.length===1&&i[0]===null)return z.null();if(i.length===0)return z.never();if(i.length===1)return z.literal(i[0]);if(i.every((u)=>typeof u==="string"))return z.enum(i);let $=i.map((u)=>z.literal(u));if($.length<2)return $[0];return z.union([$[0],$[1],...$.slice(2)])}if(r.const!==void 0)return z.literal(r.const);let v=r.type;if(Array.isArray(v)){let i=v.map(($)=>{let u={...r,type:$};return uo(u,n)});if(i.length===0)return z.never();if(i.length===1)return i[0];return z.union(i)}if(!v)return z.any();let t;switch(v){case"string":{let i=z.string();if(r.format){let $=r.format;if($==="email")i=i.check(z.email());else if($==="uri"||$==="uri-reference")i=i.check(z.url());else if($==="uuid"||$==="guid")i=i.check(z.uuid());else if($==="date-time")i=i.check(z.iso.datetime());else if($==="date")i=i.check(z.iso.date());else if($==="time")i=i.check(z.iso.time());else if($==="duration")i=i.check(z.iso.duration());else if($==="ipv4")i=i.check(z.ipv4());else if($==="ipv6")i=i.check(z.ipv6());else if($==="mac")i=i.check(z.mac());else if($==="cidr")i=i.check(z.cidrv4());else if($==="cidr-v6")i=i.check(z.cidrv6());else if($==="base64")i=i.check(z.base64());else if($==="base64url")i=i.check(z.base64url());else if($==="e164")i=i.check(z.e164());else if($==="jwt")i=i.check(z.jwt());else if($==="emoji")i=i.check(z.emoji());else if($==="nanoid")i=i.check(z.nanoid());else if($==="cuid")i=i.check(z.cuid());else if($==="cuid2")i=i.check(z.cuid2());else if($==="ulid")i=i.check(z.ulid());else if($==="xid")i=i.check(z.xid());else if($==="ksuid")i=i.check(z.ksuid())}if(typeof r.minLength==="number")i=i.min(r.minLength);if(typeof r.maxLength==="number")i=i.max(r.maxLength);if(r.pattern)i=i.regex(new RegExp(r.pattern));t=i;break}case"number":case"integer":{let i=v==="integer"?z.number().int():z.number();if(typeof r.minimum==="number")i=i.min(r.minimum);if(typeof r.maximum==="number")i=i.max(r.maximum);if(typeof r.exclusiveMinimum==="number")i=i.gt(r.exclusiveMinimum);else if(r.exclusiveMinimum===!0&&typeof r.minimum==="number")i=i.gt(r.minimum);if(typeof r.exclusiveMaximum==="number")i=i.lt(r.exclusiveMaximum);else if(r.exclusiveMaximum===!0&&typeof r.maximum==="number")i=i.lt(r.maximum);if(typeof r.multipleOf==="number")i=i.multipleOf(r.multipleOf);t=i;break}case"boolean":{t=z.boolean();break}case"null":{t=z.null();break}case"object":{let i={},$=r.properties||{},u=new Set(r.required||[]);for(let[_,I]of Object.entries($)){let o=T(I,n);i[_]=u.has(_)?o:o.optional()}if(r.propertyNames){let _=T(r.propertyNames,n),I=r.additionalProperties&&typeof r.additionalProperties==="object"?T(r.additionalProperties,n):z.any();if(Object.keys(i).length===0){t=z.record(_,I);break}let o=z.object(i).passthrough(),D=z.looseRecord(_,I);t=z.intersection(o,D);break}if(r.patternProperties){let _=r.patternProperties,I=Object.keys(_),o=[];for(let S of I){let c=T(_[S],n),j=z.string().regex(new RegExp(S));o.push(z.looseRecord(j,c))}let D=[];if(Object.keys(i).length>0)D.push(z.object(i).passthrough());if(D.push(...o),D.length===0)t=z.object({}).passthrough();else if(D.length===1)t=D[0];else{let S=z.intersection(D[0],D[1]);for(let c=2;c<D.length;c++)S=z.intersection(S,D[c]);t=S}break}let g=z.object(i);if(r.additionalProperties===!1)t=g.strict();else if(typeof r.additionalProperties==="object")t=g.catchall(T(r.additionalProperties,n));else t=g.passthrough();break}case"array":{let{prefixItems:i,items:$}=r;if(i&&Array.isArray(i)){let u=i.map((_)=>T(_,n)),g=$&&typeof $==="object"&&!Array.isArray($)?T($,n):void 0;if(g)t=z.tuple(u).rest(g);else t=z.tuple(u);if(typeof r.minItems==="number")t=t.check(z.minLength(r.minItems));if(typeof r.maxItems==="number")t=t.check(z.maxLength(r.maxItems))}else if(Array.isArray($)){let u=$.map((_)=>T(_,n)),g=r.additionalItems&&typeof r.additionalItems==="object"?T(r.additionalItems,n):void 0;if(g)t=z.tuple(u).rest(g);else t=z.tuple(u);if(typeof r.minItems==="number")t=t.check(z.minLength(r.minItems));if(typeof r.maxItems==="number")t=t.check(z.maxLength(r.maxItems))}else if($!==void 0){let u=T($,n),g=z.array(u);if(typeof r.minItems==="number")g=g.min(r.minItems);if(typeof r.maxItems==="number")g=g.max(r.maxItems);t=g}else t=z.array(z.any());break}default:throw Error(`Unsupported type: ${v}`)}return t}function T(r,n){if(typeof r==="boolean")return r?z.any():z.never();let v=uo(r,n),t=r.type||r.enum!==void 0||r.const!==void 0;if(r.anyOf&&Array.isArray(r.anyOf)){let g=r.anyOf.map((I)=>T(I,n)),_=z.union(g);v=t?z.intersection(v,_):_}if(r.oneOf&&Array.isArray(r.oneOf)){let g=r.oneOf.map((I)=>T(I,n)),_=z.xor(g);v=t?z.intersection(v,_):_}if(r.allOf&&Array.isArray(r.allOf))if(r.allOf.length===0)v=t?v:z.any();else{let g=t?v:T(r.allOf[0],n),_=t?0:1;for(let I=_;I<r.allOf.length;I++)g=z.intersection(g,T(r.allOf[I],n));v=g}if(r.nullable===!0&&n.version==="openapi-3.0")v=z.nullable(v);if(r.readOnly===!0)v=z.readonly(v);if(r.default!==void 0)v=v.default(r.default);let i={},$=["$id","id","$comment","$anchor","$vocabulary","$dynamicRef","$dynamicAnchor"];for(let g of $)if(g in r)i[g]=r[g];let u=["contentEncoding","contentMediaType","contentSchema"];for(let g of u)if(g in r)i[g]=r[g];for(let g of Object.keys(r))if(!dD.has(g))i[g]=r[g];if(Object.keys(i).length>0)n.registry.add(v,i);if(r.description)v=v.describe(r.description);return v}function go(r,n){if(typeof r==="boolean")return r?z.any():z.never();let v;try{v=JSON.parse(JSON.stringify(r))}catch{throw Error("fromJSONSchema input is not valid JSON (possibly cyclic); use $defs/$ref for recursive schemas")}let t=pD(v,n?.defaultTarget),i=v.$defs||v.definitions||{},$={version:t,defs:i,refs:new Map,processing:new Set,rootSchema:v,registry:n?.registry??H};return T(v,$)}var K4={};vr(K4,{string:()=>sD,number:()=>rk,date:()=>vk,boolean:()=>ik,bigint:()=>nk});function sD(r){return ig(ri,r)}function rk(r){return _g(ni,r)}function ik(r){return cg(vi,r)}function nk(r){return Sg($i,r)}function vk(r){return Og(Ti,r)}V(Pi());var $k=G.object({secs:G.number().int().nonnegative().describe("The number of whole seconds elapsed."),nanos:G.number().int().nonnegative().describe("The number of nanoseconds elapsed.")}),Q4=G.object({type:G.enum(["lib","service","script","app"]).or(G.string()).optional().describe("The type of project (e.g., library, service, application)."),language:G.enum(["rust","typescript"]).or(G.string()).optional().describe("The primary language of the project.")}),H4=G.object({task_name:G.string().describe("The short name of the task (e.g., 'test', 'build')."),task_exec:G.string().nullish().describe("The command executed for the task."),project_name:G.string().describe("The name of the project."),project_dir:G.string().describe("The absolute directory path of the project."),full_task_name:G.string().describe("The fully qualified task name (e.g., 'omni_utils#test')."),dependencies:G.array(G.string()).describe("A list of dependent task names."),enabled:G.boolean().or(G.string()).optional().describe("Whether the task is enabled by configuration. Either a boolean or a tera template string that evaluates to a boolean."),interactive:G.boolean().describe("Whether the task is interactive."),persistent:G.boolean().describe("Whether the task is persistent.")}),tk=G.object({status:G.literal("completed"),hash:G.string().describe("The task's content hash (Base64 encoded string). Used for caching."),task:H4,exit_code:G.number().int().describe("The exit code of the executed command (typically 0 for success)."),elapsed:$k.describe("The duration the task took to execute."),cache_hit:G.boolean().describe("Indicates if the result was pulled from cache."),details:G.object({meta:Q4}).describe("Additional run details.")}),uk=G.object({status:G.literal("errored"),task:H4,error:G.string().describe("The error message."),details:G.object({meta:Q4}).describe("Additional run details.")}),gk=G.object({status:G.literal("skipped"),task:H4,skip_reason:G.string().describe("The reason the task was skipped (e.g., 'disabled')."),details:G.object({meta:Q4}).describe("Additional run details.")}),Ik=G.discriminatedUnion("status",[tk,gk,uk]).describe("Schema for a single task execution result (completed or skipped)."),Io=G.array(Ik).describe("An array of task execution results.");function Lv(r){return{total:r,skipped:0,errored:0,completed:0,completed_with_error:0,completed_with_success:0,completed_with_cache_hit:0,completed_with_cache_hit_error:0,completed_with_cache_hit_success:0}}function _o(r){let n={...Lv(r.length),aggregated_by_metadata:{},aggregated_by_project:{},aggregated_by_task:{},projects:{}};for(let v of r){if(!n.projects[v.task.project_name])n.projects[v.task.project_name]={tasks:{}};n.projects[v.task.project_name].tasks[v.task.task_name]={execute:v.status==="completed"&&!v.cache_hit,meta:v.details.meta},Gv(v,n);let t=_k(v.details.meta);for(let i of t){if(!n.aggregated_by_metadata[i])n.aggregated_by_metadata[i]=Lv(0);Gv(v,n.aggregated_by_metadata[i])}if(!n.aggregated_by_project[v.task.project_name])n.aggregated_by_project[v.task.project_name]=Lv(0);if(Gv(v,n.aggregated_by_project[v.task.project_name]),!n.aggregated_by_task[v.task.task_name])n.aggregated_by_task[v.task.task_name]=Lv(0);Gv(v,n.aggregated_by_task[v.task.task_name])}for(let v in n.aggregated_by_metadata){let t=n.aggregated_by_metadata[v];if(t)t.total=t.skipped+t.errored+t.completed}for(let v in n.aggregated_by_project){let t=n.aggregated_by_project[v];if(t)t.total=t.skipped+t.errored+t.completed}for(let v in n.aggregated_by_task){let t=n.aggregated_by_task[v];if(t)t.total=t.skipped+t.errored+t.completed}return n}function _k(r){let n=[];if(r.type)n.push(`type:${r.type}`);if(r.language)n.push(`language:${r.language}`);return n}function Gv(r,n){switch(r.status){case"skipped":n.skipped++;break;case"errored":n.errored++;break;case"completed":if(n.completed++,r.exit_code===0)n.completed_with_success++;else n.completed_with_error++;if(r.cache_hit)if(n.completed_with_cache_hit++,r.exit_code===0)n.completed_with_cache_hit_success++;else n.completed_with_cache_hit_error++;break}}var ok=new v6;await ok.argument("<input>","The input file to read from.").option("-o, --output <output>","The output file to write to.").action(async(r,n)=>{let v=await oo.readFile(r,"utf-8"),t=JSON.parse(v),i=Io.safeParse(t);if(i.success){let $=i.data,u=_o($);if(n.output)await oo.writeFile(n.output,JSON.stringify(u,null,2));else console.log(u)}else console.error(i.error),process.exit(1)}).parseAsync();
+Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
+        }
+    for (let u of r.seen.entries()) {
+        let g = u[1];
+        if (n === u[0]) {
+            $(u);
+            continue;
+        }
+        if (r.external) {
+            let I = r.external.registry.get(u[0])?.id;
+            if (n !== u[0] && I) {
+                $(u);
+                continue;
+            }
+        }
+        if (r.metadataRegistry.get(u[0])?.id) {
+            $(u);
+            continue;
+        }
+        if (g.cycle) {
+            $(u);
+            continue;
+        }
+        if (g.count > 1) {
+            if (r.reused === "ref") {
+                $(u);
+                continue;
+            }
+        }
+    }
+}
+function wr(r, n) {
+    let v = r.seen.get(n);
+    if (!v) throw Error("Unprocessed schema. This is a bug in Zod.");
+    let t = (g) => {
+        let _ = r.seen.get(g);
+        if (_.ref === null) return;
+        let I = _.def ?? _.schema,
+            o = { ...I },
+            D = _.ref;
+        if (((_.ref = null), D)) {
+            t(D);
+            let c = r.seen.get(D),
+                j = c.schema;
+            if (
+                j.$ref &&
+                (r.target === "draft-07" ||
+                    r.target === "draft-04" ||
+                    r.target === "openapi-3.0")
+            )
+                (I.allOf = I.allOf ?? []), I.allOf.push(j);
+            else Object.assign(I, j);
+            if ((Object.assign(I, o), g._zod.parent === D))
+                for (let K in I) {
+                    if (K === "$ref" || K === "allOf") continue;
+                    if (!(K in o)) delete I[K];
+                }
+            if (j.$ref && c.def)
+                for (let K in I) {
+                    if (K === "$ref" || K === "allOf") continue;
+                    if (
+                        K in c.def &&
+                        JSON.stringify(I[K]) === JSON.stringify(c.def[K])
+                    )
+                        delete I[K];
+                }
+        }
+        let S = g._zod.parent;
+        if (S && S !== D) {
+            t(S);
+            let c = r.seen.get(S);
+            if (c?.schema.$ref) {
+                if (((I.$ref = c.schema.$ref), c.def))
+                    for (let j in I) {
+                        if (j === "$ref" || j === "allOf") continue;
+                        if (
+                            j in c.def &&
+                            JSON.stringify(I[j]) === JSON.stringify(c.def[j])
+                        )
+                            delete I[j];
+                    }
+            }
+        }
+        r.override({ zodSchema: g, jsonSchema: I, path: _.path ?? [] });
+    };
+    for (let g of [...r.seen.entries()].reverse()) t(g[0]);
+    let i = {};
+    if (r.target === "draft-2020-12")
+        i.$schema = "https://json-schema.org/draft/2020-12/schema";
+    else if (r.target === "draft-07")
+        i.$schema = "http://json-schema.org/draft-07/schema#";
+    else if (r.target === "draft-04")
+        i.$schema = "http://json-schema.org/draft-04/schema#";
+    else if (r.target === "openapi-3.0");
+    if (r.external?.uri) {
+        let g = r.external.registry.get(n)?.id;
+        if (!g) throw Error("Schema is missing an `id` property");
+        i.$id = r.external.uri(g);
+    }
+    Object.assign(i, v.def ?? v.schema);
+    let $ = r.metadataRegistry.get(n)?.id;
+    if ($ !== void 0 && i.id === $) delete i.id;
+    let u = r.external?.defs ?? {};
+    for (let g of r.seen.entries()) {
+        let _ = g[1];
+        if (_.def && _.defId) {
+            if (_.def.id === _.defId) delete _.def.id;
+            u[_.defId] = _.def;
+        }
+    }
+    if (r.external);
+    else if (Object.keys(u).length > 0)
+        if (r.target === "draft-2020-12") i.$defs = u;
+        else i.definitions = u;
+    try {
+        let g = JSON.parse(JSON.stringify(i));
+        return (
+            Object.defineProperty(g, "~standard", {
+                value: {
+                    ...n["~standard"],
+                    jsonSchema: {
+                        input: dr(n, "input", r.processors),
+                        output: dr(n, "output", r.processors),
+                    },
+                },
+                enumerable: !1,
+                writable: !1,
+            }),
+            g
+        );
+    } catch (g) {
+        throw Error("Error converting schema to JSON.");
+    }
+}
+function F(r, n) {
+    let v = n ?? { seen: new Set() };
+    if (v.seen.has(r)) return !1;
+    v.seen.add(r);
+    let t = r._zod.def;
+    if (t.type === "transform") return !0;
+    if (t.type === "array") return F(t.element, v);
+    if (t.type === "set") return F(t.valueType, v);
+    if (t.type === "lazy") return F(t.getter(), v);
+    if (
+        t.type === "promise" ||
+        t.type === "optional" ||
+        t.type === "nonoptional" ||
+        t.type === "nullable" ||
+        t.type === "readonly" ||
+        t.type === "default" ||
+        t.type === "prefault"
+    )
+        return F(t.innerType, v);
+    if (t.type === "intersection") return F(t.left, v) || F(t.right, v);
+    if (t.type === "record" || t.type === "map")
+        return F(t.keyType, v) || F(t.valueType, v);
+    if (t.type === "pipe") {
+        if (r._zod.traits.has("$ZodCodec")) return !0;
+        return F(t.in, v) || F(t.out, v);
+    }
+    if (t.type === "object") {
+        for (let i in t.shape) if (F(t.shape[i], v)) return !0;
+        return !1;
+    }
+    if (t.type === "union") {
+        for (let i of t.options) if (F(i, v)) return !0;
+        return !1;
+    }
+    if (t.type === "tuple") {
+        for (let i of t.items) if (F(i, v)) return !0;
+        if (t.rest && F(t.rest, v)) return !0;
+        return !1;
+    }
+    return !1;
+}
+var Mg =
+        (r, n = {}) =>
+        (v) => {
+            let t = lr({ ...v, processors: n });
+            return E(r, t), cr(t, r), wr(t, r);
+        },
+    dr =
+        (r, n, v = {}) =>
+        (t) => {
+            let { libraryOptions: i, target: $ } = t ?? {},
+                u = lr({ ...(i ?? {}), target: $, io: n, processors: v });
+            return E(r, u), cr(u, r), wr(u, r);
+        };
+var eD = {
+        guid: "uuid",
+        url: "uri",
+        datetime: "date-time",
+        json_string: "json-string",
+        regex: "",
+    },
+    Fg = (r, n, v, t) => {
+        let i = v;
+        i.type = "string";
+        let {
+            minimum: $,
+            maximum: u,
+            format: g,
+            patterns: _,
+            contentEncoding: I,
+        } = r._zod.bag;
+        if (typeof $ === "number") i.minLength = $;
+        if (typeof u === "number") i.maxLength = u;
+        if (g) {
+            if (((i.format = eD[g] ?? g), i.format === "")) delete i.format;
+            if (g === "time") delete i.format;
+        }
+        if (I) i.contentEncoding = I;
+        if (_ && _.size > 0) {
+            let o = [..._];
+            if (o.length === 1) i.pattern = o[0].source;
+            else if (o.length > 1)
+                i.allOf = [
+                    ...o.map((D) => ({
+                        ...(n.target === "draft-07" ||
+                        n.target === "draft-04" ||
+                        n.target === "openapi-3.0"
+                            ? { type: "string" }
+                            : {}),
+                        pattern: D.source,
+                    })),
+                ];
+        }
+    },
+    Rg = (r, n, v, t) => {
+        let i = v,
+            {
+                minimum: $,
+                maximum: u,
+                format: g,
+                multipleOf: _,
+                exclusiveMaximum: I,
+                exclusiveMinimum: o,
+            } = r._zod.bag;
+        if (typeof g === "string" && g.includes("int")) i.type = "integer";
+        else i.type = "number";
+        let D = typeof o === "number" && o >= ($ ?? Number.NEGATIVE_INFINITY),
+            S = typeof I === "number" && I <= (u ?? Number.POSITIVE_INFINITY),
+            c = n.target === "draft-04" || n.target === "openapi-3.0";
+        if (D)
+            if (c) (i.minimum = o), (i.exclusiveMinimum = !0);
+            else i.exclusiveMinimum = o;
+        else if (typeof $ === "number") i.minimum = $;
+        if (S)
+            if (c) (i.maximum = I), (i.exclusiveMaximum = !0);
+            else i.exclusiveMaximum = I;
+        else if (typeof u === "number") i.maximum = u;
+        if (typeof _ === "number") i.multipleOf = _;
+    },
+    Zg = (r, n, v, t) => {
+        v.type = "boolean";
+    },
+    eg = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("BigInt cannot be represented in JSON Schema");
+    },
+    xg = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Symbols cannot be represented in JSON Schema");
+    },
+    fg = (r, n, v, t) => {
+        if (n.target === "openapi-3.0")
+            (v.type = "string"), (v.nullable = !0), (v.enum = [null]);
+        else v.type = "null";
+    },
+    Cg = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Undefined cannot be represented in JSON Schema");
+    },
+    mg = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Void cannot be represented in JSON Schema");
+    },
+    yg = (r, n, v, t) => {
+        v.not = {};
+    },
+    hg = (r, n, v, t) => {},
+    dg = (r, n, v, t) => {},
+    pg = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Date cannot be represented in JSON Schema");
+    },
+    ag = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = Ii(i.entries);
+        if ($.every((u) => typeof u === "number")) v.type = "number";
+        if ($.every((u) => typeof u === "string")) v.type = "string";
+        v.enum = $;
+    },
+    sg = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = [];
+        for (let u of i.values)
+            if (u === void 0) {
+                if (n.unrepresentable === "throw")
+                    throw Error(
+                        "Literal `undefined` cannot be represented in JSON Schema",
+                    );
+            } else if (typeof u === "bigint")
+                if (n.unrepresentable === "throw")
+                    throw Error(
+                        "BigInt literals cannot be represented in JSON Schema",
+                    );
+                else $.push(Number(u));
+            else $.push(u);
+        if ($.length === 0);
+        else if ($.length === 1) {
+            let u = $[0];
+            if (
+                ((v.type = u === null ? "null" : typeof u),
+                n.target === "draft-04" || n.target === "openapi-3.0")
+            )
+                v.enum = [u];
+            else v.const = u;
+        } else {
+            if ($.every((u) => typeof u === "number")) v.type = "number";
+            if ($.every((u) => typeof u === "string")) v.type = "string";
+            if ($.every((u) => typeof u === "boolean")) v.type = "boolean";
+            if ($.every((u) => u === null)) v.type = "null";
+            v.enum = $;
+        }
+    },
+    rI = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("NaN cannot be represented in JSON Schema");
+    },
+    iI = (r, n, v, t) => {
+        let i = v,
+            $ = r._zod.pattern;
+        if (!$) throw Error("Pattern not found in template literal");
+        (i.type = "string"), (i.pattern = $.source);
+    },
+    nI = (r, n, v, t) => {
+        let i = v,
+            $ = { type: "string", format: "binary", contentEncoding: "binary" },
+            { minimum: u, maximum: g, mime: _ } = r._zod.bag;
+        if (u !== void 0) $.minLength = u;
+        if (g !== void 0) $.maxLength = g;
+        if (_)
+            if (_.length === 1)
+                ($.contentMediaType = _[0]), Object.assign(i, $);
+            else
+                Object.assign(i, $),
+                    (i.anyOf = _.map((I) => ({ contentMediaType: I })));
+        else Object.assign(i, $);
+    },
+    vI = (r, n, v, t) => {
+        v.type = "boolean";
+    },
+    $I = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Custom types cannot be represented in JSON Schema");
+    },
+    tI = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Function types cannot be represented in JSON Schema");
+    },
+    uI = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Transforms cannot be represented in JSON Schema");
+    },
+    gI = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Map cannot be represented in JSON Schema");
+    },
+    II = (r, n, v, t) => {
+        if (n.unrepresentable === "throw")
+            throw Error("Set cannot be represented in JSON Schema");
+    },
+    _I = (r, n, v, t) => {
+        let i = v,
+            $ = r._zod.def,
+            { minimum: u, maximum: g } = r._zod.bag;
+        if (typeof u === "number") i.minItems = u;
+        if (typeof g === "number") i.maxItems = g;
+        (i.type = "array"),
+            (i.items = E($.element, n, { ...t, path: [...t.path, "items"] }));
+    },
+    oI = (r, n, v, t) => {
+        let i = v,
+            $ = r._zod.def;
+        (i.type = "object"), (i.properties = {});
+        let u = $.shape;
+        for (let I in u)
+            i.properties[I] = E(u[I], n, {
+                ...t,
+                path: [...t.path, "properties", I],
+            });
+        let g = new Set(Object.keys(u)),
+            _ = new Set(
+                [...g].filter((I) => {
+                    let o = $.shape[I]._zod;
+                    if (n.io === "input") return o.optin === void 0;
+                    else return o.optout === void 0;
+                }),
+            );
+        if (_.size > 0) i.required = Array.from(_);
+        if ($.catchall?._zod.def.type === "never") i.additionalProperties = !1;
+        else if (!$.catchall) {
+            if (n.io === "output") i.additionalProperties = !1;
+        } else if ($.catchall)
+            i.additionalProperties = E($.catchall, n, {
+                ...t,
+                path: [...t.path, "additionalProperties"],
+            });
+    },
+    xn = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = i.inclusive === !1,
+            u = i.options.map((g, _) =>
+                E(g, n, { ...t, path: [...t.path, $ ? "oneOf" : "anyOf", _] }),
+            );
+        if ($) v.oneOf = u;
+        else v.anyOf = u;
+    },
+    UI = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = E(i.left, n, { ...t, path: [...t.path, "allOf", 0] }),
+            u = E(i.right, n, { ...t, path: [...t.path, "allOf", 1] }),
+            g = (I) => "allOf" in I && Object.keys(I).length === 1,
+            _ = [...(g($) ? $.allOf : [$]), ...(g(u) ? u.allOf : [u])];
+        v.allOf = _;
+    },
+    bI = (r, n, v, t) => {
+        let i = v,
+            $ = r._zod.def;
+        i.type = "array";
+        let u = n.target === "draft-2020-12" ? "prefixItems" : "items",
+            g =
+                n.target === "draft-2020-12"
+                    ? "items"
+                    : n.target === "openapi-3.0"
+                      ? "items"
+                      : "additionalItems",
+            _ = $.items.map((S, c) =>
+                E(S, n, { ...t, path: [...t.path, u, c] }),
+            ),
+            I = $.rest
+                ? E($.rest, n, {
+                      ...t,
+                      path: [
+                          ...t.path,
+                          g,
+                          ...(n.target === "openapi-3.0"
+                              ? [$.items.length]
+                              : []),
+                      ],
+                  })
+                : null;
+        if (n.target === "draft-2020-12") {
+            if (((i.prefixItems = _), I)) i.items = I;
+        } else if (n.target === "openapi-3.0") {
+            if (((i.items = { anyOf: _ }), I)) i.items.anyOf.push(I);
+            if (((i.minItems = _.length), !I)) i.maxItems = _.length;
+        } else if (((i.items = _), I)) i.additionalItems = I;
+        let { minimum: o, maximum: D } = r._zod.bag;
+        if (typeof o === "number") i.minItems = o;
+        if (typeof D === "number") i.maxItems = D;
+    },
+    DI = (r, n, v, t) => {
+        let i = v,
+            $ = r._zod.def;
+        i.type = "object";
+        let u = $.keyType,
+            _ = u._zod.bag?.patterns;
+        if ($.mode === "loose" && _ && _.size > 0) {
+            let o = E($.valueType, n, {
+                ...t,
+                path: [...t.path, "patternProperties", "*"],
+            });
+            i.patternProperties = {};
+            for (let D of _) i.patternProperties[D.source] = o;
+        } else {
+            if (n.target === "draft-07" || n.target === "draft-2020-12")
+                i.propertyNames = E($.keyType, n, {
+                    ...t,
+                    path: [...t.path, "propertyNames"],
+                });
+            i.additionalProperties = E($.valueType, n, {
+                ...t,
+                path: [...t.path, "additionalProperties"],
+            });
+        }
+        let I = u._zod.values;
+        if (I) {
+            let o = [...I].filter(
+                (D) => typeof D === "string" || typeof D === "number",
+            );
+            if (o.length > 0) i.required = o;
+        }
+    },
+    kI = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = E(i.innerType, n, t),
+            u = n.seen.get(r);
+        if (n.target === "openapi-3.0")
+            (u.ref = i.innerType), (v.nullable = !0);
+        else v.anyOf = [$, { type: "null" }];
+    },
+    lI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        $.ref = i.innerType;
+    },
+    cI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        ($.ref = i.innerType),
+            (v.default = JSON.parse(JSON.stringify(i.defaultValue)));
+    },
+    wI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        if ((($.ref = i.innerType), n.io === "input"))
+            v._prefault = JSON.parse(JSON.stringify(i.defaultValue));
+    },
+    SI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        $.ref = i.innerType;
+        let u;
+        try {
+            u = i.catchValue(void 0);
+        } catch {
+            throw Error(
+                "Dynamic catch values are not supported in JSON Schema",
+            );
+        }
+        v.default = u;
+    },
+    NI = (r, n, v, t) => {
+        let i = r._zod.def,
+            $ = i.in._zod.traits.has("$ZodTransform"),
+            u = n.io === "input" ? ($ ? i.out : i.in) : i.out;
+        E(u, n, t);
+        let g = n.seen.get(r);
+        g.ref = u;
+    },
+    zI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        ($.ref = i.innerType), (v.readOnly = !0);
+    },
+    jI = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        $.ref = i.innerType;
+    },
+    fn = (r, n, v, t) => {
+        let i = r._zod.def;
+        E(i.innerType, n, t);
+        let $ = n.seen.get(r);
+        $.ref = i.innerType;
+    },
+    PI = (r, n, v, t) => {
+        let i = r._zod.innerType;
+        E(i, n, t);
+        let $ = n.seen.get(r);
+        $.ref = i;
+    },
+    en = {
+        string: Fg,
+        number: Rg,
+        boolean: Zg,
+        bigint: eg,
+        symbol: xg,
+        null: fg,
+        undefined: Cg,
+        void: mg,
+        never: yg,
+        any: hg,
+        unknown: dg,
+        date: pg,
+        enum: ag,
+        literal: sg,
+        nan: rI,
+        template_literal: iI,
+        file: nI,
+        success: vI,
+        custom: $I,
+        function: tI,
+        transform: uI,
+        map: gI,
+        set: II,
+        array: _I,
+        object: oI,
+        union: xn,
+        intersection: UI,
+        tuple: bI,
+        record: DI,
+        nullable: kI,
+        nonoptional: lI,
+        default: cI,
+        prefault: wI,
+        catch: SI,
+        pipe: NI,
+        readonly: zI,
+        promise: jI,
+        optional: fn,
+        lazy: PI,
+    };
+function Cn(r, n) {
+    if ("_idmap" in r) {
+        let t = r,
+            i = lr({ ...n, processors: en }),
+            $ = {};
+        for (let _ of t._idmap.entries()) {
+            let [I, o] = _;
+            E(o, i);
+        }
+        let u = {},
+            g = { registry: t, uri: n?.uri, defs: $ };
+        i.external = g;
+        for (let _ of t._idmap.entries()) {
+            let [I, o] = _;
+            cr(i, o), (u[I] = wr(i, o));
+        }
+        if (Object.keys($).length > 0) {
+            let _ = i.target === "draft-2020-12" ? "$defs" : "definitions";
+            u.__shared = { [_]: $ };
+        }
+        return { schemas: u };
+    }
+    let v = lr({ ...n, processors: en });
+    return E(r, v), cr(v, r), wr(v, r);
+}
+class JI {
+    get metadataRegistry() {
+        return this.ctx.metadataRegistry;
+    }
+    get target() {
+        return this.ctx.target;
+    }
+    get unrepresentable() {
+        return this.ctx.unrepresentable;
+    }
+    get override() {
+        return this.ctx.override;
+    }
+    get io() {
+        return this.ctx.io;
+    }
+    get counter() {
+        return this.ctx.counter;
+    }
+    set counter(r) {
+        this.ctx.counter = r;
+    }
+    get seen() {
+        return this.ctx.seen;
+    }
+    constructor(r) {
+        let n = r?.target ?? "draft-2020-12";
+        if (n === "draft-4") n = "draft-04";
+        if (n === "draft-7") n = "draft-07";
+        this.ctx = lr({
+            processors: en,
+            target: n,
+            ...(r?.metadata && { metadata: r.metadata }),
+            ...(r?.unrepresentable && { unrepresentable: r.unrepresentable }),
+            ...(r?.override && { override: r.override }),
+            ...(r?.io && { io: r.io }),
+        });
+    }
+    process(r, n = { path: [], schemaPath: [] }) {
+        return E(r, this.ctx, n);
+    }
+    emit(r, n) {
+        if (n) {
+            if (n.cycles) this.ctx.cycles = n.cycles;
+            if (n.reused) this.ctx.reused = n.reused;
+            if (n.external) this.ctx.external = n.external;
+        }
+        cr(this.ctx, r);
+        let v = wr(this.ctx, r),
+            { "~standard": t, ...i } = v;
+        return i;
+    }
+}
+var Z6 = {};
+var Oi = {};
+vr(Oi, {
+    xor: () => H_,
+    xid: () => $_,
+    void: () => O_,
+    uuidv7: () => d6,
+    uuidv6: () => h6,
+    uuidv4: () => y6,
+    uuid: () => m6,
+    url: () => p6,
+    unknown: () => Xr,
+    union: () => Nv,
+    undefined: () => E_,
+    ulid: () => v_,
+    uint64: () => G_,
+    uint32: () => P_,
+    tuple: () => v4,
+    transform: () => jv,
+    templateLiteral: () => h_,
+    symbol: () => X_,
+    superRefine: () => Y4,
+    success: () => f_,
+    stringbool: () => vo,
+    stringFormat: () => l_,
+    string: () => Wi,
+    strictObject: () => K_,
+    set: () => F_,
+    refine: () => W4,
+    record: () => $4,
+    readonly: () => L4,
+    promise: () => d_,
+    preprocess: () => to,
+    prefault: () => c4,
+    pipe: () => sn,
+    partialRecord: () => B_,
+    optional: () => Vi,
+    object: () => V_,
+    number: () => RI,
+    nullish: () => x_,
+    nullable: () => Ki,
+    null: () => CI,
+    nonoptional: () => w4,
+    never: () => Sv,
+    nativeEnum: () => R_,
+    nanoid: () => r_,
+    nan: () => C_,
+    meta: () => io,
+    map: () => M_,
+    mac: () => g_,
+    looseRecord: () => A_,
+    looseObject: () => Q_,
+    literal: () => Z_,
+    lazy: () => E4,
+    ksuid: () => t_,
+    keyof: () => Y_,
+    jwt: () => k_,
+    json: () => $o,
+    ipv6: () => I_,
+    ipv4: () => u_,
+    invertCodec: () => y_,
+    intersection: () => i4,
+    int64: () => L_,
+    int32: () => j_,
+    int: () => an,
+    instanceof: () => no,
+    httpUrl: () => a6,
+    hostname: () => c_,
+    hex: () => w_,
+    hash: () => S_,
+    guid: () => C6,
+    function: () => p_,
+    float64: () => z_,
+    float32: () => N_,
+    file: () => e_,
+    exactOptional: () => U4,
+    enum: () => zv,
+    emoji: () => s6,
+    email: () => f6,
+    e164: () => D_,
+    discriminatedUnion: () => T_,
+    describe: () => ro,
+    date: () => W_,
+    custom: () => s_,
+    cuid2: () => n_,
+    cuid: () => i_,
+    codec: () => m_,
+    cidrv6: () => o_,
+    cidrv4: () => __,
+    check: () => a_,
+    catch: () => z4,
+    boolean: () => ZI,
+    bigint: () => J_,
+    base64url: () => b_,
+    base64: () => U_,
+    array: () => Bi,
+    any: () => q_,
+    _function: () => p_,
+    _default: () => k4,
+    _ZodString: () => rv,
+    ZodXor: () => aI,
+    ZodXID: () => gv,
+    ZodVoid: () => dI,
+    ZodUnknown: () => yI,
+    ZodUnion: () => Mi,
+    ZodUndefined: () => xI,
+    ZodUUID: () => nr,
+    ZodURL: () => Hi,
+    ZodULID: () => uv,
+    ZodType: () => J,
+    ZodTuple: () => n4,
+    ZodTransform: () => _4,
+    ZodTemplateLiteral: () => G4,
+    ZodSymbol: () => eI,
+    ZodSuccess: () => S4,
+    ZodStringFormat: () => O,
+    ZodString: () => ri,
+    ZodSet: () => u4,
+    ZodRecord: () => ar,
+    ZodReadonly: () => J4,
+    ZodPromise: () => q4,
+    ZodPreprocess: () => P4,
+    ZodPrefault: () => l4,
+    ZodPipe: () => Fi,
+    ZodOptional: () => Pv,
+    ZodObject: () => Ai,
+    ZodNumberFormat: () => Er,
+    ZodNumber: () => ni,
+    ZodNullable: () => b4,
+    ZodNull: () => fI,
+    ZodNonOptional: () => Jv,
+    ZodNever: () => hI,
+    ZodNanoID: () => vv,
+    ZodNaN: () => j4,
+    ZodMap: () => t4,
+    ZodMAC: () => FI,
+    ZodLiteral: () => g4,
+    ZodLazy: () => X4,
+    ZodKSUID: () => Iv,
+    ZodJWT: () => cv,
+    ZodIntersection: () => r4,
+    ZodIPv6: () => ov,
+    ZodIPv4: () => _v,
+    ZodGUID: () => Yi,
+    ZodFunction: () => O4,
+    ZodFile: () => I4,
+    ZodExactOptional: () => o4,
+    ZodEnum: () => sr,
+    ZodEmoji: () => nv,
+    ZodEmail: () => iv,
+    ZodE164: () => lv,
+    ZodDiscriminatedUnion: () => sI,
+    ZodDefault: () => D4,
+    ZodDate: () => Ti,
+    ZodCustomStringFormat: () => ii,
+    ZodCustom: () => Zi,
+    ZodCodec: () => Ri,
+    ZodCatch: () => N4,
+    ZodCUID2: () => tv,
+    ZodCUID: () => $v,
+    ZodCIDRv6: () => bv,
+    ZodCIDRv4: () => Uv,
+    ZodBoolean: () => vi,
+    ZodBigIntFormat: () => wv,
+    ZodBigInt: () => $i,
+    ZodBase64URL: () => kv,
+    ZodBase64: () => Dv,
+    ZodArray: () => pI,
+    ZodAny: () => mI,
+});
+var mn = {};
+vr(mn, {
+    uppercase: () => Mr,
+    trim: () => fr,
+    toUpperCase: () => mr,
+    toLowerCase: () => Cr,
+    startsWith: () => Rr,
+    slugify: () => yr,
+    size: () => Jr,
+    regex: () => Br,
+    property: () => Zn,
+    positive: () => An,
+    overwrite: () => d,
+    normalize: () => xr,
+    nonpositive: () => Fn,
+    nonnegative: () => Rn,
+    negative: () => Mn,
+    multipleOf: () => Dr,
+    minSize: () => ir,
+    minLength: () => ur,
+    mime: () => er,
+    maxSize: () => kr,
+    maxLength: () => Lr,
+    lte: () => m,
+    lt: () => s,
+    lowercase: () => Ar,
+    length: () => Gr,
+    includes: () => Fr,
+    gte: () => M,
+    gt: () => rr,
+    endsWith: () => Zr,
+});
+var pr = {};
+vr(pr, {
+    time: () => XI,
+    duration: () => EI,
+    datetime: () => LI,
+    date: () => GI,
+    ZodISOTime: () => dn,
+    ZodISODuration: () => pn,
+    ZodISODateTime: () => yn,
+    ZodISODate: () => hn,
+});
+var yn = U("ZodISODateTime", (r, n) => {
+    $t.init(r, n), O.init(r, n);
+});
+function LI(r) {
+    return $g(yn, r);
+}
+var hn = U("ZodISODate", (r, n) => {
+    tt.init(r, n), O.init(r, n);
+});
+function GI(r) {
+    return tg(hn, r);
+}
+var dn = U("ZodISOTime", (r, n) => {
+    ut.init(r, n), O.init(r, n);
+});
+function XI(r) {
+    return ug(dn, r);
+}
+var pn = U("ZodISODuration", (r, n) => {
+    gt.init(r, n), O.init(r, n);
+});
+function EI(r) {
+    return gg(pn, r);
+}
+var e6 = (r, n) => {
+        Di.init(r, n),
+            (r.name = "ZodError"),
+            Object.defineProperties(r, {
+                format: { value: (v) => li(r, v) },
+                flatten: { value: (v) => ki(r, v) },
+                addIssue: {
+                    value: (v) => {
+                        r.issues.push(v),
+                            (r.message = JSON.stringify(r.issues, qr, 2));
+                    },
+                },
+                addIssues: {
+                    value: (v) => {
+                        r.issues.push(...v),
+                            (r.message = JSON.stringify(r.issues, qr, 2));
+                    },
+                },
+                isEmpty: {
+                    get() {
+                        return r.issues.length === 0;
+                    },
+                },
+            });
+    },
+    fD = U("ZodError", e6),
+    x = U("ZodError", e6, { Parent: Error });
+var qI = Yr(x),
+    OI = Vr(x),
+    WI = Kr(x),
+    YI = Qr(x),
+    VI = hi(x),
+    KI = di(x),
+    QI = pi(x),
+    HI = ai(x),
+    TI = si(x),
+    BI = rn(x),
+    AI = nn(x),
+    MI = vn(x);
+var x6 = new WeakMap();
+function Qi(r, n, v) {
+    let t = Object.getPrototypeOf(r),
+        i = x6.get(t);
+    if (!i) (i = new Set()), x6.set(t, i);
+    if (i.has(n)) return;
+    i.add(n);
+    for (let $ in v) {
+        let u = v[$];
+        Object.defineProperty(t, $, {
+            configurable: !0,
+            enumerable: !1,
+            get() {
+                let g = u.bind(this);
+                return (
+                    Object.defineProperty(this, $, {
+                        configurable: !0,
+                        writable: !0,
+                        enumerable: !0,
+                        value: g,
+                    }),
+                    g
+                );
+            },
+            set(g) {
+                Object.defineProperty(this, $, {
+                    configurable: !0,
+                    writable: !0,
+                    enumerable: !0,
+                    value: g,
+                });
+            },
+        });
+    }
+}
+var J = U("ZodType", (r, n) => {
+        return (
+            P.init(r, n),
+            Object.assign(r["~standard"], {
+                jsonSchema: { input: dr(r, "input"), output: dr(r, "output") },
+            }),
+            (r.toJSONSchema = Mg(r, {})),
+            (r.def = n),
+            (r.type = n.type),
+            Object.defineProperty(r, "_def", { value: n }),
+            (r.parse = (v, t) => qI(r, v, t, { callee: r.parse })),
+            (r.safeParse = (v, t) => WI(r, v, t)),
+            (r.parseAsync = async (v, t) =>
+                OI(r, v, t, { callee: r.parseAsync })),
+            (r.safeParseAsync = async (v, t) => YI(r, v, t)),
+            (r.spa = r.safeParseAsync),
+            (r.encode = (v, t) => VI(r, v, t)),
+            (r.decode = (v, t) => KI(r, v, t)),
+            (r.encodeAsync = async (v, t) => QI(r, v, t)),
+            (r.decodeAsync = async (v, t) => HI(r, v, t)),
+            (r.safeEncode = (v, t) => TI(r, v, t)),
+            (r.safeDecode = (v, t) => BI(r, v, t)),
+            (r.safeEncodeAsync = async (v, t) => AI(r, v, t)),
+            (r.safeDecodeAsync = async (v, t) => MI(r, v, t)),
+            Qi(r, "ZodType", {
+                check(...v) {
+                    let t = this.def;
+                    return this.clone(
+                        w.mergeDefs(t, {
+                            checks: [
+                                ...(t.checks ?? []),
+                                ...v.map((i) =>
+                                    typeof i === "function"
+                                        ? {
+                                              _zod: {
+                                                  check: i,
+                                                  def: { check: "custom" },
+                                                  onattach: [],
+                                              },
+                                          }
+                                        : i,
+                                ),
+                            ],
+                        }),
+                        { parent: !0 },
+                    );
+                },
+                with(...v) {
+                    return this.check(...v);
+                },
+                clone(v, t) {
+                    return B(this, v, t);
+                },
+                brand() {
+                    return this;
+                },
+                register(v, t) {
+                    return v.add(this, t), this;
+                },
+                refine(v, t) {
+                    return this.check(W4(v, t));
+                },
+                superRefine(v, t) {
+                    return this.check(Y4(v, t));
+                },
+                overwrite(v) {
+                    return this.check(d(v));
+                },
+                optional() {
+                    return Vi(this);
+                },
+                exactOptional() {
+                    return U4(this);
+                },
+                nullable() {
+                    return Ki(this);
+                },
+                nullish() {
+                    return Vi(Ki(this));
+                },
+                nonoptional(v) {
+                    return w4(this, v);
+                },
+                array() {
+                    return Bi(this);
+                },
+                or(v) {
+                    return Nv([this, v]);
+                },
+                and(v) {
+                    return i4(this, v);
+                },
+                transform(v) {
+                    return sn(this, jv(v));
+                },
+                default(v) {
+                    return k4(this, v);
+                },
+                prefault(v) {
+                    return c4(this, v);
+                },
+                catch(v) {
+                    return z4(this, v);
+                },
+                pipe(v) {
+                    return sn(this, v);
+                },
+                readonly() {
+                    return L4(this);
+                },
+                describe(v) {
+                    let t = this.clone();
+                    return H.add(t, { description: v }), t;
+                },
+                meta(...v) {
+                    if (v.length === 0) return H.get(this);
+                    let t = this.clone();
+                    return H.add(t, v[0]), t;
+                },
+                isOptional() {
+                    return this.safeParse(void 0).success;
+                },
+                isNullable() {
+                    return this.safeParse(null).success;
+                },
+                apply(v) {
+                    return v(this);
+                },
+            }),
+            Object.defineProperty(r, "description", {
+                get() {
+                    return H.get(r)?.description;
+                },
+                configurable: !0,
+            }),
+            r
+        );
+    }),
+    rv = U("_ZodString", (r, n) => {
+        Pr.init(r, n),
+            J.init(r, n),
+            (r._zod.processJSONSchema = (t, i, $) => Fg(r, t, i, $));
+        let v = r._zod.bag;
+        (r.format = v.format ?? null),
+            (r.minLength = v.minimum ?? null),
+            (r.maxLength = v.maximum ?? null),
+            Qi(r, "_ZodString", {
+                regex(...t) {
+                    return this.check(Br(...t));
+                },
+                includes(...t) {
+                    return this.check(Fr(...t));
+                },
+                startsWith(...t) {
+                    return this.check(Rr(...t));
+                },
+                endsWith(...t) {
+                    return this.check(Zr(...t));
+                },
+                min(...t) {
+                    return this.check(ur(...t));
+                },
+                max(...t) {
+                    return this.check(Lr(...t));
+                },
+                length(...t) {
+                    return this.check(Gr(...t));
+                },
+                nonempty(...t) {
+                    return this.check(ur(1, ...t));
+                },
+                lowercase(t) {
+                    return this.check(Ar(t));
+                },
+                uppercase(t) {
+                    return this.check(Mr(t));
+                },
+                trim() {
+                    return this.check(fr());
+                },
+                normalize(...t) {
+                    return this.check(xr(...t));
+                },
+                toLowerCase() {
+                    return this.check(Cr());
+                },
+                toUpperCase() {
+                    return this.check(mr());
+                },
+                slugify() {
+                    return this.check(yr());
+                },
+            });
+    }),
+    ri = U("ZodString", (r, n) => {
+        Pr.init(r, n),
+            rv.init(r, n),
+            (r.email = (v) => r.check(Sn(iv, v))),
+            (r.url = (v) => r.check(qi(Hi, v))),
+            (r.jwt = (v) => r.check(Bn(cv, v))),
+            (r.emoji = (v) => r.check(Jn(nv, v))),
+            (r.guid = (v) => r.check(Ei(Yi, v))),
+            (r.uuid = (v) => r.check(Nn(nr, v))),
+            (r.uuidv4 = (v) => r.check(zn(nr, v))),
+            (r.uuidv6 = (v) => r.check(jn(nr, v))),
+            (r.uuidv7 = (v) => r.check(Pn(nr, v))),
+            (r.nanoid = (v) => r.check(Ln(vv, v))),
+            (r.guid = (v) => r.check(Ei(Yi, v))),
+            (r.cuid = (v) => r.check(Gn($v, v))),
+            (r.cuid2 = (v) => r.check(Xn(tv, v))),
+            (r.ulid = (v) => r.check(En(uv, v))),
+            (r.base64 = (v) => r.check(Qn(Dv, v))),
+            (r.base64url = (v) => r.check(Hn(kv, v))),
+            (r.xid = (v) => r.check(qn(gv, v))),
+            (r.ksuid = (v) => r.check(On(Iv, v))),
+            (r.ipv4 = (v) => r.check(Wn(_v, v))),
+            (r.ipv6 = (v) => r.check(Yn(ov, v))),
+            (r.cidrv4 = (v) => r.check(Vn(Uv, v))),
+            (r.cidrv6 = (v) => r.check(Kn(bv, v))),
+            (r.e164 = (v) => r.check(Tn(lv, v))),
+            (r.datetime = (v) => r.check(LI(v))),
+            (r.date = (v) => r.check(GI(v))),
+            (r.time = (v) => r.check(XI(v))),
+            (r.duration = (v) => r.check(EI(v)));
+    });
+function Wi(r) {
+    return rg(ri, r);
+}
+var O = U("ZodStringFormat", (r, n) => {
+        q.init(r, n), rv.init(r, n);
+    }),
+    iv = U("ZodEmail", (r, n) => {
+        h$.init(r, n), O.init(r, n);
+    });
+function f6(r) {
+    return Sn(iv, r);
+}
+var Yi = U("ZodGUID", (r, n) => {
+    m$.init(r, n), O.init(r, n);
+});
+function C6(r) {
+    return Ei(Yi, r);
+}
+var nr = U("ZodUUID", (r, n) => {
+    y$.init(r, n), O.init(r, n);
+});
+function m6(r) {
+    return Nn(nr, r);
+}
+function y6(r) {
+    return zn(nr, r);
+}
+function h6(r) {
+    return jn(nr, r);
+}
+function d6(r) {
+    return Pn(nr, r);
+}
+var Hi = U("ZodURL", (r, n) => {
+    d$.init(r, n), O.init(r, n);
+});
+function p6(r) {
+    return qi(Hi, r);
+}
+function a6(r) {
+    return qi(Hi, {
+        protocol: C.httpProtocol,
+        hostname: C.domain,
+        ...w.normalizeParams(r),
+    });
+}
+var nv = U("ZodEmoji", (r, n) => {
+    p$.init(r, n), O.init(r, n);
+});
+function s6(r) {
+    return Jn(nv, r);
+}
+var vv = U("ZodNanoID", (r, n) => {
+    a$.init(r, n), O.init(r, n);
+});
+function r_(r) {
+    return Ln(vv, r);
+}
+var $v = U("ZodCUID", (r, n) => {
+    s$.init(r, n), O.init(r, n);
+});
+function i_(r) {
+    return Gn($v, r);
+}
+var tv = U("ZodCUID2", (r, n) => {
+    rt.init(r, n), O.init(r, n);
+});
+function n_(r) {
+    return Xn(tv, r);
+}
+var uv = U("ZodULID", (r, n) => {
+    it.init(r, n), O.init(r, n);
+});
+function v_(r) {
+    return En(uv, r);
+}
+var gv = U("ZodXID", (r, n) => {
+    nt.init(r, n), O.init(r, n);
+});
+function $_(r) {
+    return qn(gv, r);
+}
+var Iv = U("ZodKSUID", (r, n) => {
+    vt.init(r, n), O.init(r, n);
+});
+function t_(r) {
+    return On(Iv, r);
+}
+var _v = U("ZodIPv4", (r, n) => {
+    It.init(r, n), O.init(r, n);
+});
+function u_(r) {
+    return Wn(_v, r);
+}
+var FI = U("ZodMAC", (r, n) => {
+    ot.init(r, n), O.init(r, n);
+});
+function g_(r) {
+    return ng(FI, r);
+}
+var ov = U("ZodIPv6", (r, n) => {
+    _t.init(r, n), O.init(r, n);
+});
+function I_(r) {
+    return Yn(ov, r);
+}
+var Uv = U("ZodCIDRv4", (r, n) => {
+    Ut.init(r, n), O.init(r, n);
+});
+function __(r) {
+    return Vn(Uv, r);
+}
+var bv = U("ZodCIDRv6", (r, n) => {
+    bt.init(r, n), O.init(r, n);
+});
+function o_(r) {
+    return Kn(bv, r);
+}
+var Dv = U("ZodBase64", (r, n) => {
+    kt.init(r, n), O.init(r, n);
+});
+function U_(r) {
+    return Qn(Dv, r);
+}
+var kv = U("ZodBase64URL", (r, n) => {
+    lt.init(r, n), O.init(r, n);
+});
+function b_(r) {
+    return Hn(kv, r);
+}
+var lv = U("ZodE164", (r, n) => {
+    ct.init(r, n), O.init(r, n);
+});
+function D_(r) {
+    return Tn(lv, r);
+}
+var cv = U("ZodJWT", (r, n) => {
+    wt.init(r, n), O.init(r, n);
+});
+function k_(r) {
+    return Bn(cv, r);
+}
+var ii = U("ZodCustomStringFormat", (r, n) => {
+    St.init(r, n), O.init(r, n);
+});
+function l_(r, n, v = {}) {
+    return hr(ii, r, n, v);
+}
+function c_(r) {
+    return hr(ii, "hostname", C.hostname, r);
+}
+function w_(r) {
+    return hr(ii, "hex", C.hex, r);
+}
+function S_(r, n) {
+    let v = n?.enc ?? "hex",
+        t = `${r}_${v}`,
+        i = C[t];
+    if (!i) throw Error(`Unrecognized hash format: ${t}`);
+    return hr(ii, t, i, n);
+}
+var ni = U("ZodNumber", (r, n) => {
+    bn.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (t, i, $) => Rg(r, t, i, $)),
+        Qi(r, "ZodNumber", {
+            gt(t, i) {
+                return this.check(rr(t, i));
+            },
+            gte(t, i) {
+                return this.check(M(t, i));
+            },
+            min(t, i) {
+                return this.check(M(t, i));
+            },
+            lt(t, i) {
+                return this.check(s(t, i));
+            },
+            lte(t, i) {
+                return this.check(m(t, i));
+            },
+            max(t, i) {
+                return this.check(m(t, i));
+            },
+            int(t) {
+                return this.check(an(t));
+            },
+            safe(t) {
+                return this.check(an(t));
+            },
+            positive(t) {
+                return this.check(rr(0, t));
+            },
+            nonnegative(t) {
+                return this.check(M(0, t));
+            },
+            negative(t) {
+                return this.check(s(0, t));
+            },
+            nonpositive(t) {
+                return this.check(m(0, t));
+            },
+            multipleOf(t, i) {
+                return this.check(Dr(t, i));
+            },
+            step(t, i) {
+                return this.check(Dr(t, i));
+            },
+            finite() {
+                return this;
+            },
+        });
+    let v = r._zod.bag;
+    (r.minValue =
+        Math.max(
+            v.minimum ?? Number.NEGATIVE_INFINITY,
+            v.exclusiveMinimum ?? Number.NEGATIVE_INFINITY,
+        ) ?? null),
+        (r.maxValue =
+            Math.min(
+                v.maximum ?? Number.POSITIVE_INFINITY,
+                v.exclusiveMaximum ?? Number.POSITIVE_INFINITY,
+            ) ?? null),
+        (r.isInt =
+            (v.format ?? "").includes("int") ||
+            Number.isSafeInteger(v.multipleOf ?? 0.5)),
+        (r.isFinite = !0),
+        (r.format = v.format ?? null);
+});
+function RI(r) {
+    return Ig(ni, r);
+}
+var Er = U("ZodNumberFormat", (r, n) => {
+    Nt.init(r, n), ni.init(r, n);
+});
+function an(r) {
+    return og(Er, r);
+}
+function N_(r) {
+    return Ug(Er, r);
+}
+function z_(r) {
+    return bg(Er, r);
+}
+function j_(r) {
+    return Dg(Er, r);
+}
+function P_(r) {
+    return kg(Er, r);
+}
+var vi = U("ZodBoolean", (r, n) => {
+    Ni.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => Zg(r, v, t, i));
+});
+function ZI(r) {
+    return lg(vi, r);
+}
+var $i = U("ZodBigInt", (r, n) => {
+    Dn.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (t, i, $) => eg(r, t, i, $)),
+        (r.gte = (t, i) => r.check(M(t, i))),
+        (r.min = (t, i) => r.check(M(t, i))),
+        (r.gt = (t, i) => r.check(rr(t, i))),
+        (r.gte = (t, i) => r.check(M(t, i))),
+        (r.min = (t, i) => r.check(M(t, i))),
+        (r.lt = (t, i) => r.check(s(t, i))),
+        (r.lte = (t, i) => r.check(m(t, i))),
+        (r.max = (t, i) => r.check(m(t, i))),
+        (r.positive = (t) => r.check(rr(BigInt(0), t))),
+        (r.negative = (t) => r.check(s(BigInt(0), t))),
+        (r.nonpositive = (t) => r.check(m(BigInt(0), t))),
+        (r.nonnegative = (t) => r.check(M(BigInt(0), t))),
+        (r.multipleOf = (t, i) => r.check(Dr(t, i)));
+    let v = r._zod.bag;
+    (r.minValue = v.minimum ?? null),
+        (r.maxValue = v.maximum ?? null),
+        (r.format = v.format ?? null);
+});
+function J_(r) {
+    return wg($i, r);
+}
+var wv = U("ZodBigIntFormat", (r, n) => {
+    zt.init(r, n), $i.init(r, n);
+});
+function L_(r) {
+    return Ng(wv, r);
+}
+function G_(r) {
+    return zg(wv, r);
+}
+var eI = U("ZodSymbol", (r, n) => {
+    jt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => xg(r, v, t, i));
+});
+function X_(r) {
+    return jg(eI, r);
+}
+var xI = U("ZodUndefined", (r, n) => {
+    Pt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => Cg(r, v, t, i));
+});
+function E_(r) {
+    return Pg(xI, r);
+}
+var fI = U("ZodNull", (r, n) => {
+    Jt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => fg(r, v, t, i));
+});
+function CI(r) {
+    return Jg(fI, r);
+}
+var mI = U("ZodAny", (r, n) => {
+    Lt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => hg(r, v, t, i));
+});
+function q_() {
+    return Lg(mI);
+}
+var yI = U("ZodUnknown", (r, n) => {
+    Gt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => dg(r, v, t, i));
+});
+function Xr() {
+    return Gg(yI);
+}
+var hI = U("ZodNever", (r, n) => {
+    Xt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => yg(r, v, t, i));
+});
+function Sv(r) {
+    return Xg(hI, r);
+}
+var dI = U("ZodVoid", (r, n) => {
+    Et.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => mg(r, v, t, i));
+});
+function O_(r) {
+    return Eg(dI, r);
+}
+var Ti = U("ZodDate", (r, n) => {
+    qt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (t, i, $) => pg(r, t, i, $)),
+        (r.min = (t, i) => r.check(M(t, i))),
+        (r.max = (t, i) => r.check(m(t, i)));
+    let v = r._zod.bag;
+    (r.minDate = v.minimum ? new Date(v.minimum) : null),
+        (r.maxDate = v.maximum ? new Date(v.maximum) : null);
+});
+function W_(r) {
+    return qg(Ti, r);
+}
+var pI = U("ZodArray", (r, n) => {
+    Ot.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => _I(r, v, t, i)),
+        (r.element = n.element),
+        Qi(r, "ZodArray", {
+            min(v, t) {
+                return this.check(ur(v, t));
+            },
+            nonempty(v) {
+                return this.check(ur(1, v));
+            },
+            max(v, t) {
+                return this.check(Lr(v, t));
+            },
+            length(v, t) {
+                return this.check(Gr(v, t));
+            },
+            unwrap() {
+                return this.element;
+            },
+        });
+});
+function Bi(r, n) {
+    return Yg(pI, r, n);
+}
+function Y_(r) {
+    let n = r._zod.def.shape;
+    return zv(Object.keys(n));
+}
+var Ai = U("ZodObject", (r, n) => {
+    Wt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => oI(r, v, t, i)),
+        w.defineLazy(r, "shape", () => {
+            return n.shape;
+        }),
+        Qi(r, "ZodObject", {
+            keyof() {
+                return zv(Object.keys(this._zod.def.shape));
+            },
+            catchall(v) {
+                return this.clone({ ...this._zod.def, catchall: v });
+            },
+            passthrough() {
+                return this.clone({ ...this._zod.def, catchall: Xr() });
+            },
+            loose() {
+                return this.clone({ ...this._zod.def, catchall: Xr() });
+            },
+            strict() {
+                return this.clone({ ...this._zod.def, catchall: Sv() });
+            },
+            strip() {
+                return this.clone({ ...this._zod.def, catchall: void 0 });
+            },
+            extend(v) {
+                return w.extend(this, v);
+            },
+            safeExtend(v) {
+                return w.safeExtend(this, v);
+            },
+            merge(v) {
+                return w.merge(this, v);
+            },
+            pick(v) {
+                return w.pick(this, v);
+            },
+            omit(v) {
+                return w.omit(this, v);
+            },
+            partial(...v) {
+                return w.partial(Pv, this, v[0]);
+            },
+            required(...v) {
+                return w.required(Jv, this, v[0]);
+            },
+        });
+});
+function V_(r, n) {
+    let v = { type: "object", shape: r ?? {}, ...w.normalizeParams(n) };
+    return new Ai(v);
+}
+function K_(r, n) {
+    return new Ai({
+        type: "object",
+        shape: r,
+        catchall: Sv(),
+        ...w.normalizeParams(n),
+    });
+}
+function Q_(r, n) {
+    return new Ai({
+        type: "object",
+        shape: r,
+        catchall: Xr(),
+        ...w.normalizeParams(n),
+    });
+}
+var Mi = U("ZodUnion", (r, n) => {
+    zi.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => xn(r, v, t, i)),
+        (r.options = n.options);
+});
+function Nv(r, n) {
+    return new Mi({ type: "union", options: r, ...w.normalizeParams(n) });
+}
+var aI = U("ZodXor", (r, n) => {
+    Mi.init(r, n),
+        Yt.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => xn(r, v, t, i)),
+        (r.options = n.options);
+});
+function H_(r, n) {
+    return new aI({
+        type: "union",
+        options: r,
+        inclusive: !1,
+        ...w.normalizeParams(n),
+    });
+}
+var sI = U("ZodDiscriminatedUnion", (r, n) => {
+    Mi.init(r, n), Vt.init(r, n);
+});
+function T_(r, n, v) {
+    return new sI({
+        type: "union",
+        options: n,
+        discriminator: r,
+        ...w.normalizeParams(v),
+    });
+}
+var r4 = U("ZodIntersection", (r, n) => {
+    Kt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => UI(r, v, t, i));
+});
+function i4(r, n) {
+    return new r4({ type: "intersection", left: r, right: n });
+}
+var n4 = U("ZodTuple", (r, n) => {
+    kn.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => bI(r, v, t, i)),
+        (r.rest = (v) => r.clone({ ...r._zod.def, rest: v }));
+});
+function v4(r, n, v) {
+    let t = n instanceof P,
+        i = t ? v : n;
+    return new n4({
+        type: "tuple",
+        items: r,
+        rest: t ? n : null,
+        ...w.normalizeParams(i),
+    });
+}
+var ar = U("ZodRecord", (r, n) => {
+    Qt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => DI(r, v, t, i)),
+        (r.keyType = n.keyType),
+        (r.valueType = n.valueType);
+});
+function $4(r, n, v) {
+    if (!n || !n._zod)
+        return new ar({
+            type: "record",
+            keyType: Wi(),
+            valueType: r,
+            ...w.normalizeParams(n),
+        });
+    return new ar({
+        type: "record",
+        keyType: r,
+        valueType: n,
+        ...w.normalizeParams(v),
+    });
+}
+function B_(r, n, v) {
+    let t = B(r);
+    return (
+        (t._zod.values = void 0),
+        new ar({
+            type: "record",
+            keyType: t,
+            valueType: n,
+            ...w.normalizeParams(v),
+        })
+    );
+}
+function A_(r, n, v) {
+    return new ar({
+        type: "record",
+        keyType: r,
+        valueType: n,
+        mode: "loose",
+        ...w.normalizeParams(v),
+    });
+}
+var t4 = U("ZodMap", (r, n) => {
+    Ht.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => gI(r, v, t, i)),
+        (r.keyType = n.keyType),
+        (r.valueType = n.valueType),
+        (r.min = (...v) => r.check(ir(...v))),
+        (r.nonempty = (v) => r.check(ir(1, v))),
+        (r.max = (...v) => r.check(kr(...v))),
+        (r.size = (...v) => r.check(Jr(...v)));
+});
+function M_(r, n, v) {
+    return new t4({
+        type: "map",
+        keyType: r,
+        valueType: n,
+        ...w.normalizeParams(v),
+    });
+}
+var u4 = U("ZodSet", (r, n) => {
+    Tt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => II(r, v, t, i)),
+        (r.min = (...v) => r.check(ir(...v))),
+        (r.nonempty = (v) => r.check(ir(1, v))),
+        (r.max = (...v) => r.check(kr(...v))),
+        (r.size = (...v) => r.check(Jr(...v)));
+});
+function F_(r, n) {
+    return new u4({ type: "set", valueType: r, ...w.normalizeParams(n) });
+}
+var sr = U("ZodEnum", (r, n) => {
+    Bt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (t, i, $) => ag(r, t, i, $)),
+        (r.enum = n.entries),
+        (r.options = Object.values(n.entries));
+    let v = new Set(Object.keys(n.entries));
+    (r.extract = (t, i) => {
+        let $ = {};
+        for (let u of t)
+            if (v.has(u)) $[u] = n.entries[u];
+            else throw Error(`Key ${u} not found in enum`);
+        return new sr({
+            ...n,
+            checks: [],
+            ...w.normalizeParams(i),
+            entries: $,
+        });
+    }),
+        (r.exclude = (t, i) => {
+            let $ = { ...n.entries };
+            for (let u of t)
+                if (v.has(u)) delete $[u];
+                else throw Error(`Key ${u} not found in enum`);
+            return new sr({
+                ...n,
+                checks: [],
+                ...w.normalizeParams(i),
+                entries: $,
+            });
+        });
+});
+function zv(r, n) {
+    let v = Array.isArray(r) ? Object.fromEntries(r.map((t) => [t, t])) : r;
+    return new sr({ type: "enum", entries: v, ...w.normalizeParams(n) });
+}
+function R_(r, n) {
+    return new sr({ type: "enum", entries: r, ...w.normalizeParams(n) });
+}
+var g4 = U("ZodLiteral", (r, n) => {
+    At.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => sg(r, v, t, i)),
+        (r.values = new Set(n.values)),
+        Object.defineProperty(r, "value", {
+            get() {
+                if (n.values.length > 1)
+                    throw Error(
+                        "This schema contains multiple valid literal values. Use `.values` instead.",
+                    );
+                return n.values[0];
+            },
+        });
+});
+function Z_(r, n) {
+    return new g4({
+        type: "literal",
+        values: Array.isArray(r) ? r : [r],
+        ...w.normalizeParams(n),
+    });
+}
+var I4 = U("ZodFile", (r, n) => {
+    Mt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => nI(r, v, t, i)),
+        (r.min = (v, t) => r.check(ir(v, t))),
+        (r.max = (v, t) => r.check(kr(v, t))),
+        (r.mime = (v, t) => r.check(er(Array.isArray(v) ? v : [v], t)));
+});
+function e_(r) {
+    return Vg(I4, r);
+}
+var _4 = U("ZodTransform", (r, n) => {
+    Ft.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => uI(r, v, t, i)),
+        (r._zod.parse = (v, t) => {
+            if (t.direction === "backward") throw new Nr(r.constructor.name);
+            v.addIssue = ($) => {
+                if (typeof $ === "string")
+                    v.issues.push(w.issue($, v.value, n));
+                else {
+                    let u = $;
+                    if (u.fatal) u.continue = !1;
+                    u.code ?? (u.code = "custom"),
+                        u.input ?? (u.input = v.value),
+                        u.inst ?? (u.inst = r),
+                        v.issues.push(w.issue(u));
+                }
+            };
+            let i = n.transform(v.value, v);
+            if (i instanceof Promise)
+                return i.then(($) => {
+                    return (v.value = $), (v.fallback = !0), v;
+                });
+            return (v.value = i), (v.fallback = !0), v;
+        });
+});
+function jv(r) {
+    return new _4({ type: "transform", transform: r });
+}
+var Pv = U("ZodOptional", (r, n) => {
+    ln.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => fn(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function Vi(r) {
+    return new Pv({ type: "optional", innerType: r });
+}
+var o4 = U("ZodExactOptional", (r, n) => {
+    Rt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => fn(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function U4(r) {
+    return new o4({ type: "optional", innerType: r });
+}
+var b4 = U("ZodNullable", (r, n) => {
+    Zt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => kI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function Ki(r) {
+    return new b4({ type: "nullable", innerType: r });
+}
+function x_(r) {
+    return Vi(Ki(r));
+}
+var D4 = U("ZodDefault", (r, n) => {
+    et.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => cI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType),
+        (r.removeDefault = r.unwrap);
+});
+function k4(r, n) {
+    return new D4({
+        type: "default",
+        innerType: r,
+        get defaultValue() {
+            return typeof n === "function" ? n() : w.shallowClone(n);
+        },
+    });
+}
+var l4 = U("ZodPrefault", (r, n) => {
+    xt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => wI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function c4(r, n) {
+    return new l4({
+        type: "prefault",
+        innerType: r,
+        get defaultValue() {
+            return typeof n === "function" ? n() : w.shallowClone(n);
+        },
+    });
+}
+var Jv = U("ZodNonOptional", (r, n) => {
+    ft.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => lI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function w4(r, n) {
+    return new Jv({
+        type: "nonoptional",
+        innerType: r,
+        ...w.normalizeParams(n),
+    });
+}
+var S4 = U("ZodSuccess", (r, n) => {
+    Ct.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => vI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function f_(r) {
+    return new S4({ type: "success", innerType: r });
+}
+var N4 = U("ZodCatch", (r, n) => {
+    mt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => SI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType),
+        (r.removeCatch = r.unwrap);
+});
+function z4(r, n) {
+    return new N4({
+        type: "catch",
+        innerType: r,
+        catchValue: typeof n === "function" ? n : () => n,
+    });
+}
+var j4 = U("ZodNaN", (r, n) => {
+    yt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => rI(r, v, t, i));
+});
+function C_(r) {
+    return Wg(j4, r);
+}
+var Fi = U("ZodPipe", (r, n) => {
+    cn.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => NI(r, v, t, i)),
+        (r.in = n.in),
+        (r.out = n.out);
+});
+function sn(r, n) {
+    return new Fi({ type: "pipe", in: r, out: n });
+}
+var Ri = U("ZodCodec", (r, n) => {
+    Fi.init(r, n), ji.init(r, n);
+});
+function m_(r, n, v) {
+    return new Ri({
+        type: "pipe",
+        in: r,
+        out: n,
+        transform: v.decode,
+        reverseTransform: v.encode,
+    });
+}
+function y_(r) {
+    let n = r._zod.def;
+    return new Ri({
+        type: "pipe",
+        in: n.out,
+        out: n.in,
+        transform: n.reverseTransform,
+        reverseTransform: n.transform,
+    });
+}
+var P4 = U("ZodPreprocess", (r, n) => {
+        Fi.init(r, n), ht.init(r, n);
+    }),
+    J4 = U("ZodReadonly", (r, n) => {
+        dt.init(r, n),
+            J.init(r, n),
+            (r._zod.processJSONSchema = (v, t, i) => zI(r, v, t, i)),
+            (r.unwrap = () => r._zod.def.innerType);
+    });
+function L4(r) {
+    return new J4({ type: "readonly", innerType: r });
+}
+var G4 = U("ZodTemplateLiteral", (r, n) => {
+    pt.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => iI(r, v, t, i));
+});
+function h_(r, n) {
+    return new G4({
+        type: "template_literal",
+        parts: r,
+        ...w.normalizeParams(n),
+    });
+}
+var X4 = U("ZodLazy", (r, n) => {
+    ru.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => PI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.getter());
+});
+function E4(r) {
+    return new X4({ type: "lazy", getter: r });
+}
+var q4 = U("ZodPromise", (r, n) => {
+    st.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => jI(r, v, t, i)),
+        (r.unwrap = () => r._zod.def.innerType);
+});
+function d_(r) {
+    return new q4({ type: "promise", innerType: r });
+}
+var O4 = U("ZodFunction", (r, n) => {
+    at.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => tI(r, v, t, i));
+});
+function p_(r) {
+    return new O4({
+        type: "function",
+        input: Array.isArray(r?.input) ? v4(r?.input) : (r?.input ?? Bi(Xr())),
+        output: r?.output ?? Xr(),
+    });
+}
+var Zi = U("ZodCustom", (r, n) => {
+    iu.init(r, n),
+        J.init(r, n),
+        (r._zod.processJSONSchema = (v, t, i) => $I(r, v, t, i));
+});
+function a_(r) {
+    let n = new W({ check: "custom" });
+    return (n._zod.check = r), n;
+}
+function s_(r, n) {
+    return Kg(Zi, r ?? (() => !0), n);
+}
+function W4(r, n = {}) {
+    return Qg(Zi, r, n);
+}
+function Y4(r, n) {
+    return Hg(r, n);
+}
+var ro = Tg,
+    io = Bg;
+function no(r, n = {}) {
+    let v = new Zi({
+        type: "custom",
+        check: "custom",
+        fn: (t) => t instanceof r,
+        abort: !0,
+        ...w.normalizeParams(n),
+    });
+    return (
+        (v._zod.bag.Class = r),
+        (v._zod.check = (t) => {
+            if (!(t.value instanceof r))
+                t.issues.push({
+                    code: "invalid_type",
+                    expected: r.name,
+                    input: t.value,
+                    inst: v,
+                    path: [...(v._zod.def.path ?? [])],
+                });
+        }),
+        v
+    );
+}
+var vo = (...r) => Ag({ Codec: Ri, Boolean: vi, String: ri }, ...r);
+function $o(r) {
+    let n = E4(() => {
+        return Nv([Wi(r), RI(), ZI(), CI(), Bi(n), $4(Wi(), n)]);
+    });
+    return n;
+}
+function to(r, n) {
+    return new P4({ type: "pipe", in: jv(r), out: n });
+}
+var mD = {
+    invalid_type: "invalid_type",
+    too_big: "too_big",
+    too_small: "too_small",
+    invalid_format: "invalid_format",
+    not_multiple_of: "not_multiple_of",
+    unrecognized_keys: "unrecognized_keys",
+    invalid_union: "invalid_union",
+    invalid_key: "invalid_key",
+    invalid_element: "invalid_element",
+    invalid_value: "invalid_value",
+    custom: "custom",
+};
+function yD(r) {
+    V({ customError: r });
+}
+function hD() {
+    return V().customError;
+}
+var V4;
+(function (r) {})(V4 || (V4 = {}));
+var z = { ...Oi, ...mn, iso: pr },
+    dD = new Set([
+        "$schema",
+        "$ref",
+        "$defs",
+        "definitions",
+        "$id",
+        "id",
+        "$comment",
+        "$anchor",
+        "$vocabulary",
+        "$dynamicRef",
+        "$dynamicAnchor",
+        "type",
+        "enum",
+        "const",
+        "anyOf",
+        "oneOf",
+        "allOf",
+        "not",
+        "properties",
+        "required",
+        "additionalProperties",
+        "patternProperties",
+        "propertyNames",
+        "minProperties",
+        "maxProperties",
+        "items",
+        "prefixItems",
+        "additionalItems",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "contains",
+        "minContains",
+        "maxContains",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "description",
+        "default",
+        "contentEncoding",
+        "contentMediaType",
+        "contentSchema",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "if",
+        "then",
+        "else",
+        "dependentSchemas",
+        "dependentRequired",
+        "nullable",
+        "readOnly",
+    ]);
+function pD(r, n) {
+    let v = r.$schema;
+    if (v === "https://json-schema.org/draft/2020-12/schema")
+        return "draft-2020-12";
+    if (v === "http://json-schema.org/draft-07/schema#") return "draft-7";
+    if (v === "http://json-schema.org/draft-04/schema#") return "draft-4";
+    return n ?? "draft-2020-12";
+}
+function aD(r, n) {
+    if (!r.startsWith("#"))
+        throw Error(
+            "External $ref is not supported, only local refs (#/...) are allowed",
+        );
+    let v = r.slice(1).split("/").filter(Boolean);
+    if (v.length === 0) return n.rootSchema;
+    let t = n.version === "draft-2020-12" ? "$defs" : "definitions";
+    if (v[0] === t) {
+        let i = v[1];
+        if (!i || !n.defs[i]) throw Error(`Reference not found: ${r}`);
+        return n.defs[i];
+    }
+    throw Error(`Reference not found: ${r}`);
+}
+function uo(r, n) {
+    if (r.not !== void 0) {
+        if (typeof r.not === "object" && Object.keys(r.not).length === 0)
+            return z.never();
+        throw Error(
+            "not is not supported in Zod (except { not: {} } for never)",
+        );
+    }
+    if (r.unevaluatedItems !== void 0)
+        throw Error("unevaluatedItems is not supported");
+    if (r.unevaluatedProperties !== void 0)
+        throw Error("unevaluatedProperties is not supported");
+    if (r.if !== void 0 || r.then !== void 0 || r.else !== void 0)
+        throw Error("Conditional schemas (if/then/else) are not supported");
+    if (r.dependentSchemas !== void 0 || r.dependentRequired !== void 0)
+        throw Error("dependentSchemas and dependentRequired are not supported");
+    if (r.$ref) {
+        let i = r.$ref;
+        if (n.refs.has(i)) return n.refs.get(i);
+        if (n.processing.has(i))
+            return z.lazy(() => {
+                if (!n.refs.has(i))
+                    throw Error(`Circular reference not resolved: ${i}`);
+                return n.refs.get(i);
+            });
+        n.processing.add(i);
+        let $ = aD(i, n),
+            u = T($, n);
+        return n.refs.set(i, u), n.processing.delete(i), u;
+    }
+    if (r.enum !== void 0) {
+        let i = r.enum;
+        if (
+            n.version === "openapi-3.0" &&
+            r.nullable === !0 &&
+            i.length === 1 &&
+            i[0] === null
+        )
+            return z.null();
+        if (i.length === 0) return z.never();
+        if (i.length === 1) return z.literal(i[0]);
+        if (i.every((u) => typeof u === "string")) return z.enum(i);
+        let $ = i.map((u) => z.literal(u));
+        if ($.length < 2) return $[0];
+        return z.union([$[0], $[1], ...$.slice(2)]);
+    }
+    if (r.const !== void 0) return z.literal(r.const);
+    let v = r.type;
+    if (Array.isArray(v)) {
+        let i = v.map(($) => {
+            let u = { ...r, type: $ };
+            return uo(u, n);
+        });
+        if (i.length === 0) return z.never();
+        if (i.length === 1) return i[0];
+        return z.union(i);
+    }
+    if (!v) return z.any();
+    let t;
+    switch (v) {
+        case "string": {
+            let i = z.string();
+            if (r.format) {
+                let $ = r.format;
+                if ($ === "email") i = i.check(z.email());
+                else if ($ === "uri" || $ === "uri-reference")
+                    i = i.check(z.url());
+                else if ($ === "uuid" || $ === "guid") i = i.check(z.uuid());
+                else if ($ === "date-time") i = i.check(z.iso.datetime());
+                else if ($ === "date") i = i.check(z.iso.date());
+                else if ($ === "time") i = i.check(z.iso.time());
+                else if ($ === "duration") i = i.check(z.iso.duration());
+                else if ($ === "ipv4") i = i.check(z.ipv4());
+                else if ($ === "ipv6") i = i.check(z.ipv6());
+                else if ($ === "mac") i = i.check(z.mac());
+                else if ($ === "cidr") i = i.check(z.cidrv4());
+                else if ($ === "cidr-v6") i = i.check(z.cidrv6());
+                else if ($ === "base64") i = i.check(z.base64());
+                else if ($ === "base64url") i = i.check(z.base64url());
+                else if ($ === "e164") i = i.check(z.e164());
+                else if ($ === "jwt") i = i.check(z.jwt());
+                else if ($ === "emoji") i = i.check(z.emoji());
+                else if ($ === "nanoid") i = i.check(z.nanoid());
+                else if ($ === "cuid") i = i.check(z.cuid());
+                else if ($ === "cuid2") i = i.check(z.cuid2());
+                else if ($ === "ulid") i = i.check(z.ulid());
+                else if ($ === "xid") i = i.check(z.xid());
+                else if ($ === "ksuid") i = i.check(z.ksuid());
+            }
+            if (typeof r.minLength === "number") i = i.min(r.minLength);
+            if (typeof r.maxLength === "number") i = i.max(r.maxLength);
+            if (r.pattern) i = i.regex(new RegExp(r.pattern));
+            t = i;
+            break;
+        }
+        case "number":
+        case "integer": {
+            let i = v === "integer" ? z.number().int() : z.number();
+            if (typeof r.minimum === "number") i = i.min(r.minimum);
+            if (typeof r.maximum === "number") i = i.max(r.maximum);
+            if (typeof r.exclusiveMinimum === "number")
+                i = i.gt(r.exclusiveMinimum);
+            else if (r.exclusiveMinimum === !0 && typeof r.minimum === "number")
+                i = i.gt(r.minimum);
+            if (typeof r.exclusiveMaximum === "number")
+                i = i.lt(r.exclusiveMaximum);
+            else if (r.exclusiveMaximum === !0 && typeof r.maximum === "number")
+                i = i.lt(r.maximum);
+            if (typeof r.multipleOf === "number")
+                i = i.multipleOf(r.multipleOf);
+            t = i;
+            break;
+        }
+        case "boolean": {
+            t = z.boolean();
+            break;
+        }
+        case "null": {
+            t = z.null();
+            break;
+        }
+        case "object": {
+            let i = {},
+                $ = r.properties || {},
+                u = new Set(r.required || []);
+            for (let [_, I] of Object.entries($)) {
+                let o = T(I, n);
+                i[_] = u.has(_) ? o : o.optional();
+            }
+            if (r.propertyNames) {
+                let _ = T(r.propertyNames, n),
+                    I =
+                        r.additionalProperties &&
+                        typeof r.additionalProperties === "object"
+                            ? T(r.additionalProperties, n)
+                            : z.any();
+                if (Object.keys(i).length === 0) {
+                    t = z.record(_, I);
+                    break;
+                }
+                let o = z.object(i).passthrough(),
+                    D = z.looseRecord(_, I);
+                t = z.intersection(o, D);
+                break;
+            }
+            if (r.patternProperties) {
+                let _ = r.patternProperties,
+                    I = Object.keys(_),
+                    o = [];
+                for (let S of I) {
+                    let c = T(_[S], n),
+                        j = z.string().regex(new RegExp(S));
+                    o.push(z.looseRecord(j, c));
+                }
+                let D = [];
+                if (Object.keys(i).length > 0)
+                    D.push(z.object(i).passthrough());
+                if ((D.push(...o), D.length === 0))
+                    t = z.object({}).passthrough();
+                else if (D.length === 1) t = D[0];
+                else {
+                    let S = z.intersection(D[0], D[1]);
+                    for (let c = 2; c < D.length; c++)
+                        S = z.intersection(S, D[c]);
+                    t = S;
+                }
+                break;
+            }
+            let g = z.object(i);
+            if (r.additionalProperties === !1) t = g.strict();
+            else if (typeof r.additionalProperties === "object")
+                t = g.catchall(T(r.additionalProperties, n));
+            else t = g.passthrough();
+            break;
+        }
+        case "array": {
+            let { prefixItems: i, items: $ } = r;
+            if (i && Array.isArray(i)) {
+                let u = i.map((_) => T(_, n)),
+                    g =
+                        $ && typeof $ === "object" && !Array.isArray($)
+                            ? T($, n)
+                            : void 0;
+                if (g) t = z.tuple(u).rest(g);
+                else t = z.tuple(u);
+                if (typeof r.minItems === "number")
+                    t = t.check(z.minLength(r.minItems));
+                if (typeof r.maxItems === "number")
+                    t = t.check(z.maxLength(r.maxItems));
+            } else if (Array.isArray($)) {
+                let u = $.map((_) => T(_, n)),
+                    g =
+                        r.additionalItems &&
+                        typeof r.additionalItems === "object"
+                            ? T(r.additionalItems, n)
+                            : void 0;
+                if (g) t = z.tuple(u).rest(g);
+                else t = z.tuple(u);
+                if (typeof r.minItems === "number")
+                    t = t.check(z.minLength(r.minItems));
+                if (typeof r.maxItems === "number")
+                    t = t.check(z.maxLength(r.maxItems));
+            } else if ($ !== void 0) {
+                let u = T($, n),
+                    g = z.array(u);
+                if (typeof r.minItems === "number") g = g.min(r.minItems);
+                if (typeof r.maxItems === "number") g = g.max(r.maxItems);
+                t = g;
+            } else t = z.array(z.any());
+            break;
+        }
+        default:
+            throw Error(`Unsupported type: ${v}`);
+    }
+    return t;
+}
+function T(r, n) {
+    if (typeof r === "boolean") return r ? z.any() : z.never();
+    let v = uo(r, n),
+        t = r.type || r.enum !== void 0 || r.const !== void 0;
+    if (r.anyOf && Array.isArray(r.anyOf)) {
+        let g = r.anyOf.map((I) => T(I, n)),
+            _ = z.union(g);
+        v = t ? z.intersection(v, _) : _;
+    }
+    if (r.oneOf && Array.isArray(r.oneOf)) {
+        let g = r.oneOf.map((I) => T(I, n)),
+            _ = z.xor(g);
+        v = t ? z.intersection(v, _) : _;
+    }
+    if (r.allOf && Array.isArray(r.allOf))
+        if (r.allOf.length === 0) v = t ? v : z.any();
+        else {
+            let g = t ? v : T(r.allOf[0], n),
+                _ = t ? 0 : 1;
+            for (let I = _; I < r.allOf.length; I++)
+                g = z.intersection(g, T(r.allOf[I], n));
+            v = g;
+        }
+    if (r.nullable === !0 && n.version === "openapi-3.0") v = z.nullable(v);
+    if (r.readOnly === !0) v = z.readonly(v);
+    if (r.default !== void 0) v = v.default(r.default);
+    let i = {},
+        $ = [
+            "$id",
+            "id",
+            "$comment",
+            "$anchor",
+            "$vocabulary",
+            "$dynamicRef",
+            "$dynamicAnchor",
+        ];
+    for (let g of $) if (g in r) i[g] = r[g];
+    let u = ["contentEncoding", "contentMediaType", "contentSchema"];
+    for (let g of u) if (g in r) i[g] = r[g];
+    for (let g of Object.keys(r)) if (!dD.has(g)) i[g] = r[g];
+    if (Object.keys(i).length > 0) n.registry.add(v, i);
+    if (r.description) v = v.describe(r.description);
+    return v;
+}
+function go(r, n) {
+    if (typeof r === "boolean") return r ? z.any() : z.never();
+    let v;
+    try {
+        v = JSON.parse(JSON.stringify(r));
+    } catch {
+        throw Error(
+            "fromJSONSchema input is not valid JSON (possibly cyclic); use $defs/$ref for recursive schemas",
+        );
+    }
+    let t = pD(v, n?.defaultTarget),
+        i = v.$defs || v.definitions || {},
+        $ = {
+            version: t,
+            defs: i,
+            refs: new Map(),
+            processing: new Set(),
+            rootSchema: v,
+            registry: n?.registry ?? H,
+        };
+    return T(v, $);
+}
+var K4 = {};
+vr(K4, {
+    string: () => sD,
+    number: () => rk,
+    date: () => vk,
+    boolean: () => ik,
+    bigint: () => nk,
+});
+function sD(r) {
+    return ig(ri, r);
+}
+function rk(r) {
+    return _g(ni, r);
+}
+function ik(r) {
+    return cg(vi, r);
+}
+function nk(r) {
+    return Sg($i, r);
+}
+function vk(r) {
+    return Og(Ti, r);
+}
+V(Pi());
+var $k = G.object({
+        secs: G.number()
+            .int()
+            .nonnegative()
+            .describe("The number of whole seconds elapsed."),
+        nanos: G.number()
+            .int()
+            .nonnegative()
+            .describe("The number of nanoseconds elapsed."),
+    }),
+    Q4 = G.object({
+        type: G.enum(["lib", "service", "script", "app"])
+            .or(G.string())
+            .optional()
+            .describe(
+                "The type of project (e.g., library, service, application).",
+            ),
+        language: G.enum(["rust", "typescript"])
+            .or(G.string())
+            .optional()
+            .describe("The primary language of the project."),
+    }),
+    H4 = G.object({
+        task_name: G.string().describe(
+            "The short name of the task (e.g., 'test', 'build').",
+        ),
+        task_exec: G.string()
+            .nullish()
+            .describe("The command executed for the task."),
+        project_name: G.string().describe("The name of the project."),
+        project_dir: G.string().describe(
+            "The absolute directory path of the project.",
+        ),
+        full_task_name: G.string().describe(
+            "The fully qualified task name (e.g., 'omni_utils#test').",
+        ),
+        dependencies: G.array(G.string()).describe(
+            "A list of dependent task names.",
+        ),
+        enabled: G.boolean()
+            .or(G.string())
+            .optional()
+            .describe(
+                "Whether the task is enabled by configuration. Either a boolean or a tera template string that evaluates to a boolean.",
+            ),
+        interactive: G.boolean().describe("Whether the task is interactive."),
+        persistent: G.boolean().describe("Whether the task is persistent."),
+    }),
+    tk = G.object({
+        status: G.literal("completed"),
+        hash: G.string().describe(
+            "The task's content hash (Base64 encoded string). Used for caching.",
+        ),
+        task: H4,
+        exit_code: G.number()
+            .int()
+            .describe(
+                "The exit code of the executed command (typically 0 for success).",
+            ),
+        elapsed: $k.describe("The duration the task took to execute."),
+        cache_hit: G.boolean().describe(
+            "Indicates if the result was pulled from cache.",
+        ),
+        details: G.object({ meta: Q4 }).describe("Additional run details."),
+    }),
+    uk = G.object({
+        status: G.literal("errored"),
+        task: H4,
+        error: G.string().describe("The error message."),
+        details: G.object({ meta: Q4 }).describe("Additional run details."),
+    }),
+    gk = G.object({
+        status: G.literal("skipped"),
+        task: H4,
+        skip_reason: G.string().describe(
+            "The reason the task was skipped (e.g., 'disabled').",
+        ),
+        details: G.object({ meta: Q4 }).describe("Additional run details."),
+    }),
+    Ik = G.discriminatedUnion("status", [tk, gk, uk]).describe(
+        "Schema for a single task execution result (completed or skipped).",
+    ),
+    Io = G.array(Ik).describe("An array of task execution results.");
+function Lv(r) {
+    return {
+        total: r,
+        skipped: 0,
+        errored: 0,
+        completed: 0,
+        completed_with_error: 0,
+        completed_with_success: 0,
+        completed_with_cache_hit: 0,
+        completed_with_cache_hit_error: 0,
+        completed_with_cache_hit_success: 0,
+    };
+}
+function _o(r) {
+    let n = {
+        ...Lv(r.length),
+        aggregated_by_metadata: {},
+        aggregated_by_project: {},
+        aggregated_by_task: {},
+        projects: {},
+    };
+    for (let v of r) {
+        if (!n.projects[v.task.project_name])
+            n.projects[v.task.project_name] = { tasks: {} };
+        (n.projects[v.task.project_name].tasks[v.task.task_name] = {
+            execute: v.status === "completed" && !v.cache_hit,
+            meta: v.details.meta,
+        }),
+            Gv(v, n);
+        let t = _k(v.details.meta);
+        for (let i of t) {
+            if (!n.aggregated_by_metadata[i])
+                n.aggregated_by_metadata[i] = Lv(0);
+            Gv(v, n.aggregated_by_metadata[i]);
+        }
+        if (!n.aggregated_by_project[v.task.project_name])
+            n.aggregated_by_project[v.task.project_name] = Lv(0);
+        if (
+            (Gv(v, n.aggregated_by_project[v.task.project_name]),
+            !n.aggregated_by_task[v.task.task_name])
+        )
+            n.aggregated_by_task[v.task.task_name] = Lv(0);
+        Gv(v, n.aggregated_by_task[v.task.task_name]);
+    }
+    for (let v in n.aggregated_by_metadata) {
+        let t = n.aggregated_by_metadata[v];
+        if (t) t.total = t.skipped + t.errored + t.completed;
+    }
+    for (let v in n.aggregated_by_project) {
+        let t = n.aggregated_by_project[v];
+        if (t) t.total = t.skipped + t.errored + t.completed;
+    }
+    for (let v in n.aggregated_by_task) {
+        let t = n.aggregated_by_task[v];
+        if (t) t.total = t.skipped + t.errored + t.completed;
+    }
+    return n;
+}
+function _k(r) {
+    let n = [];
+    if (r.type) n.push(`type:${r.type}`);
+    if (r.language) n.push(`language:${r.language}`);
+    return n;
+}
+function Gv(r, n) {
+    switch (r.status) {
+        case "skipped":
+            n.skipped++;
+            break;
+        case "errored":
+            n.errored++;
+            break;
+        case "completed":
+            if ((n.completed++, r.exit_code === 0)) n.completed_with_success++;
+            else n.completed_with_error++;
+            if (r.cache_hit)
+                if ((n.completed_with_cache_hit++, r.exit_code === 0))
+                    n.completed_with_cache_hit_success++;
+                else n.completed_with_cache_hit_error++;
+            break;
+    }
+}
+var ok = new v6();
+await ok
+    .argument("<input>", "The input file to read from.")
+    .option("-o, --output <output>", "The output file to write to.")
+    .action(async (r, n) => {
+        let v = await oo.readFile(r, "utf-8"),
+            t = JSON.parse(v),
+            i = Io.safeParse(t);
+        if (i.success) {
+            let $ = i.data,
+                u = _o($);
+            if (n.output)
+                await oo.writeFile(n.output, JSON.stringify(u, null, 2));
+            else console.log(u);
+        } else console.error(i.error), process.exit(1);
+    })
+    .parseAsync();

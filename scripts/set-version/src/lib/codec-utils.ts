@@ -1,6 +1,6 @@
 import path from "node:path";
 import JSONC from "comment-json";
-import XMLBuilder  from "fast-xml-builder"
+import XMLBuilder from "fast-xml-builder";
 import { XMLParser } from "fast-xml-parser";
 import TOML from "smol-toml";
 import YAML from "yaml";

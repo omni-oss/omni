@@ -1,18 +1,18 @@
 {
-  "crate": {
-    "targets": {},
-    "prompts": {}
-  },
-  "rust-error": {
-    "targets": {
-      "root": "./src"
+    "crate": {
+        "targets": {},
+        "prompts": {}
     },
-    "prompts": {
-      "use_tracing": true,
-      "add_error_type": true,
-      "crate_name": "omni_remote_sources",
-      "version": "workspace",
-      "crate_type": "lib"
+    "rust-error": {
+        "targets": {
+            "root": "./src"
+        },
+        "prompts": {
+            "use_tracing": true,
+            "add_error_type": true,
+            "crate_name": "omni_remote_sources",
+            "version": "workspace",
+            "crate_type": "lib"
+        }
     }
-  }
 }

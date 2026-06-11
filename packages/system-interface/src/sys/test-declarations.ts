@@ -33,8 +33,10 @@ export function declareSysTests(args: SystemTestDeclarationsArgs): void {
         }
     }
 
-    describe.skipIf(args.skip ?? false)
-        (`System ${args.name}`, { concurrent: false }, () => {
+    describe.skipIf(args.skip ?? false)(
+        `System ${args.name}`,
+        { concurrent: false },
+        () => {
             async function expectAbleToCreateFileInCurrentDirectory(
                 dir: string,
             ) {
@@ -64,5 +66,6 @@ export function declareSysTests(args: SystemTestDeclarationsArgs): void {
                     );
                 });
             }
-        });
+        },
+    );
 }

@@ -1,18 +1,18 @@
 {
-  "crate": {
-    "targets": {},
-    "prompts": {}
-  },
-  "rust-error": {
-    "targets": {
-      "root": "./src"
+    "crate": {
+        "targets": {},
+        "prompts": {}
     },
-    "prompts": {
-      "add_error_type": true,
-      "use_tracing": true,
-      "version": "workspace",
-      "crate_name": "omni_lockfile",
-      "crate_type": "lib"
+    "rust-error": {
+        "targets": {
+            "root": "./src"
+        },
+        "prompts": {
+            "add_error_type": true,
+            "use_tracing": true,
+            "version": "workspace",
+            "crate_name": "omni_lockfile",
+            "crate_type": "lib"
+        }
     }
-  }
 }

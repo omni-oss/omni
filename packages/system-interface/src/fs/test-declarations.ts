@@ -69,7 +69,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToWriteBytesFile(tempDir);
             });
         } else {
-            it("should be able to write bytes to file", async ({ tempDirPath }) => {
+            it("should be able to write bytes to file", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToWriteBytesFile(tempDirPath),
                 );
@@ -135,7 +137,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToAppendToFile(tempDir);
             });
         } else {
-            it("should be able to append to a file", async ({ tempDirPath }) => {
+            it("should be able to append to a file", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToAppendToFile(tempDirPath),
                 );
@@ -172,7 +176,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToCreateDirectory(tempDir);
             });
         } else {
-            it("should be able to create a directory", async ({ tempDirPath }) => {
+            it("should be able to create a directory", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToCreateDirectory(tempDirPath),
                 );
@@ -193,7 +199,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToRemoveADirectory(tempDir);
             });
         } else {
-            it("should be able to remove a directory", async ({ tempDirPath }) => {
+            it("should be able to remove a directory", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToRemoveADirectory(tempDirPath),
                 );
@@ -212,7 +220,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToReadDirectory(tempDir);
             });
         } else {
-            it("should be able to read a directory", async ({ tempDirPath }) => {
+            it("should be able to read a directory", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToReadDirectory(tempDirPath),
                 );
@@ -283,7 +293,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             });
         } else {
             it("should be able to copy a file", async ({ tempDirPath }) => {
-                await withFixture(tempDirPath, () => expectAbleToCopyFile(tempDirPath));
+                await withFixture(tempDirPath, () =>
+                    expectAbleToCopyFile(tempDirPath),
+                );
             });
         }
 
@@ -322,7 +334,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
             });
         } else {
             it("should be able to stat a file", async ({ tempDirPath }) => {
-                await withFixture(tempDirPath, () => expectAbleToStatFile(tempDirPath));
+                await withFixture(tempDirPath, () =>
+                    expectAbleToStatFile(tempDirPath),
+                );
             });
         }
 
@@ -338,7 +352,9 @@ export function declareFsTests(args: FileSystemTestDeclarationsArgs): void {
                 await expectAbleToStatDirectory(tempDir);
             });
         } else {
-            it("should be able to stat a directory", async ({ tempDirPath }) => {
+            it("should be able to stat a directory", async ({
+                tempDirPath,
+            }) => {
                 await withFixture(tempDirPath, () =>
                     expectAbleToStatDirectory(tempDirPath),
                 );

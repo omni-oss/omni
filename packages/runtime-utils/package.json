@@ -2,8 +2,7 @@
     "name": "@omni-oss/runtime-utils",
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
-    
-    
+
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -17,22 +16,19 @@
             }
         }
     },
-    
-    
+
     "publishConfig": {
         "access": "public"
     },
-    
-    "dependencies": {
-        
-    },
+
+    "dependencies": {},
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
-        
+
         "typescript": "catalog:"
     }
 }
