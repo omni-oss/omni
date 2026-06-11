@@ -3,7 +3,7 @@
     "description": "{{ prompts.package_description }}",
     "version": "{{ prompts.package_version }}",
     {% if prompts.package_type == 'script' %}
-    "bin": "./dist/{{ prompts.package_name }}.js",
+    "bin": "./dist/{{ prompts.package_name }}-cli.js",
     {% endif %}
     {% if prompts.package_type == 'lib' or (prompts.package_type == 'script' and prompts.script_can_be_used_as_lib) %}
     "exports": {

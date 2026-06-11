@@ -19,14 +19,12 @@ export default createConfig({
     overrides: {
         build: {
             lib: {
-                {% if prompts.package_type == "script" %}
                 entry: {
-                    "{{ prompts.package_name }}": "src/cli/index.ts",
+                    {% if prompts.package_type == "script" %}
+                    "{{ prompts.package_name }}-cli": "src/cli/index.ts",
+                    {% endif %}
                     "index": "src/index.ts",
                 },
-                {% else %}
-                entry: "src/index.ts",
-                {% endif %}
                 formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "{{ prompts.package_name }}"}.${format === "cjs" ? "cjs" : "mjs"}`,
