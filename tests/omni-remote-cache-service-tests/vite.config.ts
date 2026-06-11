@@ -7,7 +7,7 @@ export default createConfig({
         build: {
             lib: {
                 entry: "src/index.ts",
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format) =>
                     `orcs-api-test.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "OrcsApiTest",

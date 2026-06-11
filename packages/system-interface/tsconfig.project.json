@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
         "outDir": "./dist",
-        "types": ["@types/bun", "@types/node", "@types/deno"]
+        "types": ["bun", "node", "deno"]
     }
 }

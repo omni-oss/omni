@@ -10,7 +10,7 @@ export default createConfig({
             lib: {
                 entry: "src/index.ts",
 
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-rpc-boostrap"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeRpcBoostrap",

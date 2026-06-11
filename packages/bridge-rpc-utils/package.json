@@ -11,18 +11,18 @@
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/index.cjs"
+                "default": "./dist/index.mjs"
             }
         },
         "./*": {
-            "types": "./dist/*.d.ts",
+            "types": "./dist/*/index.d.ts",
             "import": {
                 "development": "./src/*/index.ts",
                 "default": "./dist/*.mjs"
             },
             "require": {
                 "development": "./src/*/index.ts",
-                "default": "./dist/*.cjs"
+                "default": "./dist/*.mjs"
             }
         }
     },

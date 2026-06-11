@@ -5,7 +5,7 @@ extends:
 
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
-depedencies:
+dependencies:
   append:
     - "@omni-oss/tsconfig"
     - "@omni-oss/vite-config"

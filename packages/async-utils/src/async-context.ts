@@ -80,9 +80,7 @@ if (snapshotFactory === null) {
             .process?.versions?.node === "string";
     if (isNodeLike) {
         try {
-            const mod = (await import("node:async_hooks")) as {
-                AsyncLocalStorage: AsyncLocalStorageStatic;
-            };
+            const mod = await import("node:async_hooks");
             const cls = mod.AsyncLocalStorage;
             if (typeof cls.snapshot === "function") {
                 const snap = cls.snapshot.bind(cls);

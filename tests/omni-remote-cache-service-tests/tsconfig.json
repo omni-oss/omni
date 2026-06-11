@@ -1,7 +1,7 @@
 {
 	"extends": ["@omni-oss/tsconfig/with-paths.json"],
 	"compilerOptions": {
-	    "types": ["@types/node"]
+	    "types": ["node"]
 	},
 	"exclude": [
         "coverage",

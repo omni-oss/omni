@@ -13,7 +13,7 @@ export default createConfig({
                     body: "./src/body/index.ts",
                     server: "./src/server/index.ts",
                 },
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-rpc-utils"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeRpcUtils",

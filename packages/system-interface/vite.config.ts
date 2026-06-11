@@ -13,7 +13,7 @@ export default createConfig({
                     deno: "./src/deno.ts",
                     node: "./src/node.ts",
                 },
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "system-interface"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "SystemInterface",

@@ -11,7 +11,7 @@
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/index.cjs"
+                "default": "./dist/index.mjs"
             }
         }
     },

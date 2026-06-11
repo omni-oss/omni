@@ -7,7 +7,7 @@ export default createConfig({
         build: {
             lib: {
                 entry: "src/index.ts",
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-rpc-router"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeRpcRouter",

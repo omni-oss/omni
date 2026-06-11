@@ -2,7 +2,7 @@
 	"extends": ["@omni-oss/tsconfig/with-paths.json"],
 	"compilerOptions": {
 		"outDir": "./dist",
-        "types": ["@types/bun", "@types/node"],
+        "types": ["bun", "node"],
         "module": "ESNext",
 	},
     "include": [

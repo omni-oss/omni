@@ -7,7 +7,9 @@ export default createConfig({
     overrides: {
         build: {
             lib: {
-                entry: "src/index.ts",
+                entry: {
+                    index: "src/index.ts",
+                },
 
                 formats: ["es"],
                 fileName: (format, entryName) =>

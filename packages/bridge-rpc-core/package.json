@@ -10,7 +10,7 @@
             },
             "require": {
                 "development": "./src/index.ts",
-                "default": "./dist/index.cjs"
+                "default": "./dist/index.mjs"
             }
         },
         "./frame": {
@@ -21,7 +21,7 @@
             },
             "require": {
                 "development": "./src/bridge/frame.ts",
-                "default": "./dist/frame.cjs"
+                "default": "./dist/frame.mjs"
             }
         },
         "./client": {
@@ -32,7 +32,7 @@
             },
             "require": {
                 "development": "./src/bridge/client/index.ts",
-                "default": "./dist/client.cjs"
+                "default": "./dist/client.mjs"
             }
         },
         "./server": {
@@ -43,7 +43,7 @@
             },
             "require": {
                 "development": "./src/bridge/server/index.ts",
-                "default": "./dist/server.cjs"
+                "default": "./dist/server.mjs"
             }
         }
     },

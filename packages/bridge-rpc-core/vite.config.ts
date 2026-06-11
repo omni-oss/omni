@@ -12,7 +12,7 @@ export default createConfig({
                     client: "src/bridge/client/index.ts",
                     server: "src/bridge/server/index.ts",
                 },
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "bridge-rpc-core"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "BridgeRpcCore",

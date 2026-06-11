@@ -12,7 +12,7 @@ export default createConfig({
                     index: "src/index.ts",
                 },
 
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "set-version"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "SetVersion",

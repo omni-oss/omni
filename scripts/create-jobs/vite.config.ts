@@ -11,7 +11,7 @@ export default createConfig({
                     index: "src/index.ts",
                 },
 
-                formats: ["es", "cjs"],
+                formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "create-jobs"}.${format === "cjs" ? "cjs" : "mjs"}`,
                 name: "CreateJobs",
