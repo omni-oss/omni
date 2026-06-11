@@ -16,7 +16,7 @@ dependencies:
     - "@omni-oss/runtime-utils"
     - "@omni-oss/log"
     - "@omni-oss/console-log-interceptor"
-    - "@omni-oss/system-interface"
+    - "@omni-oss/bridge-rpc-system-interface"
 
 tasks:
   test:unit:
