@@ -420,6 +420,61 @@ pub struct RunCommandActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+/// Transform a single file's contents by piping them through a command,
+/// replacing the file's contents with the command's standard output.
+pub struct TransformActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    /// The command to transform the file with. The file's current contents are
+    /// written to the command's standard input, and its standard output (when
+    /// the command exits successfully) becomes the file's new contents.
+    /// The path of the file being processed is exposed to the command via the
+    /// `FILENAME` environment variable.
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub command: String,
+
+    /// The file whose contents should be transformed. Does not support glob
+    /// patterns. Resolved relative to the output directory.
+    #[new(into)]
+    pub file: PathBuf,
+
+    #[serde(flatten)]
+    pub common: CommonRunCustomActionConfiguration,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
+/// Transform the contents of every file matching a set of glob patterns by
+/// piping them through a command, replacing each matched file's contents with
+/// the command's standard output.
+pub struct TransformManyActionConfiguration {
+    #[serde(flatten)]
+    pub base: BaseActionConfiguration,
+
+    /// The command to transform each file with. Each file's current contents
+    /// are written to the command's standard input, and its standard output
+    /// (when the command exits successfully) becomes that file's new contents.
+    /// The path of the file being processed is exposed to the command via the
+    /// `FILENAME` environment variable.
+    #[serde(deserialize_with = "validate_tera_expr")]
+    pub command: String,
+
+    /// Glob patterns matched against the files that have pending writes in the
+    /// current generation. Patterns are resolved relative to the output
+    /// directory. Prefix a pattern with `!` to exclude matches.
+    pub files: Vec<PathBuf>,
+
+    #[serde(flatten)]
+    pub common: CommonRunCustomActionConfiguration,
+}
+
+#[derive(
+    Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
+)]
+#[garde(allow_unvalidated)]
 pub struct RunJavaScriptActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -611,6 +666,23 @@ pub enum ActionConfiguration {
     PrependContent {
         #[serde(flatten)]
         action: PrependContentActionConfiguration,
+    },
+
+    /// Transform a single file's contents by piping them through a command,
+    /// replacing the file with the command's standard output.
+    #[strum_discriminants(strum(serialize = "transform"))]
+    Transform {
+        #[serde(flatten)]
+        action: TransformActionConfiguration,
+    },
+
+    /// Transform the contents of every file matching a set of glob patterns by
+    /// piping them through a command, replacing each file with the command's
+    /// standard output.
+    #[strum_discriminants(strum(serialize = "transform-many"))]
+    TransformMany {
+        #[serde(flatten)]
+        action: TransformManyActionConfiguration,
     },
 
     /// Run a custom command
