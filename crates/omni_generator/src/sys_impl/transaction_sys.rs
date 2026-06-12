@@ -129,7 +129,7 @@ struct State {
 /// buffered view.
 #[derive(Clone)]
 pub struct TransactionSys<S = RealSys> {
-    real: S,
+    real: Arc<S>,
     state: Arc<Mutex<State>>,
 }
 
@@ -137,7 +137,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
     /// Creates a new, empty transactional overlay over `real`.
     pub fn new(real: S) -> Self {
         Self {
-            real,
+            real: Arc::new(real),
             state: Arc::new(Mutex::new(State::default())),
         }
     }
@@ -198,7 +198,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             actions
         };
 
-        flush_to_real(&self.real, &actions).await
+        flush_to_real(&*self.real, &actions).await
     }
 
     /// Rolls back the innermost open transaction, discarding every action
@@ -216,7 +216,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         );
         st.actions.truncate(start);
         st.checkpoints.retain(|(_, len)| *len <= start);
-        rebuild(&mut st, &self.real).await;
+        rebuild(&mut st, &*self.real).await;
         Ok(())
     }
 
@@ -238,7 +238,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             actions
         };
 
-        flush_to_real(&self.real, &actions).await
+        flush_to_real(&*self.real, &actions).await
     }
 
     /// Records a checkpoint at the current position in the action log.
@@ -279,7 +279,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         st.checkpoints.truncate(pos + 1);
         // Drop any transactions that were opened after this checkpoint.
         st.tx_stack.retain(|start| *start <= len);
-        rebuild(&mut st, &self.real).await;
+        rebuild(&mut st, &*self.real).await;
         Ok(())
     }
 }
@@ -588,7 +588,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
     async fn record(&self, action: Action) -> io::Result<()> {
         let mut guard = self.state.lock().await;
         let st: &mut State = &mut guard;
-        apply_overlay(&st.overlay, &mut st.deleted, &self.real, &action)
+        apply_overlay(&st.overlay, &mut st.deleted, &*self.real, &action)
             .await?;
         st.actions.push(action);
         Ok(())
@@ -600,7 +600,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         let mut guard = self.state.lock().await;
         let st: &mut State = &mut guard;
         let result =
-            apply_overlay(&st.overlay, &mut st.deleted, &self.real, &action)
+            apply_overlay(&st.overlay, &mut st.deleted, &*self.real, &action)
                 .await?;
         st.actions.push(action);
         Ok(result)
