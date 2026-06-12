@@ -6713,6 +6713,7 @@ dependencies = [
  "sets",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "trace",

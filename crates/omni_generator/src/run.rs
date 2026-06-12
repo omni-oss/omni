@@ -14,7 +14,7 @@ use crate::{
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     gen_session::GenSession,
-    sys_impl::DryRunSys,
+    sys_impl::TransactionSys,
     utils::{expand_json_value, get_tera_context},
 };
 
@@ -50,12 +50,7 @@ pub async fn run_named<'a>(
             ErrorInner::new_generator_not_found(generator_name.to_string())
         })?;
 
-    if config.dry_run {
-        let sys = DryRunSys::default();
-        run_internal(&generator, config, &sys).await
-    } else {
-        run_internal(&generator, config, sys).await
-    }
+    run_in_transaction(&generator, config, sys).await
 }
 
 pub async fn run<'a>(
@@ -65,12 +60,29 @@ pub async fn run<'a>(
 ) -> Result<GenSession, Error> {
     crate::validate(config.available_generators)?;
 
-    if config.dry_run {
-        let sys = DryRunSys::default();
-        run_internal(&generator, config, &sys).await
-    } else {
-        run_internal(&generator, config, sys).await
+    run_in_transaction(generator, config, sys).await
+}
+
+/// Runs a generator against a transactional overlay of `sys`.
+///
+/// Every file-system mutation performed while executing the generator's
+/// actions is buffered in the overlay; nothing touches `sys` until the
+/// transaction is committed. A normal run commits the transaction once all
+/// actions have succeeded (making generation atomic), while a dry run simply
+/// drops the buffered actions without committing.
+async fn run_in_transaction<'a>(
+    r#gen: &GeneratorConfiguration,
+    config: &RunConfig<'a>,
+    sys: &impl GeneratorSys,
+) -> Result<GenSession, Error> {
+    let tx = TransactionSys::new(sys.clone());
+    let session = run_internal(r#gen, config, &tx).await?;
+
+    if !config.dry_run {
+        tx.commit().await?;
     }
+
+    Ok(session)
 }
 
 pub(crate) async fn run_internal<'a>(

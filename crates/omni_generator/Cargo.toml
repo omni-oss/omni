@@ -58,3 +58,6 @@ which = { workspace = true }
 pathdiff = { workspace = true }
 serde = { workspace = true }
 bon = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

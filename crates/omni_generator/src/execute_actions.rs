@@ -54,14 +54,12 @@ pub async fn execute_actions<'a>(
     )?;
     let output_path = Path::new(&expanded_output);
 
-    let output_dir = if output_path.starts_with(args.workspace_dir) {
-        output_path
-            .strip_prefix(args.workspace_dir)
-            .expect("should be within workspace dir")
+    if let Some(diff) = pathdiff::diff_paths(&output_path, &args.workspace_dir)
+    {
+        tera_context.insert("output_dir", &diff);
     } else {
-        &output_path
-    };
-    tera_context.insert("output_dir", &output_dir);
+        tera_context.insert("output_dir", &output_path);
+    }
 
     for (index, action) in args.actions.iter().enumerate() {
         let action_name = get_action_name(index, action, &tera_context)?;
