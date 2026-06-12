@@ -294,7 +294,7 @@ impl<S: GeneratorSys> BaseFsReadAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<Cow<'static, [u8]>> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         let st = self.state.lock().await;
 
         if let Ok(data) = st.overlay.fs_read(&cp) {
@@ -325,7 +325,7 @@ impl<S: GeneratorSys> BaseFsWriteAsync for TransactionSys<S> {
         path: &Path,
         data: &[u8],
     ) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: write to {}", cp.display());
         let action = Action::Write {
             path: cp,
@@ -342,7 +342,7 @@ impl<S: GeneratorSys> BaseFsAppendAsync for TransactionSys<S> {
         path: &Path,
         data: &[u8],
     ) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: append to {}", cp.display());
         let action = Action::Append {
             path: cp,
@@ -359,7 +359,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
         path: &Path,
         options: &CreateDirOptions,
     ) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: create directory {}", cp.display());
         let action = Action::CreateDir {
             path: cp,
@@ -372,7 +372,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
 #[async_trait::async_trait]
 impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
     async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: remove file {}", cp.display());
         let action = Action::RemoveFile { path: cp };
         self.record(action).await
@@ -382,7 +382,7 @@ impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
 #[async_trait::async_trait]
 impl<S: GeneratorSys> BaseFsRemoveDirAsync for TransactionSys<S> {
     async fn base_fs_remove_dir_async(&self, path: &Path) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: remove directory {}", cp.display());
         let action = Action::RemoveDir { path: cp };
         self.record(action).await
@@ -395,7 +395,7 @@ impl<S: GeneratorSys> BaseFsRemoveDirAllAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!(
             "Transaction: remove directory and all of its contents {}",
             cp.display()
@@ -412,8 +412,8 @@ impl<S: GeneratorSys> BaseFsRenameAsync for TransactionSys<S> {
         from: &Path,
         to: &Path,
     ) -> io::Result<()> {
-        let from = clean(from);
-        let to = clean(to);
+        let from = self.resolve(from).await;
+        let to = self.resolve(to).await;
         log::info!(
             "Transaction: rename {} -> {}",
             from.display(),
@@ -431,8 +431,8 @@ impl<S: GeneratorSys> BaseFsCopyAsync for TransactionSys<S> {
         from: &Path,
         to: &Path,
     ) -> io::Result<u64> {
-        let from = clean(from);
-        let to = clean(to);
+        let from = self.resolve(from).await;
+        let to = self.resolve(to).await;
         log::info!("Transaction: copy {} -> {}", from.display(), to.display());
         let action = Action::Copy { from, to };
         self.record_with_result(action).await
@@ -447,7 +447,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<Self::Metadata> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         let st = self.state.lock().await;
 
         if st.overlay.fs_exists_no_err(&cp)
@@ -478,7 +478,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<Self::Metadata> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         let st = self.state.lock().await;
 
         if st.overlay.fs_exists_no_err(&cp)
@@ -503,7 +503,7 @@ impl<S: GeneratorSys> BaseFsReadDirAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<Vec<PathBuf>> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         let st = self.state.lock().await;
 
         let overlay_exists = st.overlay.fs_exists_no_err(&cp);
@@ -559,7 +559,7 @@ impl<S: GeneratorSys> BaseEnvSetCurrentDirAsync for TransactionSys<S> {
         &self,
         path: &Path,
     ) -> io::Result<()> {
-        let cp = clean(path);
+        let cp = self.resolve(path).await;
         log::info!("Transaction: set current dir {}", cp.display());
         let mut st = self.state.lock().await;
         st.cwd = Some(cp.clone());
@@ -583,6 +583,36 @@ impl<S: GeneratorSys> EnvVars for TransactionSys<S> {
 // ---------------------------------------------------------------------------
 
 impl<S: GeneratorSys> TransactionSys<S> {
+    /// Resolves `path` to an absolute, normalized path using the transaction's
+    /// *logical* working directory (the buffered [`set_current_dir`] override,
+    /// if any, otherwise the real working directory).
+    ///
+    /// Because `set_current_dir` is buffered and never touches the real process
+    /// cwd until commit, relative paths must be anchored here rather than left
+    /// for the real system to resolve. Doing so guarantees that a relative path
+    /// and its absolute equivalent address the same overlay entry, and that
+    /// fall-through reads/metadata hit the same real file a plain system would.
+    /// In other words, callers observe identical path semantics whether or not
+    /// the transactional overlay is present.
+    ///
+    /// [`set_current_dir`]: BaseEnvSetCurrentDirAsync::base_env_set_current_dir_async
+    async fn resolve(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            return clean(path);
+        }
+        let override_cwd = self.state.lock().await.cwd.clone();
+        let base = match override_cwd {
+            Some(base) => base,
+            None => match self.real.env_current_dir_async().await {
+                Ok(cwd) => cwd,
+                // If even the real cwd is unavailable, fall back to normalizing
+                // the relative path as-is and let the real system resolve it.
+                Err(_) => return clean(path),
+            },
+        };
+        clean(&base.join(path))
+    }
+
     /// Applies a mutating action to the overlay and, on success, records it in
     /// the action log.
     async fn record(&self, action: Action) -> io::Result<()> {
@@ -1011,6 +1041,7 @@ fn invalid(msg: &str) -> io::Error {
 mod tests {
     use std::collections::BTreeSet;
     use std::ffi::OsString;
+    use std::sync::OnceLock;
 
     use system_traits::{
         EnvSetCurrentDirAsync, FsAppendAsync, FsCopyAsync, FsCreateDirAllAsync,
@@ -1034,6 +1065,45 @@ mod tests {
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect()
+    }
+
+    /// Serializes every test that mutates or observes the *process-global*
+    /// current working directory, so they cannot race each other.
+    fn cwd_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    /// Holds the [`cwd_lock`] and the original working directory, restoring the
+    /// latter on drop. Keeps process-global cwd mutations isolated to the test
+    /// that performs them, even if the test panics.
+    struct CwdGuard {
+        original: PathBuf,
+        _lock: tokio::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
+    /// Acquires the global cwd lock, points the real process cwd at `dir`, and
+    /// returns a guard that restores the previous cwd (and releases the lock)
+    /// when dropped. The returned canonical cwd should be used for assertions,
+    /// since the OS may canonicalize symlinked temp paths.
+    async fn enter_cwd(dir: &Path) -> (CwdGuard, PathBuf) {
+        let lock = cwd_lock().lock().await;
+        let original = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(dir).expect("set current dir");
+        let canonical = std::env::current_dir().expect("read current dir");
+        (
+            CwdGuard {
+                original,
+                _lock: lock,
+            },
+            canonical,
+        )
     }
 
     // -- individual filesystem actions --------------------------------------
@@ -1301,6 +1371,9 @@ mod tests {
     #[tokio::test]
     async fn set_current_dir_is_buffered_and_reverts() {
         let dir = temp();
+        // This test observes the real cwd, so serialize it against the tests
+        // that mutate the process-global cwd.
+        let _cwd_lock = cwd_lock().lock().await;
         let sys = TransactionSys::new(RealSys::default());
         let real_cwd = sys.env_current_dir_async().await.unwrap();
 
@@ -1327,6 +1400,235 @@ mod tests {
         assert!(found_os);
 
         unsafe { std::env::remove_var(key) };
+    }
+
+    // -- path resolution ----------------------------------------------------
+    //
+    // These tests pin down the guarantee that paths behave the same whether or
+    // not the transactional overlay is present. They deliberately stay at the
+    // buffered (overlay) layer and never commit a `set_current_dir`, because
+    // committing one would replay it onto the real process and mutate the
+    // shared, process-global working directory (racy under parallel tests).
+
+    #[tokio::test]
+    async fn relative_paths_resolve_against_real_cwd_without_override() {
+        let dir = temp();
+        // Isolate the process-global cwd to a temp directory for this test.
+        let (_cwd, real_cwd) = enter_cwd(dir.path()).await;
+        let sys = TransactionSys::new(RealSys::default());
+
+        // With no `set_current_dir` override, a relative path must resolve
+        // against the real working directory, exactly as the underlying system
+        // would. A buffered write is therefore addressable through both the
+        // relative path and its cwd-joined absolute equivalent.
+        sys.fs_write_async(Path::new("rel_probe.txt"), b"probe")
+            .await
+            .unwrap();
+
+        let abs = real_cwd.join("rel_probe.txt");
+        assert_eq!(
+            sys.fs_read_async(&abs).await.unwrap().into_owned(),
+            b"probe"
+        );
+        assert_eq!(
+            sys.fs_read_async(Path::new("rel_probe.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"probe"
+        );
+        // Still buffered: nothing was written to the temp working directory.
+        assert!(!abs.exists());
+    }
+
+    #[tokio::test]
+    async fn relative_paths_resolve_against_set_current_dir() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        // A relative write lands under the (buffered) logical cwd.
+        sys.fs_write_async(Path::new("rel.txt"), b"hi")
+            .await
+            .unwrap();
+
+        // Readable through the relative path...
+        assert_eq!(
+            sys.fs_read_async(Path::new("rel.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"hi"
+        );
+        // ...and through the equivalent absolute path.
+        assert_eq!(
+            sys.fs_read_async(&dir.path().join("rel.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"hi"
+        );
+    }
+
+    #[tokio::test]
+    async fn relative_read_falls_through_to_real_under_set_current_dir() {
+        let dir = temp();
+        std::fs::write(dir.path().join("on_disk.txt"), b"disk").unwrap();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        // A relative read must fall through to the real file under the logical
+        // cwd, just as a plain system (which would have actually changed the
+        // process cwd) resolves it.
+        assert_eq!(
+            sys.fs_read_async(Path::new("on_disk.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"disk"
+        );
+        assert!(
+            sys.fs_is_file_async(Path::new("on_disk.txt"))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn relative_and_absolute_address_same_overlay_entry() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        sys.fs_write_async(Path::new("shared.txt"), b"v")
+            .await
+            .unwrap();
+
+        // Removing via the absolute equivalent removes the same entry the
+        // relative write created.
+        sys.fs_remove_file_async(&dir.path().join("shared.txt"))
+            .await
+            .unwrap();
+        assert!(!sys.fs_exists_async(Path::new("shared.txt")).await.unwrap());
+        assert!(
+            !sys.fs_exists_async(&dir.path().join("shared.txt"))
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn dotted_relative_components_are_normalized() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        // `./a/../b.txt` must normalize to `b.txt` under the logical cwd.
+        sys.fs_write_async(Path::new("./a/../b.txt"), b"norm")
+            .await
+            .unwrap();
+        assert_eq!(
+            sys.fs_read_async(Path::new("b.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"norm"
+        );
+        assert_eq!(
+            sys.fs_read_async(&dir.path().join("b.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"norm"
+        );
+    }
+
+    #[tokio::test]
+    async fn changing_set_current_dir_redirects_relative_paths() {
+        let a = temp();
+        let b = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.env_set_current_dir_async(a.path()).await.unwrap();
+        sys.fs_write_async(Path::new("note.txt"), b"in-a")
+            .await
+            .unwrap();
+
+        sys.env_set_current_dir_async(b.path()).await.unwrap();
+        sys.fs_write_async(Path::new("note.txt"), b"in-b")
+            .await
+            .unwrap();
+
+        // Each relative write landed under the cwd in effect at the time.
+        assert_eq!(
+            sys.fs_read_async(&a.path().join("note.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"in-a"
+        );
+        assert_eq!(
+            sys.fs_read_async(&b.path().join("note.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"in-b"
+        );
+        // A bare relative path now resolves to the current cwd (b).
+        assert_eq!(
+            sys.fs_read_async(Path::new("note.txt"))
+                .await
+                .unwrap()
+                .into_owned(),
+            b"in-b"
+        );
+    }
+
+    #[tokio::test]
+    async fn relative_dir_operations_match_absolute() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        sys.fs_create_dir_all_async(Path::new("nested/inner"))
+            .await
+            .unwrap();
+        sys.fs_write_async(Path::new("nested/inner/f.txt"), b"x")
+            .await
+            .unwrap();
+
+        // Listings via the relative and absolute paths agree.
+        let rel = sys
+            .fs_read_dir_async(Path::new("nested/inner"))
+            .await
+            .unwrap();
+        let abs = sys
+            .fs_read_dir_async(&dir.path().join("nested/inner"))
+            .await
+            .unwrap();
+        assert_eq!(names(&rel), names(&abs));
+        assert_eq!(names(&rel), BTreeSet::from(["f.txt".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn rollback_discards_relative_writes() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+        sys.env_set_current_dir_async(dir.path()).await.unwrap();
+
+        sys.begin_transaction().await;
+        sys.fs_write_async(Path::new("temp.txt"), b"data")
+            .await
+            .unwrap();
+        assert!(sys.fs_exists_async(Path::new("temp.txt")).await.unwrap());
+
+        sys.rollback_transaction().await.unwrap();
+
+        // The relative write is gone, but the logical cwd (set before the
+        // transaction) survives, so relative resolution still works.
+        assert!(!sys.fs_exists_async(Path::new("temp.txt")).await.unwrap());
+        assert_eq!(sys.env_current_dir_async().await.unwrap(), dir.path());
     }
 
     // -- transaction control ------------------------------------------------
@@ -1496,5 +1798,41 @@ mod tests {
         assert_eq!(std::fs::read(root.join("c.txt")).unwrap(), b"A");
         assert_eq!(std::fs::read(root.join("b2.txt")).unwrap(), b"BB2");
         assert!(!root.join("b.txt").exists());
+    }
+
+    /// End-to-end check that committing a buffered `set_current_dir` is
+    /// replayed onto the real process and that relative writes recorded under
+    /// it are flushed to the right place — i.e. the committed result is exactly
+    /// what a plain system would have produced.
+    #[tokio::test]
+    async fn commit_replays_set_current_dir_and_relative_writes() {
+        let dir = temp();
+        // Committing a `set_current_dir` mutates the process-global cwd, so
+        // isolate it. `enter_cwd` restores the previous cwd on drop.
+        let (_cwd, root) = enter_cwd(dir.path()).await;
+        let work = root.join("work");
+        std::fs::create_dir(&work).unwrap();
+
+        let sys = TransactionSys::new(RealSys::default());
+        sys.begin_transaction().await;
+        // Buffer a cwd change followed by a relative write.
+        sys.env_set_current_dir_async(&work).await.unwrap();
+        sys.fs_write_async(Path::new("out.txt"), b"committed")
+            .await
+            .unwrap();
+
+        // Nothing on disk and the real cwd is unchanged until commit.
+        assert!(!work.join("out.txt").exists());
+        assert_eq!(std::env::current_dir().unwrap(), root);
+
+        sys.commit_transaction().await.unwrap();
+
+        // The relative write landed under the committed working directory...
+        assert_eq!(std::fs::read(work.join("out.txt")).unwrap(), b"committed");
+        // ...and the committed `set_current_dir` actually moved the process.
+        assert_eq!(
+            std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap(),
+            std::fs::canonicalize(&work).unwrap()
+        );
     }
 }
