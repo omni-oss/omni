@@ -161,3 +161,10 @@ actions:
           ]
           public_api = {{ prompts.published }}
         pattern: "@anchor:new-typescript-package"
+
+  - type: transform-many
+    command: bun x biome format --stdin-file-path=$FILENAME
+    supports_dry_run: true
+    files:
+      - "**/*.ts"
+      - "**/*.json"
