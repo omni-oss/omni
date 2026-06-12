@@ -10,11 +10,11 @@ use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
 use crate::{
-    GeneratorSys,
+    GeneratorSysFull,
     action_handlers::{
         HandlerContext, add, add_content, add_many, append, append_content,
         modify, modify_content, prepend, prepend_content, run_command,
-        run_generator, run_javascript,
+        run_generator, run_javascript, transform, transform_many,
     },
     error::{Error, ErrorInner},
     gen_session::GenSession,
@@ -42,7 +42,7 @@ pub struct ExecuteActionsArgs<'a> {
 pub async fn execute_actions<'a>(
     args: &ExecuteActionsArgs<'a>,
     gen_session: &GenSession,
-    sys: &impl GeneratorSys,
+    sys: &impl GeneratorSysFull,
 ) -> Result<(), Error> {
     let mut tera_context = get_tera_context(args.context_values);
 
@@ -124,6 +124,12 @@ pub async fn execute_actions<'a>(
             ActionConfiguration::PrependContent { action } => {
                 prepend_content(action, &handler_context, sys).await
             }
+            ActionConfiguration::Transform { action } => {
+                transform(action, &handler_context, sys).await
+            }
+            ActionConfiguration::TransformMany { action } => {
+                transform_many(action, &handler_context, sys).await
+            }
             ActionConfiguration::RunCommand { action } => {
                 run_command(action, &handler_context, sys).await
             }
@@ -194,6 +200,12 @@ fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
         }
         ActionConfiguration::Prepend { action } => action.base.r#if.as_deref(),
         ActionConfiguration::PrependContent { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::Transform { action } => {
+            action.base.r#if.as_deref()
+        }
+        ActionConfiguration::TransformMany { action } => {
             action.base.r#if.as_deref()
         }
         ActionConfiguration::RunCommand { action } => {
@@ -268,6 +280,12 @@ fn get_error_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.error_message.as_deref()
         }
+        ActionConfiguration::Transform { action } => {
+            action.base.error_message.as_deref()
+        }
+        ActionConfiguration::TransformMany { action } => {
+            action.base.error_message.as_deref()
+        }
         ActionConfiguration::RunCommand { action } => {
             action.base.error_message.as_deref()
         }
@@ -329,6 +347,12 @@ fn get_in_progress_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.in_progress_message.as_deref()
         }
+        ActionConfiguration::Transform { action } => {
+            action.base.in_progress_message.as_deref()
+        }
+        ActionConfiguration::TransformMany { action } => {
+            action.base.in_progress_message.as_deref()
+        }
         ActionConfiguration::RunCommand { action } => {
             action.base.in_progress_message.as_deref()
         }
@@ -384,6 +408,12 @@ fn get_success_message(
         ActionConfiguration::PrependContent { action } => {
             action.base.success_message.as_deref()
         }
+        ActionConfiguration::Transform { action } => {
+            action.base.success_message.as_deref()
+        }
+        ActionConfiguration::TransformMany { action } => {
+            action.base.success_message.as_deref()
+        }
         ActionConfiguration::RunCommand { action } => {
             action.base.success_message.as_deref()
         }
@@ -429,6 +459,12 @@ fn get_action_name(
         }
         ActionConfiguration::Prepend { action } => action.base.name.as_deref(),
         ActionConfiguration::PrependContent { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::Transform { action } => {
+            action.base.name.as_deref()
+        }
+        ActionConfiguration::TransformMany { action } => {
             action.base.name.as_deref()
         }
         ActionConfiguration::RunCommand { action } => {

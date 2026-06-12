@@ -8,7 +8,7 @@ use omni_generator_configurations::{
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    GeneratorSys, RunConfig,
+    GeneratorSysFull, RunConfig,
     action_handlers::HandlerContext,
     error::{Error, ErrorInner},
     run_internal,
@@ -17,7 +17,7 @@ use crate::{
 pub async fn run_generator<'a>(
     config: &RunGeneratorActionConfiguration,
     ctx: &HandlerContext<'a>,
-    sys: &impl GeneratorSys,
+    sys: &impl GeneratorSysFull,
 ) -> Result<(), Error> {
     let generator = ctx
         .available_generators

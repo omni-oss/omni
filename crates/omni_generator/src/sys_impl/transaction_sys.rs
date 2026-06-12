@@ -40,6 +40,7 @@ use std::{
     sync::Arc,
 };
 
+use omni_discovery_utils::glob::GlobMatcher;
 use path_clean::PathClean;
 use system_traits::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCopyAsync,
@@ -54,7 +55,7 @@ use system_traits::{
 };
 use tokio::sync::Mutex;
 
-use crate::GeneratorSys;
+use crate::{BaseFsGlobAsync, GeneratorSys};
 
 /// Identifies a checkpoint created by [`TransactionSys::checkpoint`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -118,6 +119,12 @@ struct State {
     next_checkpoint: u64,
     /// Overridden current working directory, if `set_current_dir` was called.
     cwd: Option<PathBuf>,
+    /// Absolute paths of every file that currently has a pending (uncommitted)
+    /// write in the overlay. Unlike the overlay itself, this set is *not*
+    /// populated by fall-through reads that merely mirror real files into the
+    /// overlay; it only tracks files the transaction has actually written,
+    /// appended to, copied, or renamed.
+    written: BTreeSet<PathBuf>,
 }
 
 /// A committable, transactional overlay over an underlying "real" system
@@ -578,6 +585,28 @@ impl<S: GeneratorSys> EnvVars for TransactionSys<S> {
     }
 }
 
+#[async_trait::async_trait]
+impl<S: GeneratorSys> BaseFsGlobAsync for TransactionSys<S> {
+    async fn base_fs_glob_async(
+        &self,
+        root_dir: &Path,
+        patterns: &[&str],
+    ) -> io::Result<Vec<PathBuf>> {
+        let matcher = GlobMatcher::new(root_dir, patterns)
+            .map_err(|e| invalid(&format!("invalid glob pattern: {e}")))?;
+
+        let st = self.state.lock().await;
+        let matches = st
+            .written
+            .iter()
+            .filter(|path| matcher.is_match(path))
+            .cloned()
+            .collect();
+
+        Ok(matches)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -618,8 +647,14 @@ impl<S: GeneratorSys> TransactionSys<S> {
     async fn record(&self, action: Action) -> io::Result<()> {
         let mut guard = self.state.lock().await;
         let st: &mut State = &mut guard;
-        apply_overlay(&st.overlay, &mut st.deleted, &*self.real, &action)
-            .await?;
+        apply_overlay(
+            &st.overlay,
+            &mut st.deleted,
+            &mut st.written,
+            &*self.real,
+            &action,
+        )
+        .await?;
         st.actions.push(action);
         Ok(())
     }
@@ -629,9 +664,14 @@ impl<S: GeneratorSys> TransactionSys<S> {
     async fn record_with_result(&self, action: Action) -> io::Result<u64> {
         let mut guard = self.state.lock().await;
         let st: &mut State = &mut guard;
-        let result =
-            apply_overlay(&st.overlay, &mut st.deleted, &*self.real, &action)
-                .await?;
+        let result = apply_overlay(
+            &st.overlay,
+            &mut st.deleted,
+            &mut st.written,
+            &*self.real,
+            &action,
+        )
+        .await?;
         st.actions.push(action);
         Ok(result)
     }
@@ -642,6 +682,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
 async fn rebuild<S: GeneratorSys>(st: &mut State, real: &S) {
     st.overlay = InMemorySys::default();
     st.deleted.clear();
+    st.written.clear();
 
     let actions = std::mem::take(&mut st.actions);
     let mut cwd = None;
@@ -649,8 +690,14 @@ async fn rebuild<S: GeneratorSys>(st: &mut State, real: &S) {
         if let Action::SetCurrentDir { path } = action {
             cwd = Some(path.clone());
         }
-        if let Err(err) =
-            apply_overlay(&st.overlay, &mut st.deleted, real, action).await
+        if let Err(err) = apply_overlay(
+            &st.overlay,
+            &mut st.deleted,
+            &mut st.written,
+            real,
+            action,
+        )
+        .await
         {
             log::warn!("Transaction: failed to replay action: {err}");
         }
@@ -665,6 +712,7 @@ async fn rebuild<S: GeneratorSys>(st: &mut State, real: &S) {
 async fn apply_overlay<S: GeneratorSys>(
     overlay: &InMemorySys,
     deleted: &mut HashSet<PathBuf>,
+    written: &mut BTreeSet<PathBuf>,
     real: &S,
     action: &Action,
 ) -> io::Result<u64> {
@@ -675,6 +723,7 @@ async fn apply_overlay<S: GeneratorSys>(
             }
             overlay.fs_write(path, data)?;
             deleted.remove(path);
+            written.insert(path.clone());
             Ok(0)
         }
         Action::Append { path, data } => {
@@ -686,6 +735,7 @@ async fn apply_overlay<S: GeneratorSys>(
             }
             overlay.fs_write(path, &existing)?;
             deleted.remove(path);
+            written.insert(path.clone());
             Ok(0)
         }
         Action::CreateDir { path, options } => {
@@ -702,18 +752,22 @@ async fn apply_overlay<S: GeneratorSys>(
         }
         Action::RemoveFile { path } => {
             remove_path(overlay, deleted, real, path, false).await?;
+            written.remove(path);
             Ok(0)
         }
         Action::RemoveDir { path } => {
             remove_path(overlay, deleted, real, path, false).await?;
+            written.remove(path);
             Ok(0)
         }
         Action::RemoveDirAll { path } => {
             remove_path(overlay, deleted, real, path, true).await?;
+            written.retain(|p| !p.starts_with(path));
             Ok(0)
         }
         Action::Rename { from, to } => {
             rename_path(overlay, deleted, real, from, to).await?;
+            remap_written(written, from, to);
             Ok(0)
         }
         Action::Copy { from, to } => {
@@ -723,11 +777,35 @@ async fn apply_overlay<S: GeneratorSys>(
             }
             overlay.fs_write(to, &data)?;
             deleted.remove(to);
+            written.insert(to.clone());
             Ok(data.len() as u64)
         }
         // The working directory is tracked at the [`State`] level, not in the
         // overlay, so there is nothing to apply here.
         Action::SetCurrentDir { .. } => Ok(0),
+    }
+}
+
+/// Re-maps the [`State::written`] set after a rename, moving any tracked file
+/// at (or beneath) `from` to the equivalent path beneath `to`.
+fn remap_written(written: &mut BTreeSet<PathBuf>, from: &Path, to: &Path) {
+    let moved: Vec<PathBuf> = written
+        .iter()
+        .filter(|p| p.as_path() == from || p.starts_with(from))
+        .cloned()
+        .collect();
+
+    for path in moved {
+        written.remove(&path);
+        let remapped = if path.as_path() == from {
+            to.to_path_buf()
+        } else {
+            match path.strip_prefix(from) {
+                Ok(rest) => to.join(rest),
+                Err(_) => to.to_path_buf(),
+            }
+        };
+        written.insert(remapped);
     }
 }
 
@@ -1052,6 +1130,7 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
+    use crate::FsGlobAsync;
 
     /// Creates a fresh temporary directory whose lifetime is tied to the
     /// returned [`TempDir`] handle (cleaned up automatically on drop).
@@ -1833,6 +1912,133 @@ mod tests {
         assert_eq!(
             std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap(),
             std::fs::canonicalize(&work).unwrap()
+        );
+    }
+
+    // -- glob over pending writes -------------------------------------------
+
+    #[tokio::test]
+    async fn glob_matches_only_files_with_pending_writes() {
+        let dir = temp();
+        let root = dir.path();
+        // A pre-existing real file that is never written through the overlay.
+        std::fs::write(root.join("real.ts"), b"real").unwrap();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&root.join("a.ts"), b"a").await.unwrap();
+        sys.fs_write_async(&root.join("nested/b.ts"), b"b")
+            .await
+            .unwrap();
+        sys.fs_write_async(&root.join("c.txt"), b"c").await.unwrap();
+
+        let matches = sys
+            .fs_glob_async(root, &["**/*.ts".to_string()])
+            .await
+            .unwrap();
+
+        // Only the written `.ts` files match; the real-only file and the
+        // `.txt` file are excluded.
+        assert_eq!(
+            names(&matches),
+            ["a.ts".to_string(), "b.ts".to_string()]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[tokio::test]
+    async fn glob_does_not_match_files_only_read_through_overlay() {
+        let dir = temp();
+        let root = dir.path();
+        std::fs::write(root.join("mirrored.ts"), b"x").unwrap();
+        let sys = TransactionSys::new(RealSys::default());
+
+        // Reading mirrors the file into the overlay, but it has no pending
+        // write, so it must not be globbed.
+        let _ = sys.fs_read_async(&root.join("mirrored.ts")).await.unwrap();
+
+        let matches = sys
+            .fs_glob_async(root, &["*.ts".to_string()])
+            .await
+            .unwrap();
+        assert!(matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn glob_supports_exclusions() {
+        let dir = temp();
+        let root = dir.path();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&root.join("keep.ts"), b"k")
+            .await
+            .unwrap();
+        sys.fs_write_async(&root.join("skip.test.ts"), b"s")
+            .await
+            .unwrap();
+
+        let matches = sys
+            .fs_glob_async(
+                root,
+                &["**/*.ts".to_string(), "!**/*.test.ts".to_string()],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            names(&matches),
+            ["keep.ts".to_string()].into_iter().collect()
+        );
+    }
+
+    #[tokio::test]
+    async fn glob_reflects_removed_and_renamed_writes() {
+        let dir = temp();
+        let root = dir.path();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&root.join("a.ts"), b"a").await.unwrap();
+        sys.fs_write_async(&root.join("b.ts"), b"b").await.unwrap();
+
+        // Remove one and rename the other.
+        sys.fs_remove_file_async(&root.join("a.ts")).await.unwrap();
+        sys.fs_rename_async(&root.join("b.ts"), &root.join("renamed.ts"))
+            .await
+            .unwrap();
+
+        let matches = sys
+            .fs_glob_async(root, &["*.ts".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(
+            names(&matches),
+            ["renamed.ts".to_string()].into_iter().collect()
+        );
+    }
+
+    #[tokio::test]
+    async fn glob_set_is_rebuilt_on_rollback() {
+        let dir = temp();
+        let root = dir.path();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&root.join("kept.ts"), b"k")
+            .await
+            .unwrap();
+
+        sys.begin_transaction().await;
+        sys.fs_write_async(&root.join("discarded.ts"), b"d")
+            .await
+            .unwrap();
+        sys.rollback_transaction().await.unwrap();
+
+        let matches = sys
+            .fs_glob_async(root, &["*.ts".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(
+            names(&matches),
+            ["kept.ts".to_string()].into_iter().collect()
         );
     }
 }

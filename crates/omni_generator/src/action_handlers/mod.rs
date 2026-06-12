@@ -15,6 +15,9 @@ mod run_command;
 mod run_custom_commons;
 mod run_generator;
 mod run_javascript;
+mod transform;
+mod transform_commons;
+mod transform_many;
 pub(crate) mod utils;
 
 pub use add::*;
@@ -30,3 +33,5 @@ pub use prepend_content::*;
 pub use run_command::*;
 pub use run_generator::*;
 pub use run_javascript::*;
+pub use transform::*;
+pub use transform_many::*;

@@ -10,7 +10,7 @@ use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    GeneratorSys,
+    GeneratorSys, GeneratorSysFull,
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     gen_session::GenSession,
@@ -88,7 +88,7 @@ async fn run_in_transaction<'a>(
 pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a>,
-    sys: &impl GeneratorSys,
+    sys: &impl GeneratorSysFull,
 ) -> Result<GenSession, Error> {
     let prompting_config = PromptingConfiguration {
         use_defaults: config.use_prompt_defaults,

@@ -29,6 +29,7 @@ derive-new = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_prompt = { workspace = true }
 omni_discovery = { workspace = true }
+omni_discovery_utils = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",
@@ -58,6 +59,7 @@ which = { workspace = true }
 pathdiff = { workspace = true }
 serde = { workspace = true }
 bon = { workspace = true }
+shlex = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

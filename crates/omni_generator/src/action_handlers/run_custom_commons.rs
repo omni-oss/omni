@@ -1,6 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
 
 use env::CommandExpansionConfig;
+use maps::Map;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
 use omni_process::ChildProcess;
 
@@ -41,6 +45,44 @@ pub async fn target_path(
     Ok(result)
 }
 
+/// Builds the fully-expanded environment for a custom command/script execution
+/// running with `target` as its working directory.
+///
+/// When the action declares no extra environment variables the caller's
+/// environment is returned untouched (borrowed); otherwise the declared values
+/// are tera-rendered and command-expanded on top of it.
+pub(crate) fn build_command_env<'a>(
+    common: &CommonRunCustomActionConfiguration,
+    ctx: &HandlerContext<'a>,
+    target: &Path,
+) -> Result<Cow<'a, Map<String, String>>, Error> {
+    if common.env.is_empty() {
+        return Ok(Cow::Borrowed(ctx.env));
+    }
+
+    let mut expanded_env = ctx.env.clone();
+
+    for (key, value) in common.env.iter() {
+        let expanded = omni_tera::one_off(
+            value,
+            format!("env value for {}", ctx.resolved_action_name),
+            ctx.tera_context_values,
+        )?;
+
+        expanded_env.insert(key.clone(), expanded);
+    }
+
+    let vars_os = omni_utils::env::to_vars_os(ctx.env);
+
+    env::expand_into_with_command_config(
+        &mut expanded_env,
+        ctx.env,
+        &CommandExpansionConfig::new_enabled(target, &vars_os),
+    )?;
+
+    Ok(Cow::Owned(expanded_env))
+}
+
 pub async fn run_custom_commons<'a>(
     command: &str,
     target_path: Option<&Path>,
@@ -70,34 +112,11 @@ pub async fn run_custom_commons<'a>(
         let mut cp =
             ChildProcess::<String, PathBuf>::new(command.clone(), target);
 
-        let mut expanded_env;
-        let env = if !common.env.is_empty() {
-            expanded_env = ctx.env.clone();
+        let env = build_command_env(common, ctx, target)?;
 
-            for (key, value) in common.env.iter() {
-                let expanded = omni_tera::one_off(
-                    value,
-                    format!("env value for {}", ctx.resolved_action_name),
-                    &ctx.tera_context_values,
-                )?;
-
-                expanded_env.insert(key.clone(), expanded);
-            }
-
-            let vars_os = omni_utils::env::to_vars_os(&ctx.env);
-
-            env::expand_into_with_command_config(
-                &mut expanded_env,
-                &ctx.env,
-                &CommandExpansionConfig::new_enabled(target, &vars_os),
-            )?;
-
-            &expanded_env
-        } else {
-            ctx.env
-        };
-
-        cp.env_vars(env).keep_stdin_open(false).record_logs(false);
+        cp.env_vars(env.as_ref())
+            .keep_stdin_open(false)
+            .record_logs(false);
 
         if common.show_output {
             cp.output_writer(tokio::io::stdout());
