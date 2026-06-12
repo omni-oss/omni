@@ -39,7 +39,7 @@ beforeAll(async () => {
             stdio: [
                 "pipe",
                 "pipe",
-                process.env.SHOW_LOG_OUTPUT ? "inherit" : "pipe",
+                process.env.SHOW_LOG_OUTPUT ? "inherit" : "ignore",
             ],
         },
     );
@@ -208,7 +208,7 @@ beforeAll(async () => {
             stdio: [
                 "pipe",
                 "pipe",
-                process.env.SHOW_LOG_OUTPUT ? "inherit" : "pipe",
+                process.env.SHOW_LOG_OUTPUT ? "inherit" : "ignore",
             ],
         },
     );
