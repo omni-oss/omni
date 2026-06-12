@@ -118,14 +118,17 @@ pub fn relative_path(
         tera::Error::msg("missing root argument or invalid type, must be present and be a string")
     })?));
 
+    log::debug!(
+        "calculated relative path between root {root:?} and value {path:?}"
+    );
     let relative_path =
         pathdiff::diff_paths(&path, &root).ok_or_else(|| {
             tera::Error::msg(
-                "unable to find relative path between root and path",
+                format!("unable to find relative path between root ({root:?}) and path ({path:?})")
             )
         })?;
     log::debug!(
-        "calculating relative path between root {:?} and value {:?}, result: {:?}",
+        "calculated relative path between root {:?} and value {:?}, result: {:?}",
         root,
         path,
         relative_path,
