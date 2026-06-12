@@ -614,6 +614,8 @@ pub enum ActionConfiguration {
     },
 
     /// Run a custom command
+    /// Hidden for now since it's not fully implemented.
+    #[serde(skip)]
     #[strum_discriminants(strum(serialize = "run-command"))]
     RunCommand {
         #[serde(flatten)]
