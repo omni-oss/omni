@@ -99,7 +99,6 @@ pub struct PruneArgs {
 
     #[arg(
         long,
-        short,
         help = "Add filter to clear only cache entries of projects residing in the given directory, accepts glob patterns"
     )]
     dir: Vec<String>,
