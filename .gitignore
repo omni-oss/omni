@@ -3,6 +3,11 @@ dist
 .env
 .env.*
 
+# coverage
+**/coverage
+*.profraw
+*.profdata
+
 ###############
 #### omni #####
 ###############
