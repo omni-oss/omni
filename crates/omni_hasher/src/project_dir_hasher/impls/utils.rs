@@ -1,4 +1,9 @@
-use std::{collections::HashMap, path::Path, time::UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use byteorder::{ByteOrder, LittleEndian};
 use futures::future::try_join_all;
@@ -9,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{
     FsCreateDirAllAsync, FsMetadataAsync, FsMetadataValue, FsReadAsync,
-    FsWriteAsync, auto_impl,
+    FsRenameAsync, FsWriteAsync, auto_impl,
 };
 
 use crate::{
@@ -21,6 +26,7 @@ use crate::{
 pub trait UtilSys:
     FsReadAsync
     + FsWriteAsync
+    + FsRenameAsync
     + FsCreateDirAllAsync
     + Send
     + Sync
@@ -89,16 +95,29 @@ pub async fn build_merkle_tree<THasher: Hasher>(
                     log::error!("Failed to read partial hashes file {partial_hashes_file:?}: {e}");
                 })?;
 
-        let (file_entries, _size): (Vec<FileEntry<THasher>>, usize) =
-            bincode_next::serde::borrow_decode_from_slice(
-                &bytes,
-                bincode_next::config::standard(),
-            )?;
+        // The cache file is written by potentially many concurrent tasks. A
+        // partially-written or otherwise corrupt file should never be fatal:
+        // we simply treat it as an empty cache and recompute, since these are
+        // only optimization hints used to avoid rewriting unchanged entries.
+        match bincode_next::serde::borrow_decode_from_slice::<
+            Vec<FileEntry<THasher>>,
+            _,
+        >(&bytes, bincode_next::config::standard())
+        {
+            Ok((file_entries, _size)) => {
+                file_entries_by_path.extend(
+                    file_entries.iter().cloned().map(|e| (e.path.clone(), e)),
+                );
 
-        file_entries_by_path
-            .extend(file_entries.iter().cloned().map(|e| (e.path.clone(), e)));
-
-        file_entries
+                file_entries
+            }
+            Err(e) => {
+                log::warn!(
+                    "Ignoring corrupt partial hashes file {partial_hashes_file:?}: {e}"
+                );
+                vec![]
+            }
+        }
     } else {
         vec![]
     };
@@ -148,8 +167,23 @@ pub async fn build_merkle_tree<THasher: Hasher>(
             bincode_next::config::standard(),
         )?;
 
-        sys.fs_write_async(&partial_hashes_file, &bytes).await.inspect_err(|e| {
-            log::error!("Failed to write partial hashes file {partial_hashes_file:?}: {e}");
+        // Write atomically: write to a unique temp file and rename it over the
+        // target. This guarantees concurrent readers always observe either the
+        // previous complete file or the new complete file, never a partially
+        // written one (which would fail to decode).
+        let tmp_file = project_dir_path
+            .join(format!("partial-hashes.bin.{}.tmp", unique_tmp_suffix()));
+
+        sys.fs_write_async(&tmp_file, &bytes)
+            .await
+            .inspect_err(|e| {
+                log::error!(
+                    "Failed to write partial hashes temp file {tmp_file:?}: {e}"
+                );
+            })?;
+
+        sys.fs_rename_async(&tmp_file, &partial_hashes_file).await.inspect_err(|e| {
+            log::error!("Failed to rename partial hashes file into place {partial_hashes_file:?}: {e}");
         })?;
     }
 
@@ -158,6 +192,20 @@ pub async fn build_merkle_tree<THasher: Hasher>(
     tree.append(&mut new_hashes.iter().map(|h| h.hash).collect::<Vec<_>>());
 
     Ok(tree)
+}
+
+/// Generates a process-and-task-unique suffix for temp files so that
+/// concurrent writers never clobber each other's in-progress files.
+fn unique_tmp_suffix() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    format!("{}-{nanos}-{count}", std::process::id())
 }
 
 #[derive(Debug, thiserror::Error)]
