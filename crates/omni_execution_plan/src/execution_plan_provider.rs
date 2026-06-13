@@ -86,24 +86,40 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 let tfqn = temp_task_name("exec", command, args);
                 let full_cmd = format!("{command} {}", args.join(" "));
 
-                projects
-                    .iter()
-                    .map(|p| {
-                        TaskExecutionNode::new(
-                            tfqn.clone(),
-                            Some(&full_cmd),
-                            None::<String>,
-                            p.name.clone(),
-                            p.dir.clone(),
-                            vec![],
-                            TeraExprBoolean::Boolean(true),
-                            false,
-                            false,
-                            None,
-                            None,
-                        )
-                    })
-                    .collect::<Vec<_>>()
+                // Apply the project/dir/meta filters to the synthetic command
+                // task too, so `exec` honors `--dir`/`-m` (not just `-p`).
+                let command_task_names = [tfqn.as_str()];
+                let task_filter = self.get_task_filter(
+                    call.is_command(),
+                    &command_task_names,
+                    project_filters,
+                    &dir_filters,
+                    meta_filter,
+                )?;
+
+                let mut nodes = vec![];
+
+                for p in projects.iter() {
+                    let node = TaskExecutionNode::new(
+                        tfqn.clone(),
+                        Some(&full_cmd),
+                        None::<String>,
+                        p.name.clone(),
+                        p.dir.clone(),
+                        vec![],
+                        TeraExprBoolean::Boolean(true),
+                        false,
+                        false,
+                        None,
+                        None,
+                    );
+
+                    if task_filter.should_include_task(&node)? {
+                        nodes.push(node);
+                    }
+                }
+
+                nodes
             }
             Call::Tasks(tnames) => {
                 let task_names_str =
