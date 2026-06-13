@@ -63,4 +63,40 @@ describe("+config @output (schema emission)", () => {
             "[possible values: workspace, project, generator]",
         );
     });
+
+    it("-p pretty output differs from compact only by whitespace", async () => {
+        // Use the short `-p` flag and a different schema than the long-form
+        // test above to confirm both spellings pretty-print equivalently.
+        const compact = await runOmni(["config", "schema", "project"]);
+        const pretty = await runOmni(["config", "schema", "project", "-p"]);
+
+        expect(compact).toHaveSucceeded();
+        expect(pretty).toHaveSucceeded();
+
+        // Compact output is a single line; pretty output gains newlines and
+        // indentation that the compact form lacks.
+        expect(compact.out).not.toContain("\n");
+        expect(pretty.out).toContain("\n");
+        expect(pretty.out).toContain("\n  ");
+
+        // Stripping all whitespace from each form yields identical text, and
+        // the parsed objects are deeply equal - the only difference is layout.
+        const stripWs = (s: string) => s.replace(/\s+/g, "");
+        expect(stripWs(pretty.stdout)).toBe(stripWs(compact.stdout));
+        expect(parseSchema(pretty.stdout)).toEqual(parseSchema(compact.stdout));
+    });
+
+    it("all three schemas expose distinct top-level titles", async () => {
+        const titles: string[] = [];
+        for (const schema of SCHEMAS) {
+            const result = await runOmni(["config", "schema", schema]);
+            expect(result).toHaveSucceeded();
+            const parsed = parseSchema(result.stdout);
+            expect(typeof parsed.title).toBe("string");
+            titles.push(parsed.title as string);
+        }
+
+        // Each configuration kind names itself uniquely.
+        expect(new Set(titles).size).toBe(SCHEMAS.length);
+    });
 });

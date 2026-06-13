@@ -151,6 +151,110 @@ describe("+run-filters @e2e (arg injection)", () => {
     });
 });
 
+describe("+run-filters @cli (arg parsing edge cases)", () => {
+    // `parse_key_value` splits on the first `=`, strips one layer of matching
+    // surrounding quotes, and errors when `=` is absent. The task echoes the
+    // injected value wrapped in markers so an empty value is still observable.
+    function echoArgSpec(): WorkspaceSpec {
+        return {
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: { greet: 'echo "<{{ args.x }}>"' },
+                },
+            },
+        };
+    }
+
+    it("splits on the first `=`, keeping the remainder in the value", async () => {
+        const ws = makeWorkspace(echoArgSpec());
+
+        const result = await runOmni(["run", "greet", "-a", "x=a=b=c"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<a=b=c>");
+    });
+
+    it("strips one layer of matching surrounding quotes", async () => {
+        const ws = makeWorkspace(echoArgSpec());
+
+        const dq = await runOmni(["run", "greet", "-a", 'x="hello world"'], {
+            cwd: ws.cwd,
+        });
+        expect(dq).toHaveSucceeded();
+        expect(dq).toOutputContaining("<hello world>");
+
+        const sq = await runOmni(["run", "greet", "-a", "x='hello world'"], {
+            cwd: ws.cwd,
+        });
+        expect(sq).toHaveSucceeded();
+        expect(sq).toOutputContaining("<hello world>");
+    });
+
+    it("leaves mismatched/unbalanced quotes intact", async () => {
+        const ws = makeWorkspace(echoArgSpec());
+
+        // Only a *matching* surrounding pair is stripped; a lone leading quote
+        // is preserved verbatim.
+        const result = await runOmni(
+            ["run", "greet", "-a", "x='only-leading"],
+            {
+                cwd: ws.cwd,
+            },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<'only-leading>");
+    });
+
+    it("accepts an empty value", async () => {
+        const ws = makeWorkspace(echoArgSpec());
+
+        const result = await runOmni(["run", "greet", "-a", "x="], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<>");
+    });
+
+    it("rejects a `-a` value with no `=` as a parse error", async () => {
+        const ws = makeWorkspace(echoArgSpec());
+
+        const result = await runOmni(["run", "greet", "-a", "noequals"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveExitCode(2);
+        expect(result).toHaveStderrContaining("no `=`");
+    });
+
+    it("injects multiple independent args from repeated `-a` flags", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        greet: 'echo "{{ args.first }}+{{ args.second }}"',
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "greet", "-a", "first=one", "-a", "second=two"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("one+two");
+    });
+});
+
 describe("+run-filters @e2e (ui mode)", () => {
     it("`-u stream` runs and streams task output", async () => {
         const ws = makeWorkspace({
@@ -294,6 +398,200 @@ describe("+run-filters @e2e (retry overrides)", () => {
 
         expect(result).toHaveExitCode(2);
         expect(result).toHaveStderrContaining("invalid value");
+    });
+});
+
+describe("+run-filters @e2e (combined filters)", () => {
+    /** Three projects spread across two directories with distinct build markers. */
+    function spreadSpec(): WorkspaceSpec {
+        return {
+            workspace: { projects: ["**"] },
+            projects: {
+                "svc/api": {
+                    name: "api",
+                    tasks: { build: 'echo "BUILD-API"' },
+                },
+                "svc/web": {
+                    name: "web",
+                    tasks: { build: 'echo "BUILD-WEB"' },
+                },
+                "tools/api": {
+                    name: "api-tool",
+                    tasks: { build: 'echo "BUILD-TOOL"' },
+                },
+            },
+        };
+    }
+
+    it("`-p` + `--dir` narrows to projects matching BOTH filters", async () => {
+        const ws = makeWorkspace(spreadSpec());
+
+        // `-p api*` alone matches api + api-tool; `--dir svc/**` alone matches
+        // api + web. Their intersection is only `api`.
+        const result = await runOmni(
+            ["run", "build", "-p", "api*", "--dir", "svc/**"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("BUILD-API");
+        expect(result.stdout).not.toContain("BUILD-WEB");
+        expect(result.stdout).not.toContain("BUILD-TOOL");
+    });
+
+    it("`-p` + `-m` applies the project and meta filters together", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: {
+                            exec: 'echo "BUILD-APP"',
+                            meta: { tier: "fast" },
+                        },
+                    },
+                },
+                other: {
+                    name: "other",
+                    tasks: {
+                        build: {
+                            exec: 'echo "BUILD-OTHER"',
+                            meta: { tier: "fast" },
+                        },
+                    },
+                },
+            },
+        });
+
+        // Both projects satisfy the meta filter, but `-p app` narrows to one.
+        const result = await runOmni(
+            ["run", "build", "-p", "app", "-m", 'tier == "fast"'],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("BUILD-APP");
+        expect(result.stdout).not.toContain("BUILD-OTHER");
+    });
+
+    it("unions the matched projects across multiple `-p` and `--dir` globs", async () => {
+        const ws = makeWorkspace(spreadSpec());
+
+        const byProject = await runOmni(
+            ["run", "build", "-p", "web", "-p", "api-tool"],
+            { cwd: ws.cwd },
+        );
+        expect(byProject).toHaveSucceeded();
+        expect(byProject).toOutputContaining("BUILD-WEB");
+        expect(byProject).toOutputContaining("BUILD-TOOL");
+        expect(byProject.stdout).not.toContain("BUILD-API");
+
+        const byDir = await runOmni(
+            ["run", "build", "--dir", "svc/**", "--dir", "tools/**"],
+            { cwd: ws.cwd },
+        );
+        expect(byDir).toHaveSucceeded();
+        expect(byDir).toOutputContaining("BUILD-API");
+        expect(byDir).toOutputContaining("BUILD-WEB");
+        expect(byDir).toOutputContaining("BUILD-TOOL");
+    });
+
+    it("a `--dir` glob matching nothing reports the no-task error (non-zero)", async () => {
+        const ws = makeWorkspace(distinctBuildsSpec());
+
+        const result = await runOmni(
+            ["run", "build", "--dir", "does-not-exist/**"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("no task to execute");
+    });
+});
+
+describe("+run-filters @perf (concurrency + dependencies)", () => {
+    it("`-c 1` still honors dependency ordering", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        first: 'echo "STEP-FIRST"',
+                        second: {
+                            exec: 'echo "STEP-SECOND"',
+                            dependencies: ["first"],
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "second", "-c", "1"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        // The dependency must complete before its dependent, regardless of the
+        // single-slot concurrency limit.
+        const firstIdx = result.stdout.indexOf("STEP-FIRST");
+        const secondIdx = result.stdout.indexOf("STEP-SECOND");
+        expect(firstIdx).toBeGreaterThanOrEqual(0);
+        expect(secondIdx).toBeGreaterThan(firstIdx);
+    });
+});
+
+describe("+run-filters @output (result + dry-run combination)", () => {
+    it("`--result` + `--result-format` honor the format even under `--dry-run`", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+            },
+        });
+
+        const result = await runOmni(
+            [
+                "run",
+                "build",
+                "--dry-run",
+                "--result",
+                "results.dat",
+                "--result-format",
+                "yaml",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // The task never executes, but the results file is still written in the
+        // requested format regardless of the `.dat` extension.
+        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("results.dat")).toBe(true);
+        expect(ws.read("results.dat")).toContain("status:");
+    });
+});
+
+describe("+run-filters @output (ui downgrade)", () => {
+    it("`-u tui` + non-TTY + `--dry-run` downgrades to stream and prints the plan", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: 'echo "PLAN-MARK"' } },
+            },
+        });
+
+        // Captured (non-TTY) stdout forces Stream UI; combined with dry-run the
+        // plan is printed rather than hanging on a TUI.
+        const result = await runOmni(["run", "build", "-u", "tui", "-d"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("Dry run mode enabled");
+        expect(result).toOutputContaining("Executing task 'app#build'");
+        expect(result.stdout).not.toContain("PLAN-MARK");
     });
 });
 

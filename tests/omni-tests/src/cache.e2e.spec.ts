@@ -400,6 +400,219 @@ describe("+cache @cache (prune filters)", () => {
     });
 });
 
+describe("+cache @cache (combined filters)", () => {
+    /** Projects across dirs, tasks tagged with meta, so each filter can narrow. */
+    function dirMetaSpec(): WorkspaceSpec {
+        return {
+            workspace: { projects: ["**"] },
+            projects: {
+                "svc/api": {
+                    name: "api",
+                    tasks: {
+                        build: {
+                            exec: 'echo "api build"',
+                            meta: { tier: "fast" },
+                        },
+                        test: {
+                            exec: 'echo "api test"',
+                            meta: { tier: "slow" },
+                        },
+                    },
+                },
+                "svc/web": {
+                    name: "web",
+                    tasks: {
+                        build: {
+                            exec: 'echo "web build"',
+                            meta: { tier: "slow" },
+                        },
+                    },
+                },
+                other: {
+                    name: "other",
+                    tasks: {
+                        build: {
+                            exec: 'echo "other build"',
+                            meta: { tier: "fast" },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    it("`stats -p -t --dir -m` narrows to the intersection of all four filters", async () => {
+        const ws = makeWorkspace(dirMetaSpec());
+
+        await seedCache(ws, ["build", "test"]);
+
+        // Only `api#build` matches every filter: project `api`, task `build`,
+        // dir `svc/**`, and meta `tier == fast`.
+        const stats = await runOmni(
+            [
+                "cache",
+                "stats",
+                "-p",
+                "api",
+                "-t",
+                "build",
+                "--dir",
+                "svc/**",
+                "-m",
+                'tier == "fast"',
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("Project: api");
+        expect(stats).toOutputContaining("- Task: build");
+        // Everything narrowed out by at least one filter is absent.
+        expect(stats.stdout).not.toContain("Project: web");
+        expect(stats.stdout).not.toContain("Project: other");
+        expect(stats.stdout).not.toContain("- Task: test");
+    });
+
+    it("`prune --project --task` narrows to the intersection (dry-run)", async () => {
+        const ws = makeWorkspace(multiTaskSpec());
+
+        await seedCache(ws, ["build", "test"]);
+
+        const dry = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--project",
+                "alpha",
+                "--task",
+                "build",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(dry).toHaveSucceeded();
+        expect(dry).toOutputContaining("Project: alpha");
+        expect(dry).toOutputContaining("Task: build");
+        // `beta` (other project) and `alpha#test` (other task) are excluded.
+        expect(dry.stdout).not.toContain("Project: beta");
+        expect(dry.stdout).not.toContain("Task: test");
+    });
+
+    it("`prune --dir --meta` combines the two context-backed filters (dry-run)", async () => {
+        const ws = makeWorkspace(dirMetaSpec());
+
+        await seedCache(ws, ["build", "test"]);
+
+        // `svc/**` keeps api + web; `tier == fast` keeps api + other; their
+        // intersection is only `api#build`.
+        const dry = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--dir",
+                "svc/**",
+                "--meta",
+                'tier == "fast"',
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(dry).toHaveSucceeded();
+        expect(dry).toOutputContaining("Project: api");
+        expect(dry.stdout).not.toContain("Project: web");
+        expect(dry.stdout).not.toContain("Project: other");
+    });
+
+    it("`prune --stale-only --older-than` applies both staleness gates", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        await seedCache(ws, ["build"]);
+
+        // Entry is fresh and younger than 1h, so neither gate matches it.
+        const dry = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--stale-only",
+                "--older-than",
+                "1h",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(dry).toHaveSucceeded();
+        expect(dry).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+
+    it("`prune --larger-than --project` combines a size gate with a project filter (dry-run)", async () => {
+        const ws = makeWorkspace(multiTaskSpec());
+
+        await seedCache(ws, ["build", "test"]);
+
+        // `alpha` matches the project filter, but no entry is over 1GB.
+        const dry = await runOmni(
+            [
+                "cache",
+                "prune",
+                "--larger-than",
+                "1GB",
+                "--project",
+                "alpha",
+                "--dry-run",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(dry).toHaveSucceeded();
+        expect(dry).toOutputContaining(
+            "No cache entries matched the given filters",
+        );
+    });
+
+    it("`prune --dry-run` with matching filters never deletes", async () => {
+        const ws = makeWorkspace(multiTaskSpec());
+
+        await seedCache(ws, ["build", "test"]);
+
+        const dry = await runOmni(
+            ["cache", "prune", "--project", "alpha", "--dry-run"],
+            { cwd: ws.cwd },
+        );
+        expect(dry).toHaveSucceeded();
+        expect(dry).toOutputContaining("Project: alpha");
+
+        // Despite matching entries, dry-run leaves the cache intact.
+        const stats = await runOmni(["cache", "stats"], { cwd: ws.cwd });
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("Project: alpha");
+        expect(stats).toOutputContaining("- Task: build");
+    });
+});
+
+describe("+cache @cache (no-cache + stats)", () => {
+    it("`run --no-cache` leaves the task out of `cache stats`", async () => {
+        const ws = makeWorkspace(multiTaskSpec());
+
+        // `build` is cached normally; `test` runs with --no-cache.
+        await seedCache(ws, ["build"]);
+        const uncached = await runOmni(
+            ["run", "test", "-p", "alpha", "--no-cache"],
+            { cwd: ws.cwd },
+        );
+        expect(uncached).toHaveSucceeded();
+
+        const stats = await runOmni(["cache", "stats"], { cwd: ws.cwd });
+        expect(stats).toHaveSucceeded();
+        expect(stats).toOutputContaining("- Task: build");
+        expect(stats.stdout).not.toContain("- Task: test");
+    });
+});
+
 describe("+cache @cli (prune arg conflicts)", () => {
     it("`--dry-run` conflicts with `--yes`", async () => {
         const ws = makeWorkspace(singleProjectSpec());

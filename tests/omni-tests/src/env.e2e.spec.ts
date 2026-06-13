@@ -124,3 +124,101 @@ describe("+env @env (merging & flags)", () => {
         expect(result.stdout).toBe("stgval");
     });
 });
+
+describe("+env @env (precedence & combined flags)", () => {
+    it("`env all -i --env <env> -e .env.{ENV}` combines inherit, env selection, and {ENV}", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: { ".env.production": "PRODVAR=prodval\n" },
+        });
+
+        const result = await runOmni(
+            [
+                "-l",
+                "off",
+                "-i",
+                "--env",
+                "production",
+                "-e",
+                ".env.{ENV}",
+                "env",
+                "all",
+            ],
+            { cwd: ws.cwd, env: { PARENT_MARKER: "hello" } },
+        );
+
+        expect(result).toHaveSucceeded();
+        // `{ENV}` -> production selects the production file...
+        expect(result.out).toContain("PRODVAR=prodval");
+        // ...and `-i` surfaces the parent process var alongside it.
+        expect(result.out).toContain("PARENT_MARKER=hello");
+    });
+
+    it("`env get <key> -i`: an env file overrides the inherited parent value", async () => {
+        // Both define SHARED. The loader seeds inherited parent vars first and
+        // then extends with env-file values (see `extra_envs` + `env.extend` in
+        // `crates/env_loader/src/lib.rs`), so the file wins.
+        const ws = envWorkspace({ SHARED: "fromfile" });
+
+        const result = await runOmni(
+            ["-l", "off", "-i", "env", "get", "SHARED"],
+            { cwd: ws.cwd, env: { SHARED: "fromparent" } },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toBe("fromfile");
+    });
+
+    it("loads every file when -e/--env-file is repeated", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: {
+                ".env.one": "ONE=oneval\n",
+                ".env.two": "TWO=twoval\n",
+                ".env.three": "THREE=threeval\n",
+            },
+        });
+
+        const result = await runOmni(
+            [
+                "-l",
+                "off",
+                "-e",
+                ".env.one",
+                "--env-file",
+                ".env.two",
+                "-e",
+                ".env.three",
+                "env",
+                "all",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result.out).toContain("ONE=oneval");
+        expect(result.out).toContain("TWO=twoval");
+        expect(result.out).toContain("THREE=threeval");
+    });
+
+    it("-r/--env-root-dir-marker stops discovery at the custom marker", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: {
+                ".env": "ROOTVAR=rootval\n",
+                "sub/mark.txt": "",
+                "sub/.env": "SUBVAR=subval\n",
+            },
+        });
+
+        const result = await runOmni(
+            ["-l", "off", "-r", "mark.txt", "env", "all"],
+            { cwd: ws.path("sub") },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result.out).toContain("SUBVAR=subval");
+        // The marker in `sub` halts the climb before reaching the root `.env`.
+        expect(result.out).not.toContain("ROOTVAR=rootval");
+    });
+});

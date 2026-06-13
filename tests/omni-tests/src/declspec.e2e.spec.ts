@@ -100,3 +100,29 @@ describe("+declspec @output (schema)", () => {
         expect(JSON.parse(pretty.stdout)).toEqual(JSON.parse(compact.stdout));
     });
 });
+
+describe("+declspec @output (cross-format equivalence)", () => {
+    it("-f yaml and -f json describe the same spec", async () => {
+        const json = await runOmni(["declspec", "dump", "-f", "json"]);
+        const yaml = await runOmni(["declspec", "dump", "-f", "yaml"]);
+
+        expect(json).toHaveSucceeded();
+        expect(yaml).toHaveSucceeded();
+
+        // Parsing each format back to a structure yields identical objects:
+        // the dump is format-agnostic, only its serialization differs.
+        const fromJson = JSON.parse(json.stdout) as DeclspecDump;
+        const fromYaml = parseYaml(yaml.stdout) as DeclspecDump;
+        expect(fromYaml).toEqual(fromJson);
+    });
+});
+
+describe("+declspec @exitcode (invalid format)", () => {
+    it("-f/--format with an invalid value is a clap parse error", async () => {
+        const result = await runOmni(["declspec", "dump", "-f", "bogus"]);
+
+        // clap rejects unknown value-enum variants before the command runs.
+        expect(result).toHaveExitCode(2);
+        expect(result).toHaveStderrContaining("invalid value 'bogus'");
+    });
+});

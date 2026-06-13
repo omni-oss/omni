@@ -145,6 +145,96 @@ describe("+scm @scm @e2e (affected selection)", () => {
     });
 });
 
+describe("+scm @scm @e2e (affected + filter combinations)", () => {
+    /** Two projects that each key their cache on all of their files. */
+    function affectedSpec() {
+        return {
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: {
+                            exec: 'echo "BUILD-APP"',
+                            cache: { key: { files: ["**/*"] } },
+                        },
+                    },
+                },
+                lib: {
+                    name: "lib",
+                    tasks: {
+                        build: {
+                            exec: 'echo "BUILD-LIB"',
+                            cache: { key: { files: ["**/*"] } },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    it("`--scm-affected` + `-p` intersect to affected projects matching the glob", async (ctx) => {
+        ctx.skip(!(await gitAvailable()), "git is not available");
+
+        const ws = makeWorkspace(affectedSpec());
+
+        await initRepo(ws);
+        await git(ws, ["add", "-A"]);
+        await git(ws, ["commit", "-qm", "init"]);
+
+        // Change BOTH projects so both are scm-affected.
+        ws.write("app/changed.txt", "edited\n");
+        ws.write("lib/changed.txt", "edited\n");
+        await git(ws, ["add", "-A"]);
+        await git(ws, ["commit", "-qm", "change-both"]);
+
+        const result = await runOmni(
+            [
+                "run",
+                "build",
+                "--affected",
+                "-b",
+                "HEAD~1",
+                "-t",
+                "HEAD",
+                "-p",
+                "app",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("BUILD-APP");
+        // `lib` is affected too, but the project glob narrows it out.
+        expect(result.stdout).not.toContain("BUILD-LIB");
+    });
+
+    it("`-b` + `-t` together define the diff range and implicitly enable scm filtering", async (ctx) => {
+        ctx.skip(!(await gitAvailable()), "git is not available");
+
+        const ws = makeWorkspace(affectedSpec());
+
+        await initRepo(ws);
+        await git(ws, ["add", "-A"]);
+        await git(ws, ["commit", "-qm", "init"]);
+
+        // Change only `app`.
+        ws.write("app/changed.txt", "edited\n");
+        await git(ws, ["add", "-A"]);
+        await git(ws, ["commit", "-qm", "change-app"]);
+
+        // No `--affected`: providing both `-b` and `-t` implicitly enables it.
+        const result = await runOmni(
+            ["run", "build", "-b", "HEAD~1", "-t", "HEAD"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("BUILD-APP");
+        expect(result.stdout).not.toContain("BUILD-LIB");
+    });
+});
+
 describe("+scm @scm @exitcode (non-git workspace)", () => {
     it("fails gracefully with a clear error outside a repository", async () => {
         const ws = makeWorkspace({

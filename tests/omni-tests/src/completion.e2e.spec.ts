@@ -58,3 +58,34 @@ describe("+completion @output (script generation)", () => {
         expect(result).toOutputContaining(PROGRAM_NAME);
     });
 });
+
+describe("+completion @output (shell-specific markers)", () => {
+    // Each shell's generated script carries a directive unique to that shell's
+    // completion system, proving the right generator ran for `-s/--shell`.
+    const SHELL_DIRECTIVES: Record<string, string> = {
+        zsh: "#compdef",
+        fish: "complete",
+        powershell: "Register-ArgumentCompleter",
+    };
+
+    for (const [shell, directive] of Object.entries(SHELL_DIRECTIVES)) {
+        it(`-s/--shell ${shell} carries the ${shell}-specific marker`, async () => {
+            const result = await runOmni(["completion", "--shell", shell]);
+
+            expect(result).toHaveSucceeded();
+            expect(result).toOutputContaining(directive);
+        });
+    }
+});
+
+describe("+completion @exitcode (invalid shell)", () => {
+    it("-s/--shell with an invalid value is a clap parse error", async () => {
+        const result = await runOmni(["completion", "--shell", "notashell"]);
+
+        // clap rejects unknown value-enum variants before the command runs.
+        expect(result).toHaveExitCode(2);
+        expect(result).toHaveStderrContaining("invalid value 'notashell'");
+        // The error lists the accepted shells (value-enum help).
+        expect(result).toHaveStderrContaining("possible values:");
+    });
+});

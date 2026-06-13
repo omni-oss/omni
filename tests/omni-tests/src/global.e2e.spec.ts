@@ -367,3 +367,197 @@ describe("+global @env (env resolution)", () => {
         expect(isolated.out).not.toContain("hello");
     });
 });
+
+describe("+global @cli (trace gating by stdout level)", () => {
+    // The stdout fmt layer (and thus any native trace it would print) is only
+    // installed when the stdout level is not `off` - see TracingSubscriber::new
+    // in `crates/omni_tracing_subscriber/src/lib.rs`. So `-t` can only surface
+    // traces when there is a stdout layer for them to attach to.
+    const NATIVE_TRACE = "tracing_initialized";
+
+    it("`-l off` suppresses native traces even with `-t`", async () => {
+        const ws = envWorkspace();
+
+        const off = await runOmni(["-l", "off", "-t", "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+        const on = await runOmni(["-l", "trace", "-t", "env", "get", "FOO"], {
+            cwd: ws.cwd,
+        });
+
+        // No stdout layer at `off`, so the native trace never reaches stdout...
+        expect(off.out).not.toContain(NATIVE_TRACE);
+        // ...but it does once a stdout layer exists (here at `trace`).
+        expect(on).toOutputContaining(NATIVE_TRACE);
+    });
+});
+
+describe("+global @cli (stderr error logs + traces together)", () => {
+    // The error *trace* the stderr log layer adds is prefixed `ERROR omni:`; the
+    // eyre report (`Error:`) is the always-printed human-readable failure.
+    const ERROR_TRACE = "ERROR omni:";
+
+    function failingWorkspace() {
+        return makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: "echo hi" } },
+            },
+        });
+    }
+
+    it("`--stderr-log --stderr-show-traces` routes error logs and traces to stderr", async () => {
+        const ws = failingWorkspace();
+
+        const result = await runOmni(
+            ["--stderr-log", "--stderr-show-traces", "run", "nope"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        // The error trace from the stderr log layer...
+        expect(result).toHaveStderrContaining(ERROR_TRACE);
+        // ...and the eyre report both land on stderr, together.
+        expect(result).toHaveStderrContaining("Error:");
+        // Neither leaks onto stdout.
+        expect(result.out).not.toContain(ERROR_TRACE);
+    });
+});
+
+describe("+global @cli (file traces at a requested level)", () => {
+    it("`--file-trace-output <path>` + `-f debug` writes debug traces there", async () => {
+        const ws = envWorkspace();
+
+        const result = await runOmni(
+            [
+                "-f",
+                "debug",
+                "--file-trace-output",
+                "./debug-trace.log",
+                "env",
+                "get",
+                "FOO",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.exists("debug-trace.log")).toBe(true);
+        const contents = ws.read("debug-trace.log");
+        // JSON trace entries carry a level; `-f debug` lets DEBUG events through.
+        expect(contents).toContain('"level"');
+        expect(contents).toContain('"DEBUG"');
+    });
+});
+
+describe("+global @cli (explicit flags override env-var forms)", () => {
+    const MISSING_WARN = "environmental variable does not exists";
+
+    it("`-l <level>` overrides OMNI_STDOUT_LOG_LEVEL", async () => {
+        const ws = envWorkspace();
+
+        // The env var silences stdout logs, but the explicit flag re-enables
+        // warn-level output (so the missing-var warning appears).
+        const overridden = await runOmni(
+            ["-l", "warn", "env", "get", "MISSING"],
+            { cwd: ws.cwd, env: { OMNI_STDOUT_LOG_LEVEL: "off" } },
+        );
+        const fromEnv = await runOmni(["env", "get", "MISSING"], {
+            cwd: ws.cwd,
+            env: { OMNI_STDOUT_LOG_LEVEL: "off" },
+        });
+
+        expect(overridden).toOutputContaining(MISSING_WARN);
+        expect(fromEnv.out).not.toContain(MISSING_WARN);
+    });
+
+    it("`--env <env>` overrides OMNI_ENV", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: {
+                ".env.development": "PICK=dev\n",
+                ".env.staging": "PICK=stg\n",
+            },
+        });
+
+        // OMNI_ENV asks for staging, but `--env development` wins, so the
+        // development file is selected.
+        const result = await runOmni(
+            [
+                "-l",
+                "off",
+                "-e",
+                ".env.{ENV}",
+                "--env",
+                "development",
+                "env",
+                "get",
+                "PICK",
+            ],
+            { cwd: ws.cwd, env: { OMNI_ENV: "staging" } },
+        );
+
+        expect(result.stdout).toBe("dev");
+    });
+
+    it("`-f <level>` overrides OMNI_FILE_TRACE_LEVEL", async () => {
+        const ws = envWorkspace();
+
+        // The env var disables file traces; the explicit flag turns them back
+        // on, so the trace file is created.
+        const result = await runOmni(
+            [
+                "-l",
+                "off",
+                "-f",
+                "info",
+                "--file-trace-output",
+                "./override.log",
+                "env",
+                "get",
+                "MISSING",
+            ],
+            { cwd: ws.cwd, env: { OMNI_FILE_TRACE_LEVEL: "off" } },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.exists("override.log")).toBe(true);
+    });
+});
+
+describe("+global @env (global flags take effect before the subcommand)", () => {
+    it("`-r` + `--env` + `-e` all apply before `env get` runs", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: {
+                // Root copy that must be ignored once the marker stops the climb.
+                ".env.production": "PICK=prodroot\n",
+                "sub/mark.txt": "",
+                "sub/.env.production": "PICK=prodsub\n",
+            },
+        });
+        const cwd = ws.path("sub");
+
+        const result = await runOmni(
+            [
+                "-l",
+                "off",
+                "-r",
+                "mark.txt",
+                "--env",
+                "production",
+                "-e",
+                ".env.{ENV}",
+                "env",
+                "get",
+                "PICK",
+            ],
+            { cwd },
+        );
+
+        // `-r` stops discovery at `sub`, `--env` selects production, and `-e`
+        // substitutes `{ENV}` - so only `sub/.env.production` is loaded.
+        expect(result.stdout).toBe("prodsub");
+        expect(result.out).not.toContain("prodroot");
+    });
+});

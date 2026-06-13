@@ -20,6 +20,7 @@ import {
     skipUnlessRemoteReachable,
     skipUnlessSshReachable,
     spawnOmniPty,
+    type WorkspaceSpec,
     workspaceMinimalRepo,
 } from "@/harness";
 
@@ -830,4 +831,276 @@ describe("+generator @e2e (git sources)", () => {
         },
         CLONE_TIMEOUT_MS,
     );
+});
+
+describe("+generator @exitcode (validation)", () => {
+    it("errors when two generators share the same name", async () => {
+        // `validate` runs at the top of `run_named`, before any prompting, so a
+        // duplicate name fails fast regardless of the generators' prompts.
+        const dupGenerator = (greeting: string) => ({
+            name: "dup",
+            description: "duplicate-named generator",
+            actions: [
+                {
+                    type: "add-content",
+                    output_path: "greeting.txt",
+                    content: greeting,
+                },
+            ],
+        });
+        const ws = makeWorkspace({
+            workspace: {
+                projects: ["**"],
+                generators: [{ source: "local", path: "generators/**" }],
+            },
+            projects: {
+                "generators/a/generator.omni.yaml": dupGenerator("from a"),
+                "generators/b/generator.omni.yaml": dupGenerator("from b"),
+            },
+            files: { ".omni/sources/generator/.keep": "" },
+        });
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "dup", "-o", "out", "--use-defaults"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("generator names must be unique");
+    });
+});
+
+/**
+ * A `multi` generator with two `remember: true` prompts (`subject`,
+ * `salutation`) and two targets (`dest` -> @output/src, `other` -> @output/lib),
+ * writing one file into each target. Two slots of each kind let us prove that
+ * repeated `-v K=V` and `-t name=path` flags ALL apply (not just the last one).
+ */
+function multiSlotGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            app: { name: "app", tasks: { build: 'echo "build app"' } },
+            "generators/multi/generator.omni.yaml": {
+                name: "multi",
+                description: "scaffolds two greeting files",
+                prompts: [
+                    {
+                        type: "text",
+                        name: "subject",
+                        message: "Who to greet?",
+                        default: "world",
+                        remember: true,
+                    },
+                    {
+                        type: "text",
+                        name: "salutation",
+                        message: "How to greet?",
+                        default: "Hello",
+                        remember: true,
+                    },
+                ],
+                targets: { dest: "@output/src", other: "@output/lib" },
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "greeting.txt",
+                        target: "dest",
+                        content:
+                            "{{ prompts.salutation }} {{ prompts.subject }}!",
+                    },
+                    {
+                        type: "add-content",
+                        output_path: "other.txt",
+                        target: "other",
+                        content: "{{ prompts.subject }}",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+describe("+generator @cli (run flag combinations)", () => {
+    it("-v + -t + --use-defaults combine prefill and target override non-interactively", async () => {
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-o",
+                "out",
+                "-v",
+                "subject=Custom",
+                "-t",
+                "dest=lib",
+                "--use-defaults",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // -v wins over the prompt default even with --use-defaults, and -t
+        // redirects `dest` from @output/src to out/lib.
+        expect(ws.read("out/lib/greeting.txt")).toBe("Hello Custom!");
+        expect(ws.exists("out/src/greeting.txt")).toBe(false);
+    });
+
+    it("multiple -v and multiple -t flags all apply", async () => {
+        const ws = makeWorkspace(multiSlotGeneratorSpec());
+
+        // Both prompts are prefilled, so the run is non-interactive without
+        // --use-defaults.
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "multi",
+                "-o",
+                "out",
+                "-v",
+                "subject=Alice",
+                "-v",
+                "salutation=Hi",
+                "-t",
+                "dest=a",
+                "-t",
+                "other=b",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // Both prefilled values and both target overrides take effect.
+        expect(ws.read("out/a/greeting.txt")).toBe("Hi Alice!");
+        expect(ws.read("out/b/other.txt")).toBe("Alice");
+    });
+
+    it("-p with -v and --overwrite always overwrites files in the project directory", async () => {
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        // Pre-create the file the `dest` target resolves to inside the project.
+        ws.write("app/src/greeting.txt", "OLD");
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-p",
+                "app",
+                "-v",
+                "subject=Bob",
+                "--overwrite",
+                "always",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // `always` replaces the pre-existing file with the generated content.
+        expect(ws.read("app/src/greeting.txt")).toBe("Hello Bob!");
+    });
+
+    it("--use-defaults --save-session=false runs with defaults and writes no session", async () => {
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-o",
+                "out",
+                "--use-defaults",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+        // The session is skipped even though `subject` is `remember: true`.
+        expect(ws.exists("out/.omni/generator.json")).toBe(false);
+    });
+
+    it("-o --overwrite never leaves pre-existing target files untouched", async () => {
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        ws.write("out/src/greeting.txt", "OLD");
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-o",
+                "out",
+                "--overwrite",
+                "never",
+                "-v",
+                "subject=Bob",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // `never` keeps the existing file even though -v would have changed it.
+        expect(ws.read("out/src/greeting.txt")).toBe("OLD");
+    });
+
+    it("-v KEY= (empty) and -v KEY=a=b mirror parse_key_value edge cases", async () => {
+        // Empty value: parse_key_value allows an empty value, so the prompt is
+        // prefilled with "" (and therefore skipped, not asked).
+        const empty = makeWorkspace(scaffoldGeneratorSpec());
+        const emptyResult = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-o",
+                "out",
+                "-v",
+                "subject=",
+                "--save-session=false",
+            ],
+            { cwd: empty.cwd },
+        );
+        expect(emptyResult).toHaveSucceeded();
+        expect(empty.read("out/src/greeting.txt")).toBe("Hello !");
+
+        // Value containing `=`: parse_key_value splits on the FIRST `=`, so the
+        // remainder (`a=b`) is kept verbatim as the value.
+        const eq = makeWorkspace(scaffoldGeneratorSpec());
+        const eqResult = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "scaffold",
+                "-o",
+                "out",
+                "-v",
+                "subject=a=b",
+                "--save-session=false",
+            ],
+            { cwd: eq.cwd },
+        );
+        expect(eqResult).toHaveSucceeded();
+        expect(eq.read("out/src/greeting.txt")).toBe("Hello a=b!");
+    });
 });

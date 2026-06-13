@@ -151,6 +151,40 @@ describe("+context @config (base & extends)", () => {
         expect(result).toOutputContaining("from base");
     });
 
+    it("merges a transitive `extends` chain through every level", async () => {
+        // child -> parent -> grandparent; the deepest base contributes a task
+        // that must reach the child through both intermediate merges.
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "grandparent.omni.yaml": {
+                    name: "grandparent",
+                    base: true,
+                    tasks: { "from-gp": 'echo "GP-TASK"' },
+                },
+                "parent.omni.yaml": {
+                    name: "parent",
+                    base: true,
+                    extends: ["grandparent.omni.yaml"],
+                    tasks: { "from-parent": 'echo "PARENT-TASK"' },
+                },
+                child: {
+                    name: "child",
+                    extends: ["../parent.omni.yaml"],
+                    tasks: { own: 'echo "OWN-TASK"' },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["-l", "off", "run", "from-gp", "-p", "child"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("GP-TASK");
+    });
+
     it("resolves both short-form and long-form task definitions", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
@@ -174,6 +208,50 @@ describe("+context @config (base & extends)", () => {
 
         expect(short).toOutputContaining("short form ran");
         expect(long).toOutputContaining("long form ran");
+    });
+});
+
+describe("+context @config @exitcode (validation)", () => {
+    it("errors clearly on duplicate project names", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "one/project.omni.yaml": {
+                    name: "dup",
+                    tasks: { build: "echo hi" },
+                },
+                "two/project.omni.yaml": {
+                    name: "dup",
+                    tasks: { build: "echo hi" },
+                },
+            },
+        });
+
+        // Validation runs while loading the context for execution.
+        const result = await runOmni(["run", "build"], { cwd: ws.cwd });
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("duplicate project name");
+    });
+
+    it("errors clearly when `extends` points at a missing config", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                child: {
+                    name: "child",
+                    extends: ["../does-not-exist.omni.yaml"],
+                    tasks: { build: "echo hi" },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "build", "-p", "child"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("does not exist");
     });
 });
 

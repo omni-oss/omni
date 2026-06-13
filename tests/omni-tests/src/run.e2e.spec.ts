@@ -391,3 +391,295 @@ describe("+run @e2e (retries & persistence)", () => {
         expect(second).toOutputContaining("0 results from cache");
     });
 });
+
+describe("+run @e2e (filter + dependency combinations)", () => {
+    it("`-i` + `-p` runs only the matched task in the matched project", async () => {
+        const ws = makeWorkspace(dependencyChainSpec());
+
+        const result = await runOmni(["run", "run", "-p", "project-1", "-i"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("run project-1");
+        // No dependencies run: neither the local `build` nor `project-2#list`.
+        expect(result.stdout).not.toContain("build project-1");
+        expect(result.stdout).not.toContain("list project-2");
+        expect(result).toOutputContaining("Successfully executed 1 tasks");
+    });
+
+    it("`-w` + `-m` filters roots by meta, then pulls dependents in by task name", async () => {
+        // The meta filter selects the matched *roots* (`core#build`), not the
+        // dependents: `-w` pulls in every dependent sharing the queried task
+        // name regardless of its own meta. `legacy#build` is excluded because
+        // it is neither a meta-matched root nor a dependent of one.
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                core: {
+                    name: "core",
+                    tasks: {
+                        build: {
+                            exec: 'echo "CORE-BUILD"',
+                            meta: { tier: "fast" },
+                        },
+                    },
+                },
+                app: {
+                    name: "app",
+                    dependencies: ["core"],
+                    tasks: {
+                        build: {
+                            exec: 'echo "APP-BUILD"',
+                            dependencies: ["^build"],
+                            meta: { tier: "slow" },
+                        },
+                    },
+                },
+                legacy: {
+                    name: "legacy",
+                    tasks: {
+                        build: {
+                            exec: 'echo "LEGACY-BUILD"',
+                            meta: { tier: "slow" },
+                        },
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "build", "-w", "-m", 'tier == "fast"'],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("CORE-BUILD");
+        // `app#build` is a `slow` dependent of the `fast` root, pulled in by `-w`.
+        expect(result).toOutputContaining("APP-BUILD");
+        // `legacy#build` is `slow` and not a dependent, so the meta filter drops it.
+        expect(result.stdout).not.toContain("LEGACY-BUILD");
+    });
+
+    it("multiple positional tasks + `-p` glob run the full matched set", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                "app-one": {
+                    name: "app-one",
+                    tasks: {
+                        build: 'echo "ONE-BUILD"',
+                        test: 'echo "ONE-TEST"',
+                    },
+                },
+                "app-two": {
+                    name: "app-two",
+                    tasks: {
+                        build: 'echo "TWO-BUILD"',
+                        test: 'echo "TWO-TEST"',
+                    },
+                },
+                other: {
+                    name: "other",
+                    tasks: { build: 'echo "OTHER-BUILD"' },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "build", "test", "-p", "app-*"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("ONE-BUILD");
+        expect(result).toOutputContaining("ONE-TEST");
+        expect(result).toOutputContaining("TWO-BUILD");
+        expect(result).toOutputContaining("TWO-TEST");
+        expect(result.stdout).not.toContain("OTHER-BUILD");
+        expect(result).toOutputContaining("Successfully executed 4 tasks");
+    });
+});
+
+describe("+run @cache (force + cache flag combinations)", () => {
+    it("`--force` + `--no-cache` re-executes but does not persist the result", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: 'echo "BUILD-MARK"' } },
+            },
+        });
+
+        // Forced + non-persisted: executes fresh and writes nothing to the cache.
+        const forced = await runOmni(
+            ["run", "build", "--force", "--no-cache"],
+            { cwd: ws.cwd },
+        );
+        expect(forced).toHaveSucceeded();
+        expect(forced).toOutputContaining("BUILD-MARK");
+        expect(forced).toOutputContaining("0 results from cache");
+
+        // Because nothing was persisted, the next plain run is still a miss.
+        const miss = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(miss).toOutputContaining("0 results from cache");
+
+        // Now that the miss above persisted, a third run is a cache hit.
+        const hit = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(hit).toOutputContaining("1 results from cache");
+    });
+
+    it("`-f` + `-L` re-executes and shows fresh (not replayed) logs", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: 'echo "BUILD-MARK"' } },
+            },
+        });
+
+        const first = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(first).toHaveSucceeded();
+
+        const forced = await runOmni(["run", "build", "-f", "-L"], {
+            cwd: ws.cwd,
+        });
+        expect(forced).toHaveSucceeded();
+        // Forced re-execution produces fresh output, not a replayed cache hit.
+        expect(forced).toOutputContaining("BUILD-MARK");
+        expect(forced).toOutputContaining("0 results from cache");
+        expect(forced.stdout).not.toContain("Cache hit for task");
+    });
+});
+
+describe("+run @e2e (on-failure with independent tasks)", () => {
+    it("`-o continue` runs the remaining independent tasks after one fails", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        first: 'echo "FIRST-RAN"',
+                        bad: "false",
+                        last: 'echo "LAST-RAN"',
+                    },
+                },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "first", "bad", "last", "-o", "continue"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        // The failing task does not stop the independent ones.
+        expect(result).toOutputContaining("FIRST-RAN");
+        expect(result).toOutputContaining("LAST-RAN");
+    });
+});
+
+describe("+run @output (dry-run + result file)", () => {
+    it("`--dry-run` + `--result` still writes the results file", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: { name: "app", tasks: { build: 'echo "DRY-MARK"' } },
+            },
+        });
+
+        const result = await runOmni(
+            ["run", "build", "--dry-run", "--result", "results.json"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // The task never executes, yet the results file is written.
+        expect(result.stdout).not.toContain("DRY-MARK");
+        expect(ws.exists("results.json")).toBe(true);
+        const parsed = JSON.parse(ws.read("results.json"));
+        expect(Array.isArray(parsed)).toBe(true);
+        expect(parsed.length).toBeGreaterThanOrEqual(1);
+    });
+});
+
+describe("+run @e2e (arg-gated execution)", () => {
+    it("`-a KEY=VAL` referenced inside an `if` expression gates the task", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        gated: {
+                            exec: 'echo "GATED-RAN"',
+                            if: '{{ args.flag == "yes" }}',
+                        },
+                    },
+                },
+            },
+        });
+
+        const enabled = await runOmni(
+            ["run", "gated", "-p", "app", "-a", "flag=yes"],
+            { cwd: ws.cwd },
+        );
+        expect(enabled).toHaveSucceeded();
+        expect(enabled).toOutputContaining("GATED-RAN");
+
+        const disabled = await runOmni(
+            ["run", "gated", "-p", "app", "-a", "flag=no"],
+            { cwd: ws.cwd },
+        );
+        expect(disabled).toHaveSucceeded();
+        expect(disabled).toOutputContaining(
+            "Skipping disabled task 'app#gated'",
+        );
+        expect(disabled.stdout).not.toContain("GATED-RAN");
+    });
+});
+
+describe("+run @e2e (template context)", () => {
+    // The per-task template context (default_provider.rs) exposes `env` (resolved
+    // workspace/project env vars) and the standard `platform` table
+    // (omni_tera/context.rs), so a task `exec` can interpolate both.
+    it("resolves workspace env vars via `{{ env.VAR }}`", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            files: { ".env": "GREETING=hello-from-env\n" },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: { greet: 'echo "<{{ env.GREETING }}>"' },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "greet", "-p", "app"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        expect(result).toOutputContaining("<hello-from-env>");
+    });
+
+    it("resolves the standard `{{ platform.* }}` context", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: { plat: 'echo "OS:[{{ platform.os }}]"' },
+                },
+            },
+        });
+
+        const result = await runOmni(["run", "plat", "-p", "app"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        // The exact OS is host-dependent; assert the template rendered to a
+        // non-empty value rather than leaking the raw `{{ ... }}` placeholder.
+        expect(result).toMatchOutput(/OS:\[.+\]/);
+        expect(result.stdout).not.toContain("{{");
+    });
+});

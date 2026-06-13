@@ -169,6 +169,65 @@ describe("+project @output (print-config)", () => {
     });
 });
 
+describe("+project @output (raw + format combinations)", () => {
+    it("`project list -r -f json` is a clean JSON array of names", async () => {
+        const ws = projectsWorkspace();
+
+        const result = await runOmni(["project", "list", "-r", "-f", "json"], {
+            cwd: ws.cwd,
+        });
+
+        expect(result).toHaveSucceeded();
+        // `-r` strips the load log, so stdout is exactly the serialized array.
+        expect(result.out).not.toContain("Loaded project configurations");
+        const parsed = JSON.parse(result.stdout) as string[];
+        expect(Array.isArray(parsed)).toBe(true);
+        expect([...parsed].sort()).toEqual([...NAMES].sort());
+    });
+
+    it("`project print-config -r -f yaml <name>` is clean YAML", async () => {
+        const ws = projectsWorkspace();
+
+        const result = await runOmni(
+            ["project", "print-config", "-r", "-f", "yaml", "alpha"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // `-r` suppresses the load log, leaving only the YAML document.
+        expect(result.out).not.toContain("Loaded project configurations");
+        const parsed = parseYaml(result.stdout) as {
+            name: string;
+            tasks: Record<string, string>;
+        };
+        expect(parsed.name).toBe("alpha");
+        expect(parsed.tasks).toMatchObject({ build: 'echo "alpha"' });
+    });
+
+    it("`project print-config -f toml <name>` round-trips the merged config", async () => {
+        const ws = projectsWorkspace();
+
+        const result = await runOmni(
+            ["project", "print-config", "-f", "toml", "alpha"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // Without `-r`, an `INFO Loaded project configurations` log precedes the
+        // document on stdout; drop those tracing lines, then the rest is the
+        // merged config serialized as TOML.
+        const tomlBody = lines(result.out)
+            .filter((line) => !/\b(INFO|WARN|ERROR|DEBUG|TRACE)\b/.test(line))
+            .join("\n");
+        const parsed = parseToml(tomlBody) as {
+            name: string;
+            tasks: Record<string, string>;
+        };
+        expect(parsed.name).toBe("alpha");
+        expect(parsed.tasks).toMatchObject({ build: 'echo "alpha"' });
+    });
+});
+
 describe("+project @exitcode (errors)", () => {
     it("print-config with an unknown project logs a clear error", async () => {
         const ws = projectsWorkspace();

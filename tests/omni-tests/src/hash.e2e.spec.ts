@@ -115,3 +115,68 @@ describe("+hash @e2e (workspace & project hashing)", () => {
         expect(result).toHaveStderrContaining("no project found");
     });
 });
+
+/** Pull the single hash token out of (raw or noisy) stdout. */
+function extractHash(stdout: string): string {
+    const match = stdout.match(HASH_PATTERN);
+    if (!match) {
+        throw new Error(`no hash token found in output:\n${stdout}`);
+    }
+    return match[0];
+}
+
+describe("+hash @output (raw vs formatted)", () => {
+    it("`hash project <name> -t <task> -r` is raw output for a selected task", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        const result = await runOmni(
+            ["hash", "-r", "project", "app", "-t", "build"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // Raw: exactly the hash, with no trailing newline and no log/trace noise.
+        expect(result.stdout).toMatch(RAW_HASH_PATTERN);
+        expect(result.stdout).not.toContain("\n");
+        expect(result.stdout).not.toContain("INFO");
+    });
+
+    it("`hash workspace -r` and non-raw yield the same underlying hash", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        const raw = await runOmni(["hash", "-r", "workspace"], {
+            cwd: ws.cwd,
+        });
+        const formatted = await runOmni(["hash", "workspace"], {
+            cwd: ws.cwd,
+        });
+
+        expect(raw).toHaveSucceeded();
+        expect(formatted).toHaveSucceeded();
+
+        // The non-raw run adds a trailing newline and an INFO log line; the raw
+        // run has neither. Once that noise is stripped, the hash is identical.
+        expect(formatted.stdout).toContain("INFO");
+        expect(raw.stdout).not.toContain("\n");
+        expect(extractHash(formatted.stdout)).toBe(extractHash(raw.stdout));
+    });
+
+    it("multiple `-t` tasks hash independently of their order", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        const ab = await runOmni(
+            ["hash", "-r", "project", "app", "-t", "build", "-t", "test"],
+            { cwd: ws.cwd },
+        );
+        const ba = await runOmni(
+            ["hash", "-r", "project", "app", "-t", "test", "-t", "build"],
+            { cwd: ws.cwd },
+        );
+
+        expect(ab).toHaveSucceeded();
+        expect(ba).toHaveSucceeded();
+        expect(ab.stdout).toMatch(RAW_HASH_PATTERN);
+        // Task selection is a set: swapping the two `-t` flags is stable.
+        expect(ba.stdout).toBe(ab.stdout);
+    });
+});
