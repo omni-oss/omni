@@ -259,12 +259,15 @@ async fn test_bridge_service_exec_generator_script() {
     let guard = BridgeServiceGuard::new().await;
     let script_path = fixture_script_path();
 
-    let body = json!({
-        "paths": [script_path.to_string_lossy()],
-        "params": {
-            "dry_run": true,
-        },
-    });
+    let body = json!([
+        {
+            "path": script_path.to_string_lossy(),
+            "params": {
+                "dry_run": true,
+                "data": null,
+            },
+        }
+    ]);
     let body_bytes = serde_json::to_vec(&body).expect("encode body as JSON");
 
     let client = guard.host().client_handle();

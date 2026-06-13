@@ -479,18 +479,16 @@ pub struct RunJavaScriptActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
 
-    /// Arguments to pass to the script.
-    #[serde(default, deserialize_with = "validate_umap_serde_json")]
-    pub args: UnorderedMap<String, serde_json::Value>,
+    /// Arbitrary data passed to the script. String values (recursively) are
+    /// rendered against the generator's template context before being sent.
+    #[serde(default)]
+    pub data: serde_json::Value,
 
     #[serde(default)]
     pub runtime: JsRuntimeOption,
 
     /// The path of the file to run.
     pub script: PathBuf,
-
-    #[serde(flatten)]
-    pub common: CommonRunCustomActionConfiguration,
 }
 
 #[derive(
@@ -694,11 +692,10 @@ pub enum ActionConfiguration {
         action: RunCommandActionConfiguration,
     },
 
-    /// Run a custom JavaScript program
-    /// Hidden for now since it's not fully implemented.
+    /// Run a custom JavaScript program against the generator's transactional
+    /// file system via the bridge service runner.
     #[strum_discriminants(strum(serialize = "run-javascript"))]
-    #[serde(rename = "run-javascript", alias = "run-js", skip)]
-    #[schemars(skip)]
+    #[serde(rename = "run-javascript", alias = "run-js")]
     RunJavaScript {
         #[serde(flatten)]
         action: RunJavaScriptActionConfiguration,

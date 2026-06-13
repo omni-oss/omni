@@ -12,10 +12,10 @@ import {
     type GeneratorScriptContext,
 } from "./script-context";
 
-export class ExecGeneratorScript extends ExecScript<Params> {
+export class ExecGeneratorScript extends ExecScript<ScriptInvocation[]> {
     public constructor() {
         super({
-            postImportAll: async (modules, client, params) => {
+            postImportAll: async (modules, client, invocations) => {
                 const invalids = modules.filter(
                     (m) =>
                         !m.module.default ||
@@ -36,12 +36,23 @@ export class ExecGeneratorScript extends ExecScript<Params> {
                     );
                 }
 
-                const ctx = await DefaultScriptContext.create({
-                    clientHandle: client,
-                    dryRun: params.dry_run,
-                    logger: Log.instance(),
-                });
-                for (const m of modules) {
+                // `modules` preserves the order of the paths handed to
+                // `importScripts`, which mirrors `invocations`, so we can pair
+                // each module with its own params (and per-script `data`).
+                for (let i = 0; i < modules.length; i++) {
+                    const m = modules[i];
+                    const invocation = invocations[i];
+                    if (!m || !invocation) {
+                        continue;
+                    }
+
+                    const ctx = await DefaultScriptContext.create({
+                        clientHandle: client,
+                        dryRun: invocation.params.dry_run,
+                        data: invocation.params.data,
+                        logger: Log.instance(),
+                    });
+
                     try {
                         const fn = m.module.default as (
                             context: GeneratorScriptContext,
@@ -61,26 +72,33 @@ export class ExecGeneratorScript extends ExecScript<Params> {
     }
 
     public override async run(context: ServiceContext): Promise<void> {
-        const payload = await parsePayload(context);
-        if (!payload) {
+        const invocations = await parsePayload(context);
+        if (!invocations) {
             return;
         }
-        await this.importScripts(payload.paths, context, payload.params);
+        await this.importScripts(
+            invocations.map((i) => i.path),
+            context,
+            invocations,
+        );
     }
 }
 
 const TEXT_DECODER = new TextDecoder();
 
-const ParamsSchema = z.object({
+const ScriptParamsSchema = z.object({
     dry_run: z.boolean(),
+    data: z.unknown(),
 });
 
-type Params = z.infer<typeof ParamsSchema>;
-
-const ExecGeneratorScriptPayloadSchema = z.object({
-    paths: z.array(z.string()),
-    params: ParamsSchema,
+const ScriptInvocationSchema = z.object({
+    path: z.string(),
+    params: ScriptParamsSchema,
 });
+
+const ExecGeneratorScriptPayloadSchema = z.array(ScriptInvocationSchema);
+
+export type ScriptInvocation = z.infer<typeof ScriptInvocationSchema>;
 
 async function parsePayload(context: ServiceContext) {
     const body = JSON.parse(

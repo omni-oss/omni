@@ -49,6 +49,7 @@ describe("DefaultScriptContext", () => {
         const ctx = await DefaultScriptContext.create({
             clientHandle: ClientHandle.DUMMY,
             dryRun: false,
+            data: null,
             logger: PROVIDED_LOGGER,
         });
 
@@ -61,6 +62,7 @@ describe("DefaultScriptContext", () => {
         const ctx = await DefaultScriptContext.create({
             clientHandle: ClientHandle.DUMMY,
             dryRun: false,
+            data: null,
             logger: PROVIDED_LOGGER,
         });
 
@@ -72,6 +74,7 @@ describe("DefaultScriptContext", () => {
             DefaultScriptContext.create({
                 clientHandle: ClientHandle.DUMMY,
                 dryRun: false,
+                data: null,
             }),
         );
 
@@ -82,6 +85,7 @@ describe("DefaultScriptContext", () => {
         const ctx = await DefaultScriptContext.create({
             clientHandle: ClientHandle.DUMMY,
             dryRun: true,
+            data: null,
             logger: PROVIDED_LOGGER,
         });
 
@@ -92,9 +96,22 @@ describe("DefaultScriptContext", () => {
         const ctx = await DefaultScriptContext.create({
             clientHandle: ClientHandle.DUMMY,
             dryRun: false,
+            data: null,
             logger: PROVIDED_LOGGER,
         });
 
         expect(ctx.isDryRun).toBe(false);
+    });
+
+    test("exposes the provided data verbatim", async () => {
+        const data = { hello: "world", nested: [1, 2, 3] };
+        const ctx = await DefaultScriptContext.create({
+            clientHandle: ClientHandle.DUMMY,
+            dryRun: false,
+            data,
+            logger: PROVIDED_LOGGER,
+        });
+
+        expect(ctx.data).toBe(data);
     });
 });

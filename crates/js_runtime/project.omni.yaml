@@ -2,3 +2,13 @@
 name: js_runtime
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+# The prebuilt `@omni-oss/bridge-service` bundle is embedded into this crate at
+# compile time (see `src/vendor.rs`), so its `dist/` must be built first.
+tasks:
+  test:
+    dependencies:
+      - "@omni-oss/bridge-service#build"
+
+dependencies:
+  - "@omni-oss/bridge-service"

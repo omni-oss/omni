@@ -60,6 +60,9 @@ pathdiff = { workspace = true }
 serde = { workspace = true }
 bon = { workspace = true }
 shlex = { workspace = true }
+js_runtime = { workspace = true }
+bridge_rpc_services = { workspace = true }
+bridge_rpc_router = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

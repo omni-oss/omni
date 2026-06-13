@@ -1,77 +1,58 @@
-use std::path::Path;
-
+use js_runtime::impls::DelegatingJsRuntimeOption;
 use omni_generator_configurations::{
     JsRuntimeOption, RunJavaScriptActionConfiguration,
 };
 
 use crate::{
-    GeneratorSys,
-    action_handlers::{
-        HandlerContext,
-        run_custom_commons::{run_custom_commons, target_path},
-    },
-    error::Error,
+    GeneratorSys, ScriptInvocation, ScriptParams,
+    action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
+/// Executes a `run-javascript` action by handing the script off to the shared,
+/// lazily-spawned generator script runner.
+///
+/// All scripts in a run (including those reached through nested
+/// `run-generator` actions) share a runner per JS runtime, and their
+/// file-system side effects flow through the same transactional overlay as the
+/// rest of the generator (see [`crate::LazyScriptRunner`]).
+///
+/// The configured `data` is rendered against the generator's template context
+/// (via [`expand_json_value`]) and handed to the script alongside the current
+/// run's `dry_run` flag. The action's `runtime` selects which JS runtime runs
+/// it.
 pub async fn run_javascript<'a>(
     config: &RunJavaScriptActionConfiguration,
     ctx: &HandlerContext<'a>,
-    sys: &impl GeneratorSys,
+    _sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let script_path = ctx.generator_dir.join(&config.script);
-    let tp = target_path(&config.common, ctx, ctx.gen_session, sys).await?;
-    let relative_path = pathdiff::diff_paths(&script_path, &tp);
-    let command = build_cmd(
-        config.runtime,
-        relative_path.as_deref().unwrap_or(&script_path),
-    );
 
-    run_custom_commons(&command, Some(tp.as_path()), &config.common, ctx, sys)
+    let data =
+        expand_json_value(ctx.tera_context_values, None, "data", &config.data)?
+            .into_owned();
+
+    let invocation = ScriptInvocation {
+        path: script_path.to_string_lossy().into_owned(),
+        params: ScriptParams {
+            dry_run: ctx.dry_run,
+            data,
+        },
+    };
+
+    ctx.script_runner
+        .run_scripts(
+            map_runtime(config.runtime),
+            std::slice::from_ref(&invocation),
+        )
         .await
 }
 
-fn auto_detect_runtime_option() -> Option<JsRuntimeOption> {
-    Some(if which::which("bun").is_ok() {
-        JsRuntimeOption::Bun
-    } else if which::which("deno").is_ok() {
-        JsRuntimeOption::Deno
-    } else if which::which("node").is_ok() {
-        JsRuntimeOption::Node
-    } else {
-        return None;
-    })
-}
-
-fn build_cmd(runtime: JsRuntimeOption, main_module: &Path) -> String {
-    let rt = if runtime == JsRuntimeOption::Auto {
-        auto_detect_runtime_option().expect("Can't auto detect runtime")
-    } else {
-        runtime
-    };
-
-    let mut cmd_builder = String::new();
-
-    let cmd = match rt {
-        JsRuntimeOption::Deno => "deno",
-        JsRuntimeOption::Node => "node",
-        JsRuntimeOption::Bun => "bun",
-        JsRuntimeOption::Auto => {
-            unreachable!("Auto select runtime should be unreachable")
-        }
-    };
-
-    cmd_builder.push_str(cmd);
-
-    if rt != JsRuntimeOption::Node {
-        cmd_builder.push_str(" run");
+/// Maps the configuration's runtime option to the runner's runtime option.
+fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
+    match runtime {
+        JsRuntimeOption::Deno => DelegatingJsRuntimeOption::Deno,
+        JsRuntimeOption::Node => DelegatingJsRuntimeOption::Node,
+        JsRuntimeOption::Bun => DelegatingJsRuntimeOption::Bun,
+        JsRuntimeOption::Auto => DelegatingJsRuntimeOption::Auto,
     }
-
-    if rt == JsRuntimeOption::Deno {
-        cmd_builder.push_str(" --allow-all");
-    }
-
-    cmd_builder.push(' ');
-    cmd_builder.push_str(&main_module.to_string_lossy());
-
-    cmd_builder
 }

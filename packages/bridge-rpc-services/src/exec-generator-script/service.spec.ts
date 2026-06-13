@@ -65,6 +65,7 @@ type GenCall = {
     isDryRun: boolean;
     hasSys: boolean;
     hasLog: boolean;
+    data?: unknown;
 };
 
 const GEN_CALLS_KEY = "__OMNI_GEN_CALLS__";
@@ -139,8 +140,12 @@ function makeJsonHarness(body: unknown): Harness {
 function makePayload(
     paths: string[],
     dryRun: boolean,
-): { paths: string[]; params: { dry_run: boolean } } {
-    return { paths, params: { dry_run: dryRun } };
+    data: unknown = null,
+): Array<{ path: string; params: { dry_run: boolean; data: unknown } }> {
+    return paths.map((path) => ({
+        path,
+        params: { dry_run: dryRun, data },
+    }));
 }
 
 /** Drains response frames until RESPONSE_END (or RESPONSE_ERROR) is observed. */
@@ -212,11 +217,13 @@ describe("ExecGeneratorScript", () => {
             async (opts: {
                 clientHandle: ClientHandle;
                 dryRun: boolean;
+                data: unknown;
                 logger?: Logger;
             }) => ({
                 sys: SYS_MARKER,
                 log: opts.logger,
                 isDryRun: opts.dryRun,
+                data: opts.data,
             }),
         );
     });
@@ -239,7 +246,13 @@ describe("ExecGeneratorScript", () => {
                 FrameType.RESPONSE_END,
             ]);
             expect(getCalls()).toEqual([
-                { name: "a", isDryRun: false, hasSys: true, hasLog: true },
+                {
+                    name: "a",
+                    isDryRun: false,
+                    hasSys: true,
+                    hasLog: true,
+                    data: null,
+                },
             ]);
         });
 
@@ -267,7 +280,7 @@ describe("ExecGeneratorScript", () => {
             expect(getCalls().map((c) => c.name)).toEqual(["async"]);
         });
 
-        test("creates the context once, with the request client and ambient logger", async () => {
+        test("creates a context per script, with the request client and ambient logger", async () => {
             const service = new ExecGeneratorScript();
             const harness = makeJsonHarness(
                 makePayload([genAPath, genBPath], false),
@@ -275,24 +288,47 @@ describe("ExecGeneratorScript", () => {
 
             await withLog(() => runService(harness, service));
 
-            expect(createContextMock).toHaveBeenCalledTimes(1);
+            expect(createContextMock).toHaveBeenCalledTimes(2);
             expect(createContextMock).toHaveBeenCalledWith({
                 clientHandle: ClientHandle.DUMMY,
                 dryRun: false,
+                data: null,
                 logger: TEST_LOGGER,
             });
         });
 
-        test("treats an empty paths array as a no-op success", async () => {
+        test("treats an empty payload as a no-op success", async () => {
             const service = new ExecGeneratorScript();
             const harness = makeJsonHarness(makePayload([], false));
 
             const result = await withLog(() => runService(harness, service));
 
             expect(result.status).toBe(Number(ResponseStatusCode.SUCCESS));
-            // The context is still created, but no generator runs.
-            expect(createContextMock).toHaveBeenCalledTimes(1);
+            // No scripts means no contexts are created.
+            expect(createContextMock).toHaveBeenCalledTimes(0);
             expect(getCalls()).toEqual([]);
+        });
+
+        test("threads per-script data into the context", async () => {
+            const service = new ExecGeneratorScript();
+            const harness = makeJsonHarness(
+                makePayload([genAPath], false, { hello: "world" }),
+            );
+
+            await withLog(() => runService(harness, service));
+
+            expect(createContextMock).toHaveBeenCalledWith(
+                expect.objectContaining({ data: { hello: "world" } }),
+            );
+            expect(getCalls()).toEqual([
+                {
+                    name: "a",
+                    isDryRun: false,
+                    hasSys: true,
+                    hasLog: true,
+                    data: { hello: "world" },
+                },
+            ]);
         });
     });
 
@@ -307,7 +343,13 @@ describe("ExecGeneratorScript", () => {
                 expect.objectContaining({ dryRun: true }),
             );
             expect(getCalls()).toEqual([
-                { name: "a", isDryRun: true, hasSys: true, hasLog: true },
+                {
+                    name: "a",
+                    isDryRun: true,
+                    hasSys: true,
+                    hasLog: true,
+                    data: null,
+                },
             ]);
         });
 
@@ -318,7 +360,13 @@ describe("ExecGeneratorScript", () => {
             await withLog(() => runService(harness, service));
 
             expect(getCalls()).toEqual([
-                { name: "a", isDryRun: false, hasSys: true, hasLog: true },
+                {
+                    name: "a",
+                    isDryRun: false,
+                    hasSys: true,
+                    hasLog: true,
+                    data: null,
+                },
             ]);
         });
     });
@@ -442,9 +490,9 @@ describe("ExecGeneratorScript", () => {
     });
 
     describe("invalid request payload", () => {
-        test("rejects a body that is not an object with 400", async () => {
+        test("rejects a body that is not an array with 400", async () => {
             const service = new ExecGeneratorScript();
-            const harness = makeJsonHarness([genAPath]);
+            const harness = makeJsonHarness({ path: genAPath });
 
             const result = await withLog(() => runService(harness, service));
 
@@ -453,42 +501,42 @@ describe("ExecGeneratorScript", () => {
             expect(createContextMock).not.toHaveBeenCalled();
         });
 
-        test("rejects a payload missing params with 400", async () => {
+        test("rejects an entry missing params with 400", async () => {
             const service = new ExecGeneratorScript();
-            const harness = makeJsonHarness({ paths: [genAPath] });
+            const harness = makeJsonHarness([{ path: genAPath }]);
 
             const result = await withLog(() => runService(harness, service));
 
             expect(result.status).toBe(400);
         });
 
-        test("rejects a payload whose dry_run is not a boolean with 400", async () => {
+        test("rejects an entry whose dry_run is not a boolean with 400", async () => {
             const service = new ExecGeneratorScript();
-            const harness = makeJsonHarness({
-                paths: [genAPath],
-                params: { dry_run: "yes" },
-            });
+            const harness = makeJsonHarness([
+                { path: genAPath, params: { dry_run: "yes", data: null } },
+            ]);
 
             const result = await withLog(() => runService(harness, service));
 
             expect(result.status).toBe(400);
         });
 
-        test("rejects a payload missing paths with 400", async () => {
+        test("rejects an entry missing path with 400", async () => {
             const service = new ExecGeneratorScript();
-            const harness = makeJsonHarness({ params: { dry_run: false } });
+            const harness = makeJsonHarness([
+                { params: { dry_run: false, data: null } },
+            ]);
 
             const result = await withLog(() => runService(harness, service));
 
             expect(result.status).toBe(400);
         });
 
-        test("rejects a payload with non-string path entries with 400", async () => {
+        test("rejects an entry with a non-string path with 400", async () => {
             const service = new ExecGeneratorScript();
-            const harness = makeJsonHarness({
-                paths: [genAPath, 42],
-                params: { dry_run: false },
-            });
+            const harness = makeJsonHarness([
+                { path: 42, params: { dry_run: false, data: null } },
+            ]);
 
             const result = await withLog(() => runService(harness, service));
 

@@ -38,6 +38,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::Arc,
+    time::SystemTime,
 };
 
 use omni_discovery_utils::glob::GlobMatcher;
@@ -50,7 +51,6 @@ use system_traits::{
     BaseFsRenameAsync, BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync,
     EnvVars, FileType, FsCreateDirAll, FsMetadata, FsMetadataValue, FsRead,
     FsRemoveFile, FsWrite,
-    boxed::BoxedFsMetadataValue,
     impls::{InMemorySys, RealSys},
 };
 use tokio::sync::Mutex;
@@ -446,9 +446,141 @@ impl<S: GeneratorSys> BaseFsCopyAsync for TransactionSys<S> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Metadata
+// ---------------------------------------------------------------------------
+
+/// A `Send + Sync` snapshot of an [`FsMetadataValue`].
+///
+/// [`BoxedFsMetadataValue`] erases the concrete metadata type behind a
+/// `Box<dyn FsMetadataValue>`, which is **not** `Send`. Services that run on the
+/// bridge RPC (see `bridge_rpc_services`) require their system handle's
+/// `Metadata` to be `Send`, so [`TransactionSys`] captures every field eagerly
+/// into this owned, thread-safe snapshot instead.
+#[derive(Debug, Clone)]
+pub struct OwnedMetadata {
+    file_type: FileType,
+    len: u64,
+    accessed: Option<SystemTime>,
+    created: Option<SystemTime>,
+    changed: Option<SystemTime>,
+    modified: Option<SystemTime>,
+    dev: Option<u64>,
+    ino: Option<u64>,
+    mode: Option<u32>,
+    nlink: Option<u64>,
+    uid: Option<u32>,
+    gid: Option<u32>,
+    rdev: Option<u64>,
+    blksize: Option<u64>,
+    blocks: Option<u64>,
+    is_block_device: Option<bool>,
+    is_char_device: Option<bool>,
+    is_fifo: Option<bool>,
+    is_socket: Option<bool>,
+    file_attributes: Option<u32>,
+}
+
+impl OwnedMetadata {
+    /// Eagerly captures every field of `metadata` into an owned snapshot.
+    fn capture<M: FsMetadataValue>(metadata: &M) -> Self {
+        Self {
+            file_type: metadata.file_type(),
+            len: metadata.len(),
+            accessed: metadata.accessed().ok(),
+            created: metadata.created().ok(),
+            changed: metadata.changed().ok(),
+            modified: metadata.modified().ok(),
+            dev: metadata.dev().ok(),
+            ino: metadata.ino().ok(),
+            mode: metadata.mode().ok(),
+            nlink: metadata.nlink().ok(),
+            uid: metadata.uid().ok(),
+            gid: metadata.gid().ok(),
+            rdev: metadata.rdev().ok(),
+            blksize: metadata.blksize().ok(),
+            blocks: metadata.blocks().ok(),
+            is_block_device: metadata.is_block_device().ok(),
+            is_char_device: metadata.is_char_device().ok(),
+            is_fifo: metadata.is_fifo().ok(),
+            is_socket: metadata.is_socket().ok(),
+            file_attributes: metadata.file_attributes().ok(),
+        }
+    }
+}
+
+fn unavailable<T>(opt: Option<T>) -> io::Result<T> {
+    opt.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::Unsupported, "metadata field unavailable")
+    })
+}
+
+impl FsMetadataValue for OwnedMetadata {
+    fn file_type(&self) -> FileType {
+        self.file_type
+    }
+    fn len(&self) -> u64 {
+        self.len
+    }
+    fn accessed(&self) -> io::Result<SystemTime> {
+        unavailable(self.accessed)
+    }
+    fn created(&self) -> io::Result<SystemTime> {
+        unavailable(self.created)
+    }
+    fn changed(&self) -> io::Result<SystemTime> {
+        unavailable(self.changed)
+    }
+    fn modified(&self) -> io::Result<SystemTime> {
+        unavailable(self.modified)
+    }
+    fn dev(&self) -> io::Result<u64> {
+        unavailable(self.dev)
+    }
+    fn ino(&self) -> io::Result<u64> {
+        unavailable(self.ino)
+    }
+    fn mode(&self) -> io::Result<u32> {
+        unavailable(self.mode)
+    }
+    fn nlink(&self) -> io::Result<u64> {
+        unavailable(self.nlink)
+    }
+    fn uid(&self) -> io::Result<u32> {
+        unavailable(self.uid)
+    }
+    fn gid(&self) -> io::Result<u32> {
+        unavailable(self.gid)
+    }
+    fn rdev(&self) -> io::Result<u64> {
+        unavailable(self.rdev)
+    }
+    fn blksize(&self) -> io::Result<u64> {
+        unavailable(self.blksize)
+    }
+    fn blocks(&self) -> io::Result<u64> {
+        unavailable(self.blocks)
+    }
+    fn is_block_device(&self) -> io::Result<bool> {
+        unavailable(self.is_block_device)
+    }
+    fn is_char_device(&self) -> io::Result<bool> {
+        unavailable(self.is_char_device)
+    }
+    fn is_fifo(&self) -> io::Result<bool> {
+        unavailable(self.is_fifo)
+    }
+    fn is_socket(&self) -> io::Result<bool> {
+        unavailable(self.is_socket)
+    }
+    fn file_attributes(&self) -> io::Result<u32> {
+        unavailable(self.file_attributes)
+    }
+}
+
 #[async_trait::async_trait]
 impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
-    type Metadata = BoxedFsMetadataValue;
+    type Metadata = OwnedMetadata;
 
     async fn base_fs_metadata_async(
         &self,
@@ -460,7 +592,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         if st.overlay.fs_exists_no_err(&cp)
             && let Ok(metadata) = st.overlay.fs_metadata(&cp)
         {
-            return Ok(BoxedFsMetadataValue::new(metadata));
+            return Ok(OwnedMetadata::capture(&metadata));
         }
         if is_shadowed(&st.deleted, &cp) {
             return Err(not_found(&cp));
@@ -470,7 +602,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
             .real
             .base_fs_metadata_async(&cp)
             .await
-            .map(BoxedFsMetadataValue::new)?;
+            .map(|m| OwnedMetadata::capture(&m))?;
 
         // Materialise directories into the overlay so directory listings can
         // merge dry-run additions with the real tree.
@@ -491,7 +623,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         if st.overlay.fs_exists_no_err(&cp)
             && let Ok(metadata) = st.overlay.fs_symlink_metadata(&cp)
         {
-            return Ok(BoxedFsMetadataValue::new(metadata));
+            return Ok(OwnedMetadata::capture(&metadata));
         }
         if is_shadowed(&st.deleted, &cp) {
             return Err(not_found(&cp));
@@ -500,7 +632,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         self.real
             .base_fs_symlink_metadata_async(&cp)
             .await
-            .map(BoxedFsMetadataValue::new)
+            .map(|m| OwnedMetadata::capture(&m))
     }
 }
 

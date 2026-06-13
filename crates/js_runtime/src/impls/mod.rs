@@ -17,7 +17,7 @@ pub trait DelegatingJsRuntimeTransport:
 {
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
@@ -27,6 +27,18 @@ pub enum DelegatingJsRuntimeOption {
     Bun,
     #[default]
     Auto,
+}
+
+impl DelegatingJsRuntimeOption {
+    /// Resolves [`Auto`](Self::Auto) to a concrete runtime detected on `PATH`.
+    /// Concrete variants are returned unchanged. Returns `None` only when
+    /// `Auto` is requested and no runtime is found.
+    pub fn resolve(self) -> Option<DelegatingJsRuntimeOption> {
+        match self {
+            DelegatingJsRuntimeOption::Auto => auto_detect_runtime_option(),
+            concrete => Some(concrete),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -124,12 +136,12 @@ where
 }
 
 fn auto_detect_runtime_option() -> Option<DelegatingJsRuntimeOption> {
-    Some(if which::which("deno").is_ok() {
+    Some(if which::which("bun").is_ok() {
+        DelegatingJsRuntimeOption::Bun
+    } else if which::which("deno").is_ok() {
         DelegatingJsRuntimeOption::Deno
     } else if which::which("node").is_ok() {
         DelegatingJsRuntimeOption::Node
-    } else if which::which("bun").is_ok() {
-        DelegatingJsRuntimeOption::Bun
     } else {
         return None;
     })

@@ -10,7 +10,7 @@ use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    GeneratorSys, GeneratorSysFull,
+    GeneratorSys, GeneratorSysFull, LazyScriptRunner,
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     gen_session::GenSession,
@@ -76,7 +76,18 @@ async fn run_in_transaction<'a>(
     sys: &impl GeneratorSys,
 ) -> Result<GenSession, Error> {
     let tx = TransactionSys::new(sys.clone());
-    let session = run_internal(r#gen, config, &tx).await?;
+    let runner = LazyScriptRunner::new(
+        tx.clone(),
+        config.workspace_dir.to_path_buf(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
+
+    let result = run_internal(r#gen, config, &tx, &runner).await;
+
+    // Tear down the JS process (if one was started) regardless of outcome.
+    runner.shutdown().await;
+
+    let session = result?;
 
     if !config.dry_run {
         tx.commit().await?;
@@ -89,6 +100,7 @@ pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a>,
     sys: &impl GeneratorSysFull,
+    runner: &LazyScriptRunner,
 ) -> Result<GenSession, Error> {
     let prompting_config = PromptingConfiguration {
         use_defaults: config.use_prompt_defaults,
@@ -163,6 +175,7 @@ pub(crate) async fn run_internal<'a>(
         target_overrides: config.target_overrides,
         current_dir: config.current_dir,
         env: config.env,
+        script_runner: runner,
     };
 
     execute_actions(&args, &session, sys).await?;

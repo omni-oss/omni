@@ -10,5 +10,6 @@ export default function generatorB(ctx) {
         isDryRun: ctx.isDryRun,
         hasSys: Boolean(ctx.sys),
         hasLog: Boolean(ctx.log),
+        data: ctx.data,
     });
 }

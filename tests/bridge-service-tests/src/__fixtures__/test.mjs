@@ -2,5 +2,7 @@
 // @ts-ignore
 
 export default function (ctx) {
-    ctx.log.info("Hello from the generator script!");
+    ctx.log.info(
+        `Hello from the generator script! data=${JSON.stringify(ctx.data)}`,
+    );
 }

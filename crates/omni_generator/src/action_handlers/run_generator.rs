@@ -104,7 +104,8 @@ pub async fn run_generator<'a>(
     };
 
     let prompted_values =
-        Box::pin(run_internal(generator, &run_config, sys)).await?;
+        Box::pin(run_internal(generator, &run_config, sys, ctx.script_runner))
+            .await?;
 
     ctx.gen_session.merge(prompted_values);
 

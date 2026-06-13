@@ -22,9 +22,12 @@ import { json, TEXT } from "@/helpers";
 /** Shared fixture script path (already used in the non-throughput spec). */
 const FIXTURE_SCRIPT = join(__dirname, "../__fixtures__/test.mjs");
 
-interface ExecParams {
-    paths: string[];
-    params: Record<string, unknown>;
+interface ScriptInvocation {
+    path: string;
+    params: {
+        dry_run: boolean;
+        data: unknown;
+    };
 }
 
 /**
@@ -32,7 +35,7 @@ interface ExecParams {
  * response status and raw body bytes.
  */
 async function execScript(
-    payload: ExecParams,
+    payload: ScriptInvocation[],
 ): Promise<{ status: ResponseStatusCode; body: Uint8Array }> {
     const req = await TsRpcClient.request("/exec-generator-script");
     const active = await req.start();
@@ -61,10 +64,12 @@ describe("bridge-service – throughput (/exec-generator-script)", {
 }, () => {
     it("handles 50 concurrent requests without errors", async () => {
         const COUNT = 50;
-        const payload: ExecParams = {
-            paths: [FIXTURE_SCRIPT],
-            params: { dry_run: true },
-        };
+        const payload: ScriptInvocation[] = [
+            {
+                path: FIXTURE_SCRIPT,
+                params: { dry_run: true, data: null },
+            },
+        ];
 
         const start = performance.now();
         const results = await Promise.all(
@@ -84,10 +89,12 @@ describe("bridge-service – throughput (/exec-generator-script)", {
 
     it("handles 200 sequential requests without framing errors", async () => {
         const COUNT = 200;
-        const payload: ExecParams = {
-            paths: [FIXTURE_SCRIPT],
-            params: { dry_run: true },
-        };
+        const payload: ScriptInvocation[] = [
+            {
+                path: FIXTURE_SCRIPT,
+                params: { dry_run: true, data: null },
+            },
+        ];
 
         const start = performance.now();
         for (let i = 0; i < COUNT; i++) {
@@ -105,10 +112,12 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         // All requests use dry_run=true; this validates that responses are
         // routed back to the correct request ID under high concurrency.
         const COUNT = 100;
-        const payload: ExecParams = {
-            paths: [FIXTURE_SCRIPT],
-            params: { dry_run: true },
-        };
+        const payload: ScriptInvocation[] = [
+            {
+                path: FIXTURE_SCRIPT,
+                params: { dry_run: true, data: null },
+            },
+        ];
 
         const start = performance.now();
         const results = await Promise.all(
@@ -135,10 +144,12 @@ describe("bridge-service – throughput (/exec-generator-script)", {
 
     it("responds to pings while exec-generator-script requests are in flight", async () => {
         const COUNT = 30;
-        const payload: ExecParams = {
-            paths: [FIXTURE_SCRIPT],
-            params: { dry_run: true },
-        };
+        const payload: ScriptInvocation[] = [
+            {
+                path: FIXTURE_SCRIPT,
+                params: { dry_run: true, data: null },
+            },
+        ];
 
         // Start a wave of requests without awaiting them yet.
         const loadPromise = Promise.all(
@@ -165,10 +176,12 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         // batch of requests, pauses, then fires another batch.
         const BATCH_SIZE = 40;
         const BATCHES = 3;
-        const payload: ExecParams = {
-            paths: [FIXTURE_SCRIPT],
-            params: { dry_run: true },
-        };
+        const payload: ScriptInvocation[] = [
+            {
+                path: FIXTURE_SCRIPT,
+                params: { dry_run: true, data: null },
+            },
+        ];
 
         const start = performance.now();
 
