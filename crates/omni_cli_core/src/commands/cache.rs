@@ -283,13 +283,13 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
     let tasks = cli_args.task.iter().map(|s| s.as_str()).collect::<Vec<_>>();
     let dirs = cli_args.dir.iter().map(|s| s.as_str()).collect::<Vec<_>>();
 
-    let args = PruneCacheArgs::new(
-        if cli_args.dry_run {
+    let args = PruneCacheArgs {
+        dry_run: if cli_args.dry_run {
             true
         } else {
             !cli_args.yes
         },
-        if cli_args.stale_only {
+        stale_only: if cli_args.stale_only {
             loaded_context = ctx.clone().into_loaded().await?;
             // loaded_context.get_cache_info(project_name, task_name);
             PruneStaleOnly::new_on(PruneCommandsContextWrapper::new(
@@ -298,12 +298,12 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         } else {
             PruneStaleOnly::new_off()
         },
-        cli_args.older_than,
-        projects.as_slice(),
-        dirs.as_slice(),
-        tasks.as_slice(),
-        cli_args.larger_than,
-    );
+        older_than: cli_args.older_than,
+        project_name_globs: projects.as_slice(),
+        task_name_globs: tasks.as_slice(),
+        dir_globs: dirs.as_slice(),
+        larger_than: cli_args.larger_than,
+    };
 
     let pruned = cache_store.prune_caches(&args).await?;
     if pruned.is_empty() {
