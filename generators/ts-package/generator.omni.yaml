@@ -154,7 +154,7 @@ actions:
     target: cog_config
     entries:
       - content: |
-          [packages."{{ vars.full_package_name }}"]
+          [monorepo.packages."{{ vars.full_package_name }}"]
           path = "{{ vars.generated_dir }}"
           include = [
               "{{ vars.generated_dir }}/**",

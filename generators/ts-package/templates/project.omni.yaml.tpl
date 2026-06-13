@@ -12,7 +12,7 @@ extends:
   - "@workspace/omni/presets/ts-vite-test.omni.yaml"
 {% endif %}
 
-depedencies:
+dependencies:
   append:
     - "@omni-oss/tsconfig"
     - "@omni-oss/vite-config"

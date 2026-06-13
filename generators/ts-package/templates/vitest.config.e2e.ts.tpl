@@ -5,7 +5,7 @@ import baseConfig from "./vite.config";
 export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
     test: {
         include: [
-            "./src/**/*.service.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
+            "./src/**/*.e2e.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",
         ],
         exclude: [
             "./src/**/__tests__/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}",

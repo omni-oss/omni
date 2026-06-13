@@ -121,7 +121,7 @@ actions:
     target: cog_config
     entries:
       - content: |
-          [packages.{{ prompts.crate_name }}]
+          [monorepo.packages.{{ prompts.crate_name }}]
           path = "{{ data.generated_dir }}"
           include = [
               "{{ data.generated_dir }}/**",
