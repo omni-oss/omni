@@ -16,7 +16,7 @@ pub struct ProjectDiscovery<'a> {
 }
 
 static IGNORE_FILES: LazyLock<[String; 1]> =
-    LazyLock::new(|| [constants::PROJECT_OMNI.to_string()]);
+    LazyLock::new(|| [constants::OMNI_IGNORE.to_string()]);
 
 static CONFIG_FILES: LazyLock<Vec<String>> = LazyLock::new(|| {
     constants::SUPPORTED_EXTENSIONS
