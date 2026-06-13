@@ -1,0 +1,23 @@
+{
+    "name": "@omni-oss/omni-tests",
+    "description": "A TypeScript Package",
+    "version": "0.0.0-semantically-released",
+    "dependencies": {
+        "@omni-oss/log": "workspace:^",
+        "zod": "catalog:",
+        "execa": "catalog:",
+        "node-pty": "catalog:",
+        "@xterm/headless": "catalog:",
+        "yaml": "catalog:",
+        "smol-toml": "catalog:"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/node": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+        "typescript": "catalog:"
+    }
+}

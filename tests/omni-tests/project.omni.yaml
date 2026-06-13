@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/omni-tests"
+
+extends:
+
+  - "@workspace/omni/presets/ts-vite-test.omni.yaml"
+
+dependencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+
+tasks:
+  test:e2e:
+    enabled: true
+    dependencies:
+      append:
+        - omni#build

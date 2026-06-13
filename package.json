@@ -37,6 +37,11 @@
         "vitest": "^4.1.8",
         "zod": "^4.4.3",
         "@commander-js/extra-typings": "^14.0.0",
-        "@logtape/logtape": "^2.1.1"
+        "@logtape/logtape": "^2.1.1",
+        "execa": "^9.6.1",
+        "node-pty": "^1.1.0",
+        "@xterm/headless": "^6.0.0",
+        "yaml": "^2.9.0",
+        "smol-toml": "^1.6.1"
     }
 }

@@ -30,3 +30,8 @@ result-summary.json
 .tests
 jobs.json
 orcs.config.json
+
+# contributors should have their own todo.txt and agents files
+**/todo.txt
+**/AGENTS.md
+.agents

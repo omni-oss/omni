@@ -545,6 +545,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages."@omni-oss/omni-tests"]
+path = "tests/omni-tests"
+include = [
+    "tests/omni-tests/**",
+]
+public_api = false
+
 #@anchor:new-typescript-package
 
 [monorepo.packages.root]
