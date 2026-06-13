@@ -1,8 +1,11 @@
 use std::{
     io::Cursor,
     path::{Path, PathBuf},
-    sync::Arc,
-    time::SystemTime,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use bytes::Bytes;
@@ -32,8 +35,8 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use system_traits::{
     FsCreateDirAllAsync, FsHardLinkAsync as _, FsMetadataAsync,
-    FsReadAsync as _, FsRemoveDirAllAsync as _, FsWriteAsync as _,
-    impls::RealSys,
+    FsReadAsync as _, FsRemoveDirAllAsync as _, FsRenameAsync as _,
+    FsWriteAsync as _, impls::RealSys,
 };
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
@@ -47,6 +50,10 @@ use crate::{
     impls::{
         cache_archive::archive,
         last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
+        lock::{
+            CacheLockGuard, LAST_USED_LOCK_FILE, PRUNE_LOCK_FILE,
+            lock_file_path,
+        },
     },
 };
 
@@ -162,6 +169,20 @@ impl HybridTaskExecutionCacheStore {
         &self,
         tasks: &[Option<CachedTaskExecution>],
     ) -> Result<(), LocalTaskExecutionCacheStoreError> {
+        // Nothing to record: avoid taking the lock or touching the db file.
+        if tasks.iter().all(|t| t.is_none()) {
+            return Ok(());
+        }
+
+        // The timestamps db is a single shared file mutated read-modify-write
+        // by every process, so serialize access with an exclusive lock to
+        // avoid lost updates and torn writes.
+        let _guard = CacheLockGuard::acquire_exclusive(lock_file_path(
+            &self.cache_dir,
+            LAST_USED_LOCK_FILE,
+        ))
+        .await?;
+
         let path = self.cache_dir.join(LAST_USED_TIMESTAMPS_DB_FILE);
         let mut last_used_db = LocalLastUsedDb::load(&path).await?;
         let dir = OffsetDateTime::now_utc();
@@ -180,11 +201,174 @@ impl HybridTaskExecutionCacheStore {
         last_used_db.save().await?;
         Ok(())
     }
+
+    /// Atomically publishes a fully-populated staging directory to its final
+    /// content-addressed location.
+    ///
+    /// Because entries are content-addressed, an entry that already exists is
+    /// equivalent to ours, so a publish that loses the race is still a
+    /// success. Returns once the destination holds a complete entry.
+    async fn publish_staging(
+        &self,
+        staging_dir: &Path,
+        output_dir: &Path,
+        metadata_path: &Path,
+    ) -> Result<(), LocalTaskExecutionCacheStoreError> {
+        const MAX_ATTEMPTS: usize = 5;
+
+        for _ in 0..MAX_ATTEMPTS {
+            match self.sys.fs_rename_async(staging_dir, output_dir).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    // A peer published an identical entry first. Discard our
+                    // staging copy and treat this as success.
+                    if self.sys.fs_exists_async(metadata_path).await? {
+                        let _ =
+                            self.sys.fs_remove_dir_all_async(staging_dir).await;
+                        return Ok(());
+                    }
+
+                    // A stale/partial directory (no metadata sentinel) is
+                    // occupying the destination, e.g. left by an older omni
+                    // version or a crashed run. Clear it and retry.
+                    if self.sys.fs_exists_async(output_dir).await? {
+                        let _ =
+                            self.sys.fs_remove_dir_all_async(output_dir).await;
+                        continue;
+                    }
+
+                    // Genuine, unrecoverable failure.
+                    let _ = self.sys.fs_remove_dir_all_async(staging_dir).await;
+                    return Err(e.into());
+                }
+            }
+        }
+
+        let _ = self.sys.fs_remove_dir_all_async(staging_dir).await;
+        Err(std::io::Error::other(
+            "failed to publish cache entry after multiple attempts",
+        )
+        .into())
+    }
+
+    /// Removes the given cache entries from disk without taking the prune
+    /// lock. Callers must already hold the exclusive prune lock.
+    async fn force_prune_inner(
+        &self,
+        entries: &[PrunedCacheEntry],
+    ) -> Result<(), LocalTaskExecutionCacheStoreError> {
+        for entry in entries {
+            if !tokio::fs::try_exists(&entry.entry_dir).await? {
+                log::debug!(
+                    "Cache entry does not exist: {}",
+                    entry.entry_dir.display()
+                );
+                continue;
+            }
+
+            tokio::fs::remove_dir_all(&entry.entry_dir)
+                .await
+                .inspect_err(|e| {
+                    log::error!("Failed to delete cache entry: {}", e)
+                })?;
+
+            log::debug!("Pruned cache entry: {}", entry.entry_dir.display());
+        }
+
+        Ok(())
+    }
+
+    /// Reclaims staging directories left behind by crashed processes.
+    ///
+    /// Only directories older than `max_age` are removed, so a
+    /// concurrently-publishing peer's fresh staging directory is never
+    /// touched. Best-effort: individual failures are logged and skipped.
+    async fn prune_stale_staging_dirs(&self, max_age: std::time::Duration) {
+        let now = SystemTime::now();
+        let mut projects = match tokio::fs::read_dir(&self.cache_dir).await {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+
+        while let Ok(Some(project)) = projects.next_entry().await {
+            let output_dir = project.path().join("output");
+            let mut entries = match tokio::fs::read_dir(&output_dir).await {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name();
+                if !name.to_string_lossy().starts_with(STAGING_PREFIX) {
+                    continue;
+                }
+
+                let stale = entry
+                    .metadata()
+                    .await
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|modified| now.duration_since(modified).ok())
+                    .is_some_and(|age| age >= max_age);
+
+                if stale
+                    && let Err(e) =
+                        tokio::fs::remove_dir_all(entry.path()).await
+                {
+                    log::debug!(
+                        "failed to reclaim stale staging dir {}: {e}",
+                        entry.path().display()
+                    );
+                }
+            }
+        }
+    }
 }
 
 const LOGS_CACHE_FILE: &str = "logs.cache";
 const CACHE_OUTPUT_METADATA_FILE: &str = "cache.meta.bin";
 const LAST_USED_TIMESTAMPS_DB_FILE: &str = "last-used-timestamps.db";
+
+/// Prefix for in-progress staging directories created while publishing a
+/// cache entry. A staging directory is populated in full and then atomically
+/// renamed into its final (content-addressed) location, so readers never
+/// observe a half-written entry. Anything bearing this prefix is internal
+/// scratch state and must be ignored by readers/stats and reclaimed by prune.
+const STAGING_PREFIX: &str = ".staging-";
+
+/// Staging directories older than this are considered orphaned (left behind by
+/// a crashed process) and are reclaimed during prune.
+const STALE_STAGING_AGE: std::time::Duration =
+    std::time::Duration::from_secs(60 * 60);
+
+/// Process-wide counter ensuring staging directory names are unique even when
+/// a single process publishes the same digest from multiple tasks at once.
+static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Builds a unique staging directory path that is a sibling of `output_dir`
+/// (and therefore on the same filesystem, so the publishing rename is atomic).
+fn staging_dir_for(output_dir: &Path) -> PathBuf {
+    let parent = output_dir.parent().unwrap_or(output_dir);
+    let digest_name = output_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    let pid = std::process::id();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let seq = STAGING_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+    parent.join(format!("{STAGING_PREFIX}{digest_name}-{pid}-{nanos}-{seq}"))
+}
+
+/// Returns whether a directory entry name denotes internal cache scratch state
+/// (staging dirs or the lock folder) rather than a real cache entry.
+fn is_internal_cache_entry(name: &str) -> bool {
+    name.starts_with('.')
+}
 
 #[async_trait::async_trait]
 impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
@@ -235,91 +419,134 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             Vec::new()
         };
 
+        // Hold a shared prune lock for the duration of publishing so a
+        // concurrent prune cannot delete an entry we are renaming into place.
+        // Multiple publishers share the lock and never block each other.
+        let _prune_guard = CacheLockGuard::acquire_shared(lock_file_path(
+            &self.cache_dir,
+            PRUNE_LOCK_FILE,
+        ))
+        .await?;
+
         for result in results {
             let output_dir =
                 result.cache_output_dir.as_deref().expect("should be some");
-            let output_files = result.output_files.expect("should be some");
-
-            // clear up just in case before writing new files
-            if self.sys.fs_exists_async(output_dir).await? {
-                self.sys.fs_remove_dir_all_async(output_dir).await?;
-            }
-
-            self.sys.fs_create_dir_all_async(output_dir).await?;
-
-            let log_content = logs_map[&result.task.project_name];
-            let logs_path = if log_content.is_some() {
-                Some(output_dir.join(LOGS_CACHE_FILE))
-            } else {
-                None
-            };
-
-            if let (Some(logs_path), Some(logs_content)) =
-                (logs_path.as_ref(), log_content)
-            {
-                self.sys.fs_write_async(logs_path, logs_content).await?;
-            }
-
-            let mut cache_output_files = Vec::with_capacity(output_files.len());
-
-            for path in output_files {
-                let original_abs_path = path.resolve(&result.roots);
-                let cache_abs_file_path = output_dir
-                    .join(format!("{}.cache", hashtext(&path.to_string())));
-
-                self.sys
-                    .fs_hard_link_async(
-                        &original_abs_path,
-                        &cache_abs_file_path,
-                    )
-                    .await?;
-
-                log::debug!(
-                    "cache file hard link {original_abs_path:?} to {cache_abs_file_path:?}"
-                );
-
-                cache_output_files.push(CachedFileOutput {
-                    cached_path: relpath(&cache_abs_file_path, output_dir)
-                        .to_path_buf(),
-                    original_path: path,
-                });
-            }
-
-            let tfqn = format!(
-                "{}#{}",
-                result.task.project_name, result.task.task_name
-            );
-
-            let new_cache_info =
-                cache_info_map.get(&tfqn).expect("should be some");
-
-            // Internally all cached files are relative to the cached output dir
-            let metadata = CachedTaskExecution {
-                project_name: result.task.project_name.to_string(),
-                logs_path: logs_path
-                    .map(|p| relpath(&p, output_dir).to_path_buf()),
-                files: cache_output_files,
-                task_name: result.task.task_name.to_string(),
-                digest: result.digest.expect("should be some"),
-                task_exec: result.task.task_exec.map(|c| c.to_string()),
-                task_retry_exec: result
-                    .task
-                    .task_retry_exec
-                    .map(|c| c.to_string()),
-                execution_duration: new_cache_info.execution_duration,
-                exit_code: new_cache_info.exit_code,
-                execution_time: OffsetDateTime::now_utc(),
-                dependency_digests: new_cache_info
-                    .task
-                    .dependency_digests
-                    .to_vec(),
-                tries: new_cache_info.tries,
-            };
-            let bytes = rmp_serde::encode::to_vec(&metadata)?;
+            let output_files =
+                result.output_files.as_ref().expect("should be some");
 
             let metadata_path = output_dir.join(CACHE_OUTPUT_METADATA_FILE);
+            let log_content = logs_map[&result.task.project_name];
+            let digest = result.digest.expect("should be some");
 
-            self.sys.fs_write_async(&metadata_path, &bytes).await?;
+            // Cache entries are content-addressed by their digest, so an
+            // existing complete entry is byte-for-byte equivalent to what we
+            // would write. Reuse it instead of rewriting (which would race
+            // with peers reading or publishing the same digest).
+            let already_published =
+                self.sys.fs_exists_async(&metadata_path).await?;
+
+            if !already_published {
+                let tfqn = format!(
+                    "{}#{}",
+                    result.task.project_name, result.task.task_name
+                );
+                let new_cache_info =
+                    cache_info_map.get(&tfqn).expect("should be some");
+
+                // Build the entry in an isolated staging directory and then
+                // atomically rename it into place, so readers only ever see a
+                // fully-formed entry.
+                let staging_dir = staging_dir_for(output_dir);
+
+                let build = async {
+                    self.sys.fs_create_dir_all_async(&staging_dir).await?;
+
+                    let logs_rel = if let Some(logs_content) = log_content {
+                        self.sys
+                            .fs_write_async(
+                                staging_dir.join(LOGS_CACHE_FILE),
+                                logs_content,
+                            )
+                            .await?;
+                        Some(PathBuf::from(LOGS_CACHE_FILE))
+                    } else {
+                        None
+                    };
+
+                    let mut cache_output_files =
+                        Vec::with_capacity(output_files.len());
+
+                    for path in output_files.iter() {
+                        let original_abs_path = path.resolve(&result.roots);
+                        let cache_file_name = format!(
+                            "{}.cache",
+                            hashtext(&path.to_string())
+                        );
+                        let cache_abs_file_path =
+                            staging_dir.join(&cache_file_name);
+
+                        self.sys
+                            .fs_hard_link_async(
+                                &original_abs_path,
+                                &cache_abs_file_path,
+                            )
+                            .await?;
+
+                        log::debug!(
+                            "cache file hard link {original_abs_path:?} to {cache_abs_file_path:?}"
+                        );
+
+                        cache_output_files.push(CachedFileOutput {
+                            cached_path: PathBuf::from(cache_file_name),
+                            original_path: path.clone(),
+                        });
+                    }
+
+                    // All cached paths are stored relative to the entry dir.
+                    let metadata = CachedTaskExecution {
+                        project_name: result.task.project_name.to_string(),
+                        logs_path: logs_rel,
+                        files: cache_output_files,
+                        task_name: result.task.task_name.to_string(),
+                        digest,
+                        task_exec: result.task.task_exec.map(|c| c.to_string()),
+                        task_retry_exec: result
+                            .task
+                            .task_retry_exec
+                            .map(|c| c.to_string()),
+                        execution_duration: new_cache_info.execution_duration,
+                        exit_code: new_cache_info.exit_code,
+                        execution_time: OffsetDateTime::now_utc(),
+                        dependency_digests: new_cache_info
+                            .task
+                            .dependency_digests
+                            .to_vec(),
+                        tries: new_cache_info.tries,
+                    };
+                    let bytes = rmp_serde::encode::to_vec(&metadata)?;
+
+                    // Write the metadata last: its presence is the sentinel
+                    // that marks the entry complete.
+                    self.sys
+                        .fs_write_async(
+                            staging_dir.join(CACHE_OUTPUT_METADATA_FILE),
+                            &bytes,
+                        )
+                        .await?;
+
+                    Ok::<(), LocalTaskExecutionCacheStoreError>(())
+                }
+                .await;
+
+                if let Err(e) = build {
+                    let _ =
+                        self.sys.fs_remove_dir_all_async(&staging_dir).await;
+                    return Err(e);
+                }
+
+                self.publish_staging(&staging_dir, output_dir, &metadata_path)
+                    .await?;
+            }
 
             let execution_hash = CachedTaskExecutionHash {
                 project_name: result.task.project_name,
@@ -549,6 +776,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
             let file_name = entry.file_name();
             let enc_project_name = file_name.to_string_lossy();
+
+            // Skip internal scratch state (the `.locks` folder, staging dirs,
+            // etc.); it is never a bs58-encoded project directory.
+            if is_internal_cache_entry(&enc_project_name) {
+                continue;
+            }
+
             let project_name =
                 bs58::decode(&enc_project_name as &str).into_vec()?;
             let project_name =
@@ -586,6 +820,16 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                             "not a directory: {}",
                             entry.path().display()
                         );
+                        continue;
+                    }
+
+                    // Skip in-progress staging directories; they are not yet
+                    // published cache entries.
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(STAGING_PREFIX)
+                    {
                         continue;
                     }
 
@@ -702,6 +946,15 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         args: &PruneCacheArgs<'_, TContext>,
     ) -> Result<Vec<PrunedCacheEntry>, Self::Error> {
+        // Take the exclusive prune lock for the whole operation so we never
+        // delete an entry a peer is publishing into. Publishers hold this lock
+        // in shared mode, so they are excluded while we prune.
+        let _prune_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
+            &self.cache_dir,
+            PRUNE_LOCK_FILE,
+        ))
+        .await?;
+
         let stats = self
             .get_stats(args.project_name_globs, args.task_name_globs)
             .await?;
@@ -822,7 +1075,10 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         }
 
         if !args.dry_run {
-            self.force_prune_caches(&entries).await?;
+            // Already holding the exclusive prune lock; use the inner helper to
+            // avoid re-acquiring it (which would deadlock).
+            self.force_prune_inner(&entries).await?;
+            self.prune_stale_staging_dirs(STALE_STAGING_AGE).await;
         }
 
         Ok(entries)
@@ -832,25 +1088,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         &self,
         entries: &[PrunedCacheEntry],
     ) -> Result<(), Self::Error> {
-        for entry in entries {
-            if !tokio::fs::try_exists(&entry.entry_dir).await? {
-                log::debug!(
-                    "Cache entry does not exist: {}",
-                    entry.entry_dir.display()
-                );
-                continue;
-            }
+        let _prune_guard = CacheLockGuard::acquire_exclusive(lock_file_path(
+            &self.cache_dir,
+            PRUNE_LOCK_FILE,
+        ))
+        .await?;
 
-            tokio::fs::remove_dir_all(&entry.entry_dir)
-                .await
-                .inspect_err(|e| {
-                    log::error!("Failed to delete cache entry: {}", e)
-                })?;
-
-            log::debug!("Pruned cache entry: {}", entry.entry_dir.display());
-        }
-
-        Ok(())
+        self.force_prune_inner(entries).await
     }
 }
 
@@ -2011,5 +2255,235 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(output_files.len(), 2, "should contain the ignored files");
+    }
+
+    /// When many processes/tasks cache the same task (and therefore the same
+    /// content digest) at once, every call must succeed and the published
+    /// entry must be complete and readable. This reproduces the cache race
+    /// (formerly `crs-004`).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_cache_same_digest_is_safe() {
+        let temp = fixture(&["project1"]).await;
+        let root = temp.path().to_path_buf();
+        let cache = cache_store(&root);
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let cache = cache.clone();
+            let root = root.clone();
+            handles.push(tokio::spawn(async move {
+                let task = task("task", "project1", &root);
+                cache
+                    .cache(&new_cache_info(
+                        Some(&LOGS_CONTENT),
+                        task.get().clone(),
+                    ))
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }));
+        }
+
+        for handle in handles {
+            handle
+                .await
+                .expect("cache task panicked")
+                .expect("every concurrent cache call should succeed");
+        }
+
+        // The published entry must be complete and its files readable.
+        let task = task("task", "project1", &root);
+        let cached_output = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output")
+            .expect("cached output should exist after concurrent caching");
+
+        for file in cached_output.files.iter() {
+            assert_eq!(
+                read_bytes(&file.cached_path).await,
+                JS_CONTENT.as_bytes(),
+                "cached file content should be intact"
+            );
+        }
+
+        // No staging directories should be left behind.
+        let output_dir = root
+            .join(".omni/cache")
+            .join(path_safe("project1"))
+            .join("output");
+        let mut entries = tokio::fs::read_dir(&output_dir)
+            .await
+            .expect("output dir should exist");
+        while let Some(entry) =
+            entries.next_entry().await.expect("failed to read dir")
+        {
+            assert!(
+                !entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(STAGING_PREFIX),
+                "no staging dirs should remain: {}",
+                entry.path().display()
+            );
+        }
+    }
+
+    /// In-progress staging directories must be invisible to readers and stats,
+    /// even if they momentarily contain a metadata file.
+    #[tokio::test]
+    async fn test_staging_dirs_are_ignored_by_stats() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), task.get().clone()))
+            .await
+            .expect("failed to cache");
+
+        let output_dir = dir
+            .join(".omni/cache")
+            .join(path_safe("project1"))
+            .join("output");
+
+        // Find the real published entry.
+        let mut entries =
+            tokio::fs::read_dir(&output_dir).await.expect("read output");
+        let real_entry = entries
+            .next_entry()
+            .await
+            .expect("read entry")
+            .expect("a published entry should exist")
+            .path();
+
+        // Plant a staging directory that even has a valid metadata file; it
+        // must still be ignored purely by its name.
+        let staging = output_dir.join(format!("{STAGING_PREFIX}planted"));
+        tokio::fs::create_dir_all(&staging)
+            .await
+            .expect("mk staging");
+        tokio::fs::copy(
+            real_entry.join(CACHE_OUTPUT_METADATA_FILE),
+            staging.join(CACHE_OUTPUT_METADATA_FILE),
+        )
+        .await
+        .expect("copy meta");
+
+        let stats = cache
+            .get_stats(&["project1"], &[])
+            .await
+            .expect("failed to get stats");
+
+        let project = stats
+            .projects
+            .iter()
+            .find(|p| p.project_name == "project1")
+            .expect("project1 should be present");
+
+        assert_eq!(
+            project.tasks.len(),
+            1,
+            "the planted staging dir must not be counted as a cache entry"
+        );
+    }
+
+    /// Prune reclaims orphaned staging directories older than the threshold,
+    /// but leaves fresh ones (which may belong to a concurrent publisher).
+    #[tokio::test]
+    async fn test_prune_reclaims_stale_staging_dirs() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+
+        let output_dir = dir
+            .join(".omni/cache")
+            .join(path_safe("project1"))
+            .join("output");
+        tokio::fs::create_dir_all(&output_dir)
+            .await
+            .expect("mk output");
+
+        let orphan = output_dir.join(format!("{STAGING_PREFIX}orphan"));
+        tokio::fs::create_dir_all(&orphan).await.expect("mk orphan");
+
+        // With a zero threshold, the orphan is considered stale and removed.
+        cache
+            .prune_stale_staging_dirs(std::time::Duration::ZERO)
+            .await;
+        assert!(
+            !tokio::fs::try_exists(&orphan).await.unwrap(),
+            "stale staging dir should be reclaimed"
+        );
+
+        // A fresh staging dir must survive a sweep with a real threshold.
+        let fresh = output_dir.join(format!("{STAGING_PREFIX}fresh"));
+        tokio::fs::create_dir_all(&fresh).await.expect("mk fresh");
+        cache
+            .prune_stale_staging_dirs(std::time::Duration::from_secs(3600))
+            .await;
+        assert!(
+            tokio::fs::try_exists(&fresh).await.unwrap(),
+            "fresh staging dir must not be reclaimed"
+        );
+    }
+
+    /// Concurrent reads each update the shared last-used-timestamps database.
+    /// The exclusive lock plus atomic save must keep the file valid and avoid
+    /// lost updates corrupting it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_concurrent_last_used_updates_keep_db_valid() {
+        let temp = fixture(&["project1"]).await;
+        let root = temp.path().to_path_buf();
+        let cache = cache_store(&root);
+
+        let seed_task = task("task", "project1", &root);
+        cache
+            .cache(&new_cache_info(
+                Some(&LOGS_CONTENT),
+                seed_task.get().clone(),
+            ))
+            .await
+            .expect("failed to cache");
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let cache = cache.clone();
+            let root = root.clone();
+            handles.push(tokio::spawn(async move {
+                let task = task("task", "project1", &root);
+                cache
+                    .get(task.get())
+                    .await
+                    .map(|o| o.is_some())
+                    .map_err(|e| e.to_string())
+            }));
+        }
+
+        for handle in handles {
+            let found = handle
+                .await
+                .expect("get task panicked")
+                .expect("concurrent get should succeed");
+            assert!(found, "cached output should exist");
+        }
+
+        // The db must still be loadable and report a last-used timestamp.
+        let stats = cache
+            .get_stats(&["project1"], &[])
+            .await
+            .expect("last-used db should remain valid");
+        let project = stats
+            .projects
+            .iter()
+            .find(|p| p.project_name == "project1")
+            .expect("project1 should be present");
+
+        assert_eq!(project.tasks.len(), 1);
+        assert!(
+            project.tasks[0].last_used_timestamp.is_some(),
+            "a last-used timestamp should have been recorded"
+        );
     }
 }

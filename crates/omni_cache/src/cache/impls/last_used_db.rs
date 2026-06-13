@@ -72,7 +72,21 @@ impl<'a> LocalLastUsedDb<'a> {
 
     pub async fn save(&self) -> Result<(), LocalLastUsedDbError> {
         let bytes = rmp_serde::encode::to_vec(&self.data)?;
-        tokio::fs::write(self.path, &bytes).await?;
+
+        // Write to a sibling temp file and atomically rename it into place so a
+        // crash mid-write can never leave a torn/corrupt database behind, and
+        // concurrent readers always observe a complete file.
+        let tmp_path = self.path.with_extension(format!(
+            "tmp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
+        tokio::fs::write(&tmp_path, &bytes).await?;
+        tokio::fs::rename(&tmp_path, self.path).await?;
 
         Ok(())
     }
