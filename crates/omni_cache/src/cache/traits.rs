@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use crate::{
-    CacheStats, CachedTaskExecution, CachedTaskExecutionHash, Context,
-    NewCacheInfo, PruneCacheArgs, PrunedCacheEntry, TaskExecutionInfo,
+    CacheStats, CacheStatsArgs, CachedTaskExecution, CachedTaskExecutionHash,
+    Context, NewCacheInfo, PruneCacheArgs, PrunedCacheEntry, TaskExecutionInfo,
 };
 
 #[async_trait::async_trait]
@@ -49,9 +49,8 @@ pub trait TaskExecutionCacheStore: Send + Sync {
         entries: &[PrunedCacheEntry],
     ) -> Result<(), Self::Error>;
 
-    async fn get_stats(
+    async fn get_stats<TContext: Context>(
         &self,
-        project_glob: &[&str],
-        task_glob: &[&str],
+        args: &CacheStatsArgs<'_, TContext>,
     ) -> Result<CacheStats, Self::Error>;
 }

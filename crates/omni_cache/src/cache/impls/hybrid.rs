@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     io::Cursor,
     path::{Path, PathBuf},
     sync::{
@@ -43,10 +44,10 @@ use tokio::task::JoinSet;
 use trace::Level;
 
 use crate::{
-    CacheStats, CachedFileOutput, CachedTaskExecution, CachedTaskExecutionHash,
-    Context, FileCacheStats, ProjectCacheStats, PruneCacheArgs, PruneStaleOnly,
-    PrunedCacheEntry, StaleStatus, TaskCacheStats, TaskExecutionCacheStore,
-    TaskExecutionInfo, TaskExecutionInfoExt,
+    CacheStats, CacheStatsArgs, CachedFileOutput, CachedTaskExecution,
+    CachedTaskExecutionHash, Context, FileCacheStats, ProjectCacheStats,
+    PruneCacheArgs, PrunedCacheEntry, StaleStatus, TaskCacheStats,
+    TaskExecutionCacheStore, TaskExecutionInfo, TaskExecutionInfoExt,
     impls::{
         cache_archive::archive,
         last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
@@ -128,6 +129,51 @@ fn hashtext(text: &str) -> String {
 }
 
 impl HybridTaskExecutionCacheStore {
+    /// Build the execution plan with the given project/task/dir/meta filters
+    /// and return the set of `project#task` task identifiers that survive all
+    /// of them. Used to apply the context-dependent `--dir`/`--meta` filters
+    /// to cache entries, which are otherwise only keyed by name.
+    fn plan_task_set<TContext: Context>(
+        &self,
+        context: &TContext,
+        project_name_globs: &[&str],
+        task_name_globs: &[&str],
+        dir_globs: &[&str],
+        meta_filter: Option<&str>,
+    ) -> Result<HashSet<String>, LocalTaskExecutionCacheStoreError> {
+        let call = Call::new_tasks(if task_name_globs.is_empty() {
+            vec!["*".to_string()]
+        } else {
+            task_name_globs.iter().map(|s| s.to_string()).collect()
+        });
+
+        let plan =
+            DefaultExecutionPlanProvider::new(ContextWrapper::new(context))
+                .get_execution_plan(
+                    &call,
+                    project_name_globs,
+                    dir_globs,
+                    meta_filter,
+                    None,
+                    false,
+                    false,
+                )?;
+
+        let mut set =
+            HashSet::with_capacity(plan.iter().map(|b| b.len()).sum());
+        for batch in plan {
+            for node in batch {
+                set.insert(format!(
+                    "{}#{}",
+                    node.project_name(),
+                    node.task_name()
+                ));
+            }
+        }
+
+        Ok(set)
+    }
+
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(level = Level::DEBUG, skip(self, tasks, config))
@@ -732,11 +778,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         Ok(outputs)
     }
 
-    async fn get_stats(
+    async fn get_stats<TContext: Context>(
         &self,
-        project_name_globs: &[&str],
-        task_name_globs: &[&str],
+        args: &CacheStatsArgs<'_, TContext>,
     ) -> Result<CacheStats, Self::Error> {
+        let project_name_globs = args.project_name_globs;
+        let task_name_globs = args.task_name_globs;
+
         let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
 
         let project_glob = {
@@ -939,7 +987,42 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             projects.push(result);
         }
 
-        Ok(CacheStats { projects })
+        let mut stats = CacheStats { projects };
+
+        // `--dir`/`--meta` are context-dependent: matching a cached entry to a
+        // directory or meta config requires the current workspace. Build the
+        // execution plan (which applies project/task/dir/meta filtering) and
+        // keep only the entries whose task survives those filters. Entries for
+        // tasks/projects that no longer exist cannot be matched and are
+        // dropped from the filtered report.
+        if !args.dir_globs.is_empty() || args.meta_filter.is_some() {
+            let context = args.context.as_ref().ok_or_else(|| {
+                LocalTaskExecutionCacheStoreError::from(
+                    LocalTaskExecutionCacheStoreErrorInner::MissingContext,
+                )
+            })?;
+
+            let allowed = self.plan_task_set(
+                context,
+                args.project_name_globs,
+                args.task_name_globs,
+                args.dir_globs,
+                args.meta_filter,
+            )?;
+
+            for project in stats.projects.iter_mut() {
+                let project_name = project.project_name.clone();
+                project.tasks.retain(|task| {
+                    allowed.contains(&format!(
+                        "{}#{}",
+                        project_name, task.task_name
+                    ))
+                });
+            }
+            stats.projects.retain(|project| !project.tasks.is_empty());
+        }
+
+        Ok(stats)
     }
 
     async fn prune_caches<TContext: Context>(
@@ -956,7 +1039,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         .await?;
 
         let stats = self
-            .get_stats(args.project_name_globs, args.task_name_globs)
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: args.project_name_globs,
+                task_name_globs: args.task_name_globs,
+                ..Default::default()
+            })
             .await?;
         let time_upper_limit = if let Some(older_than) = args.older_than {
             Some(OffsetDateTime::now_utc() - older_than)
@@ -966,9 +1053,28 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
 
         let mut entries = vec![];
 
-        let hashes = if let PruneStaleOnly::On { context, .. } =
-            &args.stale_only
-        {
+        // `--dir` and `--meta` are "context-dependent" filters: matching a
+        // cached entry requires resolving the owning project's directory and
+        // meta configuration from the *current* workspace, which only the
+        // loaded context knows. `--stale-only` likewise needs the context to
+        // recompute fresh digests. Whenever any of these is requested we build
+        // a single execution plan (which already applies project/task/dir/meta
+        // filtering) and derive from it:
+        //   * `allowed_tasks` - the set of `project#task` that survive the
+        //     dir/meta filters, used to gate which entries may be pruned, and
+        //   * `hashes` - the current fresh digest per task, used by
+        //     `--stale-only` to keep entries that are still fresh.
+        let needs_dir_or_meta_filter =
+            !args.dir_globs.is_empty() || args.meta_filter.is_some();
+        let needs_plan = args.stale_only || needs_dir_or_meta_filter;
+
+        let (allowed_tasks, hashes) = if needs_plan {
+            let context = args.context.as_ref().ok_or_else(|| {
+                LocalTaskExecutionCacheStoreError::from(
+                    LocalTaskExecutionCacheStoreErrorInner::MissingContext,
+                )
+            })?;
+
             let time_now = SystemTime::now();
 
             let call = Call::new_tasks(if args.task_name_globs.is_empty() {
@@ -982,13 +1088,20 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         &call,
                         args.project_name_globs,
                         args.dir_globs,
-                        None,
+                        args.meta_filter,
                         None,
                         false,
                         false,
                     )?;
 
             let total_task = plan.iter().map(|b| b.len()).sum();
+
+            let mut allowed_tasks = if needs_dir_or_meta_filter {
+                Some(HashSet::with_capacity(total_task))
+            } else {
+                None
+            };
+
             let mut hashes = unordered_map!(cap: total_task);
             let collect_cfg = CollectConfig {
                 digests: true,
@@ -996,6 +1109,22 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             };
 
             for batch in plan {
+                if let Some(allowed) = &mut allowed_tasks {
+                    for node in &batch {
+                        allowed.insert(format!(
+                            "{}#{}",
+                            node.project_name(),
+                            node.task_name()
+                        ));
+                    }
+                }
+
+                // Fresh digests are only needed for `--stale-only`; skip the
+                // (potentially expensive) collection otherwise.
+                if !args.stale_only {
+                    continue;
+                }
+
                 let hash_provider = HashProvider::new(&hashes);
                 let task_ctx_provider = DefaultTaskContextProvider::new(
                     hash_provider,
@@ -1025,14 +1154,19 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 hashes.extend(t_hashes);
             }
 
-            log::debug!(
-                "getting hashes for stale elapsed time: {:?}",
-                time_now.elapsed().unwrap()
-            );
+            let hashes = if args.stale_only {
+                log::debug!(
+                    "getting hashes for stale elapsed time: {:?}",
+                    time_now.elapsed().unwrap()
+                );
+                Some(hashes)
+            } else {
+                None
+            };
 
-            Some(hashes)
+            (allowed_tasks, hashes)
         } else {
-            None
+            (None, None)
         };
 
         for project in stats.projects {
@@ -1055,7 +1189,17 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let task_full_name =
                     format!("{}#{}", project.project_name, task.task_name);
 
-                if args.stale_only.is_on()
+                // When `--dir`/`--meta` are active, only prune entries whose
+                // task survived those filters in the current workspace. Entries
+                // for tasks/projects that no longer exist (orphaned) cannot be
+                // matched by dir/meta and are therefore left untouched.
+                if let Some(allowed) = &allowed_tasks
+                    && !allowed.contains(&task_full_name)
+                {
+                    continue;
+                }
+
+                if args.stale_only
                     && let Some(hashes) = &hashes
                     && let Some(hash) = hashes.get(&task_full_name)
                     && task.digest == *hash
@@ -1284,6 +1428,11 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
 
     #[error(transparent)]
     RemoteCacheServiceClient(#[from] RemoteCacheClientError),
+
+    #[error(
+        "a loaded workspace context is required to apply `--stale-only`, `--dir` or `--meta` filters while pruning the cache"
+    )]
+    MissingContext,
 }
 
 #[cfg(test)]
@@ -2372,7 +2521,10 @@ mod tests {
         .expect("copy meta");
 
         let stats = cache
-            .get_stats(&["project1"], &[])
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
             .await
             .expect("failed to get stats");
 
@@ -2471,7 +2623,10 @@ mod tests {
 
         // The db must still be loadable and report a last-used timestamp.
         let stats = cache
-            .get_stats(&["project1"], &[])
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["project1"],
+                ..Default::default()
+            })
             .await
             .expect("last-used db should remain valid");
         let project = stats

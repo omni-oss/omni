@@ -6,7 +6,7 @@ use clap::Subcommand;
 use derive_new::new;
 use itertools::Itertools;
 use omni_cache::Context as ContextTrait;
-use omni_cache::{PruneCacheArgs, PruneStaleOnly, TaskExecutionCacheStore};
+use omni_cache::{CacheStatsArgs, PruneCacheArgs, TaskExecutionCacheStore};
 use omni_context::{ContextSys, EnvVarsMap, LoadedContext, LoadedContextError};
 use owo_colors::OwoColorize;
 
@@ -55,6 +55,19 @@ pub struct StatsArgs {
         help = "Filter the cache entries by task name, accepts glob patterns"
     )]
     task: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Filter the cache entries by the directory the owning project resides in, accepts glob patterns. Only matches tasks present in the current workspace"
+    )]
+    dir: Vec<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Filter the cache entries by the task meta configuration, accepts CEL syntax. Only matches tasks present in the current workspace"
+    )]
+    meta: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -96,6 +109,13 @@ pub struct PruneArgs {
         help = "Add filter to clear only cache entries belonging to a task that matches the given task name, accepts glob patterns"
     )]
     task: Vec<String>,
+
+    #[arg(
+        long,
+        short,
+        help = "Add filter to clear only cache entries whose task meta configuration matches the given expression, accepts CEL syntax. Only matches tasks present in the current workspace"
+    )]
+    meta: Option<String>,
 
     #[arg(
         long,
@@ -199,19 +219,32 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
 
 async fn stats(ctx: &Context, args: &StatsArgs) -> eyre::Result<()> {
     let cache_store = ctx.create_cache_store();
+
+    let projects = args.project.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+    let tasks = args.task.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+    let dirs = args.dir.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+    let meta_filter = args.meta.as_deref();
+
+    // `--dir`/`--meta` need the loaded workspace to resolve cached entries
+    // against the current configuration.
+    let needs_context = !dirs.is_empty() || meta_filter.is_some();
+
+    let loaded_context;
+    let context = if needs_context {
+        loaded_context = ctx.clone().into_loaded().await?;
+        Some(CacheCommandContextWrapper::new(&loaded_context))
+    } else {
+        None
+    };
+
     let stats = cache_store
-        .get_stats(
-            args.project
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            args.task
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
+        .get_stats(&CacheStatsArgs {
+            project_name_globs: projects.as_slice(),
+            task_name_globs: tasks.as_slice(),
+            dir_globs: dirs.as_slice(),
+            meta_filter,
+            context,
+        })
         .await?;
 
     for (i, project) in stats.projects.iter().enumerate() {
@@ -282,6 +315,19 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         .collect::<Vec<_>>();
     let tasks = cli_args.task.iter().map(|s| s.as_str()).collect::<Vec<_>>();
     let dirs = cli_args.dir.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+    let meta_filter = cli_args.meta.as_deref();
+
+    // `--stale-only`, `--dir` and `--meta` all need the loaded workspace to
+    // resolve cached entries against the current configuration.
+    let needs_context =
+        cli_args.stale_only || !dirs.is_empty() || meta_filter.is_some();
+
+    let context = if needs_context {
+        loaded_context = ctx.clone().into_loaded().await?;
+        Some(CacheCommandContextWrapper::new(&loaded_context))
+    } else {
+        None
+    };
 
     let args = PruneCacheArgs {
         dry_run: if cli_args.dry_run {
@@ -289,20 +335,14 @@ async fn prune(ctx: &Context, cli_args: &PruneArgs) -> eyre::Result<()> {
         } else {
             !cli_args.yes
         },
-        stale_only: if cli_args.stale_only {
-            loaded_context = ctx.clone().into_loaded().await?;
-            // loaded_context.get_cache_info(project_name, task_name);
-            PruneStaleOnly::new_on(PruneCommandsContextWrapper::new(
-                &loaded_context,
-            ))
-        } else {
-            PruneStaleOnly::new_off()
-        },
+        stale_only: cli_args.stale_only,
         older_than: cli_args.older_than,
         project_name_globs: projects.as_slice(),
         task_name_globs: tasks.as_slice(),
         dir_globs: dirs.as_slice(),
+        meta_filter,
         larger_than: cli_args.larger_than,
+        context,
     };
 
     let pruned = cache_store.prune_caches(&args).await?;
@@ -439,12 +479,12 @@ async fn remote_setup(ctx: &Context, cli_args: &SetupArgs) -> eyre::Result<()> {
 
 #[derive(new)]
 #[repr(transparent)]
-struct PruneCommandsContextWrapper<'a, TSys: ContextSys> {
+struct CacheCommandContextWrapper<'a, TSys: ContextSys> {
     context: &'a LoadedContext<TSys>,
 }
 
 impl<'a, TSys: ContextSys> ContextTrait
-    for PruneCommandsContextWrapper<'a, TSys>
+    for CacheCommandContextWrapper<'a, TSys>
 {
     type Error = LoadedContextError;
 

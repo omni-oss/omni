@@ -5,7 +5,6 @@ use derive_new::new;
 use maps::UnorderedMap;
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, ProjectGraph};
-use strum::EnumIs;
 use thiserror::Error;
 
 type EnvVars = maps::Map<String, String>;
@@ -13,25 +12,45 @@ type EnvVars = maps::Map<String, String>;
 #[derive(new, Default)]
 pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub dry_run: bool,
-    pub stale_only: PruneStaleOnly<'a, TContext>,
+    /// Only prune entries whose cached digest no longer matches the freshly
+    /// recomputed digest. Requires `context` to be set.
+    pub stale_only: bool,
     pub older_than: Option<Duration>,
     /// If not empty, only prune cache for these projects. Otherwise, prune all projects.
     pub project_name_globs: &'a [&'a str],
     /// If not empty, only prune cache for these tasks. Otherwise, prune all tasks.
     pub task_name_globs: &'a [&'a str],
     /// If not empty, only prune cache for projects residing in these directories. Otherwise, prune all directories.
+    /// Requires `context` to be set, and only matches tasks present in the current workspace.
     pub dir_globs: &'a [&'a str],
+    /// If set, only prune cache for tasks whose meta configuration matches this
+    /// CEL expression. Requires `context` to be set, and only matches tasks
+    /// present in the current workspace.
+    pub meta_filter: Option<&'a str>,
     pub larger_than: Option<ByteSize>,
+    /// The loaded workspace context. Required whenever `stale_only`,
+    /// `dir_globs`, or `meta_filter` are used, since those filters need the
+    /// current workspace configuration (project directories, meta config and
+    /// cache inputs) to resolve cached entries.
+    pub context: Option<TContext>,
 }
 
-#[derive(new, Default, EnumIs)]
-pub enum PruneStaleOnly<'a, TContext: Context + 'a = ()> {
-    #[default]
-    Off,
-    On {
-        context: TContext,
-        _phantom: std::marker::PhantomData<&'a ()>,
-    },
+#[derive(new, Default)]
+pub struct CacheStatsArgs<'a, TContext: Context = ()> {
+    /// If not empty, only report stats for these projects. Otherwise, report all projects.
+    pub project_name_globs: &'a [&'a str],
+    /// If not empty, only report stats for these tasks. Otherwise, report all tasks.
+    pub task_name_globs: &'a [&'a str],
+    /// If not empty, only report stats for projects residing in these directories.
+    /// Requires `context` to be set, and only matches tasks present in the current workspace.
+    pub dir_globs: &'a [&'a str],
+    /// If set, only report stats for tasks whose meta configuration matches this
+    /// CEL expression. Requires `context` to be set, and only matches tasks
+    /// present in the current workspace.
+    pub meta_filter: Option<&'a str>,
+    /// The loaded workspace context. Required whenever `dir_globs` or
+    /// `meta_filter` are used.
+    pub context: Option<TContext>,
 }
 
 pub trait Context: Send + Sync {
