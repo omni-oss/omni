@@ -1,7 +1,7 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
 import { BridgeRpcSystem } from "@omni-oss/bridge-rpc-system-interface";
 import { Log, type Logger } from "@omni-oss/log";
-import { OptimizedSystem, type System } from "@omni-oss/system-interface";
+import type { System } from "@omni-oss/system-interface";
 
 export type GeneratorScriptContextOptions = {
     dryRun: boolean;
@@ -25,9 +25,7 @@ export class DefaultScriptContext implements GeneratorScriptContext {
     public static async create(
         options: GeneratorScriptContextOptions,
     ): Promise<DefaultScriptContext> {
-        const sys = options.dryRun
-            ? await BridgeRpcSystem.create(options.clientHandle)
-            : await OptimizedSystem.create();
+        const sys = await BridgeRpcSystem.create(options.clientHandle);
         const log = options.logger ?? Log.instance();
         return new DefaultScriptContext(sys, log, options.dryRun);
     }
