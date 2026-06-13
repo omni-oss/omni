@@ -28,6 +28,12 @@ pub async fn run(
     command: &ExecCommand,
     ctx: &Context,
 ) -> eyre::Result<ExitCode> {
+    if command.cmd.is_empty() {
+        eyre::bail!(
+            "no command provided to exec; pass a command after `--`, e.g. `omni exec -- echo hello`"
+        );
+    }
+
     let output_settings = get_results_settings(&command.run)?;
 
     let mut builder = ExecutionConfigBuilder::default();
