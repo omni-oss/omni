@@ -16,7 +16,7 @@ static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
-    LazyLock::new(|| vec![".omnignore".to_string()]);
+    LazyLock::new(|| vec![".omniignore".to_string()]);
 
 pub async fn discover<G: AsRef<str>>(
     root_dir: &Path,
