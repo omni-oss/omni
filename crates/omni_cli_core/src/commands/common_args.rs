@@ -155,7 +155,14 @@ impl RunArgs {
             builder.retry_interval(retry_interval);
         }
 
-        let scm = self.scm_affected.value();
+        let mut scm = self.scm_affected.value();
+        // `--scm-base`/`--scm-target` implicitly enable scm filtering (using the
+        // auto-detected scm) even when `--scm-affected` was not passed.
+        if scm.is_none()
+            && (self.scm_base.is_some() || self.scm_target.is_some())
+        {
+            scm = SelectScm::Auto;
+        }
         if !scm.is_none() {
             let base = self.scm_base.as_ref().map(|s| s.to_string());
             let target = self.scm_target.as_ref().map(|s| s.to_string());
