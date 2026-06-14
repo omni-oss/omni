@@ -363,7 +363,7 @@
     "services/bridge-service": {
       "name": "@omni-oss/bridge-service",
       "version": "0.0.0-semantically-released",
-      "dependencies": {
+      "devDependencies": {
         "@commander-js/extra-typings": "catalog:",
         "@omni-oss/bridge-rpc-bootstrap": "workspace:^",
         "@omni-oss/bridge-rpc-core": "workspace:^",
@@ -373,17 +373,15 @@
         "@omni-oss/console-log-interceptor": "workspace:^",
         "@omni-oss/log": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
-        "commander": "catalog:",
-        "zod": "catalog:",
-      },
-      "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
         "@types/node": "catalog:",
+        "commander": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
+        "zod": "catalog:",
       },
     },
     "tests/bridge-service-tests": {

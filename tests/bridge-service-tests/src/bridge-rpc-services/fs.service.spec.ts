@@ -342,4 +342,39 @@ describe("bridge_rpc_services – /fs/* (omni_bridge_test_service)", {
             ).resolves.toBeUndefined();
         });
     });
+
+    // ---------------------------------------------------------------
+    // error propagation
+    //
+    // When a service fails (returns `Err`) the server must propagate the
+    // failure back to the client as a response error frame instead of
+    // leaving the client hanging forever waiting for a response. These
+    // operations fail on the Rust side (e.g. reading metadata for a path
+    // that does not exist), so the client call must reject.
+    // ---------------------------------------------------------------
+    describe("error propagation", () => {
+        it("rejects when reading a non-existent file as a string", async () => {
+            await expect(
+                system.fs.readFileAsString(
+                    join(testDir, "_definitely-missing-abc123.txt"),
+                ),
+            ).rejects.toThrow();
+        });
+
+        it("rejects when reading a non-existent file as bytes", async () => {
+            await expect(
+                system.fs.readFileAsBytes(
+                    join(testDir, "_definitely-missing-bytes-abc123.bin"),
+                ),
+            ).rejects.toThrow();
+        });
+
+        it("rejects when stat-ing a non-existent path", async () => {
+            await expect(
+                system.fs.stat(
+                    join(testDir, "_definitely-missing-stat-abc123"),
+                ),
+            ).rejects.toThrow();
+        });
+    });
 });

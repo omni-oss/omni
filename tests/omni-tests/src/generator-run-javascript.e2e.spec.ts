@@ -178,7 +178,7 @@ describe("+generator @e2e (run-javascript)", () => {
     it("honors per-action runtimes, spawning one runner each", async (ctx) => {
         // Each `run-javascript` action picks its own runtime; distinct runtimes
         // get distinct processes. Gated so it only runs where both exist.
-        if (!runtimeAvailable("node") || !runtimeAvailable("deno")) {
+        if (!runtimeAvailable("node") || !runtimeAvailable("bun")) {
             ctx.skip();
             return;
         }
@@ -203,7 +203,7 @@ describe("+generator @e2e (run-javascript)", () => {
                             type: "run-javascript",
                             runtime: "deno",
                             script: "gen.mjs",
-                            data: { target: "on-deno.txt", message: "deno" },
+                            data: { target: "on-bun.txt", message: "bun" },
                         },
                     ],
                 },
@@ -230,6 +230,60 @@ describe("+generator @e2e (run-javascript)", () => {
 
         expect(result).toHaveSucceeded();
         expect(ws.read("on-node.txt")).toBe("node");
-        expect(ws.read("on-deno.txt")).toBe("deno");
+        expect(ws.read("on-bun.txt")).toBe("bun");
+    });
+
+    it("should propagate errors from omni to the js script", async () => {
+        // `parent` runs its own script AND delegates to `child` (which also
+        // runs a script). A single, shared JS runner must service both.
+        const ws = makeWorkspace({
+            workspace: {
+                projects: ["**"],
+                generators: [{ source: "local", path: "generators/**" }],
+            },
+            projects: {
+                "generators/js/generator.omni.yaml": {
+                    name: "js",
+                    description: "js generator",
+                    actions: [
+                        {
+                            type: "run-javascript",
+                            script: "gen.mjs",
+                            data: { target: "child.txt", message: "child" },
+                        },
+                    ],
+                },
+            },
+            files: {
+                ".omni/sources/generator/.keep": "",
+                "generators/js/gen.mjs": `
+                export default async function (ctx) {
+                    try {
+                        await ctx.sys.fs.readFileAsString("does_not_exist.txt");
+                    } catch (e) {
+                        ctx.log.error(e);
+                        throw e;
+                    }
+                }
+                `,
+            },
+        });
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "js",
+                "-o",
+                "out",
+                "--use-defaults",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveFailed();
+        expect(result).toOutputContaining("No such file or directory");
     });
 });
