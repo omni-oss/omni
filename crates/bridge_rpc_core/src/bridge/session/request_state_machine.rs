@@ -44,6 +44,10 @@ impl RequestStateMachine {
                         request_start.headers,
                     ))
                 }
+                RequestEvent::Error(error) => {
+                    self.state = RequestState::Errored;
+                    Ok(RequestStateTransitionOutput::new_error(error))
+                }
                 _ => Err(RequestStateMachineErrorInner::new_invalid_frame(
                     vec![RequestEventType::Start],
                     event.discriminant(),
@@ -72,7 +76,11 @@ impl RequestStateMachine {
                         ))
                     }
                     _ => Err(RequestStateMachineErrorInner::new_invalid_frame(
-                        vec![RequestEventType::BodyChunk],
+                        vec![
+                            RequestEventType::BodyChunk,
+                            RequestEventType::Error,
+                            RequestEventType::End,
+                        ],
                         event.discriminant(),
                     )
                     .into()),
@@ -98,9 +106,9 @@ enum RequestState {
     Errored,
 }
 
-#[derive(Debug, new, PartialEq)]
+#[derive(Debug, new, PartialEq, EnumDiscriminants)]
+#[strum_discriminants()]
 pub enum RequestStateTransitionOutput {
-    #[allow(unused)]
     Wait,
     Start {
         id: Id,
@@ -207,6 +215,26 @@ mod tests {
 
     fn end_event(id: Id, trailers: Option<Trailers>) -> RequestEvent {
         RequestEvent::End(RequestEnd { id, trailers })
+    }
+
+    fn error_event(
+        id: Id,
+        error: RequestErrorCode,
+        message: String,
+    ) -> RequestEvent {
+        RequestEvent::Error(error_frame(id, error, message))
+    }
+
+    fn error_frame(
+        id: Id,
+        error: RequestErrorCode,
+        message: String,
+    ) -> RequestError {
+        RequestError {
+            id,
+            code: error,
+            message,
+        }
     }
 
     #[test]
@@ -363,6 +391,23 @@ mod tests {
                 .expect("should be able to transition"),
             RequestStateTransitionOutput::new_body_chunk(vec![1, 2, 3]),
             "should not be corrupted after receiving a frame with invalid id"
+        );
+    }
+
+    #[test]
+    fn test_request_state_machine_fast_error_path() {
+        let (id, mut request_state_machine) = new();
+        let error = RequestErrorCode::TIMED_OUT;
+        let message = "error".to_string();
+
+        assert_eq!(
+            request_state_machine
+                .transition(error_event(id, error, message.clone()))
+                .expect("should be able to transition"),
+            RequestStateTransitionOutput::new_error(error_frame(
+                id, error, message
+            )),
+            "should be able to transition"
         );
     }
 }

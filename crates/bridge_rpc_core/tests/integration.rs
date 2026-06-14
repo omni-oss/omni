@@ -15,7 +15,8 @@ use tokio::{
 };
 
 use bridge_rpc_core::{
-    Id, ResponseErrorCode, TransportWriteFramer, bridge::frame::Frame,
+    Id, RequestErrorCode, ResponseErrorCode, TransportWriteFramer,
+    bridge::frame::Frame,
 };
 
 const TEST_PATH: &str = "test_path";
@@ -923,6 +924,151 @@ async fn test_server_response_error_propagates_to_client() {
         result.is_err(),
         "read_body_chunk must return Err when the service sent a ResponseError"
     );
+
+    close_rpcs!(rpc1, rpc2);
+    runner.await.expect("runner failed");
+}
+
+/// When a service simply returns `Err` (without ever starting a response
+/// or explicitly emitting an error frame), the failure must still be
+/// propagated back to the requesting client instead of leaving it to
+/// hang waiting for a response that will never arrive.
+#[tokio::test(flavor = "multi_thread")]
+#[test_log::test]
+#[timeout(2000)]
+async fn test_service_returning_err_propagates_to_client() {
+    #[derive(new)]
+    struct FailingService {}
+
+    #[async_trait]
+    impl Service for FailingService {
+        async fn run(
+            &self,
+            context: ServiceContext,
+        ) -> Result<(), ServiceError> {
+            // Drain the request but never start a response — just fail.
+            consume_request(context.request).await;
+            Err(ServiceError::custom("service blew up"))
+        }
+    }
+
+    let (rpc1, rpc2) = create_rpcs_with_services(
+        MirrorTestService::new(),
+        FailingService::new(),
+    );
+    let runner = run_rpcs!(rpc1, rpc2);
+    sleep(Duration::from_millis(5)).await;
+
+    let pending_response = rpc1
+        .request(TEST_PATH)
+        .await
+        .expect("request")
+        .start()
+        .await
+        .expect("start")
+        .end()
+        .await
+        .expect("end");
+
+    // The service failed before producing a response, so the client must
+    // observe an error rather than block forever waiting on a response
+    // start frame.
+    let result = pending_response.wait().await;
+    assert!(
+        result.is_err(),
+        "client must observe an error when the service returns Err"
+    );
+
+    close_rpcs!(rpc1, rpc2);
+    runner.await.expect("runner failed");
+}
+
+/// When a client sends a request error frame, the server must surface it to
+/// the running handler (cooperative cancellation) and clean up the request
+/// session rather than leaving the handler blocked on the request body.
+#[tokio::test(flavor = "multi_thread")]
+#[test_log::test]
+#[timeout(2000)]
+async fn test_client_request_error_is_observed_by_server() {
+    use std::sync::Arc;
+    use tokio::sync::Mutex as AsyncMutex;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Observed {
+        Error,
+        Eof,
+    }
+
+    #[derive(new)]
+    struct ObservingService {
+        observed: Arc<AsyncMutex<Option<Observed>>>,
+    }
+
+    #[async_trait]
+    impl Service for ObservingService {
+        async fn run(
+            &self,
+            context: ServiceContext,
+        ) -> Result<(), ServiceError> {
+            let mut reader = context.request.into_reader();
+            loop {
+                match reader.read_body_chunk().await {
+                    Ok(Some(_)) => continue,
+                    Ok(None) => {
+                        *self.observed.lock().await = Some(Observed::Eof);
+                        break;
+                    }
+                    Err(_) => {
+                        *self.observed.lock().await = Some(Observed::Error);
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    let observed = Arc::new(AsyncMutex::new(None));
+    let (rpc1, rpc2) = create_rpcs_with_services(
+        MirrorTestService::new(),
+        ObservingService::new(observed.clone()),
+    );
+    let runner = run_rpcs!(rpc1, rpc2);
+    sleep(Duration::from_millis(5)).await;
+
+    let mut active = rpc1
+        .request(TEST_PATH)
+        .await
+        .expect("request")
+        .start()
+        .await
+        .expect("start");
+    active
+        .write_body_chunk(b"partial".to_vec())
+        .await
+        .expect("write chunk");
+    active
+        .error(RequestErrorCode::UNEXPECTED_FRAME, "client cancelled")
+        .await
+        .expect("send request error");
+
+    // The handler must observe the client's request error (cooperative
+    // cancellation) instead of hanging on the request body.
+    let deadline = std::time::Instant::now() + Duration::from_millis(1000);
+    loop {
+        if let Some(observed) = *observed.lock().await {
+            assert_eq!(
+                observed,
+                Observed::Error,
+                "server handler should observe the request error"
+            );
+            break;
+        }
+        if std::time::Instant::now() > deadline {
+            panic!("server handler did not observe the request error in time");
+        }
+        sleep(Duration::from_millis(5)).await;
+    }
 
     close_rpcs!(rpc1, rpc2);
     runner.await.expect("runner failed");

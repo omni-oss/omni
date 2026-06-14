@@ -37,6 +37,7 @@ impl ResponseErrorCode {
 
 predefined_codes!(ResponseErrorCode {
     UNEXPECTED_FRAME = 0;
+    INTERNAL = 1;
 });
 
 #[derive(

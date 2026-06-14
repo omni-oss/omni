@@ -46,8 +46,12 @@ impl ResponseStateMachine {
                         response_start.headers,
                     ))
                 }
+                ResponseEvent::Error(error) => {
+                    self.state = ResponseState::Errored;
+                    Ok(ResponseStateTransitionOutput::new_error(error))
+                }
                 _ => Err(ResponseStateMachineErrorInner::new_invalid_frame(
-                    vec![ResponseEventType::Start],
+                    vec![ResponseEventType::Start, ResponseEventType::Error],
                     event.discriminant(),
                 )
                 .into()),
@@ -75,7 +79,11 @@ impl ResponseStateMachine {
                     }
                     _ => {
                         Err(ResponseStateMachineErrorInner::new_invalid_frame(
-                            vec![ResponseEventType::Start],
+                            vec![
+                                ResponseEventType::BodyChunk,
+                                ResponseEventType::Error,
+                                ResponseEventType::End,
+                            ],
                             event.discriminant(),
                         )
                         .into())
@@ -102,9 +110,8 @@ enum ResponseState {
     Errored,
 }
 
-#[derive(Debug, new, PartialEq)]
+#[derive(Debug, new, PartialEq, EnumDiscriminants)]
 pub enum ResponseStateTransitionOutput {
-    #[allow(unused)]
     Wait,
     Start {
         id: Id,
@@ -215,6 +222,22 @@ mod tests {
 
     fn end_event(id: Id, trailers: Option<Trailers>) -> ResponseEvent {
         ResponseEvent::End(ResponseEnd { id, trailers })
+    }
+
+    fn error_frame(
+        id: Id,
+        code: ResponseErrorCode,
+        message: String,
+    ) -> ResponseError {
+        ResponseError { id, code, message }
+    }
+
+    fn error_event(
+        id: Id,
+        code: ResponseErrorCode,
+        message: String,
+    ) -> ResponseEvent {
+        ResponseEvent::Error(error_frame(id, code, message))
     }
 
     #[test]
@@ -387,6 +410,23 @@ mod tests {
                 .expect("should be able to transition"),
             ResponseStateTransitionOutput::new_body_chunk(vec![1, 2, 3]),
             "should not be corrupted after receiving a frame with invalid id"
+        );
+    }
+
+    #[test]
+    fn test_response_state_machine_fast_error_path() {
+        let (id, mut request_state_machine) = new();
+        let error = ResponseErrorCode::INTERNAL;
+        let message = "error".to_string();
+
+        assert_eq!(
+            request_state_machine
+                .transition(error_event(id, error, message.clone()))
+                .expect("should be able to transition"),
+            ResponseStateTransitionOutput::new_error(error_frame(
+                id, error, message
+            )),
+            "should be able to transition to error state"
         );
     }
 }
