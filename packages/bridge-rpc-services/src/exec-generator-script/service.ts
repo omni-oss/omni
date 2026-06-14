@@ -51,6 +51,7 @@ export class ExecGeneratorScript extends ExecScript<ScriptInvocation[]> {
                         dryRun: invocation.params.dry_run,
                         data: invocation.params.data,
                         logger: Log.instance(),
+                        outputDir: invocation.params.output_dir,
                     });
 
                     try {
@@ -89,6 +90,7 @@ const TEXT_DECODER = new TextDecoder();
 const ScriptParamsSchema = z.object({
     dry_run: z.boolean(),
     data: z.unknown(),
+    output_dir: z.string(),
 });
 
 const ScriptInvocationSchema = z.object({

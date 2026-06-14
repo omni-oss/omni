@@ -96,6 +96,7 @@ function withLog<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const SYS_MARKER = { __marker: "sys" };
+const OUTPUT_DIR = "/tmp/output";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Test harness (mirrors exec-script/service.spec.ts)
@@ -141,10 +142,14 @@ function makePayload(
     paths: string[],
     dryRun: boolean,
     data: unknown = null,
-): Array<{ path: string; params: { dry_run: boolean; data: unknown } }> {
+    outputDir: string = OUTPUT_DIR,
+): Array<{
+    path: string;
+    params: { dry_run: boolean; data: unknown; output_dir: string };
+}> {
     return paths.map((path) => ({
         path,
-        params: { dry_run: dryRun, data },
+        params: { dry_run: dryRun, data, output_dir: outputDir },
     }));
 }
 
@@ -294,6 +299,7 @@ describe("ExecGeneratorScript", () => {
                 dryRun: false,
                 data: null,
                 logger: TEST_LOGGER,
+                outputDir: OUTPUT_DIR,
             });
         });
 

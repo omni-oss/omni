@@ -10,7 +10,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 // bridge connection, and so we can assert the client handle is forwarded.
 const { systemCreateMock, SYSTEM_MARKER } = vi.hoisted(() => ({
     systemCreateMock: vi.fn(),
-    SYSTEM_MARKER: { __marker: "system" },
+    SYSTEM_MARKER: {
+        fs: { __marker: "fs" },
+        proc: {
+            currentDir: () => "/host/cwd",
+            setCurrentDir: async () => {},
+            args: () => [],
+            env: () => ({}),
+        },
+    },
 }));
 
 vi.mock("@omni-oss/bridge-rpc-system-interface", () => ({
@@ -20,6 +28,8 @@ vi.mock("@omni-oss/bridge-rpc-system-interface", () => ({
 }));
 
 import { DefaultScriptContext } from "./script-context";
+
+const OUTPUT_DIR = "/tmp/output";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -51,11 +61,16 @@ describe("DefaultScriptContext", () => {
             dryRun: false,
             data: null,
             logger: PROVIDED_LOGGER,
+            outputDir: OUTPUT_DIR,
         });
 
         expect(systemCreateMock).toHaveBeenCalledTimes(1);
         expect(systemCreateMock).toHaveBeenCalledWith(ClientHandle.DUMMY);
-        expect(ctx.sys).toBe(SYSTEM_MARKER);
+        // The base system is wrapped to virtualise the current directory, so
+        // `sys` is not the raw marker but its `proc.currentDir()` starts at the
+        // provided `outputDir`.
+        expect(ctx.sys).not.toBe(SYSTEM_MARKER);
+        expect(ctx.sys.proc.currentDir()).toBe(OUTPUT_DIR);
     });
 
     test("uses the explicitly provided logger", async () => {
@@ -64,6 +79,7 @@ describe("DefaultScriptContext", () => {
             dryRun: false,
             data: null,
             logger: PROVIDED_LOGGER,
+            outputDir: OUTPUT_DIR,
         });
 
         expect(ctx.log).toBe(PROVIDED_LOGGER);
@@ -75,6 +91,7 @@ describe("DefaultScriptContext", () => {
                 clientHandle: ClientHandle.DUMMY,
                 dryRun: false,
                 data: null,
+                outputDir: OUTPUT_DIR,
             }),
         );
 
@@ -87,6 +104,7 @@ describe("DefaultScriptContext", () => {
             dryRun: true,
             data: null,
             logger: PROVIDED_LOGGER,
+            outputDir: OUTPUT_DIR,
         });
 
         expect(ctx.isDryRun).toBe(true);
@@ -98,6 +116,7 @@ describe("DefaultScriptContext", () => {
             dryRun: false,
             data: null,
             logger: PROVIDED_LOGGER,
+            outputDir: OUTPUT_DIR,
         });
 
         expect(ctx.isDryRun).toBe(false);
@@ -110,6 +129,7 @@ describe("DefaultScriptContext", () => {
             dryRun: false,
             data,
             logger: PROVIDED_LOGGER,
+            outputDir: OUTPUT_DIR,
         });
 
         expect(ctx.data).toBe(data);
