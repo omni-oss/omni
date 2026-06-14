@@ -137,4 +137,22 @@ describe("ResponseStateMachine", () => {
             chunk: new Uint8Array([1, 2, 3]),
         });
     });
+
+    it("should allow fast error path", () => {
+        const { id, rsm } = createTestSetup();
+        const errorData = {
+            id,
+            code: ResponseErrorCode.INTERNAL,
+            message: "error",
+        };
+        const errorEvent: ResponseEvent = {
+            type: ResponseEventType.ERROR,
+            data: errorData,
+        };
+
+        expect(rsm.transition(errorEvent)).toEqual({
+            type: "Error",
+            error: errorData,
+        });
+    });
 });

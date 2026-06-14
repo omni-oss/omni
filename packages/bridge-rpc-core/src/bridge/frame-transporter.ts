@@ -1,13 +1,14 @@
 import { Mpsc, type MpscReceiver } from "@omni-oss/channels";
 import { Mutex } from "async-mutex";
 import { encodeFrame } from "./codec-utils";
+import { FRAME_WORKER_BUFFER_SIZE } from "./constants";
 import type { Frame } from "./frame";
 
 type SendBytesFn = (chunk: Uint8Array) => Promise<void>;
 
 export class FrameTransporter {
     private task: { promise: Promise<void> } | undefined;
-    private mpsc = new Mpsc<Frame>();
+    private mpsc = new Mpsc<Frame, number>(FRAME_WORKER_BUFFER_SIZE);
     private mutex = new Mutex();
 
     constructor(private sendBytesFn: SendBytesFn) {}
@@ -47,7 +48,7 @@ export class FrameTransporter {
             await this.task.promise;
 
             this.task = undefined;
-            this.mpsc = new Mpsc<Frame>();
+            this.mpsc = new Mpsc<Frame, number>(FRAME_WORKER_BUFFER_SIZE);
         });
     }
 

@@ -1,7 +1,8 @@
 import type { OneshotReceiver } from "@omni-oss/channels";
 import type { Id } from "@/id";
 import type { Headers, Trailers } from "../dyn-map";
-import type { RequestError } from "../frame";
+import { throwIfError } from "../error-utils";
+import type { RequestError as RequestErrorFrame } from "../frame";
 
 export class Request {
     private _trailers: Trailers | undefined;
@@ -13,7 +14,7 @@ export class Request {
         public readonly path: string,
         public readonly headers: Headers | undefined,
         private readonly requestFrameEvents: AsyncIterable<RequestFrameEvent>,
-        private readonly requestError: OneshotReceiver<RequestError>,
+        private readonly requestError: OneshotReceiver<RequestErrorFrame>,
     ) {}
 
     public get trailers(): Trailers | undefined {
@@ -41,17 +42,11 @@ export class Request {
 
         this._isBodyReading = true;
 
-        for await (const event of this.requestFrameEvents) {
-            if (this.requestError.hasValue()) {
-                const error = await this.requestError.receive();
+        // Surface an error that arrived before any body frame.
+        await this.throwIfError();
 
-                throw new Error(
-                    `Error from server with error code: ${error.code}, message: ${error.message}`,
-                    {
-                        cause: error,
-                    },
-                );
-            }
+        for await (const event of this.requestFrameEvents) {
+            await this.throwIfError();
 
             if (RequestFrameEvent.isBodyChunk(event)) {
                 yield event.chunk;
@@ -59,11 +54,21 @@ export class Request {
                 this._trailers = event.trailers;
                 this._isBodyRead = true;
                 this._isBodyReading = false;
-                break;
+                return;
             } else {
                 throw new Error("Invalid RequestFrameEvent");
             }
         }
+
+        // The frame channel closed without an explicit end frame. This
+        // happens when the session is torn down (for example because the
+        // client sent a request error frame). Surface the error if one was
+        // delivered so the handler fails instead of silently terminating.
+        await this.throwIfError();
+    }
+
+    private throwIfError() {
+        return throwIfError(this.requestError);
     }
 
     async [Symbol.asyncDispose]() {

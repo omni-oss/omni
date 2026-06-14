@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BridgeRpc } from "@/bridge";
 import { decode, decodeFrame, encode, encodeFrame } from "@/bridge/codec-utils";
-import { ResponseErrorCode } from "@/bridge/error-code";
+import { RequestErrorCode, ResponseErrorCode } from "@/bridge/error-code";
 import { Frame, FrameType } from "@/bridge/frame";
 import { FrameSchema } from "@/bridge/frame-schema";
 import type { ServiceContext } from "@/bridge/service";
@@ -188,6 +188,95 @@ describe("Rpc to Rpc Integration", () => {
             expect(decode(responseBody)).toEqual(reqData);
         }),
     );
+
+    it("should propagate a service error to the requesting client", async () => {
+        const transport1Side = new TransformStream<Uint8Array, Uint8Array>();
+        const transport2Side = new TransformStream<Uint8Array, Uint8Array>();
+
+        const transport1 = new StreamTransport({
+            input: transport1Side.readable,
+            output: transport2Side.writable,
+        });
+        const transport2 = new StreamTransport({
+            input: transport2Side.readable,
+            output: transport1Side.writable,
+        });
+
+        const rpc1 = new BridgeRpc(transport1, createTestService());
+        // rpc2's service always fails without ever starting a response.
+        const rpc2 = new BridgeRpc(transport2, {
+            run: async () => {
+                throw new Error("service blew up");
+            },
+        });
+
+        await Promise.all([rpc1.start(), rpc2.start()]);
+        await delay(10);
+
+        try {
+            const activeRequest = await (await rpc1.request("fail")).start();
+            const pendingResponse = await activeRequest.end();
+
+            // The remote service failed before producing a response, so the
+            // client must observe an error rather than hang forever waiting
+            // on a response start frame.
+            await expect(pendingResponse.wait()).rejects.toThrow();
+        } finally {
+            // The service error was reported to the client and is therefore
+            // considered handled, so stopping the RPCs must not surface it.
+            await Promise.all([rpc1.stop(), rpc2.stop()]);
+        }
+    });
+
+    it("should send a client request error that the server handler observes", async () => {
+        const transport1Side = new TransformStream<Uint8Array, Uint8Array>();
+        const transport2Side = new TransformStream<Uint8Array, Uint8Array>();
+
+        const transport1 = new StreamTransport({
+            input: transport1Side.readable,
+            output: transport2Side.writable,
+        });
+        const transport2 = new StreamTransport({
+            input: transport2Side.readable,
+            output: transport1Side.writable,
+        });
+
+        let observed: "error" | "eof" | undefined;
+        const rpc1 = new BridgeRpc(transport1, createTestService());
+        const rpc2 = new BridgeRpc(transport2, {
+            run: async (ctx: ServiceContext) => {
+                try {
+                    for await (const _ of ctx.request.readBody()) {
+                        // drain the body
+                    }
+                    observed = "eof";
+                } catch {
+                    observed = "error";
+                }
+            },
+        });
+
+        await Promise.all([rpc1.start(), rpc2.start()]);
+        await delay(10);
+
+        try {
+            const active = await (await rpc1.request("cancel")).start();
+            await active.writeBodyChunk(new Uint8Array([1, 2, 3]));
+            // The new symmetrical client API: abort the in-flight request.
+            await active.error(
+                RequestErrorCode.UNEXPECTED_FRAME,
+                "client cancelled",
+            );
+
+            const deadline = Date.now() + 500;
+            while (observed === undefined && Date.now() < deadline) {
+                await delay(10);
+            }
+            expect(observed).toBe("error");
+        } finally {
+            await Promise.all([rpc1.stop(), rpc2.stop()]);
+        }
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -309,6 +398,55 @@ describe("Error recovery", () => {
         await delay(10);
         await rpc1.stop();
         await rpc2.stop();
+    });
+
+    it("should surface a client request error to the handler and clean up the session", async () => {
+        const transport = new TestTransport();
+
+        let observed: "error" | "eof" | undefined;
+        const service = {
+            run: async (ctx: ServiceContext) => {
+                try {
+                    for await (const _ of ctx.request.readBody()) {
+                        // drain the body
+                    }
+                    observed = "eof";
+                } catch {
+                    observed = "error";
+                }
+            },
+        };
+        const rpc = new BridgeRpc(transport, service);
+
+        await rpc.start();
+        await delay(5);
+
+        const id = Id.create();
+        await transport.injectFrame(Frame.requestStart(id, "test/path"));
+        await transport.injectFrame(
+            Frame.requestBodyChunk(id, new Uint8Array([1, 2, 3])),
+        );
+        // The client cancels by sending a request error frame.
+        await transport.injectFrame(
+            Frame.requestError(
+                id,
+                RequestErrorCode.UNEXPECTED_FRAME,
+                "client cancelled",
+            ),
+        );
+
+        // The handler must observe the error (cooperative cancellation)
+        // rather than hang forever on the request body.
+        const deadline = Date.now() + 500;
+        while (observed === undefined && Date.now() < deadline) {
+            await delay(10);
+        }
+        expect(observed).toBe("error");
+
+        // The session must have been cleaned up: a subsequent frame for the
+        // same id is treated as an unknown session.
+        await transport.injectFrame(Frame.close());
+        await rpc.stop();
     });
 });
 

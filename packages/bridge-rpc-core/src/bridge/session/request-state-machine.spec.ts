@@ -133,4 +133,22 @@ describe("RequestStateMachine", () => {
             chunk: new Uint8Array([1, 2, 3]),
         });
     });
+
+    it("should allow fast error path", () => {
+        const { id, rsm } = createTestSetup();
+        const errorData = {
+            id,
+            code: RequestErrorCode.TIMED_OUT,
+            message: "error",
+        };
+        const errorEvent: RequestEvent = {
+            type: RequestEventType.ERROR,
+            data: errorData,
+        };
+
+        expect(rsm.transition(errorEvent)).toEqual({
+            type: "Error",
+            error: errorData,
+        });
+    });
 });

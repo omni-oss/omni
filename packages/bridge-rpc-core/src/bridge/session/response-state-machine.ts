@@ -84,11 +84,19 @@ export class ResponseStateMachine {
                         status: event.data.status,
                         headers: event.data.headers ?? undefined,
                     };
+                } else if (event.type === ResponseEventType.ERROR) {
+                    this._state = ResponseState.ERRORED;
+                    this._id = event.data.id;
+                    return {
+                        type: "Error",
+                        error: event.data,
+                    };
+                } else {
+                    throw this.invalidFrameError(
+                        [ResponseEventType.START, ResponseEventType.ERROR],
+                        event.type,
+                    );
                 }
-                throw this.invalidFrameError(
-                    [ResponseEventType.START],
-                    event.type,
-                );
 
             case ResponseState.STARTED:
             case ResponseState.BODY_CHUNKS_RECEIVING:
@@ -113,7 +121,11 @@ export class ResponseStateMachine {
 
                     default:
                         throw this.invalidFrameError(
-                            [ResponseEventType.START],
+                            [
+                                ResponseEventType.BODY_CHUNK,
+                                ResponseEventType.ERROR,
+                                ResponseEventType.END,
+                            ],
                             event.type,
                         );
                 }

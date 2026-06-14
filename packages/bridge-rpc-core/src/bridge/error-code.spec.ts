@@ -6,6 +6,10 @@ describe("ResponseErrorCode", () => {
         it("should expose UNEXPECTED_FRAME with value 0", () => {
             expect(ResponseErrorCode.UNEXPECTED_FRAME.valueOf()).toBe(0);
         });
+
+        it("should expose INTERNAL with value 1", () => {
+            expect(ResponseErrorCode.INTERNAL.valueOf()).toBe(1);
+        });
     });
 
     describe("from", () => {
@@ -13,6 +17,10 @@ describe("ResponseErrorCode", () => {
             expect(ResponseErrorCode.from(0)).toBe(
                 ResponseErrorCode.UNEXPECTED_FRAME,
             );
+        });
+
+        it("should return the INTERNAL singleton for value 1", () => {
+            expect(ResponseErrorCode.from(1)).toBe(ResponseErrorCode.INTERNAL);
         });
 
         it("should create a custom code for unknown values", () => {

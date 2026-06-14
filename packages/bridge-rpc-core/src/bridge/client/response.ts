@@ -1,7 +1,11 @@
 import type { OneshotReceiver } from "@omni-oss/channels";
 import type { Id } from "@/id";
 import type { Headers, Trailers } from "../dyn-map";
-import type { ResponseError, ResponseStart } from "../frame";
+import { throwIfError } from "../error-utils";
+import type {
+    ResponseError as ResponseErrorFrame,
+    ResponseStart,
+} from "../frame";
 import type { ResponseStatusCode } from "../status-code";
 
 export class PendingResponse {
@@ -11,25 +15,29 @@ export class PendingResponse {
         private readonly id: Id,
         private readonly responseStartReceiver: OneshotReceiver<ResponseStart>,
         private readonly responseFrameReceiver: AsyncIterable<ResponseFrameEvent>,
-        private readonly responseErrorReceiver: OneshotReceiver<ResponseError>,
+        private readonly responseErrorReceiver: OneshotReceiver<ResponseErrorFrame>,
     ) {}
 
     public async wait() {
         if (this._isStarted) {
             throw new Error("Response already started");
         }
+        try {
+            const responseStart = await this.responseStartReceiver.receive();
 
-        const responseStart = await this.responseStartReceiver.receive();
+            this._isStarted = true;
 
-        this._isStarted = true;
-
-        return new Response(
-            this.id,
-            responseStart.status,
-            responseStart.headers ?? undefined,
-            this.responseFrameReceiver,
-            this.responseErrorReceiver,
-        );
+            return new Response(
+                this.id,
+                responseStart.status,
+                responseStart.headers ?? undefined,
+                this.responseFrameReceiver,
+                this.responseErrorReceiver,
+            );
+        } catch (e) {
+            await throwIfError(this.responseErrorReceiver);
+            throw new Error("Did not receive response", { cause: e });
+        }
     }
 
     public get isStarted() {
@@ -47,7 +55,7 @@ export class Response {
         public readonly status: ResponseStatusCode,
         public readonly headers: Headers | undefined,
         private readonly responseFrameReceiver: AsyncIterable<ResponseFrameEvent>,
-        private readonly responseErrorReceiver: OneshotReceiver<ResponseError>,
+        private readonly responseErrorReceiver: OneshotReceiver<ResponseErrorFrame>,
     ) {}
 
     public get trailers(): Trailers | undefined {
@@ -75,14 +83,11 @@ export class Response {
 
         this._isBodyReading = true;
 
-        for await (const event of this.responseFrameReceiver) {
-            if (this.responseErrorReceiver.hasValue()) {
-                const value = await this.responseErrorReceiver.receive();
+        // Surface an error that arrived before any body frame.
+        await this.throwIfError();
 
-                throw new Error(
-                    `Error from server: ${value.message}, error code: ${value.code}`,
-                );
-            }
+        for await (const event of this.responseFrameReceiver) {
+            await this.throwIfError();
 
             if (ResponseFrameEvent.isBodyChunk(event)) {
                 yield event.chunk;
@@ -90,11 +95,21 @@ export class Response {
                 this._trailers = event.trailers;
                 this._isBodyRead = true;
                 this._isBodyReading = false;
-                break;
+                return;
             } else {
                 throw new Error("Invalid RequestFrameEvent");
             }
         }
+
+        // The frame channel closed without an explicit end frame. This
+        // happens when the session is torn down (for example because the
+        // peer sent a response error frame). Surface the error if one was
+        // delivered so the reader fails instead of silently terminating.
+        await this.throwIfError();
+    }
+
+    private async throwIfError(): Promise<void> {
+        await throwIfError(this.responseErrorReceiver);
     }
 
     async [Symbol.asyncDispose]() {

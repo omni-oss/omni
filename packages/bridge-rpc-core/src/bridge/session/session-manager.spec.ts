@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { Id } from "../..";
+import type { ClosableSessionContext } from "./session-context";
 import { SessionManager, SessionManagerError } from "./session-manager";
 
 describe("SessionManager", () => {
     const generateId = () => Id.create();
+    const ctx = (): ClosableSessionContext => ({});
 
     it("should start and close a session", async () => {
-        const sm = new SessionManager<void, void>();
+        const sm = new SessionManager<
+            ClosableSessionContext,
+            ClosableSessionContext
+        >();
         const id1 = generateId();
         const id2 = generateId();
 
-        const req1 = sm.startRequestSession(id1, undefined);
-        const req2 = sm.startRequestSession(id2, undefined);
+        const req1 = sm.startRequestSession(id1, ctx());
+        const req2 = sm.startRequestSession(id2, ctx());
 
         expect(await req1.runExclusive((session) => session.id)).toBe(id1);
         expect(await req2.runExclusive((session) => session.id)).toBe(id2);
@@ -23,18 +28,21 @@ describe("SessionManager", () => {
     });
 
     it("should throw when trying to start a session with an ID that is already in use", async () => {
-        const sm = new SessionManager<void, void>();
+        const sm = new SessionManager<
+            ClosableSessionContext,
+            ClosableSessionContext
+        >();
         const id = generateId();
 
-        sm.startRequestSession(id, undefined);
+        sm.startRequestSession(id, ctx());
 
         // Attempting to start with same ID should throw
-        expect(() => sm.startRequestSession(id, undefined)).toThrow(
+        expect(() => sm.startRequestSession(id, ctx())).toThrow(
             SessionManagerError,
         );
 
         try {
-            sm.startRequestSession(id, undefined);
+            sm.startRequestSession(id, ctx());
         } catch (e) {
             const err = e as SessionManagerError;
             expect(err.kind).toBe("SessionIdInUse");
@@ -43,9 +51,12 @@ describe("SessionManager", () => {
     });
 
     it("should respect concurrency limits via mutex", async () => {
-        const sm = new SessionManager<void, void>();
+        const sm = new SessionManager<
+            ClosableSessionContext,
+            ClosableSessionContext
+        >();
         const id = generateId();
-        const entry = sm.startRequestSession(id, undefined);
+        const entry = sm.startRequestSession(id, ctx());
 
         let counter = 0;
 

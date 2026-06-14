@@ -21,6 +21,7 @@ import {
 } from "./client/response";
 import { ClientHandle } from "./client-handle";
 import { decodeFrame, encodeFrame } from "./codec-utils";
+import { RESPONSE_BUFFER_SIZE } from "./constants";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";
 import type { Headers } from "./dyn-map";
 import { ResponseErrorCode } from "./error-code";
@@ -54,14 +55,18 @@ export class BridgeRpc {
     private sessionManager = new SessionManager<
         RequestSessionContext,
         ResponseSessionContext
-    >();
+    >({
+        get logger() {
+            return BridgeRpc._logger;
+        },
+    });
     private isStarted = false;
     private pendingPing: Deferred<void> | undefined = undefined;
     private frameTransporter: FrameTransporter;
     private serviceTaskBackgroundProcessor = new BackgroundProcessor();
     private mutex = new Mutex();
     private _clientHandle: ClientHandle;
-    private _logger: Logger | undefined = undefined;
+    private static _logger: Logger | undefined = undefined;
 
     constructor(
         private transport: Transport,
@@ -274,8 +279,9 @@ export class BridgeRpc {
                             this.logger.warn(
                                 `failed to start request session for id ${event.event.data.id}: ${e}`,
                             );
-                            this.sendResponseErrorFrame(
+                            await this.sendResponseErrorFrame(
                                 event.event.data.id,
+                                ResponseErrorCode.UNEXPECTED_FRAME,
                                 `cannot start session: ${e}`,
                             );
                             break;
@@ -290,8 +296,9 @@ export class BridgeRpc {
                         this.logger.warn(
                             `no request session found for id: ${event.event.data.id}`,
                         );
-                        this.sendResponseErrorFrame(
+                        await this.sendResponseErrorFrame(
                             event.event.data.id,
+                            ResponseErrorCode.UNEXPECTED_FRAME,
                             `no request session for id: ${event.event.data.id}`,
                         );
                         break;
@@ -312,8 +319,9 @@ export class BridgeRpc {
                         this.logger.warn(
                             `request state machine error for id ${event.event.data.id}: ${e}`,
                         );
-                        this.sendResponseErrorFrame(
+                        await this.sendResponseErrorFrame(
                             event.event.data.id,
+                            ResponseErrorCode.UNEXPECTED_FRAME,
                             `protocol error: ${e}`,
                         );
                         await this.closeRequestSession(event.event.data.id);
@@ -464,7 +472,9 @@ export class BridgeRpc {
             id,
         });
         const responseStart = new Oneshot<ResponseStart>();
-        const responseFrame = new Mpsc<ResponseFrameEvent>();
+        const responseFrame = new Mpsc<ResponseFrameEvent, number>(
+            RESPONSE_BUFFER_SIZE,
+        );
         const responseError = new Oneshot<ResponseError>();
         const responseSessionContext = new ResponseSessionContext(
             responseStart.sender,
@@ -504,7 +514,9 @@ export class BridgeRpc {
 
     private startRequestSession(id: Id) {
         this.logger.trace("starting request session with id: {id}", { id });
-        const requestFrame = new Mpsc<RequestFrameEvent>();
+        const requestFrame = new Mpsc<RequestFrameEvent, number>(
+            RESPONSE_BUFFER_SIZE,
+        );
         const requestError = new Oneshot<RequestError>();
         const requestSessionContext = new RequestSessionContext(
             requestFrame.sender,
@@ -549,7 +561,19 @@ export class BridgeRpc {
         );
 
         this.serviceTaskBackgroundProcessor.queue(
-            this.service.run(serviceContext),
+            this.service.run(serviceContext).catch(async (error) => {
+                // Let the requesting client know the service failed by
+                // propagating the error back over the wire as a response
+                // error frame. Once it has been reported to the client the
+                // error is considered handled, so it is only logged here and
+                // not propagated any further.
+                this.logger.error(`service error for request ${id}: ${error}`);
+                await this.sendResponseErrorFrame(
+                    id,
+                    ResponseErrorCode.INTERNAL,
+                    error instanceof Error ? error.message : String(error),
+                );
+            }),
         );
     }
 
@@ -557,27 +581,44 @@ export class BridgeRpc {
         context: RequestSessionContext,
         chunk: Uint8Array,
     ) {
-        context.requestFrameSender.send({
-            type: RequestFrameEventType.BODY_CHUNK,
-            chunk,
-        });
+        // Awaiting applies backpressure: if the handler is slow to drain the
+        // request body, the receive loop pauses instead of buffering without
+        // bound. A closed channel means the consumer is gone, so the chunk is
+        // dropped (mirrors Rust logging and continuing).
+        try {
+            await context.requestFrameSender.send({
+                type: RequestFrameEventType.BODY_CHUNK,
+                chunk,
+            });
+        } catch (e) {
+            this.logger.warn(`failed to forward request body chunk: ${e}`);
+        }
     }
 
     private async handleRequestEnd(
         context: RequestSessionContext,
         trailers: Headers | undefined,
     ) {
-        context.requestFrameSender.send({
-            type: RequestFrameEventType.END,
-            trailers,
-        });
+        try {
+            await context.requestFrameSender.send({
+                type: RequestFrameEventType.END,
+                trailers,
+            });
+        } catch (e) {
+            this.logger.warn(`failed to forward request end: ${e}`);
+        }
     }
 
     private async handleRequestError(
         context: RequestSessionContext,
         error: RequestError,
     ) {
-        context.requestErrorSender.send(error);
+        this.logger.warn(`request error: ${error.message}`, { cause: error });
+        try {
+            context.requestErrorSender.send(error);
+        } catch (e) {
+            this.logger.warn(`failed to send request error: ${e}`);
+        }
     }
 
     private async handleResponseStart(
@@ -586,38 +627,55 @@ export class BridgeRpc {
         status: ResponseStatusCode,
         headers: Headers | undefined,
     ) {
-        context.responseStartSender.send({
-            id,
-            status,
-            headers,
-        });
+        try {
+            context.responseStartSender.send({
+                id,
+                status,
+                headers,
+            });
+        } catch (e) {
+            this.logger.warn(`failed to send response start: ${e}`);
+        }
     }
 
     private async handleResponseBodyChunk(
         context: ResponseSessionContext,
         chunk: Uint8Array,
     ) {
-        context.responseFrameSender.send({
-            type: ResponseFrameEventType.BODY_CHUNK,
-            chunk,
-        });
+        try {
+            await context.responseFrameSender.send({
+                type: ResponseFrameEventType.BODY_CHUNK,
+                chunk,
+            });
+        } catch (e) {
+            this.logger.warn(`failed to forward response body chunk: ${e}`);
+        }
     }
 
     private async handleResponseEnd(
         context: ResponseSessionContext,
         trailers: Headers | undefined,
     ) {
-        context.responseFrameSender.send({
-            type: ResponseFrameEventType.END,
-            trailers,
-        });
+        try {
+            await context.responseFrameSender.send({
+                type: ResponseFrameEventType.END,
+                trailers,
+            });
+        } catch (e) {
+            this.logger.warn(`failed to forward response end: ${e}`);
+        }
     }
 
     private async handleResponseError(
         context: ResponseSessionContext,
         error: ResponseError,
     ) {
-        context.responseErrorSender.send(error);
+        this.logger.warn(`response error: ${error.message}`, { cause: error });
+        try {
+            context.responseErrorSender.send(error);
+        } catch (e) {
+            this.logger.warn(`failed to send response error: ${e}`);
+        }
     }
 
     private async handleClose() {
@@ -636,13 +694,22 @@ export class BridgeRpc {
         }
     }
 
-    private sendResponseErrorFrame(id: Id, message: string): void {
-        const frame = Frame.responseError(
-            id,
-            ResponseErrorCode.UNEXPECTED_FRAME,
-            message,
-        );
-        this.frameTransporter.sender.send(frame);
+    private async sendResponseErrorFrame(
+        id: Id,
+        code: ResponseErrorCode,
+        message: string,
+    ) {
+        const frame = Frame.responseError(id, code, message);
+        // Fire-and-forget: error frames must not block the receive loop on the
+        // bounded worker channel, and a closed transport simply means there is
+        // nothing to notify.
+        try {
+            await this.frameTransporter.sender.send(frame).catch((e) => {
+                this.logger.warn(`failed to send response error frame: ${e}`);
+            });
+        } catch (e) {
+            this.logger.warn(`failed to send response error frame: ${e}`);
+        }
     }
 
     private sendFrame(frame: Frame) {
@@ -654,11 +721,11 @@ export class BridgeRpc {
     }
 
     private get logger(): Logger {
-        if (!this._logger) {
-            this._logger = Log.get("BridgeRpc");
+        if (!BridgeRpc._logger) {
+            BridgeRpc._logger = Log.get("BridgeRpc");
         }
 
-        return this._logger;
+        return BridgeRpc._logger;
     }
 }
 

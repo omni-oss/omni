@@ -71,11 +71,19 @@ export class RequestStateMachine {
                         path: event.data.path,
                         headers: event.data.headers ?? undefined,
                     };
+                } else if (event.type === RequestEventType.ERROR) {
+                    this._state = RequestState.ERRORED;
+                    this._id = event.data.id;
+                    return {
+                        type: "Error",
+                        error: event.data,
+                    };
+                } else {
+                    throw this.invalidFrameError(
+                        [RequestEventType.START, RequestEventType.ERROR],
+                        event.type,
+                    );
                 }
-                throw this.invalidFrameError(
-                    [RequestEventType.START],
-                    event.type,
-                );
 
             case RequestState.STARTED:
             case RequestState.BODY_CHUNKS_RECEIVING:
@@ -103,7 +111,11 @@ export class RequestStateMachine {
                     default:
                         // Rust code expects BodyChunk in this branch for the error message
                         throw this.invalidFrameError(
-                            [RequestEventType.BODY_CHUNK],
+                            [
+                                RequestEventType.BODY_CHUNK,
+                                RequestEventType.END,
+                                RequestEventType.ERROR,
+                            ],
                             event.type,
                         );
                 }

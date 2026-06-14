@@ -1,7 +1,9 @@
+import type { Logger } from "@omni-oss/log";
 import type { Id } from "../../";
 import { AsyncMutex } from "../../async-mutex";
 import { RequestSession } from "./request-session";
 import { ResponseSession } from "./response-session";
+import type { ClosableSessionContext } from "./session-context";
 
 export class SessionManagerError extends Error {
     constructor(
@@ -13,7 +15,16 @@ export class SessionManagerError extends Error {
     }
 }
 
-export class SessionManager<TRequestContext, TResponseContext> {
+export class SessionManager<
+    TRequestContext extends ClosableSessionContext,
+    TResponseContext extends ClosableSessionContext,
+> {
+    constructor(
+        private readonly optionalDeps?: {
+            logger?: Logger | undefined;
+        },
+    ) {}
+
     private requestSessions = new Map<
         bigint,
         AsyncMutex<RequestSession<TRequestContext>>
@@ -39,6 +50,10 @@ export class SessionManager<TRequestContext, TResponseContext> {
         const entry = new AsyncMutex(session);
         this.requestSessions.set(id.getValue(), entry);
 
+        this.optionalDeps?.logger?.info("Started request session", {
+            id: id.toString(),
+        });
+
         return entry;
     }
 
@@ -54,6 +69,9 @@ export class SessionManager<TRequestContext, TResponseContext> {
                 await session.close();
             });
             this.requestSessions.delete(id.getValue());
+            this.optionalDeps?.logger?.info("Closed request session", {
+                id: id.toString(),
+            });
         }
     }
 
@@ -63,6 +81,10 @@ export class SessionManager<TRequestContext, TResponseContext> {
         const session = new ResponseSession(id, context);
         const entry = new AsyncMutex(session);
         this.responseSessions.set(id.getValue(), entry);
+
+        this.optionalDeps?.logger?.info("Started response session", {
+            id: id.toString(),
+        });
 
         return entry;
     }
@@ -82,6 +104,9 @@ export class SessionManager<TRequestContext, TResponseContext> {
                 await session.close();
             });
             this.responseSessions.delete(id.getValue());
+            this.optionalDeps?.logger?.info("Closed response session", {
+                id: id.toString(),
+            });
         }
     }
 }

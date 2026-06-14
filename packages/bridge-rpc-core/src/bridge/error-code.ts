@@ -6,6 +6,7 @@ import { Uint16Schema } from "./int-schema";
  */
 export class ResponseErrorCode {
     public static readonly UNEXPECTED_FRAME = new ResponseErrorCode(0);
+    public static readonly INTERNAL = new ResponseErrorCode(1);
     private static readonly _customCodes = new Map<number, ResponseErrorCode>();
 
     private constructor(private readonly _value: number) {
@@ -16,6 +17,8 @@ export class ResponseErrorCode {
         switch (value) {
             case 0:
                 return ResponseErrorCode.UNEXPECTED_FRAME;
+            case 1:
+                return ResponseErrorCode.INTERNAL;
             default: {
                 return getOrSet(
                     ResponseErrorCode._customCodes,

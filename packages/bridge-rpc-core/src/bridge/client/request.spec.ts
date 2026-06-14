@@ -2,6 +2,7 @@ import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it } from "vitest";
 import { Id } from "@/id";
 import { ResponseErrorCode } from "../error-code";
+import { errorFromFrame } from "../error-utils";
 import { Frame, type ResponseError, type ResponseStart } from "../frame";
 import {
     ActiveRequest,
@@ -57,9 +58,7 @@ describe("PendingRequest", () => {
         };
         errorSender.send(error);
 
-        await expect(request.start()).rejects.toThrow(
-            `Request failed with error code ${error.code.toString()}, ${error.message}`,
-        );
+        await expect(request.start()).rejects.toThrow(errorFromFrame(error));
     });
 });
 
@@ -141,7 +140,7 @@ describe("ActiveRequest", () => {
 
         const data = new Uint8Array([1, 2, 3]);
         await expect(request.writeBodyChunk(data)).rejects.toThrow(
-            `Request failed with error code ${error.code.toString()}, ${error.message}`,
+            errorFromFrame(error),
         );
     });
 

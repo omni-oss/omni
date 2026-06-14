@@ -1,7 +1,8 @@
 import type { Id } from "../../";
 import { ResponseStateMachine } from "./response-state-machine";
+import type { ClosableSessionContext } from "./session-context";
 
-export class ResponseSession<TContext> {
+export class ResponseSession<TContext extends ClosableSessionContext> {
     private readonly _state: ResponseStateMachine = new ResponseStateMachine();
 
     constructor(
@@ -14,6 +15,6 @@ export class ResponseSession<TContext> {
     }
 
     async close() {
-        // do nothing for now
+        await this.context?.close?.();
     }
 }

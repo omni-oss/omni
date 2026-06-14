@@ -9,7 +9,7 @@ export class PendingResponse {
 
     constructor(
         private id: Id,
-        private frameSender: MpscSender<Frame>,
+        private frameSender: MpscSender<Frame, number | undefined>,
     ) {}
 
     public async start(
@@ -21,7 +21,7 @@ export class PendingResponse {
         }
 
         const frame = Frame.responseStart(this.id, statusCode, headers);
-        this.frameSender.send(frame);
+        await this.frameSender.send(frame);
         this._isStarted = true;
         return new ActiveResponse(this.id, this.frameSender);
     }
@@ -36,13 +36,13 @@ export class ActiveResponse {
 
     constructor(
         private id: Id,
-        private frameSender: MpscSender<Frame>,
+        private frameSender: MpscSender<Frame, number | undefined>,
     ) {}
 
     public async writeBodyChunk(chunk: Uint8Array) {
         await this.ensureNotEnded();
         const frame = Frame.responseBodyChunk(this.id, chunk);
-        this.frameSender.send(frame);
+        await this.frameSender.send(frame);
         return this;
     }
 
@@ -51,7 +51,7 @@ export class ActiveResponse {
         this._isEnded = true;
 
         const frame = Frame.responseEnd(this.id, trailers);
-        this.frameSender.send(frame);
+        await this.frameSender.send(frame);
     }
 
     public get isEnded() {
