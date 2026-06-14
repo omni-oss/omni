@@ -50,6 +50,7 @@ pub struct ScriptParams {
     pub dry_run: bool,
     /// Arbitrary, already-templated data provided by the action configuration.
     pub data: serde_json::Value,
+    pub output_dir: String,
 }
 
 /// A single `{ path, params }` entry in the `exec-generator-script` payload.

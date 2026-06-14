@@ -36,14 +36,12 @@ pub async fn run_javascript<'a>(
         params: ScriptParams {
             dry_run: ctx.dry_run,
             data,
+            output_dir: ctx.output_dir.to_string_lossy().into_owned(),
         },
     };
 
     ctx.script_runner
-        .run_scripts(
-            map_runtime(config.runtime),
-            std::slice::from_ref(&invocation),
-        )
+        .run_scripts(map_runtime(config.runtime), &[invocation])
         .await
 }
 
