@@ -265,6 +265,7 @@ async fn test_bridge_service_exec_generator_script() {
             "params": {
                 "dry_run": true,
                 "data": null,
+                "output_dir": workspace_dir(),
             },
         }
     ]);

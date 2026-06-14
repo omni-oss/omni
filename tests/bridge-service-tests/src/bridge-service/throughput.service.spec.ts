@@ -27,6 +27,7 @@ interface ScriptInvocation {
     params: {
         dry_run: boolean;
         data: unknown;
+        output_dir: string;
     };
 }
 
@@ -67,7 +68,7 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         const payload: ScriptInvocation[] = [
             {
                 path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null },
+                params: { dry_run: true, data: null, output_dir: __dirname },
             },
         ];
 
@@ -92,7 +93,7 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         const payload: ScriptInvocation[] = [
             {
                 path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null },
+                params: { dry_run: true, data: null, output_dir: __dirname },
             },
         ];
 
@@ -115,7 +116,7 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         const payload: ScriptInvocation[] = [
             {
                 path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null },
+                params: { dry_run: true, data: null, output_dir: __dirname },
             },
         ];
 
@@ -147,7 +148,7 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         const payload: ScriptInvocation[] = [
             {
                 path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null },
+                params: { dry_run: true, data: null, output_dir: __dirname },
             },
         ];
 
@@ -179,7 +180,7 @@ describe("bridge-service – throughput (/exec-generator-script)", {
         const payload: ScriptInvocation[] = [
             {
                 path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null },
+                params: { dry_run: true, data: null, output_dir: __dirname },
             },
         ];
 

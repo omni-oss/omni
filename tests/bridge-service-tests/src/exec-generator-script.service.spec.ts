@@ -19,6 +19,7 @@ describe("/exec-generator-script", {
                     params: {
                         dry_run: true,
                         data: { greeting: "hi" },
+                        output_dir: __dirname,
                     },
                 },
             ]),

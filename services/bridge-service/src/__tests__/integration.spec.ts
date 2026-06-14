@@ -39,6 +39,11 @@ describe("integration test", {
                         params: {
                             dry_run: true,
                             data: null,
+                            output_dir: join(
+                                __dirname,
+                                "__fixtures__",
+                                "output",
+                            ),
                         },
                     },
                 ]),

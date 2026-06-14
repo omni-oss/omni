@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import fs from "node:fs";
+import os from "node:os";
+import path, { resolve } from "node:path";
 import type {
     FileStat,
     FileSystem,
@@ -6,15 +8,18 @@ import type {
     System,
 } from "@omni-oss/system-interface";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-
 import { InMemoryCwdSystem } from "./in-memory-cwd-system";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────
-
-const HOST_CWD = "/host/cwd";
-const OUTPUT_DIR = "/tmp/output";
+//
+const TMP_DIR = path.join(
+    fs.realpathSync(os.tmpdir()),
+    `test-${crypto.randomUUID()}`,
+);
+const HOST_CWD = TMP_DIR;
+const OUTPUT_DIR = path.join(TMP_DIR, "output");
 
 const STAT_MARKER = { __marker: "stat" } as unknown as FileStat;
 
@@ -84,8 +89,9 @@ describe("InMemoryCwdSystem", () => {
         });
 
         test("setCurrentDir updates the in-memory dir only", async () => {
-            await sys.proc.setCurrentDir("/somewhere/else");
-            expect(sys.proc.currentDir()).toBe("/somewhere/else");
+            const newDir = path.join(sys.proc.currentDir(), "sub");
+            await sys.proc.setCurrentDir(newDir);
+            expect(sys.proc.currentDir()).toBe(newDir);
         });
 
         test("setCurrentDir never touches the host process", async () => {
@@ -109,8 +115,9 @@ describe("InMemoryCwdSystem", () => {
         });
 
         test("setCurrentDir accepts absolute dirs verbatim", async () => {
-            await sys.proc.setCurrentDir("/abs/path");
-            expect(sys.proc.currentDir()).toBe("/abs/path");
+            const newDir = path.join(HOST_CWD, "abs", "path");
+            await sys.proc.setCurrentDir(newDir);
+            expect(sys.proc.currentDir()).toBe(newDir);
         });
     });
 
@@ -135,10 +142,9 @@ describe("InMemoryCwdSystem", () => {
         });
 
         test("leaves absolute paths unchanged", async () => {
-            await sys.fs.readFileAsString("/etc/hosts");
-            expect(inner.fs.readFileAsString).toHaveBeenCalledWith(
-                "/etc/hosts",
-            );
+            const dir = path.join(HOST_CWD, "data");
+            await sys.fs.readFileAsString(dir);
+            expect(inner.fs.readFileAsString).toHaveBeenCalledWith(dir);
         });
 
         test("follows the in-memory dir after setCurrentDir", async () => {

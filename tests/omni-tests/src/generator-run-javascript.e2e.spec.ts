@@ -90,7 +90,7 @@ describe("+generator @e2e (run-javascript)", () => {
         expect(result).toHaveSucceeded();
         // The script wrote via `ctx.sys`, and the (non-dry) run committed it.
         // `data.message` was templated against the generator's `vars`.
-        expect(ws.read("from-js.txt")).toBe("Hello world");
+        expect(ws.read("out/from-js.txt")).toBe("Hello world");
     });
 
     it("commits nothing under --dry-run", async () => {
@@ -171,8 +171,8 @@ describe("+generator @e2e (run-javascript)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(ws.read("parent.txt")).toBe("parent");
-        expect(ws.read("child.txt")).toBe("child");
+        expect(ws.read("out/parent.txt")).toBe("parent");
+        expect(ws.read("out/child.txt")).toBe("child");
     });
 
     it("honors per-action runtimes, spawning one runner each", async (ctx) => {
@@ -201,7 +201,7 @@ describe("+generator @e2e (run-javascript)", () => {
                         },
                         {
                             type: "run-javascript",
-                            runtime: "deno",
+                            runtime: "bun",
                             script: "gen.mjs",
                             data: { target: "on-bun.txt", message: "bun" },
                         },
@@ -229,8 +229,8 @@ describe("+generator @e2e (run-javascript)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(ws.read("on-node.txt")).toBe("node");
-        expect(ws.read("on-bun.txt")).toBe("bun");
+        expect(ws.read("out/on-node.txt")).toBe("node");
+        expect(ws.read("out/on-bun.txt")).toBe("bun");
     });
 
     it("should propagate errors from omni to the js script", async () => {

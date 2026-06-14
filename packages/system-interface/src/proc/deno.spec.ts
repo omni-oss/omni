@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import { DenoProcess } from "./deno";
 import { declareProcTests } from "./test-declarations";
@@ -5,9 +6,9 @@ import { declareProcTests } from "./test-declarations";
 declareProcTests({
     name: "Deno",
     args: process.argv,
-    currentDir: process.cwd(),
+    currentDir: fs.realpathSync(process.cwd()),
     env: process.env,
-    newCurrentDir: os.tmpdir(),
+    newCurrentDir: fs.realpathSync(os.tmpdir()),
     proc: new DenoProcess(),
     skip: typeof Deno === "undefined",
 });
