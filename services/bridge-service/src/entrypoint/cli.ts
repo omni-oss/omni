@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { Writable } from "node:stream";
 import { Command } from "@commander-js/extra-typings";
 import { interceptLogs } from "@omni-oss/console-log-interceptor";
 import { Log } from "@omni-oss/log";
-import { withLogTapeRoot } from "@omni-oss/log/logtape";
+import { getStreamSink, withLogTapeRoot } from "@omni-oss/log/logtape";
 import { createStudioRpcInstance } from "@/index";
 import { getBridgeRpcSink } from "@/logging";
 import { description, name, version } from "../../package.json";
@@ -22,6 +23,7 @@ program.command("run").action(async () => {
                         return rpc.clientHandle;
                     },
                 }),
+                stderr: getStreamSink(Writable.toWeb(process.stderr)),
             },
             loggers: [
                 {
@@ -34,8 +36,8 @@ program.command("run").action(async () => {
                     sinks: ["bridge-rpc"],
                 },
                 {
-                    category: ["*"],
-                    sinks: [],
+                    category: ["bridge-rpc-core"],
+                    sinks: ["stderr"],
                     lowestLevel: "warning",
                 },
             ],

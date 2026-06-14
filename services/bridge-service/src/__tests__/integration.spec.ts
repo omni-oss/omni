@@ -33,12 +33,15 @@ describe("integration test", {
                 .then((req) => req.start());
             const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
             await request.writeBodyChunk(
-                json({
-                    paths: [scriptPath],
-                    params: {
-                        dry_run: true,
+                json([
+                    {
+                        path: scriptPath,
+                        params: {
+                            dry_run: true,
+                            data: null,
+                        },
                     },
-                }),
+                ]),
             );
             const end = await request.end().then((x) => x.wait());
 

@@ -2,7 +2,8 @@
     "name": "@omni-oss/bridge-service",
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
-    "dependencies": {
+    "dependencies": {},
+    "devDependencies": {
         "zod": "catalog:",
         "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
@@ -13,9 +14,7 @@
         "@omni-oss/bridge-rpc-system-interface": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
         "@omni-oss/log": "workspace:^",
-        "@omni-oss/console-log-interceptor": "workspace:^"
-    },
-    "devDependencies": {
+        "@omni-oss/console-log-interceptor": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
