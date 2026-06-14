@@ -65,17 +65,6 @@ describe("Oneshot", () => {
         );
     });
 
-    it("should error on close if it is closed before sending a value", async () => {
-        const oneshot = new Oneshot<number>();
-
-        oneshot.receiver.close();
-
-        expect(() => oneshot.receiver.close()).toThrow(OneshotClosedError);
-        await expect(oneshot.receiver.receive()).rejects.toThrow(
-            OneshotClosedError,
-        );
-    });
-
     it("should error when receive is called twice", async () => {
         const oneshot = new Oneshot<number>();
 

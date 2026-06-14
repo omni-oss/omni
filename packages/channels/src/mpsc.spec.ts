@@ -101,4 +101,95 @@ describe("Mpsc", () => {
         expect(res1.done).toBe(true);
         expect(res2.done).toBe(true);
     });
+
+    describe("bounded (backpressure)", () => {
+        it("rejects an invalid capacity", () => {
+            expect(() => new Mpsc<number, number>(0)).toThrow();
+            expect(() => new Mpsc<number, number>(-1)).toThrow();
+            expect(() => new Mpsc<number, number>(1.5)).toThrow();
+        });
+
+        it("resolves sends immediately while there is spare capacity", async () => {
+            const { sender: tx } = new Mpsc<number, number>(2);
+
+            let resolved = 0;
+            await tx.send(1).then(() => resolved++);
+            await tx.send(2).then(() => resolved++);
+
+            expect(resolved).toBe(2);
+        });
+
+        it("applies backpressure once the buffer is full and resolves when a slot frees", async () => {
+            const { sender: tx, receiver: rx } = new Mpsc<number, number>(1);
+
+            // First send fits in the buffer and resolves immediately.
+            await tx.send(1);
+
+            // Second send must wait for a free slot.
+            let thirdResolved = false;
+            const pending = tx.send(2).then(() => {
+                thirdResolved = true;
+            });
+
+            // Give the microtask queue a chance — it must still be pending.
+            await Promise.resolve();
+            expect(thirdResolved).toBe(false);
+
+            // Draining one item frees a slot and unblocks the pending send.
+            expect(await rx.next()).toEqual({ done: false, value: 1 });
+            await pending;
+            expect(thirdResolved).toBe(true);
+
+            // The previously backpressured value is now buffered.
+            expect(await rx.next()).toEqual({ done: false, value: 2 });
+        });
+
+        it("preserves FIFO order across backpressured sends", async () => {
+            const { sender: tx, receiver: rx } = new Mpsc<number, number>(1);
+
+            await tx.send(1);
+            // These two are backpressured (not awaited yet).
+            const p2 = tx.send(2);
+            const p3 = tx.send(3);
+
+            const received: number[] = [];
+            received.push((await rx.next()).value as number);
+            received.push((await rx.next()).value as number);
+            received.push((await rx.next()).value as number);
+            await Promise.all([p2, p3]);
+
+            expect(received).toEqual([1, 2, 3]);
+        });
+
+        it("hands off directly to a waiting receiver without consuming capacity", async () => {
+            const { sender: tx, receiver: rx } = new Mpsc<number, number>(1);
+
+            const pending = rx.next();
+            // A receiver is already waiting, so this resolves immediately even
+            // though we then fill the buffer.
+            await tx.send(1);
+            expect(await pending).toEqual({ done: false, value: 1 });
+
+            // Buffer is empty again, so another send fits without backpressure.
+            await tx.send(2);
+        });
+
+        it("rejects pending backpressured sends when closed", async () => {
+            const { sender: tx } = new Mpsc<number, number>(1);
+
+            await tx.send(1);
+            const pending = tx.send(2);
+
+            tx.close();
+
+            await expect(pending).rejects.toThrow();
+        });
+
+        it("trySend returns false when the buffer is full", async () => {
+            const { sender: tx } = new Mpsc<number, number>(1);
+
+            expect(tx.trySend(1)).toBe(true);
+            expect(tx.trySend(2)).toBe(false);
+        });
+    });
 });

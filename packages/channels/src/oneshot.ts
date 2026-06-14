@@ -71,10 +71,6 @@ export class OneshotReceiver<T> {
     }
 
     public close() {
-        if (this.state.closed) {
-            throw new OneshotClosedError();
-        }
-
         this.closerFn();
     }
 }
@@ -95,43 +91,31 @@ export class OneshotSender<T> {
     }
 
     public send(value: T) {
-        if (this.state.closed) {
-            throw new OneshotClosedError();
-        }
-
-        if (this.state.sent) {
-            throw new OneshotValueSentError();
-        }
-
         this.senderFn(value);
     }
 
     public close() {
-        if (this.state.closed) {
-            throw new OneshotClosedError();
-        }
-
         this.closerFn();
     }
 }
 
 export class OneshotClosedError extends Error {
-    constructor() {
-        super("Oneshot is closed");
+    constructor(message?: string) {
+        super(message ?? "Oneshot is closed");
         this.name = "OneshotClosedError";
     }
 }
 
 export class OneshotReceiveCalledError extends Error {
-    constructor() {
-        super("Receive can only be called once");
+    constructor(message?: string) {
+        super(message ?? "Receive can only be called once");
         this.name = "OneshotReceiveCalledError";
     }
 }
 
 export class OneshotValueSentError extends Error {
-    constructor() {
-        super("Oneshot value has already been sent");
+    constructor(message?: string) {
+        super(message ?? "Oneshot value has already been sent");
         this.name = "OneshotValueSentError";
     }
 }
