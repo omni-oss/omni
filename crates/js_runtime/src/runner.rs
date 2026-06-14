@@ -87,7 +87,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             let rpc = rpc.clone();
             tokio::spawn(async move {
                 if let Err(e) = rpc.run().await {
-                    trace::error!(error = %e, "bridge service rpc loop ended");
+                    trace::error!(error = %e, "bridge_service_rpc_loop_ended");
                 }
             })
         };
