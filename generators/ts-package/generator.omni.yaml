@@ -32,13 +32,13 @@ prompts:
         value: e2e-tests
     default: lib
 
-  - if: "{{ prompts.package_type == 'script' }}"
+  - if: "{{ inputs.package_type == 'script' }}"
     name: script_can_be_used_as_lib
     type: confirm
     message: Can this script be used as a library?
     default: false
 
-  - if: "{{ prompts.package_type == 'script' }}"
+  - if: "{{ inputs.package_type == 'script' }}"
     name: shebang_executor
     type: select
     message: What shebang should be used for the script?
@@ -56,13 +56,13 @@ prompts:
     message: What is the description of your package?
     default: A TypeScript Package
 
-  - if: "{{ prompts.package_type != 'e2e-tests' and prompts.package_type != 'service-tests' }}"
+  - if: "{{ inputs.package_type != 'e2e-tests' and inputs.package_type != 'service-tests' }}"
     name: unit_test
     type: confirm
     message: Do you want to add unit tests?
     default: true
 
-  - if: "{{ prompts.package_type != 'e2e-tests' and prompts.package_type != 'service-tests' }}"
+  - if: "{{ inputs.package_type != 'e2e-tests' and inputs.package_type != 'service-tests' }}"
     name: integration_test
     type: confirm
     message: Do you want to add integration tests?
@@ -83,7 +83,7 @@ prompts:
     message: Will the package be published to a registry?
     default: false
 
-  - if: "{{ prompts.published }}"
+  - if: "{{ inputs.published }}"
     name: publish_access
     type: select
     message: What is the publish access of your package?
@@ -98,7 +98,7 @@ targets:
   cog_config: "@workspace/cog.toml"
 
 vars:
-  full_package_name: "@omni-oss/{{ prompts.package_name }}"
+  full_package_name: "@omni-oss/{{ inputs.package_name }}"
   generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\', to='/') }}"
 
 actions:
@@ -112,38 +112,38 @@ actions:
       - "!templates/src/__tests__/integration.spec.ts.tpl"
       - "!templates/src/add.spec.ts.tpl"
 
-  - if: "{{ prompts.package_type == 'lib' or prompts.package_type == 'script' }}"
+  - if: "{{ inputs.package_type == 'lib' or inputs.package_type == 'script' }}"
     type: add-many
     base_path: templates
     files:
       - templates/src/add.ts.tpl
 
-  - if: "{{ prompts.package_type == 'script' }}"
+  - if: "{{ inputs.package_type == 'script' }}"
     type: add-many
     base_path: templates
     files:
       - templates/src/cli/index.ts.tpl
 
-  - if: "{{ prompts.package_type == 'e2e-tests' }}"
+  - if: "{{ inputs.package_type == 'e2e-tests' }}"
     type: add-many
     base_path: templates
     files:
       - "templates/vitest.config.e2e.ts.tpl"
 
-  - if: "{{ prompts.package_type == 'service-tests' }}"
+  - if: "{{ inputs.package_type == 'service-tests' }}"
     type: add-many
     base_path: templates
     files:
       - "templates/vitest.config.service.ts.tpl"
 
-  - if: "{{ prompts.integration_test | default(value=false) }}"
+  - if: "{{ inputs.integration_test | default(value=false) }}"
     type: add-many
     base_path: templates
     files:
       - templates/vitest.config.integration.ts.tpl
       - templates/src/__tests__/integration.spec.ts.tpl
 
-  - if: "{{ prompts.unit_test | default(value=false) }}"
+  - if: "{{ inputs.unit_test | default(value=false) }}"
     type: add-many
     base_path: templates
     files:
@@ -159,7 +159,7 @@ actions:
           include = [
               "{{ vars.generated_dir }}/**",
           ]
-          public_api = {{ prompts.published }}
+          public_api = {{ inputs.published }}
         pattern: "@anchor:new-typescript-package"
 
   - type: transform-many

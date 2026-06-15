@@ -43,7 +43,7 @@ prompts:
         value: custom
         description: Set own crate version
 
-  - if: "{{ prompts.version == 'custom' }}"
+  - if: "{{ inputs.version == 'custom' }}"
     type: text
     name: crate_version
     message: Crate version
@@ -59,7 +59,7 @@ prompts:
     message: Add crate level error type
     default: true
 
-  - if: "{{ prompts.add_error_type }}"
+  - if: "{{ inputs.add_error_type }}"
     type: text
     name: error_name
     message: Error type name
@@ -73,7 +73,7 @@ targets:
   cog_config: "@workspace/cog.toml"
 
 vars:
-  error_mod_name: "{% if prompts.error_name %}{{ prompts.error_name | snake_case }}{% endif %}"
+  error_mod_name: "{% if inputs.error_name %}{{ inputs.error_name | snake_case }}{% endif %}"
 
 actions:
   - type: add-many
@@ -83,13 +83,13 @@ actions:
       - templates/**
       - "!templates/src/main.rs.tpl"
 
-  - if: "{{ prompts.crate_type == 'bin' }}"
+  - if: "{{ inputs.crate_type == 'bin' }}"
     type: add
     target: root
     file: templates/src/main.rs.tpl
     base_path: templates
 
-  - if: "{{ prompts.add_error_type }}"
+  - if: "{{ inputs.add_error_type }}"
     type: run-generator
     generator: rust-error
     targets:
@@ -97,7 +97,7 @@ actions:
     prompt_values:
       forward: all
 
-  - if: "{{ prompts.add_error_type }}"
+  - if: "{{ inputs.add_error_type }}"
     type: prepend-content
     target: lib
     entries:
@@ -112,7 +112,7 @@ actions:
   - type: prepend-content
     target: root_cargo_toml
     entries:
-      - content: '{{ prompts.crate_name }} = { path = "{{ data.generated_dir }}" }'
+      - content: '{{ inputs.crate_name }} = { path = "{{ data.generated_dir }}" }'
         pattern: "@anchor:new-crate"
     data:
       generated_dir: "{{ output_dir | replace(from='\\', to='/') }}"
@@ -121,7 +121,7 @@ actions:
     target: cog_config
     entries:
       - content: |
-          [monorepo.packages.{{ prompts.crate_name }}]
+          [monorepo.packages.{{ inputs.crate_name }}]
           path = "{{ data.generated_dir }}"
           include = [
               "{{ data.generated_dir }}/**",
