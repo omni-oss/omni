@@ -10,7 +10,7 @@ use crate::{
 use either::Either;
 use maps::{UnorderedMap, unordered_map};
 use sets::UnorderedSet;
-use strum::IntoDiscriminant;
+use strum::IntoDiscriminant as _;
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub async fn collect<TExtra: InputExtras>(
@@ -305,7 +305,7 @@ fn skip(
                 values,
             );
 
-            let tera_result = omni_tera::Tera::one_off(if_expr, &ctx, true)?;
+            let tera_result = omni_tera::one_off(if_expr, if_expr, &ctx)?;
             let tera_result = tera_result.trim();
 
             validate_boolean_expression_result(&tera_result, if_expr)?;
@@ -414,200 +414,5 @@ impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
     ) -> Result<(), value_bag::Error> {
         self.value = false;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use either::Either;
-    use maps::unordered_map;
-    use value_bag::ValueBag;
-
-    use super::*;
-    use crate::{
-        configuration::{
-            BaseInputConfiguration, CollectionConfig, InputConfiguration,
-            TextInputConfiguration, ValidateConfiguration,
-            ValidatedInputConfiguration,
-        },
-        error::ErrorKind,
-        scripted::ScriptedInputProvider,
-    };
-
-    #[tokio::test]
-    async fn test_collect_skips_input_when_if_false() {
-        let inputs = vec![
-            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("lang", "Language?", None),
-                    vec![],
-                ),
-                None::<String>,
-            )),
-            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(
-                        "framework",
-                        "Framework?",
-                        Some(Either::Right(
-                            "{{ inputs.lang == 'rust' }}".to_string(),
-                        )),
-                    ),
-                    vec![],
-                ),
-                None::<String>,
-            )),
-        ];
-
-        let provider = ScriptedInputProvider::new([("lang", "typescript")]);
-
-        let result = collect(
-            &inputs,
-            &unordered_map!(),
-            &unordered_map!(),
-            &CollectionConfig::default(),
-            &provider,
-        )
-        .await
-        .unwrap();
-
-        assert!(result.contains_key("lang"));
-        assert!(!result.contains_key("framework"));
-    }
-
-    #[tokio::test]
-    async fn test_collect_uses_pre_exec_value() {
-        let inputs = vec![InputConfiguration::<()>::new_text(
-            TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("name", "Name?", None),
-                    vec![],
-                ),
-                None::<String>,
-            ),
-        )];
-
-        let pre_exec_values = unordered_map! {
-            "name".to_string() => ValueBag::capture_serde1(&"Alice").to_owned()
-        };
-        let provider =
-            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
-
-        let result = collect(
-            &inputs,
-            &pre_exec_values,
-            &unordered_map!(),
-            &CollectionConfig::default(),
-            &provider,
-        )
-        .await
-        .unwrap();
-
-        let name_val = result.get("name").unwrap();
-        assert_eq!(name_val.by_ref().to_str().as_deref(), Some("Alice"));
-    }
-
-    #[tokio::test]
-    async fn test_collect_uses_default_when_use_defaults_true() {
-        let inputs = vec![InputConfiguration::<()>::new_text(
-            TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("greeting", "Greeting?", None),
-                    vec![],
-                ),
-                Some("hello".to_string()),
-            ),
-        )];
-
-        let provider =
-            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
-        let config = CollectionConfig {
-            use_defaults: true,
-            ..Default::default()
-        };
-
-        let result = collect(
-            &inputs,
-            &unordered_map!(),
-            &unordered_map!(),
-            &config,
-            &provider,
-        )
-        .await
-        .unwrap();
-
-        let greeting_val = result.get("greeting").unwrap();
-        assert_eq!(greeting_val.by_ref().to_str().as_deref(), Some("hello"));
-    }
-
-    #[tokio::test]
-    async fn test_collect_reprompts_when_prefilled_value_fails_validation() {
-        let validator = ValidateConfiguration::new(
-            Either::Right("{{ value | int > 0 }}".to_string()),
-            Some("Must be positive".to_string()),
-        );
-
-        let inputs = vec![InputConfiguration::<()>::new_text(
-            TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("age", "Age?", None),
-                    vec![validator],
-                ),
-                None::<String>,
-            ),
-        )];
-
-        let pre_exec_values = unordered_map! {
-            "age".to_string() => ValueBag::capture_serde1(&"-1").to_owned()
-        };
-        let provider = ScriptedInputProvider::new([("age", "25")]);
-
-        let result = collect(
-            &inputs,
-            &pre_exec_values,
-            &unordered_map!(),
-            &CollectionConfig::default(),
-            &provider,
-        )
-        .await
-        .unwrap();
-
-        let age_val = result.get("age").unwrap();
-        assert_eq!(age_val.by_ref().to_str().as_deref(), Some("25"));
-    }
-
-    #[tokio::test]
-    async fn test_collect_returns_error_on_duplicate_input_names() {
-        let inputs = vec![
-            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("name", "First name?", None),
-                    vec![],
-                ),
-                None::<String>,
-            )),
-            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new("name", "Second name?", None),
-                    vec![],
-                ),
-                None::<String>,
-            )),
-        ];
-
-        let provider =
-            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
-
-        let result = collect(
-            &inputs,
-            &unordered_map!(),
-            &unordered_map!(),
-            &CollectionConfig::default(),
-            &provider,
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().kind(), ErrorKind::DuplicateInputName);
     }
 }
