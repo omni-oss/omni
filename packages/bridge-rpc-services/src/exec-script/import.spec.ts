@@ -75,6 +75,22 @@ describe("import", () => {
             const mod = await importScript<{ value: number }>(absolute);
             expect(mod.value).toBe(42);
         });
+
+        test("strips Windows extended-length path prefix (\\\\?\\) before converting to a URL", async () => {
+            // Rust's std::fs::canonicalize prepends \\?\ to paths on Windows.
+            // importScript must strip this prefix so pathToFileURL produces a
+            // valid file:// URL rather than file://%3F\…
+            //
+            // We prepend the prefix to the real fixture path; on non-Windows
+            // platforms the prefix is stripped by our normalizer and the
+            // remaining absolute path is resolved normally.
+            const realPath = resolve(namedPath);
+            // Simulate what Rust's canonicalize returns: \\?\<absolutePath>
+            const withPrefix = `\\\\?\\${realPath}`;
+
+            const mod = await importScript<{ value: number }>(withPrefix);
+            expect(mod.value).toBe(42);
+        });
     });
 
     describe("importScript() returns module exports as-is", () => {

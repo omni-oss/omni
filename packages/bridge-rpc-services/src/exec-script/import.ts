@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 //   ./foo.ts | ../foo.ts          → relative path
 //   /abs/foo.ts                   → POSIX absolute path
 //   C:\scripts\foo.ts             → Windows absolute path
+//   \\?\C:\scripts\foo.ts         → Windows extended-length path (from Rust canonicalize)
 //   file:///…                     → file URL
 //   https://… | npm:… | jsr:…     → URL specifiers (Deno/Bun)
 //   @scope/pkg | pkg              → bare specifier, resolved by the runtime
@@ -38,10 +39,34 @@ function isBare(spec: string): boolean {
     );
 }
 
+/**
+ * Strip the Windows extended-length path prefix (`\\?\` or `\\?\UNC\`) that
+ * Rust's `std::fs::canonicalize` produces on Windows. `pathToFileURL` cannot
+ * handle it and generates an invalid `file://%3F\…` URL instead.
+ *
+ * - `\\?\UNC\server\share` → `\\server\share`
+ * - `\\?\C:\…`             → `C:\…`
+ */
+function stripWindowsExtendedLengthPrefix(p: string): string {
+    // \\?\UNC\server\share  →  \\server\share
+    if (p.startsWith("\\\\?\\UNC\\") || p.startsWith("\\\\?\\UNC/")) {
+        return `\\\\${p.slice(8)}`;
+    }
+    // \\?\C:\…  →  C:\…
+    if (p.startsWith("\\\\?\\")) {
+        return p.slice(4);
+    }
+    return p;
+}
+
 function toImportSpecifier(spec: string): string {
     if (isUrlLike(spec) || isBare(spec)) return spec;
+    // Strip Windows extended-length path prefix before converting to a file
+    // URL.  Without this, pathToFileURL produces an invalid `file://%3F\…`
+    // URL for paths returned by Rust's std::fs::canonicalize on Windows.
+    const normalized = stripWindowsExtendedLengthPrefix(spec);
     // Relative or absolute filesystem path → file URL (Windows-safe).
-    return pathToFileURL(resolvePath(spec)).href;
+    return pathToFileURL(resolvePath(normalized)).href;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
