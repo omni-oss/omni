@@ -118,7 +118,10 @@ impl VendoredBridgeService {
                 root = %root.display(),
                 "vendored bridge-service already up to date"
             );
-            return Ok(VendoredLocation { root, entrypoint });
+            return Ok(VendoredLocation {
+                root: omni_utils::path::clean(root),
+                entrypoint: omni_utils::path::clean(entrypoint),
+            });
         }
 
         trace::debug!(
@@ -188,7 +191,10 @@ impl VendoredBridgeService {
                 error::error!("failed to write version marker: {e}")
             })?;
 
-        Ok(VendoredLocation { root, entrypoint })
+        Ok(VendoredLocation {
+            root: omni_utils::path::clean(root),
+            entrypoint: omni_utils::path::clean(entrypoint),
+        })
     }
 
     async fn is_up_to_date(&self, root: &Path, entrypoint: &Path) -> bool {

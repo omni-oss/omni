@@ -38,6 +38,7 @@ rust-embed = { workspace = true, features = [
 ] }
 bridge_rpc_core = { workspace = true }
 bridge_rpc_router = { workspace = true }
+omni_utils = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
