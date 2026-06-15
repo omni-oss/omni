@@ -2,21 +2,25 @@ use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::GeneratorConfiguration;
-use omni_prompt::configuration::{
-    BasePromptConfiguration, OptionConfiguration, PromptConfiguration,
-    PromptingConfiguration, SelectPromptConfiguration,
+use omni_input_provider::{
+    CollectionConfig, collect_one,
+    configuration::{
+        BaseInputConfiguration, InputConfiguration, OptionConfiguration,
+        SelectInputConfiguration,
+    },
 };
+use omni_prompt::CliInputProvider;
 use value_bag::{OwnedValueBag, ValueBag};
 
-pub fn prompt_generator_name(
-    generators: &[Cow<GeneratorConfiguration>],
+pub async fn prompt_generator_name(
+    generators: &[Cow<'_, GeneratorConfiguration>],
 ) -> eyre::Result<String> {
     let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
+    let prompting_config = CollectionConfig::default();
 
     let prompt =
-        PromptConfiguration::<()>::new_select(SelectPromptConfiguration::new(
-            BasePromptConfiguration::new(
+        InputConfiguration::<()>::new_select(SelectInputConfiguration::new(
+            BaseInputConfiguration::new(
                 "generator_name",
                 "Select generator",
                 None,
@@ -35,12 +39,14 @@ pub fn prompt_generator_name(
             None,
         ));
 
-    let value = omni_prompt::prompt_one(
+    let value = collect_one(
         &prompt,
         None,
         &context_values,
         &prompting_config,
-    )?
+        &CliInputProvider::default(),
+    )
+    .await?
     .expect("should have value at this point");
 
     let value = value

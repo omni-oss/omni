@@ -27,7 +27,7 @@ log = { workspace = true }
 tracing = { workspace = true, optional = true }
 derive-new = { workspace = true }
 omni_generator_configurations = { workspace = true }
-omni_prompt = { workspace = true }
+omni_input_provider = { workspace = true }
 omni_discovery = { workspace = true }
 omni_discovery_utils = { workspace = true }
 system_traits = { workspace = true, features = [
@@ -66,3 +66,4 @@ bridge_rpc_router = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+omni_input_provider = { workspace = true, features = ["test-utils"] }

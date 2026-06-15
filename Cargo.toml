@@ -195,6 +195,7 @@ omni_setup = { path = "./crates/omni_setup" }
 omni_generator_configurations = { path = "./crates/omni_generator_configurations" }
 omni_scm = { path = "./crates/omni_scm" }
 omni_prompt = { path = "./crates/omni_prompt" }
+omni_input_provider = { path = "./crates/omni_input_provider" }
 omni_serde_validators = { path = "./crates/omni_serde_validators" }
 omni_configuration_discovery = { path = "./crates/omni_configuration_discovery" }
 omni_discovery = { path = "./crates/omni_discovery" }

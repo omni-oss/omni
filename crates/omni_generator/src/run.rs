@@ -5,12 +5,12 @@ use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
-use omni_prompt::configuration::PromptingConfiguration;
+use omni_input_provider::{CollectionConfig, InputProvider, collect};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    GeneratorSys, GeneratorSysFull, LazyScriptRunner,
+    GeneratorSys, GeneratorSysFull, JsScriptRunner, LazyScriptRunner,
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     gen_session::GenSession,
@@ -30,9 +30,9 @@ pub struct RunConfig<'a> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
-    /// Skip prompts with default values
     pub use_prompt_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
+    pub input_provider: &'a dyn InputProvider,
 }
 
 pub async fn run_named<'a>(
@@ -100,11 +100,11 @@ pub(crate) async fn run_internal<'a>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a>,
     sys: &impl GeneratorSysFull,
-    runner: &LazyScriptRunner,
+    runner: &dyn JsScriptRunner,
 ) -> Result<GenSession, Error> {
-    let prompting_config = PromptingConfiguration {
+    let collection_config = CollectionConfig {
         use_defaults: config.use_prompt_defaults,
-        ..PromptingConfiguration::default()
+        ..CollectionConfig::default()
     };
 
     let session = GenSession::with_restored(
@@ -113,12 +113,14 @@ pub(crate) async fn run_internal<'a>(
         Default::default(),
     );
 
-    let mut values = omni_prompt::prompt(
+    let mut values = collect(
         &r#gen.prompts,
         &config.prompt_values,
         &config.context_values,
-        &prompting_config,
-    )?;
+        &collection_config,
+        config.input_provider,
+    )
+    .await?;
 
     // propagate prompt values to the context values
     for (key, value) in config.prompt_values.iter() {
@@ -175,7 +177,8 @@ pub(crate) async fn run_internal<'a>(
         target_overrides: config.target_overrides,
         current_dir: config.current_dir,
         env: config.env,
-        script_runner: runner,
+        js_script_runner: runner,
+        input_provider: config.input_provider,
     };
 
     execute_actions(&args, &session, sys).await?;

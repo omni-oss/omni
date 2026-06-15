@@ -32,6 +32,8 @@ use js_runtime::{
 use serde::Serialize;
 use tokio::sync::Mutex;
 
+use async_trait::async_trait;
+
 use crate::{GeneratorSys, TransactionSys, error::Error};
 
 /// Path of the `exec-generator-script` service exposed by the bridge service.
@@ -60,6 +62,19 @@ pub struct ScriptInvocation {
     pub path: String,
     /// Per-script parameters.
     pub params: ScriptParams,
+}
+
+/// Abstraction over the JavaScript script execution backend.
+///
+/// `run_scripts` dispatches one or more script invocations to a JS process
+/// for the given runtime, spawning that process lazily on first use.
+#[async_trait]
+pub trait JsScriptRunner: Send + Sync + std::fmt::Debug {
+    async fn run_scripts(
+        &self,
+        runtime: DelegatingJsRuntimeOption,
+        invocations: &[ScriptInvocation],
+    ) -> Result<(), Error>;
 }
 
 /// A shared, lazily-spawned set of generator script runners keyed by runtime.
@@ -129,28 +144,6 @@ impl LazyScriptRunner {
         }
     }
 
-    /// Runs the generator scripts described by `invocations` on the shared
-    /// process for `runtime`, spawning that process if it isn't running yet.
-    pub async fn run_scripts(
-        &self,
-        runtime: DelegatingJsRuntimeOption,
-        invocations: &[ScriptInvocation],
-    ) -> Result<(), Error> {
-        // Resolve `Auto` to a concrete runtime so every `Auto` request shares a
-        // single process (and so distinct explicit runtimes get distinct keys).
-        let resolved = runtime.resolve().ok_or_else(|| {
-            Error::custom("no JS runtime (node/bun/deno) found on PATH")
-        })?;
-
-        let runner = self.runner_for(resolved).await?;
-
-        runner
-            .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
-            .await
-            .map(|_| ())
-            .map_err(|e| Error::custom(e.to_string()))
-    }
-
     /// Returns the (possibly newly-spawned) runner for a concrete `runtime`.
     ///
     /// Actions run sequentially within a generation, so a single mutex around
@@ -178,5 +171,26 @@ impl LazyScriptRunner {
         for (_, runner) in runners {
             let _ = runner.shutdown().await;
         }
+    }
+}
+
+#[async_trait]
+impl JsScriptRunner for LazyScriptRunner {
+    async fn run_scripts(
+        &self,
+        runtime: DelegatingJsRuntimeOption,
+        invocations: &[ScriptInvocation],
+    ) -> Result<(), Error> {
+        let resolved = runtime.resolve().ok_or_else(|| {
+            Error::custom("no JS runtime (node/bun/deno) found on PATH")
+        })?;
+
+        let runner = self.runner_for(resolved).await?;
+
+        runner
+            .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
+            .await
+            .map(|_| ())
+            .map_err(|e| Error::custom(e.to_string()))
     }
 }

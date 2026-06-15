@@ -1,8 +1,5 @@
-pub mod configuration;
-pub mod error;
+mod cli_input_provider;
 mod make;
-mod parsers;
-mod prompt;
-mod utils;
 
-pub use prompt::*;
+pub use cli_input_provider::CliInputProvider;
+pub use omni_input_provider::*;

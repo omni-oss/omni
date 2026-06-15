@@ -6,10 +6,13 @@ use std::{
 };
 
 use maps::{UnorderedMap, unordered_map};
-use omni_prompt::configuration::{
-    BasePromptConfiguration, ConfirmPromptConfiguration, PromptConfiguration,
-    PromptingConfiguration, TextPromptConfiguration,
-    ValidatedPromptConfiguration,
+use omni_input_provider::{
+    InputProvider, collect_one,
+    configuration::{
+        BaseInputConfiguration, CollectionConfig, ConfirmInputConfiguration,
+        InputConfiguration, TextInputConfiguration,
+        ValidatedInputConfiguration,
+    },
 };
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -114,6 +117,7 @@ pub async fn ensure_dir_exists(
 pub async fn should_overwrite(
     path: &Path,
     overwrite: Option<OverwriteConfiguration>,
+    provider: &dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<bool, Error> {
     if let Some(overwrite) = overwrite {
@@ -128,9 +132,9 @@ pub async fn should_overwrite(
 
     let is_dir = sys.fs_is_dir_async(path).await?;
 
-    let prompt_cfg = PromptConfiguration::<()>::new_confirm(
-        ConfirmPromptConfiguration::new(
-            BasePromptConfiguration::new(
+    let prompt_cfg = InputConfiguration::<()>::new_confirm(
+        ConfirmInputConfiguration::new(
+            BaseInputConfiguration::new(
                 "overwrite_path",
                 if is_dir {
                     format!(
@@ -145,10 +149,11 @@ pub async fn should_overwrite(
         ),
     );
 
-    let cfg = PromptingConfiguration::default();
+    let cfg = CollectionConfig::default();
 
     let result =
-        omni_prompt::prompt_one(&prompt_cfg, None, &unordered_map!(), &cfg)?
+        collect_one(&prompt_cfg, None, &unordered_map!(), &cfg, provider)
+            .await?
             .expect("should have value");
 
     let bool_result = result.by_ref().to_bool().expect("should be bool");
@@ -159,10 +164,12 @@ pub async fn should_overwrite(
 pub async fn overwrite(
     output_path: &Path,
     overwrite: Option<OverwriteConfiguration>,
+    provider: &dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<Option<bool>, Error> {
     if sys.fs_exists_async(&output_path).await? {
-        let overwrite = should_overwrite(&output_path, overwrite, sys).await?;
+        let overwrite =
+            should_overwrite(&output_path, overwrite, provider, sys).await?;
         let output_path_d = output_path.display();
         if overwrite {
             if sys.fs_is_dir_async(&output_path).await? {
@@ -191,6 +198,7 @@ pub async fn get_target_dir<'a>(
     output_dir: &'a Path,
     generator: &'a str,
     session: &'a GenSession,
+    provider: &'a dyn InputProvider,
     _sys: &'a impl GeneratorSys,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
@@ -203,9 +211,9 @@ pub async fn get_target_dir<'a>(
     }
 
     let prompt_cfg =
-        PromptConfiguration::<()>::new_text(TextPromptConfiguration::new(
-            ValidatedPromptConfiguration::new(
-                BasePromptConfiguration::new(
+        InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+            ValidatedInputConfiguration::new(
+                BaseInputConfiguration::new(
                     target_name,
                     format!("Directory for target {}:", target_name),
                     None,
@@ -215,16 +223,13 @@ pub async fn get_target_dir<'a>(
             None,
         ));
 
-    let cfg = PromptingConfiguration::default();
+    let cfg = CollectionConfig::default();
 
     loop {
-        let result = omni_prompt::prompt_one(
-            &prompt_cfg,
-            None,
-            &unordered_map!(),
-            &cfg,
-        )?
-        .expect("should have value");
+        let result =
+            collect_one(&prompt_cfg, None, &unordered_map!(), &cfg, provider)
+                .await?
+                .expect("should have value");
 
         let path_str = result.by_ref().to_str().expect("should be string");
         let path = Path::new(&path_str as &str);
@@ -244,6 +249,7 @@ pub async fn get_target_dir<'a>(
 pub async fn get_target_file<'a>(
     target_name: &str,
     ctx: &HandlerContext<'a>,
+    provider: &'a dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<Cow<'a, Path>, Error> {
     let base = enum_map::enum_map! {
@@ -258,7 +264,7 @@ pub async fn get_target_file<'a>(
     let target = if let Some(target) = target {
         target
     } else {
-        Cow::Owned(prompt_target_file(target_name, ctx, sys).await?)
+        Cow::Owned(prompt_target_file(target_name, ctx, provider, sys).await?)
     };
 
     Ok(target)
@@ -267,12 +273,13 @@ pub async fn get_target_file<'a>(
 pub async fn prompt_target_file(
     target_name: &str,
     ctx: &HandlerContext<'_>,
+    provider: &dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let prompt_cfg =
-        PromptConfiguration::<()>::new_text(TextPromptConfiguration::new(
-            ValidatedPromptConfiguration::new(
-                BasePromptConfiguration::new(
+        InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+            ValidatedInputConfiguration::new(
+                BaseInputConfiguration::new(
                     target_name,
                     format!("Directory for target {}:", target_name),
                     None,
@@ -282,7 +289,7 @@ pub async fn prompt_target_file(
             None,
         ));
 
-    let cfg = PromptingConfiguration::default();
+    let cfg = CollectionConfig::default();
 
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
@@ -290,13 +297,10 @@ pub async fn prompt_target_file(
     };
 
     loop {
-        let result = omni_prompt::prompt_one(
-            &prompt_cfg,
-            None,
-            &unordered_map!(),
-            &cfg,
-        )?
-        .expect("should have value");
+        let result =
+            collect_one(&prompt_cfg, None, &unordered_map!(), &cfg, provider)
+                .await?
+                .expect("should have value");
 
         let path_str = result.by_ref().to_str().expect("should be string");
         let path = if let Ok(path) = path_str.as_ref().parse::<OmniPath>() {
@@ -361,6 +365,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a>,
+    provider: &'a dyn InputProvider,
     strip_extensions: &'a [TExt],
     flatten: bool,
     session: &'a GenSession,
@@ -375,6 +380,7 @@ pub async fn get_output_path<'a, TExt: AsRef<str>>(
                 ctx.output_dir,
                 ctx.generator_name,
                 session,
+                provider,
                 sys,
             )
             .await?,

@@ -33,6 +33,7 @@ pub async fn target_path(
             ctx.output_dir,
             ctx.generator_name,
             session,
+            ctx.input_provider,
             sys,
         )
         .await?;

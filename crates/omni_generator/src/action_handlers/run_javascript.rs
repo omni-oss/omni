@@ -8,18 +8,6 @@ use crate::{
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
-/// Executes a `run-javascript` action by handing the script off to the shared,
-/// lazily-spawned generator script runner.
-///
-/// All scripts in a run (including those reached through nested
-/// `run-generator` actions) share a runner per JS runtime, and their
-/// file-system side effects flow through the same transactional overlay as the
-/// rest of the generator (see [`crate::LazyScriptRunner`]).
-///
-/// The configured `data` is rendered against the generator's template context
-/// (via [`expand_json_value`]) and handed to the script alongside the current
-/// run's `dry_run` flag. The action's `runtime` selects which JS runtime runs
-/// it.
 pub async fn run_javascript<'a>(
     config: &RunJavaScriptActionConfiguration,
     ctx: &HandlerContext<'a>,
@@ -40,17 +28,100 @@ pub async fn run_javascript<'a>(
         },
     };
 
-    ctx.script_runner
+    ctx.js_script_runner
         .run_scripts(map_runtime(config.runtime), &[invocation])
         .await
 }
 
-/// Maps the configuration's runtime option to the runner's runtime option.
 fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
     match runtime {
         JsRuntimeOption::Deno => DelegatingJsRuntimeOption::Deno,
         JsRuntimeOption::Node => DelegatingJsRuntimeOption::Node,
         JsRuntimeOption::Bun => DelegatingJsRuntimeOption::Bun,
         JsRuntimeOption::Auto => DelegatingJsRuntimeOption::Auto,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use js_runtime::impls::DelegatingJsRuntimeOption;
+    use omni_generator_configurations::{
+        BaseActionConfiguration, JsRuntimeOption,
+        RunJavaScriptActionConfiguration,
+    };
+    use system_traits::impls::RealSys;
+
+    use super::super::test_harness::{Fixture, MockJsScriptRunner};
+    use super::{map_runtime, run_javascript};
+
+    fn config(
+        script: &str,
+        runtime: JsRuntimeOption,
+    ) -> RunJavaScriptActionConfiguration {
+        RunJavaScriptActionConfiguration {
+            base: BaseActionConfiguration {
+                r#if: None,
+                name: None,
+                in_progress_message: None,
+                success_message: None,
+                error_message: None,
+            },
+            data: Default::default(),
+            runtime,
+            script: script.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatches_invocation_to_runner() {
+        let mock = MockJsScriptRunner::default();
+        let mock_ref = mock.clone();
+        let fix = Fixture::new().with_js_script_runner(Box::new(mock));
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        run_javascript(&config("gen.js", JsRuntimeOption::Auto), &ctx, &sys)
+            .await
+            .unwrap();
+
+        let invs = mock_ref.invocations.lock().unwrap();
+        assert_eq!(invs.len(), 1);
+        let (_, scripts) = &invs[0];
+        assert_eq!(scripts.len(), 1);
+        let expected_path = fix.generator.path().join("gen.js");
+        assert_eq!(scripts[0].path, expected_path.to_string_lossy().as_ref());
+        assert!(!scripts[0].params.dry_run);
+    }
+
+    #[test]
+    fn map_runtime_deno() {
+        assert!(matches!(
+            map_runtime(JsRuntimeOption::Deno),
+            DelegatingJsRuntimeOption::Deno
+        ));
+    }
+
+    #[test]
+    fn map_runtime_node() {
+        assert!(matches!(
+            map_runtime(JsRuntimeOption::Node),
+            DelegatingJsRuntimeOption::Node
+        ));
+    }
+
+    #[test]
+    fn map_runtime_bun() {
+        assert!(matches!(
+            map_runtime(JsRuntimeOption::Bun),
+            DelegatingJsRuntimeOption::Bun
+        ));
+    }
+
+    #[test]
+    fn map_runtime_auto() {
+        assert!(matches!(
+            map_runtime(JsRuntimeOption::Auto),
+            DelegatingJsRuntimeOption::Auto
+        ));
     }
 }

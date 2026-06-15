@@ -21,7 +21,8 @@ pub async fn insert_one<'a>(
     sys: &'a impl GeneratorSys,
 ) -> Result<(), Error> {
     let target_name = &common.target;
-    let target = get_target_file(target_name, ctx, sys).await?;
+    let target =
+        get_target_file(target_name, ctx, ctx.input_provider, sys).await?;
 
     let tera_ctx_with_data =
         augment_tera_context(ctx.tera_context_values, Some(&common.data))?;
@@ -86,4 +87,170 @@ pub async fn insert_one<'a>(
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use maps::UnorderedMap;
+    use omni_generator_configurations::{
+        CommonInsertConfiguration, InsertInlineContentEntry,
+    };
+    use system_traits::impls::RealSys;
+
+    use super::super::test_harness::Fixture;
+    use super::insert_one;
+
+    #[tokio::test]
+    async fn appends_content_after_first_matching_line() {
+        let fix = Fixture::new().with_output_target("src", "src.txt");
+        std::fs::write(
+            fix.output.path().join("src.txt"),
+            "line1\nMARKER\nline3",
+        )
+        .unwrap();
+
+        let entries = [InsertInlineContentEntry {
+            pattern: "MARKER".to_string(),
+            content: "inserted".to_string(),
+        }];
+        let common = CommonInsertConfiguration {
+            separator: "\n".to_string(),
+            unique: true,
+            data: UnorderedMap::default(),
+            target: "src".to_string(),
+            render: false,
+        };
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        insert_one(&entries, false, &common, &ctx, &sys)
+            .await
+            .unwrap();
+
+        let result =
+            std::fs::read_to_string(fix.output.path().join("src.txt")).unwrap();
+        assert_eq!(result, "line1\nMARKER\ninserted\nline3");
+    }
+
+    #[tokio::test]
+    async fn prepends_content_before_first_matching_line() {
+        let fix = Fixture::new().with_output_target("src", "src.txt");
+        std::fs::write(
+            fix.output.path().join("src.txt"),
+            "line1\nMARKER\nline3",
+        )
+        .unwrap();
+
+        let entries = [InsertInlineContentEntry {
+            pattern: "MARKER".to_string(),
+            content: "inserted".to_string(),
+        }];
+        let common = CommonInsertConfiguration {
+            separator: "\n".to_string(),
+            unique: true,
+            data: UnorderedMap::default(),
+            target: "src".to_string(),
+            render: false,
+        };
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        insert_one(&entries, true, &common, &ctx, &sys)
+            .await
+            .unwrap();
+
+        let result =
+            std::fs::read_to_string(fix.output.path().join("src.txt")).unwrap();
+        assert_eq!(result, "line1\ninserted\nMARKER\nline3");
+    }
+
+    #[tokio::test]
+    async fn non_unique_prepend_inserts_before_every_match() {
+        let fix = Fixture::new().with_output_target("src", "src.txt");
+        std::fs::write(
+            fix.output.path().join("src.txt"),
+            "MARKER\nstuff\nMARKER",
+        )
+        .unwrap();
+
+        let entries = [InsertInlineContentEntry {
+            pattern: "MARKER".to_string(),
+            content: "X".to_string(),
+        }];
+        let common = CommonInsertConfiguration {
+            separator: "\n".to_string(),
+            unique: false,
+            data: UnorderedMap::default(),
+            target: "src".to_string(),
+            render: false,
+        };
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        insert_one(&entries, true, &common, &ctx, &sys)
+            .await
+            .unwrap();
+
+        let result =
+            std::fs::read_to_string(fix.output.path().join("src.txt")).unwrap();
+        assert_eq!(result, "X\nMARKER\nstuff\nX\nMARKER");
+    }
+
+    #[tokio::test]
+    async fn renders_tera_content_before_inserting() {
+        let fix = Fixture::new()
+            .with_value("name", "Alice")
+            .with_output_target("src", "src.txt");
+        std::fs::write(
+            fix.output.path().join("src.txt"),
+            "before\nMARKER\nafter",
+        )
+        .unwrap();
+
+        let entries = [InsertInlineContentEntry {
+            pattern: "MARKER".to_string(),
+            content: "Hello {{ name }}".to_string(),
+        }];
+        let common = CommonInsertConfiguration {
+            separator: "\n".to_string(),
+            unique: true,
+            data: UnorderedMap::default(),
+            target: "src".to_string(),
+            render: true,
+        };
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        insert_one(&entries, false, &common, &ctx, &sys)
+            .await
+            .unwrap();
+
+        let result =
+            std::fs::read_to_string(fix.output.path().join("src.txt")).unwrap();
+        assert_eq!(result, "before\nMARKER\nHello Alice\nafter");
+    }
+
+    #[tokio::test]
+    async fn returns_error_when_pattern_not_found() {
+        let fix = Fixture::new().with_output_target("src", "src.txt");
+        std::fs::write(fix.output.path().join("src.txt"), "line1\nline2")
+            .unwrap();
+
+        let entries = [InsertInlineContentEntry {
+            pattern: "NOTFOUND".to_string(),
+            content: "x".to_string(),
+        }];
+        let common = CommonInsertConfiguration {
+            separator: "\n".to_string(),
+            unique: true,
+            data: UnorderedMap::default(),
+            target: "src".to_string(),
+            render: false,
+        };
+        let ctx = fix.ctx();
+        let sys = RealSys;
+
+        let result = insert_one(&entries, false, &common, &ctx, &sys).await;
+        assert!(result.is_err());
+    }
 }

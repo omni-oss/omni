@@ -58,7 +58,7 @@ pub(crate) enum ErrorInner {
     },
 
     #[error(transparent)]
-    Prompt(#[from] omni_prompt::error::Error),
+    Collect(#[from] omni_input_provider::error::Error),
 
     #[error(transparent)]
     GeneratorDiscovery(#[from] omni_configuration_discovery::error::Error),

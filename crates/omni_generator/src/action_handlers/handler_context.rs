@@ -6,7 +6,7 @@ use omni_generator_configurations::{
 };
 use value_bag::OwnedValueBag;
 
-use crate::{LazyScriptRunner, gen_session::GenSession};
+use crate::{JsScriptRunner, gen_session::GenSession};
 
 #[derive(Debug, Clone, Copy)]
 #[allow(unused)]
@@ -27,5 +27,6 @@ pub struct HandlerContext<'a> {
     pub resolved_action_name: &'a str,
     pub env: &'a Map<String, String>,
     pub gen_session: &'a GenSession,
-    pub script_runner: &'a LazyScriptRunner,
+    pub js_script_runner: &'a dyn JsScriptRunner,
+    pub input_provider: &'a dyn omni_input_provider::InputProvider,
 }

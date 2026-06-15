@@ -6,7 +6,7 @@ use crate::{
 };
 use garde::Validate;
 use maps::UnorderedMap;
-use omni_prompt::configuration::PromptConfiguration;
+use omni_input_provider::InputConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ pub struct GeneratorConfiguration {
 
     /// Prompts to ask the user
     #[serde(default)]
-    pub prompts: Vec<PromptConfiguration<PromptConfigurationExtra>>,
+    pub prompts: Vec<InputConfiguration<InputConfigurationExtra>>,
 
     /// Actions to perform
     #[serde(default)]
@@ -73,7 +73,7 @@ pub struct GeneratorConfiguration {
     Validate,
 )]
 #[garde(allow_unvalidated)]
-pub struct PromptConfigurationExtra {
+pub struct InputConfigurationExtra {
     /// Whether to remember the value of this prompt to the session so that future invocations of the generator don't ask the user again
     /// when used in the same directory.
     #[serde(default)]

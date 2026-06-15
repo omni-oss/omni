@@ -20,6 +20,9 @@ mod transform_commons;
 mod transform_many;
 pub(crate) mod utils;
 
+#[cfg(test)]
+pub(crate) mod test_harness;
+
 pub use add::*;
 pub use add_inline::*;
 pub use add_many::*;

@@ -424,6 +424,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_input_provider]
+path = "crates/omni_input_provider"
+include = [
+    "crates/omni_input_provider/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

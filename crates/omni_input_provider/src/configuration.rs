@@ -1,6 +1,5 @@
-use crate::{
-    PromptExtras,
-    parsers::{either_value_or_tera_expr, either_value_or_tera_expr_optional},
+use crate::parsers::{
+    either_value_or_tera_expr, either_value_or_tera_expr_optional,
 };
 use derive_new::new;
 use either::Either;
@@ -12,6 +11,30 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 use value_bag::{OwnedValueBag, ValueBag};
+
+pub trait InputExtras:
+    for<'de> Deserialize<'de>
+    + Serialize
+    + JsonSchema
+    + Clone
+    + std::fmt::Debug
+    + PartialEq
+    + Validate
+    + Default
+{
+}
+
+impl<T> InputExtras for T where
+    T: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Validate
+        + Default
+{
+}
 
 #[derive(
     Deserialize,
@@ -25,7 +48,7 @@ use value_bag::{OwnedValueBag, ValueBag};
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct BasePromptConfiguration {
+pub struct BaseInputConfiguration {
     #[new(into)]
     #[serde(deserialize_with = "validate_name")]
     pub name: String,
@@ -48,19 +71,19 @@ pub struct BasePromptConfiguration {
 )]
 #[garde(allow_unvalidated)]
 pub struct ValidateConfiguration {
-    /// Accepts a tera expression that will be evaluated to a boolean that determines if the prompt is valid.
+    /// Accepts a tera expression that will be evaluated to a boolean that determines if the input is valid.
     ///
     /// Available Context
-    /// - `value`: The value of the prompt.
+    /// - `value`: The value of the input.
     #[schemars(with = "EitherUntaggedDef<bool, String>")]
     #[new(into)]
     #[serde(with = "either_value_or_tera_expr")]
     pub condition: Either<bool, String>,
 
-    /// Accepts a tera expression that will be evaluated to a string that will be used as an error message if the prompt is invalid.
+    /// Accepts a tera expression that will be evaluated to a string that will be used as an error message if the input is invalid.
     ///
     /// Available Context
-    /// - `value`: The value of the prompt.
+    /// - `value`: The value of the input.
     #[new(into)]
     #[serde(deserialize_with = "option_validate_tera_expr")]
     pub error_message: Option<String>,
@@ -78,12 +101,11 @@ pub struct ValidateConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct ValidatedPromptConfiguration {
+pub struct ValidatedInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration,
+    pub base: BaseInputConfiguration,
 
-    /// The validation rules for the prompt.
     #[new(into)]
     #[serde(default)]
     pub validate: Vec<ValidateConfiguration>,
@@ -101,17 +123,11 @@ pub struct ValidatedPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct ConfirmPromptConfiguration {
+pub struct ConfirmInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration,
+    pub base: BaseInputConfiguration,
 
-    /// The default value of the checkbox.
-    /// Accepts a tera expression that will be evaluated to a boolean that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<bool, String>>")]
@@ -131,21 +147,14 @@ pub struct ConfirmPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct SelectPromptConfiguration {
+pub struct SelectInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: BasePromptConfiguration,
+    pub base: BaseInputConfiguration,
 
-    /// The available options for the select.
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
 
-    /// The default value of the select.
-    /// Accepts a tera expression that will be evaluated to a string that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<String>,
@@ -163,21 +172,14 @@ pub struct SelectPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct MultiSelectPromptConfiguration {
+pub struct MultiSelectInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration,
+    pub base: ValidatedInputConfiguration,
 
-    /// The available options for the multi-select.
     #[new(into)]
     pub options: Vec<OptionConfiguration>,
 
-    /// The default value of the multi-select.
-    /// Accepts a list of tera expressions that will be evaluated to a list of strings that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<Vec<String>>,
@@ -195,16 +197,11 @@ pub struct MultiSelectPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct TextPromptConfiguration {
+pub struct TextInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration,
+    pub base: ValidatedInputConfiguration,
 
-    /// Accepts a tera expression that will be evaluated to a string that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     pub default: Option<String>,
@@ -222,10 +219,10 @@ pub struct TextPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct PasswordPromptConfiguration {
+pub struct PasswordInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration,
+    pub base: ValidatedInputConfiguration,
 }
 
 #[derive(
@@ -240,16 +237,11 @@ pub struct PasswordPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct FloatNumberPromptConfiguration {
+pub struct FloatInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration,
+    pub base: ValidatedInputConfiguration,
 
-    /// Accepts a tera expression that will be evaluated to a float that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<f64, String>>")]
@@ -269,16 +261,11 @@ pub struct FloatNumberPromptConfiguration {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct IntegerNumberPromptConfiguration {
+pub struct IntegerInputConfiguration {
     #[serde(flatten)]
     #[new(into)]
-    pub base: ValidatedPromptConfiguration,
+    pub base: ValidatedInputConfiguration,
 
-    /// Accepts a tera expression that will be evaluated to an integer that will be used as the default value.
-    ///
-    /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
-    /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[new(into)]
     #[serde(default)]
     #[schemars(with = "Option<EitherUntaggedDef<i64, String>>")]
@@ -297,15 +284,15 @@ pub struct IntegerNumberPromptConfiguration {
     new,
     EnumDiscriminants,
 )]
-#[strum_discriminants(name(PromptType), vis(pub))]
+#[strum_discriminants(name(InputType), vis(pub))]
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
-pub enum PromptConfiguration<TExtra: Default = ()> {
+pub enum InputConfiguration<TExtra: Default = ()> {
     Confirm {
         #[serde(flatten)]
         #[new(into)]
-        prompt: ConfirmPromptConfiguration,
+        input: ConfirmInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -313,8 +300,7 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     Select {
         #[serde(flatten)]
         #[new(into)]
-        prompt: SelectPromptConfiguration,
-
+        input: SelectInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -322,8 +308,7 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     MultiSelect {
         #[serde(flatten)]
         #[new(into)]
-        prompt: MultiSelectPromptConfiguration,
-
+        input: MultiSelectInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -331,8 +316,7 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     Text {
         #[serde(flatten)]
         #[new(into)]
-        prompt: TextPromptConfiguration,
-
+        input: TextInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -340,8 +324,7 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     Password {
         #[serde(flatten)]
         #[new(into)]
-        prompt: PasswordPromptConfiguration,
-
+        input: PasswordInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -349,8 +332,7 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     Float {
         #[serde(flatten)]
         #[new(into)]
-        prompt: FloatNumberPromptConfiguration,
-
+        input: FloatInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
@@ -358,76 +340,71 @@ pub enum PromptConfiguration<TExtra: Default = ()> {
     Integer {
         #[serde(flatten)]
         #[new(into)]
-        prompt: IntegerNumberPromptConfiguration,
-
+        input: IntegerInputConfiguration,
         #[serde(flatten)]
         #[new(default)]
         extra: TExtra,
     },
 }
 
-impl<TExtra: PromptExtras> PromptConfiguration<TExtra> {
+impl<TExtra: InputExtras> InputConfiguration<TExtra> {
     pub fn extra(&self) -> &TExtra {
         match self {
-            PromptConfiguration::Confirm { extra, .. } => extra,
-            PromptConfiguration::Select { extra, .. } => extra,
-            PromptConfiguration::MultiSelect { extra, .. } => extra,
-            PromptConfiguration::Text { extra, .. } => extra,
-            PromptConfiguration::Password { extra, .. } => extra,
-            PromptConfiguration::Float { extra, .. } => extra,
-            PromptConfiguration::Integer { extra, .. } => extra,
+            InputConfiguration::Confirm { extra, .. } => extra,
+            InputConfiguration::Select { extra, .. } => extra,
+            InputConfiguration::MultiSelect { extra, .. } => extra,
+            InputConfiguration::Text { extra, .. } => extra,
+            InputConfiguration::Password { extra, .. } => extra,
+            InputConfiguration::Float { extra, .. } => extra,
+            InputConfiguration::Integer { extra, .. } => extra,
         }
     }
 
     pub fn name(&self) -> &str {
         match self {
-            PromptConfiguration::Confirm { prompt, .. } => &prompt.base.name,
-            PromptConfiguration::Select { prompt, .. } => &prompt.base.name,
-            PromptConfiguration::MultiSelect { prompt, .. } => {
-                &prompt.base.base.name
+            InputConfiguration::Confirm { input, .. } => &input.base.name,
+            InputConfiguration::Select { input, .. } => &input.base.name,
+            InputConfiguration::MultiSelect { input, .. } => {
+                &input.base.base.name
             }
-            PromptConfiguration::Text { prompt, .. } => &prompt.base.base.name,
-            PromptConfiguration::Password { prompt, .. } => {
-                &prompt.base.base.name
-            }
-            PromptConfiguration::Float { prompt, .. } => &prompt.base.base.name,
-            PromptConfiguration::Integer { prompt, .. } => {
-                &prompt.base.base.name
-            }
+            InputConfiguration::Text { input, .. } => &input.base.base.name,
+            InputConfiguration::Password { input, .. } => &input.base.base.name,
+            InputConfiguration::Float { input, .. } => &input.base.base.name,
+            InputConfiguration::Integer { input, .. } => &input.base.base.name,
         }
     }
 
     pub fn default_value(&self) -> Option<OwnedValueBag> {
         Some(match self {
-            PromptConfiguration::Confirm { prompt, .. } => {
-                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            InputConfiguration::Confirm { input, .. } => {
+                unwrap_either_to_vbag(input.default.as_ref()?)
             }
-            PromptConfiguration::Select { prompt, .. } => {
-                let value = prompt.default.as_ref()?;
+            InputConfiguration::Select { input, .. } => {
+                let value = input.default.as_ref()?;
                 ValueBag::from_serde1(&value).to_owned()
             }
-            PromptConfiguration::MultiSelect { prompt, .. } => {
-                let value = prompt.default.as_ref()?;
+            InputConfiguration::MultiSelect { input, .. } => {
+                let value = input.default.as_ref()?;
                 ValueBag::from_serde1(&value).to_owned()
             }
-            PromptConfiguration::Text { prompt, .. } => {
-                let value = prompt.default.as_ref()?;
+            InputConfiguration::Text { input, .. } => {
+                let value = input.default.as_ref()?;
                 ValueBag::from_serde1(&value).to_owned()
             }
-            PromptConfiguration::Password { .. } => {
+            InputConfiguration::Password { .. } => {
                 return None;
             }
-            PromptConfiguration::Float { prompt, .. } => {
-                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            InputConfiguration::Float { input, .. } => {
+                unwrap_either_to_vbag(input.default.as_ref()?)
             }
-            PromptConfiguration::Integer { prompt, .. } => {
-                unwarp_either_to_vbag(prompt.default.as_ref()?)
+            InputConfiguration::Integer { input, .. } => {
+                unwrap_either_to_vbag(input.default.as_ref()?)
             }
         })
     }
 }
 
-fn unwarp_either_to_vbag<L: Serialize, R: Serialize>(
+fn unwrap_either_to_vbag<L: serde::Serialize, R: serde::Serialize>(
     either: &Either<L, R>,
 ) -> OwnedValueBag {
     match either {
@@ -441,37 +418,38 @@ fn unwarp_either_to_vbag<L: Serialize, R: Serialize>(
 )]
 #[garde(allow_unvalidated)]
 pub struct OptionConfiguration {
-    /// The name of the option.
     #[new(into)]
     pub name: String,
 
-    /// The description of the option.
     #[new(into)]
     #[serde(default)]
     pub description: Option<String>,
 
-    /// The value of the option.
     #[new(into)]
     pub value: String,
 
-    /// Whether to use this option as a separator.
     #[new(into)]
     #[serde(default)]
     pub separator: bool,
 }
 
 #[derive(Debug, new)]
-pub struct PromptingConfiguration<'a> {
+pub struct CollectionConfig<'a> {
+    /// Variable name under which already-collected values are exposed
+    /// when evaluating `if` Tera expressions.
     pub if_expressions_root_property: Option<&'a str>,
-    pub validation_expressions_value_name: Option<&'a str>,
+    /// Variable name under which the candidate value is exposed
+    /// when evaluating validator Tera expressions.
+    pub validation_value_name: Option<&'a str>,
+    /// When `true`, inputs with a `default` field skip interactive collection.
     pub use_defaults: bool,
 }
 
-impl<'a> Default for PromptingConfiguration<'a> {
+impl<'a> Default for CollectionConfig<'a> {
     fn default() -> Self {
         Self {
-            if_expressions_root_property: Some("prompts"),
-            validation_expressions_value_name: Some("value"),
+            if_expressions_root_property: Some("inputs"),
+            validation_value_name: Some("value"),
             use_defaults: false,
         }
     }

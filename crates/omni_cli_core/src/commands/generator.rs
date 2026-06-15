@@ -20,11 +20,15 @@ use omni_generator::{GenSession, GeneratorSys, RunConfig};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
-use omni_prompt::configuration::{
-    BasePromptConfiguration, ConfirmPromptConfiguration, OptionConfiguration,
-    PromptConfiguration, PromptingConfiguration, SelectPromptConfiguration,
-    TextPromptConfiguration, ValidatedPromptConfiguration,
+use omni_input_provider::{
+    CollectionConfig, collect_one,
+    configuration::{
+        BaseInputConfiguration, ConfirmInputConfiguration, InputConfiguration,
+        OptionConfiguration, SelectInputConfiguration, TextInputConfiguration,
+        ValidatedInputConfiguration,
+    },
 };
+use omni_prompt::CliInputProvider;
 use omni_remote_sources::manager::{
     RemoteSourceManager, config::RemoteSourceConfig,
 };
@@ -151,7 +155,9 @@ async fn run_generator_run(
 
     let (output_dir, project) =
         match (command.args.output.clone(), &command.args.project) {
-            (None, None) => (prompt_output_dir(projects, &current_dir)?, None),
+            (None, None) => {
+                (prompt_output_dir(projects, &current_dir).await?, None)
+            }
             (None, Some(project)) => {
                 let p = projects.iter().find(|p| p.name == *project);
                 if let Some(p) = p {
@@ -227,7 +233,7 @@ async fn run_generator_run(
     let generator_name = if let Some(name) = &command.args.name {
         Cow::Borrowed(name.as_str())
     } else {
-        Cow::Owned(prompt_generator_name(&generators)?)
+        Cow::Owned(prompt_generator_name(&generators).await?)
     };
 
     let mut has_exiting_session = false;
@@ -241,6 +247,7 @@ async fn run_generator_run(
         session.restore_prompts(&generator_name, &mut pre_exec_values, false);
     }
 
+    let input_provider = CliInputProvider::default();
     let run = RunConfig {
         dry_run: command.args.dry_run,
         output_dir: output_dir.as_path(),
@@ -254,6 +261,7 @@ async fn run_generator_run(
         args: None,
         use_prompt_defaults: command.args.common.use_defaults,
         available_generators: &generators,
+        input_provider: &input_provider,
     };
 
     let session =
@@ -266,7 +274,7 @@ async fn run_generator_run(
         } else if has_exiting_session {
             true
         } else {
-            prompt_save_prompts()?
+            prompt_save_prompts().await?
         };
 
         if save {
@@ -289,16 +297,16 @@ fn get_target_overrides(
     )
 }
 
-fn prompt_output_dir(
+async fn prompt_output_dir(
     projects: &[Project],
     current_dir: &Path,
 ) -> eyre::Result<PathBuf> {
     let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
+    let prompting_config = CollectionConfig::default();
 
     let prompt =
-        PromptConfiguration::<()>::new_select(SelectPromptConfiguration::new(
-            BasePromptConfiguration::new(
+        InputConfiguration::<()>::new_select(SelectInputConfiguration::new(
+            BaseInputConfiguration::new(
                 "output_dir_or_project",
                 "Where should the generator output be written?",
                 None,
@@ -320,12 +328,14 @@ fn prompt_output_dir(
             Some("output_dir".to_string()),
         ));
 
-    let value = omni_prompt::prompt_one(
+    let value = collect_one(
         &prompt,
         None,
         &context_values,
         &prompting_config,
-    )?
+        &CliInputProvider::default(),
+    )
+    .await?
     .expect("should have value at this point");
 
     let value = value
@@ -334,9 +344,9 @@ fn prompt_output_dir(
         .ok_or_else(|| eyre::eyre!("value is not a string"))?;
 
     if value == "output_dir" {
-        let text_prompt = TextPromptConfiguration::new(
-            ValidatedPromptConfiguration::new(
-                BasePromptConfiguration::new(
+        let text_prompt = TextInputConfiguration::new(
+            ValidatedInputConfiguration::new(
+                BaseInputConfiguration::new(
                     "output_dir",
                     "Output directory",
                     None,
@@ -345,15 +355,17 @@ fn prompt_output_dir(
             ),
             None,
         );
-        let prompt = &PromptConfiguration::<()>::new_text(text_prompt);
+        let prompt = &InputConfiguration::<()>::new_text(text_prompt);
 
         loop {
-            let output_dir = omni_prompt::prompt_one(
+            let output_dir = collect_one(
                 &prompt,
                 None,
                 &context_values,
                 &prompting_config,
-            )?
+                &CliInputProvider::default(),
+            )
+            .await?
             .expect("should have value at this point");
             let output_dir =
                 output_dir.by_ref().to_str().expect("value is not a string");
@@ -373,20 +385,22 @@ fn prompt_output_dir(
             })
             .collect::<Vec<_>>();
 
-        let prompt = PromptConfiguration::<()>::new_select(
-            SelectPromptConfiguration::new(
-                BasePromptConfiguration::new("project", "Select project", None),
+        let prompt = InputConfiguration::<()>::new_select(
+            SelectInputConfiguration::new(
+                BaseInputConfiguration::new("project", "Select project", None),
                 options,
                 Some("project".to_string()),
             ),
         );
 
-        let value = omni_prompt::prompt_one(
+        let value = collect_one(
             &prompt,
             None,
             &context_values,
             &prompting_config,
-        )?
+            &CliInputProvider::default(),
+        )
+        .await?
         .expect("should have value at this point");
 
         let value = value
@@ -402,13 +416,13 @@ fn prompt_output_dir(
     }
 }
 
-fn prompt_save_prompts() -> eyre::Result<bool> {
+async fn prompt_save_prompts() -> eyre::Result<bool> {
     let context_values = unordered_map!();
-    let prompting_config = PromptingConfiguration::default();
+    let prompting_config = CollectionConfig::default();
 
-    let prompt = PromptConfiguration::<()>::new_confirm(
-        ConfirmPromptConfiguration::new(
-            BasePromptConfiguration::new(
+    let prompt = InputConfiguration::<()>::new_confirm(
+        ConfirmInputConfiguration::new(
+            BaseInputConfiguration::new(
                 "save_prompts",
                 "Would you like to save prompts and targets to the output directory?",
                 Some(Left(true)),
@@ -417,12 +431,14 @@ fn prompt_save_prompts() -> eyre::Result<bool> {
         ),
     );
 
-    let value = omni_prompt::prompt_one(
+    let value = collect_one(
         &prompt,
         None,
         &context_values,
         &prompting_config,
-    )?
+        &CliInputProvider::default(),
+    )
+    .await?
     .expect("should have value at this point");
 
     let value = value

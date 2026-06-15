@@ -1,0 +1,613 @@
+use crate::{
+    configuration::{
+        CollectionConfig, InputConfiguration, InputExtras, InputType,
+        ValidateConfiguration,
+    },
+    error::{Error, ErrorInner, ErrorKind},
+    provider::InputProvider,
+    utils::{validate_boolean_expression_result, validate_value},
+};
+use either::Either;
+use maps::{UnorderedMap, unordered_map};
+use sets::UnorderedSet;
+use strum::IntoDiscriminant;
+use value_bag::{OwnedValueBag, ValueBag};
+
+pub async fn collect<TExtra: InputExtras>(
+    inputs: &[InputConfiguration<TExtra>],
+    pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    context_values: &UnorderedMap<String, OwnedValueBag>,
+    config: &CollectionConfig<'_>,
+    provider: &dyn InputProvider,
+) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
+    validate_input_configurations(inputs)?;
+    let mut values = UnorderedMap::default();
+
+    let mut ctx_vals = omni_tera::Context::new();
+    for (key, value) in context_values {
+        ctx_vals.insert(key, value);
+    }
+
+    for input in inputs {
+        let if_expr = get_if_expression(input);
+
+        if let Some(if_expr) = if_expr
+            && skip(
+                if_expr,
+                &values,
+                &ctx_vals,
+                config.if_expressions_root_property,
+            )?
+        {
+            continue;
+        }
+
+        let key = get_input_name(input).to_string();
+        let validators = get_validators(input);
+        let pre_exec_value = pre_exec_values.get(&key);
+
+        let value = get_input_value(
+            config,
+            &ctx_vals,
+            input,
+            validators,
+            &key,
+            pre_exec_value,
+            provider,
+        )
+        .await?;
+
+        values.insert(key, value);
+    }
+
+    Ok(values)
+}
+
+pub async fn collect_one<TExtra: InputExtras>(
+    input: &InputConfiguration<TExtra>,
+    pre_exec_value: Option<&OwnedValueBag>,
+    context_values: &UnorderedMap<String, OwnedValueBag>,
+    config: &CollectionConfig<'_>,
+    provider: &dyn InputProvider,
+) -> Result<Option<OwnedValueBag>, Error> {
+    let mut ctx_vals = omni_tera::Context::new();
+    for (key, value) in context_values {
+        ctx_vals.insert(key, value);
+    }
+
+    let if_expr = get_if_expression(input);
+    let mut pre_exec_values = unordered_map!();
+    if let Some(pre_exec_value) = pre_exec_value {
+        pre_exec_values
+            .insert(get_input_name(input).to_string(), pre_exec_value.clone());
+    }
+
+    if let Some(if_expr) = if_expr
+        && skip(
+            if_expr,
+            &pre_exec_values,
+            &ctx_vals,
+            config.if_expressions_root_property,
+        )?
+    {
+        return Ok(None);
+    }
+
+    let validators = get_validators(input);
+    let key = get_input_name(input).to_string();
+    let value = get_input_value(
+        config,
+        &ctx_vals,
+        input,
+        validators,
+        &key,
+        pre_exec_value,
+        provider,
+    )
+    .await?;
+
+    Ok(Some(value))
+}
+
+async fn get_input_value<TExtra: InputExtras>(
+    config: &CollectionConfig<'_>,
+    ctx_vals: &omni_tera::Context,
+    input: &InputConfiguration<TExtra>,
+    validators: &[ValidateConfiguration],
+    key: &String,
+    pre_exec_value: Option<&OwnedValueBag>,
+    provider: &dyn InputProvider,
+) -> Result<OwnedValueBag, Error> {
+    let value = if let Some(pre_exec_value) = pre_exec_value {
+        log::debug!("using pre-exec value for input {key}: {pre_exec_value}");
+        process_pre_filled_value(
+            config,
+            ctx_vals,
+            input,
+            validators,
+            key,
+            pre_exec_value,
+            false,
+            provider,
+        )
+        .await?
+    } else if config.use_defaults
+        && let Some(value) = input.default_value()
+    {
+        log::debug!("using default value for input {key}: {value}");
+        process_pre_filled_value(
+            config, ctx_vals, input, validators, key, &value, true, provider,
+        )
+        .await?
+    } else {
+        log::debug!(
+            "no pre-exec or default value for input {key}, collecting from user"
+        );
+        get_raw_input_value(input, ctx_vals, provider).await?
+    };
+    Ok(value)
+}
+
+async fn process_pre_filled_value<TExtra: InputExtras>(
+    config: &CollectionConfig<'_>,
+    ctx_vals: &omni_tera::Context,
+    input: &InputConfiguration<TExtra>,
+    validators: &[ValidateConfiguration],
+    key: &String,
+    value: &OwnedValueBag,
+    expand_str_value: bool,
+    provider: &dyn InputProvider,
+) -> Result<OwnedValueBag, Error> {
+    let value = match input.discriminant() {
+        InputType::Confirm => {
+            let bool = try_parse_bool(value.by_ref()).ok_or_else(|| {
+                make_input_type_error(key, value.by_ref(), "boolean")
+            })?;
+            ValueBag::capture_serde1(&bool).to_owned()
+        }
+        InputType::Float => {
+            let float = try_parse_float(value.by_ref()).ok_or_else(|| {
+                make_input_type_error(key, value.by_ref(), "float")
+            })?;
+            ValueBag::capture_serde1(&float).to_owned()
+        }
+        InputType::Integer => {
+            let int = try_parse_int(value.by_ref()).ok_or_else(|| {
+                make_input_type_error(key, value.by_ref(), "integer")
+            })?;
+            ValueBag::capture_serde1(&int).to_owned()
+        }
+        InputType::Select
+        | InputType::MultiSelect
+        | InputType::Text
+        | InputType::Password => value.clone(),
+    };
+
+    let mut is_string_convertible = IsStringConvertible::default();
+    value.by_ref().visit(&mut is_string_convertible)?;
+
+    let value = if expand_str_value && is_string_convertible.value {
+        if let Some(template) = value.by_ref().to_str() {
+            let expanded = omni_tera::one_off(
+                template,
+                format!("default value for {key}"),
+                ctx_vals,
+            )?;
+            ValueBag::from_str(&expanded).to_owned()
+        } else {
+            log::warn!(
+                "Failed to expand default value for input {key} because it's not a string, using the original value: {value:#?}"
+            );
+            value
+        }
+    } else {
+        value
+    };
+
+    let result = validate_value(
+        key,
+        &value,
+        ctx_vals,
+        validators,
+        config.validation_value_name,
+    );
+    Ok(if let Err(err) = result {
+        if err.kind() == ErrorKind::InvalidValue {
+            log::warn!("re-collecting due to validation error: {err}");
+            get_raw_input_value(input, ctx_vals, provider).await?
+        } else {
+            return Err(err);
+        }
+    } else {
+        value.clone()
+    })
+}
+
+async fn get_raw_input_value<TExtra: InputExtras>(
+    input: &InputConfiguration<TExtra>,
+    context_values: &omni_tera::Context,
+    provider: &dyn InputProvider,
+) -> Result<OwnedValueBag, Error> {
+    let value = match input {
+        InputConfiguration::Confirm { input, .. } => {
+            let v = provider.confirm(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::Select { input, .. } => {
+            let v = provider.select(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::MultiSelect { input, .. } => {
+            let v = provider.multi_select(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::Text { input, .. } => {
+            let v = provider.text(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::Password { input, .. } => {
+            let v = provider.password(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::Float { input, .. } => {
+            let v = provider.float_number(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+        InputConfiguration::Integer { input, .. } => {
+            let v = provider.integer_number(input, context_values).await?;
+            ValueBag::capture_serde1(&v).to_owned()
+        }
+    };
+    Ok(value)
+}
+
+fn get_validators<TExtra: InputExtras>(
+    input: &InputConfiguration<TExtra>,
+) -> &[ValidateConfiguration] {
+    match input {
+        InputConfiguration::Confirm { .. } => &[],
+        InputConfiguration::Select { .. } => &[],
+        InputConfiguration::MultiSelect { .. } => &[],
+        InputConfiguration::Text { input, .. } => &input.base.validate,
+        InputConfiguration::Password { input, .. } => &input.base.validate,
+        InputConfiguration::Float { input, .. } => &input.base.validate,
+        InputConfiguration::Integer { input, .. } => &input.base.validate,
+    }
+}
+
+fn get_if_expression<TExtra: InputExtras>(
+    input: &InputConfiguration<TExtra>,
+) -> Option<&Either<bool, String>> {
+    let if_expr = match input {
+        InputConfiguration::Confirm { input, .. } => &input.base.r#if,
+        InputConfiguration::Select { input, .. } => &input.base.r#if,
+        InputConfiguration::MultiSelect { input, .. } => &input.base.base.r#if,
+        InputConfiguration::Text { input, .. } => &input.base.base.r#if,
+        InputConfiguration::Password { input, .. } => &input.base.base.r#if,
+        InputConfiguration::Float { input, .. } => &input.base.base.r#if,
+        InputConfiguration::Integer { input, .. } => &input.base.base.r#if,
+    };
+    if_expr.as_ref()
+}
+
+fn skip(
+    if_expr: &Either<bool, String>,
+    values: &UnorderedMap<String, OwnedValueBag>,
+    context_values: &omni_tera::Context,
+    if_expressions_root_property: Option<&str>,
+) -> Result<bool, Error> {
+    Ok(match if_expr {
+        Either::Left(left) => !*left,
+        Either::Right(if_expr) => {
+            let mut ctx = context_values.clone();
+            ctx.insert(
+                if_expressions_root_property.unwrap_or("inputs"),
+                values,
+            );
+
+            let tera_result = omni_tera::Tera::one_off(if_expr, &ctx, true)?;
+            let tera_result = tera_result.trim();
+
+            validate_boolean_expression_result(&tera_result, if_expr)?;
+
+            tera_result != "true"
+        }
+    })
+}
+
+fn validate_input_configurations<TExtra: InputExtras>(
+    inputs: &[InputConfiguration<TExtra>],
+) -> Result<(), Error> {
+    let mut seen_names = UnorderedSet::default();
+
+    for input in inputs {
+        let name = get_input_name(input);
+
+        if seen_names.contains(&name) {
+            return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
+        }
+
+        seen_names.insert(name);
+    }
+
+    Ok(())
+}
+
+fn get_input_name<TExtra: InputExtras>(
+    input: &InputConfiguration<TExtra>,
+) -> &str {
+    match input {
+        InputConfiguration::Confirm { input, .. } => &input.base.name,
+        InputConfiguration::Select { input, .. } => &input.base.name,
+        InputConfiguration::MultiSelect { input, .. } => &input.base.base.name,
+        InputConfiguration::Text { input, .. } => &input.base.base.name,
+        InputConfiguration::Password { input, .. } => &input.base.base.name,
+        InputConfiguration::Float { input, .. } => &input.base.base.name,
+        InputConfiguration::Integer { input, .. } => &input.base.base.name,
+    }
+}
+
+fn try_parse_bool(value: value_bag::ValueBag<'_>) -> Option<bool> {
+    if let Some(value) = value.to_bool() {
+        return Some(value);
+    }
+    if let Some(value) = value.to_str() {
+        return Some(value.parse::<bool>().ok()?);
+    }
+    None
+}
+
+fn try_parse_float(value: value_bag::ValueBag<'_>) -> Option<f64> {
+    if let Some(value) = value.to_f64() {
+        return Some(value);
+    }
+    if let Some(value) = value.to_str() {
+        return Some(value.parse::<f64>().ok()?);
+    }
+    None
+}
+
+fn try_parse_int(value: value_bag::ValueBag<'_>) -> Option<i64> {
+    if let Some(value) = value.to_i64() {
+        return Some(value);
+    }
+    if let Some(value) = value.to_str() {
+        return Some(value.parse::<i64>().ok()?);
+    }
+    None
+}
+
+fn make_input_type_error<'a>(
+    input_name: &'a str,
+    value: value_bag::ValueBag<'a>,
+    expected_type: &'a str,
+) -> Error {
+    Error::from(eyre::eyre!(
+        "{input_name}: value is not of type {expected_type}: value {value}",
+        value =
+            serde_json::to_string_pretty(&value).expect("should be converted"),
+    ))
+}
+
+#[derive(Default)]
+struct IsStringConvertible {
+    pub value: bool,
+}
+
+impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
+    fn visit_borrowed_str(
+        &mut self,
+        _value: &'v str,
+    ) -> Result<(), value_bag::Error> {
+        self.value = true;
+        Ok(())
+    }
+
+    fn visit_str(&mut self, _value: &str) -> Result<(), value_bag::Error> {
+        self.value = true;
+        Ok(())
+    }
+
+    fn visit_any(
+        &mut self,
+        _value: value_bag::ValueBag,
+    ) -> Result<(), value_bag::Error> {
+        self.value = false;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use either::Either;
+    use maps::unordered_map;
+    use value_bag::ValueBag;
+
+    use super::*;
+    use crate::{
+        configuration::{
+            BaseInputConfiguration, CollectionConfig, InputConfiguration,
+            TextInputConfiguration, ValidateConfiguration,
+            ValidatedInputConfiguration,
+        },
+        error::ErrorKind,
+        scripted::ScriptedInputProvider,
+    };
+
+    #[tokio::test]
+    async fn test_collect_skips_input_when_if_false() {
+        let inputs = vec![
+            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("lang", "Language?", None),
+                    vec![],
+                ),
+                None::<String>,
+            )),
+            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(
+                        "framework",
+                        "Framework?",
+                        Some(Either::Right(
+                            "{{ inputs.lang == 'rust' }}".to_string(),
+                        )),
+                    ),
+                    vec![],
+                ),
+                None::<String>,
+            )),
+        ];
+
+        let provider = ScriptedInputProvider::new([("lang", "typescript")]);
+
+        let result = collect(
+            &inputs,
+            &unordered_map!(),
+            &unordered_map!(),
+            &CollectionConfig::default(),
+            &provider,
+        )
+        .await
+        .unwrap();
+
+        assert!(result.contains_key("lang"));
+        assert!(!result.contains_key("framework"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_uses_pre_exec_value() {
+        let inputs = vec![InputConfiguration::<()>::new_text(
+            TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("name", "Name?", None),
+                    vec![],
+                ),
+                None::<String>,
+            ),
+        )];
+
+        let pre_exec_values = unordered_map! {
+            "name".to_string() => ValueBag::capture_serde1(&"Alice").to_owned()
+        };
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+
+        let result = collect(
+            &inputs,
+            &pre_exec_values,
+            &unordered_map!(),
+            &CollectionConfig::default(),
+            &provider,
+        )
+        .await
+        .unwrap();
+
+        let name_val = result.get("name").unwrap();
+        assert_eq!(name_val.by_ref().to_str().as_deref(), Some("Alice"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_uses_default_when_use_defaults_true() {
+        let inputs = vec![InputConfiguration::<()>::new_text(
+            TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("greeting", "Greeting?", None),
+                    vec![],
+                ),
+                Some("hello".to_string()),
+            ),
+        )];
+
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+        let config = CollectionConfig {
+            use_defaults: true,
+            ..Default::default()
+        };
+
+        let result = collect(
+            &inputs,
+            &unordered_map!(),
+            &unordered_map!(),
+            &config,
+            &provider,
+        )
+        .await
+        .unwrap();
+
+        let greeting_val = result.get("greeting").unwrap();
+        assert_eq!(greeting_val.by_ref().to_str().as_deref(), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_reprompts_when_prefilled_value_fails_validation() {
+        let validator = ValidateConfiguration::new(
+            Either::Right("{{ value | int > 0 }}".to_string()),
+            Some("Must be positive".to_string()),
+        );
+
+        let inputs = vec![InputConfiguration::<()>::new_text(
+            TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("age", "Age?", None),
+                    vec![validator],
+                ),
+                None::<String>,
+            ),
+        )];
+
+        let pre_exec_values = unordered_map! {
+            "age".to_string() => ValueBag::capture_serde1(&"-1").to_owned()
+        };
+        let provider = ScriptedInputProvider::new([("age", "25")]);
+
+        let result = collect(
+            &inputs,
+            &pre_exec_values,
+            &unordered_map!(),
+            &CollectionConfig::default(),
+            &provider,
+        )
+        .await
+        .unwrap();
+
+        let age_val = result.get("age").unwrap();
+        assert_eq!(age_val.by_ref().to_str().as_deref(), Some("25"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_returns_error_on_duplicate_input_names() {
+        let inputs = vec![
+            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("name", "First name?", None),
+                    vec![],
+                ),
+                None::<String>,
+            )),
+            InputConfiguration::<()>::new_text(TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new("name", "Second name?", None),
+                    vec![],
+                ),
+                None::<String>,
+            )),
+        ];
+
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+
+        let result = collect(
+            &inputs,
+            &unordered_map!(),
+            &unordered_map!(),
+            &CollectionConfig::default(),
+            &provider,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::DuplicateInputName);
+    }
+}

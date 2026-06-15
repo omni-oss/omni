@@ -1,33 +1,30 @@
 use std::{borrow::Cow, str::FromStr};
 
 use either::Either;
+use omni_input_provider::{
+    configuration::{
+        ConfirmInputConfiguration, FloatInputConfiguration,
+        IntegerInputConfiguration, MultiSelectInputConfiguration,
+        OptionConfiguration, PasswordInputConfiguration,
+        SelectInputConfiguration, TextInputConfiguration,
+        ValidateConfiguration,
+    },
+    error::{Error, ErrorInner},
+    utils::validate_value,
+};
 use requestty::Question;
 use serde::Serialize;
 use sets::unordered_set;
 use value_bag::ValueBag;
 
-use crate::{
-    configuration::{
-        ConfirmPromptConfiguration, FloatNumberPromptConfiguration,
-        IntegerNumberPromptConfiguration, MultiSelectPromptConfiguration,
-        OptionConfiguration, PasswordPromptConfiguration,
-        PromptingConfiguration, SelectPromptConfiguration,
-        TextPromptConfiguration, ValidateConfiguration,
-    },
-    error::{Error, ErrorInner},
-    utils::validate_value,
-};
-
 pub fn confirm<'a>(
-    prompt: &'a ConfirmPromptConfiguration,
+    input: &'a ConfirmInputConfiguration,
     context_values: &'a omni_tera::Context,
-    _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.name.as_str();
-    let default_value = &prompt.default;
+    let name = input.base.name.as_str();
+    let default_value = &input.default;
 
-    let question =
-        Question::confirm(name).message(prompt.base.message.as_str());
+    let question = Question::confirm(name).message(input.base.message.as_str());
 
     Ok(if let Some(default_value) = default_value {
         question.default(try_parse_or_expand_default_value(
@@ -43,22 +40,22 @@ pub fn confirm<'a>(
 }
 
 pub fn password<'a>(
-    prompt: &'a PasswordPromptConfiguration,
+    input: &'a PasswordInputConfiguration,
     context_values: &'a omni_tera::Context,
-    config: &'a PromptingConfiguration,
+    validation_value_name: Option<&'a str>,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.base.name.as_str();
-    let validators = prompt.base.validate.as_slice();
+    let name = input.base.base.name.as_str();
+    let validators = input.base.validate.as_slice();
 
     let question = Question::password(name)
-        .message(prompt.base.base.message.as_str())
-        .validate(|answer, _| {
+        .message(input.base.base.message.as_str())
+        .validate(move |answer, _| {
             validate(
                 &answer.to_string(),
                 name,
                 context_values,
                 validators,
-                config,
+                validation_value_name,
             )
         });
 
@@ -66,24 +63,24 @@ pub fn password<'a>(
 }
 
 pub fn text<'a>(
-    prompt: &'a TextPromptConfiguration,
+    input: &'a TextInputConfiguration,
     context_values: &'a omni_tera::Context,
-    config: &'a PromptingConfiguration,
+    validation_value_name: Option<&'a str>,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.base.name.as_str();
-    let validators = prompt.base.validate.as_slice();
+    let name = input.base.base.name.as_str();
+    let validators = input.base.validate.as_slice();
     let question = Question::input(name)
-        .message(prompt.base.base.message.as_str())
-        .validate(|answer, _| {
+        .message(input.base.base.message.as_str())
+        .validate(move |answer, _| {
             validate(
                 &answer.to_string(),
                 name,
                 context_values,
                 validators,
-                config,
+                validation_value_name,
             )
         });
-    let default_value = prompt
+    let default_value = input
         .default
         .as_deref()
         .map(|v| expand_default_value(v, name, context_values))
@@ -98,21 +95,20 @@ pub fn text<'a>(
 }
 
 pub fn select<'a>(
-    prompt: &'a SelectPromptConfiguration,
+    input: &'a SelectInputConfiguration,
     context_values: &'a omni_tera::Context,
-    _config: &'a PromptingConfiguration,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.name.as_str();
-    let default_value = prompt
+    let name = input.base.name.as_str();
+    let default_value = input
         .default
         .as_deref()
         .map(|v| expand_default_value(v, name, context_values))
         .transpose()?;
 
     let mut question =
-        Question::select(name).message(prompt.base.message.as_str());
+        Question::select(name).message(input.base.message.as_str());
 
-    for option in prompt.options.iter() {
+    for option in input.options.iter() {
         let text = get_option_text(option);
         if option.separator {
             question = question.separator(text);
@@ -123,7 +119,7 @@ pub fn select<'a>(
 
     Ok(if let Some(default) = default_value
         && let Some(index) =
-            prompt.options.iter().position(|o| o.value == default)
+            input.options.iter().position(|o| o.value == default)
     {
         question.default(index)
     } else {
@@ -133,12 +129,12 @@ pub fn select<'a>(
 }
 
 pub fn multi_select<'a>(
-    prompt: &'a MultiSelectPromptConfiguration,
+    input: &'a MultiSelectInputConfiguration,
     context_values: &'a omni_tera::Context,
-    config: &'a PromptingConfiguration,
+    validation_value_name: Option<&'a str>,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.base.name.as_str();
-    let default_values = if let Some(default_values) = &prompt.default {
+    let name = input.base.base.name.as_str();
+    let default_values = if let Some(default_values) = &input.default {
         let mut values = unordered_set!();
         for option in default_values {
             values.insert(expand_default_value(option, name, context_values)?);
@@ -148,11 +144,11 @@ pub fn multi_select<'a>(
         None
     };
 
-    let validators = prompt.base.validate.as_slice();
+    let validators = input.base.validate.as_slice();
 
     let mut question = Question::multi_select(name)
-        .message(prompt.base.base.message.as_str())
-        .validate(|answers, _| {
+        .message(input.base.base.message.as_str())
+        .validate(move |answers, _| {
             let values = answers
                 .iter()
                 .enumerate()
@@ -160,16 +156,20 @@ pub fn multi_select<'a>(
                     if !value {
                         return None;
                     }
-
-                    prompt.options.get(i).map(|o| o.value.clone())
+                    input.options.get(i).map(|o| o.value.clone())
                 })
                 .collect::<Vec<_>>();
-
-            validate(&values, name, context_values, validators, config)
+            validate(
+                &values,
+                name,
+                context_values,
+                validators,
+                validation_value_name,
+            )
         });
 
     if let Some(defaults) = default_values {
-        for option in prompt.options.iter() {
+        for option in input.options.iter() {
             let text = get_option_text(option);
             if option.separator {
                 question = question.separator(text);
@@ -181,7 +181,7 @@ pub fn multi_select<'a>(
             }
         }
     } else {
-        for option in prompt.options.iter() {
+        for option in input.options.iter() {
             let text = get_option_text(option);
             if option.separator {
                 question = question.separator(text);
@@ -212,22 +212,28 @@ fn get_option_text<'a>(option: &'a OptionConfiguration) -> Cow<'a, str> {
 }
 
 pub fn float_number<'a>(
-    prompt: &'a FloatNumberPromptConfiguration,
+    input: &'a FloatInputConfiguration,
     context_values: &'a omni_tera::Context,
-    config: &'a PromptingConfiguration,
+    validation_value_name: Option<&'a str>,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.base.name.as_str();
-    let validators = prompt.base.validate.as_slice();
+    let name = input.base.base.name.as_str();
+    let validators = input.base.validate.as_slice();
     let question = Question::input(name)
-        .message(prompt.base.base.message.as_str())
-        .validate(|answer, _| {
+        .message(input.base.base.message.as_str())
+        .validate(move |answer, _| {
             if let Ok(value) = answer.parse::<f64>() {
-                validate(&value, name, context_values, validators, config)
+                validate(
+                    &value,
+                    name,
+                    context_values,
+                    validators,
+                    validation_value_name,
+                )
             } else {
-                Err("value is not an integer".to_string())
+                Err("value is not a float".to_string())
             }
         });
-    let default_value = prompt
+    let default_value = input
         .default
         .as_ref()
         .map(|v| {
@@ -249,22 +255,28 @@ pub fn float_number<'a>(
 }
 
 pub fn integer_number<'a>(
-    prompt: &'a IntegerNumberPromptConfiguration,
+    input: &'a IntegerInputConfiguration,
     context_values: &'a omni_tera::Context,
-    config: &'a PromptingConfiguration,
+    validation_value_name: Option<&'a str>,
 ) -> Result<requestty::Question<'a>, Error> {
-    let name = prompt.base.base.name.as_str();
-    let validators = prompt.base.validate.as_slice();
+    let name = input.base.base.name.as_str();
+    let validators = input.base.validate.as_slice();
     let question = Question::input(name)
-        .message(prompt.base.base.message.as_str())
-        .validate(|answer, _| {
+        .message(input.base.base.message.as_str())
+        .validate(move |answer, _| {
             if let Ok(value) = answer.parse::<i64>() {
-                validate(&value, name, context_values, validators, config)
+                validate(
+                    &value,
+                    name,
+                    context_values,
+                    validators,
+                    validation_value_name,
+                )
             } else {
                 Err("value is not an integer".to_string())
             }
         });
-    let default_value = prompt
+    let default_value = input
         .default
         .as_ref()
         .map(|v| {
@@ -286,7 +298,7 @@ pub fn integer_number<'a>(
 }
 
 fn try_parse_or_expand_default_value<T: FromStr + Clone>(
-    prompt_name: &str,
+    input_name: &str,
     expected_type: &str,
     value: &Either<T, String>,
     context_values: &omni_tera::Context,
@@ -299,7 +311,7 @@ fn try_parse_or_expand_default_value<T: FromStr + Clone>(
             } else {
                 let expanded = omni_tera::one_off(
                     &value,
-                    &format!("default value for prompt {}", prompt_name),
+                    &format!("default value for input {}", input_name),
                     context_values,
                 )?;
                 let parsed = expanded.as_str().parse::<T>();
@@ -307,14 +319,17 @@ fn try_parse_or_expand_default_value<T: FromStr + Clone>(
                 if let Ok(value) = parsed {
                     Ok(value)
                 } else {
-                    Err(Error::new(ErrorInner::InvalidValue {
-                        prompt_name: prompt_name.to_string(),
-                        value: ValueBag::capture_serde1(&expanded).to_owned(),
-                        error_message: format!(
-                            "Value '{}' is not a valid {} value",
-                            value, expected_type
-                        ),
-                    }))
+                    Err(Error::from(
+                        omni_input_provider::error::ErrorInner::InvalidValue {
+                            input_name: input_name.to_string(),
+                            value: ValueBag::capture_serde1(&expanded)
+                                .to_owned(),
+                            error_message: format!(
+                                "Value '{}' is not a valid {} value",
+                                value, expected_type
+                            ),
+                        },
+                    ))
                 }
             }
         }
@@ -328,7 +343,7 @@ fn expand_default_value(
 ) -> Result<String, Error> {
     let expanded = omni_tera::one_off(
         template,
-        &format!("default value for prompt {}", name),
+        &format!("default value for input {}", name),
         context_values,
     )?;
     Ok(expanded)
@@ -339,7 +354,7 @@ fn validate<T: Serialize + 'static>(
     name: &str,
     context_values: &omni_tera::Context,
     validators: &[ValidateConfiguration],
-    config: &PromptingConfiguration,
+    validation_value_name: Option<&str>,
 ) -> Result<(), String> {
     let value = ValueBag::capture_serde1(value).to_owned();
 
@@ -348,17 +363,15 @@ fn validate<T: Serialize + 'static>(
         &value,
         context_values,
         validators,
-        config.validation_expressions_value_name,
+        validation_value_name,
     );
 
     if let Err(err) = result {
         if let ErrorInner::InvalidValue { error_message, .. } = &err.0 {
             Err(error_message.to_string())
         } else {
-            // TODO: find a better way to show errors,
-            // currently this is badly displayed due to prompt formatting in the terminal
-            log::error!("{:?}", err);
-            std::process::exit(1);
+            // Return a descriptive error string instead of exiting the process.
+            Err(format!("unexpected validation error: {err:?}"))
         }
     } else {
         Ok(())

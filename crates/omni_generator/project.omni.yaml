@@ -7,7 +7,7 @@ extends:
 dependencies:
   - omni_generator_configurations
   - omni_file_data_serde
-  - omni_prompt
+  - omni_input_provider
   - omni_configuration_discovery
   - omni_discovery
   - omni_tera

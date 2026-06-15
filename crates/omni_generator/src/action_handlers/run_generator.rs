@@ -101,11 +101,16 @@ pub async fn run_generator<'a>(
         args: Some(&config.args),
         use_prompt_defaults: false,
         available_generators: &available_generators,
+        input_provider: ctx.input_provider,
     };
 
-    let prompted_values =
-        Box::pin(run_internal(generator, &run_config, sys, ctx.script_runner))
-            .await?;
+    let prompted_values = Box::pin(run_internal(
+        generator,
+        &run_config,
+        sys,
+        ctx.js_script_runner,
+    ))
+    .await?;
 
     ctx.gen_session.merge(prompted_values);
 
@@ -195,4 +200,187 @@ fn to_owned_value_bag(
             ValueBag::capture_serde1(&list).to_owned()
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use maps::{UnorderedMap, unordered_map};
+    use omni_generator_configurations::{
+        BaseActionConfiguration, ForAllPromptValuesConfiguration,
+        ForwardPromptValuesConfiguration, PromptValue,
+        PromptValuesConfiguration, RunGeneratorActionConfiguration,
+    };
+    use value_bag::ValueBag;
+
+    use super::super::test_harness::Fixture;
+    use super::{resolve_prompt_values, to_owned_value_bag};
+
+    fn run_gen_config(
+        forward: ForwardPromptValuesConfiguration,
+        values: UnorderedMap<String, PromptValue>,
+    ) -> RunGeneratorActionConfiguration {
+        RunGeneratorActionConfiguration {
+            base: BaseActionConfiguration {
+                r#if: None,
+                name: None,
+                in_progress_message: None,
+                success_message: None,
+                error_message: None,
+            },
+            generator: "gen".to_string(),
+            prompt_values: PromptValuesConfiguration { forward, values },
+            args: UnorderedMap::default(),
+            output_dir: None,
+            targets: UnorderedMap::default(),
+        }
+    }
+
+    #[test]
+    fn converts_integer() {
+        let ctx = omni_tera::Context::new();
+        let val =
+            to_owned_value_bag("k", &PromptValue::Integer(42), &ctx).unwrap();
+        let n = serde_json::to_value(&val).unwrap().as_i64().unwrap();
+        assert_eq!(n, 42);
+    }
+
+    #[test]
+    fn converts_float() {
+        let ctx = omni_tera::Context::new();
+        let val =
+            to_owned_value_bag("k", &PromptValue::Float(1.5), &ctx).unwrap();
+        let f = serde_json::to_value(&val).unwrap().as_f64().unwrap();
+        assert_eq!(f, 1.5);
+    }
+
+    #[test]
+    fn converts_boolean() {
+        let ctx = omni_tera::Context::new();
+        let val =
+            to_owned_value_bag("k", &PromptValue::Boolean(true), &ctx).unwrap();
+        let b = serde_json::to_value(&val).unwrap().as_bool().unwrap();
+        assert!(b);
+    }
+
+    #[test]
+    fn expands_string_template() {
+        let mut ctx = omni_tera::Context::new();
+        ctx.insert("x", "hello");
+        let val = to_owned_value_bag(
+            "k",
+            &PromptValue::String("{{ x }}".into()),
+            &ctx,
+        )
+        .unwrap();
+        let s = val.by_ref().to_str().unwrap().into_owned();
+        assert_eq!(s, "hello");
+    }
+
+    #[test]
+    fn converts_list() {
+        let ctx = omni_tera::Context::new();
+        let list = PromptValue::List(vec![
+            PromptValue::Integer(1),
+            PromptValue::String("hi".into()),
+        ]);
+        let val = to_owned_value_bag("k", &list, &ctx).unwrap();
+        let json = serde_json::to_value(&val).unwrap();
+        assert_eq!(json, serde_json::json!([1, "hi"]));
+    }
+
+    #[test]
+    fn forward_all_copies_all_parent_prompts() {
+        let fix = Fixture::new();
+        let ctx = fix.ctx();
+        let map = serde_json::json!({"a": 1_i64, "b": "foo"});
+        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let config = run_gen_config(
+            ForwardPromptValuesConfiguration::ForAll(
+                ForAllPromptValuesConfiguration::All,
+            ),
+            unordered_map!(),
+        );
+        let result =
+            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+        assert!(result.contains_key("a"));
+        assert!(result.contains_key("b"));
+    }
+
+    #[test]
+    fn forward_none_produces_empty_result() {
+        let fix = Fixture::new();
+        let ctx = fix.ctx();
+        let map = serde_json::json!({"a": 1_i64});
+        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let config = run_gen_config(
+            ForwardPromptValuesConfiguration::ForAll(
+                ForAllPromptValuesConfiguration::None,
+            ),
+            unordered_map!(),
+        );
+        let result =
+            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn forward_selected_copies_only_named_keys() {
+        let fix = Fixture::new();
+        let ctx = fix.ctx();
+        let map = serde_json::json!({"a": 1_i64, "b": "foo", "c": 3_i64});
+        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let config = run_gen_config(
+            ForwardPromptValuesConfiguration::Selected(vec![
+                "a".into(),
+                "c".into(),
+            ]),
+            unordered_map!(),
+        );
+        let result =
+            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+        assert!(result.contains_key("a"));
+        assert!(result.contains_key("c"));
+        assert!(!result.contains_key("b"));
+    }
+
+    #[test]
+    fn forward_selected_skips_missing_keys_without_error() {
+        let fix = Fixture::new();
+        let ctx = fix.ctx();
+        let map = serde_json::json!({"a": 1_i64});
+        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let config = run_gen_config(
+            ForwardPromptValuesConfiguration::Selected(vec![
+                "a".into(),
+                "missing".into(),
+            ]),
+            unordered_map!(),
+        );
+        let result = resolve_prompt_values(&parent_prompts, &config, &ctx);
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert!(result.contains_key("a"));
+        assert!(!result.contains_key("missing"));
+    }
+
+    #[test]
+    fn explicit_values_override_forwarded_values() {
+        let fix = Fixture::new();
+        let ctx = fix.ctx();
+        let map = serde_json::json!({"a": 1_i64});
+        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let config = run_gen_config(
+            ForwardPromptValuesConfiguration::ForAll(
+                ForAllPromptValuesConfiguration::All,
+            ),
+            unordered_map!("a".to_string() => PromptValue::Integer(99)),
+        );
+        let result =
+            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+        let n = serde_json::to_value(&result["a"])
+            .unwrap()
+            .as_i64()
+            .unwrap();
+        assert_eq!(n, 99);
+    }
 }

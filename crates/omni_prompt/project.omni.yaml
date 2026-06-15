@@ -5,8 +5,6 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - omni_serde_validators
+  - omni_input_provider
   - omni_tera
-  - maps
   - sets
-  - system_traits

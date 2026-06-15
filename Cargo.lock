@@ -6418,6 +6418,7 @@ dependencies = [
  "omni_generator_configurations",
  "omni_git_utils",
  "omni_hasher",
+ "omni_input_provider",
  "omni_process",
  "omni_prompt",
  "omni_remote_source",
@@ -6736,8 +6737,8 @@ dependencies = [
  "omni_discovery_utils",
  "omni_file_data_serde",
  "omni_generator_configurations",
+ "omni_input_provider",
  "omni_process",
- "omni_prompt",
  "omni_tera",
  "omni_types",
  "omni_utils",
@@ -6775,7 +6776,7 @@ dependencies = [
  "merge",
  "omni_core",
  "omni_expressions",
- "omni_prompt",
+ "omni_input_provider",
  "omni_serde_validators",
  "omni_types",
  "regex",
@@ -6839,6 +6840,32 @@ dependencies = [
  "tokio 1.52.3",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_input_provider"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "derive-new",
+ "either",
+ "eyre",
+ "garde 0.23.0",
+ "log",
+ "maps",
+ "omni_serde_validators",
+ "omni_tera",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_validate",
+ "sets",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "tracing",
+ "value-bag",
 ]
 
 [[package]]
@@ -6906,23 +6933,15 @@ dependencies = [
 name = "omni_prompt"
 version = "0.5.0"
 dependencies = [
- "derive-new",
+ "async-trait",
  "either",
  "eyre",
- "garde 0.23.0",
  "log",
- "maps",
- "omni_serde_validators",
+ "omni_input_provider",
  "omni_tera",
  "requestty",
- "schemars",
  "serde",
- "serde_json",
- "serde_validate",
  "sets",
- "strum 0.28.0",
- "system_traits",
- "thiserror 2.0.18",
  "trace",
  "tracing",
  "value-bag",

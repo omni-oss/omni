@@ -4,6 +4,7 @@ use clap::Args;
 use eyre::Ok;
 use maps::{map, unordered_map};
 use omni_generator::RunConfig;
+use omni_prompt::CliInputProvider;
 use system_traits::{EnvCurrentDirAsync, impls::RealSys};
 use tempfile::tempdir;
 use value_bag::ValueBag;
@@ -81,6 +82,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         "current_dir".to_string() => ValueBag::from_serde1(&current_dir).to_owned(),
     };
 
+    let input_provider = CliInputProvider::default();
     let run_config = RunConfig {
         available_generators: &all_generators[..],
         output_dir: output_dir,
@@ -94,6 +96,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         overwrite: None,
         use_prompt_defaults: command.args.common.use_defaults,
         prompt_values: &pre_exec_values,
+        input_provider: &input_provider,
     };
 
     omni_generator::run(&generator, &run_config, &sys).await?;

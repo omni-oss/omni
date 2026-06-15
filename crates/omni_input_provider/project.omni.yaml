@@ -1,18 +1,12 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: omni_generator_configurations
+name: omni_input_provider
+
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
 dependencies:
-  - omni_types
   - omni_serde_validators
-  - config_utils
-  - omni_core
-  - omni_input_provider
+  - omni_tera
   - serde_validate
   - maps
   - sets
-  - js_runtime
-  - omni_expressions
-  - system_traits
-  - trace

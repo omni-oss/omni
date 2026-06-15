@@ -4,7 +4,7 @@ use value_bag::OwnedValueBag;
 
 #[derive(Debug, thiserror::Error, new)]
 #[error(transparent)]
-pub struct Error(pub(crate) ErrorInner);
+pub struct Error(pub ErrorInner);
 
 impl Error {
     #[allow(unused)]
@@ -16,24 +16,20 @@ impl Error {
 impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-
         Self(inner)
     }
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
-pub(crate) enum ErrorInner {
+pub enum ErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
 
-    #[error(transparent)]
-    Requestty(#[from] requestty::ErrorKind),
-
     #[error(
-        "duplicate prompt name: {0}, please ensure that all prompt names are unique"
+        "duplicate input name: {0}, please ensure that all input names are unique"
     )]
-    DuplicatePromptName(String),
+    DuplicateInputName(String),
 
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),
@@ -42,10 +38,10 @@ pub(crate) enum ErrorInner {
     ValueBag(#[from] value_bag::Error),
 
     #[error(
-        "value '{value}' is invalid for prompt {prompt_name}: {error_message}"
+        "value '{value}' is invalid for input {input_name}: {error_message}"
     )]
     InvalidValue {
-        prompt_name: String,
+        input_name: String,
         value: OwnedValueBag,
         error_message: String,
     },

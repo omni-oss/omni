@@ -10,7 +10,7 @@ use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
 use crate::{
-    GeneratorSysFull, LazyScriptRunner,
+    GeneratorSysFull, JsScriptRunner,
     action_handlers::{
         HandlerContext, add, add_content, add_many, append, append_content,
         modify, modify_content, prepend, prepend_content, run_command,
@@ -37,7 +37,8 @@ pub struct ExecuteActionsArgs<'a> {
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub env: &'a Map<String, String>,
-    pub script_runner: &'a LazyScriptRunner,
+    pub js_script_runner: &'a dyn JsScriptRunner,
+    pub input_provider: &'a dyn omni_input_provider::InputProvider,
 }
 
 pub async fn execute_actions<'a>(
@@ -87,7 +88,8 @@ pub async fn execute_actions<'a>(
             current_dir: args.current_dir,
             env: args.env,
             gen_session,
-            script_runner: args.script_runner,
+            js_script_runner: args.js_script_runner,
+            input_provider: args.input_provider,
         };
 
         let in_progress_message =
