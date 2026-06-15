@@ -114,7 +114,7 @@ pub(crate) async fn run_internal<'a>(
     );
 
     let mut values = collect(
-        &r#gen.prompts,
+        &r#gen.inputs,
         &config.prompt_values,
         &config.context_values,
         &collection_config,
@@ -184,7 +184,7 @@ pub(crate) async fn run_internal<'a>(
     execute_actions(&args, &session, sys).await?;
 
     let skip = r#gen
-        .prompts
+        .inputs
         .iter()
         .filter_map(|p| {
             if p.extra().remember {
