@@ -13,7 +13,13 @@ pub async fn run_javascript<'a>(
     ctx: &HandlerContext<'a>,
     _sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let script_path = ctx.generator_dir.join(&config.script);
+    // `canonicalize` (used when the context is loaded) returns paths with the
+    // Windows verbatim prefix (`\\?\`).  `omni_utils::path::clean` strips it
+    // so the JS bridge receives a plain path that `pathToFileURL` can convert
+    // to a valid `file://` URL.
+    let script_path =
+        omni_utils::path::clean(ctx.generator_dir.join(&config.script));
+    let output_dir = omni_utils::path::clean(&ctx.output_dir);
 
     let data =
         expand_json_value(ctx.tera_context_values, None, "data", &config.data)?
@@ -24,7 +30,7 @@ pub async fn run_javascript<'a>(
         params: ScriptParams {
             dry_run: ctx.dry_run,
             data,
-            output_dir: ctx.output_dir.to_string_lossy().into_owned(),
+            output_dir: output_dir.to_string_lossy().into_owned(),
         },
     };
 
