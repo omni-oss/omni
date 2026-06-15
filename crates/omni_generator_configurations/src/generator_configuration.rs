@@ -39,7 +39,7 @@ pub struct GeneratorConfiguration {
 
     /// Prompts to ask the user
     #[serde(default)]
-    #[serde(rename = "prompts")]
+    #[serde(alias = "prompts")]
     pub inputs: Vec<InputConfiguration<InputConfigurationExtra>>,
 
     /// Actions to perform
@@ -51,7 +51,7 @@ pub struct GeneratorConfiguration {
     /// The variables are available in the templates as `{{ vars.var_name }}`
     ///
     /// Available context variables:
-    /// - `prompts`: The values of the prompts
+    /// - `inputss`: The values of the prompts
     #[serde(default)]
     #[serde(deserialize_with = "validate_umap_serde_json")]
     pub vars: UnorderedMap<String, serde_json::Value>,

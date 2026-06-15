@@ -20,12 +20,12 @@ impl GenSession {
     pub fn with_restored(
         generator_name: impl Into<String>,
         targets: UnorderedMap<String, OmniPath>,
-        prompts: UnorderedMap<String, OwnedValueBag>,
+        inputs: UnorderedMap<String, OwnedValueBag>,
     ) -> Self {
         Self {
             data: Mutex::new(UnorderedMap::from_iter([(
                 generator_name.into(),
-                DataImpl { prompts, targets },
+                DataImpl { inputs, targets },
             )])),
         }
     }
@@ -81,7 +81,7 @@ impl GenSession {
             .map(|p| p.clone())
     }
 
-    pub fn set_prompt(
+    pub fn set_input(
         &self,
         generator: impl Into<String>,
         key: impl Into<String>,
@@ -92,11 +92,11 @@ impl GenSession {
             .unwrap()
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
-            .prompts
+            .inputs
             .insert(key.into(), value.into());
     }
 
-    pub fn get_prompt(
+    pub fn get_input(
         &self,
         generator: impl AsRef<str>,
         key: impl AsRef<str>,
@@ -105,21 +105,21 @@ impl GenSession {
             .lock()
             .unwrap()
             .get(generator.as_ref())
-            .and_then(|d| d.prompts.get(key.as_ref()))
+            .and_then(|d| d.inputs.get(key.as_ref()))
             .map(|p| p.clone())
     }
 
-    pub fn set_prompts(
+    pub fn set_inputs(
         &self,
         generator: impl Into<String>,
-        prompts: UnorderedMap<String, OwnedValueBag>,
+        inputs: UnorderedMap<String, OwnedValueBag>,
     ) {
         self.data
             .lock()
             .unwrap()
             .entry(generator.into())
             .or_insert_with(DataImpl::default)
-            .prompts = prompts;
+            .inputs = inputs;
     }
 
     pub fn set_targets(
@@ -145,7 +145,7 @@ impl GenSession {
                 .entry(generator.clone())
                 .or_insert_with(DataImpl::default);
             data.targets.extend(other_data.targets.clone());
-            data.prompts.extend(other_data.prompts.clone());
+            data.inputs.extend(other_data.inputs.clone());
         }
     }
 
@@ -167,19 +167,19 @@ impl GenSession {
         }
     }
 
-    pub fn restore_prompts(
+    pub fn restore_inputs(
         &self,
         generator: impl AsRef<str>,
-        prompts: &mut UnorderedMap<String, OwnedValueBag>,
+        inputs: &mut UnorderedMap<String, OwnedValueBag>,
         override_existing: bool,
     ) {
         let data = self.data.lock().unwrap();
-        let data = data.get(generator.as_ref()).map(|d| &d.prompts);
+        let data = data.get(generator.as_ref()).map(|d| &d.inputs);
 
         if let Some(data) = data {
             for (k, v) in data {
-                if override_existing || !prompts.contains_key(k) {
-                    prompts.insert(k.clone(), v.clone());
+                if override_existing || !inputs.contains_key(k) {
+                    inputs.insert(k.clone(), v.clone());
                 }
             }
         }
@@ -213,7 +213,7 @@ impl GenSession {
         }
     }
 
-    pub fn unset_prompts(
+    pub fn unset_inputs(
         &self,
         generator: impl Into<String>,
         keys: impl IntoIterator<Item = impl AsRef<String>>,
@@ -221,7 +221,7 @@ impl GenSession {
         let mut data = self.data.lock().unwrap();
         if let Some(data) = data.get_mut(generator.into().as_str()) {
             for key in keys {
-                data.prompts.remove(key.as_ref());
+                data.inputs.remove(key.as_ref());
             }
         }
     }
@@ -233,7 +233,7 @@ impl GenSession {
         }
 
         for (_, data) in data.iter() {
-            if !data.targets.is_empty() || !data.prompts.is_empty() {
+            if !data.targets.is_empty() || !data.inputs.is_empty() {
                 return false;
             }
         }
@@ -245,15 +245,16 @@ impl GenSession {
 #[derive(Clone, serde::Serialize, Default, Debug)]
 struct DataImpl {
     targets: UnorderedMap<String, OmniPath>,
-    prompts: UnorderedMap<String, OwnedValueBag>,
+    #[serde(alias = "prompts")]
+    inputs: UnorderedMap<String, OwnedValueBag>,
 }
 
 impl DataImpl {
     fn from_de(de: DataImplDeserialize) -> Self {
         Self {
             targets: de.targets,
-            prompts: de
-                .prompts
+            inputs: de
+                .inputs
                 .into_iter()
                 .map(|(k, v)| (k, ValueBag::from_serde1(&v).to_owned()))
                 .collect(),
@@ -264,7 +265,8 @@ impl DataImpl {
 #[derive(Clone, serde::Deserialize)]
 struct DataImplDeserialize {
     targets: UnorderedMap<String, OmniPath>,
-    prompts: UnorderedMap<String, serde_json::Value>,
+    #[serde(alias = "prompts")]
+    inputs: UnorderedMap<String, serde_json::Value>,
 }
 
 #[cfg(test)]

@@ -20,6 +20,7 @@ import { dirname, extname, isAbsolute, join } from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { onTestFinished } from "vitest";
 import { stringify as stringifyYaml } from "yaml";
+import { cleanPath } from "@/utils";
 
 const SUPPORTED_EXT = /\.(ya?ml|json|toml)$/i;
 
@@ -118,7 +119,11 @@ export function makeWorkspace(spec: WorkspaceSpec = {}): Workspace {
     const ws: Workspace = {
         cwd: root,
         root,
-        path: (...segments) => join(root, ...segments),
+        path: (...segments) => {
+            const result = join(root, ...segments);
+
+            return cleanPath(result);
+        },
         write(relPath, content) {
             const abs = isAbsolute(relPath) ? relPath : join(root, relPath);
             mkdirSync(dirname(abs), { recursive: true });

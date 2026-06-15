@@ -26,11 +26,11 @@ pub struct RunConfig<'a> {
     pub workspace_dir: &'a Path,
     pub current_dir: &'a Path,
     pub target_overrides: &'a UnorderedMap<String, OmniPath>,
-    pub prompt_values: &'a UnorderedMap<String, OwnedValueBag>,
+    pub input_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
-    pub use_prompt_defaults: bool,
+    pub use_inputs_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub input_provider: &'a dyn InputProvider,
 }
@@ -103,7 +103,7 @@ pub(crate) async fn run_internal<'a>(
     runner: &dyn JsScriptRunner,
 ) -> Result<GenSession, Error> {
     let collection_config = CollectionConfig {
-        use_defaults: config.use_prompt_defaults,
+        use_defaults: config.use_inputs_defaults,
         ..CollectionConfig::default()
     };
 
@@ -115,7 +115,7 @@ pub(crate) async fn run_internal<'a>(
 
     let mut values = collect(
         &r#gen.inputs,
-        &config.prompt_values,
+        &config.input_values,
         &config.context_values,
         &collection_config,
         config.input_provider,
@@ -123,18 +123,18 @@ pub(crate) async fn run_internal<'a>(
     .await?;
 
     // propagate prompt values to the context values
-    for (key, value) in config.prompt_values.iter() {
+    for (key, value) in config.input_values.iter() {
         if !values.contains_key(key) {
             values.insert(key.to_string(), value.clone());
         }
     }
 
-    trace::trace!(?values, "prompt_values");
+    trace::trace!(?values, "inputs_values");
 
     let mut context_values = config.context_values.clone();
 
     context_values.insert(
-        "prompts".to_string(),
+        "inputs".to_string(),
         ValueBag::capture_serde1(&values).to_owned(),
     );
 
@@ -195,7 +195,7 @@ pub(crate) async fn run_internal<'a>(
         })
         .collect::<UnorderedSet<_>>();
 
-    session.set_prompts(
+    session.set_inputs(
         r#gen.name.as_str(),
         values
             .into_iter()

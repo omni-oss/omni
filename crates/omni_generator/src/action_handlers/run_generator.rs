@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
-    ForAllPromptValuesConfiguration, ForwardPromptValuesConfiguration,
-    PromptValue, Root, RunGeneratorActionConfiguration,
+    ForAllInputValuesConfiguration, ForwardInputValuesConfiguration,
+    InputValue, Root, RunGeneratorActionConfiguration,
 };
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -27,13 +27,13 @@ pub async fn run_generator<'a>(
             name: config.generator.clone(),
         })?;
 
-    let parent_prompts = ctx.context_values
-        .get("prompts")
+    let parent_inputs = ctx.context_values
+        .get("inputs")
         .expect("should have prompt vaues, if you encountered this error, please report it to the maintainers");
 
-    let prompt_values = resolve_prompt_values(parent_prompts, config, &ctx)?;
+    let input_values = resolve_input_values(parent_inputs, config, &ctx)?;
 
-    log::trace!("resolved prompt values: {prompt_values:#?}");
+    log::trace!("resolved prompt values: {input_values:#?}");
 
     let target_overrides = if config.targets.is_empty() {
         Cow::Borrowed(ctx.target_overrides)
@@ -94,17 +94,17 @@ pub async fn run_generator<'a>(
         workspace_dir: ctx.workspace_dir,
         overwrite: ctx.overwrite,
         context_values: ctx.context_values,
-        prompt_values: prompt_values.as_ref(),
+        input_values: input_values.as_ref(),
         target_overrides: target_overrides.as_ref(),
         current_dir: ctx.current_dir,
         env: ctx.env,
         args: Some(&config.args),
-        use_prompt_defaults: false,
+        use_inputs_defaults: false,
         available_generators: &available_generators,
         input_provider: ctx.input_provider,
     };
 
-    let prompted_values = Box::pin(run_internal(
+    let prompted_inputs_values = Box::pin(run_internal(
         generator,
         &run_config,
         sys,
@@ -112,17 +112,17 @@ pub async fn run_generator<'a>(
     ))
     .await?;
 
-    ctx.gen_session.merge(prompted_values);
+    ctx.gen_session.merge(prompted_inputs_values);
 
     Ok(())
 }
 
-fn resolve_prompt_values<'a>(
-    parent_prompts: &'a OwnedValueBag,
+fn resolve_input_values<'a>(
+    parent_inputs: &'a OwnedValueBag,
     config: &RunGeneratorActionConfiguration,
     ctx: &HandlerContext<'a>,
 ) -> Result<Cow<'a, UnorderedMap<String, OwnedValueBag>>, Error> {
-    let parsed = serde_json::to_value(parent_prompts)?;
+    let parsed = serde_json::to_value(parent_inputs)?;
 
     if !parsed.is_object() {
         return Err(ErrorInner::Custom(eyre::eyre!(
@@ -131,29 +131,29 @@ fn resolve_prompt_values<'a>(
         .into());
     }
 
-    let prompts = parsed.as_object().expect("should be object at this point");
+    let inputs = parsed.as_object().expect("should be object at this point");
 
     let mut all_values = unordered_map!();
 
-    match &config.prompt_values.forward {
-        ForwardPromptValuesConfiguration::ForAll(
-            ForAllPromptValuesConfiguration::All,
+    match &config.inputs_values.forward {
+        ForwardInputValuesConfiguration::ForAll(
+            ForAllInputValuesConfiguration::All,
         ) => {
-            for (key, value) in prompts {
+            for (key, value) in inputs {
                 all_values.insert(
                     key.clone(),
                     ValueBag::capture_serde1(value).to_owned(),
                 );
             }
         }
-        ForwardPromptValuesConfiguration::ForAll(
-            ForAllPromptValuesConfiguration::None,
+        ForwardInputValuesConfiguration::ForAll(
+            ForAllInputValuesConfiguration::None,
         ) => {
             // do nothing
         }
-        ForwardPromptValuesConfiguration::Selected(l) => {
+        ForwardInputValuesConfiguration::Selected(l) => {
             for key in l {
-                if let Some(value) = prompts.get(key) {
+                if let Some(value) = inputs.get(key) {
                     all_values.insert(
                         key.clone(),
                         ValueBag::capture_serde1(value).to_owned(),
@@ -163,7 +163,7 @@ fn resolve_prompt_values<'a>(
         }
     }
 
-    for (key, value) in config.prompt_values.values.iter() {
+    for (key, value) in config.inputs_values.values.iter() {
         let converted =
             to_owned_value_bag(key, value, ctx.tera_context_values)?;
 
@@ -175,18 +175,20 @@ fn resolve_prompt_values<'a>(
 
 fn to_owned_value_bag(
     key: &str,
-    prompt_value: &PromptValue,
+    input_value: &InputValue,
     tera_ctx: &omni_tera::Context,
 ) -> Result<OwnedValueBag, Error> {
-    Ok(match prompt_value {
-        PromptValue::Integer(i) => ValueBag::capture_serde1(i).to_owned(),
-        PromptValue::Float(f) => ValueBag::capture_serde1(f).to_owned(),
-        PromptValue::Boolean(b) => ValueBag::capture_serde1(b).to_owned(),
-        PromptValue::String(s) => ValueBag::capture_serde1(
-            &omni_tera::one_off(&s, &format!("prompts.{key}"), tera_ctx)?,
-        )
+    Ok(match input_value {
+        InputValue::Integer(i) => ValueBag::capture_serde1(i).to_owned(),
+        InputValue::Float(f) => ValueBag::capture_serde1(f).to_owned(),
+        InputValue::Boolean(b) => ValueBag::capture_serde1(b).to_owned(),
+        InputValue::String(s) => ValueBag::capture_serde1(&omni_tera::one_off(
+            &s,
+            &format!("inputs.{key}"),
+            tera_ctx,
+        )?)
         .to_owned(),
-        PromptValue::List(values) => {
+        InputValue::List(values) => {
             let mut list = Vec::with_capacity(values.len());
 
             for (idx, value) in values.iter().enumerate() {
@@ -206,18 +208,18 @@ fn to_owned_value_bag(
 mod tests {
     use maps::{UnorderedMap, unordered_map};
     use omni_generator_configurations::{
-        BaseActionConfiguration, ForAllPromptValuesConfiguration,
-        ForwardPromptValuesConfiguration, PromptValue,
-        PromptValuesConfiguration, RunGeneratorActionConfiguration,
+        BaseActionConfiguration, ForAllInputValuesConfiguration,
+        ForwardInputValuesConfiguration, InputValue, InputValuesConfiguration,
+        RunGeneratorActionConfiguration,
     };
     use value_bag::ValueBag;
 
     use super::super::test_harness::Fixture;
-    use super::{resolve_prompt_values, to_owned_value_bag};
+    use super::{resolve_input_values, to_owned_value_bag};
 
     fn run_gen_config(
-        forward: ForwardPromptValuesConfiguration,
-        values: UnorderedMap<String, PromptValue>,
+        forward: ForwardInputValuesConfiguration,
+        values: UnorderedMap<String, InputValue>,
     ) -> RunGeneratorActionConfiguration {
         RunGeneratorActionConfiguration {
             base: BaseActionConfiguration {
@@ -228,7 +230,7 @@ mod tests {
                 error_message: None,
             },
             generator: "gen".to_string(),
-            prompt_values: PromptValuesConfiguration { forward, values },
+            inputs_values: InputValuesConfiguration { forward, values },
             args: UnorderedMap::default(),
             output_dir: None,
             targets: UnorderedMap::default(),
@@ -239,7 +241,7 @@ mod tests {
     fn converts_integer() {
         let ctx = omni_tera::Context::new();
         let val =
-            to_owned_value_bag("k", &PromptValue::Integer(42), &ctx).unwrap();
+            to_owned_value_bag("k", &InputValue::Integer(42), &ctx).unwrap();
         let n = serde_json::to_value(&val).unwrap().as_i64().unwrap();
         assert_eq!(n, 42);
     }
@@ -248,7 +250,7 @@ mod tests {
     fn converts_float() {
         let ctx = omni_tera::Context::new();
         let val =
-            to_owned_value_bag("k", &PromptValue::Float(1.5), &ctx).unwrap();
+            to_owned_value_bag("k", &InputValue::Float(1.5), &ctx).unwrap();
         let f = serde_json::to_value(&val).unwrap().as_f64().unwrap();
         assert_eq!(f, 1.5);
     }
@@ -257,7 +259,7 @@ mod tests {
     fn converts_boolean() {
         let ctx = omni_tera::Context::new();
         let val =
-            to_owned_value_bag("k", &PromptValue::Boolean(true), &ctx).unwrap();
+            to_owned_value_bag("k", &InputValue::Boolean(true), &ctx).unwrap();
         let b = serde_json::to_value(&val).unwrap().as_bool().unwrap();
         assert!(b);
     }
@@ -268,7 +270,7 @@ mod tests {
         ctx.insert("x", "hello");
         let val = to_owned_value_bag(
             "k",
-            &PromptValue::String("{{ x }}".into()),
+            &InputValue::String("{{ x }}".into()),
             &ctx,
         )
         .unwrap();
@@ -279,9 +281,9 @@ mod tests {
     #[test]
     fn converts_list() {
         let ctx = omni_tera::Context::new();
-        let list = PromptValue::List(vec![
-            PromptValue::Integer(1),
-            PromptValue::String("hi".into()),
+        let list = InputValue::List(vec![
+            InputValue::Integer(1),
+            InputValue::String("hi".into()),
         ]);
         let val = to_owned_value_bag("k", &list, &ctx).unwrap();
         let json = serde_json::to_value(&val).unwrap();
@@ -289,19 +291,19 @@ mod tests {
     }
 
     #[test]
-    fn forward_all_copies_all_parent_prompts() {
+    fn forward_all_copies_all_parent_inputs() {
         let fix = Fixture::new();
         let ctx = fix.ctx();
         let map = serde_json::json!({"a": 1_i64, "b": "foo"});
-        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let parent_inputs = ValueBag::from_serde1(&map).to_owned();
         let config = run_gen_config(
-            ForwardPromptValuesConfiguration::ForAll(
-                ForAllPromptValuesConfiguration::All,
+            ForwardInputValuesConfiguration::ForAll(
+                ForAllInputValuesConfiguration::All,
             ),
             unordered_map!(),
         );
         let result =
-            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+            resolve_input_values(&parent_inputs, &config, &ctx).unwrap();
         assert!(result.contains_key("a"));
         assert!(result.contains_key("b"));
     }
@@ -311,15 +313,15 @@ mod tests {
         let fix = Fixture::new();
         let ctx = fix.ctx();
         let map = serde_json::json!({"a": 1_i64});
-        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let parent_inputs = ValueBag::from_serde1(&map).to_owned();
         let config = run_gen_config(
-            ForwardPromptValuesConfiguration::ForAll(
-                ForAllPromptValuesConfiguration::None,
+            ForwardInputValuesConfiguration::ForAll(
+                ForAllInputValuesConfiguration::None,
             ),
             unordered_map!(),
         );
         let result =
-            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+            resolve_input_values(&parent_inputs, &config, &ctx).unwrap();
         assert!(result.is_empty());
     }
 
@@ -328,16 +330,16 @@ mod tests {
         let fix = Fixture::new();
         let ctx = fix.ctx();
         let map = serde_json::json!({"a": 1_i64, "b": "foo", "c": 3_i64});
-        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let parent_inputs = ValueBag::from_serde1(&map).to_owned();
         let config = run_gen_config(
-            ForwardPromptValuesConfiguration::Selected(vec![
+            ForwardInputValuesConfiguration::Selected(vec![
                 "a".into(),
                 "c".into(),
             ]),
             unordered_map!(),
         );
         let result =
-            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+            resolve_input_values(&parent_inputs, &config, &ctx).unwrap();
         assert!(result.contains_key("a"));
         assert!(result.contains_key("c"));
         assert!(!result.contains_key("b"));
@@ -348,15 +350,15 @@ mod tests {
         let fix = Fixture::new();
         let ctx = fix.ctx();
         let map = serde_json::json!({"a": 1_i64});
-        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let parent_inputs = ValueBag::from_serde1(&map).to_owned();
         let config = run_gen_config(
-            ForwardPromptValuesConfiguration::Selected(vec![
+            ForwardInputValuesConfiguration::Selected(vec![
                 "a".into(),
                 "missing".into(),
             ]),
             unordered_map!(),
         );
-        let result = resolve_prompt_values(&parent_prompts, &config, &ctx);
+        let result = resolve_input_values(&parent_inputs, &config, &ctx);
         assert!(result.is_ok());
         let result = result.unwrap();
         assert!(result.contains_key("a"));
@@ -368,15 +370,15 @@ mod tests {
         let fix = Fixture::new();
         let ctx = fix.ctx();
         let map = serde_json::json!({"a": 1_i64});
-        let parent_prompts = ValueBag::from_serde1(&map).to_owned();
+        let parent_inputs = ValueBag::from_serde1(&map).to_owned();
         let config = run_gen_config(
-            ForwardPromptValuesConfiguration::ForAll(
-                ForAllPromptValuesConfiguration::All,
+            ForwardInputValuesConfiguration::ForAll(
+                ForAllInputValuesConfiguration::All,
             ),
-            unordered_map!("a".to_string() => PromptValue::Integer(99)),
+            unordered_map!("a".to_string() => InputValue::Integer(99)),
         );
         let result =
-            resolve_prompt_values(&parent_prompts, &config, &ctx).unwrap();
+            resolve_input_values(&parent_inputs, &config, &ctx).unwrap();
         let n = serde_json::to_value(&result["a"])
             .unwrap()
             .as_i64()

@@ -94,7 +94,7 @@ describe("+init @e2e (clone + run primary generator)", () => {
     );
 
     it(
-        "forwards `-v/--value` to the generator run so prompts are prefilled",
+        "forwards `-v/--value` to the generator run so inputs are prefilled",
         async (ctx) => {
             await skipUnlessRemoteReachable(ctx);
 

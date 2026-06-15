@@ -57,7 +57,7 @@ pub async fn prompt_generator_name(
     Ok(value.to_string())
 }
 
-pub fn get_prompt_values(
+pub fn get_input_values(
     values: &[(String, String)],
 ) -> UnorderedMap<String, OwnedValueBag> {
     UnorderedMap::from_iter(

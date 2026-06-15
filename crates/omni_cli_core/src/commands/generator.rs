@@ -6,7 +6,7 @@ use std::{
 
 use crate::commands::{
     generator_common_args::GeneratorRunCommonArgs,
-    generator_utils::{get_prompt_values, prompt_generator_name},
+    generator_utils::{get_input_values, prompt_generator_name},
 };
 
 use super::parser::parse_key_value;
@@ -101,7 +101,7 @@ pub struct GeneratorRunArgs {
         long,
         num_args(0..=1),
         require_equals(true),
-        help = "Save prompts and targets to the output directory so they can be reused future invocations",
+        help = "Save inputs and targets to the output directory so they can be reused future invocations",
         default_missing_value = "true"
     )]
     pub save_session: Option<bool>,
@@ -179,7 +179,7 @@ async fn run_generator_run(
 
     log::trace!("Generator output directory: {}", output_dir.display());
 
-    let mut pre_exec_values = get_prompt_values(&command.args.common.value);
+    let mut pre_exec_values = get_input_values(&command.args.common.value);
     let env = loaded_context.get_cached_env_vars(output_dir.as_path());
 
     let mut context_values = unordered_map!();
@@ -244,7 +244,7 @@ async fn run_generator_run(
         let session = GenSession::from_disk(file.as_path(), sys).await?;
         has_exiting_session = true;
         session.restore_targets(&generator_name, &mut target_overrides, false);
-        session.restore_prompts(&generator_name, &mut pre_exec_values, false);
+        session.restore_inputs(&generator_name, &mut pre_exec_values, false);
     }
 
     let input_provider = CliInputProvider::default();
@@ -255,11 +255,11 @@ async fn run_generator_run(
         workspace_dir: &workspace_dir,
         target_overrides: &target_overrides,
         context_values: &context_values,
-        prompt_values: &pre_exec_values,
+        input_values: &pre_exec_values,
         current_dir: &current_dir,
         env: &env.as_deref().unwrap_or(&default_map),
         args: None,
-        use_prompt_defaults: command.args.common.use_defaults,
+        use_inputs_defaults: command.args.common.use_defaults,
         available_generators: &generators,
         input_provider: &input_provider,
     };
@@ -274,7 +274,7 @@ async fn run_generator_run(
         } else if has_exiting_session {
             true
         } else {
-            prompt_save_prompts().await?
+            prompt_save_inputs().await?
         };
 
         if save {
@@ -416,15 +416,15 @@ async fn prompt_output_dir(
     }
 }
 
-async fn prompt_save_prompts() -> eyre::Result<bool> {
+async fn prompt_save_inputs() -> eyre::Result<bool> {
     let context_values = unordered_map!();
     let prompting_config = CollectionConfig::default();
 
     let prompt = InputConfiguration::<()>::new_confirm(
         ConfirmInputConfiguration::new(
             BaseInputConfiguration::new(
-                "save_prompts",
-                "Would you like to save prompts and targets to the output directory?",
+                "save_inputs",
+                "Would you like to save inputs and targets to the output directory?",
                 Some(Left(true)),
             ),
             Some(Left(true)),

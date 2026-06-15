@@ -130,14 +130,14 @@ export function promptGeneratorSpec(): WorkspaceSpec {
             "generators/greeter/generator.omni.yaml": {
                 name: "greeter",
                 description: "POC text-prompt generator",
-                prompts: [
+                inputs: [
                     { type: "text", name: "subject", message: "Who to greet?" },
                 ],
                 actions: [
                     {
                         type: "add-content",
                         output_path: "greeting.txt",
-                        content: "Hello {{ prompts.subject }}!",
+                        content: "Hello {{ inputs.subject }}!",
                     },
                 ],
             },
@@ -173,7 +173,7 @@ export function scaffoldGeneratorSpec(): WorkspaceSpec {
             "generators/scaffold/generator.omni.yaml": {
                 name: "scaffold",
                 description: "scaffolds a greeting file",
-                prompts: [
+                inputs: [
                     {
                         type: "text",
                         name: "subject",
@@ -188,7 +188,7 @@ export function scaffoldGeneratorSpec(): WorkspaceSpec {
                         type: "add-content",
                         output_path: "greeting.txt",
                         target: "dest",
-                        content: "Hello {{ prompts.subject }}!",
+                        content: "Hello {{ inputs.subject }}!",
                     },
                 ],
             },

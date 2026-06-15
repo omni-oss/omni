@@ -28,7 +28,7 @@ pub struct BaseActionConfiguration {
     /// Accepts a tera template that should evaluate to boolean that determines if the action should be executed.
     ///
     /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub r#if: Option<String>,
@@ -37,7 +37,7 @@ pub struct BaseActionConfiguration {
     /// Should be unique within the same action group.
     ///
     /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub name: Option<String>,
@@ -45,7 +45,7 @@ pub struct BaseActionConfiguration {
     /// Accepts a tera template that should evaluate to a string that will be used as a progress message.
     ///
     /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub in_progress_message: Option<String>,
@@ -53,7 +53,7 @@ pub struct BaseActionConfiguration {
     /// Accepts a tera template that should evaluate to a string that will be used as a success message.
     ///
     /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
     pub success_message: Option<String>,
@@ -61,7 +61,7 @@ pub struct BaseActionConfiguration {
     /// Accepts a tera template that should evaluate to a string that will be used as a failure message.
     ///
     /// Available Context
-    /// - `prompts`: A dictionary containing the values of the prompts that were asked previously.
+    /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     /// - `error`: A string containing the error message that was returned by the action.
     #[serde(default, deserialize_with = "option_validate_tera_expr")]
@@ -177,7 +177,7 @@ pub struct RunGeneratorActionConfiguration {
     pub generator: String,
 
     #[serde(default)]
-    pub prompt_values: PromptValuesConfiguration,
+    pub inputs_values: InputValuesConfiguration,
 
     #[serde(default)]
     pub args: UnorderedMap<String, serde_json::Value>,
@@ -523,11 +523,11 @@ pub enum JsRuntimeOption {
     Default,
 )]
 #[garde(allow_unvalidated)]
-pub struct PromptValuesConfiguration {
+pub struct InputValuesConfiguration {
     #[serde(default)]
-    pub forward: ForwardPromptValuesConfiguration,
+    pub forward: ForwardInputValuesConfiguration,
     #[serde(default)]
-    pub values: UnorderedMap<String, PromptValue>,
+    pub values: UnorderedMap<String, InputValue>,
 }
 
 #[derive(
@@ -535,12 +535,12 @@ pub struct PromptValuesConfiguration {
 )]
 #[garde(allow_unvalidated)]
 #[serde(untagged)]
-pub enum PromptValue {
+pub enum InputValue {
     Integer(i64),
     Float(f64),
     Boolean(bool),
     String(String),
-    List(Vec<PromptValue>),
+    List(Vec<InputValue>),
 }
 
 #[derive(
@@ -548,15 +548,15 @@ pub enum PromptValue {
 )]
 #[garde(allow_unvalidated)]
 #[serde(untagged)]
-pub enum ForwardPromptValuesConfiguration {
-    ForAll(ForAllPromptValuesConfiguration),
+pub enum ForwardInputValuesConfiguration {
+    ForAll(ForAllInputValuesConfiguration),
     Selected(Vec<String>),
 }
 
-impl Default for ForwardPromptValuesConfiguration {
+impl Default for ForwardInputValuesConfiguration {
     fn default() -> Self {
-        ForwardPromptValuesConfiguration::ForAll(
-            ForAllPromptValuesConfiguration::None,
+        ForwardInputValuesConfiguration::ForAll(
+            ForAllInputValuesConfiguration::None,
         )
     }
 }
@@ -574,7 +574,7 @@ impl Default for ForwardPromptValuesConfiguration {
 )]
 #[serde(rename_all = "kebab-case")]
 #[garde(allow_unvalidated)]
-pub enum ForAllPromptValuesConfiguration {
+pub enum ForAllInputValuesConfiguration {
     All,
     #[default]
     None,

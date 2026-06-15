@@ -3,10 +3,10 @@
  * Pinned to `crates/omni_cli_core/src/commands/generator.rs` (+ its
  * `generator_common_args.rs`).
  *
- * The interactive paths (output-dir/project/save prompts, generator selection)
+ * The interactive paths (output-dir/project/save inputs, generator selection)
  * are covered by the PTY-driven `+prompt`/`+generator @tui` tests. Here we keep
  * runs non-interactive by always supplying `-n <name>`, an explicit output, and
- * either `--use-defaults` or `-v` so prompts never block. Because the fixture's
+ * either `--use-defaults` or `-v` so inputs never block. Because the fixture's
  * prompt is `remember: true`, the session is never empty, so a successful run
  * would otherwise pop the "save session?" confirm; we pass `--save-session` to
  * force the save and skip that prompt (the flag takes no value).
@@ -31,7 +31,7 @@ function parseSession(raw: string): Record<string, SessionEntry> {
 
 interface SessionEntry {
     targets: Record<string, string>;
-    prompts: Record<string, unknown>;
+    inputs: Record<string, unknown>;
 }
 
 describe("+generator @cli (list)", () => {
@@ -133,7 +133,7 @@ describe("+generator @cli (run)", () => {
         expect(ws.read("app/src/greeting.txt")).toBe("Hello world!");
     });
 
-    it("-v/--value prefills prompts (skipping the prompt) and --use-defaults uses defaults", async () => {
+    it("-v/--value prefills inputs (skipping the prompt) and --use-defaults uses defaults", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
         // -v prefills `subject`, so the prompt is satisfied without input.
@@ -237,7 +237,7 @@ describe("+generator @cli (run)", () => {
         expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
     });
 
-    it("--save-session writes .omni/generator.json with prompts and targets", async () => {
+    it("--save-session writes .omni/generator.json with inputs and targets", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
         const result = await runOmni(
@@ -258,8 +258,8 @@ describe("+generator @cli (run)", () => {
 
         expect(result).toHaveSucceeded();
         const session = parseSession(ws.read("out/.omni/generator.json"));
-        // Only `remember: true` prompts and overridden targets are persisted.
-        expect(session?.scaffold?.prompts.subject).toBe("world");
+        // Only `remember: true` inputs and overridden targets are persisted.
+        expect(session?.scaffold?.inputs.subject).toBe("world");
         expect(session?.scaffold?.targets.dest).toBe("lib");
     });
 
@@ -591,7 +591,7 @@ describe("+generator @exitcode (run errors)", () => {
 /**
  * A workspace whose `pipeline` generator writes lowercase files and then pipes
  * them back through `tr a-z A-Z`, exercising the `transform`/`transform-many`
- * actions. It has no prompts, so the session stays empty and no save confirm
+ * actions. It has no inputs, so the session stays empty and no save confirm
  * appears. `tr` is POSIX-only, hence the platform guard.
  */
 function transformSpec() {
@@ -653,7 +653,7 @@ describe("+generator @e2e (transform actions)", () => {
 });
 
 describe("+generator @tui (interactive run via PTY)", () => {
-    it("prompts for output target, generator name, prompts, then save", async () => {
+    it("prompts for output target, generator name, inputs, then save", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
         // No -o/-p/-n: omni must drive the whole interactive chain.
@@ -678,7 +678,7 @@ describe("+generator @tui (interactive run via PTY)", () => {
         pty.press("enter");
 
         // 5. Post-run "save session?" confirm (defaults to yes).
-        await pty.waitFor("save prompts and targets");
+        await pty.waitFor("save inputs and targets");
         pty.press("enter");
 
         const exit = await pty.waitForExit();
@@ -735,7 +735,7 @@ function parseLockfile(raw: string): {
 }
 
 describe("+generator @e2e (git sources)", () => {
-    const CLONE_TIMEOUT_MS = 60_000;
+    const CLONE_TIMEOUT_MS = 10_000;
 
     it(
         "pulls a git source, locks it, and exposes its generators to `list`",
@@ -836,7 +836,7 @@ describe("+generator @e2e (git sources)", () => {
 describe("+generator @exitcode (validation)", () => {
     it("errors when two generators share the same name", async () => {
         // `validate` runs at the top of `run_named`, before any prompting, so a
-        // duplicate name fails fast regardless of the generators' prompts.
+        // duplicate name fails fast regardless of the generators' inputs.
         const dupGenerator = (greeting: string) => ({
             name: "dup",
             description: "duplicate-named generator",
@@ -871,7 +871,7 @@ describe("+generator @exitcode (validation)", () => {
 });
 
 /**
- * A `multi` generator with two `remember: true` prompts (`subject`,
+ * A `multi` generator with two `remember: true` inputs (`subject`,
  * `salutation`) and two targets (`dest` -> @output/src, `other` -> @output/lib),
  * writing one file into each target. Two slots of each kind let us prove that
  * repeated `-v K=V` and `-t name=path` flags ALL apply (not just the last one).
@@ -887,7 +887,7 @@ function multiSlotGeneratorSpec(): WorkspaceSpec {
             "generators/multi/generator.omni.yaml": {
                 name: "multi",
                 description: "scaffolds two greeting files",
-                prompts: [
+                inputs: [
                     {
                         type: "text",
                         name: "subject",
@@ -910,13 +910,13 @@ function multiSlotGeneratorSpec(): WorkspaceSpec {
                         output_path: "greeting.txt",
                         target: "dest",
                         content:
-                            "{{ prompts.salutation }} {{ prompts.subject }}!",
+                            "{{ inputs.salutation }} {{ inputs.subject }}!",
                     },
                     {
                         type: "add-content",
                         output_path: "other.txt",
                         target: "other",
-                        content: "{{ prompts.subject }}",
+                        content: "{{ inputs.subject }}",
                     },
                 ],
             },

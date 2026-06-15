@@ -11,7 +11,7 @@ use value_bag::ValueBag;
 
 use crate::commands::{
     generator_common_args::GeneratorRunCommonArgs,
-    generator_utils::get_prompt_values,
+    generator_utils::get_input_values,
 };
 
 #[derive(Args, Debug)]
@@ -75,7 +75,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
 
     log::info!("Found {} generator(s) in the source.", all_generators.len());
 
-    let pre_exec_values = get_prompt_values(&command.args.common.value);
+    let pre_exec_values = get_input_values(&command.args.common.value);
 
     let context_values = unordered_map! {
         "output_dir".to_string() => ValueBag::from_serde1(&output_dir.to_string_lossy()).to_owned(),
@@ -94,8 +94,8 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         dry_run: false,
         args: None,
         overwrite: None,
-        use_prompt_defaults: command.args.common.use_defaults,
-        prompt_values: &pre_exec_values,
+        use_inputs_defaults: command.args.common.use_defaults,
+        input_values: &pre_exec_values,
         input_provider: &input_provider,
     };
 

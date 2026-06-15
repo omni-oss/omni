@@ -1,7 +1,7 @@
 /**
  * Pseudo-terminal harness for interactive / TUI e2e tests.
  *
- * Some omni flows are interactive: `+generator` prompts, `+prompt` confirmations,
+ * Some omni flows are interactive: `+generator` inputs, `+prompt` confirmations,
  * spinners, and other TUI surfaces only render (and only read input) when stdin
  * is a real TTY. {@link runOmni} pipes through plain pipes, so it can't exercise
  * those paths. This harness instead spawns the binary under a pty (via

@@ -19,6 +19,7 @@ import {
     type Workspace,
     type WorkspaceSpec,
 } from "@/harness";
+import { cleanPath } from "./utils";
 
 /** A workspace with `alpha` (build+test) and `beta` (build) echo tasks. */
 function multiTaskSpec(): WorkspaceSpec {
@@ -77,7 +78,7 @@ describe("+cache @cache (cache dir)", () => {
         const result = await runOmni(["cache", "dir"], { cwd: ws.cwd });
 
         expect(result).toHaveSucceeded();
-        expect(result.out).toBe(ws.path(".omni", "cache"));
+        expect(cleanPath(result.out)).toBe(ws.path(".omni", "cache"));
     });
 });
 
@@ -256,7 +257,7 @@ describe("+cache @cache (prune)", () => {
     });
 });
 
-describe("+cache @prompt (prune interactive confirmation)", () => {
+describe("+cache @input (prune interactive confirmation)", () => {
     it("`n` at the confirmation prompt aborts and keeps the cache", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 

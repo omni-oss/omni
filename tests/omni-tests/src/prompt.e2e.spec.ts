@@ -2,16 +2,15 @@
  * Interactive `omni_prompt` (requestty) widgets, driven through the PTY harness.
  *
  * These run real requestty prompts via `omni generator run`: a generator's
- * `prompts` render the widgets, and its `add-content` action bakes the answers
+ * `inputs` render the widgets, and its `add-content` action bakes the answers
  * into a file we can read back - which proves the keystrokes were actually
  * received and parsed. Always `waitFor` the prompt message before sending keys.
  *
  * The generators here keep `remember` unset and declare no target overrides, so
  * their session is empty and no post-run "save session?" confirm appears; the
- * run completes as soon as the prompts are answered. Each run passes `-o out`
+ * run completes as soon as the inputs are answered. Each run passes `-o out`
  * (and usually `-n <name>`) so only the widget under test is interactive.
  *
- * Pinned to `crates/omni_prompt/src/prompt.rs` and `.../make/prompts.rs`.
  */
 
 import { describe, expect, it } from "vitest";
@@ -26,14 +25,14 @@ type Json = Record<string, unknown>;
 
 interface GeneratorDef {
     description?: string;
-    prompts?: Json[];
+    inputs?: Json[];
     actions: Json[];
 }
 
 /**
  * Build a workspace exposing one local generator source plus the given
  * generators (keyed by name). Mirrors the shape of {@link promptGeneratorSpec}
- * but lets each test declare its own prompts/actions.
+ * but lets each test declare its own inputs/actions.
  */
 function generatorWorkspace(generators: Record<string, GeneratorDef>) {
     const projects: Record<string, Json> = {};
@@ -43,7 +42,7 @@ function generatorWorkspace(generators: Record<string, GeneratorDef>) {
             ...(def.description !== undefined
                 ? { description: def.description }
                 : {}),
-            ...(def.prompts !== undefined ? { prompts: def.prompts } : {}),
+            ...(def.inputs !== undefined ? { inputs: def.inputs } : {}),
             actions: def.actions,
         };
     }
@@ -62,10 +61,10 @@ function generatorWorkspace(generators: Record<string, GeneratorDef>) {
 }
 
 /** A single generator named `g` whose action writes `content` to `result.txt`. */
-function singleGenerator(prompts: Json[], content: string) {
+function singleGenerator(inputs: Json[], content: string) {
     return generatorWorkspace({
         g: {
-            prompts,
+            inputs,
             actions: [
                 {
                     type: "add-content",
@@ -77,8 +76,8 @@ function singleGenerator(prompts: Json[], content: string) {
     });
 }
 
-describe("+prompt @tui (text prompt)", () => {
-    it("drives a requestty text prompt and bakes the answer into output", async () => {
+describe("+input @tui (text input)", () => {
+    it("drives a requestty text input and bakes the answer into output", async () => {
         const ws = makeWorkspace(promptGeneratorSpec());
 
         const pty = spawnOmniPty(
@@ -106,7 +105,7 @@ describe("+prompt @tui (text prompt)", () => {
     });
 });
 
-describe("+prompt @tui (select prompt)", () => {
+describe("+input @tui (select input)", () => {
     it("selecting a different generator from the list runs that one", async () => {
         const ws = generatorWorkspace({
             alpha: {
@@ -159,7 +158,7 @@ describe("+prompt @tui (select prompt)", () => {
     });
 });
 
-describe("+prompt @tui (multi_select prompt)", () => {
+describe("+input @tui (multi_select input)", () => {
     it("space toggles options and enter submits the selected values", async () => {
         const ws = singleGenerator(
             [
@@ -174,7 +173,7 @@ describe("+prompt @tui (multi_select prompt)", () => {
                     ],
                 },
             ],
-            '{{ prompts.tags | join(sep="-") }}',
+            '{{ inputs.tags | join(sep="-") }}',
         );
 
         const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
@@ -195,7 +194,7 @@ describe("+prompt @tui (multi_select prompt)", () => {
     });
 });
 
-describe("+prompt @tui (confirm prompt)", () => {
+describe("+input @tui (confirm input)", () => {
     function confirmWorkspace() {
         return singleGenerator(
             [
@@ -206,7 +205,7 @@ describe("+prompt @tui (confirm prompt)", () => {
                     default: true,
                 },
             ],
-            "{{ prompts.flag }}",
+            "{{ inputs.flag }}",
         );
     }
 
@@ -244,7 +243,7 @@ describe("+prompt @tui (confirm prompt)", () => {
     });
 });
 
-describe("+prompt @tui (validation)", () => {
+describe("+input @tui (validation)", () => {
     it("re-prompts on invalid input and proceeds once valid", async () => {
         const ws = singleGenerator(
             [
@@ -260,7 +259,7 @@ describe("+prompt @tui (validation)", () => {
                     ],
                 },
             ],
-            "{{ prompts.code }}",
+            "{{ inputs.code }}",
         );
 
         const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
@@ -284,7 +283,7 @@ describe("+prompt @tui (validation)", () => {
     });
 });
 
-describe("+prompt @tui (if-skip & password)", () => {
+describe("+input @tui (if-skip & password)", () => {
     it("an `if: false` prompt is skipped and never rendered", async () => {
         const ws = singleGenerator(
             [
@@ -297,7 +296,7 @@ describe("+prompt @tui (if-skip & password)", () => {
                 },
                 { type: "text", name: "shown", message: "Type value" },
             ],
-            "hidden={{ prompts.hidden | default(value='MISSING') }} shown={{ prompts.shown }}",
+            "hidden={{ inputs.hidden | default(value='MISSING') }} shown={{ inputs.shown }}",
         );
 
         const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
@@ -316,11 +315,11 @@ describe("+prompt @tui (if-skip & password)", () => {
         expect(ws.read("out/result.txt")).toBe("hidden=MISSING shown=here");
     });
 
-    it("a password prompt captures input without echoing it", async () => {
+    it("a password input captures input without echoing it", async () => {
         const secret = "topsecret-123";
         const ws = singleGenerator(
             [{ type: "password", name: "secret", message: "Enter secret" }],
-            "secret={{ prompts.secret }}",
+            "secret={{ inputs.secret }}",
         );
 
         const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
