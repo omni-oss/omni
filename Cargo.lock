@@ -5423,6 +5423,7 @@ dependencies = [
  "eyre",
  "futures 0.3.32",
  "log",
+ "omni_utils",
  "rust-embed",
  "schemars",
  "serde",

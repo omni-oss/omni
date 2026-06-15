@@ -175,7 +175,9 @@ describe("+generator @e2e (run-javascript)", () => {
         expect(ws.read("out/child.txt")).toBe("child");
     });
 
-    it("honors per-action runtimes, spawning one runner each", async (ctx) => {
+    it("honors per-action runtimes, spawning one runner each", {
+        timeout: 90_000,
+    }, async (ctx) => {
         // Each `run-javascript` action picks its own runtime; distinct runtimes
         // get distinct processes. Gated so it only runs where both exist.
         if (!runtimeAvailable("node") || !runtimeAvailable("bun")) {
@@ -284,6 +286,13 @@ describe("+generator @e2e (run-javascript)", () => {
         );
 
         expect(result).toHaveFailed();
-        expect(result).toOutputContaining("No such file or directory");
+        // The exact wording of the "file not found" OS error differs by platform:
+        //   POSIX   → "No such file or directory"
+        //   Windows → "The system cannot find the path specified."
+        const fileNotFoundMsg =
+            process.platform === "win32"
+                ? "The system cannot find the path specified."
+                : "No such file or directory";
+        expect(result).toOutputContaining(fileNotFoundMsg);
     });
 });

@@ -83,7 +83,16 @@ function tryRegisterCleanup(cleanup: () => void): void {
     try {
         // `onTestFinished` throws when there is no active test context, which
         // lets the harness also be used from setup code that owns cleanup().
-        onTestFinished(() => cleanup());
+        onTestFinished(() => {
+            try {
+                cleanup();
+            } catch {
+                // Swallow cleanup errors so they don't mask the real test
+                // failure.  On Windows, EPERM can occur when spawned child
+                // processes still hold open file handles at teardown time
+                // (e.g. after a test timeout).
+            }
+        });
     } catch {
         // Not inside a test - caller is responsible for calling cleanup().
     }

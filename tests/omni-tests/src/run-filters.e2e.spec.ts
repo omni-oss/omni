@@ -155,13 +155,21 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
     // `parse_key_value` splits on the first `=`, strips one layer of matching
     // surrounding quotes, and errors when `=` is absent. The task echoes the
     // injected value wrapped in markers so an empty value is still observable.
+    //
+    // We use `node -e` instead of `echo` because some Windows installations of
+    // Git Bash ship an echo.exe that strips single-quote characters from its
+    // arguments (treating them as POSIX shell quoting delimiters even when
+    // invoked directly).  Node.js passes arguments through verbatim on every
+    // platform, making it a reliable cross-platform alternative here.
     function echoArgSpec(): WorkspaceSpec {
         return {
             workspace: { projects: ["**"] },
             projects: {
                 app: {
                     name: "app",
-                    tasks: { greet: 'echo "<{{ args.x }}>"' },
+                    tasks: {
+                        greet: `node -e "console.log('<'+process.argv[1]+'>')" "{{ args.x }}"`,
+                    },
                 },
             },
         };

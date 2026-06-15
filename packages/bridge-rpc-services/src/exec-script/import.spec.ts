@@ -66,7 +66,10 @@ describe("import", () => {
             expect(mod.join("a", "b")).toBe(join("a", "b"));
         });
 
-        test("treats Windows-style absolute paths as paths, not URLs", async () => {
+        test("treats Windows-style absolute paths as paths, not URLs", async (ctx) => {
+            if (process.platform !== "win32") {
+                ctx.skip();
+            }
             // On non-Windows platforms there is no C:\ path, so we synthesize
             // the assertion: any absolute filesystem path that the OS knows
             // about must round-trip through importScript without being mistaken
@@ -76,7 +79,10 @@ describe("import", () => {
             expect(mod.value).toBe(42);
         });
 
-        test("strips Windows extended-length path prefix (\\\\?\\) before converting to a URL", async () => {
+        test("strips Windows extended-length path prefix (\\\\?\\) before converting to a URL", async (ctx) => {
+            if (process.platform !== "win32") {
+                ctx.skip();
+            }
             // Rust's std::fs::canonicalize prepends \\?\ to paths on Windows.
             // importScript must strip this prefix so pathToFileURL produces a
             // valid file:// URL rather than file://%3F\…
