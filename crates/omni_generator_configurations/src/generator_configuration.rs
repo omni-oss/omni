@@ -39,7 +39,8 @@ pub struct GeneratorConfiguration {
 
     /// Prompts to ask the user
     #[serde(default)]
-    pub prompts: Vec<InputConfiguration<InputConfigurationExtra>>,
+    #[serde(rename = "prompts")]
+    pub inputs: Vec<InputConfiguration<InputConfigurationExtra>>,
 
     /// Actions to perform
     #[serde(default)]
