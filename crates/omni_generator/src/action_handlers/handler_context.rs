@@ -1,10 +1,10 @@
 use std::{borrow::Cow, path::Path};
 
 use maps::{Map, UnorderedMap};
-use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
+use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
 use value_bag::OwnedValueBag;
 
 use crate::{JsScriptRunner, gen_session::GenSession};
@@ -28,6 +28,7 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub resolved_action_name: &'a str,
     pub env: &'a Map<String, String>,
     pub gen_session: &'a GenSession,
+    pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider,
     pub subscriber: &'a S,

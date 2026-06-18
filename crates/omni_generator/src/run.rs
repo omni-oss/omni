@@ -33,7 +33,7 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
-    pub use_inputs_defaults: bool,
+    pub use_input_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub input_provider: &'a dyn InputProvider,
     pub subscriber: &'a S,
@@ -124,7 +124,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     runner: &dyn JsScriptRunner,
 ) -> Result<GenSession, Error> {
     let collection_config = CollectionConfig {
-        use_defaults: config.use_inputs_defaults,
+        use_defaults: config.use_input_defaults,
         ..CollectionConfig::default()
     };
 
@@ -150,7 +150,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         }
     }
 
-    trace::trace!(?values, "inputs_values");
+    trace::trace!(?values, "input_values");
 
     let mut context_values = config.context_values.clone();
 
@@ -201,6 +201,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         js_script_runner: runner,
         input_provider: config.input_provider,
         subscriber: config.subscriber,
+        use_input_defaults: config.use_input_defaults,
     };
 
     execute_actions(&args, &session, sys).await?;

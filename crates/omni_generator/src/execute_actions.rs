@@ -1,11 +1,11 @@
 use std::{borrow::Cow, path::Path};
 
 use maps::{Map, UnorderedMap};
-use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
 use omni_generator_configurations::{
     ActionConfiguration, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration,
 };
+use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
@@ -22,7 +22,8 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
+pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
+{
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub generator_dir: &'a Path,
@@ -37,6 +38,7 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber> 
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub env: &'a Map<String, String>,
+    pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider,
     pub subscriber: &'a S,
@@ -92,6 +94,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             js_script_runner: args.js_script_runner,
             input_provider: args.input_provider,
             subscriber: args.subscriber,
+            use_input_defaults: args.use_input_defaults,
         };
 
         let in_progress_message =

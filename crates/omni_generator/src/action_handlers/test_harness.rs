@@ -147,6 +147,7 @@ impl Fixture {
             js_script_runner: self.js_script_runner.as_ref(),
             input_provider: &self.input_provider,
             subscriber: &omni_messages::NoopSubscriber,
+            use_input_defaults: false,
         }
     }
 }

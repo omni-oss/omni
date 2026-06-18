@@ -177,7 +177,7 @@ pub struct RunGeneratorActionConfiguration {
     pub generator: String,
 
     #[serde(default)]
-    pub inputs_values: InputValuesConfiguration,
+    pub input_values: InputValuesConfiguration,
 
     #[serde(default)]
     pub args: UnorderedMap<String, serde_json::Value>,

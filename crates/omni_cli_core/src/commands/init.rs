@@ -94,7 +94,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         dry_run: false,
         args: None,
         overwrite: None,
-        use_inputs_defaults: command.args.common.use_defaults,
+        use_input_defaults: command.args.common.use_defaults,
         input_values: &pre_exec_values,
         input_provider: &input_provider,
         subscriber: &omni_messages::NoopSubscriber,

@@ -197,7 +197,7 @@ async fn run_generator_run(
         overwrite: command.args.overwrite.map(|o| o.value()),
         save_session: command.args.save_session,
         ignore_session: command.args.ignore_session,
-        prompt_values: get_input_values(&command.args.common.value),
+        input_values: get_input_values(&command.args.common.value),
         use_defaults: command.args.common.use_defaults,
         input_provider: Arc::new(CliInputProvider::default()),
     };

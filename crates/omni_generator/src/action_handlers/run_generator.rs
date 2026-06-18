@@ -1,10 +1,12 @@
 use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
-use omni_messages::{DiagnosticEvent, DiagnosticLevel, GeneratorEventSubscriber};
 use omni_generator_configurations::{
     ForAllInputValuesConfiguration, ForwardInputValuesConfiguration,
     InputValue, Root, RunGeneratorActionConfiguration,
+};
+use omni_messages::{
+    DiagnosticEvent, DiagnosticLevel, GeneratorEventSubscriber,
 };
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -60,7 +62,9 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     ctx.subscriber
         .on_diagnostic(DiagnosticEvent {
             level: DiagnosticLevel::Trace,
-            message: format!("resolved target overrides: {target_overrides:#?}"),
+            message: format!(
+                "resolved target overrides: {target_overrides:#?}"
+            ),
             fields: Default::default(),
             target: "omni::generator::run_generator".to_string(),
         })
@@ -114,13 +118,13 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         current_dir: ctx.current_dir,
         env: ctx.env,
         args: Some(&config.args),
-        use_inputs_defaults: false,
+        use_input_defaults: ctx.use_input_defaults,
         available_generators: &available_generators,
         input_provider: ctx.input_provider,
         subscriber: ctx.subscriber,
     };
 
-    let prompted_inputs_values = Box::pin(run_internal(
+    let prompted_input_values = Box::pin(run_internal(
         generator,
         &run_config,
         sys,
@@ -128,7 +132,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     ))
     .await?;
 
-    ctx.gen_session.merge(prompted_inputs_values);
+    ctx.gen_session.merge(prompted_input_values);
 
     Ok(())
 }
@@ -151,7 +155,7 @@ fn resolve_input_values<'a, S: GeneratorEventSubscriber>(
 
     let mut all_values = unordered_map!();
 
-    match &config.inputs_values.forward {
+    match &config.input_values.forward {
         ForwardInputValuesConfiguration::ForAll(
             ForAllInputValuesConfiguration::All,
         ) => {
@@ -179,7 +183,7 @@ fn resolve_input_values<'a, S: GeneratorEventSubscriber>(
         }
     }
 
-    for (key, value) in config.inputs_values.values.iter() {
+    for (key, value) in config.input_values.values.iter() {
         let converted =
             to_owned_value_bag(key, value, ctx.tera_context_values)?;
 
@@ -246,7 +250,7 @@ mod tests {
                 error_message: None,
             },
             generator: "gen".to_string(),
-            inputs_values: InputValuesConfiguration { forward, values },
+            input_values: InputValuesConfiguration { forward, values },
             args: UnorderedMap::default(),
             output_dir: None,
             targets: UnorderedMap::default(),

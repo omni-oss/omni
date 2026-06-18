@@ -44,7 +44,7 @@ pub struct GeneratorRunRequest {
     /// Skip loading an existing session from disk even if one exists.
     pub ignore_session: Option<bool>,
     /// Pre-filled prompt values (key → value bag).
-    pub prompt_values: UnorderedMap<String, OwnedValueBag>,
+    pub input_values: UnorderedMap<String, OwnedValueBag>,
     /// Use default values for all prompts that have defaults.
     pub use_defaults: bool,
     /// Supplies interactive prompts. Use `NoopInputProvider` for non-interactive contexts.
@@ -156,7 +156,7 @@ where
     let gen_output_dir = output_dir.join(GEN_DIR);
     let session_file = output_dir.join(GEN_FILE);
 
-    let mut pre_exec_values = req.prompt_values;
+    let mut pre_exec_values = req.input_values;
     let mut target_overrides = target_overrides;
 
     // Restore saved session unless caller asked us to ignore it.
@@ -185,7 +185,7 @@ where
         current_dir: &current_dir,
         env: env.as_deref().unwrap_or(&default_map),
         args: None,
-        use_inputs_defaults: req.use_defaults,
+        use_input_defaults: req.use_defaults,
         available_generators: &generators,
         input_provider: req.input_provider.as_ref(),
         subscriber,
