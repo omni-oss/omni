@@ -1,26 +1,26 @@
 [package]
-name = "{{ prompts.crate_name }}"
+name = "{{ inputs.crate_name }}"
 rust-version.workspace = true
 edition.workspace = true
-{%- if prompts.version == 'workspace' %}
+{%- if inputs.version == 'workspace' %}
 version.workspace = true
-{%- elif prompts.version == 'custom' %}
-version = "{{ prompts.crate_version }}"
+{%- elif inputs.version == 'custom' %}
+version = "{{ inputs.crate_version }}"
 {%- endif %}
 authors.workspace = true
 repository.workspace = true
 
-{%- if prompts.crate_type == 'bin' %}
+{%- if inputs.crate_type == 'bin' %}
 [[bin]]
-name = "{{ prompts.crate_name }}"
+name = "{{ inputs.crate_name }}"
 path = "src/main.rs"
 {%- endif %}
 
 [lib]
-name = "{{ prompts.crate_name }}"
+name = "{{ inputs.crate_name }}"
 path = "src/lib.rs"
 
-{%- if prompts.use_tracing %}
+{%- if inputs.use_tracing %}
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["dep:tracing", "trace/enabled"]
@@ -30,7 +30,7 @@ enable-tracing = ["dep:tracing", "trace/enabled"]
 eyre = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
-{%- if prompts.use_tracing %}
+{%- if inputs.use_tracing %}
 trace = { workspace = true }
 tracing = { workspace = true, optional = true }
 log = { workspace = true }
@@ -38,7 +38,7 @@ log = { workspace = true }
 bon = { workspace = true }
 derive-new = { workspace = true }
 
-{%- if prompts.use_tracing %}
+{%- if inputs.use_tracing %}
 [dev-dependencies]
 test-log = { workspace = true }
 rstest = { workspace = true }

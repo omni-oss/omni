@@ -7,6 +7,7 @@ prompts:
   - type: text
     name: error_name
     message: Error Name
+    default: Error
 
 targets:
   root: .

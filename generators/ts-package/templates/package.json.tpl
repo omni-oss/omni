@@ -1,11 +1,11 @@
 {
     "name": "{{ vars.full_package_name }}",
-    "description": "{{ prompts.package_description }}",
-    "version": "{{ prompts.package_version }}",
-    {% if prompts.package_type == 'script' %}
-    "bin": "./dist/{{ prompts.package_name }}-cli.js",
+    "description": "{{ inputs.package_description }}",
+    "version": "{{ inputs.package_version }}",
+    {% if inputs.package_type == 'script' %}
+    "bin": "./dist/{{ inputs.package_name }}-cli.js",
     {% endif %}
-    {% if prompts.package_type == 'lib' or (prompts.package_type == 'script' and prompts.script_can_be_used_as_lib) %}
+    {% if inputs.package_type == 'lib' or (inputs.package_type == 'script' and inputs.script_can_be_used_as_lib) %}
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -20,13 +20,13 @@
         }
     },
     {% endif %}
-    {% if prompts.published %}
+    {% if inputs.published %}
     "publishConfig": {
-        "access": "{{ prompts.publish_access }}"
+        "access": "{{ inputs.publish_access }}"
     },
     {% endif %}
     "dependencies": {
-        {% if prompts.package_type == "script" %}
+        {% if inputs.package_type == "script" %}
         "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
         {% endif %}
@@ -39,11 +39,11 @@
         "@omni-oss/vitest-config": "workspace:^",
         "vite": "catalog:",
         "vitest": "catalog:",
-        {% if prompts.package_type == 'script' %}
+        {% if inputs.package_type == 'script' %}
         "@types/node": "catalog:",
-            {% if prompts.shebang_executor == 'bun' %}
+            {% if inputs.shebang_executor == 'bun' %}
         "@types/bun": "catalog:",
-            {% elif prompts.shebang_executor == 'deno' %}
+            {% elif inputs.shebang_executor == 'deno' %}
         "@types/deno": "catalog:",
             {% endif %}
         {% endif %}
