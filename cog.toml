@@ -432,16 +432,16 @@ include = [
 public_api = false
 
 [monorepo.packages.omni_messages]
-path = "C:/Repositories/omni/crates/omni_messages"
+path = "crates/omni_messages"
 include = [
-    "C:/Repositories/omni/crates/omni_messages/**",
+    "crates/omni_messages/**",
 ]
 public_api = false
 
 [monorepo.packages.omni_api]
-path = "C:/Repositories/omni/crates/omni_api"
+path = "omni/crates/omni_api"
 include = [
-    "C:/Repositories/omni/crates/omni_api/**",
+    "omni/crates/omni_api/**",
 ]
 public_api = false
 
