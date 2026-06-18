@@ -202,12 +202,11 @@ async fn run_generator_run(
         input_provider: Arc::new(CliInputProvider::default()),
     };
 
-    OmniApi::new_with_sys(
-        ctx.clone(),
+    let api = OmniApi::new_with_loaded_sys(
+        loaded_context,
         crate::subscriber::CliSubscriber::new_stream(),
-    )
-    .generator_run(req)
-    .await?;
+    );
+    api.generator_run(req).await?;
 
     Ok(())
 }

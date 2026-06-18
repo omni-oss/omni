@@ -1,4 +1,4 @@
-use omni_context::{Context, ContextSys};
+use omni_context::{ContextSys, LoadedContext};
 use serde::{Deserialize, Serialize};
 
 // ── Response ──────────────────────────────────────────────────────────────────
@@ -13,11 +13,10 @@ pub struct HashResponse {
 
 /// Compute the hash for the entire workspace.
 pub async fn handle_hash_workspace<TSys: ContextSys>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
 ) -> eyre::Result<HashResponse> {
-    let loaded = ctx.clone().into_loaded().await?;
     Ok(HashResponse {
-        hash: loaded.get_workspace_hash_string().await?,
+        hash: ctx.get_workspace_hash_string().await?,
     })
 }
 
@@ -26,13 +25,12 @@ pub async fn handle_hash_workspace<TSys: ContextSys>(
 /// If `tasks` is empty all tasks are hashed together; otherwise only the
 /// listed task names are included.
 pub async fn handle_hash_project<TSys: ContextSys>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
     name: &str,
     tasks: &[String],
 ) -> eyre::Result<HashResponse> {
-    let loaded = ctx.clone().into_loaded().await?;
     let task_refs: Vec<&str> = tasks.iter().map(String::as_str).collect();
     Ok(HashResponse {
-        hash: loaded.get_project_hash_string(name, &task_refs).await?,
+        hash: ctx.get_project_hash_string(name, &task_refs).await?,
     })
 }

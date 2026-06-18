@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use maps::UnorderedMap;
-use omni_context::Context;
-use omni_messages::ExecutionEventSubscriber;
+use omni_context::LoadedContext;
 use omni_execution_plan::{Call, ScmAffectedFilter};
+use omni_messages::ExecutionEventSubscriber;
 use omni_scm::SelectScm;
 use omni_task_executor::{
     ExecutionConfigBuilder, Force, OnFailure, TaskExecutionResult,
@@ -116,7 +116,7 @@ impl RunResponse {
 /// `subscriber` is passed by reference; `&S` implements
 /// [`ExecutionEventSubscriber`] via the blanket impl in `omni_messages`.
 pub async fn handle_run<TSys, S>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
     subscriber: &S,
     req: RunRequest,
 ) -> eyre::Result<RunResponse>
@@ -138,8 +138,7 @@ where
     apply_filters(&mut builder, &req.filters);
 
     let config = builder.build()?;
-    let loaded = ctx.clone().into_loaded().await?;
-    let executor = TaskExecutor::new(config, &loaded, subscriber);
+    let executor = TaskExecutor::new(config, ctx, subscriber);
     let results = executor.run().await?;
 
     Ok(RunResponse { results })
@@ -148,7 +147,10 @@ where
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 /// Apply [`RunFilters`] onto an [`ExecutionConfigBuilder`].
-pub(crate) fn apply_filters(builder: &mut ExecutionConfigBuilder, filters: &RunFilters) {
+pub(crate) fn apply_filters(
+    builder: &mut ExecutionConfigBuilder,
+    filters: &RunFilters,
+) {
     if let Some(meta) = &filters.meta {
         builder.meta_filter(meta);
     }
@@ -171,7 +173,9 @@ pub(crate) fn apply_filters(builder: &mut ExecutionConfigBuilder, filters: &RunF
     }
 
     let mut scm = filters.scm_affected;
-    if scm.is_none() && (filters.scm_base.is_some() || filters.scm_target.is_some()) {
+    if scm.is_none()
+        && (filters.scm_base.is_some() || filters.scm_target.is_some())
+    {
         scm = SelectScm::Auto;
     }
     if !scm.is_none() {

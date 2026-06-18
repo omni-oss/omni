@@ -2,12 +2,16 @@ use std::path::PathBuf;
 
 use omni_cache::{CacheStats, PrunedCacheEntry};
 use omni_configurations::ProjectConfiguration;
-use omni_context::{Context, ContextSys, WorkspaceInitConfig, get_root_dir};
-use omni_messages::{OmniEventSubscriber, TracingSubscriber};
+use omni_context::{
+    Context, ContextSys, LoadedContext, MaybeLoaded, WorkspaceInitConfig,
+    get_root_dir,
+};
 use omni_generator::GeneratorSys;
+use omni_messages::{OmniEventSubscriber, TracingSubscriber};
 use omni_task_executor::TaskExecutorSys;
 use omni_tracing_subscriber::TracingConfig;
 use system_traits::impls::RealSys as RealSysSync;
+use tokio::sync::Mutex;
 
 use crate::{
     OmniApiError,
@@ -142,7 +146,7 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
         };
 
         Ok(OmniApi {
-            ctx,
+            ctx: Mutex::new(MaybeLoaded::Unloaded(ctx)),
             subscriber: self.subscriber,
             _setup_guard: setup_guard,
         })
@@ -160,11 +164,21 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
 ///
 /// All async methods pass `&self.subscriber` to the underlying engines via the
 /// blanket `impl ExecutionEventSubscriber for &S` defined in `omni_messages`.
+///
+/// # Sharing
+///
+/// `OmniApi` uses a [`tokio::sync::Mutex`] for interior mutability so that the
+/// context can be lazily loaded on the first call that requires it. All methods
+/// take `&self`, making it straightforward to share an instance via
+/// `Arc<OmniApi<...>>`.
 pub struct OmniApi<
     TSys: ContextSys = RealSysSync,
     S: OmniEventSubscriber = TracingSubscriber,
 > {
-    ctx: Context<TSys>,
+    /// Lazily-loaded context behind a mutex. Transitions from `Unloaded` to
+    /// `Loaded` on the first operation that requires project metadata, then
+    /// stays loaded for the lifetime of this instance.
+    ctx: Mutex<MaybeLoaded<TSys>>,
     subscriber: S,
     _setup_guard: Option<SetupGuard>,
 }
@@ -216,15 +230,27 @@ impl<TSys: ContextSys, S: OmniEventSubscriber> OmniApi<TSys, S> {
     /// ```
     pub fn new_with_sys(ctx: Context<TSys>, subscriber: S) -> Self {
         Self {
-            ctx,
+            ctx: Mutex::new(MaybeLoaded::Unloaded(ctx)),
             subscriber,
             _setup_guard: None,
         }
     }
 
-    /// Returns a reference to the inner context.
-    pub fn context(&self) -> &Context<TSys> {
-        &self.ctx
+    /// Construct an `OmniApi` from an already-loaded [`LoadedContext`].
+    ///
+    /// Use this when the caller has already paid the project-discovery cost
+    /// (e.g. a CLI command that loaded the context for prompting). Operations
+    /// that would otherwise call `into_loaded` internally will skip that work
+    /// entirely.
+    pub fn new_with_loaded_sys(
+        ctx: LoadedContext<TSys>,
+        subscriber: S,
+    ) -> Self {
+        Self {
+            ctx: Mutex::new(MaybeLoaded::Loaded(ctx)),
+            subscriber,
+            _setup_guard: None,
+        }
     }
 
     /// Returns a reference to the event subscriber.
@@ -242,19 +268,34 @@ where
 {
     /// Execute one or more named tasks.
     pub async fn run(&self, req: RunRequest) -> eyre::Result<RunResponse> {
-        crate::operations::run::handle_run(&self.ctx, &self.subscriber, req)
-            .await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::run::handle_run(
+            ctx.as_loaded_context(),
+            &self.subscriber,
+            req,
+        )
+        .await
     }
 
     /// Execute an arbitrary command in the workspace environment.
     pub async fn exec(&self, req: ExecRequest) -> eyre::Result<ExecResponse> {
-        crate::operations::exec::handle_exec(&self.ctx, &self.subscriber, req)
-            .await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::exec::handle_exec(
+            ctx.as_loaded_context(),
+            &self.subscriber,
+            req,
+        )
+        .await
     }
 
     /// Compute the hash for the entire workspace.
     pub async fn hash_workspace(&self) -> eyre::Result<HashResponse> {
-        crate::operations::hash::handle_hash_workspace(&self.ctx).await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::hash::handle_hash_workspace(ctx.as_loaded_context())
+            .await
     }
 
     /// Compute the hash for a single project.
@@ -266,8 +307,14 @@ where
         name: &str,
         tasks: &[String],
     ) -> eyre::Result<HashResponse> {
-        crate::operations::hash::handle_hash_project(&self.ctx, name, tasks)
-            .await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::hash::handle_hash_project(
+            ctx.as_loaded_context(),
+            name,
+            tasks,
+        )
+        .await
     }
 
     /// Show per-project cache statistics.
@@ -275,7 +322,13 @@ where
         &self,
         req: CacheStatsRequest,
     ) -> eyre::Result<CacheStats> {
-        crate::operations::cache::handle_cache_stats(&self.ctx, req).await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::cache::handle_cache_stats(
+            ctx.as_loaded_context(),
+            req,
+        )
+        .await
     }
 
     /// Compute prunable cache entries.
@@ -289,7 +342,13 @@ where
         &self,
         req: CachePruneRequest,
     ) -> eyre::Result<CachePruneResponse> {
-        crate::operations::cache::handle_cache_prune(&self.ctx, req).await
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::cache::handle_cache_prune(
+            ctx.as_loaded_context(),
+            req,
+        )
+        .await
     }
 
     /// Delete the entries returned by a previous [`cache_prune`] call.
@@ -299,8 +358,12 @@ where
         &self,
         entries: Vec<PrunedCacheEntry>,
     ) -> eyre::Result<()> {
-        crate::operations::cache::handle_cache_force_prune(&self.ctx, entries)
-            .await
+        let ctx = self.ctx.lock().await;
+        crate::operations::cache::handle_cache_force_prune(
+            ctx.as_context(),
+            entries,
+        )
+        .await
     }
 
     /// Configure a remote cache server for this workspace.
@@ -308,8 +371,12 @@ where
         &self,
         req: CacheRemoteSetupRequest,
     ) -> eyre::Result<()> {
-        crate::operations::cache::handle_cache_remote_setup(&self.ctx, req)
-            .await
+        let ctx = self.ctx.lock().await;
+        crate::operations::cache::handle_cache_remote_setup(
+            ctx.as_context(),
+            req,
+        )
+        .await
     }
 }
 
@@ -321,13 +388,15 @@ where
     S: OmniEventSubscriber,
 {
     /// Retrieve workspace environment variables.
-    pub fn get_env(&self, req: EnvRequest) -> eyre::Result<EnvResponse> {
-        crate::operations::env::handle_env(&self.ctx, req)
+    pub async fn get_env(&self, req: EnvRequest) -> eyre::Result<EnvResponse> {
+        let ctx = self.ctx.lock();
+        crate::operations::env::handle_env(ctx.await.as_context(), req)
     }
 
     /// Return the local cache directory path.
-    pub fn cache_dir(&self) -> PathBuf {
-        self.ctx.cache_dir()
+    pub async fn cache_dir(&self) -> PathBuf {
+        let ctx = self.ctx.lock().await;
+        ctx.as_context().cache_dir()
     }
 
     /// Return a JSON Schema for the requested configuration kind.
@@ -351,7 +420,8 @@ where
 
     /// List the names of all projects in the workspace.
     pub async fn project_list(&self) -> eyre::Result<Vec<String>> {
-        crate::operations::project::handle_project_list(&self.ctx).await
+        let ctx = self.ctx.lock().await;
+        crate::operations::project::handle_project_list(ctx.as_context()).await
     }
 
     /// Return the full configuration for the named project.
@@ -361,7 +431,12 @@ where
         &self,
         name: &str,
     ) -> eyre::Result<ProjectConfiguration> {
-        crate::operations::project::handle_project_config(&self.ctx, name).await
+        let ctx = self.ctx.lock().await;
+        crate::operations::project::handle_project_config(
+            ctx.as_context(),
+            name,
+        )
+        .await
     }
 }
 
@@ -380,8 +455,10 @@ where
         &self,
         req: GeneratorRunRequest,
     ) -> eyre::Result<GeneratorRunResponse> {
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
         crate::operations::generator::handle_generator_run(
-            &self.ctx,
+            ctx.as_loaded_context(),
             &self.subscriber,
             req,
         )
@@ -390,6 +467,8 @@ where
 
     /// List all available generators in the workspace.
     pub async fn generator_list(&self) -> eyre::Result<GeneratorListResponse> {
-        crate::operations::generator::handle_generator_list(&self.ctx).await
+        let ctx = self.ctx.lock().await;
+        crate::operations::generator::handle_generator_list(ctx.as_context())
+            .await
     }
 }

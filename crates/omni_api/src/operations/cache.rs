@@ -72,13 +72,13 @@ pub struct CachePruneResponse {
 
 /// Show per-project cache statistics.
 pub async fn handle_cache_stats<TSys>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
     req: CacheStatsRequest,
 ) -> eyre::Result<CacheStats>
 where
     TSys: TaskExecutorSys + Clone,
 {
-    let cache_store = ctx.create_cache_store();
+    let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
@@ -87,8 +87,7 @@ where
     let needs_context = !dirs.is_empty() || req.meta.is_some();
 
     let stats = if needs_context {
-        let loaded = ctx.clone().into_loaded().await?;
-        let wrapper = CacheCtxWrapper::new(&loaded);
+        let wrapper = CacheCtxWrapper::new(ctx);
         cache_store
             .get_stats(&CacheStatsArgs {
                 project_name_globs: &projects,
@@ -118,13 +117,13 @@ where
 /// When `req.dry_run == true` the returned entries are not deleted; pass them
 /// to [`handle_cache_force_prune`] to actually remove them.
 pub async fn handle_cache_prune<TSys>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
     req: CachePruneRequest,
 ) -> eyre::Result<CachePruneResponse>
 where
     TSys: TaskExecutorSys + Clone,
 {
-    let cache_store = ctx.create_cache_store();
+    let cache_store = ctx.as_context().create_cache_store();
 
     let projects: Vec<&str> = req.project.iter().map(String::as_str).collect();
     let tasks: Vec<&str> = req.task.iter().map(String::as_str).collect();
@@ -134,8 +133,7 @@ where
         req.stale_only || !dirs.is_empty() || req.meta.is_some();
 
     let entries = if needs_context {
-        let loaded = ctx.clone().into_loaded().await?;
-        let wrapper = CacheCtxWrapper::new(&loaded);
+        let wrapper = CacheCtxWrapper::new(ctx);
         cache_store
             .prune_caches(&PruneCacheArgs {
                 dry_run: req.dry_run,

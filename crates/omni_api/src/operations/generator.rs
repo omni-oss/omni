@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use maps::UnorderedMap;
 use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
-use omni_context::{Context, ContextSys};
+use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
 use omni_remote_sources::manager::{
@@ -80,7 +80,7 @@ pub struct GeneratorListResponse {
 ///
 /// `subscriber` is passed by reference (the `&S` blanket impl covers forwarding).
 pub async fn handle_generator_run<TSys, S>(
-    ctx: &Context<TSys>,
+    ctx: &LoadedContext<TSys>,
     subscriber: &S,
     req: GeneratorRunRequest,
 ) -> eyre::Result<GeneratorRunResponse>
@@ -94,12 +94,11 @@ where
         )
     })?;
 
-    let loaded_context = ctx.clone().into_loaded().await?;
-    let sys = loaded_context.sys().clone();
+    let sys = ctx.sys().clone();
 
-    let projects = loaded_context.projects();
-    let current_dir = loaded_context.current_dir()?;
-    let workspace_dir = loaded_context.root_dir().to_path_buf();
+    let projects = ctx.projects();
+    let current_dir = ctx.current_dir()?;
+    let workspace_dir = ctx.root_dir().to_path_buf();
 
     // Resolve output_dir and optionally the project.
     let (output_dir, project) = match (&req.project, req.output_dir) {
@@ -120,7 +119,7 @@ where
 
     // Build context values map fed into Tera templates.
     let default_map = maps::Map::default();
-    let env = loaded_context.get_cached_env_vars(output_dir.as_path());
+    let env = ctx.get_cached_env_vars(output_dir.as_path());
 
     let mut context_values: UnorderedMap<String, OwnedValueBag> =
         Default::default();
@@ -172,7 +171,7 @@ where
         session.restore_inputs_as_value_bag(&name, &mut pre_exec_values, false);
     }
 
-    let generators = get_generators(ctx, &sys).await?;
+    let generators = get_generators(ctx.as_context(), &sys).await?;
 
     let run_config = RunConfig {
         dry_run: req.dry_run,

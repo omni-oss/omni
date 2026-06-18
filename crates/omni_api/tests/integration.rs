@@ -70,13 +70,15 @@ fn builder_with_real_workspace_succeeds() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_workspace(tmp.path());
 
-    let api = OmniApi::builder()
+    let result = OmniApi::builder()
         .root_dir(tmp.path())
         .with_setup(false)
-        .build()
-        .expect("builder should succeed with a valid workspace");
+        .build();
 
-    assert!(api.context().root_dir().is_absolute());
+    assert!(
+        result.is_ok(),
+        "builder should succeed with a valid workspace"
+    );
 }
 
 #[test]
@@ -151,36 +153,43 @@ async fn hash_project_returns_non_empty_string() {
 
 // ── env ───────────────────────────────────────────────────────────────────────
 
-#[test]
-fn env_all_returns_ok() {
+#[tokio::test]
+async fn env_all_returns_ok() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let resp = api.get_env(EnvRequest { key: None }).expect("get all env");
+    let resp = api
+        .get_env(EnvRequest { key: None })
+        .await
+        .expect("get all env");
     let _ = resp.vars;
 }
 
-#[test]
-fn env_get_specific_key_filters_result() {
+#[tokio::test]
+async fn env_get_specific_key_filters_result() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let all = api.get_env(EnvRequest { key: None }).expect("get all env");
+    let all = api
+        .get_env(EnvRequest { key: None })
+        .await
+        .expect("get all env");
     if let Some(key) = all.vars.keys().next().cloned() {
         let specific = api
             .get_env(EnvRequest {
                 key: Some(key.clone()),
             })
+            .await
             .expect("get specific key");
         assert_eq!(specific.vars.len(), 1);
         assert!(specific.vars.contains_key(&key));
     }
 }
 
-#[test]
-fn env_get_missing_key_returns_empty_map() {
+#[tokio::test]
+async fn env_get_missing_key_returns_empty_map() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
@@ -189,19 +198,20 @@ fn env_get_missing_key_returns_empty_map() {
         .get_env(EnvRequest {
             key: Some("DOES_NOT_EXIST_XYZ".into()),
         })
+        .await
         .expect("get missing key");
     assert!(resp.vars.is_empty());
 }
 
 // ── cache dir ─────────────────────────────────────────────────────────────────
 
-#[test]
-fn cache_dir_is_inside_workspace() {
+#[tokio::test]
+async fn cache_dir_is_inside_workspace() {
     let tmp = tempfile::TempDir::new().unwrap();
     write_workspace(tmp.path());
     let api = make_api(tmp.path());
 
-    let dir = api.cache_dir();
+    let dir = api.cache_dir().await;
     let canonical_tmp = tmp.path().canonicalize().unwrap();
     assert!(
         dir.starts_with(&canonical_tmp),

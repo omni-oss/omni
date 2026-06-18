@@ -41,6 +41,10 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         self.unloaded_context.tracing_config()
     }
 
+    pub fn as_context(&self) -> &Context<TSys> {
+        &self.unloaded_context
+    }
+
     pub fn sys(&self) -> &TSys {
         self.unloaded_context.sys()
     }

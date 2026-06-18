@@ -180,7 +180,7 @@ pub async fn run(command: &CacheCommand, ctx: &Context) -> eyre::Result<()> {
 
     match &command.subcommand {
         CacheSubcommands::Dir => {
-            println!("{}", api.cache_dir().display());
+            println!("{}", api.cache_dir().await.display());
         }
 
         CacheSubcommands::Stats { args } => {

@@ -27,9 +27,11 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
 
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {
-            let response = api.get_env(EnvRequest {
-                key: Some(key.clone()),
-            })?;
+            let response = api
+                .get_env(EnvRequest {
+                    key: Some(key.clone()),
+                })
+                .await?;
             if let Some(val) = response.vars.get(key.as_str()) {
                 print!("{val}");
             } else {
@@ -37,7 +39,7 @@ pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
             }
         }
         EnvSubcommands::All => {
-            let response = api.get_env(EnvRequest { key: None })?;
+            let response = api.get_env(EnvRequest { key: None }).await?;
             for (k, v) in &response.vars {
                 println!("{k}={v}");
             }
