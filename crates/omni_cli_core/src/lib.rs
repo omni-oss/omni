@@ -5,4 +5,5 @@ pub mod constants;
 pub mod context;
 pub mod core;
 pub mod executor;
+pub mod subscriber;
 pub mod utils;

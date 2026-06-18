@@ -1,5 +1,6 @@
 use std::{borrow::Cow, path::Path};
 
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{
     CommonInsertConfiguration, InsertInlineContentEntry,
 };
@@ -13,11 +14,11 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
-pub async fn insert_one<'a>(
+pub async fn insert_one<'a, S: GeneratorEventSubscriber>(
     entries: &[InsertInlineContentEntry],
     prepend: bool,
     common: &'a CommonInsertConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &'a impl GeneratorSys,
 ) -> Result<(), Error> {
     let target_name = &common.target;

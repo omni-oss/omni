@@ -1,6 +1,5 @@
 use std::{borrow::Cow, time::Duration};
 
-use derive_new::new;
 use futures::future::join_all;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
@@ -8,16 +7,17 @@ use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
+use omni_messages::{
+    CacheHitEvent, DiagnosticLevel, ExecutionEventSubscriber,
+    TaskCompletedEvent, TaskFailedEvent, TaskOutputStream,
+    TaskOutputStreamEvent, TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent,
+    TaskStartedEvent, publish::diagnostic,
+};
 use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
 };
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
-use omni_term_ui::mux_output_presenter::{
-    MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterExt,
-    MuxOutputPresenterStatic, StreamHandleError,
-};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
-use owo_colors::{OwoColorize as _, Style};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use trace::Level;
 
@@ -27,16 +27,18 @@ use crate::{
     task_context_provider::DefaultTaskContextProvider,
 };
 
-#[derive(new)]
-pub struct BatchExecutor<'s, TCacheStore, TSys>
+pub struct BatchExecutor<'s, TCacheStore, TSys, S>
 where
     TCacheStore: TaskExecutionCacheStore,
     TSys: TaskExecutorSys,
+    S: ExecutionEventSubscriber,
 {
     context: &'s LoadedContext<TSys>,
     cache_manager: CacheManager<TCacheStore, TSys>,
     sys: TSys,
-    presenter: &'s MuxOutputPresenterStatic,
+    subscriber: &'s S,
+    wants_task_output_stream: bool,
+    wants_task_input_stream: bool,
     max_concurrent_tasks: usize,
     ignore_dependencies: bool,
     on_failure: OnFailure,
@@ -49,11 +51,49 @@ where
     args: &'s UnorderedMap<String, serde_json::Value>,
 }
 
-impl<'s, TCacheStore, TSys> BatchExecutor<'s, TCacheStore, TSys>
+impl<'s, TCacheStore, TSys, S> BatchExecutor<'s, TCacheStore, TSys, S>
 where
     TCacheStore: TaskExecutionCacheStore,
     TSys: TaskExecutorSys,
+    S: ExecutionEventSubscriber,
 {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        context: &'s LoadedContext<TSys>,
+        cache_manager: CacheManager<TCacheStore, TSys>,
+        sys: TSys,
+        subscriber: &'s S,
+        max_concurrent_tasks: usize,
+        ignore_dependencies: bool,
+        on_failure: OnFailure,
+        dry_run: bool,
+        replay_cached_logs: bool,
+        max_retries: Option<u8>,
+        retry_interval: Option<Duration>,
+        no_cache: bool,
+        add_task_details: bool,
+        args: &'s UnorderedMap<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            context,
+            cache_manager,
+            sys,
+            wants_task_output_stream: subscriber.wants_task_output_stream(),
+            wants_task_input_stream: subscriber.wants_task_input_stream(),
+            subscriber,
+            max_concurrent_tasks,
+            ignore_dependencies,
+            on_failure,
+            dry_run,
+            replay_cached_logs,
+            max_retries,
+            retry_interval,
+            no_cache,
+            add_task_details,
+            args,
+        }
+    }
+
     fn should_skip_batch_on_error(
         &self,
         overall_results: &UnorderedMap<String, TaskExecutionResult>,
@@ -102,26 +142,21 @@ where
         task_ctx: &TaskContext<'_>,
         res: &CachedTaskExecution,
     ) -> Result<(), BatchExecutorError> {
-        const EXIT_CODE_ERROR_STYLE: Style = Style::new().red().bold();
-        const EXIT_CODE_SUCCESS_STYLE: Style = Style::new().green().bold();
-
-        log::info!(
-            "Cache hit for task '{}' with exit code '{}' {}",
-            task_ctx.node.full_task_name(),
-            res.exit_code.style(if res.exit_code == 0 {
-                EXIT_CODE_SUCCESS_STYLE
-            } else {
-                EXIT_CODE_ERROR_STYLE
-            }),
-            (if self.replay_cached_logs {
-                "(replaying logs)"
-            } else {
-                "(skipping logs)"
+        // Emit cache hit event
+        self.subscriber
+            .on_cache_hit(CacheHitEvent {
+                task_id: task_ctx.node.full_task_name().to_string(),
+                project: task_ctx.node.project_name().to_string(),
+                task: task_ctx.node.task_name().to_string(),
+                digest: res.digest.to_vec(),
+                replay_logs: self.replay_cached_logs
+                    && self.wants_task_output_stream,
+                has_logs: res.logs_path.is_some(),
             })
-            .dimmed()
-        );
+            .await;
 
         if self.replay_cached_logs
+            && self.wants_task_output_stream
             && let Some(logs_path) = &res.logs_path
         {
             let file = tokio::fs::OpenOptions::new()
@@ -129,17 +164,18 @@ where
                 .open(logs_path)
                 .await?;
 
-            log::debug!("replaying logs from {:?}", logs_path);
-
-            let handle = self
-                .presenter
-                .add_stream_output(
-                    task_ctx.node.full_task_name().to_string(),
-                    file,
-                )
-                .await?;
-
-            handle.await?;
+            self.subscriber
+                .on_task_output_stream(TaskOutputStreamEvent {
+                    task_id: task_ctx.node.full_task_name().to_string(),
+                    project: task_ctx.node.project_name().to_string(),
+                    task: task_ctx.node.task_name().to_string(),
+                    is_replay: true,
+                    stream: TaskOutputStream {
+                        reader: Box::new(file),
+                        writer: None,
+                    },
+                })
+                .await;
         }
 
         // hard link the cached files to the original file paths if they don't exist
@@ -149,14 +185,15 @@ where
                     file.original_path.path().expect("should be resolved");
 
                 if self.sys.fs_exists_async(original_path).await? {
-                    log::debug!(
-                        "file already exists {original_path:?}, skipping cache restore"
-                    );
+                    diagnostic!(
+                        self.subscriber,
+                        DiagnosticLevel::Debug,
+                        "file already exists {original_path:?}, skipping cache restore",
+                    ).await;
                     continue;
                 }
 
                 let dir = original_path.parent().expect("should have parent");
-                // check if dir exists
                 if !self.sys.fs_exists_async(dir).await? {
                     self.sys.fs_create_dir_all_async(dir).await?;
                 }
@@ -168,11 +205,14 @@ where
                     )
                     .await?;
 
-                log::debug!(
-                    "restore cached file {:?} to {:?}",
+                diagnostic!(
+                    self.subscriber,
+                    DiagnosticLevel::Debug,
+                    "restored cached file {:?} to {:?}",
                     file.cached_path,
-                    original_path
-                );
+                    original_path,
+                )
+                .await;
             }
         }
 
@@ -320,10 +360,15 @@ where
         // when on_failure is set to skip_next_batches
         if self.should_skip_batch_on_error(overall_results) {
             for task in batch {
-                log::error!(
-                    "Skipping task '{}' due to previous batch failure",
-                    task.full_task_name()
-                );
+                self.subscriber
+                    .on_task_skipped(TaskSkippedEvent {
+                        task_id: task.full_task_name().to_string(),
+                        project: task.project_name().to_string(),
+                        task: task.task_name().to_string(),
+                        reason: TaskSkipReason::PreviousBatchFailure,
+                        dependency: None,
+                    })
+                    .await;
             }
 
             let skipped_results =
@@ -351,15 +396,15 @@ where
                     ),
                 );
 
-                log::info!(
-                    "{}",
-                    format!(
-                        "Skipping task '{}' because it has no command",
-                        task_ctx.node.full_task_name()
-                    )
-                    .white()
-                    .dimmed()
-                );
+                self.subscriber
+                    .on_task_skipped(TaskSkippedEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        reason: TaskSkipReason::NoCommand,
+                        dependency: None,
+                    })
+                    .await;
                 continue;
             }
 
@@ -376,19 +421,19 @@ where
                     ),
                 );
 
-                log::info!(
-                    "{}",
-                    format!(
-                        "Skipping disabled task '{}'",
-                        task_ctx.node.full_task_name()
-                    )
-                    .white()
-                    .dimmed()
-                );
+                self.subscriber
+                    .on_task_skipped(TaskSkippedEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        reason: TaskSkipReason::Disabled,
+                        dependency: None,
+                    })
+                    .await;
                 continue;
             }
 
-            if let Some(error) =
+            if let Some(failed_dep) =
                 self.should_skip_task_on_error(task_ctx, overall_results)
             {
                 new_results.insert(
@@ -398,11 +443,15 @@ where
                         SkipReason::DependeeTaskFailure,
                     ),
                 );
-                log::error!(
-                    "Skipping task '{}' due to failed dependency '{}'",
-                    task_ctx.node.full_task_name(),
-                    error
-                );
+                self.subscriber
+                    .on_task_skipped(TaskSkippedEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        reason: TaskSkipReason::DependeeTaskFailure,
+                        dependency: Some(failed_dep),
+                    })
+                    .await;
                 continue;
             }
 
@@ -430,10 +479,14 @@ where
                 task_ctx.cache_info.as_ref().is_some_and(|ci| ci.cache_logs);
 
             if self.dry_run {
-                log::info!(
+                diagnostic!(
+                    self.subscriber,
+                    DiagnosticLevel::Info,
                     "Executing task '{}'",
-                    task_ctx.node.full_task_name()
-                );
+                    task_ctx.node.full_task_name(),
+                )
+                .await;
+
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
                     task_ctx,
@@ -458,7 +511,9 @@ where
                     task_ctx,
                 )?;
                 futs.push(run_process(
-                    self.presenter,
+                    self.subscriber,
+                    self.wants_task_output_stream,
+                    self.wants_task_input_stream,
                     task_ctx,
                     override_command,
                     override_retry_command,
@@ -477,8 +532,6 @@ where
         if !futs.is_empty() {
             fut_results.extend(join_all(futs.drain(..)).await);
         }
-
-        self.presenter.wait().await?;
 
         let hashes = self
             .cache_manager
@@ -502,14 +555,17 @@ where
                 DefaultHash::default()
             } else {
                 hashes.get(&fname).map(|h| h.digest).ok_or_else(|| {
+                    BatchExecutorErrorInner::new_cant_get_task_hash(
+                        fname.clone(),
+                    )
+                })
+                .inspect_err(|_| {
+                    // Fire-and-forget diagnostic; we're in a sync context so we
+                    // can't await here. Use log:: as a fallback.
                     log::error!(
                         "Failed to get hash for task '{}', this is a bug, if you see this please report it to the maintainers",
                         fname
                     );
-
-                    BatchExecutorErrorInner::new_cant_get_task_hash(
-                        fname.clone(),
-                    )
                 })?
             };
 
@@ -664,8 +720,10 @@ fn expand_omni_path(
     })
 }
 
-async fn run_process<'a>(
-    presenter: &'a MuxOutputPresenterStatic,
+async fn run_process<'a, S: ExecutionEventSubscriber>(
+    subscriber: &'a S,
+    wants_task_output_stream: bool,
+    wants_task_input_stream: bool,
     task_ctx: &'a TaskContext<'a>,
     override_command: Option<String>,
     override_retry_command: Option<String>,
@@ -676,11 +734,18 @@ async fn run_process<'a>(
     let mut tries = 0u8;
 
     let reg_cmd = override_command.as_deref().or(task_ctx.node.task_exec());
-
     let retry_cmd = override_retry_command
         .as_deref()
         .or(task_ctx.node.task_retry_exec())
         .or(reg_cmd);
+
+    subscriber
+        .on_task_started(TaskStartedEvent {
+            task_id: task_ctx.node.full_task_name().to_string(),
+            project: task_ctx.node.project_name().to_string(),
+            task: task_ctx.node.task_name().to_string(),
+        })
+        .await;
 
     let result = loop {
         tries += 1;
@@ -711,23 +776,46 @@ async fn run_process<'a>(
 
         proc.empty_command_is_success(true);
 
-        let handle = if presenter.accepts_input() {
-            let (out_writer, in_reader, handle) = presenter
-                .add_piped_stream_full(task_ctx.node.full_task_name())
-                .await
-                .expect("failed to add stream");
+        if wants_task_output_stream {
+            let is_interactive =
+                task_ctx.node.persistent() || task_ctx.node.interactive();
 
-            proc.output_writer(out_writer).input_reader(in_reader);
-            handle
-        } else {
-            let (stream, handle) = presenter
-                .add_piped_stream_output(task_ctx.node.full_task_name())
-                .await
-                .expect("failed to add stream");
+            let (writer_end, reader_end) = tokio::io::duplex(64 * 1024);
 
-            proc.output_writer(stream);
-            handle
-        };
+            if wants_task_input_stream && is_interactive {
+                let (stdin_reader, stdin_writer) = tokio::io::duplex(4 * 1024);
+
+                proc.output_writer(writer_end).input_reader(stdin_reader);
+
+                subscriber
+                    .on_task_output_stream(TaskOutputStreamEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        is_replay: false,
+                        stream: TaskOutputStream {
+                            reader: Box::new(reader_end),
+                            writer: Some(Box::new(stdin_writer)),
+                        },
+                    })
+                    .await;
+            } else {
+                proc.output_writer(writer_end);
+
+                subscriber
+                    .on_task_output_stream(TaskOutputStreamEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        is_replay: false,
+                        stream: TaskOutputStream {
+                            reader: Box::new(reader_end),
+                            writer: None,
+                        },
+                    })
+                    .await;
+            }
+        }
 
         proc.record_logs(record_logs)
             .env_vars(&task_ctx.env_vars)
@@ -743,63 +831,75 @@ async fn run_process<'a>(
             if let Some(duration) = retry_duration
                 && !duration.is_zero()
             {
-                log::warn!(
-                    "Wating for '{:?}' before retrying task '{}'",
+                diagnostic!(
+                    subscriber,
+                    DiagnosticLevel::Warn,
+                    "Waiting for '{:?}' before retrying task '{}'",
                     duration,
                     task_ctx.node.full_task_name(),
-                );
+                )
+                .await;
                 tokio::time::sleep(duration).await;
             }
 
-            log::warn!(
-                "Failed task '{}' due to {}, retrying...",
-                task_ctx.node.full_task_name(),
-                match &result {
-                    Ok(t) => format!("exit code '{}'", t.exit_code()),
-                    Err(e) => format!("{}", e),
-                }
-            );
+            subscriber
+                .on_task_retrying(TaskRetryingEvent {
+                    task_id: task_ctx.node.full_task_name().to_string(),
+                    project: task_ctx.node.project_name().to_string(),
+                    task: task_ctx.node.task_name().to_string(),
+                    attempt: tries,
+                    max_retries,
+                    delay: retry_duration,
+                })
+                .await;
 
             continue;
         }
-
-        if let Ok(t) = &result {
-            if t.success() {
-                log::info!(
-                    "{}",
-                    format!(
-                        "Executed task '{}'",
-                        task_ctx.node.full_task_name()
-                    )
-                );
-            } else {
-                log::error!(
-                    "{}",
-                    format!(
-                        "Executed task '{}' but errored with exit code '{}'",
-                        task_ctx.node.full_task_name(),
-                        t.exit_code()
-                    )
-                );
-            }
-        }
-
-        if let Err(e) = &result {
-            log::error!(
-                "Failed to execute task '{}': {}",
-                task_ctx.node.full_task_name(),
-                e
-            );
-        }
-
-        handle.wait().await.expect("failed to wait for stream");
 
         break result;
     };
 
     match result {
-        Ok(t) => TaskResultContext::new_completed(task_ctx, t, tries),
-        Err(e) => TaskResultContext::new_error(task_ctx, e, tries),
+        Ok(t) => {
+            let elapsed = t.elapsed;
+            let exit_code = t.exit_code();
+            if t.success() {
+                subscriber
+                    .on_task_completed(TaskCompletedEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        exit_code,
+                        elapsed,
+                        cache_hit: false,
+                        tries,
+                    })
+                    .await;
+            } else {
+                subscriber
+                    .on_task_failed(TaskFailedEvent {
+                        task_id: task_ctx.node.full_task_name().to_string(),
+                        project: task_ctx.node.project_name().to_string(),
+                        task: task_ctx.node.task_name().to_string(),
+                        error: format!("exit code '{}'", exit_code),
+                        tries,
+                    })
+                    .await;
+            }
+            TaskResultContext::new_completed(task_ctx, t, tries)
+        }
+        Err(e) => {
+            subscriber
+                .on_task_failed(TaskFailedEvent {
+                    task_id: task_ctx.node.full_task_name().to_string(),
+                    project: task_ctx.node.project_name().to_string(),
+                    task: task_ctx.node.task_name().to_string(),
+                    error: e.to_string(),
+                    tries,
+                })
+                .await;
+            TaskResultContext::new_error(task_ctx, e, tries)
+        }
     }
 }
 
@@ -821,7 +921,7 @@ impl<T: Into<BatchExecutorErrorInner>> From<T> for BatchExecutorError {
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants, derive_new::new)]
 #[strum_discriminants(name(BatchExecutorErrorKind), vis(pub))]
 pub(crate) enum BatchExecutorErrorInner {
     #[error("can't get task contexts")]
@@ -850,12 +950,6 @@ pub(crate) enum BatchExecutorErrorInner {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    MuxOutputPresenter(#[from] MuxOutputPresenterError),
-
-    #[error(transparent)]
-    StreamHandle(#[from] StreamHandleError),
 
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),

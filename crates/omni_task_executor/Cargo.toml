@@ -21,7 +21,7 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 omni_core = { workspace = true }
-atty = { workspace = true }
+
 trace = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
@@ -29,7 +29,7 @@ shlex = { workspace = true }
 omni_hasher = { workspace = true }
 system_traits = { workspace = true }
 bytes = { workspace = true }
-owo-colors = { workspace = true }
+
 derive-new = { workspace = true }
 futures = { workspace = true }
 maps = { workspace = true }
@@ -49,12 +49,12 @@ omni_cache = { workspace = true }
 ahash = { workspace = true }
 bs58 = { workspace = true }
 num_cpus = { workspace = true }
-omni_term_ui = { workspace = true }
-omni_tracing_subscriber = { workspace = true }
-crossbeam-channel = { workspace = true }
+omni_messages = { workspace = true }
+
 omni_execution_plan = { workspace = true }
 omni_task_context = { workspace = true }
 omni_collector = { workspace = true }
 omni_types = { workspace = true }
 omni_tera = { workspace = true }
 omni_config_types = { workspace = true }
+bon = { workspace = true }

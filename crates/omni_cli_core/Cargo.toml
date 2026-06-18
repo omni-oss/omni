@@ -69,7 +69,7 @@ env = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
 enum-map = { workspace = true }
-rmcp = { workspace = true }
+
 omni_cache = { workspace = true }
 omni_hasher = { workspace = true }
 derive_builder = { workspace = true }
@@ -87,6 +87,8 @@ omni_configurations = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_generator = { workspace = true }
 omni_context = { workspace = true }
+omni_term_ui = { workspace = true }
+omni_messages = { workspace = true }
 omni_task_executor = { workspace = true }
 clap_declspec = { workspace = true }
 atty = { workspace = true }
@@ -107,6 +109,8 @@ either = { workspace = true }
 omni_git_utils = { workspace = true }
 tempfile = { workspace = true }
 omni_remote_source = { workspace = true }
+omni_api = { workspace = true }
+parking_lot = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

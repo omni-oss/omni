@@ -1,7 +1,7 @@
 use clap::{Args, Subcommand};
-use omni_context::GetVarsArgs;
-
-use crate::context::Context;
+use omni_api::{EnvRequest, OmniApi};
+use omni_context::Context;
+use omni_messages::NoopSubscriber;
 
 #[derive(Subcommand)]
 #[command(rename_all = "kebab-case")]
@@ -23,25 +23,26 @@ pub struct EnvCommand {
 }
 
 pub async fn run(env: &EnvCommand, ctx: &Context) -> eyre::Result<()> {
-    let mut env_loader = ctx.create_env_loader();
-    let env_vars = env_loader.get(&GetVarsArgs {
-        inherit_env_vars: ctx.inherit_env_vars(),
-        ..Default::default()
-    })?;
+    let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
 
     match env.subcommand {
         EnvSubcommands::Get { ref key } => {
-            if let Some(env) = env_vars.get(key) {
-                print!("{env}");
+            let response = api.get_env(EnvRequest {
+                key: Some(key.clone()),
+            })?;
+            if let Some(val) = response.vars.get(key.as_str()) {
+                print!("{val}");
             } else {
                 log::warn!("environmental variable does not exists: {}", key);
             }
         }
         EnvSubcommands::All => {
-            for (key, value) in env_vars.iter() {
-                println!("{key}={value}");
+            let response = api.get_env(EnvRequest { key: None })?;
+            for (k, v) in &response.vars {
+                println!("{k}={v}");
             }
         }
     }
+
     Ok(())
 }

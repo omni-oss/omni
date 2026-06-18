@@ -2,13 +2,14 @@ use std::path::Path;
 
 use super::add_commons::add_one;
 use omni_discovery::Discovery;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::AddManyActionConfiguration;
 
 use crate::{GeneratorSys, action_handlers::HandlerContext, error::Error};
 
-pub async fn add_many<'a>(
+pub async fn add_many<'a, S: GeneratorEventSubscriber>(
     config: &AddManyActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let glob_patterns = config

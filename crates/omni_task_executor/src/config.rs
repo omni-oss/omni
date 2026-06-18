@@ -3,7 +3,7 @@ use std::time::Duration;
 use derive_builder::Builder;
 use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
-use omni_configurations::Ui;
+
 use omni_execution_plan::{Call, ScmAffectedFilter};
 
 use crate::{Force, OnFailure};
@@ -72,10 +72,6 @@ pub struct ExecutionConfig {
     #[builder(setter(custom))]
     #[getset(get = "pub")]
     call: Call,
-
-    #[builder(default)]
-    #[getset(get_copy = "pub")]
-    ui: Ui,
 
     #[builder(default)]
     #[getset(get_copy = "pub")]

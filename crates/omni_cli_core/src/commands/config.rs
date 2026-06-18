@@ -1,8 +1,5 @@
 use clap::ValueEnum;
-use omni_generator_configurations::GeneratorConfiguration;
-use schemars::{Schema as SchemarsSchema, schema_for};
-
-use crate::configurations::{ProjectConfiguration, WorkspaceConfiguration};
+use omni_api::{SchemaKind, handle_config_schema};
 
 #[derive(clap::Args)]
 pub struct ConfigCommand {
@@ -41,38 +38,25 @@ pub struct PrintSchemaArgs {
     pretty: bool,
 }
 
-fn output_schema(
-    schema: &SchemarsSchema,
-    args: &PrintSchemaArgs,
-) -> eyre::Result<()> {
-    if args.pretty {
-        println!("{}", serde_json::to_string_pretty(schema)?);
-    } else {
-        println!("{}", serde_json::to_string(schema)?);
-    }
-
-    Ok(())
-}
-
 pub async fn run(config: &ConfigCommand) -> eyre::Result<()> {
     match config.subcommand {
         ConfigSubcommands::Schema {
             schema: ref subcommand,
             ref args,
         } => {
-            let sc = match subcommand {
-                Schema::Workspace => {
-                    schema_for!(WorkspaceConfiguration)
-                }
-                Schema::Project => {
-                    schema_for!(ProjectConfiguration)
-                }
-                Schema::Generator => {
-                    schema_for!(GeneratorConfiguration)
-                }
+            let kind = match subcommand {
+                Schema::Workspace => SchemaKind::Workspace,
+                Schema::Project => SchemaKind::Project,
+                Schema::Generator => SchemaKind::Generator,
             };
 
-            output_schema(&sc, args)?;
+            let response = handle_config_schema(kind)?;
+
+            if args.pretty {
+                println!("{}", serde_json::to_string_pretty(&response.schema)?);
+            } else {
+                println!("{}", serde_json::to_string(&response.schema)?);
+            }
         }
     }
 

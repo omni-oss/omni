@@ -5,7 +5,7 @@ mod config;
 mod execution_plan_provider;
 mod executor;
 mod force;
-mod in_memory_tracer;
+
 mod on_failure;
 mod pipeline;
 mod result;

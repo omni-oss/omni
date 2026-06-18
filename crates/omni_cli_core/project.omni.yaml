@@ -15,17 +15,25 @@ dependencies:
   - omni_generator
   - omni_input_provider
   - omni_prompt
-  - env_loader
-  - omni_expressions
   - omni_scm
   - omni_execution_plan
-  - config_utils
-  - omni_types
+  - omni_expressions
+  - omni_cache
+  - omni_hasher
+  - omni_collector
   - omni_process
-  - system_traits
-  - dir_walker
-  - clap_declspec
-  - clap_utils
+  - omni_types
+  - omni_term_ui
+  - omni_messages
+  - omni_api
   - omni_tracing_subscriber
   - omni_remote_source
   - omni_git_utils
+  - env
+  - env_loader
+  - config_utils
+  - dir_walker
+  - system_traits
+  - clap_declspec
+  - clap_utils
+  - js_runtime

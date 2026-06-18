@@ -1,8 +1,9 @@
 use clap::{Args, Subcommand};
+use omni_api::OmniApi;
+use omni_context::Context;
+use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::noop_subscriber;
-use tracing_futures::WithSubscriber;
-
-use crate::context::Context;
+use tracing_futures::WithSubscriber as _;
 
 #[derive(clap::Args)]
 #[command(author, version, about = "Get hashes for the workspace or projects")]
@@ -48,45 +49,34 @@ pub struct HashProjectCommand {
 }
 
 pub async fn run(command: &HashCommand, ctx: &Context) -> eyre::Result<()> {
-    let ctx = ctx.clone();
+    let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
 
-    let ctx = if command.args.raw {
-        ctx.into_loaded().with_subscriber(noop_subscriber()).await?
+    let response = if command.args.raw {
+        match command.subcommand {
+            HashSubcommands::Workspace => {
+                api.hash_workspace()
+                    .with_subscriber(noop_subscriber())
+                    .await?
+            }
+            HashSubcommands::Project { ref command } => {
+                api.hash_project(&command.project, &command.task)
+                    .with_subscriber(noop_subscriber())
+                    .await?
+            }
+        }
     } else {
-        ctx.into_loaded().await?
+        match command.subcommand {
+            HashSubcommands::Workspace => api.hash_workspace().await?,
+            HashSubcommands::Project { ref command } => {
+                api.hash_project(&command.project, &command.task).await?
+            }
+        }
     };
 
-    match command.subcommand {
-        HashSubcommands::Workspace => {
-            let hashstring = ctx.get_workspace_hash_string().await?;
-
-            if command.args.raw {
-                print!("{hashstring}");
-            } else {
-                println!("{hashstring}");
-            }
-        }
-        HashSubcommands::Project {
-            command: ref project_cmd,
-        } => {
-            let hashstring = ctx
-                .get_project_hash_string(
-                    &project_cmd.project,
-                    project_cmd
-                        .task
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                )
-                .await?;
-
-            if command.args.raw {
-                print!("{hashstring}");
-            } else {
-                println!("{hashstring}");
-            }
-        }
+    if command.args.raw {
+        print!("{}", response.hash);
+    } else {
+        println!("{}", response.hash);
     }
 
     Ok(())

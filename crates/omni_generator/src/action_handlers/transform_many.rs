@@ -1,3 +1,4 @@
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::TransformManyActionConfiguration;
 
 use crate::{
@@ -6,9 +7,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn transform_many<'a>(
+pub async fn transform_many<'a, S: GeneratorEventSubscriber>(
     config: &TransformManyActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSysFull,
 ) -> Result<(), Error> {
     let patterns = config

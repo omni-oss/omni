@@ -1,9 +1,11 @@
 use clap::{ArgAction, Args, Subcommand};
 use derive_new::new;
+use omni_api::OmniApi;
 use omni_context::Context;
+use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::noop_subscriber;
 use serde::Serialize;
-use tracing_futures::WithSubscriber;
+use tracing_futures::WithSubscriber as _;
 
 use crate::commands::utils::write_serialized_to;
 
@@ -68,21 +70,28 @@ async fn run_print_config(
     command: &PrintConfigCommand,
     ctx: &Context,
 ) -> eyre::Result<()> {
-    let loaded = if command.args.raw {
-        ctx.clone()
-            .load_project_configurations()
+    let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
+    let name = &command.args.project_name;
+
+    let result = if command.args.raw {
+        api.project_config(name)
             .with_subscriber(noop_subscriber())
-            .await?
+            .await
     } else {
-        ctx.load_project_configurations().await?
+        api.project_config(name).await
     };
 
-    let result = loaded.iter().find(|x| x.name == command.args.project_name);
-
-    if let Some(result) = result {
-        write_serialized_to(result, command.args.format, std::io::stdout())?;
-    } else {
-        log::error!("No project named '{}' found", command.args.project_name);
+    match result {
+        Ok(config) => {
+            write_serialized_to(
+                config,
+                command.args.format,
+                std::io::stdout(),
+            )?;
+        }
+        Err(e) => {
+            log::error!("{}", e);
+        }
     }
 
     Ok(())
@@ -109,29 +118,29 @@ pub struct ListArgs {
 }
 
 async fn run_list(command: &ListCommand, ctx: &Context) -> eyre::Result<()> {
-    let loaded = if command.args.raw {
-        ctx.clone()
-            .load_project_configurations()
+    let api = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber);
+
+    let names = if command.args.raw {
+        api.project_list()
             .with_subscriber(noop_subscriber())
             .await?
     } else {
-        ctx.load_project_configurations().await?
+        api.project_list().await?
     };
 
     if let Some(format) = command.args.format {
-        let names = loaded.iter().map(|e| e.name.as_str()).collect::<Vec<_>>();
         if format == SerializationFormat::Toml {
             write_serialized_to(
-                ProjectNames::new(&names),
+                ProjectNames::new(names),
                 format,
                 std::io::stdout(),
             )?;
         } else {
-            write_serialized_to(names, format, std::io::stdout())?;
+            write_serialized_to(&names, format, std::io::stdout())?;
         }
     } else {
-        for project in &loaded {
-            println!("{}", project.name);
+        for name in &names {
+            println!("{name}");
         }
     }
 
@@ -139,6 +148,6 @@ async fn run_list(command: &ListCommand, ctx: &Context) -> eyre::Result<()> {
 }
 
 #[derive(Serialize, new)]
-struct ProjectNames<'a> {
-    projects: &'a Vec<&'a str>,
+struct ProjectNames {
+    projects: Vec<String>,
 }

@@ -158,6 +158,8 @@ omni_remote_source = { path = "crates/omni_remote_source" }
 bridge_rpc_services = { path = "crates/bridge_rpc_services" }
 bridge_rpc_utils = { path = "crates/bridge_rpc_utils" }
 omni_bridge_test_service = { path = "services/omni_bridge_test_service" }
+omni_messages = { path = "./crates/omni_messages" }
+omni_api = { path = "./crates/omni_api" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

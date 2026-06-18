@@ -1,4 +1,5 @@
 use either::Left;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{OmniPath, OverwriteConfiguration, Root};
 use std::{
     borrow::Cow,
@@ -246,9 +247,9 @@ pub async fn get_target_dir<'a>(
     }
 }
 
-pub async fn get_target_file<'a>(
+pub async fn get_target_file<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     provider: &'a dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<Cow<'a, Path>, Error> {
@@ -270,9 +271,9 @@ pub async fn get_target_file<'a>(
     Ok(target)
 }
 
-pub async fn prompt_target_file(
+pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
     target_name: &str,
-    ctx: &HandlerContext<'_>,
+    ctx: &HandlerContext<'_, S>,
     provider: &dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
@@ -360,11 +361,11 @@ pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
     Cow::Borrowed(path)
 }
 
-pub async fn get_output_path<'a, TExt: AsRef<str>>(
+pub async fn get_output_path<'a, TExt: AsRef<str>, S: GeneratorEventSubscriber>(
     target_name: Option<&'a str>,
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     provider: &'a dyn InputProvider,
     strip_extensions: &'a [TExt],
     flatten: bool,
@@ -441,8 +442,8 @@ pub fn augment_tera_context<'a>(
     Ok(Cow::Owned(new_ctx))
 }
 
-pub fn get_bases<'a>(
-    ctx: &HandlerContext<'a>,
+pub fn get_bases<'a, S: GeneratorEventSubscriber>(
+    ctx: &HandlerContext<'a, S>,
 ) -> enum_map::EnumMap<Root, &'a Path> {
     enum_map::enum_map! {
         Root::Output => ctx.output_dir,

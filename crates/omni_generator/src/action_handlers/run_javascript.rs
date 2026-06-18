@@ -1,4 +1,5 @@
 use js_runtime::impls::DelegatingJsRuntimeOption;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{
     JsRuntimeOption, RunJavaScriptActionConfiguration,
 };
@@ -8,9 +9,9 @@ use crate::{
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
-pub async fn run_javascript<'a>(
+pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     config: &RunJavaScriptActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     _sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     // `canonicalize` (used when the context is loaded) returns paths with the

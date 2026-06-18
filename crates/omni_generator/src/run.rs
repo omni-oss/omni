@@ -1,11 +1,14 @@
 use std::{borrow::Cow, path::Path};
 
-use derive_new::new;
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use omni_input_provider::{CollectionConfig, InputProvider, collect};
+use omni_messages::{
+    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
+    NoopSubscriber,
+};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -18,8 +21,8 @@ use crate::{
     utils::{expand_json_value, get_tera_context},
 };
 
-#[derive(Debug, new)]
-pub struct RunConfig<'a> {
+#[derive(Debug)]
+pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub overwrite: Option<OverwriteConfiguration>,
@@ -33,13 +36,18 @@ pub struct RunConfig<'a> {
     pub use_inputs_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub input_provider: &'a dyn InputProvider,
+    pub subscriber: &'a S,
 }
 
-pub async fn run_named<'a>(
+pub struct GeneratorRunResult {
+    pub session: GenSession,
+}
+
+pub async fn run_named<'a, S: GeneratorEventSubscriber>(
     generator_name: &'a str,
-    config: &RunConfig<'a>,
+    config: &RunConfig<'a, S>,
     sys: &impl GeneratorSys,
-) -> Result<GenSession, Error> {
+) -> Result<GeneratorRunResult, Error> {
     crate::validate(config.available_generators)?;
 
     let generator = config
@@ -53,11 +61,11 @@ pub async fn run_named<'a>(
     run_in_transaction(&generator, config, sys).await
 }
 
-pub async fn run<'a>(
+pub async fn run<'a, S: GeneratorEventSubscriber>(
     generator: &'a GeneratorConfiguration,
-    config: &RunConfig<'a>,
+    config: &RunConfig<'a, S>,
     sys: &impl GeneratorSys,
-) -> Result<GenSession, Error> {
+) -> Result<GeneratorRunResult, Error> {
     crate::validate(config.available_generators)?;
 
     run_in_transaction(generator, config, sys).await
@@ -70,17 +78,23 @@ pub async fn run<'a>(
 /// transaction is committed. A normal run commits the transaction once all
 /// actions have succeeded (making generation atomic), while a dry run simply
 /// drops the buffered actions without committing.
-async fn run_in_transaction<'a>(
+async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
-    config: &RunConfig<'a>,
+    config: &RunConfig<'a, S>,
     sys: &impl GeneratorSys,
-) -> Result<GenSession, Error> {
+) -> Result<GeneratorRunResult, Error> {
     let tx = TransactionSys::new(sys.clone());
     let runner = LazyScriptRunner::new(
         tx.clone(),
         config.workspace_dir.to_path_buf(),
         env!("CARGO_PKG_VERSION").to_string(),
     );
+    config
+        .subscriber
+        .on_generator_start(GeneratorStartEvent {
+            name: r#gen.name.clone(),
+        })
+        .await;
 
     let result = run_internal(r#gen, config, &tx, &runner).await;
 
@@ -93,12 +107,19 @@ async fn run_in_transaction<'a>(
         tx.commit().await?;
     }
 
-    Ok(session)
+    config
+        .subscriber
+        .on_generator_completed(GeneratorCompletedEvent {
+            name: r#gen.name.clone(),
+        })
+        .await;
+
+    Ok(GeneratorRunResult { session })
 }
 
-pub(crate) async fn run_internal<'a>(
+pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
-    config: &RunConfig<'a>,
+    config: &RunConfig<'a, S>,
     sys: &impl GeneratorSysFull,
     runner: &dyn JsScriptRunner,
 ) -> Result<GenSession, Error> {
@@ -179,6 +200,7 @@ pub(crate) async fn run_internal<'a>(
         env: config.env,
         js_script_runner: runner,
         input_provider: config.input_provider,
+        subscriber: config.subscriber,
     };
 
     execute_actions(&args, &session, sys).await?;
@@ -207,7 +229,7 @@ pub(crate) async fn run_internal<'a>(
                 }
             })
             .collect(),
-    );
+    )?;
 
     Ok(session)
 }

@@ -1,6 +1,7 @@
 use omni_generator_configurations::{
     ModifyActionConfiguration, ModifyInlineContentEntry,
 };
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
@@ -8,9 +9,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn modify<'a>(
+pub async fn modify<'a, S: GeneratorEventSubscriber>(
     config: &ModifyActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let mut entries = vec![];

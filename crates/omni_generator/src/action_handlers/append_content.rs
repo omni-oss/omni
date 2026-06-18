@@ -1,4 +1,5 @@
 use omni_generator_configurations::AppendContentActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
@@ -6,9 +7,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn append_content<'a>(
+pub async fn append_content<'a, S: GeneratorEventSubscriber>(
     config: &AppendContentActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     insert_one(&config.entries, false, &config.common, ctx, sys).await?;

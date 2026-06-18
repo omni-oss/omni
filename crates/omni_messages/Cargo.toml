@@ -1,0 +1,25 @@
+[package]
+name = "omni_messages"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_messages"
+path = "src/lib.rs"
+
+[features]
+default = ["enable-tracing", "tracing"]
+tracing = []
+enable-tracing = ["trace/enabled"]
+
+[dependencies]
+serde  = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+trace = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }

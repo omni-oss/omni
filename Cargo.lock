@@ -6299,6 +6299,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_api"
+version = "0.15.1"
+dependencies = [
+ "bytesize",
+ "derive-new",
+ "either",
+ "eyre",
+ "log",
+ "maps",
+ "omni_cache",
+ "omni_configurations",
+ "omni_context",
+ "omni_core",
+ "omni_execution_plan",
+ "omni_generator",
+ "omni_generator_configurations",
+ "omni_input_provider",
+ "omni_messages",
+ "omni_remote_cache_client",
+ "omni_remote_source",
+ "omni_scm",
+ "omni_setup",
+ "omni_task_context",
+ "omni_task_executor",
+ "omni_tera",
+ "omni_tracing_subscriber",
+ "path-clean",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sets",
+ "strum 0.28.0",
+ "system_traits",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "value-bag",
+]
+
+[[package]]
 name = "omni_bridge_test_service"
 version = "0.0.0"
 dependencies = [
@@ -6408,6 +6449,7 @@ dependencies = [
  "maps",
  "merge",
  "num_cpus",
+ "omni_api",
  "omni_cache",
  "omni_collector",
  "omni_configurations",
@@ -6420,6 +6462,7 @@ dependencies = [
  "omni_git_utils",
  "omni_hasher",
  "omni_input_provider",
+ "omni_messages",
  "omni_process",
  "omni_prompt",
  "omni_remote_source",
@@ -6427,13 +6470,14 @@ dependencies = [
  "omni_setup",
  "omni_task_context",
  "omni_task_executor",
+ "omni_term_ui",
  "omni_tracing_subscriber",
  "omni_types",
  "owo-colors",
+ "parking_lot 0.12.5",
  "path-clean",
  "petgraph",
  "regex",
- "rmcp",
  "schemars",
  "serde",
  "serde_json",
@@ -6739,6 +6783,7 @@ dependencies = [
  "omni_file_data_serde",
  "omni_generator_configurations",
  "omni_input_provider",
+ "omni_messages",
  "omni_process",
  "omni_tera",
  "omni_types",
@@ -6890,6 +6935,19 @@ dependencies = [
  "trace",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "omni_messages"
+version = "0.15.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "tracing",
 ]
 
 [[package]]
@@ -7169,12 +7227,11 @@ name = "omni_task_executor"
 version = "0.8.2"
 dependencies = [
  "ahash 0.8.12",
- "atty",
  "base64",
+ "bon",
  "bs58",
  "bytes 1.11.1",
  "config_utils",
- "crossbeam-channel",
  "derive-new",
  "derive_builder",
  "env",
@@ -7194,13 +7251,11 @@ dependencies = [
  "omni_execution_plan",
  "omni_expressions",
  "omni_hasher",
+ "omni_messages",
  "omni_process",
  "omni_task_context",
  "omni_tera",
- "omni_term_ui",
- "omni_tracing_subscriber",
  "omni_types",
- "owo-colors",
  "serde",
  "serde_json",
  "shlex 2.0.1",
@@ -8682,41 +8737,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
-name = "rmcp"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0810a9f717d9828f475fe1f629f4c305c8464b7f496c3a854b58d29e65f4058e"
-dependencies = [
- "async-trait",
- "base64",
- "chrono",
- "futures 0.3.32",
- "pastey",
- "pin-project-lite",
- "rmcp-macros",
- "schemars",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio 1.52.3",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
-name = "rmcp-macros"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6aefac48c364756e97f04c0401ba3231e8607882c7c1d92da0437dc16307904d"
-dependencies = [
- "darling 0.23.0",
- "proc-macro2",
- "quote",
- "serde_json",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "rmp"
 version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9064,7 +9084,6 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
- "chrono",
  "dyn-clone",
  "either",
  "indexmap",

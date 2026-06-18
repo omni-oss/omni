@@ -11,31 +11,30 @@ use crate::commands::{
 
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
-use either::Left;
-use maps::{Map, UnorderedMap, unordered_map};
+use maps::{UnorderedMap, unordered_map};
+use omni_api::{GeneratorRunRequest, OmniApi};
 use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
 use omni_context::Context;
 use omni_core::Project;
-use omni_generator::{GenSession, GeneratorSys, RunConfig};
+use omni_generator::GeneratorSys;
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use omni_input_provider::{
     CollectionConfig, collect_one,
     configuration::{
-        BaseInputConfiguration, ConfirmInputConfiguration, InputConfiguration,
-        OptionConfiguration, SelectInputConfiguration, TextInputConfiguration,
+        BaseInputConfiguration, InputConfiguration, OptionConfiguration,
+        SelectInputConfiguration, TextInputConfiguration,
         ValidatedInputConfiguration,
     },
 };
+use omni_messages::NoopSubscriber;
 use omni_prompt::CliInputProvider;
 use omni_remote_sources::manager::{
     RemoteSourceManager, config::RemoteSourceConfig,
 };
 use owo_colors::OwoColorize;
-use system_traits::{FsCreateDirAllAsync, FsMetadataAsync};
 use tokio::task::JoinSet;
-use value_bag::ValueBag;
 
 #[derive(Debug, Clone, clap::Args)]
 pub struct GeneratorCommand {
@@ -151,9 +150,8 @@ async fn run_generator_run(
     let loaded_context = ctx.clone().into_loaded().await?;
     let projects = loaded_context.projects();
     let current_dir = loaded_context.current_dir()?;
-    let workspace_dir = loaded_context.root_dir().to_path_buf();
 
-    let (output_dir, project) =
+    let (output_dir, _project) =
         match (command.args.output.clone(), &command.args.project) {
             (None, None) => {
                 (prompt_output_dir(projects, &current_dir).await?, None)
@@ -179,55 +177,7 @@ async fn run_generator_run(
 
     log::trace!("Generator output directory: {}", output_dir.display());
 
-    let mut pre_exec_values = get_input_values(&command.args.common.value);
-    let env = loaded_context.get_cached_env_vars(output_dir.as_path());
-
-    let mut context_values = unordered_map!();
-
-    context_values.insert(
-        "output_dir".to_string(),
-        ValueBag::capture_serde1(&output_dir).to_owned(),
-    );
-
-    context_values.insert(
-        "workspace_dir".to_string(),
-        ValueBag::capture_serde1(&workspace_dir).to_owned(),
-    );
-
-    context_values.insert(
-        "current_dir".to_string(),
-        ValueBag::capture_serde1(&current_dir).to_owned(),
-    );
-
-    let default_map = Map::default();
-
-    if let Some(env) = &env {
-        context_values.insert(
-            "env".to_string(),
-            ValueBag::capture_serde1(env).to_owned(),
-        );
-    } else {
-        context_values.insert(
-            "env".to_string(),
-            ValueBag::capture_serde1(&default_map).to_owned(),
-        );
-    }
-
-    if let Some(project) = project {
-        context_values.insert(
-            "project".to_string(),
-            ValueBag::capture_serde1(project).to_owned(),
-        );
-    }
-
-    let mut target_overrides = get_target_overrides(&command.args.target);
-
     let sys = loaded_context.sys();
-
-    const GENERATOR_OUTPUT_DIR: &str = ".omni";
-    const GENERATOR_OUTPUT_FILE: &str = ".omni/generator.json";
-    let gen_output_dir = output_dir.join(GENERATOR_OUTPUT_DIR);
-    let file = output_dir.join(GENERATOR_OUTPUT_FILE);
     let generators = get_generators(ctx, sys).await?;
 
     let generator_name = if let Some(name) = &command.args.name {
@@ -236,55 +186,28 @@ async fn run_generator_run(
         Cow::Owned(prompt_generator_name(&generators).await?)
     };
 
-    let mut has_exiting_session = false;
-
-    if !command.args.ignore_session.unwrap_or(false)
-        && sys.fs_exists_no_err_async(&file).await
-    {
-        let session = GenSession::from_disk(file.as_path(), sys).await?;
-        has_exiting_session = true;
-        session.restore_targets(&generator_name, &mut target_overrides, false);
-        session.restore_inputs(&generator_name, &mut pre_exec_values, false);
-    }
-
-    let input_provider = CliInputProvider::default();
-    let run = RunConfig {
+    let req = GeneratorRunRequest {
+        name: Some(generator_name.to_string()),
+        output_dir,
+        project: None,
+        target: get_target_overrides(&command.args.target)
+            .into_iter()
+            .collect(),
         dry_run: command.args.dry_run,
-        output_dir: output_dir.as_path(),
         overwrite: command.args.overwrite.map(|o| o.value()),
-        workspace_dir: &workspace_dir,
-        target_overrides: &target_overrides,
-        context_values: &context_values,
-        input_values: &pre_exec_values,
-        current_dir: &current_dir,
-        env: &env.as_deref().unwrap_or(&default_map),
-        args: None,
-        use_inputs_defaults: command.args.common.use_defaults,
-        available_generators: &generators,
-        input_provider: &input_provider,
+        save_session: command.args.save_session,
+        ignore_session: command.args.ignore_session,
+        prompt_values: get_input_values(&command.args.common.value),
+        use_defaults: command.args.common.use_defaults,
+        input_provider: Arc::new(CliInputProvider::default()),
     };
 
-    let session =
-        omni_generator::run_named(&generator_name, &run, loaded_context.sys())
-            .await?;
-
-    if !command.args.dry_run && !session.is_empty() {
-        let save = if let Some(save) = command.args.save_session {
-            save
-        } else if has_exiting_session {
-            true
-        } else {
-            prompt_save_inputs().await?
-        };
-
-        if save {
-            if !sys.fs_exists_no_err_async(&gen_output_dir).await {
-                sys.fs_create_dir_all_async(&gen_output_dir).await?;
-            }
-
-            session.write_to_disk(file.as_path(), sys).await?;
-        }
-    }
+    OmniApi::new_with_sys(
+        ctx.clone(),
+        crate::subscriber::CliSubscriber::new_stream(),
+    )
+    .generator_run(req)
+    .await?;
 
     Ok(())
 }
@@ -416,47 +339,16 @@ async fn prompt_output_dir(
     }
 }
 
-async fn prompt_save_inputs() -> eyre::Result<bool> {
-    let context_values = unordered_map!();
-    let prompting_config = CollectionConfig::default();
-
-    let prompt = InputConfiguration::<()>::new_confirm(
-        ConfirmInputConfiguration::new(
-            BaseInputConfiguration::new(
-                "save_inputs",
-                "Would you like to save inputs and targets to the output directory?",
-                Some(Left(true)),
-            ),
-            Some(Left(true)),
-        ),
-    );
-
-    let value = collect_one(
-        &prompt,
-        None,
-        &context_values,
-        &prompting_config,
-        &CliInputProvider::default(),
-    )
-    .await?
-    .expect("should have value at this point");
-
-    let value = value
-        .by_ref()
-        .to_bool()
-        .ok_or_else(|| eyre::eyre!("value is not boolean"))?;
-
-    Ok(value)
-}
-
 async fn run_generator_list(
     _command: &GeneratorListCommand,
     ctx: &Context,
 ) -> eyre::Result<()> {
-    let generators = get_generators(ctx, ctx.sys()).await?;
+    let response = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber)
+        .generator_list()
+        .await?;
 
     println!("{}", "Available Generators:".bold());
-    for generator in generators {
+    for generator in response.generators {
         println!(
             "- {}{}{} (id: {})",
             generator

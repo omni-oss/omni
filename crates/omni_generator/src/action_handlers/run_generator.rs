@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
+use omni_messages::{DiagnosticEvent, DiagnosticLevel, GeneratorEventSubscriber};
 use omni_generator_configurations::{
     ForAllInputValuesConfiguration, ForwardInputValuesConfiguration,
     InputValue, Root, RunGeneratorActionConfiguration,
@@ -14,9 +15,9 @@ use crate::{
     run_internal,
 };
 
-pub async fn run_generator<'a>(
+pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     config: &RunGeneratorActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSysFull,
 ) -> Result<(), Error> {
     let generator = ctx
@@ -33,7 +34,14 @@ pub async fn run_generator<'a>(
 
     let input_values = resolve_input_values(parent_inputs, config, &ctx)?;
 
-    log::trace!("resolved prompt values: {input_values:#?}");
+    ctx.subscriber
+        .on_diagnostic(DiagnosticEvent {
+            level: DiagnosticLevel::Trace,
+            message: format!("resolved prompt values: {input_values:#?}"),
+            fields: Default::default(),
+            target: "omni::generator::run_generator".to_string(),
+        })
+        .await;
 
     let target_overrides = if config.targets.is_empty() {
         Cow::Borrowed(ctx.target_overrides)
@@ -49,7 +57,14 @@ pub async fn run_generator<'a>(
         Cow::Owned(map)
     };
 
-    log::trace!("resolved target overrides: {target_overrides:#?}");
+    ctx.subscriber
+        .on_diagnostic(DiagnosticEvent {
+            level: DiagnosticLevel::Trace,
+            message: format!("resolved target overrides: {target_overrides:#?}"),
+            fields: Default::default(),
+            target: "omni::generator::run_generator".to_string(),
+        })
+        .await;
 
     let override_output_dir = config.output_dir.as_ref().map(|d| {
         let base = enum_map::enum_map! {
@@ -102,6 +117,7 @@ pub async fn run_generator<'a>(
         use_inputs_defaults: false,
         available_generators: &available_generators,
         input_provider: ctx.input_provider,
+        subscriber: ctx.subscriber,
     };
 
     let prompted_inputs_values = Box::pin(run_internal(
@@ -117,10 +133,10 @@ pub async fn run_generator<'a>(
     Ok(())
 }
 
-fn resolve_input_values<'a>(
+fn resolve_input_values<'a, S: GeneratorEventSubscriber>(
     parent_inputs: &'a OwnedValueBag,
     config: &RunGeneratorActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
 ) -> Result<Cow<'a, UnorderedMap<String, OwnedValueBag>>, Error> {
     let parsed = serde_json::to_value(parent_inputs)?;
 

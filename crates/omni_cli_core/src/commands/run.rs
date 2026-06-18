@@ -7,14 +7,13 @@ use omni_task_executor::{ExecutionConfigBuilder, Force};
 use crate::{
     commands::{
         common_args::RunArgs,
-        utils::{
-            exit_code, get_results_settings, report_execution_results,
-            write_serialized_to_file,
-        },
+        utils::{exit_code, get_results_settings, write_serialized_to_file},
     },
     context::Context,
     executor::{Call, OnFailure, TaskExecutor},
 };
+
+use super::utils::resolve_subscriber;
 
 #[derive(Args)]
 pub struct RunCommand {
@@ -105,11 +104,14 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let executor = TaskExecutor::new(config, &ctx);
+    let sub = resolve_subscriber(command.run.ui);
+    let executor = TaskExecutor::new(config, &ctx, &sub);
 
     let results = executor.run().await?;
 
-    report_execution_results(&results);
+    sub.wait().await;
+
+    // report_execution_results is now handled by CliSubscriber::on_execution_complete
 
     if let Some((fmt, results_file_path)) = output_settings {
         write_serialized_to_file(&results, fmt, results_file_path)?;

@@ -1,4 +1,5 @@
 use super::add_commons::add_one;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::AddActionConfiguration;
 
 use crate::{
@@ -7,9 +8,9 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
-pub async fn add<'a>(
+pub async fn add<'a, S: GeneratorEventSubscriber>(
     config: &AddActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let template_file = ctx.generator_dir.join(&config.file);

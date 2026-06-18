@@ -1,45 +1,59 @@
-use std::io::Read;
-
-use derive_new::new;
 use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
 use omni_execution_plan::{
     ExecutionPlanProvider as _, ExecutionPlanProviderError,
 };
-use omni_tracing_subscriber::{
-    Level, TracingConfig,
-    custom_output::{
-        CustomOutput, CustomOutputConfig, FormatOptions, OutputType,
-    },
+use omni_messages::{
+    DiagnosticLevel, ExecutionCompleteEvent, ExecutionEventSubscriber,
+    ExecutionPlanReadyEvent, TracingSubscriber, diagnostic,
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use trace::instrument::WithSubscriber;
+
+use derive_new::new;
 
 use crate::{
     Call, ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     execution_plan_provider::ContextExecutionPlanProvider,
-    in_memory_tracer::InMemoryTracer,
     pipeline::{ExecutionPipeline, ExecutionPipelineError},
-    utils,
 };
 
-#[derive(Debug, new)]
-pub struct TaskExecutor<'a, TSys: TaskExecutorSys> {
-    #[new(into)]
+pub struct TaskExecutor<
+    'a,
+    TSys: TaskExecutorSys,
+    S: ExecutionEventSubscriber = TracingSubscriber,
+> {
     config: ExecutionConfig,
     context: &'a LoadedContext<TSys>,
+    subscriber: S,
 }
 
-impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
+impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
+    TaskExecutor<'a, TSys, S>
+{
+    pub fn new(
+        config: impl Into<ExecutionConfig>,
+        context: &'a LoadedContext<TSys>,
+        subscriber: S,
+    ) -> Self {
+        Self {
+            config: config.into(),
+            context,
+            subscriber,
+        }
+    }
+
     pub async fn run(
         &self,
     ) -> Result<Vec<TaskExecutionResult>, TaskExecutorError> {
         let start_time = std::time::Instant::now();
+
         if self.config.dry_run() {
-            log::info!(
-                "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed"
-            );
+            diagnostic!(
+                self.subscriber,
+                DiagnosticLevel::Info,
+                "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed",
+            ).await;
         }
 
         let plan = ContextExecutionPlanProvider::new(self.context)
@@ -82,86 +96,51 @@ impl<'a, TSys: TaskExecutorSys> TaskExecutor<'a, TSys> {
             ))?;
         }
 
-        let is_tui = utils::should_use_tui(self.config.ui(), &plan);
+        self.subscriber
+            .on_execution_plan_ready(ExecutionPlanReadyEvent {
+                total: plan.iter().flatten().count(),
+                has_interactive_or_persistent_tasks: plan
+                    .iter()
+                    .flatten()
+                    .any(|t| t.interactive() || t.persistent()),
+            })
+            .await;
 
-        let pipeline = ExecutionPipeline::new(plan, self.context, &self.config);
+        let pipeline = ExecutionPipeline::new(
+            plan,
+            self.context,
+            &self.config,
+            &self.subscriber,
+        );
 
-        let results = if is_tui {
-            let (temp, file_write_task, sub) =
-                self.prepare_in_memory_subscriber()?;
+        let results = pipeline.run().await?;
 
-            let result = pipeline.run().with_subscriber(sub).await?;
-
-            file_write_task.await??;
-
-            let file = std::fs::OpenOptions::new().read(true).open(temp)?;
-
-            std::io::copy(&mut file.take(u64::MAX), &mut std::io::stdout())?;
-
-            result
-        } else {
-            pipeline.run().await?
-        };
-
-        log::info!("Overrall execution time: {:?}", start_time.elapsed());
+        self.subscriber
+            .on_execution_complete(ExecutionCompleteEvent {
+                total: results.len(),
+                succeeded: results.iter().filter(|r| r.success()).count(),
+                failed: results
+                    .iter()
+                    .filter(|r| !r.is_skipped() && !r.success())
+                    .count(),
+                skipped: results.iter().filter(|r| r.is_skipped()).count(),
+                cache_hits: results
+                    .iter()
+                    .filter(|r| {
+                        matches!(
+                            r,
+                            crate::TaskExecutionResult::Completed {
+                                cache_hit: true,
+                                ..
+                            }
+                        )
+                    })
+                    .count(),
+                elapsed: start_time.elapsed(),
+            })
+            .await;
 
         Ok(results)
-    }
-
-    fn prepare_in_memory_subscriber(
-        &self,
-    ) -> Result<
-        (
-            std::path::PathBuf,
-            tokio::task::JoinHandle<Result<(), std::io::Error>>,
-            omni_tracing_subscriber::TracingSubscriber,
-        ),
-        TaskExecutorError,
-    > {
-        let stdout_trace_level = self.context.tracing_config().stdout_level;
-        let config = TracingConfig {
-            stderr_enabled: false,
-            stdout_level: Level::Off,
-            ..self.context.tracing_config().clone()
-        };
-        trace::debug!(
-            ?config,
-            "updated_tracing_config_for_in_memory_subscriber"
-        );
-
-        let (tx, rx) = crossbeam_channel::bounded::<Vec<u8>>(1024);
-        let trace_dir = self.context.trace_dir();
-        let temp = trace_dir.join("temp.log");
-        let f_temp = temp.clone();
-        let file_write_task = tokio::task::spawn_blocking(move || {
-            if !trace_dir.exists() {
-                std::fs::create_dir_all(&trace_dir)?;
-            }
-
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(f_temp)?;
-
-            for chunk in rx {
-                std::io::copy(&mut chunk.take(u64::MAX), &mut file)?;
-            }
-            Ok::<_, std::io::Error>(())
-        });
-        let tracer = InMemoryTracer::new(tx);
-        let custom_output = CustomOutput::new_instance(
-            CustomOutputConfig {
-                trace_level: stdout_trace_level,
-                output_type: OutputType::new_text(FormatOptions::default()),
-            },
-            tracer,
-        );
-        let sub = omni_tracing_subscriber::TracingSubscriber::new(
-            &config,
-            vec![custom_output],
-        )?;
-        Ok((temp, file_write_task, sub))
     }
 }
 

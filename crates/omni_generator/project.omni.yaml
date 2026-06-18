@@ -8,8 +8,10 @@ dependencies:
   - omni_generator_configurations
   - omni_file_data_serde
   - omni_input_provider
+  - omni_messages
   - omni_configuration_discovery
   - omni_discovery
+  - omni_discovery_utils
   - omni_tera
   - omni_types
   - omni_process
@@ -19,3 +21,5 @@ dependencies:
   - system_traits
   - maps
   - sets
+  - bridge_rpc_services
+  - bridge_rpc_router

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::TransformActionConfiguration;
 
 use crate::{
@@ -8,9 +9,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn transform<'a>(
+pub async fn transform<'a, S: GeneratorEventSubscriber>(
     config: &TransformActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let file = resolve_file(&config.file, ctx)?;
@@ -20,9 +21,9 @@ pub async fn transform<'a>(
 
 /// Resolves the (tera-expanded) `file` to an absolute path, anchoring relative
 /// paths to the output directory.
-fn resolve_file(
+fn resolve_file<S: GeneratorEventSubscriber>(
     file: &Path,
-    ctx: &HandlerContext<'_>,
+    ctx: &HandlerContext<'_, S>,
 ) -> Result<PathBuf, Error> {
     let expanded = omni_tera::one_off(
         &file.to_string_lossy(),

@@ -1,6 +1,7 @@
 use omni_generator_configurations::{
     AppendActionConfiguration, InsertInlineContentEntry,
 };
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
@@ -8,9 +9,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn append<'a>(
+pub async fn append<'a, S: GeneratorEventSubscriber>(
     config: &AppendActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let mut entries = vec![];

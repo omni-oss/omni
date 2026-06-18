@@ -1,5 +1,6 @@
 use std::{borrow::Cow, path::Path};
 
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonAddConfiguration;
 
 use crate::{
@@ -13,14 +14,14 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
-pub async fn add_one<'a, TRender, TSys>(
+pub async fn add_one<'a, TRender, TSys, S: GeneratorEventSubscriber>(
     file: &'a Path,
     content: &'a str,
     base_path: Option<&'a Path>,
     render: TRender,
     common: &CommonAddConfiguration,
     flatten: bool,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &'a TSys,
 ) -> Result<(), Error>
 where

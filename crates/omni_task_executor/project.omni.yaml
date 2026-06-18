@@ -10,15 +10,16 @@ dependencies:
   - omni_expressions
   - omni_hasher
   - omni_cache
-  - omni_term_ui
-  - omni_tracing_subscriber
+  - omni_messages
   - omni_execution_plan
   - omni_task_context
   - omni_collector
   - omni_types
-  - system_traits
-  - maps
-  - config_utils
+  - omni_process
   - omni_context
   - omni_tera
   - omni_config_types
+  - env
+  - system_traits
+  - maps
+  - config_utils

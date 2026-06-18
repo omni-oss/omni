@@ -52,3 +52,32 @@ pub fn from_args_and_sys<TSys: ContextSys>(
 
     Ok(ctx)
 }
+
+/// Context creation from WorkspaceInitConfig — use this in non-CLI entrypoints.
+pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
+    cfg: &WorkspaceInitConfig,
+    root_dir: impl AsRef<Path>,
+    sys: TSys,
+    tracing: &TracingConfig,
+) -> Result<Context<TSys>, ContextError> {
+    let ctx = Context::new(
+        sys,
+        &cfg.env,
+        root_dir.as_ref(),
+        cfg.inherit_env_vars,
+        &cfg.env_root_dir_marker,
+        cfg.env_files.clone(),
+        tracing,
+    )?;
+    Ok(ctx)
+}
+
+pub fn from_config_and_sys<TSys: ContextSys>(
+    cfg: &WorkspaceInitConfig,
+    sys: TSys,
+    tracing: &TracingConfig,
+) -> Result<Context<TSys>, ContextError> {
+    let root_dir = get_root_dir(&sys)?;
+    let ctx = from_config_root_dir_and_sys(cfg, root_dir, sys, tracing)?;
+    Ok(ctx)
+}

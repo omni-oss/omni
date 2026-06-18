@@ -1,4 +1,5 @@
 use omni_generator_configurations::PrependContentActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
@@ -6,9 +7,9 @@ use crate::{
     error::Error,
 };
 
-pub async fn prepend_content<'a>(
+pub async fn prepend_content<'a, S: GeneratorEventSubscriber>(
     config: &PrependContentActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     insert_one(&config.entries, true, &config.common, ctx, sys).await?;

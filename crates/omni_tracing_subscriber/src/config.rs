@@ -11,3 +11,19 @@ pub struct TracingConfig {
     pub stderr_enabled: bool,
     pub stderr_show_traces: bool,
 }
+
+impl TracingConfig {
+    /// Returns a config where every level is off and no file sink is used.
+    /// Suitable for library consumers that manage tracing externally or do not
+    /// want any file-based tracing output.
+    pub fn disabled() -> Self {
+        Self {
+            stdout_level: Level::Off,
+            stdout_show_traces: false,
+            file_level: Level::Off,
+            file_path: None,
+            stderr_enabled: false,
+            stderr_show_traces: false,
+        }
+    }
+}

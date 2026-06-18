@@ -5,6 +5,7 @@ use std::{
 
 use env::CommandExpansionConfig;
 use maps::Map;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
 use omni_process::ChildProcess;
 
@@ -18,9 +19,9 @@ use crate::{
     gen_session::GenSession,
 };
 
-pub async fn target_path(
+pub async fn target_path<S: GeneratorEventSubscriber>(
     common: &CommonRunCustomActionConfiguration,
-    ctx: &HandlerContext<'_>,
+    ctx: &HandlerContext<'_, S>,
     session: &GenSession,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
@@ -52,9 +53,9 @@ pub async fn target_path(
 /// When the action declares no extra environment variables the caller's
 /// environment is returned untouched (borrowed); otherwise the declared values
 /// are tera-rendered and command-expanded on top of it.
-pub(crate) fn build_command_env<'a>(
+pub(crate) fn build_command_env<'a, S: GeneratorEventSubscriber>(
     common: &CommonRunCustomActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     target: &Path,
 ) -> Result<Cow<'a, Map<String, String>>, Error> {
     if common.env.is_empty() {
@@ -84,11 +85,11 @@ pub(crate) fn build_command_env<'a>(
     Ok(Cow::Owned(expanded_env))
 }
 
-pub async fn run_custom_commons<'a>(
+pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
     command: &str,
     target_path: Option<&Path>,
     common: &CommonRunCustomActionConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     let __s_target;

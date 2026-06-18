@@ -1,30 +1,48 @@
-use derive_new::new;
 use maps::unordered_map;
 use omni_cache::impls::HybridTaskExecutionCacheStore;
 use omni_context::LoadedContext;
 use omni_core::BatchedExecutionPlan;
-use omni_term_ui::mux_output_presenter::{
-    MuxOutputPresenter, MuxOutputPresenterError, MuxOutputPresenterStatic,
+use omni_messages::{
+    ExecutionEventSubscriber,
+    execution::events::{BatchCompletedEvent, BatchStartEvent},
 };
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
-use trace::instrument::WithSubscriber;
 
 use crate::{
     ExecutionConfig, TaskExecutionResult, TaskExecutorSys,
     batch_executor::{BatchExecutor, BatchExecutorError},
     cache_manager::CacheManagerBuilder,
     cache_store_provider::{CacheStoreProvider, ContextCacheStoreProvider},
-    utils::should_use_tui,
 };
 
-#[derive(Debug, new)]
-pub struct ExecutionPipeline<'a, TSys: TaskExecutorSys> {
+pub struct ExecutionPipeline<
+    'a,
+    TSys: TaskExecutorSys,
+    S: ExecutionEventSubscriber,
+> {
     plan: BatchedExecutionPlan,
     context: &'a LoadedContext<TSys>,
     config: &'a ExecutionConfig,
+    subscriber: &'a S,
 }
 
-impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
+impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
+    ExecutionPipeline<'a, TSys, S>
+{
+    pub fn new(
+        plan: BatchedExecutionPlan,
+        context: &'a LoadedContext<TSys>,
+        config: &'a ExecutionConfig,
+        subscriber: &'a S,
+    ) -> Self {
+        Self {
+            plan,
+            context,
+            config,
+            subscriber,
+        }
+    }
+
     pub async fn run(
         self,
     ) -> Result<Vec<TaskExecutionResult>, ExecutionPipelineError> {
@@ -55,17 +73,11 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
             log::info!("Remote caching enabled");
         }
 
-        let presenter = if should_use_tui(self.config.ui(), &execution_plan) {
-            MuxOutputPresenterStatic::new_tui()
-        } else {
-            MuxOutputPresenterStatic::new_stream()
-        };
-
         let mut batch_exec = BatchExecutor::new(
             self.context,
             cache_manager,
             self.context.sys().clone(),
-            &presenter,
+            self.subscriber,
             self.config.max_concurrency().unwrap_or(num_cpus::get() * 4),
             self.config.ignore_dependencies(),
             self.config.on_failure(),
@@ -79,15 +91,18 @@ impl<'a, TSys: TaskExecutorSys> ExecutionPipeline<'a, TSys> {
         );
 
         for batch in &execution_plan {
+            self.subscriber.on_batch_start(BatchStartEvent {}).await;
+
             let results = batch_exec
                 .execute_batch(&batch, &results_accumulator)
-                .with_current_subscriber()
                 .await?;
+
+            self.subscriber
+                .on_batch_completed(BatchCompletedEvent {})
+                .await;
 
             results_accumulator.extend(results);
         }
-
-        presenter.close().await?;
 
         Ok(results_accumulator.into_values().collect())
     }
@@ -116,7 +131,4 @@ impl<T: Into<ExecutionPipelineErrorInner>> From<T> for ExecutionPipelineError {
 enum ExecutionPipelineErrorInner {
     #[error(transparent)]
     BatchExecutor(#[from] BatchExecutorError),
-
-    #[error(transparent)]
-    MuxOutputPresenter(#[from] MuxOutputPresenterError),
 }

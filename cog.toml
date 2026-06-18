@@ -431,6 +431,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_messages]
+path = "C:/Repositories/omni/crates/omni_messages"
+include = [
+    "C:/Repositories/omni/crates/omni_messages/**",
+]
+public_api = false
+
+[monorepo.packages.omni_api]
+path = "C:/Repositories/omni/crates/omni_api"
+include = [
+    "C:/Repositories/omni/crates/omni_api/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

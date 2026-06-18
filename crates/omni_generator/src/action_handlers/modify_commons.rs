@@ -1,5 +1,6 @@
 use std::{borrow::Cow, path::Path};
 
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{
     CommonModifyConfiguration, ModifyInlineContentEntry,
 };
@@ -13,10 +14,10 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
-pub async fn modify_one<'a>(
+pub async fn modify_one<'a, S: GeneratorEventSubscriber>(
     entries: &'a [ModifyInlineContentEntry],
     common: &'a CommonModifyConfiguration,
-    ctx: &HandlerContext<'a>,
+    ctx: &HandlerContext<'a, S>,
     sys: &'a impl GeneratorSys,
 ) -> Result<(), Error> {
     let target_name = &common.target;

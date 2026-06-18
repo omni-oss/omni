@@ -1,7 +1,7 @@
 use std::{borrow::Cow, path::Path};
 
-use derive_new::new;
 use maps::{Map, UnorderedMap};
+use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
 use omni_generator_configurations::{
     ActionConfiguration, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration,
@@ -21,8 +21,8 @@ use crate::{
     utils::get_tera_context,
 };
 
-#[derive(Debug, new)]
-pub struct ExecuteActionsArgs<'a> {
+#[derive(Debug)]
+pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub generator_dir: &'a Path,
@@ -39,10 +39,11 @@ pub struct ExecuteActionsArgs<'a> {
     pub env: &'a Map<String, String>,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider,
+    pub subscriber: &'a S,
 }
 
-pub async fn execute_actions<'a>(
-    args: &ExecuteActionsArgs<'a>,
+pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
+    args: &ExecuteActionsArgs<'a, S>,
     gen_session: &GenSession,
     sys: &impl GeneratorSysFull,
 ) -> Result<(), Error> {
@@ -90,6 +91,7 @@ pub async fn execute_actions<'a>(
             gen_session,
             js_script_runner: args.js_script_runner,
             input_provider: args.input_provider,
+            subscriber: args.subscriber,
         };
 
         let in_progress_message =

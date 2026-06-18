@@ -61,14 +61,6 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        short,
-        help = "Ui mode to use while running the command",
-        value_enum
-    )]
-    pub ui: Option<EnumValueAdapter<Ui>>,
-
-    #[arg(
-        long,
         alias = "base",
         short = 'b',
         help = "The base commit to compare against. This will implicitly enable --scm-affected"
@@ -115,13 +107,21 @@ pub struct RunArgs {
         value_parser = parse_key_value::<String, String>,
     )]
     pub args: Vec<(String, String)>,
+
+    #[arg(
+        long,
+        short,
+        help = "Ui mode to use while running the command",
+        value_enum
+    )]
+    pub ui: Option<EnumValueAdapter<Ui>>,
 }
 
 impl RunArgs {
     pub fn apply_to(
         &self,
         builder: &mut ExecutionConfigBuilder,
-        ws_config: &WorkspaceConfiguration,
+        _ws_config: &WorkspaceConfiguration,
     ) {
         if let Some(meta) = &self.meta {
             builder.meta_filter(meta);
@@ -132,17 +132,6 @@ impl RunArgs {
 
         if let Some(max_concurrency) = self.max_concurrency {
             builder.max_concurrency(max_concurrency);
-        }
-
-        if let Some(ui) = self.ui {
-            builder.ui(ui.value());
-        } else {
-            builder.ui(ws_config.ui);
-        }
-
-        // additional check if tty is available, since `Ui::Tui` is only available if tty is available
-        if !atty::is(atty::Stream::Stdout) {
-            builder.ui(Ui::Stream);
         }
 
         builder.dry_run(self.dry_run);

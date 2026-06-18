@@ -1,0 +1,63 @@
+[package]
+name = "omni_api"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+vendored-openssl = [
+    "omni_cache/vendored-openssl",
+    "omni_execution_plan/vendored-openssl",
+]
+
+[lib]
+name = "omni_api"
+path = "src/lib.rs"
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+trace = { workspace = true }
+log = { workspace = true }
+strum = { workspace = true }
+schemars = { workspace = true }
+maps = { workspace = true }
+sets = { workspace = true }
+derive-new = { workspace = true }
+bytesize = { workspace = true }
+path-clean = { workspace = true }
+value-bag = { workspace = true }
+system_traits = { workspace = true, features = ["real-sync", "real-async-tokio"] }
+either = { workspace = true }
+
+omni_messages = { workspace = true }
+omni_context = { workspace = true }
+omni_task_executor = { workspace = true }
+omni_configurations = { workspace = true }
+omni_generator = { workspace = true }
+omni_generator_configurations = { workspace = true }
+omni_input_provider = { workspace = true }
+omni_cache = { workspace = true }
+omni_execution_plan = { workspace = true }
+omni_scm = { workspace = true }
+omni_remote_source = { workspace = true }
+omni_setup = { workspace = true }
+omni_task_context = { workspace = true }
+omni_remote_cache_client = { workspace = true }
+omni_tracing_subscriber = { workspace = true }
+omni_core = { workspace = true }
+omni_tera = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+omni_context = { workspace = true }
+omni_tracing_subscriber = { workspace = true }
+system_traits  = { workspace = true, features = ["real-sync", "real-async-tokio"] }

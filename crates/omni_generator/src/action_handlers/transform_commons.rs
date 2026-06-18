@@ -1,6 +1,7 @@
 use std::{path::Path, process::Stdio};
 
 use maps::Map;
+use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
@@ -24,11 +25,11 @@ use crate::{
 ///
 /// This is the shared implementation behind both the `transform` and
 /// `transform-many` actions.
-pub(crate) async fn transform_one(
+pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     file: &Path,
     command: &str,
     common: &CommonRunCustomActionConfiguration,
-    ctx: &HandlerContext<'_>,
+    ctx: &HandlerContext<'_, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
     // Honour the same dry-run contract as the other "run" actions: skip the
