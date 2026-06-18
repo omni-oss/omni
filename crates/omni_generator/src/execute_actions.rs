@@ -6,6 +6,7 @@ use omni_generator_configurations::{
     OverwriteConfiguration,
 };
 use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
+use omni_utils::path::clean;
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
 
@@ -59,7 +60,8 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
     )?;
     let output_path = Path::new(&expanded_output);
 
-    if let Some(diff) = pathdiff::diff_paths(&output_path, &args.workspace_dir)
+    if let Some(diff) =
+        pathdiff::diff_paths(&output_path, clean(&args.workspace_dir))
     {
         tera_context.insert("output_dir", &diff);
     } else {
