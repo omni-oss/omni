@@ -44,6 +44,7 @@
         "node-pty": "^1.1.0",
         "@xterm/headless": "^6.0.0",
         "yaml": "^2.9.0",
-        "smol-toml": "^1.6.1"
+        "smol-toml": "^1.6.1",
+        "@modelcontextprotocol/client": "^2.0.0-alpha.2"
     }
 }

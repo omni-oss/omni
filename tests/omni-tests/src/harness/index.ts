@@ -28,6 +28,8 @@ export {
     sshReachable,
     workspaceMinimalRepo,
 } from "./git-remote";
+export type { ConnectMcpOptions, McpClient } from "./mcp";
+export { connectMcp } from "./mcp";
 export { lines, normalize, normalizeLines } from "./normalize";
 export { findRepoRoot } from "./paths";
 export type {

@@ -3,13 +3,15 @@
     "description": "A TypeScript Package",
     "version": "0.0.0-semantically-released",
     "dependencies": {
+        "@cfworker/json-schema": "^4.1.1",
+        "@modelcontextprotocol/client": "catalog:",
         "@omni-oss/log": "workspace:^",
-        "zod": "catalog:",
+        "@xterm/headless": "catalog:",
         "execa": "catalog:",
         "node-pty": "catalog:",
-        "@xterm/headless": "catalog:",
+        "smol-toml": "catalog:",
         "yaml": "catalog:",
-        "smol-toml": "catalog:"
+        "zod": "catalog:"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "workspace:^",
