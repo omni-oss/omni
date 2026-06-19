@@ -293,8 +293,8 @@ impl ExecutionEventSubscriber for CliSubscriber {
             log::info!(
                 "{}",
                 format!(
-                    "Saved time in total from cached results ({})",
-                    e.elapsed.as_secs_f64()
+                    "Saved time in total from cached results ({:?})",
+                    e.total_time_saved
                 )
                 .gradient(Gradient::Instagram)
                 .bold()
