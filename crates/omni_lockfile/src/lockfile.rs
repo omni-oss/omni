@@ -5,7 +5,7 @@ use std::{
 
 use derive_new::new;
 use maps::map;
-use parking_lot::Mutex;
+use tokio::sync::Mutex;
 use trace::Level;
 use url::Url;
 
@@ -62,7 +62,7 @@ impl Lockfile {
         &self,
         updater_fn: impl FnOnce(&mut LockfileData) -> Result<(), Error>,
     ) -> Result<(), Error> {
-        let mut data = self.data.lock();
+        let mut data = self.data.lock().await;
         (updater_fn)(&mut data)?;
 
         self.is_modified.store(true, Ordering::Relaxed);
@@ -116,7 +116,7 @@ impl Lockfile {
     }
 
     pub async fn get_git_commit(&self, uri: &Url, rev: &str) -> Option<String> {
-        match &*self.data.lock() {
+        match &*self.data.lock().await {
             LockfileData::V1_0_0(v1) => v1
                 .git
                 .get(uri)
@@ -127,7 +127,7 @@ impl Lockfile {
     pub async fn save(&self, sys: &impl LockfileSys) -> Result<(), Error> {
         let is_modified = self.is_modified.load(Ordering::Relaxed);
         if is_modified {
-            let data = self.data.lock();
+            let data = self.data.lock().await;
             omni_file_data_serde::write_async(self.path.as_path(), &*data, sys)
                 .await?;
         }
