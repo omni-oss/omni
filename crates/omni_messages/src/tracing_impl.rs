@@ -158,6 +158,7 @@ mod tests {
             skipped: 0,
             cache_hits: 0,
             elapsed: Duration::from_millis(10),
+            total_time_saved: Duration::ZERO,
         })
         .await;
     }

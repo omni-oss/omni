@@ -83,6 +83,7 @@ pub struct ExecutionCompleteEvent {
     pub skipped: usize,
     pub cache_hits: usize,
     pub elapsed: Duration,
+    pub total_time_saved: Duration,
 }
 
 // ─── Skip reason ─────────────────────────────────────────────────────────────
