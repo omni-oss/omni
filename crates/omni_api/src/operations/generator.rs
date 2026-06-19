@@ -1,9 +1,12 @@
+use either::Either;
 use either::Either::Left;
 use omni_generator_configurations::GeneratorConfiguration;
+use omni_generator_configurations::InputConfigurationExtra;
 use omni_generator_configurations::OmniPath;
 use omni_generator_configurations::OverwriteConfiguration;
 use omni_input_provider::BaseInputConfiguration;
 use omni_input_provider::ConfirmInputConfiguration;
+use omni_input_provider::InputConfiguration;
 use omni_input_provider::InputProvider;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -167,8 +170,12 @@ where
             omni_generator::GenSession::from_disk(session_file.as_path(), &sys)
                 .await?;
         had_existing_session = true;
-        session.restore_targets(&name, &mut target_overrides, false);
-        session.restore_inputs_as_value_bag(&name, &mut pre_exec_values, false);
+        session
+            .restore_targets(&name, &mut target_overrides, false)
+            .await;
+        session
+            .restore_inputs_as_value_bag(&name, &mut pre_exec_values, false)
+            .await;
     }
 
     let generators = get_generators(ctx.as_context(), &sys).await?;
@@ -195,7 +202,7 @@ where
     let mut session_saved = false;
 
     if !req.dry_run
-        && !result.session.is_empty()
+        && !result.session.is_empty().await
         && (!sys.fs_exists_no_err_async(session_file.as_path()).await
             || result
                 .session
@@ -354,4 +361,282 @@ where
     remote_sources.lock().await?;
 
     Ok(configurations)
+}
+
+// ── Generator Inspect types ──────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeneratorInspectResponse {
+    pub name: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub inputs: Vec<GeneratorInputSpec>,
+    pub targets: Vec<GeneratorTargetSpec>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeneratorInputSpec {
+    pub name: String,
+    pub message: String,
+    pub kind: GeneratorInputKind,
+    pub required: bool,
+    pub default: Option<InputDefault>,
+    pub has_dynamic_default: bool,
+    pub options: Vec<InputOption>,
+    pub condition: Option<InputCondition>,
+    pub validators: Vec<InputValidator>,
+    pub remember: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GeneratorInputKind {
+    Confirm,
+    Select,
+    MultiSelect,
+    Text,
+    Password,
+    Float,
+    Integer,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InputDefault {
+    Static { value: StaticInputDefault },
+    Dynamic { expr: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StaticInputDefault {
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    StrList(Vec<String>),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InputCondition {
+    AlwaysHidden,
+    Expression { expr: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InputValidator {
+    pub condition: String,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InputOption {
+    pub label: String,
+    pub description: Option<String>,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeneratorTargetSpec {
+    pub key: String,
+    pub default_path: String,
+}
+
+// ── Generator Inspect handler ─────────────────────────────────────────────────
+
+/// Inspect a generator's full input schema without loading the workspace.
+pub async fn handle_generator_inspect<TSys>(
+    ctx: &Context<TSys>,
+    name: &str,
+) -> eyre::Result<GeneratorInspectResponse>
+where
+    TSys: ContextSys + GeneratorSys + Clone,
+{
+    let sys = ctx.sys().clone();
+    let generators = get_generators(ctx, &sys).await?;
+
+    let generator = generators
+        .iter()
+        .find(|g| g.name == name)
+        .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))?;
+
+    let inputs = generator.inputs.iter().map(translate_input).collect();
+
+    let targets = generator
+        .targets
+        .iter()
+        .map(|(key, path)| GeneratorTargetSpec {
+            key: key.clone(),
+            default_path: omni_path_to_string(path),
+        })
+        .collect();
+
+    Ok(GeneratorInspectResponse {
+        name: generator.name.clone(),
+        display_name: generator.display_name.clone(),
+        description: generator.description.clone(),
+        inputs,
+        targets,
+    })
+}
+
+fn omni_path_to_string(path: &OmniPath) -> String {
+    if path.is_any_rooted() {
+        format!(
+            "@{}/{}",
+            path.root().expect("root should be set"),
+            path.unresolved_path().to_string_lossy()
+        )
+    } else {
+        path.unresolved_path().to_string_lossy().to_string()
+    }
+}
+
+fn translate_input(
+    input: &InputConfiguration<InputConfigurationExtra>,
+) -> GeneratorInputSpec {
+    let name = input.name().to_string();
+    let message = input.message().to_string();
+    let remember = input.extra().remember;
+    let condition = translate_condition(input.condition());
+
+    let (kind, default, options, validators) = match input {
+        InputConfiguration::Confirm { input, .. } => (
+            GeneratorInputKind::Confirm,
+            either_to_default_bool(input.default.as_ref()),
+            vec![],
+            vec![],
+        ),
+        InputConfiguration::Select { input, .. } => (
+            GeneratorInputKind::Select,
+            input.default.as_ref().map(|s| InputDefault::Static {
+                value: StaticInputDefault::Str(s.clone()),
+            }),
+            input.options.iter().map(translate_option).collect(),
+            vec![],
+        ),
+        InputConfiguration::MultiSelect { input, .. } => (
+            GeneratorInputKind::MultiSelect,
+            input.default.as_ref().map(|v| InputDefault::Static {
+                value: StaticInputDefault::StrList(v.clone()),
+            }),
+            input.options.iter().map(translate_option).collect(),
+            vec![],
+        ),
+        InputConfiguration::Text { input, .. } => (
+            GeneratorInputKind::Text,
+            input.default.as_ref().map(|s| InputDefault::Static {
+                value: StaticInputDefault::Str(s.clone()),
+            }),
+            vec![],
+            translate_validators(&input.base.validate),
+        ),
+        InputConfiguration::Password { input, .. } => (
+            GeneratorInputKind::Password,
+            None,
+            vec![],
+            translate_validators(&input.base.validate),
+        ),
+        InputConfiguration::Float { input, .. } => (
+            GeneratorInputKind::Float,
+            either_to_default_float(input.default.as_ref()),
+            vec![],
+            translate_validators(&input.base.validate),
+        ),
+        InputConfiguration::Integer { input, .. } => (
+            GeneratorInputKind::Integer,
+            either_to_default_int(input.default.as_ref()),
+            vec![],
+            translate_validators(&input.base.validate),
+        ),
+    };
+
+    let has_dynamic_default =
+        matches!(&default, Some(InputDefault::Dynamic { .. }));
+    let required = default.is_none()
+        && !matches!(&condition, Some(InputCondition::AlwaysHidden));
+
+    GeneratorInputSpec {
+        name,
+        message,
+        kind,
+        required,
+        default,
+        has_dynamic_default,
+        options,
+        condition,
+        validators,
+        remember,
+    }
+}
+
+fn translate_condition(
+    cond: Option<&Either<bool, String>>,
+) -> Option<InputCondition> {
+    match cond? {
+        Either::Left(true) => None,
+        Either::Left(false) => Some(InputCondition::AlwaysHidden),
+        Either::Right(expr) => {
+            Some(InputCondition::Expression { expr: expr.clone() })
+        }
+    }
+}
+
+fn either_to_default_bool(
+    v: Option<&Either<bool, String>>,
+) -> Option<InputDefault> {
+    Some(match v? {
+        Either::Left(b) => InputDefault::Static {
+            value: StaticInputDefault::Bool(*b),
+        },
+        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
+    })
+}
+
+fn either_to_default_int(
+    v: Option<&Either<i64, String>>,
+) -> Option<InputDefault> {
+    Some(match v? {
+        Either::Left(i) => InputDefault::Static {
+            value: StaticInputDefault::Int(*i),
+        },
+        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
+    })
+}
+
+fn either_to_default_float(
+    v: Option<&Either<f64, String>>,
+) -> Option<InputDefault> {
+    Some(match v? {
+        Either::Left(f) => InputDefault::Static {
+            value: StaticInputDefault::Float(*f),
+        },
+        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
+    })
+}
+
+fn translate_validators(
+    validators: &[omni_input_provider::ValidateConfiguration],
+) -> Vec<InputValidator> {
+    validators
+        .iter()
+        .map(|v| InputValidator {
+            condition: match &v.condition {
+                Either::Left(b) => b.to_string(),
+                Either::Right(expr) => expr.clone(),
+            },
+            error_message: v.error_message.clone(),
+        })
+        .collect()
+}
+
+fn translate_option(
+    opt: &omni_input_provider::OptionConfiguration,
+) -> InputOption {
+    InputOption {
+        label: opt.name.clone(),
+        description: opt.description.clone(),
+        value: opt.value.clone(),
+    }
 }

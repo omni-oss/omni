@@ -24,7 +24,8 @@ use crate::{
         env::{EnvRequest, EnvResponse},
         exec::{ExecRequest, ExecResponse},
         generator::{
-            GeneratorListResponse, GeneratorRunRequest, GeneratorRunResponse,
+            GeneratorInspectResponse, GeneratorListResponse,
+            GeneratorRunRequest, GeneratorRunResponse,
         },
         hash::HashResponse,
         run::{RunRequest, RunResponse},
@@ -470,5 +471,21 @@ where
         let ctx = self.ctx.lock().await;
         crate::operations::generator::handle_generator_list(ctx.as_context())
             .await
+    }
+
+    /// Inspect a generator's full input schema.
+    ///
+    /// Does not require the workspace to be loaded — generator YAML is read
+    /// directly from disk.
+    pub async fn generator_inspect(
+        &self,
+        name: &str,
+    ) -> eyre::Result<GeneratorInspectResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::generator::handle_generator_inspect(
+            ctx.as_context(),
+            name,
+        )
+        .await
     }
 }

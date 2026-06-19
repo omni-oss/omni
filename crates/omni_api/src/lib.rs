@@ -18,8 +18,10 @@ pub use operations::{
     env::{EnvRequest, EnvResponse},
     exec::{ExecRequest, ExecResponse},
     generator::{
-        GeneratorInfo, GeneratorListResponse, GeneratorRunRequest,
-        GeneratorRunResponse,
+        GeneratorInfo, GeneratorInputKind, GeneratorInputSpec,
+        GeneratorInspectResponse, GeneratorListResponse, GeneratorRunRequest,
+        GeneratorRunResponse, GeneratorTargetSpec, InputCondition,
+        InputDefault, InputOption, InputValidator, StaticInputDefault,
     },
     hash::HashResponse,
     run::{RunFilters, RunRequest, RunResponse},
