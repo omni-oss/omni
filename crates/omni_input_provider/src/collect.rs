@@ -29,7 +29,7 @@ pub async fn collect<TExtra: InputExtras>(
     }
 
     for input in inputs {
-        let if_expr = get_if_expression(input);
+        let if_expr = input.condition();
 
         if let Some(if_expr) = if_expr
             && skip(
@@ -42,7 +42,7 @@ pub async fn collect<TExtra: InputExtras>(
             continue;
         }
 
-        let key = get_input_name(input).to_string();
+        let key = input.name().to_string();
         let validators = get_validators(input);
         let pre_exec_value = pre_exec_values.get(&key);
 
@@ -75,11 +75,11 @@ pub async fn collect_one<TExtra: InputExtras>(
         ctx_vals.insert(key, value);
     }
 
-    let if_expr = get_if_expression(input);
+    let if_expr = input.condition();
     let mut pre_exec_values = unordered_map!();
     if let Some(pre_exec_value) = pre_exec_value {
         pre_exec_values
-            .insert(get_input_name(input).to_string(), pre_exec_value.clone());
+            .insert(input.name().to_string(), pre_exec_value.clone());
     }
 
     if let Some(if_expr) = if_expr
@@ -94,7 +94,7 @@ pub async fn collect_one<TExtra: InputExtras>(
     }
 
     let validators = get_validators(input);
-    let key = get_input_name(input).to_string();
+    let key = input.name().to_string();
     let value = get_input_value(
         config,
         &ctx_vals,
@@ -275,21 +275,6 @@ fn get_validators<TExtra: InputExtras>(
     }
 }
 
-fn get_if_expression<TExtra: InputExtras>(
-    input: &InputConfiguration<TExtra>,
-) -> Option<&Either<bool, String>> {
-    let if_expr = match input {
-        InputConfiguration::Confirm { input, .. } => &input.base.r#if,
-        InputConfiguration::Select { input, .. } => &input.base.r#if,
-        InputConfiguration::MultiSelect { input, .. } => &input.base.base.r#if,
-        InputConfiguration::Text { input, .. } => &input.base.base.r#if,
-        InputConfiguration::Password { input, .. } => &input.base.base.r#if,
-        InputConfiguration::Float { input, .. } => &input.base.base.r#if,
-        InputConfiguration::Integer { input, .. } => &input.base.base.r#if,
-    };
-    if_expr.as_ref()
-}
-
 fn skip(
     if_expr: &Either<bool, String>,
     values: &UnorderedMap<String, OwnedValueBag>,
@@ -321,7 +306,7 @@ fn validate_input_configurations<TExtra: InputExtras>(
     let mut seen_names = UnorderedSet::default();
 
     for input in inputs {
-        let name = get_input_name(input);
+        let name = input.name();
 
         if seen_names.contains(&name) {
             return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
@@ -331,20 +316,6 @@ fn validate_input_configurations<TExtra: InputExtras>(
     }
 
     Ok(())
-}
-
-fn get_input_name<TExtra: InputExtras>(
-    input: &InputConfiguration<TExtra>,
-) -> &str {
-    match input {
-        InputConfiguration::Confirm { input, .. } => &input.base.name,
-        InputConfiguration::Select { input, .. } => &input.base.name,
-        InputConfiguration::MultiSelect { input, .. } => &input.base.base.name,
-        InputConfiguration::Text { input, .. } => &input.base.base.name,
-        InputConfiguration::Password { input, .. } => &input.base.base.name,
-        InputConfiguration::Float { input, .. } => &input.base.base.name,
-        InputConfiguration::Integer { input, .. } => &input.base.base.name,
-    }
 }
 
 fn try_parse_bool(value: value_bag::ValueBag<'_>) -> Option<bool> {

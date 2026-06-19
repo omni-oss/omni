@@ -374,6 +374,31 @@ impl<TExtra: InputExtras> InputConfiguration<TExtra> {
         }
     }
 
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Confirm { input, .. } => &input.base.message,
+            Self::Select { input, .. } => &input.base.message,
+            Self::MultiSelect { input, .. } => &input.base.base.message,
+            Self::Text { input, .. } => &input.base.base.message,
+            Self::Password { input, .. } => &input.base.base.message,
+            Self::Float { input, .. } => &input.base.base.message,
+            Self::Integer { input, .. } => &input.base.base.message,
+        }
+    }
+
+    pub fn condition(&self) -> Option<&Either<bool, String>> {
+        let r#if = match self {
+            Self::Confirm { input, .. } => &input.base.r#if,
+            Self::Select { input, .. } => &input.base.r#if,
+            Self::MultiSelect { input, .. } => &input.base.base.r#if,
+            Self::Text { input, .. } => &input.base.base.r#if,
+            Self::Password { input, .. } => &input.base.base.r#if,
+            Self::Float { input, .. } => &input.base.base.r#if,
+            Self::Integer { input, .. } => &input.base.base.r#if,
+        };
+        r#if.as_ref()
+    }
+
     pub fn default_value(&self) -> Option<OwnedValueBag> {
         Some(match self {
             InputConfiguration::Confirm { input, .. } => {
