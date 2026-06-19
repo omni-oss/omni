@@ -132,7 +132,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     ))
     .await?;
 
-    ctx.gen_session.merge(prompted_input_values);
+    ctx.gen_session.merge(prompted_input_values).await;
 
     Ok(())
 }

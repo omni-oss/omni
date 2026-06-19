@@ -1,6 +1,6 @@
 use either::Left;
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{OmniPath, OverwriteConfiguration, Root};
+use omni_messages::GeneratorEventSubscriber;
 use std::{
     borrow::Cow,
     path::{self, Path, PathBuf},
@@ -241,7 +241,9 @@ pub async fn get_target_dir<'a>(
 
         let path = OmniPath::new(path);
 
-        session.set_target(generator, target_name.to_string(), &path);
+        session
+            .set_target(generator, target_name.to_string(), &path)
+            .await;
 
         break Ok(Cow::Owned(path));
     }
@@ -361,7 +363,11 @@ pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
     Cow::Borrowed(path)
 }
 
-pub async fn get_output_path<'a, TExt: AsRef<str>, S: GeneratorEventSubscriber>(
+pub async fn get_output_path<
+    'a,
+    TExt: AsRef<str>,
+    S: GeneratorEventSubscriber,
+>(
     target_name: Option<&'a str>,
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,

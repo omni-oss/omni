@@ -218,19 +218,21 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         })
         .collect::<UnorderedSet<_>>();
 
-    session.set_inputs(
-        r#gen.name.as_str(),
-        values
-            .into_iter()
-            .filter_map(|(k, v)| {
-                if skip.contains(k.as_str()) {
-                    None
-                } else {
-                    Some((k, v))
-                }
-            })
-            .collect(),
-    )?;
+    session
+        .set_inputs(
+            r#gen.name.as_str(),
+            values
+                .into_iter()
+                .filter_map(|(k, v)| {
+                    if skip.contains(k.as_str()) {
+                        None
+                    } else {
+                        Some((k, v))
+                    }
+                })
+                .collect(),
+        )
+        .await?;
 
     Ok(session)
 }
