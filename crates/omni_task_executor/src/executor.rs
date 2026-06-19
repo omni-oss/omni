@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use omni_cache::impls::LocalTaskExecutionCacheStoreError;
 use omni_context::LoadedContext;
 use omni_core::{ProjectGraphError, TaskExecutionGraphError};
@@ -115,6 +117,18 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
 
         let results = pipeline.run().await?;
 
+        let total_time_saved: Duration = results
+            .iter()
+            .filter_map(|r| match r {
+                TaskExecutionResult::Completed {
+                    elapsed,
+                    cache_hit: true,
+                    ..
+                } => Some(*elapsed),
+                _ => None,
+            })
+            .sum();
+
         self.subscriber
             .on_execution_complete(ExecutionCompleteEvent {
                 total: results.len(),
@@ -137,6 +151,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                     })
                     .count(),
                 elapsed: start_time.elapsed(),
+                total_time_saved,
             })
             .await;
 
