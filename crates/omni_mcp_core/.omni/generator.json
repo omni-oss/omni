@@ -1,0 +1,12 @@
+{
+  "crate": {
+    "targets": {},
+    "inputs": {}
+  },
+  "rust-error": {
+    "targets": {
+      "root": "./src"
+    },
+    "inputs": {}
+  }
+}

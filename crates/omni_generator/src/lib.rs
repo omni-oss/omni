@@ -18,6 +18,6 @@ pub use run::*;
 pub use scoping::*;
 pub use script_runner::*;
 pub use sys::*;
-pub use sys_impl::*;
+pub use sys_impl::TransactionSys;
 pub use util_types::*;
 pub use validate::*;

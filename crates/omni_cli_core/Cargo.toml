@@ -110,6 +110,7 @@ omni_git_utils = { workspace = true }
 tempfile = { workspace = true }
 omni_remote_source = { workspace = true }
 omni_api = { workspace = true }
+omni_mcp_core = { workspace = true }
 parking_lot = { workspace = true }
 
 [build-dependencies]

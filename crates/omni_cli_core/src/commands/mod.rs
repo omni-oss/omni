@@ -6,8 +6,10 @@ use completion::CompletionCommand;
 use config::ConfigCommand;
 use env::EnvCommand;
 use exec::ExecCommand;
+use mcp::McpCommand;
 use omni_tracing_subscriber::Level;
 use run::RunCommand;
+use strum::{EnumDiscriminants, EnumIs};
 mod common_args;
 mod common_types;
 mod generator_common_args;
@@ -33,6 +35,7 @@ pub mod generator;
 mod generator_utils;
 pub mod hash;
 pub mod init;
+pub mod mcp;
 pub mod project;
 pub mod run;
 
@@ -162,7 +165,7 @@ impl Default for CliArgs {
     }
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, EnumIs, EnumDiscriminants)]
 #[command(rename_all = "kebab-case", about = "")]
 pub enum CliSubcommands {
     #[command(about = "Output environment variabls values")]
@@ -197,4 +200,7 @@ pub enum CliSubcommands {
 
     #[command(about = "Project related commands")]
     Project(ProjectCommand),
+
+    #[command(about = "Start an MCP server for AI agent integration")]
+    Mcp(McpCommand),
 }

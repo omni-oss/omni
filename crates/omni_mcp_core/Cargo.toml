@@ -1,0 +1,43 @@
+[package]
+name = "omni_mcp_core"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_mcp_core"
+path = "src/lib.rs"
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["dep:tracing", "trace/enabled"]
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+trace = { workspace = true }
+tracing = { workspace = true, optional = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+omni_api = { workspace = true }
+omni_context = { workspace = true }
+omni_messages = { workspace = true }
+omni_task_executor = { workspace = true }
+omni_generator = { workspace = true }
+omni_input_provider = { workspace = true }
+omni_tera = { workspace = true }
+async-trait = { workspace = true }
+value-bag = { workspace = true }
+maps = { workspace = true }
+
+[dev-dependencies]
+test-log = { workspace = true }
+rstest = { workspace = true }
+rstest_reuse = { workspace = true }

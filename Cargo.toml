@@ -123,7 +123,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^2.7.3" }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^1.7.0", features = ["server", "macros"] }
+rmcp = { version = "^1.7.0", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
@@ -160,6 +160,7 @@ bridge_rpc_utils = { path = "crates/bridge_rpc_utils" }
 omni_bridge_test_service = { path = "services/omni_bridge_test_service" }
 omni_messages = { path = "./crates/omni_messages" }
 omni_api = { path = "./crates/omni_api" }
+omni_mcp_core = { path = "crates/omni_mcp_core" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

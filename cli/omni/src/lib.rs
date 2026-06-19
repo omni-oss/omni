@@ -101,6 +101,16 @@ pub async fn run(
             let context = create_ctx()?;
             commands::project::run(cmd, &context).await?;
         }
+        CliSubcommands::Mcp(mcp) => {
+            let context = if let Some(root) = &mcp.root_dir {
+                context::from_args_root_dir_and_sys(
+                    args, root, RealSys, tracing,
+                )?
+            } else {
+                create_ctx()?
+            };
+            commands::mcp::run(mcp, &context).await?;
+        }
     }
 
     Ok(())
@@ -115,7 +125,12 @@ pub async fn main() -> eyre::Result<()> {
 
     let cli = Cli::parse();
 
-    let ws_root_dir = get_root_dir(&RealSys).ok();
+    let ws_root_dir = if cli.subcommand.is_mcp() {
+        None
+    } else {
+        get_root_dir(&RealSys).ok()
+    };
+
     let trace_file_path = cli
         .args
         .file_trace_output

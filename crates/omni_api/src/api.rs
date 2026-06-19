@@ -26,6 +26,7 @@ use crate::{
         generator::{
             GeneratorInspectResponse, GeneratorListResponse,
             GeneratorRunRequest, GeneratorRunResponse,
+            GeneratorValidateInputRequest, GeneratorValidateInputResponse,
         },
         hash::HashResponse,
         run::{RunRequest, RunResponse},
@@ -485,6 +486,23 @@ where
         crate::operations::generator::handle_generator_inspect(
             ctx.as_context(),
             name,
+        )
+        .await
+    }
+
+    /// Validate a set of input values against a generator's schema.
+    ///
+    /// Does not run the generator. Returns a list of validation errors (missing
+    /// required fields, failed validator expressions) so that callers can give
+    /// feedback before attempting a full run.
+    pub async fn generator_validate_input(
+        &self,
+        req: GeneratorValidateInputRequest,
+    ) -> eyre::Result<GeneratorValidateInputResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::generator::handle_generator_validate_input(
+            ctx.as_context(),
+            req,
         )
         .await
     }

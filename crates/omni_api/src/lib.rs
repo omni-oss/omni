@@ -20,8 +20,10 @@ pub use operations::{
     generator::{
         GeneratorInfo, GeneratorInputKind, GeneratorInputSpec,
         GeneratorInspectResponse, GeneratorListResponse, GeneratorRunRequest,
-        GeneratorRunResponse, GeneratorTargetSpec, InputCondition,
-        InputDefault, InputOption, InputValidator, StaticInputDefault,
+        GeneratorRunResponse, GeneratorTargetSpec,
+        GeneratorValidateInputRequest, GeneratorValidateInputResponse,
+        InputCondition, InputDefault, InputFieldError, InputOption,
+        InputValidator, StaticInputDefault,
     },
     hash::HashResponse,
     run::{RunFilters, RunRequest, RunResponse},

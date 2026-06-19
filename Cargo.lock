@@ -6471,6 +6471,7 @@ dependencies = [
  "omni_git_utils",
  "omni_hasher",
  "omni_input_provider",
+ "omni_mcp_core",
  "omni_messages",
  "omni_process",
  "omni_prompt",
@@ -6801,6 +6802,7 @@ dependencies = [
  "pathdiff",
  "regex",
  "requestty",
+ "schemars",
  "serde",
  "serde_json",
  "sets",
@@ -6944,6 +6946,36 @@ dependencies = [
  "trace",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "omni_mcp_core"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "log",
+ "maps",
+ "omni_api",
+ "omni_context",
+ "omni_generator",
+ "omni_input_provider",
+ "omni_messages",
+ "omni_task_executor",
+ "omni_tera",
+ "rmcp",
+ "rstest",
+ "rstest_reuse",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "tracing",
+ "value-bag",
 ]
 
 [[package]]
@@ -8746,6 +8778,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
+name = "rmcp"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0810a9f717d9828f475fe1f629f4c305c8464b7f496c3a854b58d29e65f4058e"
+dependencies = [
+ "async-trait",
+ "base64",
+ "chrono",
+ "futures 0.3.32",
+ "pastey",
+ "pin-project-lite",
+ "rmcp-macros",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "rmcp-macros"
+version = "1.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aefac48c364756e97f04c0401ba3231e8607882c7c1d92da0437dc16307904d"
+dependencies = [
+ "darling 0.23.0",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "rmp"
 version = "0.8.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9093,6 +9160,7 @@ version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "either",
  "indexmap",

@@ -445,6 +445,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_mcp_core]
+path = "crates/omni_mcp_core"
+include = [
+    "crates/omni_mcp_core/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

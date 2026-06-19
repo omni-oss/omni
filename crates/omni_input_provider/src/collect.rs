@@ -387,3 +387,696 @@ impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
         Ok(())
     }
 }
+
+// ── Validate ──────────────────────────────────────────────────────────────────
+
+/// A validation error for a single named input field.
+#[derive(Debug)]
+pub struct ValidationError {
+    pub input_name: String,
+    pub message: String,
+}
+
+/// The outcome of a [`validate`] call.
+pub struct ValidationReport {
+    pub errors: Vec<ValidationError>,
+}
+
+impl ValidationReport {
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+/// Validate a set of pre-supplied input values against an input schema without
+/// collecting anything interactively.
+///
+/// For each active (non-skipped) input:
+/// - emits a [`ValidationError`] when the value is missing and no default is
+///   available (accounting for `config.use_defaults`)
+/// - type-checks numeric / boolean inputs
+/// - runs all Tera-based validator expressions via [`validate_value`]
+///
+/// Infrastructure errors (e.g. a malformed Tera template in an `if` condition)
+/// are returned as `Err`.
+pub fn validate<TExtra: InputExtras>(
+    inputs: &[InputConfiguration<TExtra>],
+    input_values: &UnorderedMap<String, OwnedValueBag>,
+    context_values: &UnorderedMap<String, OwnedValueBag>,
+    config: &CollectionConfig<'_>,
+) -> Result<ValidationReport, Error> {
+    validate_input_configurations(inputs)?;
+
+    let mut ctx_vals = omni_tera::Context::new();
+    for (key, value) in context_values {
+        ctx_vals.insert(key, value);
+    }
+
+    let mut errors = Vec::new();
+
+    for input in inputs {
+        let name = input.name();
+
+        if let Some(if_expr) = input.condition()
+            && skip(
+                if_expr,
+                input_values,
+                &ctx_vals,
+                config.if_expressions_root_property,
+            )?
+        {
+            continue;
+        }
+
+        let value = input_values.get(name);
+        let has_default =
+            config.use_defaults && input.default_value().is_some();
+
+        if value.is_none() && !has_default {
+            errors.push(ValidationError {
+                input_name: name.to_string(),
+                message: format!("required input '{name}' is missing"),
+            });
+            continue;
+        }
+
+        if let Some(value) = value {
+            let typed_value = match input.discriminant() {
+                InputType::Confirm => try_parse_bool(value.by_ref())
+                    .ok_or_else(|| {
+                        make_input_type_error(name, value.by_ref(), "boolean")
+                    })
+                    .map(|b| ValueBag::capture_serde1(&b).to_owned()),
+                InputType::Float => try_parse_float(value.by_ref())
+                    .ok_or_else(|| {
+                        make_input_type_error(name, value.by_ref(), "float")
+                    })
+                    .map(|f| ValueBag::capture_serde1(&f).to_owned()),
+                InputType::Integer => try_parse_int(value.by_ref())
+                    .ok_or_else(|| {
+                        make_input_type_error(name, value.by_ref(), "integer")
+                    })
+                    .map(|i| ValueBag::capture_serde1(&i).to_owned()),
+                _ => Ok(value.clone()),
+            };
+
+            match typed_value {
+                Err(e) => errors.push(ValidationError {
+                    input_name: name.to_string(),
+                    message: e.to_string(),
+                }),
+                Ok(typed) => {
+                    if let Err(e) = validate_value(
+                        name,
+                        &typed,
+                        &ctx_vals,
+                        get_validators(input),
+                        config.validation_value_name,
+                    ) {
+                        errors.push(ValidationError {
+                            input_name: name.to_string(),
+                            message: e.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ValidationReport { errors })
+}
+
+#[cfg(test)]
+mod tests {
+    use either::Either;
+    use maps::UnorderedMap;
+    use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+    use value_bag::{OwnedValueBag, ValueBag};
+
+    use super::{collect, collect_one, validate};
+    use crate::{
+        configuration::{
+            BaseInputConfiguration, CollectionConfig,
+            ConfirmInputConfiguration, InputConfiguration,
+            IntegerInputConfiguration, TextInputConfiguration,
+            ValidateConfiguration, ValidatedInputConfiguration,
+        },
+        scripted::ScriptedInputProvider,
+    };
+
+    /// Minimal `TExtra` for tests — satisfies `InputExtras` without a full derive.
+    #[derive(
+        Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema,
+    )]
+    struct NoExtra;
+
+    impl garde::Validate for NoExtra {
+        type Context = ();
+
+        fn validate_into(
+            &self,
+            _ctx: &Self::Context,
+            _parent: &mut dyn FnMut() -> garde::Path,
+            _report: &mut garde::Report,
+        ) {
+        }
+    }
+
+    // ── input builders ────────────────────────────────────────────────────────
+
+    fn text(name: &'static str) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Text {
+            input: TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(name, name, None),
+                    vec![],
+                ),
+                None::<String>,
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    fn text_with_default(
+        name: &'static str,
+        default: &'static str,
+    ) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Text {
+            input: TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(name, name, None),
+                    vec![],
+                ),
+                Some(default.to_string()),
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    fn text_with_condition(
+        name: &'static str,
+        condition: Option<Either<bool, String>>,
+    ) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Text {
+            input: TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(name, name, condition),
+                    vec![],
+                ),
+                None::<String>,
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    fn text_with_validator(
+        name: &'static str,
+        expr: &'static str,
+    ) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Text {
+            input: TextInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(name, name, None),
+                    vec![ValidateConfiguration::new(
+                        Either::<bool, String>::Right(expr.to_string()),
+                        Some("validation failed".to_string()),
+                    )],
+                ),
+                None::<String>,
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    fn confirm(name: &'static str) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Confirm {
+            input: ConfirmInputConfiguration::new(
+                BaseInputConfiguration::new(name, name, None),
+                None::<Either<bool, String>>,
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    fn integer(name: &'static str) -> InputConfiguration<NoExtra> {
+        InputConfiguration::Integer {
+            input: IntegerInputConfiguration::new(
+                ValidatedInputConfiguration::new(
+                    BaseInputConfiguration::new(name, name, None),
+                    vec![],
+                ),
+                None::<Either<i64, String>>,
+            ),
+            extra: NoExtra,
+        }
+    }
+
+    // ── value / map helpers ───────────────────────────────────────────────────
+
+    fn str_val(s: &str) -> OwnedValueBag {
+        ValueBag::from_serde1(&s).to_owned()
+    }
+
+    fn bool_val(b: bool) -> OwnedValueBag {
+        ValueBag::from_serde1(&b).to_owned()
+    }
+
+    fn int_val(i: i64) -> OwnedValueBag {
+        ValueBag::from_serde1(&i).to_owned()
+    }
+
+    fn one(
+        name: &str,
+        val: OwnedValueBag,
+    ) -> UnorderedMap<String, OwnedValueBag> {
+        let mut m = UnorderedMap::default();
+        m.insert(name.to_string(), val);
+        m
+    }
+
+    fn cfg(use_defaults: bool) -> CollectionConfig<'static> {
+        CollectionConfig {
+            use_defaults,
+            ..Default::default()
+        }
+    }
+
+    fn scripted(answers: &[(&str, &str)]) -> ScriptedInputProvider {
+        ScriptedInputProvider::new(answers.iter().copied())
+    }
+
+    fn empty() -> UnorderedMap<String, OwnedValueBag> {
+        Default::default()
+    }
+
+    /// Serialize an `OwnedValueBag` to `serde_json::Value` for assertions.
+    fn jv(v: &OwnedValueBag) -> serde_json::Value {
+        serde_json::to_value(v).expect("OwnedValueBag must serialize to JSON")
+    }
+
+    // ── validate ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn missing_required_field_produces_error() {
+        let inputs = [text("name")];
+        let report =
+            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors.len(), 1);
+        assert_eq!(report.errors[0].input_name, "name");
+    }
+
+    #[test]
+    fn provided_required_field_is_valid() {
+        let inputs = [text("name")];
+        let values = one("name", str_val("Alice"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn defaulted_field_not_required_when_use_defaults_true() {
+        let inputs = [text_with_default("env", "development")];
+        let report = validate(&inputs, &empty(), &empty(), &cfg(true)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn defaulted_field_required_when_use_defaults_false() {
+        let inputs = [text_with_default("env", "development")];
+        let report =
+            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors[0].input_name, "env");
+    }
+
+    #[test]
+    fn always_hidden_field_is_never_required() {
+        let inputs = [text_with_condition("secret", Some(Either::Left(false)))];
+        let report =
+            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn conditional_field_skipped_when_tera_condition_is_false() {
+        let inputs = [
+            text("kind"),
+            text_with_condition(
+                "extra",
+                Some(Either::Right(
+                    "{{ inputs.kind == 'advanced' }}".to_string(),
+                )),
+            ),
+        ];
+        let values = one("kind", str_val("basic"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn conditional_field_required_when_tera_condition_is_true() {
+        let inputs = [
+            text("kind"),
+            text_with_condition(
+                "extra",
+                Some(Either::Right(
+                    "{{ inputs.kind == 'advanced' }}".to_string(),
+                )),
+            ),
+        ];
+        let values = one("kind", str_val("advanced"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors[0].input_name, "extra");
+    }
+
+    #[test]
+    fn confirm_rejects_non_bool_string() {
+        let inputs = [confirm("enabled")];
+        let values = one("enabled", str_val("not-a-bool"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors[0].input_name, "enabled");
+    }
+
+    #[test]
+    fn confirm_accepts_bool_value() {
+        let inputs = [confirm("enabled")];
+        let values = one("enabled", bool_val(true));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn integer_rejects_non_numeric_string() {
+        let inputs = [integer("count")];
+        let values = one("count", str_val("not-a-number"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors[0].input_name, "count");
+    }
+
+    #[test]
+    fn integer_accepts_integer_value() {
+        let inputs = [integer("count")];
+        let values = one("count", int_val(42));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn validator_expression_rejects_short_value() {
+        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
+        let values = one("name", str_val("ab"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(!report.is_valid());
+        assert_eq!(report.errors[0].input_name, "name");
+    }
+
+    #[test]
+    fn validator_expression_accepts_valid_value() {
+        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
+        let values = one("name", str_val("Alice"));
+        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn all_errors_collected_not_just_first() {
+        let inputs = [text("a"), text("b"), text("c")];
+        let report =
+            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
+        assert_eq!(report.errors.len(), 3);
+    }
+
+    #[test]
+    fn duplicate_input_names_is_infrastructure_error() {
+        let inputs = [text("name"), text("name")];
+        let result = validate(&inputs, &empty(), &empty(), &cfg(false));
+        assert!(result.is_err());
+    }
+
+    // ── collect ───────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn collect_text_via_provider() {
+        let inputs = [text("name")];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("name", "Alice")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("name").unwrap()), json!("Alice"));
+    }
+
+    #[tokio::test]
+    async fn collect_pre_exec_value_shadows_provider() {
+        // Provider has no answer for "name" — would error if called.
+        let inputs = [text("name")];
+        let pre_exec = one("name", str_val("Bob"));
+        let result =
+            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("name").unwrap()), json!("Bob"));
+    }
+
+    #[tokio::test]
+    async fn collect_uses_default_when_use_defaults_true() {
+        let inputs = [text_with_default("env", "development")];
+        let result =
+            collect(&inputs, &empty(), &empty(), &cfg(true), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("env").unwrap()), json!("development"));
+    }
+
+    #[tokio::test]
+    async fn collect_ignores_default_when_use_defaults_false() {
+        let inputs = [text_with_default("env", "development")];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("env", "production")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("env").unwrap()), json!("production"));
+    }
+
+    #[tokio::test]
+    async fn collect_skips_always_hidden_field() {
+        let inputs = [
+            text("visible"),
+            text_with_condition("hidden", Some(Either::Left(false))),
+        ];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("visible", "yes")]),
+        )
+        .await
+        .unwrap();
+        assert!(result.get("visible").is_some());
+        assert!(result.get("hidden").is_none());
+    }
+
+    #[tokio::test]
+    async fn collect_skips_conditional_field_when_condition_false() {
+        // "extra" condition references the already-collected "kind" value.
+        let inputs = [
+            text("kind"),
+            text_with_condition(
+                "extra",
+                Some(Either::Right(
+                    "{{ inputs.kind == 'advanced' }}".to_string(),
+                )),
+            ),
+        ];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("kind", "basic")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("kind").unwrap()), json!("basic"));
+        assert!(result.get("extra").is_none());
+    }
+
+    #[tokio::test]
+    async fn collect_includes_conditional_field_when_condition_true() {
+        let inputs = [
+            text("kind"),
+            text_with_condition(
+                "extra",
+                Some(Either::Right(
+                    "{{ inputs.kind == 'advanced' }}".to_string(),
+                )),
+            ),
+        ];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("kind", "advanced"), ("extra", "bonus")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("extra").unwrap()), json!("bonus"));
+    }
+
+    #[tokio::test]
+    async fn collect_coerces_string_pre_exec_to_bool() {
+        let inputs = [confirm("enabled")];
+        let pre_exec = one("enabled", str_val("true"));
+        let result =
+            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("enabled").unwrap()), json!(true));
+    }
+
+    #[tokio::test]
+    async fn collect_coerces_string_pre_exec_to_integer() {
+        let inputs = [integer("count")];
+        let pre_exec = one("count", str_val("42"));
+        let result =
+            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("count").unwrap()), json!(42));
+    }
+
+    #[tokio::test]
+    async fn collect_falls_back_to_provider_when_pre_exec_fails_validation() {
+        // "ab" (length 2) fails the validator; collect() re-asks via provider.
+        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
+        let pre_exec = one("name", str_val("ab"));
+        let result = collect(
+            &inputs,
+            &pre_exec,
+            &empty(),
+            &cfg(false),
+            &scripted(&[("name", "Alice")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("name").unwrap()), json!("Alice"));
+    }
+
+    #[tokio::test]
+    async fn collect_expands_default_template_using_context() {
+        let inputs = [text_with_default("greeting", "Hello {{ name }}")];
+        let context = one("name", str_val("World"));
+        let result =
+            collect(&inputs, &empty(), &context, &cfg(true), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("greeting").unwrap()), json!("Hello World"));
+    }
+
+    #[tokio::test]
+    async fn collect_all_inputs_present_in_result() {
+        let inputs = [text("a"), text("b"), text("c")];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("a", "1"), ("b", "2"), ("c", "3")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("a").unwrap()), json!("1"));
+        assert_eq!(jv(result.get("b").unwrap()), json!("2"));
+        assert_eq!(jv(result.get("c").unwrap()), json!("3"));
+    }
+
+    #[tokio::test]
+    async fn collect_duplicate_input_names_returns_error() {
+        let inputs = [text("x"), text("x")];
+        let result = collect(
+            &inputs,
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("x", "v")]),
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    // ── collect_one ───────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn collect_one_prompts_provider_for_active_input() {
+        let input = text("name");
+        let result = collect_one(
+            &input,
+            None,
+            &empty(),
+            &cfg(false),
+            &scripted(&[("name", "Alice")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.as_ref().unwrap()), json!("Alice"));
+    }
+
+    #[tokio::test]
+    async fn collect_one_returns_none_for_always_hidden_input() {
+        let input = text_with_condition("secret", Some(Either::Left(false)));
+        let result =
+            collect_one(&input, None, &empty(), &cfg(false), &scripted(&[]))
+                .await
+                .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn collect_one_uses_pre_exec_value() {
+        let input = text("name");
+        let pre = str_val("Bob");
+        let result = collect_one(
+            &input,
+            Some(&pre),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.as_ref().unwrap()), json!("Bob"));
+    }
+
+    #[tokio::test]
+    async fn collect_one_returns_some_when_condition_is_always_true() {
+        let input = text_with_condition("label", Some(Either::Left(true)));
+        let result = collect_one(
+            &input,
+            None,
+            &empty(),
+            &cfg(false),
+            &scripted(&[("label", "visible")]),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_some());
+        assert_eq!(jv(result.as_ref().unwrap()), json!("visible"));
+    }
+}

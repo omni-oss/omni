@@ -37,3 +37,4 @@ dependencies:
   - clap_declspec
   - clap_utils
   - js_runtime
+  - omni_mcp_core

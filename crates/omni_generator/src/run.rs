@@ -1,4 +1,7 @@
-use std::{borrow::Cow, path::Path};
+use std::{
+    borrow::Cow,
+    path::{Path, PathBuf},
+};
 
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
@@ -9,6 +12,7 @@ use omni_messages::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
     NoopSubscriber,
 };
+use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -17,7 +21,7 @@ use crate::{
     error::{Error, ErrorInner},
     execute_actions::{ExecuteActionsArgs, execute_actions},
     gen_session::GenSession,
-    sys_impl::TransactionSys,
+    sys_impl::{self, PendingActionsVisitor, TransactionSys},
     utils::{expand_json_value, get_tera_context},
 };
 
@@ -41,6 +45,7 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
 
 pub struct GeneratorRunResult {
     pub session: GenSession,
+    pub actions: Vec<Action>,
 }
 
 pub async fn run_named<'a, S: GeneratorEventSubscriber>(
@@ -103,6 +108,32 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
 
     let session = result?;
 
+    let actions = {
+        struct InferActionsVisitor {
+            actions: Vec<Action>,
+        }
+        impl<TSys: GeneratorSys> PendingActionsVisitor<TSys> for InferActionsVisitor {
+            type Error = eyre::Report;
+
+            async fn visit_action(
+                &mut self,
+                action: &sys_impl::Action,
+                sys: &TSys,
+            ) -> Result<(), Self::Error> {
+                if let Some(a) = Action::infer_from(action, sys).await? {
+                    self.actions.push(a);
+                }
+                Ok(())
+            }
+        }
+
+        let mut visitor = InferActionsVisitor {
+            actions: Vec::new(),
+        };
+        tx.visit_pending_actions(&mut visitor).await?;
+        visitor.actions
+    };
+
     if !config.dry_run {
         tx.commit().await?;
     }
@@ -114,7 +145,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         })
         .await;
 
-    Ok(GeneratorRunResult { session })
+    Ok(GeneratorRunResult { session, actions })
 }
 
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
@@ -255,4 +286,64 @@ fn expand_vars(
     }
 
     Ok(result)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+pub enum Action {
+    CreateFile { path: PathBuf },
+    ModifyFile { path: PathBuf },
+    RemoveFile { path: PathBuf },
+    CreateDir { path: PathBuf },
+    RemoveDir { path: PathBuf },
+    RemoveDirAll { path: PathBuf },
+    Rename { from: PathBuf, to: PathBuf },
+    Copy { from: PathBuf, to: PathBuf },
+}
+
+impl Action {
+    pub async fn infer_from<'a, TSys: GeneratorSys>(
+        action: &'a sys_impl::Action,
+        sys: &'a TSys,
+    ) -> eyre::Result<Option<Self>> {
+        Ok(match action {
+            sys_impl::Action::Write { path, .. } => {
+                let exists = sys.fs_exists_no_err_async(path).await;
+                if exists {
+                    Some(Self::ModifyFile { path: path.clone() })
+                } else {
+                    Some(Self::CreateFile { path: path.clone() })
+                }
+            }
+            sys_impl::Action::Append { path, .. } => {
+                let exists = sys.fs_exists_no_err_async(path).await;
+                if exists {
+                    Some(Self::ModifyFile { path: path.clone() })
+                } else {
+                    Some(Self::CreateFile { path: path.clone() })
+                }
+            }
+            sys_impl::Action::CreateDir { path, .. } => {
+                Some(Self::CreateDir { path: path.clone() })
+            }
+            sys_impl::Action::RemoveFile { path } => {
+                Some(Self::RemoveFile { path: path.clone() })
+            }
+            sys_impl::Action::RemoveDir { path } => {
+                Some(Self::RemoveDir { path: path.clone() })
+            }
+            sys_impl::Action::RemoveDirAll { path } => {
+                Some(Self::RemoveDirAll { path: path.clone() })
+            }
+            sys_impl::Action::Rename { from, to } => Some(Self::Rename {
+                from: from.clone(),
+                to: to.clone(),
+            }),
+            sys_impl::Action::Copy { from, to } => Some(Self::Copy {
+                from: from.clone(),
+                to: to.clone(),
+            }),
+            sys_impl::Action::SetCurrentDir { .. } => None,
+        })
+    }
 }

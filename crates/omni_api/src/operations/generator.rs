@@ -1,5 +1,6 @@
 use either::Either;
 use either::Either::Left;
+use omni_generator::Action;
 use omni_generator_configurations::GeneratorConfiguration;
 use omni_generator_configurations::InputConfigurationExtra;
 use omni_generator_configurations::OmniPath;
@@ -57,8 +58,8 @@ pub struct GeneratorRunRequest {
 /// Response from a `generator_run` call.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeneratorRunResponse {
-    /// Files written to disk (empty for dry runs).
-    pub files_created: Vec<PathBuf>,
+    /// Actions done by the generator (empty for dry runs).
+    pub actions: Vec<Action>,
     /// `true` if the session was saved to disk.
     pub session_saved: bool,
 }
@@ -222,10 +223,8 @@ where
         session_saved = true;
     }
 
-    // The generator doesn't currently surface a per-file list in its response;
-    // the session tracks targets rather than individual files. Return empty for now.
     Ok(GeneratorRunResponse {
-        files_created: vec![],
+        actions: result.actions,
         session_saved,
     })
 }
@@ -639,4 +638,77 @@ fn translate_option(
         description: opt.description.clone(),
         value: opt.value.clone(),
     }
+}
+
+// ── Validate Input types ──────────────────────────────────────────────────────
+
+/// Request to validate a set of input values against a generator's schema.
+#[derive(Debug)]
+pub struct GeneratorValidateInputRequest {
+    pub name: String,
+    pub input_values: UnorderedMap<String, OwnedValueBag>,
+    /// When `true`, inputs that have a default are not flagged as missing.
+    /// Mirrors the behaviour of `generator_run`'s `use_defaults` flag.
+    pub use_defaults: bool,
+}
+
+/// Response from a `generator_validate_input` call.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GeneratorValidateInputResponse {
+    /// `true` when `errors` is empty.
+    pub valid: bool,
+    pub errors: Vec<InputFieldError>,
+}
+
+/// A validation error for a single named input field.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InputFieldError {
+    pub input_name: String,
+    pub message: String,
+}
+
+// ── Validate Input handler ────────────────────────────────────────────────────
+
+/// Validate a set of input values against a generator's schema without running it.
+///
+/// Delegates to [`omni_input_provider::validate`] which reuses the same
+/// condition evaluation and validator expression logic as interactive collection.
+pub async fn handle_generator_validate_input<TSys>(
+    ctx: &Context<TSys>,
+    req: GeneratorValidateInputRequest,
+) -> eyre::Result<GeneratorValidateInputResponse>
+where
+    TSys: ContextSys + GeneratorSys + Clone,
+{
+    let sys = ctx.sys().clone();
+    let generators = get_generators(ctx, &sys).await?;
+
+    let generator = generators
+        .iter()
+        .find(|g| g.name == req.name)
+        .ok_or_else(|| eyre::eyre!("generator '{}' not found", req.name))?;
+
+    let config = omni_input_provider::CollectionConfig {
+        use_defaults: req.use_defaults,
+        ..Default::default()
+    };
+
+    let report = omni_input_provider::validate(
+        &generator.inputs,
+        &req.input_values,
+        &Default::default(),
+        &config,
+    )?;
+
+    Ok(GeneratorValidateInputResponse {
+        valid: report.is_valid(),
+        errors: report
+            .errors
+            .into_iter()
+            .map(|e| InputFieldError {
+                input_name: e.input_name,
+                message: e.message,
+            })
+            .collect(),
+    })
 }

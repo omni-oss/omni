@@ -63,7 +63,7 @@ pub struct Checkpoint(u64);
 
 /// A single buffered mutating action.
 #[derive(Clone, Debug)]
-enum Action {
+pub enum Action {
     Write {
         path: PathBuf,
         data: Vec<u8>,
@@ -98,7 +98,6 @@ enum Action {
     },
 }
 
-/// The mutable, transactional state shared between every clone of a
 /// [`TransactionSys`].
 #[derive(Default)]
 struct State {
@@ -136,15 +135,50 @@ struct State {
 /// buffered view.
 #[derive(Clone)]
 pub struct TransactionSys<S = RealSys> {
-    real: Arc<S>,
+    wrapped_sys: Arc<S>,
     state: Arc<Mutex<State>>,
+}
+
+/// Visitor over the buffered (uncommitted) actions of a [`TransactionSys`].
+///
+/// Implement this trait to inspect each [`Action`] in the pending log without
+/// committing it. See [`TransactionSys::visit_pending_actions`].
+#[allow(async_fn_in_trait)]
+pub trait PendingActionsVisitor<S> {
+    type Error: Send + Sync + 'static;
+
+    /// Called once per buffered action, in recording order.
+    ///
+    /// Return `Err` to abort traversal and propagate the error.
+    async fn visit_action(
+        &mut self,
+        action: &Action,
+        sys: &S,
+    ) -> Result<(), Self::Error>;
+}
+
+/// Blanket impl: any `async |action, sys| -> eyre::Result<()>` closure works
+/// as a [`PendingActionsVisitor`].
+impl<S, F> PendingActionsVisitor<S> for F
+where
+    F: for<'a> AsyncFnMut(&'a Action, &'a S) -> eyre::Result<()>,
+{
+    type Error = eyre::Report;
+
+    async fn visit_action(
+        &mut self,
+        action: &Action,
+        sys: &S,
+    ) -> eyre::Result<()> {
+        self(action, sys).await
+    }
 }
 
 impl<S: GeneratorSys> TransactionSys<S> {
     /// Creates a new, empty transactional overlay over `real`.
     pub fn new(real: S) -> Self {
         Self {
-            real: Arc::new(real),
+            wrapped_sys: Arc::new(real),
             state: Arc::new(Mutex::new(State::default())),
         }
     }
@@ -165,8 +199,26 @@ impl<S: GeneratorSys> TransactionSys<S> {
     }
 
     /// Returns the number of buffered (uncommitted) actions.
-    pub async fn pending_actions(&self) -> usize {
+    pub async fn pending_actions_count(&self) -> usize {
         self.state.lock().await.actions.len()
+    }
+
+    pub async fn has_pending_actions(&self) -> bool {
+        !self.state.lock().await.actions.is_empty()
+    }
+
+    pub async fn visit_pending_actions<V>(
+        &self,
+        visitor: &mut V,
+    ) -> Result<(), V::Error>
+    where
+        V: PendingActionsVisitor<S>,
+    {
+        let st = self.state.lock().await;
+        for action in &st.actions {
+            visitor.visit_action(action, &*self.wrapped_sys).await?;
+        }
+        Ok(())
     }
 
     /// Commits the innermost open transaction.
@@ -205,7 +257,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             actions
         };
 
-        flush_to_real(&*self.real, &actions).await
+        flush_to_real(&*self.wrapped_sys, &actions).await
     }
 
     /// Rolls back the innermost open transaction, discarding every action
@@ -223,7 +275,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         );
         st.actions.truncate(start);
         st.checkpoints.retain(|(_, len)| *len <= start);
-        rebuild(&mut st, &*self.real).await;
+        rebuild(&mut st, &*self.wrapped_sys).await;
         Ok(())
     }
 
@@ -245,7 +297,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             actions
         };
 
-        flush_to_real(&*self.real, &actions).await
+        flush_to_real(&*self.wrapped_sys, &actions).await
     }
 
     /// Records a checkpoint at the current position in the action log.
@@ -286,7 +338,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         st.checkpoints.truncate(pos + 1);
         // Drop any transactions that were opened after this checkpoint.
         st.tx_stack.retain(|start| *start <= len);
-        rebuild(&mut st, &*self.real).await;
+        rebuild(&mut st, &*self.wrapped_sys).await;
         Ok(())
     }
 }
@@ -311,7 +363,7 @@ impl<S: GeneratorSys> BaseFsReadAsync for TransactionSys<S> {
             return Err(not_found(&cp));
         }
 
-        let content = self.real.base_fs_read_async(&cp).await?;
+        let content = self.wrapped_sys.base_fs_read_async(&cp).await?;
 
         // Mirror the freshly fetched content into the overlay so subsequent
         // reads and mutations are observable. This is *not* logged as an
@@ -599,7 +651,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
         }
 
         let result = self
-            .real
+            .wrapped_sys
             .base_fs_metadata_async(&cp)
             .await
             .map(|m| OwnedMetadata::capture(&m))?;
@@ -629,7 +681,7 @@ impl<S: GeneratorSys> BaseFsMetadataAsync for TransactionSys<S> {
             return Err(not_found(&cp));
         }
 
-        self.real
+        self.wrapped_sys
             .base_fs_symlink_metadata_async(&cp)
             .await
             .map(|m| OwnedMetadata::capture(&m))
@@ -658,7 +710,7 @@ impl<S: GeneratorSys> BaseFsReadDirAsync for TransactionSys<S> {
             }
         }
 
-        match self.real.base_fs_read_dir_async(&cp).await {
+        match self.wrapped_sys.base_fs_read_dir_async(&cp).await {
             Ok(es) => {
                 for entry in es {
                     if !is_shadowed(&st.deleted, &entry) {
@@ -688,7 +740,7 @@ impl<S: GeneratorSys> EnvCurrentDirAsync for TransactionSys<S> {
         if let Some(cwd) = self.state.lock().await.cwd.clone() {
             return Ok(cwd);
         }
-        self.real.env_current_dir_async().await
+        self.wrapped_sys.env_current_dir_async().await
     }
 }
 
@@ -709,11 +761,11 @@ impl<S: GeneratorSys> BaseEnvSetCurrentDirAsync for TransactionSys<S> {
 
 impl<S: GeneratorSys> EnvVars for TransactionSys<S> {
     fn env_vars(&self) -> std::env::Vars {
-        self.real.env_vars()
+        self.wrapped_sys.env_vars()
     }
 
     fn env_vars_os(&self) -> std::env::VarsOs {
-        self.real.env_vars_os()
+        self.wrapped_sys.env_vars_os()
     }
 }
 
@@ -764,7 +816,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
         let override_cwd = self.state.lock().await.cwd.clone();
         let base = match override_cwd {
             Some(base) => base,
-            None => match self.real.env_current_dir_async().await {
+            None => match self.wrapped_sys.env_current_dir_async().await {
                 Ok(cwd) => cwd,
                 // If even the real cwd is unavailable, fall back to normalizing
                 // the relative path as-is and let the real system resolve it.
@@ -783,7 +835,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             &st.overlay,
             &mut st.deleted,
             &mut st.written,
-            &*self.real,
+            &*self.wrapped_sys,
             &action,
         )
         .await?;
@@ -800,7 +852,7 @@ impl<S: GeneratorSys> TransactionSys<S> {
             &st.overlay,
             &mut st.deleted,
             &mut st.written,
-            &*self.real,
+            &*self.wrapped_sys,
             &action,
         )
         .await?;
@@ -1334,13 +1386,13 @@ mod tests {
         );
         // ...but not yet on the real file system.
         assert!(!path.exists());
-        assert_eq!(sys.pending_actions().await, 1);
+        assert_eq!(sys.pending_actions_count().await, 1);
 
         sys.commit().await.unwrap();
 
         assert!(path.exists());
         assert_eq!(std::fs::read(&path).unwrap(), b"hello");
-        assert_eq!(sys.pending_actions().await, 0);
+        assert_eq!(sys.pending_actions_count().await, 0);
     }
 
     #[tokio::test]
@@ -1857,7 +1909,7 @@ mod tests {
         sys.rollback_transaction().await.unwrap();
 
         assert!(!sys.fs_exists_async(&path).await.unwrap());
-        assert_eq!(sys.pending_actions().await, 0);
+        assert_eq!(sys.pending_actions_count().await, 0);
         assert!(!path.exists());
     }
 
@@ -1934,13 +1986,13 @@ mod tests {
 
         assert!(sys.fs_exists_async(&a).await.unwrap());
         assert!(!sys.fs_exists_async(&b).await.unwrap());
-        assert_eq!(sys.pending_actions().await, 1);
+        assert_eq!(sys.pending_actions_count().await, 1);
 
         // The checkpoint remains usable for another rollback.
         sys.fs_write_async(&b, b"b2").await.unwrap();
         sys.rollback_to_checkpoint(cp).await.unwrap();
         assert!(!sys.fs_exists_async(&b).await.unwrap());
-        assert_eq!(sys.pending_actions().await, 1);
+        assert_eq!(sys.pending_actions_count().await, 1);
     }
 
     #[tokio::test]
@@ -2172,5 +2224,165 @@ mod tests {
             names(&matches),
             ["kept.ts".to_string()].into_iter().collect()
         );
+    }
+
+    // -- has_pending_actions ------------------------------------------------
+
+    #[tokio::test]
+    async fn has_pending_actions_false_when_empty() {
+        let sys = TransactionSys::new(RealSys::default());
+        assert!(!sys.has_pending_actions().await);
+    }
+
+    #[tokio::test]
+    async fn has_pending_actions_true_after_write() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&dir.path().join("a.txt"), b"hi")
+            .await
+            .unwrap();
+
+        assert!(sys.has_pending_actions().await);
+    }
+
+    #[tokio::test]
+    async fn has_pending_actions_false_after_commit() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&dir.path().join("a.txt"), b"hi")
+            .await
+            .unwrap();
+        sys.commit().await.unwrap();
+
+        assert!(!sys.has_pending_actions().await);
+    }
+
+    #[tokio::test]
+    async fn has_pending_actions_false_after_rollback() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.begin_transaction().await;
+        sys.fs_write_async(&dir.path().join("b.txt"), b"hi")
+            .await
+            .unwrap();
+        sys.rollback_transaction().await.unwrap();
+
+        assert!(!sys.has_pending_actions().await);
+    }
+
+    // -- visit_pending_actions ---------------------------------------------
+
+    #[tokio::test]
+    async fn visit_pending_actions_does_not_call_visitor_when_empty() {
+        let sys = TransactionSys::new(RealSys::default());
+
+        struct PanicVisitor;
+        impl PendingActionsVisitor<RealSys> for PanicVisitor {
+            type Error = eyre::Report;
+
+            async fn visit_action(
+                &mut self,
+                _: &Action,
+                _: &RealSys,
+            ) -> Result<(), Self::Error> {
+                panic!("visitor should not be called on empty action log");
+            }
+        }
+
+        sys.visit_pending_actions(&mut PanicVisitor).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn visit_pending_actions_visits_every_action_in_order() {
+        let dir = temp();
+        let root = dir.path();
+        let sys = TransactionSys::new(RealSys::default());
+
+        let paths = [
+            root.join("first.txt"),
+            root.join("second.txt"),
+            root.join("third.txt"),
+        ];
+        for p in &paths {
+            sys.fs_write_async(p, b"x").await.unwrap();
+        }
+
+        struct PathCollector(Vec<PathBuf>);
+        impl PendingActionsVisitor<RealSys> for PathCollector {
+            type Error = eyre::Report;
+            async fn visit_action(
+                &mut self,
+                action: &Action,
+                _: &RealSys,
+            ) -> eyre::Result<(), Self::Error> {
+                self.0.push(match action {
+                    Action::Write { path, .. } => path.clone(),
+                    _ => PathBuf::new(),
+                });
+                Ok(())
+            }
+        }
+
+        let mut collector = PathCollector(Vec::new());
+        sys.visit_pending_actions(&mut collector).await.unwrap();
+
+        assert_eq!(collector.0, paths);
+    }
+
+    #[tokio::test]
+    async fn visit_pending_actions_propagates_error() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&dir.path().join("x.txt"), b"x")
+            .await
+            .unwrap();
+
+        struct ErrorVisitor;
+        impl PendingActionsVisitor<RealSys> for ErrorVisitor {
+            type Error = eyre::Report;
+            async fn visit_action(
+                &mut self,
+                _: &Action,
+                _: &RealSys,
+            ) -> Result<(), Self::Error> {
+                Err(eyre::eyre!("boom"))
+            }
+        }
+
+        let result = sys.visit_pending_actions(&mut ErrorVisitor).await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "boom");
+    }
+
+    #[tokio::test]
+    async fn visit_pending_actions_does_not_mutate_action_log() {
+        let dir = temp();
+        let sys = TransactionSys::new(RealSys::default());
+
+        sys.fs_write_async(&dir.path().join("y.txt"), b"y")
+            .await
+            .unwrap();
+
+        let count_before = sys.pending_actions_count().await;
+
+        struct NoopVisitor;
+        impl PendingActionsVisitor<RealSys> for NoopVisitor {
+            type Error = eyre::Report;
+            async fn visit_action(
+                &mut self,
+                _: &Action,
+                _: &RealSys,
+            ) -> Result<(), Self::Error> {
+                Ok(())
+            }
+        }
+
+        sys.visit_pending_actions(&mut NoopVisitor).await.unwrap();
+
+        assert_eq!(sys.pending_actions_count().await, count_before);
     }
 }
