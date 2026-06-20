@@ -583,6 +583,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages."@omni-oss/gen-sdk"]
+path = "packages/gen-sdk"
+include = [
+    "packages/gen-sdk/**",
+]
+public_api = false
+
+[monorepo.packages."@omni-oss/gen-sdk-core"]
+path = "packages/gen-sdk-core"
+include = [
+    "packages/gen-sdk-core/**",
+]
+public_api = false
+
 #@anchor:new-typescript-package
 
 [monorepo.packages.root]
