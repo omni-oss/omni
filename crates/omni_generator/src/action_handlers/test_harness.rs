@@ -148,6 +148,8 @@ impl Fixture {
             input_provider: &self.input_provider,
             subscriber: &omni_messages::NoopSubscriber,
             use_input_defaults: false,
+            depth: 0,
+            max_depth: crate::DEFAULT_MAX_GENERATOR_DEPTH,
         }
     }
 }

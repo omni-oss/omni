@@ -27,6 +27,13 @@ use crate::{
     utils::{expand_json_value, get_tera_context},
 };
 
+/// Default cap on `run-generator` nesting depth. The static `detect_recursion`
+/// pass is the primary cycle guard; this bound is a defense-in-depth backstop
+/// for runtime edges the static graph cannot model. Real nesting is only a few
+/// levels deep, so the default is generous. Callers can override it via
+/// [`RunConfig::max_depth`] when a config legitimately nests deeper.
+pub const DEFAULT_MAX_GENERATOR_DEPTH: usize = 64;
+
 #[derive(Debug)]
 pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub dry_run: bool,
@@ -43,6 +50,9 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub input_provider: &'a dyn InputProvider,
     pub subscriber: &'a S,
+    /// Maximum `run-generator` nesting depth before a run is aborted. Use
+    /// [`DEFAULT_MAX_GENERATOR_DEPTH`] unless a config legitimately nests deeper.
+    pub max_depth: usize,
 }
 
 pub struct GeneratorRunResult {
@@ -122,7 +132,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         })
         .await;
 
-    let result = run_internal(generator, config, &tx, &runner).await;
+    let result = run_internal(generator, config, &tx, &runner, 0).await;
 
     // Tear down the JS process (if one was started) regardless of outcome.
     runner.shutdown().await;
@@ -174,7 +184,16 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     config: &RunConfig<'a, S>,
     sys: &impl GeneratorSysFull,
     runner: &dyn JsScriptRunner,
+    depth: usize,
 ) -> Result<GenSession, Error> {
+    if depth > config.max_depth {
+        return Err(ErrorInner::new_max_generator_depth_exceeded(
+            r#gen.name.clone(),
+            config.max_depth,
+        )
+        .into());
+    }
+
     let collection_config = CollectionConfig {
         use_defaults: config.use_input_defaults,
         ..CollectionConfig::default()
@@ -254,6 +273,8 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         input_provider: config.input_provider,
         subscriber: config.subscriber,
         use_input_defaults: config.use_input_defaults,
+        depth,
+        max_depth: config.max_depth,
     };
 
     execute_actions(&args, &session, sys).await?;

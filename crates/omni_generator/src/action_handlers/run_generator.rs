@@ -122,6 +122,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         available_generators: &available_generators,
         input_provider: ctx.input_provider,
         subscriber: ctx.subscriber,
+        max_depth: ctx.max_depth,
     };
 
     let prompted_input_values = Box::pin(run_internal(
@@ -129,6 +130,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         &run_config,
         sys,
         ctx.js_script_runner,
+        ctx.depth + 1,
     ))
     .await?;
 

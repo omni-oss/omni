@@ -146,4 +146,13 @@ pub(crate) enum ErrorInner {
         #[new(into)]
         config_path: PathBuf,
     },
+
+    #[error(
+        "generator '{name}' exceeded the maximum nesting depth of {limit}; if this nesting is intentional, raise max_depth"
+    )]
+    MaxGeneratorDepthExceeded {
+        #[new(into)]
+        name: String,
+        limit: usize,
+    },
 }

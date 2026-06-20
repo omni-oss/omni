@@ -43,6 +43,10 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider,
     pub subscriber: &'a S,
+    /// Current `run-generator` nesting depth of the generator being executed.
+    pub depth: usize,
+    /// Maximum allowed nesting depth, propagated to nested runs.
+    pub max_depth: usize,
 }
 
 pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
@@ -97,6 +101,8 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             input_provider: args.input_provider,
             subscriber: args.subscriber,
             use_input_defaults: args.use_input_defaults,
+            depth: args.depth,
+            max_depth: args.max_depth,
         };
 
         let in_progress_message =

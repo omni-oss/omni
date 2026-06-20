@@ -32,4 +32,8 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider,
     pub subscriber: &'a S,
+    /// Current `run-generator` nesting depth of this generator.
+    pub depth: usize,
+    /// Maximum allowed nesting depth, propagated to nested runs.
+    pub max_depth: usize,
 }
