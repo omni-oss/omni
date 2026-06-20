@@ -1,0 +1,27 @@
+{
+    "name": "@omni-oss/gen-sdk",
+    "description": "SDK for authoring JavaScript-based Omni Generator Scripts",
+    "version": "0.0.0-semantically-released",
+
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            }
+        }
+    },
+
+    "devDependencies": {
+        "@omni-oss/gen-sdk-core": "workspace:^",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "vite": "catalog:",
+        "typescript": "catalog:"
+    }
+}

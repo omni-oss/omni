@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/gen-sdk"
+
+extends:
+
+  - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
+
+
+dependencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/gen-sdk-core"
+
+tasks:
+
+  test:unit:
+    enabled: false
+
+  test:integration:
+    enabled: false
+
+  test:
+    enabled: true
+
+  build:
+    enabled: true
+
+  publish:
+    enabled: false
+
+
+
+
+meta:
+  publish: false
