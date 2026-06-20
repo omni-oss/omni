@@ -50,3 +50,6 @@ linux-keyutils-keyring-store = { workspace = true }
 
 [dev-dependencies]
 fastrand = { workspace = true }
+
+[build-dependencies]
+embed-manifest = { workspace = true }

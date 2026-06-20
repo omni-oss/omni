@@ -156,7 +156,7 @@ pub async fn main() -> eyre::Result<()> {
         file_level: cli.args.file_trace_level.value(),
         stdout_level: cli.args.stdout_log_level.value(),
         stdout_show_traces: cli.args.stdout_show_traces,
-        stderr_enabled: cli.args.stderr_log,
+        stderr_level: cli.args.stderr_log_level.value(),
         stderr_show_traces: cli.args.stderr_show_traces,
     };
 

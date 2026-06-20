@@ -29,6 +29,9 @@ pub async fn run(cmd: &McpCommand, ctx: &Context<RealSys>) -> eyre::Result<()> {
     let server = OmniMcpServer::new(ctx.clone(), NoopSubscriber);
     let mut config = ctx.tracing_config().clone();
     config.stdout_level = Level::Off;
+    // stdio logging is used for the MCP protocol, so we don't want to log anything to stdout.
+    // We do want to log to stderr, so we set the stderr level to Info.
+    config.stderr_level = Level::Info;
     let sub = TracingSubscriber::new(&config, vec![])
         .expect("Failed to create tracing subscriber");
     serve_stdio(server).with_subscriber(sub).await

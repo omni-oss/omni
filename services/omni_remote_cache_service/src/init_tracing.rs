@@ -4,7 +4,7 @@ use omni_tracing_subscriber::{Level, TracingConfig, TracingSubscriber};
 
 pub fn init_tracing() -> eyre::Result<()> {
     let tracing_config = TracingConfig {
-        stderr_enabled: true,
+        stderr_level: Level::Warn,
         stdout_level: Level::Info,
         stderr_show_traces: true,
         stdout_show_traces: true,

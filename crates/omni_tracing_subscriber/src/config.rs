@@ -8,7 +8,7 @@ pub struct TracingConfig {
     pub stdout_show_traces: bool,
     pub file_level: Level,
     pub file_path: Option<PathBuf>,
-    pub stderr_enabled: bool,
+    pub stderr_level: Level,
     pub stderr_show_traces: bool,
 }
 
@@ -22,7 +22,7 @@ impl TracingConfig {
             stdout_show_traces: false,
             file_level: Level::Off,
             file_path: None,
-            stderr_enabled: false,
+            stderr_level: Level::Off,
             stderr_show_traces: false,
         }
     }

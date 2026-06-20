@@ -6,7 +6,7 @@
  *     `log` facade output (INFO/WARN/ERROR) all go to *stdout* by default.
  *   - clap argument/usage errors and hard `eyre` failure reports go to *stderr*.
  * So "stdout vs stderr separation" here means: data on stdout, argument errors
- * on stderr. (Routing logs to stderr is opt-in via `--stderr-log`, covered by
+ * on stderr. (Routing logs to stderr is opt-in via `--stderr-log-level`, covered by
  * the +global suite.)
  */
 

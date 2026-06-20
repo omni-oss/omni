@@ -36,7 +36,7 @@ pub fn noop_subscriber() -> TracingSubscriber {
         &TracingConfig {
             file_path: None,
             file_level: Level::Off,
-            stderr_enabled: false,
+            stderr_level: Level::Off,
             stdout_level: Level::Off,
             stderr_show_traces: false,
             stdout_show_traces: false,
@@ -85,7 +85,8 @@ impl TracingSubscriber {
             layers.push(stdout_layer);
         }
 
-        if config.stderr_enabled {
+        if !config.stderr_level.is_off() {
+            let filter: LevelFilter = config.stderr_level.into();
             let stderr_layer = tracing_subscriber::fmt::layer()
                 .with_ansi(atty::is(atty::Stream::Stderr))
                 .with_ansi_sanitization(false)
@@ -93,7 +94,7 @@ impl TracingSubscriber {
                 .with_filter(
                     main_filters
                         .clone()
-                        .with_default(LevelFilter::ERROR)
+                        .with_default(filter)
                         .and(LogFilter::new(config.stderr_show_traces)),
                 )
                 .boxed();

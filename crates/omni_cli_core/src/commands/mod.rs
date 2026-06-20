@@ -84,13 +84,12 @@ pub struct CliArgs {
 
     #[arg(
         long,
-        group = "stderr-log",
-        help = "Output Error log to stderr",
-        env = "OMNI_STDERR_LOG_ENABLED",
-        default_value_t = false,
-        action = clap::ArgAction::SetTrue,
+        help = "Max level of logs to stderr",
+        env = "OMNI_STDERR_LOG_LEVEL",
+        default_value = "off",
+        value_enum
     )]
-    pub stderr_log: bool,
+    pub stderr_log_level: EnumValueAdapter<Level>,
 
     #[arg(
         long = "stderr-show-traces",
@@ -152,7 +151,7 @@ impl Default for CliArgs {
     fn default() -> Self {
         Self {
             stdout_log_level: EnumValueAdapter::new(Level::Off),
-            stderr_log: false,
+            stderr_log_level: EnumValueAdapter::new(Level::Off),
             file_trace_output: None,
             file_trace_level: EnumValueAdapter::new(Level::Off),
             env_root_dir_marker: None,

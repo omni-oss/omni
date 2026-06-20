@@ -168,11 +168,11 @@ describe("+global @cli (stderr logging)", () => {
         });
     }
 
-    it("--stderr-log gates the stderr log layer", async () => {
+    it("--stderr-log-level=warn gates the stderr log layer", async () => {
         const ws = failingWorkspace();
 
         const enabled = await runOmni(
-            ["--stderr-log", "--stderr-show-traces", "run", "nope"],
+            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
             { cwd: ws.cwd },
         );
         const disabled = await runOmni(
@@ -186,12 +186,12 @@ describe("+global @cli (stderr logging)", () => {
         expect(disabled.err).not.toContain(ERROR_TRACE);
     });
 
-    it("honors OMNI_STDERR_LOG_ENABLED", async () => {
+    it("honors OMNI_STDERR_LOG_LEVEL", async () => {
         const ws = failingWorkspace();
 
         const result = await runOmni(["--stderr-show-traces", "run", "nope"], {
             cwd: ws.cwd,
-            env: { OMNI_STDERR_LOG_ENABLED: "true" },
+            env: { OMNI_STDERR_LOG_LEVEL: "warn" },
         });
 
         expect(result).toHaveStderrContaining(ERROR_TRACE);
@@ -201,12 +201,15 @@ describe("+global @cli (stderr logging)", () => {
         const ws = failingWorkspace();
 
         const withTraces = await runOmni(
-            ["--stderr-log", "--stderr-show-traces", "run", "nope"],
+            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
             { cwd: ws.cwd },
         );
-        const withoutTraces = await runOmni(["--stderr-log", "run", "nope"], {
-            cwd: ws.cwd,
-        });
+        const withoutTraces = await runOmni(
+            ["--stderr-log-level=warn", "run", "nope"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(withTraces).toHaveStderrContaining(ERROR_TRACE);
         expect(withoutTraces).toHaveFailed();
@@ -406,11 +409,11 @@ describe("+global @cli (stderr error logs + traces together)", () => {
         });
     }
 
-    it("`--stderr-log --stderr-show-traces` routes error logs and traces to stderr", async () => {
+    it("`--stderr-log-level=warn --stderr-show-traces` routes error logs and traces to stderr", async () => {
         const ws = failingWorkspace();
 
         const result = await runOmni(
-            ["--stderr-log", "--stderr-show-traces", "run", "nope"],
+            ["--stderr-log-level=warn", "--stderr-show-traces", "run", "nope"],
             { cwd: ws.cwd },
         );
 
