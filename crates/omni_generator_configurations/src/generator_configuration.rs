@@ -27,6 +27,10 @@ pub struct GeneratorConfiguration {
     #[serde(skip)]
     pub scope_id: Option<String>,
 
+    /// Whether this generator can be invoked by the user directly. If false, it can only be invoked by other generators.
+    #[serde(default = "default_true")]
+    pub user_invocable: bool,
+
     /// Unique name of the generator
     pub name: String,
 
@@ -79,4 +83,8 @@ pub struct InputConfigurationExtra {
     /// when used in the same directory.
     #[serde(default)]
     pub remember: bool,
+}
+
+fn default_true() -> bool {
+    true
 }

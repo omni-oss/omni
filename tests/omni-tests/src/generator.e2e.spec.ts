@@ -325,6 +325,30 @@ describe("+generator @cli (run)", () => {
         expect(ignored).toHaveSucceeded();
         expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
     });
+
+    it("prevents non-user invocable generators from being run", async () => {
+        const spec = scaffoldGeneratorSpec();
+        if (spec.projects) {
+            spec.projects["generators/non-user-invocable/generator.omni.yaml"] =
+                {
+                    name: "non-user-invocable",
+                    description: "a generator that can't be run by the user",
+                    user_invocable: false,
+                    actions: [],
+                };
+        }
+        const ws = makeWorkspace(spec);
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "non-user-invocable", "-o", "out"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveExitCode(1);
+        expect(result.stderr).toContain(
+            "generator 'non-user-invocable' is not invocable by the user",
+        );
+    });
 });
 
 describe("+generator @cli (--save-session/--ignore-session value handling)", () => {

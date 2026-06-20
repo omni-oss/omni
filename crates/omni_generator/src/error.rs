@@ -130,4 +130,10 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     Expansion(#[from] env::ExpansionError),
+
+    #[error("generator '{name}' is not invocable by the user")]
+    GeneratorNotInvocable {
+        #[new(into)]
+        name: String,
+    },
 }

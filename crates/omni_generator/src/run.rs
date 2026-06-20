@@ -62,6 +62,12 @@ pub async fn run_named<'a, S: GeneratorEventSubscriber>(
         .ok_or_else(|| {
             ErrorInner::new_generator_not_found(generator_name.to_string())
         })?;
+    if !generator.user_invocable {
+        return Err(ErrorInner::new_generator_not_invocable(
+            generator_name.to_string(),
+        )
+        .into());
+    }
 
     run_in_transaction(&generator, config, sys).await
 }
@@ -72,6 +78,12 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
     sys: &impl GeneratorSys,
 ) -> Result<GeneratorRunResult, Error> {
     crate::validate(config.available_generators)?;
+    if !generator.user_invocable {
+        return Err(ErrorInner::new_generator_not_invocable(
+            generator.name.clone(),
+        )
+        .into());
+    }
 
     run_in_transaction(generator, config, sys).await
 }
