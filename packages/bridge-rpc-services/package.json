@@ -37,10 +37,12 @@
         "@omni-oss/bridge-rpc-utils": "workspace:^",
         "@omni-oss/async-utils": "workspace:^",
         "@omni-oss/log": "workspace:^",
-        "@omni-oss/bridge-rpc-system-interface": "workspace:^"
+        "@omni-oss/bridge-rpc-system-interface": "workspace:^",
+        "@omni-oss/gen-sdk-core": "workspace:^"
     },
     "devDependencies": {
         "@omni-oss/channels": "workspace:^",
+        "@omni-oss/gen-sdk-core": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",

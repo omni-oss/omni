@@ -1,8 +1,11 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
 import { BridgeRpcSystem } from "@omni-oss/bridge-rpc-system-interface";
+import type { GeneratorScriptContext } from "@omni-oss/gen-sdk-core";
 import { Log, type Logger } from "@omni-oss/log";
 import type { System } from "@omni-oss/system-interface";
 import { InMemoryCwdSystem } from "./in-memory-cwd-system";
+
+export type { GeneratorScriptContext };
 
 export type GeneratorScriptContextOptions = {
     dryRun: boolean;
@@ -12,15 +15,6 @@ export type GeneratorScriptContextOptions = {
     logger?: Logger;
     outputDir: string;
 };
-
-export type GeneratorScriptContext = Readonly<{
-    sys: System;
-    log: Logger;
-    isDryRun: boolean;
-    outputDir: string;
-    /** Arbitrary data passed from the `run-javascript` action's config. */
-    data: unknown;
-}>;
 
 export class DefaultScriptContext implements GeneratorScriptContext {
     private constructor(
