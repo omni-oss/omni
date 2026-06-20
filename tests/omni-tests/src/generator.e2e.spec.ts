@@ -1128,3 +1128,175 @@ describe("+generator @cli (run flag combinations)", () => {
         expect(eq.read("out/src/greeting.txt")).toBe("Hello a=b!");
     });
 });
+
+// ---------------------------------------------------------------------------
+// Recursion detection + --max-depth (configurable nesting limit)
+//
+// Mirrors the MCP-side coverage in `mcp.e2e.spec.ts`, exercised here through
+// the `omni generator run` CLI. `detect_recursion` runs up front in
+// `run_in_transaction`; the runtime depth cap is the configurable backstop
+// surfaced via `--max-depth`.
+// ---------------------------------------------------------------------------
+
+/** A generator that invokes itself, forming a direct recursion cycle. */
+function selfRecursiveGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/loop/generator.omni.yaml": {
+                name: "loop",
+                description: "calls itself, forming a direct recursion cycle",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "loop" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/** Two generators that invoke each other (ping → pong → ping). */
+function mutualRecursionGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/ping/generator.omni.yaml": {
+                name: "ping",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "pong" }],
+            },
+            "generators/pong/generator.omni.yaml": {
+                name: "pong",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "ping" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/** A legitimate, non-cyclic chain: parent runs child, which writes a file. */
+function nestedGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/parent/generator.omni.yaml": {
+                name: "parent",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "child" }],
+            },
+            "generators/child/generator.omni.yaml": {
+                name: "child",
+                inputs: [],
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "nested.txt",
+                        content: "from child",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+describe("+generator @exitcode (recursion)", () => {
+    it("rejects a generator that directly invokes itself", async () => {
+        // loop → loop. detect_recursion fails before any action runs, so no
+        // output is produced.
+        const ws = makeWorkspace(selfRecursiveGeneratorSpec());
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "loop", "-o", "out", "--use-defaults"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveExitCode(1);
+        expect(result.stderr).toContain("will recurse into itself");
+        expect(ws.exists("out")).toBe(false);
+    });
+
+    it("rejects a generator caught in an indirect (mutual) recursion cycle", async () => {
+        // ping → pong → ping.
+        const ws = makeWorkspace(mutualRecursionGeneratorSpec());
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "ping", "-o", "out", "--use-defaults"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveExitCode(1);
+        expect(result.stderr).toContain("will recurse into itself");
+    });
+});
+
+describe("+generator @cli (--max-depth)", () => {
+    it("aborts a legitimate (acyclic) chain when --max-depth is below its nesting", async () => {
+        // parent → child is non-cyclic; child runs at depth 1. With
+        // --max-depth 0 the nested run exceeds the cap and is rejected even
+        // though there is no recursion.
+        const ws = makeWorkspace(nestedGeneratorSpec());
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "parent",
+                "-o",
+                "out",
+                "--use-defaults",
+                "--max-depth",
+                "0",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveExitCode(1);
+        expect(result.stderr).toContain("exceeded the maximum nesting depth");
+        expect(ws.exists("out/nested.txt")).toBe(false);
+    });
+
+    it("runs the chain when --max-depth is raised to allow the nesting", async () => {
+        const ws = makeWorkspace(nestedGeneratorSpec());
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "parent",
+                "-o",
+                "out",
+                "--use-defaults",
+                "--max-depth",
+                "5",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/nested.txt")).toContain("from child");
+    });
+
+    it("runs the chain with the default depth when --max-depth is omitted", async () => {
+        const ws = makeWorkspace(nestedGeneratorSpec());
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "parent", "-o", "out", "--use-defaults"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/nested.txt")).toContain("from child");
+    });
+});

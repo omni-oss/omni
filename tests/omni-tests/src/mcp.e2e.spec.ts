@@ -107,6 +107,201 @@ function twoProjectSpec(): WorkspaceSpec {
     };
 }
 
+/**
+ * A workspace whose generator has a conditional input gated on the value of a
+ * preceding input. `version` is a `select` defaulting to `"custom"`, and
+ * `crate_version` is only active when `version == 'custom'`.
+ *
+ * This mirrors the real `crate` generator and exercises default-value
+ * propagation during validation: the `if` expression references
+ * `inputs.version`, which is only present if the resolved default of `version`
+ * is threaded into the condition context. Without that propagation the Tera
+ * render of `{{ inputs.version == 'custom' }}` fails and validation reports a
+ * `_configuration` error instead of evaluating the input tree.
+ */
+function conditionalGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/conditional/generator.omni.yaml": {
+                name: "conditional",
+                description: "conditional input gated on another input's value",
+                inputs: [
+                    {
+                        type: "select",
+                        name: "version",
+                        message: "Version",
+                        default: "custom",
+                        options: [
+                            {
+                                name: "Inherit from workspace",
+                                value: "workspace",
+                            },
+                            { name: "Custom", value: "custom" },
+                        ],
+                    },
+                    {
+                        if: "{{ inputs.version == 'custom' }}",
+                        type: "text",
+                        name: "crate_version",
+                        message: "Crate version",
+                        default: "0.0.0",
+                    },
+                ],
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "version.txt",
+                        content: "{{ inputs.version }}",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * Like {@link conditionalGeneratorSpec} but the conditional input has no
+ * default, so it is *required* whenever its `if` condition is active. This lets
+ * tests observe whether the condition evaluated truthy (input required) or
+ * falsy (input skipped) purely from the validation result.
+ */
+function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/conditional/generator.omni.yaml": {
+                name: "conditional",
+                description:
+                    "required conditional input gated on another input",
+                inputs: [
+                    {
+                        type: "select",
+                        name: "version",
+                        message: "Version",
+                        default: "custom",
+                        options: [
+                            {
+                                name: "Inherit from workspace",
+                                value: "workspace",
+                            },
+                            { name: "Custom", value: "custom" },
+                        ],
+                    },
+                    {
+                        if: "{{ inputs.version == 'custom' }}",
+                        type: "text",
+                        name: "crate_version",
+                        message: "Crate version",
+                    },
+                ],
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "version.txt",
+                        content: "{{ inputs.version }}",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * A generator that invokes itself through a `run-generator` action, forming a
+ * direct recursion cycle (`loop → loop`). Running it must be rejected by the
+ * up-front recursion check (`detect_recursion`) before any action executes.
+ */
+function selfRecursiveGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/loop/generator.omni.yaml": {
+                name: "loop",
+                description: "calls itself, forming a direct recursion cycle",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "loop" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * Two generators that invoke each other (`ping → pong → ping`), forming an
+ * indirect recursion cycle. Running either entry point must be rejected.
+ */
+function mutualRecursionGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/ping/generator.omni.yaml": {
+                name: "ping",
+                description: "calls pong",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "pong" }],
+            },
+            "generators/pong/generator.omni.yaml": {
+                name: "pong",
+                description: "calls ping",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "ping" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * A legitimate, non-cyclic composition: `parent` runs `child`, which writes a
+ * file. This is the positive control proving `detect_recursion` does not
+ * false-positive on a valid `run-generator` chain and that nested generation
+ * actually executes.
+ */
+function nestedGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/parent/generator.omni.yaml": {
+                name: "parent",
+                description: "runs the child generator",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "child" }],
+            },
+            "generators/child/generator.omni.yaml": {
+                name: "child",
+                description: "writes a nested file",
+                inputs: [],
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "nested.txt",
+                        content: "from child",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Protocol — tools/list
 // ---------------------------------------------------------------------------
@@ -539,6 +734,159 @@ describe("+mcp @mcp @cli (generator_run parallelism)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// generator_run — recursion detection
+// ---------------------------------------------------------------------------
+
+describe("+mcp @mcp @cli (generator_run recursion)", () => {
+    it("rejects a generator that directly invokes itself", async () => {
+        // loop → loop. detect_recursion runs before any action executes, so the
+        // call must reject rather than recurse until exhaustion.
+        const ws = makeWorkspace(selfRecursiveGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        await expect(
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "loop",
+                    output_dir: ws.path("out"),
+                    dry_run: false,
+                    use_defaults: true,
+                    save_session: false,
+                    ignore_session: true,
+                },
+            }),
+        ).rejects.toThrow();
+
+        // Nothing should have been written.
+        expect(ws.exists("out")).toBe(false);
+    });
+
+    it("rejects a generator caught in an indirect (mutual) recursion cycle", async () => {
+        // ping → pong → ping.
+        const ws = makeWorkspace(mutualRecursionGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        await expect(
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "ping",
+                    output_dir: ws.path("out"),
+                    dry_run: false,
+                    use_defaults: true,
+                    save_session: false,
+                    ignore_session: true,
+                },
+            }),
+        ).rejects.toThrow();
+    });
+
+    it("rejects recursion even on a dry run", async () => {
+        // The recursion guard precedes the dry-run/commit split, so a dry run is
+        // rejected just like a real run.
+        const ws = makeWorkspace(selfRecursiveGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        await expect(
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "loop",
+                    output_dir: ws.path("out"),
+                    dry_run: true,
+                    use_defaults: true,
+                    save_session: false,
+                    ignore_session: true,
+                },
+            }),
+        ).rejects.toThrow();
+    });
+
+    it("runs a valid non-cyclic run-generator chain to completion", async () => {
+        // parent → child (no cycle). Proves detect_recursion does not
+        // false-positive on legitimate composition and that the nested
+        // generator actually executes and writes its file.
+        const ws = makeWorkspace(nestedGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_run",
+            arguments: {
+                name: "parent",
+                output_dir: ws.path("out"),
+                dry_run: false,
+                use_defaults: true,
+                save_session: false,
+                ignore_session: true,
+            },
+        });
+        const data = getContent<{ ok: boolean }>(result);
+
+        expect(data.ok).toBe(true);
+        expect(ws.exists("out/nested.txt")).toBe(true);
+        expect(ws.read("out/nested.txt")).toContain("from child");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// generator_run — max_depth (configurable nesting limit)
+// ---------------------------------------------------------------------------
+
+describe("+mcp @mcp @cli (generator_run max_depth)", () => {
+    it("aborts a legitimate (acyclic) chain when max_depth is set below its nesting", async () => {
+        // parent → child is a valid, non-cyclic chain: child runs at depth 1.
+        // With max_depth=0 the nested run exceeds the cap and is rejected even
+        // though there is no recursion. Proves the depth cap is not
+        // recursion-specific and is honored downward.
+        const ws = makeWorkspace(nestedGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        await expect(
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "parent",
+                    output_dir: ws.path("out"),
+                    dry_run: false,
+                    use_defaults: true,
+                    save_session: false,
+                    ignore_session: true,
+                    max_depth: 0,
+                },
+            }),
+        ).rejects.toThrow();
+
+        // The nested write must not have happened.
+        expect(ws.exists("out/nested.txt")).toBe(false);
+    });
+
+    it("runs the same chain when max_depth is raised to allow the nesting", async () => {
+        // Same fixture, but an explicit, generous max_depth lets the depth-1
+        // nested generator run. Proves the cap is configurable upward.
+        const ws = makeWorkspace(nestedGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_run",
+            arguments: {
+                name: "parent",
+                output_dir: ws.path("out"),
+                dry_run: false,
+                use_defaults: true,
+                save_session: false,
+                ignore_session: true,
+                max_depth: 5,
+            },
+        });
+        const data = getContent<{ ok: boolean }>(result);
+
+        expect(data.ok).toBe(true);
+        expect(ws.read("out/nested.txt")).toContain("from child");
+    });
+});
+
+// ---------------------------------------------------------------------------
 // generator_validate_input
 // ---------------------------------------------------------------------------
 
@@ -576,6 +924,104 @@ describe("+mcp @mcp @cli (generator_validate_input)", () => {
         const data = getContent<{ valid: boolean }>(result);
 
         expect(data.valid).toBe(true);
+    });
+
+    it("valid=true with use_defaults=true when a conditional input is gated on another input's default", async () => {
+        // Regression: the `crate_version` input's `if` references
+        // `inputs.version`, which is only resolved via `version`'s default.
+        // Before default-value propagation in validation, rendering
+        // `{{ inputs.version == 'custom' }}` failed and surfaced as a
+        // `_configuration` error rather than a clean valid result.
+        const ws = makeWorkspace(conditionalGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_validate_input",
+            arguments: {
+                name: "conditional",
+                input_values: {},
+                use_defaults: true,
+            },
+        });
+        const data = getContent<{
+            valid: boolean;
+            errors: Array<{ input_name: string; message: string }>;
+        }>(result);
+
+        expect(data.valid).toBe(true);
+        expect(data.errors).toHaveLength(0);
+    });
+
+    it("evaluates a conditional input's gate against an explicitly provided parent value", async () => {
+        // version=workspace makes the `{{ inputs.version == 'custom' }}` gate
+        // false, so `crate_version` is skipped entirely and is not required —
+        // even with use_defaults=false.
+        const ws = makeWorkspace(conditionalRequiredGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_validate_input",
+            arguments: {
+                name: "conditional",
+                input_values: { version: "workspace" },
+                use_defaults: false,
+            },
+        });
+        const data = getContent<{ valid: boolean; errors: unknown[] }>(result);
+
+        expect(data.valid).toBe(true);
+        expect(data.errors).toHaveLength(0);
+    });
+
+    it("flags a required conditional input as missing when its gate is active", async () => {
+        // version=custom activates the gate, so the required `crate_version`
+        // (no default) must be reported missing rather than silently passing or
+        // erroring on condition rendering.
+        const ws = makeWorkspace(conditionalRequiredGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_validate_input",
+            arguments: {
+                name: "conditional",
+                input_values: { version: "custom" },
+                use_defaults: false,
+            },
+        });
+        const data = getContent<{
+            valid: boolean;
+            errors: Array<{ input_name: string; message: string }>;
+        }>(result);
+
+        expect(data.valid).toBe(false);
+        expect(data.errors.some((e) => e.input_name === "crate_version")).toBe(
+            true,
+        );
+        // Must be a per-field error, not a config-level rendering failure.
+        expect(data.errors.some((e) => e.input_name === "_configuration")).toBe(
+            false,
+        );
+    });
+
+    it("required conditional input passes when its gate is active via the parent default", async () => {
+        // No version provided → version resolves to its default "custom" →
+        // gate active → crate_version is required and is satisfied here by an
+        // explicit value, proving the default propagates into the gate.
+        const ws = makeWorkspace(conditionalRequiredGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "generator_validate_input",
+            arguments: {
+                name: "conditional",
+                input_values: { crate_version: "1.2.3" },
+                use_defaults: true,
+            },
+        });
+        const data = getContent<{ valid: boolean; errors: unknown[] }>(result);
+
+        expect(data.valid).toBe(true);
+        expect(data.errors).toHaveLength(0);
     });
 });
 
