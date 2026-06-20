@@ -8,7 +8,7 @@
         "@omni-oss/summarize-results": "workspace:^",
         "@omni-oss/set-version": "workspace:^",
         "@omni-oss/create-jobs": "workspace:^",
-        "@microsoft/api-extractor": "^7.58.7",
+        "@microsoft/api-extractor": "catalog:",
         "@vitest/coverage-v8": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
@@ -34,7 +34,7 @@
         "@vitest/coverage-v8": "^4.1.8",
         "commander": "^14.0.3",
         "typescript": "^6.0.3",
-        "unplugin-dts": "^1.0.0-beta.6",
+        "unplugin-dts": "^1.0.2",
         "vite": "^8.0.16",
         "vitest": "^4.1.8",
         "zod": "^4.4.3",
@@ -45,6 +45,7 @@
         "@xterm/headless": "^6.0.0",
         "yaml": "^2.9.0",
         "smol-toml": "^1.6.1",
-        "@modelcontextprotocol/client": "^2.0.0-alpha.2"
+        "@modelcontextprotocol/client": "^2.0.0-alpha.2",
+        "@microsoft/api-extractor": "^7.58.9"
     }
 }

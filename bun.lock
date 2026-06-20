@@ -6,7 +6,7 @@
       "name": "@omni-oss/root",
       "dependencies": {
         "@biomejs/biome": "^2.4.15",
-        "@microsoft/api-extractor": "^7.58.7",
+        "@microsoft/api-extractor": "catalog:",
         "@omni-oss/biome-config": "workspace:^",
         "@omni-oss/create-jobs": "workspace:^",
         "@omni-oss/set-version": "workspace:^",
@@ -124,6 +124,7 @@
       },
       "devDependencies": {
         "@omni-oss/channels": "workspace:^",
+        "@omni-oss/gen-sdk-core": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
@@ -140,6 +141,7 @@
         "@omni-oss/bridge-rpc-system-interface": "workspace:^",
         "@omni-oss/bridge-rpc-utils": "workspace:^",
         "@omni-oss/channels": "workspace:^",
+        "@omni-oss/gen-sdk-core": "workspace:^",
         "@omni-oss/log": "workspace:^",
         "@omni-oss/runtime-utils": "workspace:^",
         "@omni-oss/system-interface": "workspace:^",
@@ -212,6 +214,35 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
+      },
+    },
+    "packages/gen-sdk": {
+      "name": "@omni-oss/gen-sdk",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@omni-oss/gen-sdk-core": "workspace:^",
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/system-interface": "workspace:^",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+    },
+    "packages/gen-sdk-core": {
+      "name": "@omni-oss/gen-sdk-core",
+      "version": "0.0.0-semantically-released",
+      "devDependencies": {
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/system-interface": "workspace:^",
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+      },
+      "peerDependencies": {
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/system-interface": "workspace:^",
       },
     },
     "packages/log": {
@@ -447,6 +478,7 @@
   "catalog": {
     "@commander-js/extra-typings": "^14.0.0",
     "@logtape/logtape": "^2.1.1",
+    "@microsoft/api-extractor": "^7.58.9",
     "@modelcontextprotocol/client": "^2.0.0-alpha.2",
     "@omni-oss/channels": "workspace:^",
     "@omni-oss/tsconfig": "workspace:^",
@@ -462,7 +494,7 @@
     "node-pty": "^1.1.0",
     "smol-toml": "^1.6.1",
     "typescript": "^6.0.3",
-    "unplugin-dts": "^1.0.0-beta.6",
+    "unplugin-dts": "^1.0.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
     "yaml": "^2.9.0",
@@ -651,7 +683,7 @@
 
     "@logtape/logtape": ["@logtape/logtape@2.1.1", "", {}, "sha512-aULbCqUQGerfOsZ3CMvcKtueKzmdchluXYUd3bIHKmOIS93fx1ko0+hyRQ4flloGZ8EiyRPydZXiy8n1J/eAQA=="],
 
-    "@microsoft/api-extractor": ["@microsoft/api-extractor@7.58.7", "", { "dependencies": { "@microsoft/api-extractor-model": "7.33.8", "@microsoft/tsdoc": "~0.16.0", "@microsoft/tsdoc-config": "~0.18.1", "@rushstack/node-core-library": "5.23.1", "@rushstack/rig-package": "0.7.3", "@rushstack/terminal": "0.24.0", "@rushstack/ts-command-line": "5.3.9", "diff": "~8.0.2", "minimatch": "10.2.3", "resolve": "~1.22.1", "semver": "~7.7.4", "source-map": "~0.6.1", "typescript": "5.9.3" }, "bin": { "api-extractor": "bin/api-extractor" } }, "sha512-yK6OycD46gIzLRpj6ueVUWPk1ACSpkN1LBo05gY1qPTylbWyUCanXfH7+VgkI5LJrJoRSQR5F04XuCffCXLOBw=="],
+    "@microsoft/api-extractor": ["@microsoft/api-extractor@7.58.9", "", { "dependencies": { "@microsoft/api-extractor-model": "7.33.8", "@microsoft/tsdoc": "~0.16.0", "@microsoft/tsdoc-config": "~0.18.1", "@rushstack/node-core-library": "5.23.1", "@rushstack/rig-package": "0.7.3", "@rushstack/terminal": "0.24.0", "@rushstack/ts-command-line": "5.3.10", "diff": "~8.0.2", "minimatch": "10.2.3", "resolve": "~1.22.1", "semver": "~7.7.4", "source-map": "~0.6.1", "typescript": "5.9.3" }, "bin": { "api-extractor": "bin/api-extractor" } }, "sha512-S2UF4yza5GoxCmf7hJQNxJNZN9ltOVuOQv8Dy+Z21aol5ERoBNMdWcQHm4MJMPPItW4H/4rZD906iaf4mUojJA=="],
 
     "@microsoft/api-extractor-model": ["@microsoft/api-extractor-model@7.33.8", "", { "dependencies": { "@microsoft/tsdoc": "~0.16.0", "@microsoft/tsdoc-config": "~0.18.1", "@rushstack/node-core-library": "5.23.1" } }, "sha512-aIcoQggPyer3B6Ze3usz0YWC/oBwUHfRH5ETUsr+oT2BRA6SfTJl7IKPcPZkX4UR+PohowzW4uMxsvjrn8vm+w=="],
 
@@ -706,6 +738,10 @@
     "@omni-oss/console-log-interceptor": ["@omni-oss/console-log-interceptor@workspace:packages/console-log-interceptor"],
 
     "@omni-oss/create-jobs": ["@omni-oss/create-jobs@workspace:scripts/create-jobs"],
+
+    "@omni-oss/gen-sdk": ["@omni-oss/gen-sdk@workspace:packages/gen-sdk"],
+
+    "@omni-oss/gen-sdk-core": ["@omni-oss/gen-sdk-core@workspace:packages/gen-sdk-core"],
 
     "@omni-oss/log": ["@omni-oss/log@workspace:packages/log"],
 
@@ -821,7 +857,7 @@
 
     "@rushstack/terminal": ["@rushstack/terminal@0.24.0", "", { "dependencies": { "@rushstack/node-core-library": "5.23.1", "@rushstack/problem-matcher": "0.2.1", "supports-color": "~8.1.1" }, "peerDependencies": { "@types/node": "*" }, "optionalPeers": ["@types/node"] }, "sha512-8ZQS4MMaGsv27EXCBiH7WMPkRZrffeDoIevs6z9TM5dzqiY6+Hn4evfK/G+gvgBTjfvfkHIZPQQmalmI2sM4TQ=="],
 
-    "@rushstack/ts-command-line": ["@rushstack/ts-command-line@5.3.9", "", { "dependencies": { "@rushstack/terminal": "0.24.0", "@types/argparse": "1.0.38", "argparse": "~1.0.9", "string-argv": "~0.3.1" } }, "sha512-GIHqU+sRGQ3LGWAZu1O+9Yh++qwtyNIIGuNbcWHJjBTm2qRez0cwINUHZ+pQLR8UuzZDcMajrDaNbUYoaL/XtQ=="],
+    "@rushstack/ts-command-line": ["@rushstack/ts-command-line@5.3.10", "", { "dependencies": { "@rushstack/terminal": "0.24.0", "@types/argparse": "1.0.38", "argparse": "~1.0.9", "string-argv": "~0.3.1" } }, "sha512-fwI076HYknC0IrMXdY6UmjDv+PH7NHhNJX3/pY2UblSE5XrXgndXZPiOe/6ZtuFpn6DvVDVNhtkIzQ+Qu/MhVQ=="],
 
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
 
@@ -1783,7 +1819,7 @@
 
     "unplugin": ["unplugin@2.3.11", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "acorn": "^8.15.0", "picomatch": "^4.0.3", "webpack-virtual-modules": "^0.6.2" } }, "sha512-5uKD0nqiYVzlmCRs01Fhs2BdkEgBS3SAVP6ndrBsuK42iC2+JHyxM05Rm9G8+5mkmRtzMZGY8Ct5+mliZxU/Ww=="],
 
-    "unplugin-dts": ["unplugin-dts@1.0.1", "", { "dependencies": { "@rollup/pluginutils": "^5.1.4", "@volar/typescript": "^2.4.26", "compare-versions": "^6.1.1", "debug": "^4.4.0", "kolorist": "^1.8.0", "local-pkg": "^1.1.1", "magic-string": "^0.30.17", "unplugin": "^2.3.2" }, "peerDependencies": { "@microsoft/api-extractor": ">=7", "@rspack/core": "^1", "@vue/language-core": "~3.1.5", "esbuild": "*", "rolldown": "*", "rollup": ">=3", "typescript": ">=4", "vite": ">=3", "webpack": "^4 || ^5" }, "optionalPeers": ["@microsoft/api-extractor", "@rspack/core", "@vue/language-core", "esbuild", "rolldown", "rollup", "vite", "webpack"] }, "sha512-EdJZxdWP4Tm/xhe58/zAge3Tu0OKDYygm8rucRrcCZ4XzgA31jexUKhaJuEMddOPBDs9ONnq6vwigbjeBqkfuw=="],
+    "unplugin-dts": ["unplugin-dts@1.0.2", "", { "dependencies": { "@rollup/pluginutils": "^5.1.4", "@volar/typescript": "^2.4.26", "compare-versions": "^6.1.1", "debug": "^4.4.0", "kolorist": "^1.8.0", "local-pkg": "^1.1.1", "magic-string": "^0.30.17", "unplugin": "^2.3.2" }, "peerDependencies": { "@microsoft/api-extractor": ">=7", "@rspack/core": "^1", "@vue/language-core": "~3.1.5", "esbuild": "*", "rolldown": "*", "rollup": ">=3", "typescript": ">=4", "vite": ">=3", "webpack": "^4 || ^5" }, "optionalPeers": ["@microsoft/api-extractor", "@rspack/core", "@vue/language-core", "esbuild", "rolldown", "rollup", "vite", "webpack"] }, "sha512-VbNiMD0LMl/t6nJueGtrCp79N7ZO1nquxj/FUybJDnKwZGsnW2wjdwBSzA3QEHujoxmxZIptsG43hL7LzXE96w=="],
 
     "unstorage": ["unstorage@2.0.0-alpha.7", "", { "peerDependencies": { "@azure/app-configuration": "^1.11.0", "@azure/cosmos": "^4.9.1", "@azure/data-tables": "^13.3.2", "@azure/identity": "^4.13.0", "@azure/keyvault-secrets": "^4.10.0", "@azure/storage-blob": "^12.31.0", "@capacitor/preferences": "^6 || ^7 || ^8", "@deno/kv": ">=0.13.0", "@netlify/blobs": "^6.5.0 || ^7.0.0 || ^8.1.0 || ^9.0.0 || ^10.0.0", "@planetscale/database": "^1.19.0", "@upstash/redis": "^1.36.2", "@vercel/blob": ">=0.27.3", "@vercel/functions": "^2.2.12 || ^3.0.0", "@vercel/kv": "^1.0.1", "aws4fetch": "^1.0.20", "chokidar": "^4 || ^5", "db0": ">=0.3.4", "idb-keyval": "^6.2.2", "ioredis": "^5.9.3", "lru-cache": "^11.2.6", "mongodb": "^6 || ^7", "ofetch": "*", "uploadthing": "^7.7.4" }, "optionalPeers": ["@azure/app-configuration", "@azure/cosmos", "@azure/data-tables", "@azure/identity", "@azure/keyvault-secrets", "@azure/storage-blob", "@capacitor/preferences", "@deno/kv", "@netlify/blobs", "@planetscale/database", "@upstash/redis", "@vercel/blob", "@vercel/functions", "@vercel/kv", "aws4fetch", "chokidar", "db0", "idb-keyval", "ioredis", "lru-cache", "mongodb", "ofetch", "uploadthing"] }, "sha512-ELPztchk2zgFJnakyodVY3vJWGW9jy//keJ32IOJVGUMyaPydwcA1FtVvWqT0TNRch9H+cMNEGllfVFfScImog=="],
 
