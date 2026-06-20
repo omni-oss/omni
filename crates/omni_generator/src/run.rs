@@ -64,12 +64,6 @@ pub async fn run_named<'a, S: GeneratorEventSubscriber>(
         .ok_or_else(|| {
             ErrorInner::new_generator_not_found(generator_name.to_string())
         })?;
-    if !generator.user_invocable {
-        return Err(ErrorInner::new_generator_not_invocable(
-            generator_name.to_string(),
-        )
-        .into());
-    }
 
     run_in_transaction(&generator, config, sys).await
 }
@@ -80,13 +74,6 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
     sys: &impl GeneratorSys,
 ) -> Result<GeneratorRunResult, Error> {
     crate::validate(config.available_generators)?;
-    if !generator.user_invocable {
-        return Err(ErrorInner::new_generator_not_invocable(
-            generator.name.clone(),
-        )
-        .into());
-    }
-
     run_in_transaction(generator, config, sys).await
 }
 
@@ -98,10 +85,19 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
 /// actions have succeeded (making generation atomic), while a dry run simply
 /// drops the buffered actions without committing.
 async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
-    r#gen: &GeneratorConfiguration,
+    generator: &GeneratorConfiguration,
     config: &RunConfig<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<GeneratorRunResult, Error> {
+    if !generator.user_invocable {
+        return Err(ErrorInner::new_generator_not_invocable(
+            generator.name.to_string(),
+        )
+        .into());
+    }
+
+    crate::detect_recursion(generator, config.available_generators)?;
+
     // Serialize all generator runs within the same workspace. Generators can
     // write to arbitrary workspace-level paths (not just output_dir), so
     // per-directory locking is insufficient — a single workspace-scoped lock
@@ -122,11 +118,11 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     config
         .subscriber
         .on_generator_start(GeneratorStartEvent {
-            name: r#gen.name.clone(),
+            name: generator.name.clone(),
         })
         .await;
 
-    let result = run_internal(r#gen, config, &tx, &runner).await;
+    let result = run_internal(generator, config, &tx, &runner).await;
 
     // Tear down the JS process (if one was started) regardless of outcome.
     runner.shutdown().await;
@@ -166,7 +162,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     config
         .subscriber
         .on_generator_completed(GeneratorCompletedEvent {
-            name: r#gen.name.clone(),
+            name: generator.name.clone(),
         })
         .await;
 

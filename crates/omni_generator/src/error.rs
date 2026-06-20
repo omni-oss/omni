@@ -136,4 +136,14 @@ pub(crate) enum ErrorInner {
         #[new(into)]
         name: String,
     },
+
+    #[error(
+        "generator '{name}' call will recurse into itself, config path: {config_path}"
+    )]
+    GeneratorRecursion {
+        #[new(into)]
+        name: String,
+        #[new(into)]
+        config_path: PathBuf,
+    },
 }

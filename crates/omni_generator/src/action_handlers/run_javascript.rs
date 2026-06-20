@@ -1,8 +1,8 @@
 use js_runtime::impls::DelegatingJsRuntimeOption;
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{
     JsRuntimeOption, RunJavaScriptActionConfiguration,
 };
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys, ScriptInvocation, ScriptParams,
@@ -51,6 +51,8 @@ fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use js_runtime::impls::DelegatingJsRuntimeOption;
     use omni_generator_configurations::{
         BaseActionConfiguration, JsRuntimeOption,
@@ -95,8 +97,10 @@ mod tests {
         assert_eq!(invs.len(), 1);
         let (_, scripts) = &invs[0];
         assert_eq!(scripts.len(), 1);
-        let expected_path = fix.generator.path().join("gen.js");
-        assert_eq!(scripts[0].path, expected_path.to_string_lossy().as_ref());
+        let expected_path =
+            omni_utils::path::clean(fix.generator.path().join("gen.js"));
+        let script0_path = omni_utils::path::clean(Path::new(&scripts[0].path));
+        assert_eq!(script0_path, expected_path);
         assert!(!scripts[0].params.dry_run);
     }
 
