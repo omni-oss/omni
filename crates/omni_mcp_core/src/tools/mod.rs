@@ -36,7 +36,7 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
         ),
         tool_typed::<GeneratorRunParams>(
             "generator_run",
-            "Scaffold files using a generator",
+            "Scaffold files using a generator. Concurrent runs within the same workspace are automatically serialized to prevent race conditions on shared files. Run generators sequentially rather than in parallel.",
             false,
         ),
         tool_typed::<GeneratorValidateInputParams>(
