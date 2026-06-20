@@ -48,6 +48,54 @@ function getContent<T>(result: CallToolResult): T {
     return result.structuredContent as unknown as T;
 }
 
+/**
+ * A workspace with a generator that appends a Tera-rendered entry after a
+ * sentinel line in a workspace-level file (`@root/registry.txt`). This is the
+ * minimal fixture needed to exercise the read-modify-write race: without the
+ * workspace lock, concurrent runs would each read the original file and the
+ * last writer would overwrite the other's entry.
+ */
+function appendGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/appender/generator.omni.yaml": {
+                name: "appender",
+                inputs: [
+                    {
+                        type: "text",
+                        name: "entry",
+                        message: "What to append?",
+                    },
+                ],
+                // @workspace resolves to the workspace root, so this file is
+                // shared across every generator run in the workspace.
+                targets: { registry: "@workspace/registry.txt" },
+                actions: [
+                    {
+                        type: "append-content",
+                        target: "registry",
+                        entries: [
+                            {
+                                pattern: "# ENTRIES",
+                                content: "{{ inputs.entry }}",
+                            },
+                        ],
+                    },
+                ],
+            },
+        },
+        files: {
+            // Pre-seed the target file; append-content requires it to exist.
+            "registry.txt": "# ENTRIES\n",
+            ".omni/sources/generator/.keep": "",
+        },
+    };
+}
+
 /** Two-project workspace for filter / multi-project assertions. */
 function twoProjectSpec(): WorkspaceSpec {
     return {
@@ -404,6 +452,89 @@ describe("+mcp @mcp @cli (generator_run)", () => {
         });
 
         expect(ws.read("custom/src/greeting.txt")).toContain("Hello MCP!");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// generator_run — parallel / concurrency
+// ---------------------------------------------------------------------------
+
+describe("+mcp @mcp @cli (generator_run parallelism)", () => {
+    it("concurrent runs to different output dirs all complete without errors", async () => {
+        // Fire N runs simultaneously against separate output dirs. The workspace
+        // lock serializes them internally, but since the outputs are disjoint
+        // every run should succeed and write the correct file.
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const N = 5;
+        const results = await Promise.all(
+            Array.from({ length: N }, (_, i) =>
+                client.callTool({
+                    name: "generator_run",
+                    arguments: {
+                        name: "scaffold",
+                        output_dir: ws.path(`out-${i}`),
+                        dry_run: false,
+                        use_defaults: false,
+                        save_session: false,
+                        ignore_session: true,
+                        input_values: { subject: `Run${i}` },
+                    },
+                }),
+            ),
+        );
+
+        results.forEach((result, i) => {
+            const data = getContent<{ ok: boolean }>(result);
+            expect(data.ok).toBe(true);
+            expect(ws.exists(`out-${i}/src/greeting.txt`)).toBe(true);
+            expect(ws.read(`out-${i}/src/greeting.txt`)).toContain(
+                `Hello Run${i}!`,
+            );
+        });
+    });
+
+    it("concurrent runs modifying a shared workspace-level file preserve all changes", async () => {
+        // This directly exercises the read-modify-write race that prompted the
+        // workspace lock. The `append-content` action reads `registry.txt`,
+        // inserts a line after the sentinel, and writes it back. Without
+        // serialization the second concurrent run would read the original file
+        // and overwrite the first run's entry. With the lock both entries survive.
+        const ws = makeWorkspace(appendGeneratorSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        await Promise.all([
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "appender",
+                    output_dir: ws.path("out"),
+                    dry_run: false,
+                    use_defaults: false,
+                    save_session: false,
+                    ignore_session: true,
+                    input_values: { entry: "alpha" },
+                },
+            }),
+            client.callTool({
+                name: "generator_run",
+                arguments: {
+                    name: "appender",
+                    output_dir: ws.path("out"),
+                    dry_run: false,
+                    use_defaults: false,
+                    save_session: false,
+                    ignore_session: true,
+                    input_values: { entry: "beta" },
+                },
+            }),
+        ]);
+
+        // Both entries must appear — a race would cause one to be silently lost.
+        const registry = ws.read("registry.txt");
+        expect(registry).toContain("alpha");
+        expect(registry).toContain("beta");
     });
 });
 
