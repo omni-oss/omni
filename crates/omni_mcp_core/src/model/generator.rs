@@ -27,6 +27,8 @@ pub struct GeneratorInspectResult {
     pub description: Option<String>,
     pub inputs: Vec<McpInputSpec>,
     pub targets: Vec<McpTargetSpec>,
+    /// Sub-generators invoked by `run-generator` actions, in declaration order.
+    pub sub_generators: Vec<McpSubGeneratorRef>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -99,6 +101,11 @@ pub struct GeneratorRunParams {
         description = "When true, the generator will ignore any sessions's saved inputs and targets for current run."
     )]
     pub ignore_session: bool,
+    #[serde(default)]
+    #[schemars(
+        description = "Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default."
+    )]
+    pub max_depth: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -123,10 +130,46 @@ pub struct GeneratorValidateInputParams {
 pub struct GeneratorValidateInputResult {
     pub valid: bool,
     pub errors: Vec<McpInputFieldError>,
+    pub sub_generators: Vec<McpSubGeneratorValidationResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct McpSubGeneratorValidationResult {
+    pub generator_name: String,
+    /// The `if` expression on the `run-generator` action, if any.
+    pub action_condition: Option<String>,
+    pub valid: bool,
+    pub errors: Vec<McpInputFieldError>,
+    pub sub_generators: Vec<McpSubGeneratorValidationResult>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct McpInputFieldError {
     pub input_name: String,
     pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case", tag = "kind")]
+pub enum McpForwardedInputs {
+    /// All parent inputs are forwarded into the sub-generator's context.
+    All,
+    /// No parent inputs are forwarded.
+    None,
+    /// Only the named parent inputs are forwarded.
+    Selected { names: Vec<String> },
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct McpSubGeneratorRef {
+    /// The generator name as written in the config.
+    pub name: String,
+    /// The `if` expression on the `run-generator` action, if any.
+    pub action_condition: Option<String>,
+    /// Which parent inputs flow into the sub-generator's context automatically.
+    pub forwarded_inputs: McpForwardedInputs,
+    /// Inputs pre-set with static values in the action config, as a JSON object.
+    pub pre_filled_inputs: Value,
+    /// Recursive inspect result; absent when name is dynamic or a cycle was detected.
+    pub generator: Option<Box<GeneratorInspectResult>>,
 }

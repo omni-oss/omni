@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use maps::UnorderedMap;
 use omni_api::{
-    GeneratorInputKind, GeneratorInspectResponse, GeneratorRunRequest,
-    GeneratorValidateInputRequest, InputCondition, InputDefault,
-    StaticInputDefault,
+    ForwardedInputs, GeneratorInputKind, GeneratorInspectResponse,
+    GeneratorRunRequest, GeneratorValidateInputRequest, InputCondition,
+    InputDefault, StaticInputDefault, SubGeneratorRef,
+    SubGeneratorValidationResult,
 };
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
@@ -24,8 +25,9 @@ use crate::{
         GeneratorInspectParams, GeneratorInspectResult, GeneratorListResult,
         GeneratorRunParams, GeneratorRunResult, GeneratorSummary,
         GeneratorValidateInputParams, GeneratorValidateInputResult,
-        McpInputCondition, McpInputFieldError, McpInputOption, McpInputSpec,
-        McpTargetSpec, McpValidator,
+        McpForwardedInputs, McpInputCondition, McpInputFieldError,
+        McpInputOption, McpInputSpec, McpSubGeneratorRef,
+        McpSubGeneratorValidationResult, McpTargetSpec, McpValidator,
     },
     server::OmniMcpServer,
 };
@@ -82,6 +84,7 @@ where
             input_values: deserialize_input_values(params.input_values),
             use_defaults: params.use_defaults,
             input_provider: Arc::new(NeverInputProvider),
+            max_depth: params.max_depth,
         };
         let response = self.make_api().generator_run(req).await?;
         Ok(GeneratorRunResult {
@@ -103,13 +106,11 @@ where
         let response = self.make_api().generator_validate_input(req).await?;
         Ok(GeneratorValidateInputResult {
             valid: response.valid,
-            errors: response
-                .errors
+            errors: translate_field_errors(response.errors),
+            sub_generators: response
+                .sub_generators
                 .into_iter()
-                .map(|e| McpInputFieldError {
-                    input_name: e.input_name,
-                    message: e.message,
-                })
+                .map(translate_sub_validation)
                 .collect(),
         })
     }
@@ -130,6 +131,11 @@ fn translate_inspect_response(
                 key: t.key,
                 default_path: t.default_path,
             })
+            .collect(),
+        sub_generators: resp
+            .sub_generators
+            .into_iter()
+            .map(translate_sub_generator_ref)
             .collect(),
     }
 }
@@ -207,6 +213,32 @@ fn translate_input_spec(input: omni_api::GeneratorInputSpec) -> McpInputSpec {
     }
 }
 
+fn translate_sub_generator_ref(r: SubGeneratorRef) -> McpSubGeneratorRef {
+    let forwarded_inputs = match r.forwarded_inputs {
+        ForwardedInputs::All => McpForwardedInputs::All,
+        ForwardedInputs::None => McpForwardedInputs::None,
+        ForwardedInputs::Selected { names } => {
+            McpForwardedInputs::Selected { names }
+        }
+    };
+
+    let pre_filled_inputs = serde_json::Value::Object(
+        r.pre_filled_inputs
+            .into_iter()
+            .collect::<serde_json::Map<_, _>>(),
+    );
+
+    McpSubGeneratorRef {
+        name: r.name,
+        action_condition: r.action_condition,
+        forwarded_inputs,
+        pre_filled_inputs,
+        generator: r
+            .generator
+            .map(|g| Box::new(translate_inspect_response(*g))),
+    }
+}
+
 fn deserialize_input_values(
     v: serde_json::Value,
 ) -> UnorderedMap<String, OwnedValueBag> {
@@ -216,6 +248,34 @@ fn deserialize_input_values(
             .map(|(k, v)| (k, ValueBag::from_serde1(&v).to_owned()))
             .collect(),
         _ => Default::default(),
+    }
+}
+
+fn translate_field_errors(
+    errors: Vec<omni_api::InputFieldError>,
+) -> Vec<McpInputFieldError> {
+    errors
+        .into_iter()
+        .map(|e| McpInputFieldError {
+            input_name: e.input_name,
+            message: e.message,
+        })
+        .collect()
+}
+
+fn translate_sub_validation(
+    r: SubGeneratorValidationResult,
+) -> McpSubGeneratorValidationResult {
+    McpSubGeneratorValidationResult {
+        generator_name: r.generator_name,
+        action_condition: r.action_condition,
+        valid: r.valid,
+        errors: translate_field_errors(r.errors),
+        sub_generators: r
+            .sub_generators
+            .into_iter()
+            .map(translate_sub_validation)
+            .collect(),
     }
 }
 
