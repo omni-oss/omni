@@ -433,6 +433,11 @@ pub fn validate<TExtra: InputExtras>(
     }
 
     let mut errors = Vec::new();
+    // Tracks the resolved effective value for each processed input so that
+    // later condition expressions (e.g. `{{ inputs.version == 'custom' }}`)
+    // can reference earlier inputs' values even when they came from defaults.
+    let mut effective_values: UnorderedMap<String, OwnedValueBag> =
+        input_values.clone();
 
     for input in inputs {
         let name = input.name();
@@ -440,7 +445,7 @@ pub fn validate<TExtra: InputExtras>(
         if let Some(if_expr) = input.condition()
             && skip(
                 if_expr,
-                input_values,
+                &effective_values,
                 &ctx_vals,
                 config.if_expressions_root_property,
             )?
@@ -458,6 +463,15 @@ pub fn validate<TExtra: InputExtras>(
                 message: format!("required input '{name}' is missing"),
             });
             continue;
+        }
+
+        // Populate effective_values with the default so subsequent condition
+        // expressions see this input's resolved value.
+        if value.is_none()
+            && has_default
+            && let Some(default) = input.default_value()
+        {
+            effective_values.insert(name.to_string(), default);
         }
 
         if let Some(value) = value {
@@ -486,6 +500,7 @@ pub fn validate<TExtra: InputExtras>(
                     message: e.to_string(),
                 }),
                 Ok(typed) => {
+                    effective_values.insert(name.to_string(), typed.clone());
                     if let Err(e) = validate_value(
                         name,
                         &typed,
