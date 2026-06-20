@@ -115,7 +115,6 @@ pub struct GeneratorRunArgs {
     pub ignore_session: Option<bool>,
 
     #[arg(
-        short,
         long,
         help = "Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default."
     )]
