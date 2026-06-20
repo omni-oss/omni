@@ -43,7 +43,9 @@ authors = []
 path = "cli/omni"
 include = [
     "cli/omni/**",
-    "crates/*/**"
+    "crates/*/**",
+    "packages/*/**",
+    "services/bridge-service/**",
 ]
 ignore = [
     "crates/omni_remote_cache_storage/**",
@@ -54,7 +56,9 @@ public_api = true
 path = "crates/omni_cli_core"
 include = [
     "cli/omni/**",
-    "crates/*/**"
+    "crates/*/**",
+    "packages/*/**",
+    "services/bridge-service/**",
 ]
 ignore = [
     "crates/omni_remote_cache_storage/**",
