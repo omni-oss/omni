@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
+use omni_utils::lock::LockGuard;
+
 use crate::{
     GeneratorSys, GeneratorSysFull, JsScriptRunner, LazyScriptRunner,
     error::{Error, ErrorInner},
@@ -100,6 +102,17 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     config: &RunConfig<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<GeneratorRunResult, Error> {
+    // Serialize all generator runs within the same workspace. Generators can
+    // write to arbitrary workspace-level paths (not just output_dir), so
+    // per-directory locking is insufficient — a single workspace-scoped lock
+    // is the only safe granularity.
+    let lock_path = config
+        .workspace_dir
+        .join(".omni")
+        .join("locks")
+        .join("generator.lock");
+    let _lock = LockGuard::acquire_exclusive(lock_path).await?;
+
     let tx = TransactionSys::new(sys.clone());
     let runner = LazyScriptRunner::new(
         tx.clone(),

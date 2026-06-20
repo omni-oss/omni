@@ -7426,6 +7426,7 @@ dependencies = [
  "strum 0.28.0",
  "system_traits",
  "thiserror 2.0.18",
+ "tokio 1.52.3",
  "trace",
  "tracing",
 ]
