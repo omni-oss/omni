@@ -474,10 +474,8 @@ where
             .await
     }
 
-    /// Inspect a generator's full input schema.
-    ///
-    /// Does not require the workspace to be loaded — generator YAML is read
-    /// directly from disk.
+    /// Inspect a generator's full input schema, recursing into all
+    /// sub-generators it invokes via `run-generator` actions. Cycle-safe.
     pub async fn generator_inspect(
         &self,
         name: &str,

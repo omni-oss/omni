@@ -1,8 +1,12 @@
 use either::Either;
 use either::Either::Left;
 use omni_generator::Action;
+use omni_generator_configurations::ActionConfiguration;
+use omni_generator_configurations::ForAllInputValuesConfiguration;
+use omni_generator_configurations::ForwardInputValuesConfiguration;
 use omni_generator_configurations::GeneratorConfiguration;
 use omni_generator_configurations::InputConfigurationExtra;
+use omni_generator_configurations::InputValue;
 use omni_generator_configurations::OmniPath;
 use omni_generator_configurations::OverwriteConfiguration;
 use omni_input_provider::BaseInputConfiguration;
@@ -11,6 +15,7 @@ use omni_input_provider::InputConfiguration;
 use omni_input_provider::InputProvider;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -53,6 +58,9 @@ pub struct GeneratorRunRequest {
     pub use_defaults: bool,
     /// Supplies interactive prompts. Use `NoopInputProvider` for non-interactive contexts.
     pub input_provider: Arc<dyn InputProvider>,
+    /// Maximum `run-generator` nesting depth before the run is aborted. `None`
+    /// uses [`omni_generator::DEFAULT_MAX_GENERATOR_DEPTH`].
+    pub max_depth: Option<usize>,
 }
 
 /// Response from a `generator_run` call.
@@ -196,6 +204,9 @@ where
         available_generators: &generators,
         input_provider: req.input_provider.as_ref(),
         subscriber,
+        max_depth: req
+            .max_depth
+            .unwrap_or(omni_generator::DEFAULT_MAX_GENERATOR_DEPTH),
     };
 
     let result = omni_generator::run_named(&name, &run_config, &sys).await?;
@@ -262,10 +273,12 @@ where
 
     let generators = generators
         .iter()
-        .map(|g| GeneratorInfo {
-            name: g.name.clone(),
-            display_name: g.display_name.clone(),
-            description: g.description.clone(),
+        .filter_map(|g| {
+            g.user_invocable.then(|| GeneratorInfo {
+                name: g.name.clone(),
+                display_name: g.display_name.clone(),
+                description: g.description.clone(),
+            })
         })
         .collect();
 
@@ -371,6 +384,8 @@ pub struct GeneratorInspectResponse {
     pub description: Option<String>,
     pub inputs: Vec<GeneratorInputSpec>,
     pub targets: Vec<GeneratorTargetSpec>,
+    /// Sub-generators invoked by `run-generator` actions, in declaration order.
+    pub sub_generators: Vec<SubGeneratorRef>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -444,7 +459,8 @@ pub struct GeneratorTargetSpec {
 
 // ── Generator Inspect handler ─────────────────────────────────────────────────
 
-/// Inspect a generator's full input schema without loading the workspace.
+/// Inspect a generator's full input schema, recursing into all sub-generators
+/// invoked by `run-generator` actions. Cycle-safe.
 pub async fn handle_generator_inspect<TSys>(
     ctx: &Context<TSys>,
     name: &str,
@@ -454,30 +470,9 @@ where
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
-
-    let generator = generators
-        .iter()
-        .find(|g| g.name == name)
-        .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))?;
-
-    let inputs = generator.inputs.iter().map(translate_input).collect();
-
-    let targets = generator
-        .targets
-        .iter()
-        .map(|(key, path)| GeneratorTargetSpec {
-            key: key.clone(),
-            default_path: omni_path_to_string(path),
-        })
-        .collect();
-
-    Ok(GeneratorInspectResponse {
-        name: generator.name.clone(),
-        display_name: generator.display_name.clone(),
-        description: generator.description.clone(),
-        inputs,
-        targets,
-    })
+    let mut visited = HashSet::new();
+    inspect_generator(name, &generators, &mut visited)
+        .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))
 }
 
 fn omni_path_to_string(path: &OmniPath) -> String {
@@ -652,12 +647,24 @@ pub struct GeneratorValidateInputRequest {
     pub use_defaults: bool,
 }
 
+/// Validation result for a single sub-generator invoked by a `run-generator` action.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubGeneratorValidationResult {
+    pub generator_name: String,
+    /// The `if` expression on the `run-generator` action, if any.
+    pub action_condition: Option<String>,
+    pub valid: bool,
+    pub errors: Vec<InputFieldError>,
+    pub sub_generators: Vec<SubGeneratorValidationResult>,
+}
+
 /// Response from a `generator_validate_input` call.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GeneratorValidateInputResponse {
-    /// `true` when `errors` is empty.
+    /// `true` when all errors (including sub-generators) are empty.
     pub valid: bool,
     pub errors: Vec<InputFieldError>,
+    pub sub_generators: Vec<SubGeneratorValidationResult>,
 }
 
 /// A validation error for a single named input field.
@@ -669,10 +676,8 @@ pub struct InputFieldError {
 
 // ── Validate Input handler ────────────────────────────────────────────────────
 
-/// Validate a set of input values against a generator's schema without running it.
-///
-/// Delegates to [`omni_input_provider::validate`] which reuses the same
-/// condition evaluation and validator expression logic as interactive collection.
+/// Validate a set of input values against a generator's full schema, including
+/// all sub-generators invoked by `run-generator` actions. Cycle-safe.
 pub async fn handle_generator_validate_input<TSys>(
     ctx: &Context<TSys>,
     req: GeneratorValidateInputRequest,
@@ -683,32 +688,258 @@ where
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
 
-    let generator = generators
-        .iter()
-        .find(|g| g.name == req.name)
-        .ok_or_else(|| eyre::eyre!("generator '{}' not found", req.name))?;
-
     let config = omni_input_provider::CollectionConfig {
         use_defaults: req.use_defaults,
         ..Default::default()
     };
 
-    let report = omni_input_provider::validate(
-        &generator.inputs,
+    let mut visited = HashSet::new();
+    let (errors, sub_generators) = validate_generator(
+        &req.name,
         &req.input_values,
-        &Default::default(),
+        &generators,
         &config,
-    )?;
+        &mut visited,
+    )
+    .ok_or_else(|| eyre::eyre!("generator '{}' not found", req.name))?;
 
+    let valid = errors.is_empty() && sub_generators.iter().all(|s| s.valid);
     Ok(GeneratorValidateInputResponse {
-        valid: report.is_valid(),
-        errors: report
-            .errors
-            .into_iter()
-            .map(|e| InputFieldError {
-                input_name: e.input_name,
-                message: e.message,
-            })
-            .collect(),
+        valid,
+        errors,
+        sub_generators,
     })
+}
+
+fn validate_generator(
+    name: &str,
+    input_values: &UnorderedMap<String, OwnedValueBag>,
+    generators: &[Cow<'static, GeneratorConfiguration>],
+    config: &omni_input_provider::CollectionConfig<'_>,
+    visited: &mut HashSet<String>,
+) -> Option<(Vec<InputFieldError>, Vec<SubGeneratorValidationResult>)> {
+    let generator = generators.iter().find(|g| g.name == name)?;
+
+    let report = match omni_input_provider::validate(
+        &generator.inputs,
+        input_values,
+        &Default::default(),
+        config,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            return Some((
+                vec![InputFieldError {
+                    input_name: String::from("_configuration"),
+                    message: e.to_string(),
+                }],
+                vec![],
+            ));
+        }
+    };
+
+    let errors: Vec<InputFieldError> = report
+        .errors
+        .into_iter()
+        .map(|e| InputFieldError {
+            input_name: e.input_name,
+            message: e.message,
+        })
+        .collect();
+
+    visited.insert(name.to_string());
+
+    let sub_generators = generator
+        .actions
+        .iter()
+        .filter_map(|action| {
+            let ActionConfiguration::RunGenerator { action } = action else {
+                return None;
+            };
+            if visited.contains(&action.generator) {
+                return None;
+            }
+            let effective_inputs = compute_effective_sub_inputs(
+                &action.input_values,
+                input_values,
+            );
+            let (sub_errors, sub_sub) = validate_generator(
+                &action.generator,
+                &effective_inputs,
+                generators,
+                config,
+                visited,
+            )?;
+            let valid =
+                sub_errors.is_empty() && sub_sub.iter().all(|s| s.valid);
+            Some(SubGeneratorValidationResult {
+                generator_name: action.generator.clone(),
+                action_condition: action.base.r#if.clone(),
+                valid,
+                errors: sub_errors,
+                sub_generators: sub_sub,
+            })
+        })
+        .collect();
+
+    visited.remove(name);
+
+    Some((errors, sub_generators))
+}
+
+/// Compute the effective input values a sub-generator will receive:
+/// forwarded parent inputs are applied first, then pre-filled static values
+/// from the action config override them.
+fn compute_effective_sub_inputs(
+    cfg: &omni_generator_configurations::InputValuesConfiguration,
+    parent_inputs: &UnorderedMap<String, OwnedValueBag>,
+) -> UnorderedMap<String, OwnedValueBag> {
+    let mut effective = UnorderedMap::default();
+
+    match &cfg.forward {
+        ForwardInputValuesConfiguration::ForAll(
+            ForAllInputValuesConfiguration::All,
+        ) => effective.extend(parent_inputs.clone()),
+        ForwardInputValuesConfiguration::Selected(names) => {
+            for name in names {
+                if let Some(v) = parent_inputs.get(name.as_str()) {
+                    effective.insert(name.clone(), v.clone());
+                }
+            }
+        }
+        ForwardInputValuesConfiguration::ForAll(
+            ForAllInputValuesConfiguration::None,
+        ) => {}
+    }
+
+    for (k, v) in &cfg.values {
+        effective.insert(k.clone(), input_value_to_owned_value_bag(v));
+    }
+
+    effective
+}
+
+fn input_value_to_owned_value_bag(v: &InputValue) -> OwnedValueBag {
+    ValueBag::from_serde1(&input_value_to_json(v)).to_owned()
+}
+
+// ── Sub-generator traversal types ───────────────────────────────────────────
+
+/// Describes how the parent generator's inputs flow into a sub-generator.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "kind")]
+pub enum ForwardedInputs {
+    /// All parent inputs are forwarded into the sub-generator's context.
+    All,
+    /// No parent inputs are forwarded.
+    None,
+    /// Only the named parent inputs are forwarded.
+    Selected { names: Vec<String> },
+}
+
+/// An invocation of a sub-generator found inside a `run-generator` action.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubGeneratorRef {
+    /// The generator name as written in the config.
+    pub name: String,
+    /// The `if` expression on the `run-generator` action, if any.
+    pub action_condition: Option<String>,
+    /// Which parent inputs flow into the sub-generator's context automatically.
+    pub forwarded_inputs: ForwardedInputs,
+    /// Inputs that are pre-set with static values in the action config (key → JSON value).
+    pub pre_filled_inputs: Vec<(String, serde_json::Value)>,
+    /// Recursive inspect result; `None` when a cycle was detected.
+    pub generator: Option<Box<GeneratorInspectResponse>>,
+}
+
+fn inspect_generator(
+    name: &str,
+    generators: &[Cow<'static, GeneratorConfiguration>],
+    visited: &mut HashSet<String>,
+) -> Option<GeneratorInspectResponse> {
+    let generator = generators.iter().find(|g| g.name == name)?;
+
+    let inputs = generator.inputs.iter().map(translate_input).collect();
+    let targets = generator
+        .targets
+        .iter()
+        .map(|(key, path)| GeneratorTargetSpec {
+            key: key.clone(),
+            default_path: omni_path_to_string(path),
+        })
+        .collect();
+
+    visited.insert(name.to_string());
+
+    let sub_generators = generator
+        .actions
+        .iter()
+        .filter_map(|action| {
+            let ActionConfiguration::RunGenerator { action } = action else {
+                return None;
+            };
+            let action_condition = action.base.r#if.clone();
+
+            let forwarded_inputs = match &action.input_values.forward {
+                ForwardInputValuesConfiguration::ForAll(
+                    ForAllInputValuesConfiguration::All,
+                ) => ForwardedInputs::All,
+                ForwardInputValuesConfiguration::ForAll(
+                    ForAllInputValuesConfiguration::None,
+                ) => ForwardedInputs::None,
+                ForwardInputValuesConfiguration::Selected(names) => {
+                    ForwardedInputs::Selected {
+                        names: names.clone(),
+                    }
+                }
+            };
+
+            let pre_filled_inputs = action
+                .input_values
+                .values
+                .iter()
+                .map(|(k, v)| (k.clone(), input_value_to_json(v)))
+                .collect();
+
+            let child_generator = if visited.contains(&action.generator) {
+                None
+            } else {
+                inspect_generator(&action.generator, generators, visited)
+                    .map(Box::new)
+            };
+
+            Some(SubGeneratorRef {
+                name: action.generator.clone(),
+                action_condition,
+                forwarded_inputs,
+                pre_filled_inputs,
+                generator: child_generator,
+            })
+        })
+        .collect();
+
+    visited.remove(name);
+
+    Some(GeneratorInspectResponse {
+        name: generator.name.clone(),
+        display_name: generator.display_name.clone(),
+        description: generator.description.clone(),
+        inputs,
+        targets,
+        sub_generators,
+    })
+}
+
+fn input_value_to_json(v: &InputValue) -> serde_json::Value {
+    match v {
+        InputValue::Integer(i) => serde_json::Value::Number((*i).into()),
+        InputValue::Float(f) => serde_json::Number::from_f64(*f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        InputValue::Boolean(b) => serde_json::Value::Bool(*b),
+        InputValue::String(s) => serde_json::Value::String(s.clone()),
+        InputValue::List(l) => serde_json::Value::Array(
+            l.iter().map(input_value_to_json).collect(),
+        ),
+    }
 }
