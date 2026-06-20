@@ -98,6 +98,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         input_values: &pre_exec_values,
         input_provider: &input_provider,
         subscriber: &omni_messages::NoopSubscriber,
+        max_depth: omni_generator::DEFAULT_MAX_GENERATOR_DEPTH,
     };
 
     omni_generator::run(&generator, &run_config, &sys).await?;

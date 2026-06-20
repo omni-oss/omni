@@ -13,6 +13,7 @@ dist
 ###############
 **/.omni/cache/**
 **/.omni/trace/**
+**/.omni/locks/**
 **/.omni/remote-cache.omni.*
 **/.omni/sources/*/**
 **/.omni/remote_cache/**

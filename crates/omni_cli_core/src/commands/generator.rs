@@ -114,6 +114,13 @@ pub struct GeneratorRunArgs {
     )]
     pub ignore_session: Option<bool>,
 
+    #[arg(
+        short,
+        long,
+        help = "Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default."
+    )]
+    pub max_depth: Option<usize>,
+
     #[command(flatten)]
     pub common: GeneratorRunCommonArgs,
 }
@@ -200,6 +207,7 @@ async fn run_generator_run(
         input_values: get_input_values(&command.args.common.value),
         use_defaults: command.args.common.use_defaults,
         input_provider: Arc::new(CliInputProvider::default()),
+        max_depth: command.args.max_depth,
     };
 
     let api = OmniApi::new_with_loaded_sys(

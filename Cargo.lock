@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "bridge_rpc_router"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bridge_rpc_core",
@@ -5429,7 +5429,7 @@ dependencies = [
 
 [[package]]
 name = "js_runtime"
-version = "0.2.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bridge_rpc_core",
@@ -6431,7 +6431,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.16.0"
+version = "0.15.1"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6956,7 +6956,7 @@ dependencies = [
 
 [[package]]
 name = "omni_mcp_core"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "async-trait",
  "eyre",
