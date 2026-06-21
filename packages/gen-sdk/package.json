@@ -17,6 +17,10 @@
         }
     },
 
+    "publishConfig": {
+        "access": "public"
+    },
+
     "devDependencies": {
         "@omni-oss/gen-sdk-core": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",

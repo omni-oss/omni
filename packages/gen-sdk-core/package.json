@@ -15,6 +15,9 @@
             }
         }
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "peerDependencies": {
         "@omni-oss/log": "workspace:^",
         "@omni-oss/system-interface": "workspace:^"

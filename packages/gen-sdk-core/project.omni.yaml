@@ -28,7 +28,7 @@ tasks:
     enabled: true
 
   publish:
-    enabled: false
+    enabled: true
 
 
 
