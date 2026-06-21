@@ -239,9 +239,9 @@ describe("+init @e2e @exitcode (error paths)", () => {
             cwd: ws.cwd,
         });
 
-        // `init` returns Ok after logging, so the exit code stays 0.
-        expect(result).toHaveExitCode(0);
-        expect(result).toOutputContaining("No source provided");
+        // `init` returns Ok after logging
+        expect(result).not.toHaveExitCode(0);
+        expect(result).toHaveStderrContaining("No source provided");
         expect(ws.exists("nope/workspace.omni.yaml")).toBe(false);
     });
 
@@ -283,10 +283,10 @@ describe("+init @e2e @exitcode (error paths)", () => {
             { cwd: ws.cwd },
         );
 
-        // The git-rev validation logs and returns Ok, so the exit code stays 0
+        // The git-rev validation logs
         // and nothing is cloned or written.
-        expect(result).toHaveExitCode(0);
-        expect(result).toOutputContaining(
+        expect(result).not.toHaveExitCode(0);
+        expect(result).toHaveStderrContaining(
             "Git revision specified without a git repository URL",
         );
         expect(ws.exists("no-git/workspace.omni.yaml")).toBe(false);
