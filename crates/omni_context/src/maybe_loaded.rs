@@ -62,6 +62,13 @@ impl<TSys: ContextSys> MaybeLoaded<TSys> {
         }
     }
 
+    pub async fn ensure_loaded(
+        &mut self,
+    ) -> Result<&LoadedContext<TSys>, ContextError> {
+        self.load().await?;
+        Ok(self.as_loaded_context())
+    }
+
     /// Resolves to a [`LoadedContext`].
     ///
     /// If this value is `Loaded`, returns it directly (no I/O). Otherwise the
