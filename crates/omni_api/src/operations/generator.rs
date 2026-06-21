@@ -44,8 +44,8 @@ pub struct GeneratorRunRequest {
     /// Resolve `output_dir` from this project's directory (CLI convenience).
     pub project: Option<String>,
     /// Target overrides: `(target_key, path)` pairs.
-    #[schemars(with = "Vec<(String, String)>")]
-    pub target: Vec<(String, OmniPath)>,
+    #[schemars(with = "UnorderedMap<String, String>")]
+    pub target: UnorderedMap<String, OmniPath>,
     /// Simulate generation without writing files.
     pub dry_run: bool,
     /// How to handle existing files.
@@ -55,7 +55,7 @@ pub struct GeneratorRunRequest {
     /// Skip loading an existing session from disk even if one exists.
     pub ignore_session: Option<bool>,
     /// Pre-filled prompt values (key → value bag).
-    #[schemars(with = "std::collections::HashMap<String, serde_json::Value>")]
+    #[schemars(with = "UnorderedMap<String, serde_json::Value>")]
     pub input_values: UnorderedMap<String, OwnedValueBag>,
     /// Use default values for all prompts that have defaults.
     pub use_defaults: bool,

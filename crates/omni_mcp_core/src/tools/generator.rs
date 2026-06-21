@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use maps::UnorderedMap;
+use maps::{UnorderedMap, unordered_map};
 use omni_api::{
     ForwardedInputs, GeneratorInputKind, GeneratorInspectResponse,
     GeneratorRunRequest, GeneratorValidateInputRequest, InputCondition,
@@ -76,7 +76,7 @@ where
             name: Some(params.name),
             output_dir: PathBuf::from(&params.output_dir),
             project: params.project,
-            target: vec![],
+            target: unordered_map!(),
             dry_run: params.dry_run,
             overwrite: None,
             save_session: Some(params.save_session),
