@@ -525,6 +525,33 @@ describe("+mcp @mcp @cli (generator_list)", () => {
 
         expect(data.generators).toHaveLength(0);
     });
+
+    it("omits generators with `user_invocable: false`", async () => {
+        // A non-user-invocable generator is only callable by other generators,
+        // so `generator_list` must not expose it to MCP clients.
+        const spec = scaffoldGeneratorSpec();
+        if (spec.projects) {
+            spec.projects["generators/internal/generator.omni.yaml"] = {
+                name: "internal-helper",
+                description: "only callable by other generators",
+                user_invocable: false,
+                actions: [],
+            };
+        }
+        const ws = makeWorkspace(spec);
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({ name: "generator_list" });
+        const data = getContent<{
+            generators: Array<{ name: string; description?: string }>;
+        }>(result);
+
+        const names = data.generators.map((g) => g.name);
+        // The user-invocable generator is exposed...
+        expect(names).toContain("scaffold");
+        // ...while the non-user-invocable one is filtered out.
+        expect(names).not.toContain("internal-helper");
+    });
 });
 
 // ---------------------------------------------------------------------------

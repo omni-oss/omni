@@ -65,6 +65,30 @@ describe("+generator @cli (list)", () => {
         expect(result).toHaveSucceeded();
         expect(result.stdout).not.toContain("scaffold");
     });
+
+    it("omits generators with `user_invocable: false` from the list", async () => {
+        // Add a hidden helper generator alongside the user-invocable
+        // `scaffold`. It can only be called by other generators, so it must
+        // not surface in the user-facing listing.
+        const spec = scaffoldGeneratorSpec();
+        if (spec.projects) {
+            spec.projects["generators/internal/generator.omni.yaml"] = {
+                name: "internal-helper",
+                description: "only callable by other generators",
+                user_invocable: false,
+                actions: [],
+            };
+        }
+        const ws = makeWorkspace(spec);
+
+        const result = await runOmni(["generator", "list"], { cwd: ws.cwd });
+
+        expect(result).toHaveSucceeded();
+        // The user-invocable generator is still listed...
+        expect(result).toOutputContaining("scaffold");
+        // ...but the non-user-invocable one is filtered out.
+        expect(result.stdout).not.toContain("internal-helper");
+    });
 });
 
 describe("+generator @cli (run)", () => {

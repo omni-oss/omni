@@ -13,6 +13,11 @@
  * `workspace.omni.yaml` from `workspace.omni.yaml.tpl` (its sibling `**`
  * sources are dot-files, which the globs skip), giving a deterministic output
  * file to assert on.
+ *
+ * `--git-rev <rev>` is forwarded to `clone_repo` and resolved with
+ * `rev_parse_single`, so it accepts a branch, tag, or commit hash. `init`
+ * also rejects `--git-rev` when no `--git` URL is given (it logs and returns
+ * Ok, so the exit code stays 0).
  */
 
 import { mkdirSync } from "node:fs";
@@ -124,6 +129,72 @@ describe("+init @e2e (clone + run primary generator)", () => {
         },
         CLONE_TIMEOUT_MS,
     );
+
+    it(
+        "`--git-rev <branch>` clones at the given revision and runs the generator",
+        async (ctx) => {
+            await skipUnlessRemoteReachable(ctx);
+
+            const ws = makeWorkspace();
+
+            const result = await runOmni(
+                [
+                    "init",
+                    "--git",
+                    repo.https,
+                    "--git-rev",
+                    repo.rev,
+                    "-o",
+                    "rev-branch",
+                    "-v",
+                    `${repo.promptName}=rev-branch-ws`,
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("rev-branch/workspace.omni.yaml")).toContain(
+                "name: rev-branch-ws",
+            );
+        },
+        CLONE_TIMEOUT_MS,
+    );
+
+    it(
+        "`--git-rev <commit>` clones at the specific commit hash",
+        async (ctx) => {
+            await skipUnlessRemoteReachable(ctx);
+
+            // The current (single) commit on `main`. A full clone fetches all
+            // of `main`'s history, so this SHA stays resolvable by
+            // `rev_parse_single` even if the branch advances later.
+            const commit = "656e50e1a615b5b71f43eed968d8647a33b04dd0";
+            const ws = makeWorkspace();
+
+            const result = await runOmni(
+                [
+                    "init",
+                    "--git",
+                    repo.https,
+                    "--git-rev",
+                    commit,
+                    "-o",
+                    "rev-commit",
+                    "-v",
+                    `${repo.promptName}=rev-commit-ws`,
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("rev-commit/workspace.omni.yaml")).toContain(
+                "name: rev-commit-ws",
+            );
+        },
+        CLONE_TIMEOUT_MS,
+    );
 });
 
 describe("+init @e2e @scm (SSH remote)", () => {
@@ -200,6 +271,55 @@ describe("+init @e2e @exitcode (error paths)", () => {
             expect(result).toHaveExitCode(0);
             expect(result).toOutputContaining("No primary generator is found");
             expect(ws.exists("empty/workspace.omni.yaml")).toBe(false);
+        },
+        CLONE_TIMEOUT_MS,
+    );
+
+    it("`--git-rev` without `--git` logs an error and exits without action", async () => {
+        const ws = makeWorkspace();
+
+        const result = await runOmni(
+            ["init", "--git-rev", repo.rev, "-o", "no-git"],
+            { cwd: ws.cwd },
+        );
+
+        // The git-rev validation logs and returns Ok, so the exit code stays 0
+        // and nothing is cloned or written.
+        expect(result).toHaveExitCode(0);
+        expect(result).toOutputContaining(
+            "Git revision specified without a git repository URL",
+        );
+        expect(ws.exists("no-git/workspace.omni.yaml")).toBe(false);
+    });
+
+    it(
+        "an invalid `--git-rev` surfaces a checkout error",
+        async (ctx) => {
+            await skipUnlessRemoteReachable(ctx);
+
+            // The clone succeeds, but resolving a bogus revision fails after
+            // checkout - no credential prompt, so there's no risk of hanging.
+            const ws = makeWorkspace();
+
+            const result = await runOmni(
+                [
+                    "init",
+                    "--git",
+                    repo.https,
+                    "--git-rev",
+                    "this-rev-does-not-exist",
+                    "-o",
+                    "bad-rev",
+                    "-v",
+                    `${repo.promptName}=x`,
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+            );
+
+            expect(result).toHaveExitCode(1);
+            expect(result.failed).toBe(true);
+            expect(ws.exists("bad-rev/workspace.omni.yaml")).toBe(false);
         },
         CLONE_TIMEOUT_MS,
     );
