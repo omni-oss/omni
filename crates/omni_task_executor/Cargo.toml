@@ -58,3 +58,4 @@ omni_types = { workspace = true }
 omni_tera = { workspace = true }
 omni_config_types = { workspace = true }
 bon = { workspace = true }
+schemars = { workspace = true }

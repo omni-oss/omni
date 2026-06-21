@@ -4,6 +4,7 @@ use omni_messages::ExecutionEventSubscriber;
 use omni_task_executor::{
     ExecutionConfigBuilder, TaskExecutionResult, TaskExecutor, TaskExecutorSys,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::run::{RunFilters, apply_filters};
@@ -11,7 +12,7 @@ use super::run::{RunFilters, apply_filters};
 // ── Request ────────────────────────────────────────────────────────────────────
 
 /// Request to run an arbitrary command in the workspace environment.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, JsonSchema)]
 pub struct ExecRequest {
     /// The command and its arguments (e.g. `["echo", "hello"]`).
     pub cmd: Vec<String>,
@@ -31,8 +32,10 @@ impl Default for ExecRequest {
 // ── Response ──────────────────────────────────────────────────────────────────
 
 /// Results of an `exec` operation.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ExecResponse {
+    // `TaskExecutionResult` lives in `omni_task_executor` and does not
+    // implement `JsonSchema`; represent it opaquely here.
     pub results: Vec<TaskExecutionResult>,
 }
 

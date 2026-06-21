@@ -6,6 +6,7 @@ use derive_new::new;
 use maps::Map;
 use omni_hasher::impls::DefaultHash;
 use omni_types::OmniPath;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use yoke::Yokeable;
 
@@ -36,17 +37,22 @@ pub struct NewCacheInfo<'a> {
     pub tries: u8,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, new, Serialize, Deserialize)]
+#[derive(
+    Clone, PartialEq, Eq, Debug, new, Serialize, Deserialize, JsonSchema,
+)]
 pub struct PrunedCacheEntry {
     pub project_name: String,
     pub task_name: String,
     pub digest: DefaultHash,
+    #[schemars(with = "String")]
     pub size: ByteSize,
     pub entry_dir: PathBuf,
     pub stale: StaleStatus,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, new, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Debug, new, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum StaleStatus {
     Unknown,

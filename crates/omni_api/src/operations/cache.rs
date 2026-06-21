@@ -14,12 +14,13 @@ use omni_context::{
 use omni_core::{Project, ProjectGraph, TaskExecutionNode};
 use omni_task_context::CacheInfo;
 use omni_task_executor::TaskExecutorSys;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ── Request types ─────────────────────────────────────────────────────────────
 
 /// Filters for [`handle_cache_stats`].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct CacheStatsRequest {
     pub project: Vec<String>,
     pub task: Vec<String>,
@@ -28,13 +29,14 @@ pub struct CacheStatsRequest {
 }
 
 /// Filters for [`handle_cache_prune`].
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct CachePruneRequest {
     /// Only prune cache entries whose digest is stale.
     pub stale_only: bool,
     /// Only prune entries older than this duration.
     pub older_than: Option<Duration>,
     /// Only prune entries larger than this byte size.
+    #[schemars(with = "Option<u64>")]
     pub larger_than: Option<ByteSize>,
     pub project: Vec<String>,
     pub task: Vec<String>,
@@ -45,7 +47,7 @@ pub struct CachePruneRequest {
 }
 
 /// Parameters for [`handle_cache_remote_setup`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CacheRemoteSetupRequest {
     pub api_base_url: String,
     pub api_key: String,
@@ -60,9 +62,11 @@ pub struct CacheRemoteSetupRequest {
 // ── Response types ────────────────────────────────────────────────────────────
 
 /// Result of a [`handle_cache_prune`] call.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CachePruneResponse {
     /// The entries that were (or would be, when `dry_run == true`) pruned.
+    // `PrunedCacheEntry` lives in `omni_cache` and does not implement
+    // `JsonSchema` (it embeds external types); represent it opaquely here.
     pub entries: Vec<PrunedCacheEntry>,
     /// Mirrors `CachePruneRequest::dry_run`.
     pub dry_run: bool,

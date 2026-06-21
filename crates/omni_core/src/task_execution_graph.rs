@@ -12,6 +12,7 @@ use petgraph::{
     graph::{DiGraph, NodeIndex},
     visit::{Dfs, IntoNeighborsDirected as _, Reversed, Topo, Walker},
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant};
 use trace::Level;
@@ -19,7 +20,15 @@ use trace::Level;
 use crate::{Project, ProjectGraph, ProjectGraphError};
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Deserialize,
+    Serialize,
+    JsonSchema,
 )]
 pub struct TaskExecutionNode {
     task_name: String,

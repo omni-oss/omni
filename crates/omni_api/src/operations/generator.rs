@@ -13,6 +13,7 @@ use omni_input_provider::BaseInputConfiguration;
 use omni_input_provider::ConfirmInputConfiguration;
 use omni_input_provider::InputConfiguration;
 use omni_input_provider::InputProvider;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -33,7 +34,7 @@ use value_bag::{OwnedValueBag, ValueBag};
 // ── Request / Response types ──────────────────────────────────────────────────
 
 /// Request to run a generator.
-#[derive(Debug)]
+#[derive(Debug, JsonSchema)]
 pub struct GeneratorRunRequest {
     /// The generator to run. `None` is not accepted by the API handler — the
     /// CLI adapter must prompt the user and provide the name before calling.
@@ -43,6 +44,7 @@ pub struct GeneratorRunRequest {
     /// Resolve `output_dir` from this project's directory (CLI convenience).
     pub project: Option<String>,
     /// Target overrides: `(target_key, path)` pairs.
+    #[schemars(with = "Vec<(String, String)>")]
     pub target: Vec<(String, OmniPath)>,
     /// Simulate generation without writing files.
     pub dry_run: bool,
@@ -53,10 +55,12 @@ pub struct GeneratorRunRequest {
     /// Skip loading an existing session from disk even if one exists.
     pub ignore_session: Option<bool>,
     /// Pre-filled prompt values (key → value bag).
+    #[schemars(with = "std::collections::HashMap<String, serde_json::Value>")]
     pub input_values: UnorderedMap<String, OwnedValueBag>,
     /// Use default values for all prompts that have defaults.
     pub use_defaults: bool,
     /// Supplies interactive prompts. Use `NoopInputProvider` for non-interactive contexts.
+    #[schemars(skip)]
     pub input_provider: Arc<dyn InputProvider>,
     /// Maximum `run-generator` nesting depth before the run is aborted. `None`
     /// uses [`omni_generator::DEFAULT_MAX_GENERATOR_DEPTH`].
@@ -64,7 +68,7 @@ pub struct GeneratorRunRequest {
 }
 
 /// Response from a `generator_run` call.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorRunResponse {
     /// Actions done by the generator (empty for dry runs).
     pub actions: Vec<Action>,
@@ -73,7 +77,7 @@ pub struct GeneratorRunResponse {
 }
 
 /// A single entry in a `generator_list` response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorInfo {
     pub name: String,
     pub display_name: Option<String>,
@@ -81,7 +85,7 @@ pub struct GeneratorInfo {
 }
 
 /// Response from a `generator_list` call.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorListResponse {
     pub generators: Vec<GeneratorInfo>,
 }
@@ -378,7 +382,7 @@ where
 
 // ── Generator Inspect types ──────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorInspectResponse {
     pub name: String,
     pub display_name: Option<String>,
@@ -389,7 +393,7 @@ pub struct GeneratorInspectResponse {
     pub sub_generators: Vec<SubGeneratorRef>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorInputSpec {
     pub name: String,
     pub message: String,
@@ -404,7 +408,7 @@ pub struct GeneratorInputSpec {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum GeneratorInputKind {
     Confirm,
@@ -416,14 +420,14 @@ pub enum GeneratorInputKind {
     Integer,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputDefault {
     Static { value: StaticInputDefault },
     Dynamic { expr: String },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum StaticInputDefault {
     Bool(bool),
@@ -433,27 +437,27 @@ pub enum StaticInputDefault {
     StrList(Vec<String>),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputCondition {
     AlwaysHidden,
     Expression { expr: String },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct InputValidator {
     pub condition: String,
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct InputOption {
     pub label: String,
     pub description: Option<String>,
     pub value: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorTargetSpec {
     pub key: String,
     pub default_path: String,
@@ -642,9 +646,10 @@ fn translate_option(
 // ── Validate Input types ──────────────────────────────────────────────────────
 
 /// Request to validate a set of input values against a generator's schema.
-#[derive(Debug)]
+#[derive(Debug, JsonSchema)]
 pub struct GeneratorValidateInputRequest {
     pub name: String,
+    #[schemars(with = "std::collections::HashMap<String, serde_json::Value>")]
     pub input_values: UnorderedMap<String, OwnedValueBag>,
     /// When `true`, inputs that have a default are not flagged as missing.
     /// Mirrors the behaviour of `generator_run`'s `use_defaults` flag.
@@ -652,7 +657,7 @@ pub struct GeneratorValidateInputRequest {
 }
 
 /// Validation result for a single sub-generator invoked by a `run-generator` action.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SubGeneratorValidationResult {
     pub generator_name: String,
     /// The `if` expression on the `run-generator` action, if any.
@@ -663,7 +668,7 @@ pub struct SubGeneratorValidationResult {
 }
 
 /// Response from a `generator_validate_input` call.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorValidateInputResponse {
     /// `true` when all errors (including sub-generators) are empty.
     pub valid: bool,
@@ -672,7 +677,7 @@ pub struct GeneratorValidateInputResponse {
 }
 
 /// A validation error for a single named input field.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct InputFieldError {
     pub input_name: String,
     pub message: String,
@@ -830,7 +835,7 @@ fn input_value_to_owned_value_bag(v: &InputValue) -> OwnedValueBag {
 // ── Sub-generator traversal types ───────────────────────────────────────────
 
 /// Describes how the parent generator's inputs flow into a sub-generator.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum ForwardedInputs {
     /// All parent inputs are forwarded into the sub-generator's context.
@@ -842,7 +847,7 @@ pub enum ForwardedInputs {
 }
 
 /// An invocation of a sub-generator found inside a `run-generator` action.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SubGeneratorRef {
     /// The generator name as written in the config.
     pub name: String,

@@ -1,10 +1,11 @@
 use omni_context::{ContextSys, LoadedContext};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ── Response ──────────────────────────────────────────────────────────────────
 
 /// The computed hash string.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct HashResponse {
     pub hash: String,
 }

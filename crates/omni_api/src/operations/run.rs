@@ -9,12 +9,13 @@ use omni_task_executor::{
     ExecutionConfigBuilder, Force, OnFailure, TaskExecutionResult,
     TaskExecutor, TaskExecutorSys,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ── Request ─────────────────────────────────────────────────────────────────
 
 /// Filters common to `run` and `exec` operations.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, JsonSchema)]
 pub struct RunFilters {
     /// CEL expression to match against task meta configuration.
     pub meta: Option<String>,
@@ -31,6 +32,7 @@ pub struct RunFilters {
     /// SCM target commit for affected-files filtering.
     pub scm_target: Option<String>,
     /// SCM strategy for affected-files detection.
+    #[schemars(with = "String")]
     pub scm_affected: SelectScm,
     /// Override max retries for all tasks.
     pub retry: Option<u8>,
@@ -59,7 +61,7 @@ impl Default for RunFilters {
 }
 
 /// Request to run one or more named tasks.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, JsonSchema)]
 pub struct RunRequest {
     /// Task names to execute.
     pub tasks: Vec<String>,
@@ -68,12 +70,14 @@ pub struct RunRequest {
     /// Also run tasks that depend on the matching tasks.
     pub with_dependents: bool,
     /// How to handle task failures.
+    #[schemars(with = "String")]
     pub on_failure: OnFailure,
     /// Do not persist results to the local cache.
     pub no_cache: bool,
     /// Do not replay cached task output logs.
     pub no_replay_logs: bool,
     /// Force re-execution even for cached tasks.
+    #[schemars(with = "String")]
     pub force: Force,
     /// Filters that narrow down which projects/tasks are in scope.
     pub filters: RunFilters,
@@ -97,8 +101,11 @@ impl Default for RunRequest {
 // ── Response ─────────────────────────────────────────────────────────────────
 
 /// Results of a `run` operation.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RunResponse {
+    // `TaskExecutionResult` lives in `omni_task_executor` and does not
+    // implement `JsonSchema`; represent it opaquely here.
+    #[schemars(with = "Vec<serde_json::Value>")]
     pub results: Vec<TaskExecutionResult>,
 }
 

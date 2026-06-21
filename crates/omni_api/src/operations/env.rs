@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use omni_context::{Context, ContextSys, GetVarsArgs};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ── Request ───────────────────────────────────────────────────────────────────
 
 /// Request to retrieve workspace environment variables.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct EnvRequest {
     /// If set, return only this key. If `None`, return all variables.
     pub key: Option<String>,
@@ -15,7 +16,7 @@ pub struct EnvRequest {
 // ── Response ──────────────────────────────────────────────────────────────────
 
 /// Workspace environment variables.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EnvResponse {
     /// All resolved environment variables, sorted by key.
     pub vars: BTreeMap<String, String>,
@@ -40,7 +41,10 @@ pub fn handle_env<TSys: ContextSys>(
             .map(|v| BTreeMap::from([(key, v.clone())]))
             .unwrap_or_default()
     } else {
-        env_vars.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        env_vars
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     };
 
     Ok(EnvResponse { vars })

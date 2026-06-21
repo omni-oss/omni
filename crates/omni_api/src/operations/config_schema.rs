@@ -1,12 +1,14 @@
 use omni_configurations::{ProjectConfiguration, WorkspaceConfiguration};
 use omni_generator_configurations::GeneratorConfiguration;
-use schemars::schema_for;
+use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
 
 // ── Kind ─────────────────────────────────────────────────────────────────────
 
 /// Which configuration schema to return.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum SchemaKind {
     Workspace,
@@ -17,7 +19,7 @@ pub enum SchemaKind {
 // ── Response ──────────────────────────────────────────────────────────────────
 
 /// A JSON Schema document.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigSchemaResponse {
     pub schema: serde_json::Value,
 }

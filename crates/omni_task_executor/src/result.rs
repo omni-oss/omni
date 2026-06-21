@@ -4,15 +4,17 @@ use derive_new::new;
 use omni_configurations::MetaConfiguration;
 use omni_core::TaskExecutionNode;
 use omni_hasher::impls::DefaultHash;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIs};
 
-#[derive(Debug, new, EnumIs, Serialize, Deserialize)]
+#[derive(Debug, new, EnumIs, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "status")]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskExecutionResult {
     Completed {
         #[serde(with = "crate::serde_impls::default_hash_to_string")]
+        #[schemars(with = "String")]
         hash: DefaultHash,
         task: TaskExecutionNode,
         exit_code: u32,
@@ -104,7 +106,7 @@ impl TaskExecutionResult {
     }
 }
 
-#[derive(Debug, new, EnumIs, Display, Serialize, Deserialize)]
+#[derive(Debug, new, EnumIs, Display, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkipReason {
     #[strum(to_string = "task in a previous batch failed")]
@@ -117,7 +119,7 @@ pub enum SkipReason {
     NoCommand,
 }
 
-#[derive(Debug, Clone, new, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, new, Serialize, Deserialize, Default, JsonSchema)]
 pub struct TaskDetails {
     pub meta: Option<MetaConfiguration>,
     pub output_files: Option<Vec<PathBuf>>,
