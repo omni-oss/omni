@@ -17,3 +17,5 @@ jobs:
 
       - name: Conventional Commits Check
         uses: cocogitto/cocogitto-action@v4
+        with:
+          command: check
