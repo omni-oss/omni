@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_setup-v0.2.0 - 2026-06-20
+#### Features
+- convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel
+
+- - -
+
 ## omni_setup-v0.1.2 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

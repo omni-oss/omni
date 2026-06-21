@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.4.2 - 2026-06-21
+#### Bug Fixes
+- (**omni_context**) add ensure_loaded method to MaybeLoaded - (94b1bf5) - Clarence Manuel
+- (**omni_context**) incorrect ignore files configuration - (a2c9633) - Clarence Manuel
+- prevent double loading of context - (2702b3a) - Clarence Manuel
+#### Refactoring
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.4.1 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

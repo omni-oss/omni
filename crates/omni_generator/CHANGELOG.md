@@ -2,6 +2,40 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.9.0 - 2026-06-21
+#### Features
+- (**omni_generator**) implement transform and transform-many actions - (f14e39f) - Clarence Manuel
+- add initial mcp support - (a5c8b6e) - Clarence Manuel
+- implement run-javascript action - (7800281) - Clarence Manuel
+#### Bug Fixes
+- (**omni_generator**) add max_depth support - (a2c6040) - Clarence Manuel
+- (**omni_generator**) add recursion detection - (36c32ae) - Clarence Manuel
+- (**omni_generator**) serialize generator runs when run in parallel - (478cbd6) - Clarence Manuel
+- (**omni_generator**) add user_invocable flag for generator configuration - (39440c9) - Clarence Manuel
+- (**omni_generator**) output_dir in context is not relative on windows - (dc49c99) - Clarence Manuel
+- (**omni_generator**) --use-defaults flag doesn't propagate to sub-generators - (cb8ceaf) - Clarence Manuel
+- (**omni_generator**) rename prompts to inputs - (cc32919) - Clarence Manuel
+- (**omni_generator**) windows path handling - (9acbfd5) - Clarence Manuel
+- (**omni_generator**) provide output_dir to run-javascript actions - (915cf6e) - Clarence Manuel
+- (**omni_generator**) fix typo in ignore files configuration - (3f29ef7) - Clarence Manuel
+- (**omni_generator**) normalize paths in transaction_sys methods - (52c8217) - Clarence Manuel
+- (**omni_generator**) make inner Sys implementation shared - (4ae89d9) - Clarence Manuel
+- (**omni_generator**) implemenet transactional system - (84f1422) - Clarence Manuel
+- (**omni_generator**) fix DryRunSys compile errors - (a028572) - Clarence Manuel
+- expose description field in generator inputs - (46bc836) - Clarence Manuel
+- rename prompts to inputs - (516dba6) - Clarence Manuel
+#### Refactoring
+- (**omni_generator**) make GenSession methods async - (26640a8) - Clarence Manuel
+- introduce and use input builders - (25221a0) - Clarence Manuel
+- allow optionally passing arbitrary version file to bridge service vendoring - (56d3912) - Clarence Manuel
+- expose base method for ActionConfiguration - (58decdc) - Clarence Manuel
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_generator**) update DryRunSys implementation - (dc4486a) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.8.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

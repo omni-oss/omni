@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.8.3 - 2026-06-21
+#### Bug Fixes
+- (**omni_task_executor**) populate total time saved calculation - (659a5c8) - Clarence Manuel
+#### Refactoring
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+#### Miscellaneous Chores
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.8.2 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

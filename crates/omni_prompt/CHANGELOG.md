@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_prompt-v0.5.1 - 2026-06-15
+#### Bug Fixes
+- (**omni_prompt**) implement proper runtime typecheck for prompt values - (157b928) - Clarence Manuel
+#### Refactoring
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+
+- - -
+
 ## omni_prompt-v0.5.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

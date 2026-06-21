@@ -2,6 +2,34 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-rpc-core-v0.1.0 - 2026-06-14
+#### Features
+- implement bridge-rpc utils and services - (121791b) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-rpc**) implement async-context propagation in AbstractTransport.onReceive - (5a4422d) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) improve error handling - (181bac2) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) fix transport-read-framer bug and improve error handling and propagation - (9ec7d72) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) implement frame tuple wire format - (84ec442) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) improve error handling on BridgeRpc.stop - (fe924d4) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) status code visibility issue - (b54edc4) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) implement instance caching for status code classes - (53c2aef) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add asyncDispose cleanup support for request and response objects - (403f47e) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) use interface instead of type for Service type - (3751cc1) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add equals method to status code classes - (f0cb3d1) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) allow method chaining on writeBodyChunk methods - (42f75d0) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add state check assertions for request and response objects - (e45545c) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) expose ClientHandle to services - (842cce1) - Clarence Manuel
+- add validation for status code classes - (99ea27d) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/bridge-rpc-core**) update integration tests - (f33d4b3) - Clarence Manuel
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- add retries - (b2d4616) - Clarence Manuel
+- update concurrent request amount in integration tests - (a38c527) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update packages versions and configurations - (bb47909) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-rpc-v0.1.2 - 2026-05-22
 #### Bug Fixes
 - path error on windows - (8c75e42) - Clarence Manuel

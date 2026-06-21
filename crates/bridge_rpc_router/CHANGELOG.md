@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## bridge_rpc_router-v0.2.0 - 2026-06-14
+#### Features
+- implement run-javascript action - (7800281) - Clarence Manuel
+#### Bug Fixes
+- rename bridge_rpc crate to bridge_rpc_core and expose a ClientHandle instance to services - (cbb4e9d) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## bridge_rpc_router-v0.1.0 - 2026-01-31
 #### Features
 - (**bridge_rpc_router**) implement router - (20f0e20) - Clarence Manuel

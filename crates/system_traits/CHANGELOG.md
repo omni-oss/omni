@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## system_traits-v0.1.2 - 2026-06-10
+#### Bug Fixes
+- (**system_traits**) implement more traits for InMemorySys - (c7faa16) - Clarence Manuel
+- (**system_traits**) add and implement new traits - (c35fd03) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## system_traits-v0.1.1 - 2026-03-14
 #### Bug Fixes
 - auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel

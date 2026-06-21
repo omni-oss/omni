@@ -2,6 +2,58 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.11.0 - 2026-06-21
+#### Features
+- (**@omni-oss/bridge-rpc-system-interface**) refactor system interface implementation into it's own package - (43044bd) - Clarence Manuel
+- (**@omni-oss/bridge-service**) initial bridge service implementation - (a68f36c) - Clarence Manuel
+- (**@omni-oss/log**) implement centralized logging facade library - (d618a12) - Clarence Manuel
+- (**omni_generator**) implement transform and transform-many actions - (f14e39f) - Clarence Manuel
+- convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel
+- add initial mcp support - (a5c8b6e) - Clarence Manuel
+- implement run-javascript action - (7800281) - Clarence Manuel
+- implement bridge-rpc utils and services - (121791b) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-service**) add sink implementation - (c7ccae6) - Clarence Manuel
+- (**bridge_rpc_services**) implement proc and fs services - (a43afdb) - Clarence Manuel
+- (**bridge_rpc_services**) implement initial services crate for bridge_rpc - (c46d2f6) - Clarence Manuel
+- (**bridge_rpc_utils**) implement utils crate for bridge_rpc - (7805a19) - Clarence Manuel
+- (**omni_bridge_test_service**) implement initial rust bridge test service - (967937f) - Clarence Manuel
+- (**omni_cli_core**) support --max-depth flag in generator subcommand - (42d3dd2) - Clarence Manuel
+- (**omni_generator**) serialize generator runs when run in parallel - (478cbd6) - Clarence Manuel
+- (**omni_generator**) implemenet transactional system - (84f1422) - Clarence Manuel
+- (**omni_mcp_core**) expose more parameter fields to cache pruning - (d797b68) - Clarence Manuel
+- rename bridge_rpc crate to bridge_rpc_core and expose a ClientHandle instance to services - (cbb4e9d) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) add mcp e2e tests - (02f545f) - Clarence Manuel
+- (**@omni-oss/omni-tests**) add error propagation tests - (b2259bf) - Clarence Manuel
+- (**@omni-tests**) fix failing tests on windows - (5221988) - Clarence Manuel
+- add initial e2e tests - (4102afc) - Clarence Manuel
+#### Continuous Integration
+- update cocogitto version - (14ea051) - Clarence Manuel
+#### Refactoring
+- (**@omni-oss/bridge-service**) move files into other packages - (f0808ac) - Clarence Manuel
+- introduce and use input builders - (25221a0) - Clarence Manuel
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+- configurations - (3b140ea) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/bridge-rpc-bootstrap**) rename package - (dcb88dd) - Clarence Manuel
+- (**@omni-oss/bridge-service-tests**) depend on bridge-rpc-system-interface - (7db344b) - Clarence Manuel
+- (**@omni-oss/bridge-service-tests**) initial implementation bridge service tests - (62d4616) - Clarence Manuel
+- (**@omni-oss/vitest-config**) add vitest coverage support - (da6d494) - Clarence Manuel
+- (**js_runtime**) minor changes - (7857e98) - Clarence Manuel
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+- update package versions - (3754002) - Clarence Manuel
+- update itertools version - (0f2a07b) - Clarence Manuel
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- update lock file - (dedbbf2) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update crate versions - (013c27c) - Clarence Manuel
+- update rust toolchain - (a7a6847) - Clarence Manuel
+- update packages versions and configurations - (bb47909) - Clarence Manuel
+
+- - -
+
 ## root-v0.10.1 - 2026-05-24
 #### Bug Fixes
 - generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel

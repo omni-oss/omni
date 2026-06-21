@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## bridge_rpc_core-v0.0.1 - 2026-06-14
+#### Bug Fixes
+- (**bridge_rpc_core**) improve error handling - (5600ed3) - Clarence Manuel
+- (**bridge_rpc_core**) fix incorrect serialization of headers due to rmpv::ext::to_value handling - (86cb1a3) - Clarence Manuel
+- (**bridge_rpc_core**) fix transport_read_framer bug and improve error handling and propagation - (74f0479) - Clarence Manuel
+- (**bridge_rpc_core**) implement frame wire format as tuple - (533b8d0) - Clarence Manuel
+- (**bridge_rpc_core**) improve DynMap methods implementation - (a947334) - Clarence Manuel
+- (**bridge_rpc_core**) add into_trailers method for request and response - (802ee64) - Clarence Manuel
+- rename bridge_rpc crate to bridge_rpc_core and expose a ClientHandle instance to services - (cbb4e9d) - Clarence Manuel
+#### Miscellaneous Chores
+- update concurrent request amount in integration tests - (a38c527) - Clarence Manuel
+
+- - -
+
 ## bridge_rpc-v0.1.2 - 2026-03-14
 #### Bug Fixes
 - auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel

@@ -1,7 +1,7 @@
 {
     "name": "@omni-oss/gen-sdk-core",
     "description": "Shared generator SDK types consumed by bridge-rpc-services and gen-sdk",
-    "version": "0.0.0-semantically-released",
+    "version": "0.1.0",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",

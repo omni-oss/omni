@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/vite-config-v0.2.1 - 2026-06-20
+#### Bug Fixes
+- (**@omni-oss/vite-config**) add additional configuration for library preset - (3eecf9c) - Clarence Manuel
+- (**@omni-oss/vite-config**) add bundleTypes option to library preset - (440b766) - Clarence Manuel
+- (**@omni-oss/vite-config**) add esmExternalRequirePlugin to base config - (4a55619) - Clarence Manuel
+- (**@omni-oss/vite-config**) add test preset - (9c0e606) - Clarence Manuel
+- support fine-grained predicates for dependency externalize options - (9367b4e) - Clarence Manuel
+#### Miscellaneous Chores
+- format files - (3b49082) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/vite-config-v0.2.0 - 2026-03-21
 #### Features
 - (**@omni-oss/vite-config**) improved support for customizable vite-configs - (5dd046a) - Clarence Manuel

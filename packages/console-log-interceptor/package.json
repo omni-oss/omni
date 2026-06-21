@@ -1,7 +1,7 @@
 {
     "name": "@omni-oss/console-log-interceptor",
     "description": "A TypeScript Package",
-    "version": "0.0.0-semantically-released",
+    "version": "0.0.1",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",

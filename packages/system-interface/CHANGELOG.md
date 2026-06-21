@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/system-interface-v0.1.2 - 2026-06-15
+#### Bug Fixes
+- (**@omni-oss/system-interface**) make ProcessEnv and ArgsList readonly - (14c46a0) - Clarence Manuel
+- (**@omni-oss/system-interface**) expose implementation entrypoint - (a4d22e2) - Clarence Manuel
+- (**@omni-oss/system-interface**) resolve build error - (e00c2e8) - Clarence Manuel
+#### Tests
+- update broken tests - (05d3582) - Clarence Manuel
+#### Miscellaneous Chores
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- format files - (3b49082) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/system-interface-v0.1.1 - 2026-05-22
 #### Bug Fixes
 - update process interface - (edc25ad) - Clarence Manuel

@@ -2,6 +2,26 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/channels-v0.1.0 - 2026-06-14
+#### Features
+- (**@omni-oss/channels**) implement bounded mspc and cleanup oneshot code - (5e4db7f) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/channels**) prevent Oneshot.receive from being called twice - (618655d) - Clarence Manuel
+#### Miscellaneous Chores
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- format files - (3b49082) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update vite configs - (e326f27) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/channels-v0.0.1 - 2026-01-31
 #### Bug Fixes
 - test error on ts packages - (5c49879) - Clarence Manuel

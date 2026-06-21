@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.8.0 - 2026-06-21
+#### Features
+- implement run-javascript action - (7800281) - Clarence Manuel
+- add transform and transform-many configuration - (3e1dc5b) - Clarence Manuel
+#### Bug Fixes
+- (**omni_generator**) add user_invocable flag for generator configuration - (39440c9) - Clarence Manuel
+- (**omni_generator**) --use-defaults flag doesn't propagate to sub-generators - (cb8ceaf) - Clarence Manuel
+- (**omni_generator_configuration**) hide run-command action - (d189f60) - Clarence Manuel
+- (**omni_generator_configurations**) rename prompts to inputs - (28f910f) - Clarence Manuel
+- rename prompts to inputs - (516dba6) - Clarence Manuel
+#### Refactoring
+- expose base method for ActionConfiguration - (58decdc) - Clarence Manuel
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.7.0 - 2026-05-18
 #### Features
 - support remote git generator sources - (c83d835) - Clarence Manuel

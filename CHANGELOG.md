@@ -2,6 +2,136 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.16.0 - 2026-06-21
+### Package updates
+- bridge_rpc_core bumped to bridge_rpc_core-v0.0.1
+- omni_mcp_core bumped to omni_mcp_core-v0.1.0
+- @omni-oss/console-log-interceptor bumped to @omni-oss/console-log-interceptor-v0.0.1
+- bridge_rpc_utils bumped to bridge_rpc_utils-v0.0.1
+- @omni-oss/bridge-service-tests bumped to @omni-oss/bridge-service-tests-v0.1.0
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.2.0
+- @omni-oss/bridge-rpc-router bumped to @omni-oss/bridge-rpc-router-v0.2.0
+- @omni-oss/bridge-rpc-services bumped to @omni-oss/bridge-rpc-services-v0.1.0
+- omni_execution_plan bumped to omni_execution_plan-v0.4.2
+- omni_utils bumped to omni_utils-v0.1.2
+- @omni-oss/bridge-rpc-system-interface bumped to @omni-oss/bridge-rpc-system-interface-v0.1.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.8.0
+- @omni-oss/log bumped to @omni-oss/log-v0.1.0
+- @omni-oss/system-interface bumped to @omni-oss/system-interface-v0.1.2
+- system_traits bumped to system_traits-v0.1.2
+- @omni-oss/runtime-utils bumped to @omni-oss/runtime-utils-v0.0.1
+- omni_input_provider bumped to omni_input_provider-v0.1.0
+- omni bumped to omni-v0.16.0
+- @omni-oss/gen-sdk bumped to @omni-oss/gen-sdk-v0.1.0
+- omni_messages bumped to omni_messages-v0.0.1
+- omni_bridge_test_service bumped to omni_bridge_test_service-v0.1.0
+- @omni-oss/channels bumped to @omni-oss/channels-v0.1.0
+- bridge_rpc_services bumped to bridge_rpc_services-v0.0.1
+- @omni-oss/bridge-service bumped to @omni-oss/bridge-service-v0.1.0
+- omni_task_executor bumped to omni_task_executor-v0.8.3
+- omni_hasher bumped to omni_hasher-v0.1.1
+- @omni-oss/gen-sdk-core bumped to @omni-oss/gen-sdk-core-v0.1.0
+- @omni-oss/async-utils bumped to @omni-oss/async-utils-v0.1.1
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.1.0
+- js_runtime bumped to js_runtime-v0.2.0
+- @omni-oss/vite-config bumped to @omni-oss/vite-config-v0.2.1
+- omni_generator bumped to omni_generator-v0.9.0
+- @omni-oss/bridge-rpc-core bumped to @omni-oss/bridge-rpc-core-v0.1.0
+- @omni-oss/bridge-rpc-utils bumped to @omni-oss/bridge-rpc-utils-v0.1.0
+- omni_prompt bumped to omni_prompt-v0.5.1
+- omni_setup bumped to omni_setup-v0.2.0
+- omni_context bumped to omni_context-v0.4.2
+- omni_cache bumped to omni_cache-v0.6.0
+- omni_tracing_subscriber bumped to omni_tracing_subscriber-v0.2.0
+- root bumped to root-v0.11.0
+- omni_cli_core bumped to omni_cli_core-v0.16.0
+- bridge_rpc_router bumped to bridge_rpc_router-v0.2.0
+### Global changes
+#### Features
+- (**@omni-oss/bridge-rpc-system-interface**) refactor system interface implementation into it's own package - (43044bd) - Clarence Manuel
+- (**@omni-oss/bridge-service**) initial bridge service implementation - (a68f36c) - Clarence Manuel
+- (**@omni-oss/log**) implement centralized logging facade library - (d618a12) - Clarence Manuel
+- (**omni_generator**) implement transform and transform-many actions - (f14e39f) - Clarence Manuel
+- convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel
+- add initial mcp support - (a5c8b6e) - Clarence Manuel
+- implement run-javascript action - (7800281) - Clarence Manuel
+- implement bridge-rpc utils and services - (121791b) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-service**) add sink implementation - (c7ccae6) - Clarence Manuel
+- (**@omni-oss/console-log-interceptor**) implement console log interception - (7709a0b) - Clarence Manuel
+- (**bridge_rpc_services**) implement proc and fs services - (a43afdb) - Clarence Manuel
+- (**bridge_rpc_services**) implement initial services crate for bridge_rpc - (c46d2f6) - Clarence Manuel
+- (**bridge_rpc_utils**) implement utils crate for bridge_rpc - (7805a19) - Clarence Manuel
+- (**omni_api**) implement deep generator inspect and input validate - (8ac1c94) - Clarence Manuel
+- (**omni_api**) add generator_inspect - (f5985b3) - Clarence Manuel
+- (**omni_bridge_test_service**) implement initial rust bridge test service - (967937f) - Clarence Manuel
+- (**omni_cli_core**) support --max-depth flag in generator subcommand - (42d3dd2) - Clarence Manuel
+- (**omni_generator**) serialize generator runs when run in parallel - (478cbd6) - Clarence Manuel
+- (**omni_generator**) --use-defaults flag doesn't propagate to sub-generators - (cb8ceaf) - Clarence Manuel
+- (**omni_generator**) implemenet transactional system - (84f1422) - Clarence Manuel
+- (**omni_mcp_core**) expose more parameter fields to cache pruning - (d797b68) - Clarence Manuel
+- expose description field in generator inputs - (46bc836) - Clarence Manuel
+- prevent double loading of context - (2702b3a) - Clarence Manuel
+- rename bridge_rpc crate to bridge_rpc_core and expose a ClientHandle instance to services - (cbb4e9d) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) add mcp e2e tests - (02f545f) - Clarence Manuel
+- (**@omni-oss/omni-tests**) add error propagation tests - (b2259bf) - Clarence Manuel
+- (**@omni-tests**) fix failing tests on windows - (5221988) - Clarence Manuel
+- add initial e2e tests - (4102afc) - Clarence Manuel
+#### Continuous Integration
+- update cocogitto workflow config - (90817ae) - Clarence Manuel
+- update cocogitto version - (14ea051) - Clarence Manuel
+- update workflows - (babed8e) - Clarence Manuel
+- update workflows - (beba8c9) - Clarence Manuel
+#### Refactoring
+- (**@omni-oss/bridge-service**) move files into other packages - (f0808ac) - Clarence Manuel
+- (**omni_api**) utilize ensure_loaded - (133c099) - Clarence Manuel
+- introduce and use input builders - (25221a0) - Clarence Manuel
+- update parameter type - (b21493b) - Clarence Manuel
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+- configurations - (3b140ea) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/bridge-rpc-bootstrap**) rename package - (dcb88dd) - Clarence Manuel
+- (**@omni-oss/bridge-service-tests**) depend on bridge-rpc-system-interface - (7db344b) - Clarence Manuel
+- (**@omni-oss/bridge-service-tests**) initial implementation bridge service tests - (62d4616) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) utilize new test preset - (e1a95c2) - Clarence Manuel
+- (**@omni-oss/omni-remote-cache-service-tests**) rename api tests to service tests - (2056205) - Clarence Manuel
+- (**@omni-oss/vitest-config**) add vitest coverage support - (da6d494) - Clarence Manuel
+- (**js_runtime**) minor changes - (7857e98) - Clarence Manuel
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+- update cog.toml - (e498e6f) - Clarence Manuel
+- update package versions - (3754002) - Clarence Manuel
+- update cog.toml - (6b4d3d2) - Clarence Manuel
+- fix hardcoded directories in cog.toml - (6829724) - Clarence Manuel
+- update generator context references - (56b7dbb) - Clarence Manuel
+- update itertools version - (0f2a07b) - Clarence Manuel
+- update rust-multiplatform preset - (53a050c) - Clarence Manuel
+- update generators to use the named prompts context variable name - (f5a6ef9) - Clarence Manuel
+- update generators - (97953aa) - Clarence Manuel
+- update generators - (2b9fc7d) - Clarence Manuel
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- update ts-package generator - (ffafe74) - Clarence Manuel
+- format files - (3b49082) - Clarence Manuel
+- update cog.toml to support 7.0 schema - (d8f8632) - Clarence Manuel
+- update ts-package generator invalid syntax - (a7b8e64) - Clarence Manuel
+- add retries - (b2d4616) - Clarence Manuel
+- update crate generator - (a9bcde7) - Clarence Manuel
+- update lock file - (dedbbf2) - Clarence Manuel
+- update ts-vite-test preset - (a031306) - Clarence Manuel
+- add @omni-oss/log to ts-package generator default dependencies - (4940d4a) - Clarence Manuel
+- update ts-package generator - (e012e29) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update ts-package generator - (dddce15) - Clarence Manuel
+- update omni presets - (18fc1a6) - Clarence Manuel
+- update ts-package generator - (3a63a64) - Clarence Manuel
+- update crate versions - (013c27c) - Clarence Manuel
+- update ts-package generator - (d022fed) - Clarence Manuel
+- update rust toolchain - (a7a6847) - Clarence Manuel
+- update packages versions and configurations - (bb47909) - Clarence Manuel
+
+- - -
+
 ## v0.15.1 - 2026-05-24
 ### Package updates
 - omni_core bumped to omni_core-v0.3.2

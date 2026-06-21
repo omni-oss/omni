@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_utils-v0.1.2 - 2026-06-20
+#### Bug Fixes
+- (**omni_utils**) add LockGuard file lock - (e5010ad) - Clarence Manuel
+
+- - -
+
 ## omni_utils-v0.1.1 - 2026-05-22
 #### Bug Fixes
 - relative_path filter not working properly on windows - (d58a8ab) - Clarence Manuel

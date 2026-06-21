@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.6.0 - 2026-06-21
+#### Features
+- implement meta --meta filter on cache prune and stats - (d019202) - Clarence Manuel
+#### Bug Fixes
+- (**omni_cache**) implement locking for concurrent runs - (02c5446) - Clarence Manuel
+#### Refactoring
+- (**omni_cache**) utilize omni_utils::lock::LockGuard - (e76a1ed) - Clarence Manuel
+#### Miscellaneous Chores
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.5.2 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

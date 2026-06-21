@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/async-utils-v0.1.1 - 2026-06-11
+#### Bug Fixes
+- (**@omni-oss/async-utils**) implement async-context utilities - (abe77dd) - Clarence Manuel
+#### Miscellaneous Chores
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+- update vite configs - (e326f27) - Clarence Manuel
+- utilize bun catalogs - (40fe122) - Clarence Manuel
+- bump node version [skip ci] - (04067be) - Clarence Manuel
+- use ^ for workspace package version [skip ci] - (89ba03b) - Clarence Manuel
+- add dependencies to project.omni.yaml [skip ci] - (de71dd7) - Clarence Manuel
+- add publishConfig to existing packages [skip ci] - (5a48ec0) - Clarence Manuel
+- update npm packages [skip ci] - (8fba262) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/async-utils-v0.1.0 - 2026-01-31
 #### Features
 - (**@omni-oss/async-utils**) introduce DeferredError instead of generic Error for exception - (7eec3bd) - Clarence Manuel

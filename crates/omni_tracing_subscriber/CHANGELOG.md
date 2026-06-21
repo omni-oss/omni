@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tracing_subscriber-v0.2.0 - 2026-06-20
+#### Features
+- convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel
+#### Refactoring
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+
+- - -
+
 ## omni_tracing_subscriber-v0.1.2 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## js_runtime-v0.2.0 - 2026-06-21
+#### Features
+- implement run-javascript action - (7800281) - Clarence Manuel
+#### Bug Fixes
+- (**js_runtime**) windows path handling - (e4549d3) - Clarence Manuel
+#### Refactoring
+- allow optionally passing arbitrary version file to bridge service vendoring - (56d3912) - Clarence Manuel
+#### Miscellaneous Chores
+- (**js_runtime**) minor changes - (7857e98) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## js_runtime-v0.1.1 - 2026-03-14
 #### Bug Fixes
 - auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel

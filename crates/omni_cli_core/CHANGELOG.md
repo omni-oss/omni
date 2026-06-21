@@ -2,6 +2,177 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.16.0 - 2026-06-21
+#### Features
+- (**@omni-oss/bridge-rpc-services**) implement BridgeRpcSystem - (74a4e07) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-system-interface**) refactor system interface implementation into it's own package - (43044bd) - Clarence Manuel
+- (**@omni-oss/bridge-service**) initial bridge service implementation - (a68f36c) - Clarence Manuel
+- (**@omni-oss/channels**) implement bounded mspc and cleanup oneshot code - (5e4db7f) - Clarence Manuel
+- (**@omni-oss/gen-sdk**) expose gen-sdk package - (d561790) - Clarence Manuel
+- (**@omni-oss/gen-sdk-core**) add gen-sdk-core package - (0560c6c) - Clarence Manuel
+- (**@omni-oss/log**) implement centralized logging facade library - (d618a12) - Clarence Manuel
+- (**omni_generator**) implement transform and transform-many actions - (f14e39f) - Clarence Manuel
+- convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel
+- add initial mcp support - (a5c8b6e) - Clarence Manuel
+- implement run-javascript action - (7800281) - Clarence Manuel
+- implement meta --meta filter on cache prune and stats - (d019202) - Clarence Manuel
+- add transform and transform-many configuration - (3e1dc5b) - Clarence Manuel
+- implement bridge-rpc utils and services - (121791b) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/async-utils**) implement async-context utilities - (abe77dd) - Clarence Manuel
+- (**@omni-oss/bridge-rpc**) implement async-context propagation in AbstractTransport.onReceive - (5a4422d) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) improve error handling - (181bac2) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) fix transport-read-framer bug and improve error handling and propagation - (9ec7d72) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) implement frame tuple wire format - (84ec442) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) improve error handling on BridgeRpc.stop - (fe924d4) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) status code visibility issue - (b54edc4) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) implement instance caching for status code classes - (53c2aef) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add asyncDispose cleanup support for request and response objects - (403f47e) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) use interface instead of type for Service type - (3751cc1) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add equals method to status code classes - (f0cb3d1) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) allow method chaining on writeBodyChunk methods - (42f75d0) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) add state check assertions for request and response objects - (e45545c) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) expose ClientHandle to services - (842cce1) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-router**) improve error handling Router.run method - (e5ea40a) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-service**) utilize BridgeRpcSystem in dry-run and normal mode - (a829f2b) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) utilize gen-sdk-core package - (25bd3d0) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) windows path handling - (db8ff22) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) support outputDir generator script context variable and in-memory cwd - (9fa3957) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) update BridgeRpcSystem.env() return type to ArgsList - (1aeb52c) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) update build dependencies - (5e9c123) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) move exec-generator-script implementation - (0714d8c) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) utilize new package and changes and rename loadScript to importScript - (8279bd8) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-utils**) implement fail server response function - (be1de22) - Clarence Manuel
+- (**@omni-oss/bridge-service**) fix undefined ClientHandle - (4a7bf16) - Clarence Manuel
+- (**@omni-oss/bridge-service**) update failing test - (e2e1c6c) - Clarence Manuel
+- (**@omni-oss/bridge-service**) add sink implementation - (c7ccae6) - Clarence Manuel
+- (**@omni-oss/bridge-services**) use method instead of field for ExecScript implementation - (15f8c84) - Clarence Manuel
+- (**@omni-oss/channels**) prevent Oneshot.receive from being called twice - (618655d) - Clarence Manuel
+- (**@omni-oss/console-log-interceptor**) implement console log interception - (7709a0b) - Clarence Manuel
+- (**@omni-oss/gen-sdk-core**) export additional types - (bdf4740) - Clarence Manuel
+- (**@omni-oss/log**) update export maps - (509d7d1) - Clarence Manuel
+- (**@omni-oss/log**) implement noop logging as fallback logger - (5869e02) - Clarence Manuel
+- (**@omni-oss/runtime-utils**) create new package runtime related utilities - (e264ee3) - Clarence Manuel
+- (**@omni-oss/system-interface**) make ProcessEnv and ArgsList readonly - (14c46a0) - Clarence Manuel
+- (**@omni-oss/system-interface**) expose implementation entrypoint - (a4d22e2) - Clarence Manuel
+- (**@omni-oss/system-interface**) resolve build error - (e00c2e8) - Clarence Manuel
+- (**@omni-oss/vite-config**) add additional configuration for library preset - (3eecf9c) - Clarence Manuel
+- (**@omni-oss/vite-config**) add bundleTypes option to library preset - (440b766) - Clarence Manuel
+- (**@omni-oss/vite-config**) add esmExternalRequirePlugin to base config - (4a55619) - Clarence Manuel
+- (**@omni-oss/vite-config**) add test preset - (9c0e606) - Clarence Manuel
+- (**@omni/bridge-service**) improve error log handling propagation - (036d791) - Clarence Manuel
+- (**bridge_rpc_core**) improve error handling - (5600ed3) - Clarence Manuel
+- (**bridge_rpc_core**) fix incorrect serialization of headers due to rmpv::ext::to_value handling - (86cb1a3) - Clarence Manuel
+- (**bridge_rpc_core**) fix transport_read_framer bug and improve error handling and propagation - (74f0479) - Clarence Manuel
+- (**bridge_rpc_core**) implement frame wire format as tuple - (533b8d0) - Clarence Manuel
+- (**bridge_rpc_core**) improve DynMap methods implementation - (a947334) - Clarence Manuel
+- (**bridge_rpc_core**) add into_trailers method for request and response - (802ee64) - Clarence Manuel
+- (**bridge_rpc_services**) fix incorrect serialization of headers due to rmpv::ext::to_value handling - (5659d19) - Clarence Manuel
+- (**bridge_rpc_services**) implement proc and fs services - (a43afdb) - Clarence Manuel
+- (**bridge_rpc_services**) implement initial services crate for bridge_rpc - (c46d2f6) - Clarence Manuel
+- (**bridge_rpc_utils**) implement utils crate for bridge_rpc - (7805a19) - Clarence Manuel
+- (**js_runtime**) windows path handling - (e4549d3) - Clarence Manuel
+- (**omni_api**) implement deep generator inspect and input validate - (8ac1c94) - Clarence Manuel
+- (**omni_api**) add generator_inspect - (f5985b3) - Clarence Manuel
+- (**omni_cache**) implement locking for concurrent runs - (02c5446) - Clarence Manuel
+- (**omni_cli_core**) validation failures should return non-zero exit code - (6a48207) - Clarence Manuel
+- (**omni_cli_core**) support --git-rev flag in init subcommand - (eb55840) - Clarence Manuel
+- (**omni_cli_core**) remove short in --max-depth flag - (da68bcd) - Clarence Manuel
+- (**omni_cli_core**) support --max-depth flag in generator subcommand - (42d3dd2) - Clarence Manuel
+- (**omni_cli_core**) use total time saved field - (00a11cc) - Clarence Manuel
+- (**omni_cli_core**) any scm flags should implicitly enable scm filtering - (5845ddd) - Clarence Manuel
+- (**omni_cli_core**) exec shouldn't take empty command - (224fb8f) - Clarence Manuel
+- (**omni_cli_core**) fix mismatched arguments position for prune command - (587a8b6) - Clarence Manuel
+- (**omni_cli_core**) ignore-session and save-session flags should optionally take values - (e26e888) - Clarence Manuel
+- (**omni_context**) add ensure_loaded method to MaybeLoaded - (94b1bf5) - Clarence Manuel
+- (**omni_context**) incorrect ignore files configuration - (a2c9633) - Clarence Manuel
+- (**omni_execution_plan**) apply filters dir and meta filters on exec path - (8ef9924) - Clarence Manuel
+- (**omni_generator**) add max_depth support - (a2c6040) - Clarence Manuel
+- (**omni_generator**) add recursion detection - (36c32ae) - Clarence Manuel
+- (**omni_generator**) serialize generator runs when run in parallel - (478cbd6) - Clarence Manuel
+- (**omni_generator**) add user_invocable flag for generator configuration - (39440c9) - Clarence Manuel
+- (**omni_generator**) output_dir in context is not relative on windows - (dc49c99) - Clarence Manuel
+- (**omni_generator**) --use-defaults flag doesn't propagate to sub-generators - (cb8ceaf) - Clarence Manuel
+- (**omni_generator**) rename prompts to inputs - (cc32919) - Clarence Manuel
+- (**omni_generator**) windows path handling - (9acbfd5) - Clarence Manuel
+- (**omni_generator**) provide output_dir to run-javascript actions - (915cf6e) - Clarence Manuel
+- (**omni_generator**) fix typo in ignore files configuration - (3f29ef7) - Clarence Manuel
+- (**omni_generator**) normalize paths in transaction_sys methods - (52c8217) - Clarence Manuel
+- (**omni_generator**) make inner Sys implementation shared - (4ae89d9) - Clarence Manuel
+- (**omni_generator**) implemenet transactional system - (84f1422) - Clarence Manuel
+- (**omni_generator**) fix DryRunSys compile errors - (a028572) - Clarence Manuel
+- (**omni_generator_configuration**) hide run-command action - (d189f60) - Clarence Manuel
+- (**omni_generator_configurations**) rename prompts to inputs - (28f910f) - Clarence Manuel
+- (**omni_hasher**) fix UnexpectedEnd error on concurrent omni execution - (e1ea8b7) - Clarence Manuel
+- (**omni_input_provider**) validate function not getting processed value - (97a8d00) - Clarence Manuel
+- (**omni_input_provider**) preset values not available in if conditions - (60c2ca6) - Clarence Manuel
+- (**omni_mcp_core**) expose more parameter fields to cache pruning - (d797b68) - Clarence Manuel
+- (**omni_mcp_core**) update generator tools - (a1cfbe1) - Clarence Manuel
+- (**omni_mcp_core**) update generator_run tool description - (c3567c3) - Clarence Manuel
+- (**omni_messages**) add total time saved calculation field - (fbcc278) - Clarence Manuel
+- (**omni_prompt**) implement proper runtime typecheck for prompt values - (157b928) - Clarence Manuel
+- (**omni_task_executor**) populate total time saved calculation - (659a5c8) - Clarence Manuel
+- (**omni_utils**) add LockGuard file lock - (e5010ad) - Clarence Manuel
+- (**system_traits**) implement more traits for InMemorySys - (c7faa16) - Clarence Manuel
+- (**system_traits**) add and implement new traits - (c35fd03) - Clarence Manuel
+- expose description field in generator inputs - (46bc836) - Clarence Manuel
+- prevent double loading of context - (2702b3a) - Clarence Manuel
+- rename prompts to inputs - (516dba6) - Clarence Manuel
+- prune subcommand crash due to duplicate flag short name - (dfff39c) - Clarence Manuel
+- rename bridge_rpc crate to bridge_rpc_core and expose a ClientHandle instance to services - (cbb4e9d) - Clarence Manuel
+- support fine-grained predicates for dependency externalize options - (9367b4e) - Clarence Manuel
+- support single path input for exec-script service - (e34f360) - Clarence Manuel
+- add validation for status code classes - (99ea27d) - Clarence Manuel
+#### Tests
+- (**@omni-oss/bridge-rpc-services**) fix lint errors in js test fixtures - (1471860) - Clarence Manuel
+- (**@omni-oss/bridge-service**) update integration test payload - (49a8353) - Clarence Manuel
+- (**@omni-tests**) fix failing tests on windows - (5221988) - Clarence Manuel
+- update broken tests - (05d3582) - Clarence Manuel
+- add unit tests to exec-generator-script - (0eebf99) - Clarence Manuel
+#### Refactoring
+- (**@omni-oss/bridge-service**) move files into other packages - (f0808ac) - Clarence Manuel
+- (**omni_api**) utilize ensure_loaded - (133c099) - Clarence Manuel
+- (**omni_cache**) utilize omni_utils::lock::LockGuard - (e76a1ed) - Clarence Manuel
+- (**omni_generator**) make GenSession methods async - (26640a8) - Clarence Manuel
+- (**omni_input_provider**) add common function as method in configuration - (2542b2e) - Clarence Manuel
+- (**omni_lockfile**) use async mutex for data handling - (fca88f2) - Clarence Manuel
+- introduce and use input builders - (25221a0) - Clarence Manuel
+- update parameter type - (b21493b) - Clarence Manuel
+- allow optionally passing arbitrary version file to bridge service vendoring - (56d3912) - Clarence Manuel
+- expose base method for ActionConfiguration - (58decdc) - Clarence Manuel
+- create a central omni_api and omni_messages crate extracted from omni_cli_core - (eba8ec1) - Clarence Manuel
+- improve omni_generator architecture and testability - (487a134) - Clarence Manuel
+- configurations - (3b140ea) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/bridge-rpc-bootstrap**) rename package - (dcb88dd) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-core**) update integration tests - (f33d4b3) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) remove old rpc-system files - (53e8b78) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) update DryRunSystem mock implementations - (77c1465) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-utils**) fix dependency error - (f419798) - Clarence Manuel
+- (**@omni-oss/bridge-service**) fix compile error due to missing dependencies - (ddf5ef1) - Clarence Manuel
+- (**@omni-oss/bridge-service**) fix output artifact not runnable on runtimes without require support - (c98983a) - Clarence Manuel
+- (**@omni-oss/bridge-service**) update integration test - (f18018a) - Clarence Manuel
+- (**@omni-oss/bridge-service**) remove unused package config - (aaa0754) - Clarence Manuel
+- (**@omni-oss/bridge-service**) fix tests - (6da3d54) - Clarence Manuel
+- (**@omni-oss/bridge-service-tests**) initial implementation bridge service tests - (62d4616) - Clarence Manuel
+- (**@omni-oss/console-log-interceptor**) fix unresolved module on ci - (203d6c7) - Clarence Manuel
+- (**@omni-oss/vitest-config**) add vitest coverage support - (da6d494) - Clarence Manuel
+- (**@omni-oss/vitest-config**) rename api config to service config - (aa0f58e) - Clarence Manuel
+- (**bridge_rpc_utils**) update tests - (2212b41) - Clarence Manuel
+- (**js_runtime**) minor changes - (7857e98) - Clarence Manuel
+- (**omni_generator**) update DryRunSys implementation - (dc4486a) - Clarence Manuel
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+- fix typo in project configs - (b610667) - Clarence Manuel
+- improve error message for pipe - (4f71e18) - Clarence Manuel
+- fix ts build errors - (45a6b32) - Clarence Manuel
+- format files - (3b49082) - Clarence Manuel
+- add retries - (b2d4616) - Clarence Manuel
+- update concurrent request amount in integration tests - (a38c527) - Clarence Manuel
+- update project configs - (fee5066) - Clarence Manuel
+- update packages versions and configurations - (bb47909) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.15.1 - 2026-05-24
 #### Bug Fixes
 - generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel
