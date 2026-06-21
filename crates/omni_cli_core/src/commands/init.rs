@@ -54,10 +54,9 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     let output_dir = command.args.output.as_deref().unwrap_or(&current_dir);
 
     if command.args.git_rev.is_some() && command.args.git.is_none() {
-        log::error!(
+        eyre::bail!(
             "Git revision specified without a git repository URL. Provide a git repository using the --git option when specifying a git revision."
         );
-        return Ok(());
     }
 
     if let Some(url) = &command.args.git {
@@ -71,11 +70,9 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         .await?;
         log::info!("Repository cloned successfully.");
     } else {
-        log::error!(
+        eyre::bail!(
             "No source provided for initialization. Please provide a git repository using the --git option."
         );
-
-        return Ok(());
     }
 
     let primary_generator =
