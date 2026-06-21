@@ -31,6 +31,12 @@ pub struct InitArgs {
     git: Option<String>,
 
     #[arg(
+        long,
+        help = "The git revision to use when cloning the repository (e.g., branch, tag, or commit hash"
+    )]
+    git_rev: Option<String>,
+
+    #[arg(
         short,
         long,
         help = "The output directory for the initialized workspace"
@@ -46,9 +52,23 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     let sys = RealSys;
     let current_dir = sys.env_current_dir_async().await?;
     let output_dir = command.args.output.as_deref().unwrap_or(&current_dir);
+
+    if command.args.git_rev.is_some() && command.args.git.is_none() {
+        log::error!(
+            "Git revision specified without a git repository URL. Provide a git repository using the --git option when specifying a git revision."
+        );
+        return Ok(());
+    }
+
     if let Some(url) = &command.args.git {
         log::info!("Cloning repository from {}...", url);
-        omni_git_utils::clone_repo(&sys, &url, None, dir.path()).await?;
+        omni_git_utils::clone_repo(
+            &sys,
+            &url,
+            command.args.git_rev.as_deref(),
+            dir.path(),
+        )
+        .await?;
         log::info!("Repository cloned successfully.");
     } else {
         log::error!(
