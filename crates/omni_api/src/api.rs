@@ -271,9 +271,8 @@ where
     /// Execute one or more named tasks.
     pub async fn run(&self, req: RunRequest) -> eyre::Result<RunResponse> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
         crate::operations::run::handle_run(
-            ctx.as_loaded_context(),
+            ctx.ensure_loaded().await?,
             &self.subscriber,
             req,
         )
@@ -283,9 +282,8 @@ where
     /// Execute an arbitrary command in the workspace environment.
     pub async fn exec(&self, req: ExecRequest) -> eyre::Result<ExecResponse> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
         crate::operations::exec::handle_exec(
-            ctx.as_loaded_context(),
+            ctx.ensure_loaded().await?,
             &self.subscriber,
             req,
         )
@@ -295,9 +293,10 @@ where
     /// Compute the hash for the entire workspace.
     pub async fn hash_workspace(&self) -> eyre::Result<HashResponse> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
-        crate::operations::hash::handle_hash_workspace(ctx.as_loaded_context())
-            .await
+        crate::operations::hash::handle_hash_workspace(
+            ctx.ensure_loaded().await?,
+        )
+        .await
     }
 
     /// Compute the hash for a single project.
@@ -310,9 +309,8 @@ where
         tasks: &[String],
     ) -> eyre::Result<HashResponse> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
         crate::operations::hash::handle_hash_project(
-            ctx.as_loaded_context(),
+            ctx.ensure_loaded().await?,
             name,
             tasks,
         )
@@ -325,9 +323,8 @@ where
         req: CacheStatsRequest,
     ) -> eyre::Result<CacheStats> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
         crate::operations::cache::handle_cache_stats(
-            ctx.as_loaded_context(),
+            ctx.ensure_loaded().await?,
             req,
         )
         .await
@@ -345,9 +342,8 @@ where
         req: CachePruneRequest,
     ) -> eyre::Result<CachePruneResponse> {
         let mut ctx = self.ctx.lock().await;
-        ctx.load().await?;
         crate::operations::cache::handle_cache_prune(
-            ctx.as_loaded_context(),
+            ctx.ensure_loaded().await?,
             req,
         )
         .await
