@@ -145,6 +145,7 @@ pub async fn should_overwrite(
                     format!("File already exists at path: {path:?}. Overwrite?")
                 },
                 None,
+                None,
             ),
             Some(Left(true)),
         ),
@@ -218,6 +219,7 @@ pub async fn get_target_dir<'a>(
                     target_name,
                     format!("Directory for target {}:", target_name),
                     None,
+                    None,
                 ),
                 [],
             ),
@@ -285,6 +287,7 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
                 BaseInputConfiguration::new(
                     target_name,
                     format!("Directory for target {}:", target_name),
+                    None,
                     None,
                 ),
                 [],

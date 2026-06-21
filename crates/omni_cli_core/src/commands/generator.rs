@@ -239,6 +239,7 @@ async fn prompt_output_dir(
                 "output_dir_or_project",
                 "Where should the generator output be written?",
                 None,
+                None,
             ),
             [
                 OptionConfiguration::new(
@@ -279,6 +280,7 @@ async fn prompt_output_dir(
                     "output_dir",
                     "Output directory",
                     None,
+                    None,
                 ),
                 [],
             ),
@@ -316,7 +318,12 @@ async fn prompt_output_dir(
 
         let prompt = InputConfiguration::<()>::new_select(
             SelectInputConfiguration::new(
-                BaseInputConfiguration::new("project", "Select project", None),
+                BaseInputConfiguration::new(
+                    "project",
+                    "Select project",
+                    None,
+                    None,
+                ),
                 options,
                 Some("project".to_string()),
             ),

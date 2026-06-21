@@ -252,6 +252,7 @@ async fn should_save_session(
                 "save_inputs",
                 "Would you like to save inputs and targets to the output directory?",
                 Some(Left(true)),
+                None,
             ),
             Some(Left(true)),
         );
@@ -400,6 +401,7 @@ pub struct GeneratorInputSpec {
     pub condition: Option<InputCondition>,
     pub validators: Vec<InputValidator>,
     pub remember: bool,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -494,6 +496,7 @@ fn translate_input(
     let message = input.message().to_string();
     let remember = input.extra().remember;
     let condition = translate_condition(input.condition());
+    let description = input.description().map(|s| s.to_owned());
 
     let (kind, default, options, validators) = match input {
         InputConfiguration::Confirm { input, .. } => (
@@ -552,6 +555,7 @@ fn translate_input(
         && !matches!(&condition, Some(InputCondition::AlwaysHidden));
 
     GeneratorInputSpec {
+        description,
         name,
         message,
         kind,

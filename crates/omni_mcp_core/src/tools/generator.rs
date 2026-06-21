@@ -187,6 +187,7 @@ fn translate_input_spec(input: omni_api::GeneratorInputSpec) -> McpInputSpec {
     McpInputSpec {
         name: input.name,
         message: input.message,
+        description: input.description,
         kind,
         required,
         default: default_value,

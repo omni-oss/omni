@@ -24,6 +24,7 @@ pub async fn prompt_generator_name(
                 "generator_name",
                 "Select generator",
                 None,
+                None,
             ),
             generators
                 .iter()

@@ -43,6 +43,7 @@ pub struct McpInputSpec {
     pub condition: Option<McpInputCondition>,
     pub validators: Vec<McpValidator>,
     pub remember: bool,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

@@ -565,7 +565,7 @@ mod tests {
         InputConfiguration::Text {
             input: TextInputConfiguration::new(
                 ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None),
+                    BaseInputConfiguration::new(name, name, None, None),
                     vec![],
                 ),
                 None::<String>,
@@ -581,7 +581,7 @@ mod tests {
         InputConfiguration::Text {
             input: TextInputConfiguration::new(
                 ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None),
+                    BaseInputConfiguration::new(name, name, None, None),
                     vec![],
                 ),
                 Some(default.to_string()),
@@ -597,7 +597,7 @@ mod tests {
         InputConfiguration::Text {
             input: TextInputConfiguration::new(
                 ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, condition),
+                    BaseInputConfiguration::new(name, name, condition, None),
                     vec![],
                 ),
                 None::<String>,
@@ -613,7 +613,7 @@ mod tests {
         InputConfiguration::Text {
             input: TextInputConfiguration::new(
                 ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None),
+                    BaseInputConfiguration::new(name, name, None, None),
                     vec![ValidateConfiguration::new(
                         Either::<bool, String>::Right(expr.to_string()),
                         Some("validation failed".to_string()),
@@ -628,7 +628,7 @@ mod tests {
     fn confirm(name: &'static str) -> InputConfiguration<NoExtra> {
         InputConfiguration::Confirm {
             input: ConfirmInputConfiguration::new(
-                BaseInputConfiguration::new(name, name, None),
+                BaseInputConfiguration::new(name, name, None, None),
                 None::<Either<bool, String>>,
             ),
             extra: NoExtra,
@@ -639,7 +639,7 @@ mod tests {
         InputConfiguration::Integer {
             input: IntegerInputConfiguration::new(
                 ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None),
+                    BaseInputConfiguration::new(name, name, None, None),
                     vec![],
                 ),
                 None::<Either<i64, String>>,

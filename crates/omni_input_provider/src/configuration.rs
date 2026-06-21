@@ -64,6 +64,9 @@ pub struct BaseInputConfiguration {
         default
     )]
     pub r#if: Option<Either<bool, String>>,
+
+    #[new(into)]
+    pub description: Option<String>,
 }
 
 #[derive(
@@ -348,6 +351,18 @@ pub enum InputConfiguration<TExtra: Default = ()> {
 }
 
 impl<TExtra: InputExtras> InputConfiguration<TExtra> {
+    pub fn base(&self) -> &BaseInputConfiguration {
+        match self {
+            InputConfiguration::Confirm { input, .. } => &input.base,
+            InputConfiguration::Select { input, .. } => &input.base,
+            InputConfiguration::MultiSelect { input, .. } => &input.base.base,
+            InputConfiguration::Text { input, .. } => &input.base.base,
+            InputConfiguration::Password { input, .. } => &input.base.base,
+            InputConfiguration::Float { input, .. } => &input.base.base,
+            InputConfiguration::Integer { input, .. } => &input.base.base,
+        }
+    }
+
     pub fn extra(&self) -> &TExtra {
         match self {
             InputConfiguration::Confirm { extra, .. } => extra,
@@ -360,43 +375,20 @@ impl<TExtra: InputExtras> InputConfiguration<TExtra> {
         }
     }
 
+    pub fn description(&self) -> Option<&str> {
+        self.base().description.as_deref()
+    }
+
     pub fn name(&self) -> &str {
-        match self {
-            InputConfiguration::Confirm { input, .. } => &input.base.name,
-            InputConfiguration::Select { input, .. } => &input.base.name,
-            InputConfiguration::MultiSelect { input, .. } => {
-                &input.base.base.name
-            }
-            InputConfiguration::Text { input, .. } => &input.base.base.name,
-            InputConfiguration::Password { input, .. } => &input.base.base.name,
-            InputConfiguration::Float { input, .. } => &input.base.base.name,
-            InputConfiguration::Integer { input, .. } => &input.base.base.name,
-        }
+        self.base().name.as_str()
     }
 
     pub fn message(&self) -> &str {
-        match self {
-            Self::Confirm { input, .. } => &input.base.message,
-            Self::Select { input, .. } => &input.base.message,
-            Self::MultiSelect { input, .. } => &input.base.base.message,
-            Self::Text { input, .. } => &input.base.base.message,
-            Self::Password { input, .. } => &input.base.base.message,
-            Self::Float { input, .. } => &input.base.base.message,
-            Self::Integer { input, .. } => &input.base.base.message,
-        }
+        self.base().message.as_str()
     }
 
     pub fn condition(&self) -> Option<&Either<bool, String>> {
-        let r#if = match self {
-            Self::Confirm { input, .. } => &input.base.r#if,
-            Self::Select { input, .. } => &input.base.r#if,
-            Self::MultiSelect { input, .. } => &input.base.base.r#if,
-            Self::Text { input, .. } => &input.base.base.r#if,
-            Self::Password { input, .. } => &input.base.base.r#if,
-            Self::Float { input, .. } => &input.base.base.r#if,
-            Self::Integer { input, .. } => &input.base.base.r#if,
-        };
-        r#if.as_ref()
+        self.base().r#if.as_ref()
     }
 
     pub fn default_value(&self) -> Option<OwnedValueBag> {
