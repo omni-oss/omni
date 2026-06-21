@@ -276,6 +276,7 @@ directories = { version = "^6.0.0" }
 target-lexicon = { version = "^0.13.5" }
 interprocess = { version = "^2.4.2", features = ["tokio"] }
 # nom = { version = "^8.0.0" }
+macro_rules_attribute = { version = "^0.2.2" }
 
 
 [patch.crates-io]

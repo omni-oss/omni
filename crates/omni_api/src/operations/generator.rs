@@ -1,5 +1,4 @@
 use either::Either;
-use either::Either::Left;
 use omni_generator::Action;
 use omni_generator_configurations::ActionConfiguration;
 use omni_generator_configurations::ForAllInputValuesConfiguration;
@@ -9,10 +8,10 @@ use omni_generator_configurations::InputConfigurationExtra;
 use omni_generator_configurations::InputValue;
 use omni_generator_configurations::OmniPath;
 use omni_generator_configurations::OverwriteConfiguration;
-use omni_input_provider::BaseInputConfiguration;
-use omni_input_provider::ConfirmInputConfiguration;
 use omni_input_provider::InputConfiguration;
 use omni_input_provider::InputProvider;
+use omni_input_provider::builder;
+use omni_input_provider::collect_one;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -248,22 +247,29 @@ async fn should_save_session(
     save_session: Option<bool>,
     input_provider: &Arc<dyn InputProvider>,
 ) -> Result<bool, eyre::Error> {
-    Ok(if let Some(save) = save_session {
-        save
-    } else {
-        let config = ConfirmInputConfiguration::new(
-            BaseInputConfiguration::new(
-                "save_inputs",
-                "Would you like to save inputs and targets to the output directory?",
-                Some(Left(true)),
-                None,
-            ),
-            Some(Left(true)),
-        );
-        input_provider
-            .confirm(&config, &omni_tera::Context::default())
-            .await?
-    })
+    if let Some(save) = save_session {
+        return Ok(save);
+    }
+
+    let prompt = builder::confirm::<()>()
+        .name("save_inputs")
+        .message(
+            "Would you like to save inputs and targets to the output directory?",
+        )
+        .default(true)
+        .build();
+
+    let result = collect_one(
+        &prompt,
+        None,
+        &UnorderedMap::default(),
+        &omni_input_provider::CollectionConfig::default(),
+        input_provider.as_ref(),
+    )
+    .await?
+    .expect("should have value");
+
+    Ok(result.by_ref().to_bool().expect("should be bool"))
 }
 
 /// List all available generators in the workspace.

@@ -6911,6 +6911,7 @@ name = "omni_input_provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bon",
  "derive-new",
  "either",
  "eyre",

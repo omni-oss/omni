@@ -2,13 +2,7 @@ use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::GeneratorConfiguration;
-use omni_input_provider::{
-    CollectionConfig, collect_one,
-    configuration::{
-        BaseInputConfiguration, InputConfiguration, OptionConfiguration,
-        SelectInputConfiguration,
-    },
-};
+use omni_input_provider::{CollectionConfig, builder, collect_one};
 use omni_prompt::CliInputProvider;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -18,27 +12,22 @@ pub async fn prompt_generator_name(
     let context_values = unordered_map!();
     let prompting_config = CollectionConfig::default();
 
-    let prompt =
-        InputConfiguration::<()>::new_select(SelectInputConfiguration::new(
-            BaseInputConfiguration::new(
-                "generator_name",
-                "Select generator",
-                None,
-                None,
-            ),
-            generators
-                .iter()
-                .map(|g| {
-                    OptionConfiguration::new(
-                        g.display_name.as_deref().unwrap_or(&g.name.as_str()),
-                        g.description.clone(),
-                        g.name.clone(),
-                        false,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            None,
-        ));
+    let prompt = builder::select::<()>()
+        .name("generator_name")
+        .message("Select generator")
+        .options(generators.iter().map(|generator| {
+            builder::option()
+                .name(
+                    generator
+                        .display_name
+                        .clone()
+                        .unwrap_or_else(|| generator.name.clone()),
+                )
+                .value(generator.name.clone())
+                .maybe_description(generator.description.clone())
+                .build()
+        }))
+        .build();
 
     let value = collect_one(
         &prompt,

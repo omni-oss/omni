@@ -532,12 +532,7 @@ mod tests {
 
     use super::{collect, collect_one, validate};
     use crate::{
-        configuration::{
-            BaseInputConfiguration, CollectionConfig,
-            ConfirmInputConfiguration, InputConfiguration,
-            IntegerInputConfiguration, TextInputConfiguration,
-            ValidateConfiguration, ValidatedInputConfiguration,
-        },
+        configuration::{CollectionConfig, InputConfiguration, builder},
         scripted::ScriptedInputProvider,
     };
 
@@ -562,90 +557,54 @@ mod tests {
     // ── input builders ────────────────────────────────────────────────────────
 
     fn text(name: &'static str) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Text {
-            input: TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None, None),
-                    vec![],
-                ),
-                None::<String>,
-            ),
-            extra: NoExtra,
-        }
+        builder::text::<NoExtra>().name(name).message(name).build()
     }
 
     fn text_with_default(
         name: &'static str,
         default: &'static str,
     ) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Text {
-            input: TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None, None),
-                    vec![],
-                ),
-                Some(default.to_string()),
-            ),
-            extra: NoExtra,
-        }
+        builder::text::<NoExtra>()
+            .name(name)
+            .message(name)
+            .default(default)
+            .build()
     }
 
     fn text_with_condition(
         name: &'static str,
         condition: Option<Either<bool, String>>,
     ) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Text {
-            input: TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, condition, None),
-                    vec![],
-                ),
-                None::<String>,
-            ),
-            extra: NoExtra,
-        }
+        builder::text::<NoExtra>()
+            .name(name)
+            .message(name)
+            .maybe_condition(condition.map(builder::ValueOrExpr::from))
+            .build()
     }
 
     fn text_with_validator(
         name: &'static str,
         expr: &'static str,
     ) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Text {
-            input: TextInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None, None),
-                    vec![ValidateConfiguration::new(
-                        Either::<bool, String>::Right(expr.to_string()),
-                        Some("validation failed".to_string()),
-                    )],
-                ),
-                None::<String>,
-            ),
-            extra: NoExtra,
-        }
+        builder::text::<NoExtra>()
+            .name(name)
+            .message(name)
+            .validate([(expr, "validation failed")])
+            .build()
     }
 
     fn confirm(name: &'static str) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Confirm {
-            input: ConfirmInputConfiguration::new(
-                BaseInputConfiguration::new(name, name, None, None),
-                None::<Either<bool, String>>,
-            ),
-            extra: NoExtra,
-        }
+        builder::confirm::<NoExtra>()
+            .name(name)
+            .message(name)
+            .build()
     }
 
     fn integer(name: &'static str) -> InputConfiguration<NoExtra> {
-        InputConfiguration::Integer {
-            input: IntegerInputConfiguration::new(
-                ValidatedInputConfiguration::new(
-                    BaseInputConfiguration::new(name, name, None, None),
-                    vec![],
-                ),
-                None::<Either<i64, String>>,
-            ),
-            extra: NoExtra,
-        }
+        builder::integer::<NoExtra>()
+            .name(name)
+            .message(name)
+            .build()
     }
 
     // ── value / map helpers ───────────────────────────────────────────────────

@@ -20,14 +20,7 @@ use omni_generator::GeneratorSys;
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
-use omni_input_provider::{
-    CollectionConfig, collect_one,
-    configuration::{
-        BaseInputConfiguration, InputConfiguration, OptionConfiguration,
-        SelectInputConfiguration, TextInputConfiguration,
-        ValidatedInputConfiguration,
-    },
-};
+use omni_input_provider::{CollectionConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::CliInputProvider;
 use omni_remote_sources::manager::{
@@ -233,30 +226,15 @@ async fn prompt_output_dir(
     let context_values = unordered_map!();
     let prompting_config = CollectionConfig::default();
 
-    let prompt =
-        InputConfiguration::<()>::new_select(SelectInputConfiguration::new(
-            BaseInputConfiguration::new(
-                "output_dir_or_project",
-                "Where should the generator output be written?",
-                None,
-                None,
-            ),
-            [
-                OptionConfiguration::new(
-                    "Output directory",
-                    None,
-                    "output_dir",
-                    false,
-                ),
-                OptionConfiguration::new(
-                    "Project directory",
-                    None,
-                    "project",
-                    false,
-                ),
-            ],
-            Some("output_dir".to_string()),
-        ));
+    let prompt = omni_prompt::builder::select::<()>()
+        .name("output_dir_or_project")
+        .message("Where should the generator output be written?")
+        .default("output_dir")
+        .options([
+            ("Output directory", "output_dir"),
+            ("Project directory", "project"),
+        ])
+        .build();
 
     let value = collect_one(
         &prompt,
@@ -274,19 +252,10 @@ async fn prompt_output_dir(
         .ok_or_else(|| eyre::eyre!("value is not a string"))?;
 
     if value == "output_dir" {
-        let text_prompt = TextInputConfiguration::new(
-            ValidatedInputConfiguration::new(
-                BaseInputConfiguration::new(
-                    "output_dir",
-                    "Output directory",
-                    None,
-                    None,
-                ),
-                [],
-            ),
-            None,
-        );
-        let prompt = &InputConfiguration::<()>::new_text(text_prompt);
+        let prompt = &omni_input_provider::builder::text::<()>()
+            .name("output_dir")
+            .message("Output directory path")
+            .build();
 
         loop {
             let output_dir = collect_one(
@@ -306,28 +275,14 @@ async fn prompt_output_dir(
     } else if value == "project" {
         let options = projects
             .iter()
-            .map(|p| {
-                OptionConfiguration::new(
-                    p.name.as_str(),
-                    None,
-                    p.dir.to_string_lossy(),
-                    false,
-                )
-            })
+            .map(|p| (p.name.clone(), p.dir.to_string_lossy().to_string()))
             .collect::<Vec<_>>();
 
-        let prompt = InputConfiguration::<()>::new_select(
-            SelectInputConfiguration::new(
-                BaseInputConfiguration::new(
-                    "project",
-                    "Select project",
-                    None,
-                    None,
-                ),
-                options,
-                Some("project".to_string()),
-            ),
-        );
+        let prompt = omni_prompt::builder::select::<()>()
+            .name("project")
+            .message("Select project")
+            .options(options)
+            .build();
 
         let value = collect_one(
             &prompt,

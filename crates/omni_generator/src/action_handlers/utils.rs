@@ -1,4 +1,3 @@
-use either::Left;
 use omni_generator_configurations::{OmniPath, OverwriteConfiguration, Root};
 use omni_messages::GeneratorEventSubscriber;
 use std::{
@@ -8,12 +7,7 @@ use std::{
 
 use maps::{UnorderedMap, unordered_map};
 use omni_input_provider::{
-    InputProvider, collect_one,
-    configuration::{
-        BaseInputConfiguration, CollectionConfig, ConfirmInputConfiguration,
-        InputConfiguration, TextInputConfiguration,
-        ValidatedInputConfiguration,
-    },
+    InputProvider, builder, collect_one, configuration::CollectionConfig,
 };
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -133,23 +127,17 @@ pub async fn should_overwrite(
 
     let is_dir = sys.fs_is_dir_async(path).await?;
 
-    let prompt_cfg = InputConfiguration::<()>::new_confirm(
-        ConfirmInputConfiguration::new(
-            BaseInputConfiguration::new(
-                "overwrite_path",
-                if is_dir {
-                    format!(
-                        "Directory already exists at path: {path:?}. Delete it and all of its contents?"
-                    )
-                } else {
-                    format!("File already exists at path: {path:?}. Overwrite?")
-                },
-                None,
-                None,
-            ),
-            Some(Left(true)),
-        ),
-    );
+    let prompt_cfg = builder::confirm::<()>()
+        .name("overwrite_path")
+        .message(if is_dir {
+            format!(
+                "Directory already exists at path: {path:?}. Delete it and all of its contents?"
+            )
+        } else {
+            format!("File already exists at path: {path:?}. Overwrite?")
+        })
+        .default(true)
+        .build();
 
     let cfg = CollectionConfig::default();
 
@@ -212,19 +200,10 @@ pub async fn get_target_dir<'a>(
         return Ok(Cow::Borrowed(target));
     }
 
-    let prompt_cfg =
-        InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-            ValidatedInputConfiguration::new(
-                BaseInputConfiguration::new(
-                    target_name,
-                    format!("Directory for target {}:", target_name),
-                    None,
-                    None,
-                ),
-                [],
-            ),
-            None,
-        ));
+    let prompt_cfg = builder::text::<()>()
+        .name(target_name)
+        .message(format!("Directory for target {}:", target_name))
+        .build();
 
     let cfg = CollectionConfig::default();
 
@@ -281,19 +260,10 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
     provider: &dyn InputProvider,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
-    let prompt_cfg =
-        InputConfiguration::<()>::new_text(TextInputConfiguration::new(
-            ValidatedInputConfiguration::new(
-                BaseInputConfiguration::new(
-                    target_name,
-                    format!("Directory for target {}:", target_name),
-                    None,
-                    None,
-                ),
-                [],
-            ),
-            None,
-        ));
+    let prompt_cfg = builder::text::<()>()
+        .name(target_name)
+        .message(format!("Directory for target {}:", target_name))
+        .build();
 
     let cfg = CollectionConfig::default();
 
