@@ -6959,7 +6959,9 @@ name = "omni_mcp_core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "bytesize",
  "eyre",
+ "humantime-serde",
  "log",
  "maps",
  "omni_api",

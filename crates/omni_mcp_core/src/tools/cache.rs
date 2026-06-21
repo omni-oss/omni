@@ -61,7 +61,10 @@ where
             stale_only: params.stale_only,
             project: params.project,
             task: params.task,
-            ..Default::default()
+            dir: params.dir,
+            larger_than: params.larger_than,
+            meta: params.meta,
+            older_than: params.older_than,
         };
         let api = self.make_api();
         let prune_response = api.cache_prune(req).await?;

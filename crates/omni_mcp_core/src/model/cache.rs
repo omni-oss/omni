@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use bytesize::ByteSize;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +44,17 @@ pub struct CachePruneParams {
     pub project: Vec<String>,
     #[serde(default)]
     pub task: Vec<String>,
+    /// Only prune entries older than this duration.
+    #[serde(default, with = "humantime_serde")]
+    #[schemars(with = "String")]
+    pub older_than: Option<Duration>,
+    #[serde(default)]
+    #[schemars(with = "String")]
+    pub larger_than: Option<ByteSize>,
+    #[serde(default)]
+    pub meta: Option<String>,
+    #[serde(default)]
+    pub dir: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

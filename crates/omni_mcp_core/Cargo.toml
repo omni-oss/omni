@@ -36,6 +36,8 @@ omni_tera = { workspace = true }
 async-trait = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
+bytesize = { workspace = true }
+humantime-serde = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }
