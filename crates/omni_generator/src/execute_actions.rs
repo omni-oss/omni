@@ -178,7 +178,7 @@ fn skip(
     action: &ActionConfiguration,
     tera_context: &omni_tera::Context,
 ) -> Result<bool, Error> {
-    let if_expr = get_if_expr(action);
+    let if_expr = action.base().r#if.as_deref();
 
     if let Some(if_expr) = if_expr {
         let result = omni_tera::one_off(
@@ -192,45 +192,6 @@ fn skip(
         Ok(result == "false")
     } else {
         Ok(false)
-    }
-}
-
-fn get_if_expr(action: &ActionConfiguration) -> Option<&str> {
-    match action {
-        ActionConfiguration::Add { action } => action.base.base.r#if.as_deref(),
-        ActionConfiguration::AddContent { action } => {
-            action.base.base.r#if.as_deref()
-        }
-        ActionConfiguration::AddMany { action } => {
-            action.base.base.r#if.as_deref()
-        }
-        ActionConfiguration::RunGenerator { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::Modify { action } => action.base.r#if.as_deref(),
-        ActionConfiguration::Append { action } => action.base.r#if.as_deref(),
-        ActionConfiguration::ModifyContent { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::AppendContent { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::Prepend { action } => action.base.r#if.as_deref(),
-        ActionConfiguration::PrependContent { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::Transform { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::TransformMany { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::RunCommand { action } => {
-            action.base.r#if.as_deref()
-        }
-        ActionConfiguration::RunJavaScript { action } => {
-            action.base.r#if.as_deref()
-        }
     }
 }
 
@@ -266,50 +227,7 @@ fn get_error_message(
     action: &ActionConfiguration,
     tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
-    let message = match action {
-        ActionConfiguration::Add { action } => {
-            action.base.base.error_message.as_deref()
-        }
-        ActionConfiguration::AddContent { action } => {
-            action.base.base.error_message.as_deref()
-        }
-        ActionConfiguration::AddMany { action } => {
-            action.base.base.error_message.as_deref()
-        }
-        ActionConfiguration::RunGenerator { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::Modify { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::Append { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::ModifyContent { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::AppendContent { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::Prepend { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::PrependContent { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::Transform { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::TransformMany { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::RunCommand { action } => {
-            action.base.error_message.as_deref()
-        }
-        ActionConfiguration::RunJavaScript { action } => {
-            action.base.error_message.as_deref()
-        }
-    };
+    let message = action.base().error_message.as_deref();
 
     if let Some(message) = message {
         let mut error_ctx = tera_context.clone();
@@ -333,50 +251,7 @@ fn get_in_progress_message(
     action: &ActionConfiguration,
     tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
-    let message = match action {
-        ActionConfiguration::Add { action } => {
-            action.base.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::AddContent { action } => {
-            action.base.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::AddMany { action } => {
-            action.base.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::RunGenerator { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::Modify { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::Append { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::ModifyContent { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::AppendContent { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::Prepend { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::PrependContent { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::Transform { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::TransformMany { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::RunCommand { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-        ActionConfiguration::RunJavaScript { action } => {
-            action.base.in_progress_message.as_deref()
-        }
-    };
+    let message = action.base().in_progress_message.as_deref();
 
     if let Some(message) = message {
         render_text(
@@ -394,50 +269,7 @@ fn get_success_message(
     action: &ActionConfiguration,
     tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
-    let message = match action {
-        ActionConfiguration::Add { action } => {
-            action.base.base.success_message.as_deref()
-        }
-        ActionConfiguration::AddContent { action } => {
-            action.base.base.success_message.as_deref()
-        }
-        ActionConfiguration::AddMany { action } => {
-            action.base.base.success_message.as_deref()
-        }
-        ActionConfiguration::RunGenerator { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::Modify { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::Append { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::ModifyContent { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::AppendContent { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::Prepend { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::PrependContent { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::Transform { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::TransformMany { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::RunCommand { action } => {
-            action.base.success_message.as_deref()
-        }
-        ActionConfiguration::RunJavaScript { action } => {
-            action.base.success_message.as_deref()
-        }
-    };
+    let message = action.base().success_message.as_deref();
 
     if let Some(message) = message {
         render_text(
@@ -455,42 +287,7 @@ fn get_action_name(
     action: &ActionConfiguration,
     tera_context: &omni_tera::Context,
 ) -> Result<String, Error> {
-    let name = match action {
-        ActionConfiguration::Add { action } => action.base.base.name.as_deref(),
-        ActionConfiguration::AddContent { action } => {
-            action.base.base.name.as_deref()
-        }
-        ActionConfiguration::AddMany { action } => {
-            action.base.base.name.as_deref()
-        }
-        ActionConfiguration::RunGenerator { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::Modify { action } => action.base.name.as_deref(),
-        ActionConfiguration::Append { action } => action.base.name.as_deref(),
-        ActionConfiguration::ModifyContent { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::AppendContent { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::Prepend { action } => action.base.name.as_deref(),
-        ActionConfiguration::PrependContent { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::Transform { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::TransformMany { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::RunCommand { action } => {
-            action.base.name.as_deref()
-        }
-        ActionConfiguration::RunJavaScript { action } => {
-            action.base.name.as_deref()
-        }
-    };
+    let name = action.base().name.as_deref();
 
     if let Some(name) = name {
         render_text(name, &format!("name for action#{}", index), tera_context)

@@ -702,6 +702,30 @@ pub enum ActionConfiguration {
     },
 }
 
+impl ActionConfiguration {
+    /// Returns the [`BaseActionConfiguration`] shared by every action variant,
+    /// transparently reaching through the extra nesting that the `add*`
+    /// variants introduce via [`BaseAddActionConfiguration`].
+    pub fn base(&self) -> &BaseActionConfiguration {
+        match self {
+            ActionConfiguration::Add { action } => &action.base.base,
+            ActionConfiguration::AddContent { action } => &action.base.base,
+            ActionConfiguration::AddMany { action } => &action.base.base,
+            ActionConfiguration::RunGenerator { action } => &action.base,
+            ActionConfiguration::Modify { action } => &action.base,
+            ActionConfiguration::ModifyContent { action } => &action.base,
+            ActionConfiguration::Append { action } => &action.base,
+            ActionConfiguration::AppendContent { action } => &action.base,
+            ActionConfiguration::Prepend { action } => &action.base,
+            ActionConfiguration::PrependContent { action } => &action.base,
+            ActionConfiguration::Transform { action } => &action.base,
+            ActionConfiguration::TransformMany { action } => &action.base,
+            ActionConfiguration::RunCommand { action } => &action.base,
+            ActionConfiguration::RunJavaScript { action } => &action.base,
+        }
+    }
+}
+
 #[derive(
     Deserialize,
     Serialize,
