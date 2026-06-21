@@ -21,7 +21,7 @@
 //! Versioning
 //! ----------
 //! The caller bakes a *version* into [`VendoredBridgeService::new`] (typically
-//! the embedding binary's version). A `.omni-vendored-version` marker is
+//! the embedding binary's version). A `.omni-bridge-service-version` marker is
 //! written alongside the bundle; if the marker already matches the requested
 //! version (and the entrypoint exists) the existing files are reused untouched,
 //! otherwise the destination is overwritten. This guarantees the binary always
@@ -38,7 +38,7 @@ use crate::{JsRuntimeError, error};
 pub const VENDORED_PACKAGE_NAME: &str = "@omni-oss/bridge-service-vendored";
 
 /// Name of the marker file recording which version is currently materialized.
-const VERSION_MARKER: &str = ".omni-vendored-version";
+const DEFAULT_VERSION_MARKER: &str = ".omni-bridge-service-version";
 
 /// Relative path (within the bundle root) of the CLI entrypoint.
 const ENTRYPOINT_REL: &str = "dist/bridge-service-cli.mjs";
@@ -72,6 +72,7 @@ pub struct VendoredLocation {
 #[derive(Debug, Clone)]
 pub struct VendoredBridgeService {
     version: String,
+    version_file_name: String,
 }
 
 impl VendoredBridgeService {
@@ -80,9 +81,17 @@ impl VendoredBridgeService {
     /// `version` should uniquely identify the embedded bundle for the lifetime
     /// of the binary (e.g. the binary's own `CARGO_PKG_VERSION`), so that
     /// upgrading the binary refreshes any stale on-disk copy.
-    pub fn new(version: impl Into<String>) -> Self {
+    /// The `version_file_name` is the name of the marker file that records which version is currently materialized on disk.
+    /// It defaults to `.omni-bridge-service-version` but can be customized for testing purposes.
+    pub fn new(
+        version: impl Into<String>,
+        version_file_name: Option<impl Into<String>>,
+    ) -> Self {
         Self {
             version: version.into(),
+            version_file_name: version_file_name
+                .map(Into::into)
+                .unwrap_or_else(|| DEFAULT_VERSION_MARKER.to_string()),
         }
     }
 
@@ -185,11 +194,12 @@ impl VendoredBridgeService {
             .into());
         }
 
-        tokio::fs::write(root.join(VERSION_MARKER), self.version.as_bytes())
-            .await
-            .map_err(|e| {
-                error::error!("failed to write version marker: {e}")
-            })?;
+        tokio::fs::write(
+            root.join(&self.version_file_name),
+            self.version.as_bytes(),
+        )
+        .await
+        .map_err(|e| error::error!("failed to write version marker: {e}"))?;
 
         Ok(VendoredLocation {
             root: omni_utils::path::clean(root),
@@ -201,7 +211,8 @@ impl VendoredBridgeService {
         if !tokio::fs::try_exists(entrypoint).await.unwrap_or(false) {
             return false;
         }
-        match tokio::fs::read_to_string(root.join(VERSION_MARKER)).await {
+        match tokio::fs::read_to_string(root.join(DEFAULT_VERSION_MARKER)).await
+        {
             Ok(marker) => marker.trim() == self.version,
             Err(_) => false,
         }
@@ -234,7 +245,7 @@ mod tests {
     async fn ensure_materializes_bundle_and_renames_package() {
         let tmp = tempfile::tempdir().expect("tempdir");
 
-        let loc = VendoredBridgeService::new("test-version")
+        let loc = VendoredBridgeService::new("test-version", None::<String>)
             .ensure(tmp.path())
             .await
             .expect(
@@ -265,7 +276,7 @@ mod tests {
             .await
             .expect("create node_modules");
 
-        let loc = VendoredBridgeService::new("v1")
+        let loc = VendoredBridgeService::new("v1", None::<String>)
             .ensure(tmp.path())
             .await
             .expect("ensure should succeed");
@@ -282,17 +293,17 @@ mod tests {
     async fn ensure_is_idempotent_for_same_version() {
         let tmp = tempfile::tempdir().expect("tempdir");
 
-        let first = VendoredBridgeService::new("v1")
+        let first = VendoredBridgeService::new("v1", None::<String>)
             .ensure(tmp.path())
             .await
             .expect("first ensure");
-        let marker = first.root.join(VERSION_MARKER);
+        let marker = first.root.join(DEFAULT_VERSION_MARKER);
         let written_at = tokio::fs::metadata(&marker)
             .await
             .and_then(|m| m.modified())
             .expect("marker mtime");
 
-        let second = VendoredBridgeService::new("v1")
+        let second = VendoredBridgeService::new("v1", None::<String>)
             .ensure(tmp.path())
             .await
             .expect("second ensure");

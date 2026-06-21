@@ -115,10 +115,11 @@ impl LazyScriptRunner {
             let version = version.clone();
 
             Box::pin(async move {
-                let vendored = VendoredBridgeService::new(version)
-                    .ensure(&context_dir)
-                    .await
-                    .map_err(|e| Error::custom(e.to_string()))?;
+                let vendored =
+                    VendoredBridgeService::new(version, None::<String>)
+                        .ensure(&context_dir)
+                        .await
+                        .map_err(|e| Error::custom(e.to_string()))?;
 
                 let mut router = Router::new();
                 register_services_with_defaults(
