@@ -737,6 +737,45 @@ describe("+generator @tui (interactive run via PTY)", () => {
         expect(ws.read("app/src/greeting.txt")).toBe("Hello PTY!");
         expect(ws.exists("app/.omni/generator.json")).toBe(true);
     });
+
+    it("prompts for a free-form output directory, generator name, inputs, then save", async () => {
+        const ws = makeWorkspace(scaffoldGeneratorSpec());
+
+        // No -o/-p/-n: omni drives the whole interactive chain, this time
+        // taking the "Output directory" branch instead of "Project directory".
+        const pty = spawnOmniPty(["generator", "run"], { cwd: ws.cwd });
+
+        // 1. Output-target select: "Output directory" is the default (first)
+        //    option, so confirm it without moving the cursor.
+        await pty.waitFor("Where should the generator output be written?");
+        pty.press("enter");
+
+        // 2. Free-form output-directory path prompt (resolved against cwd).
+        await pty.waitFor("Output directory path");
+        pty.type("gen-out");
+        pty.press("enter");
+
+        // 3. Generator-name select (only `scaffold`).
+        await pty.waitFor("Select generator");
+        pty.press("enter");
+
+        // 4. The generator's own `subject` prompt.
+        await pty.waitFor("Who to greet?");
+        pty.type("PTY");
+        pty.press("enter");
+
+        // 5. Post-run "save session?" confirm (defaults to yes).
+        await pty.waitFor("save inputs and targets");
+        pty.press("enter");
+
+        const exit = await pty.waitForExit();
+
+        expect(exit.exitCode).toBe(0);
+        // Output landed under the typed directory (`dest` => `@output/src`), and
+        // the save confirm persisted the session at that directory's root.
+        expect(ws.read("gen-out/src/greeting.txt")).toBe("Hello PTY!");
+        expect(ws.exists("gen-out/.omni/generator.json")).toBe(true);
+    });
 });
 
 /**
