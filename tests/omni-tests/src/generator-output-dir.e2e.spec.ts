@@ -75,7 +75,9 @@ function outputDirCaptureSpec(): WorkspaceSpec {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("+generator @cli (output_dir template variable)", () => {
+describe("+generator @cli (output_dir template variable)", {
+    tags: ["generator"],
+}, () => {
     it("{{ output_dir }} is workspace-relative for a top-level output dir", async () => {
         // Single path segment: separator differences don't apply, and the
         // expected value is unambiguously "out" on every platform.

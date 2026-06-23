@@ -21,5 +21,29 @@ export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
         // unit test, so give e2e tests room before timing out.
         testTimeout: 30_000,
         hookTimeout: 30_000,
+        tags: [
+            {
+                name: "generator",
+            },
+            {
+                name: "mcp",
+            },
+            {
+                name: "input",
+            },
+            {
+                name: "prompt",
+            },
+            {
+                name: "hashing",
+            },
+            {
+                name: "caching",
+            },
+            {
+                name: "execution",
+            },
+        ],
+        strictTags: true,
     },
 } satisfies UserWorkspaceConfig);

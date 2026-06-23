@@ -15,8 +15,11 @@
 import { describe, expect, it } from "vitest";
 import {
     makeWorkspace,
+    mutualRecursionGeneratorSpec,
+    nestedGeneratorSpec,
     runOmni,
     scaffoldGeneratorSpec,
+    selfRecursiveGeneratorSpec,
     skipUnlessRemoteReachable,
     skipUnlessSshReachable,
     spawnOmniPty,
@@ -34,7 +37,9 @@ interface SessionEntry {
     inputs: Record<string, unknown>;
 }
 
-describe("+generator @cli (list)", () => {
+describe("+generator @cli (list)", {
+    tags: ["generator"],
+}, () => {
     it("`generator list` shows each generator's name and description", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -91,7 +96,9 @@ describe("+generator @cli (list)", () => {
     });
 });
 
-describe("+generator @cli (run)", () => {
+describe("+generator @cli (run)", {
+    tags: ["generator"],
+}, () => {
     it("scaffolds files non-interactively with -n/-o/--use-defaults", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -375,7 +382,9 @@ describe("+generator @cli (run)", () => {
     });
 });
 
-describe("+generator @cli (--save-session/--ignore-session value handling)", () => {
+describe("+generator @cli (--save-session/--ignore-session value handling)", {
+    tags: ["generator"],
+}, () => {
     // Both flags are optional-value booleans: bare = true, `=true`/`=false`
     // explicit, and the space-separated form is rejected (require_equals).
     it("bare --save-session defaults to true and writes the session", async () => {
@@ -587,7 +596,9 @@ describe("+generator @cli (--save-session/--ignore-session value handling)", () 
     });
 });
 
-describe("+generator @exitcode (run errors)", () => {
+describe("+generator @exitcode (run errors)", {
+    tags: ["generator"],
+}, () => {
     it("-p/--project with an unknown project errors with `Project <x> not found`", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -679,7 +690,9 @@ function transformSpec() {
     };
 }
 
-describe("+generator @e2e (transform actions)", () => {
+describe("+generator @e2e (transform actions)", {
+    tags: ["generator"],
+}, () => {
     it.skipIf(process.platform === "win32")(
         "transform/transform-many pipe generated files through a command",
         async () => {
@@ -700,7 +713,9 @@ describe("+generator @e2e (transform actions)", () => {
     );
 });
 
-describe("+generator @tui (interactive run via PTY)", () => {
+describe("+generator @tui (interactive run via PTY)", {
+    tags: ["generator"],
+}, () => {
     it("prompts for output target, generator name, inputs, then save", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -821,7 +836,9 @@ function parseLockfile(raw: string): {
     return JSON.parse(raw);
 }
 
-describe("+generator @e2e (git sources)", () => {
+describe("+generator @e2e (git sources)", {
+    tags: ["generator"],
+}, () => {
     const CLONE_TIMEOUT_MS = 10_000;
 
     it(
@@ -920,7 +937,9 @@ describe("+generator @e2e (git sources)", () => {
     );
 });
 
-describe("+generator @exitcode (validation)", () => {
+describe("+generator @exitcode (validation)", {
+    tags: ["generator"],
+}, () => {
     it("errors when two generators share the same name", async () => {
         // `validate` runs at the top of `run_named`, before any prompting, so a
         // duplicate name fails fast regardless of the generators' inputs.
@@ -976,14 +995,14 @@ function multiSlotGeneratorSpec(): WorkspaceSpec {
                 description: "scaffolds two greeting files",
                 inputs: [
                     {
-                        type: "text",
+                        type: "string",
                         name: "subject",
                         message: "Who to greet?",
                         default: "world",
                         remember: true,
                     },
                     {
-                        type: "text",
+                        type: "string",
                         name: "salutation",
                         message: "How to greet?",
                         default: "Hello",
@@ -1012,7 +1031,9 @@ function multiSlotGeneratorSpec(): WorkspaceSpec {
     };
 }
 
-describe("+generator @cli (run flag combinations)", () => {
+describe("+generator @cli (run flag combinations)", {
+    tags: ["generator"],
+}, () => {
     it("-v + -t + --use-defaults combine prefill and target override non-interactively", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
 
@@ -1199,80 +1220,14 @@ describe("+generator @cli (run flag combinations)", () => {
 // the `omni generator run` CLI. `detect_recursion` runs up front in
 // `run_in_transaction`; the runtime depth cap is the configurable backstop
 // surfaced via `--max-depth`.
+//
+// Fixtures are shared via the harness: selfRecursiveGeneratorSpec,
+// mutualRecursionGeneratorSpec, nestedGeneratorSpec.
 // ---------------------------------------------------------------------------
 
-/** A generator that invokes itself, forming a direct recursion cycle. */
-function selfRecursiveGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/loop/generator.omni.yaml": {
-                name: "loop",
-                description: "calls itself, forming a direct recursion cycle",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "loop" }],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
-/** Two generators that invoke each other (ping → pong → ping). */
-function mutualRecursionGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/ping/generator.omni.yaml": {
-                name: "ping",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "pong" }],
-            },
-            "generators/pong/generator.omni.yaml": {
-                name: "pong",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "ping" }],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
-/** A legitimate, non-cyclic chain: parent runs child, which writes a file. */
-function nestedGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/parent/generator.omni.yaml": {
-                name: "parent",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "child" }],
-            },
-            "generators/child/generator.omni.yaml": {
-                name: "child",
-                inputs: [],
-                actions: [
-                    {
-                        type: "add-content",
-                        output_path: "nested.txt",
-                        content: "from child",
-                    },
-                ],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
-describe("+generator @exitcode (recursion)", () => {
+describe("+generator @exitcode (recursion)", {
+    tags: ["generator"],
+}, () => {
     it("rejects a generator that directly invokes itself", async () => {
         // loop → loop. detect_recursion fails before any action runs, so no
         // output is produced.
@@ -1302,7 +1257,9 @@ describe("+generator @exitcode (recursion)", () => {
     });
 });
 
-describe("+generator @cli (--max-depth)", () => {
+describe("+generator @cli (--max-depth)", {
+    tags: ["generator"],
+}, () => {
     it("aborts a legitimate (acyclic) chain when --max-depth is below its nesting", async () => {
         // parent → child is non-cyclic; child runs at depth 1. With
         // --max-depth 0 the nested run exceeds the cap and is rejected even

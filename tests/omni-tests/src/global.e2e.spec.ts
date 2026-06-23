@@ -97,7 +97,7 @@ describe("+global @cli (stdout logging)", () => {
         expect(result).toOutputContaining(MISSING_WARN);
     });
 
-    it("-l/--stdout-logs-level off silences stdout logs", async () => {
+    it("-l/--stdout-log-level off silences stdout logs", async () => {
         const ws = envWorkspace();
 
         const result = await runOmni(["-l", "off", "env", "get", "MISSING"], {

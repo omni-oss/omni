@@ -43,6 +43,7 @@ export const workspaceMinimalRepo = {
     sshUrl: "ssh://git@github.com/omni-oss/workspace-minimal.git",
     /** Default branch pulled by the tests. */
     rev: "main",
+    pinCommit: "cef04c0278eee8787171fb5f0dfee646f1d460ab",
     /** Identity of the repo's primary generator (see `generator.omni.yaml`). */
     generatorId: "workspace-minimal",
     generatorDisplayName: "Minimal Omni Workspace",

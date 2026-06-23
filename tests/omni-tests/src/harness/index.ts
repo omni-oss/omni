@@ -17,8 +17,11 @@ export {
     dependencyChainSpec,
     extendsSpec,
     multiFormatProjectsSpec,
+    mutualRecursionGeneratorSpec,
+    nestedGeneratorSpec,
     promptGeneratorSpec,
     scaffoldGeneratorSpec,
+    selfRecursiveGeneratorSpec,
     singleProjectSpec,
 } from "./fixtures";
 export {

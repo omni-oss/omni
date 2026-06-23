@@ -24,7 +24,7 @@ const GENERATOR_SOURCE = [{ source: "local", path: "generators/**" }];
 
 /**
  * A workspace with a `parent` generator (no inputs) that invokes a `child`
- * generator via `run_generator`. The child has a `subject` text input with
+ * generator via `run_generator`. The child has a `subject` string input with
  * default "world" and writes `Hello {{ inputs.subject }}!` to `greeting.txt`.
  */
 function parentChildSpec(): WorkspaceSpec {
@@ -38,7 +38,7 @@ function parentChildSpec(): WorkspaceSpec {
                 name: "child",
                 inputs: [
                     {
-                        type: "text",
+                        type: "string",
                         name: "subject",
                         message: "Who to greet?",
                         default: "world",
@@ -61,7 +61,9 @@ function parentChildSpec(): WorkspaceSpec {
     };
 }
 
-describe("+generator @cli (run-generator / use_input_defaults)", () => {
+describe("+generator @cli (run-generator / use_input_defaults)", {
+    tags: ["generator"],
+}, () => {
     it("--use-defaults propagates into a sub-generator's inputs", async () => {
         // The parent has no inputs; the child has `subject` defaulting to
         // "world". With --use-defaults the child must pick up that default
@@ -99,7 +101,7 @@ describe("+generator @cli (run-generator / use_input_defaults)", () => {
                     name: "child",
                     inputs: [
                         {
-                            type: "text",
+                            type: "string",
                             name: "subject",
                             message: "Who to greet?",
                             default: "world",
@@ -160,13 +162,13 @@ describe("+generator @cli (run-generator / use_input_defaults)", () => {
                     name: "leaf",
                     inputs: [
                         {
-                            type: "text",
+                            type: "string",
                             name: "greeting",
                             message: "Greeting?",
                             default: "Hello",
                         },
                         {
-                            type: "text",
+                            type: "string",
                             name: "subject",
                             message: "Subject?",
                             default: "earth",
@@ -225,7 +227,7 @@ describe("+generator @cli (run-generator / use_input_defaults)", () => {
                     name: "child",
                     inputs: [
                         {
-                            type: "text",
+                            type: "string",
                             name: "subject",
                             message: "Who to greet?",
                             default: "world",
@@ -243,7 +245,7 @@ describe("+generator @cli (run-generator / use_input_defaults)", () => {
                     name: "parent",
                     inputs: [
                         {
-                            type: "text",
+                            type: "string",
                             name: "prefix",
                             message: "Prefix?",
                             default: "Greetings",

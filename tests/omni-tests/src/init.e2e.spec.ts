@@ -36,7 +36,9 @@ const repo = workspaceMinimalRepo;
 // tests more headroom than the default 30s.
 const CLONE_TIMEOUT_MS = 60_000;
 
-describe("+init @e2e (clone + run primary generator)", () => {
+describe("+init @e2e (clone + run primary generator)", {
+    tags: ["generator"],
+}, () => {
     it(
         "`--git <url>` clones the repo and runs its primary generator into cwd",
         async (ctx) => {
@@ -169,7 +171,6 @@ describe("+init @e2e (clone + run primary generator)", () => {
             // The current (single) commit on `main`. A full clone fetches all
             // of `main`'s history, so this SHA stays resolvable by
             // `rev_parse_single` even if the branch advances later.
-            const commit = "656e50e1a615b5b71f43eed968d8647a33b04dd0";
             const ws = makeWorkspace();
 
             const result = await runOmni(
@@ -178,7 +179,7 @@ describe("+init @e2e (clone + run primary generator)", () => {
                     "--git",
                     repo.https,
                     "--git-rev",
-                    commit,
+                    repo.pinCommit,
                     "-o",
                     "rev-commit",
                     "-v",
@@ -197,7 +198,7 @@ describe("+init @e2e (clone + run primary generator)", () => {
     );
 });
 
-describe("+init @e2e @scm (SSH remote)", () => {
+describe("+init @e2e @scm (SSH remote)", { tags: ["generator"] }, () => {
     it(
         "`--git <scp-url>` clones over SSH using the machine's keys",
         async (ctx) => {
@@ -231,7 +232,7 @@ describe("+init @e2e @scm (SSH remote)", () => {
     );
 });
 
-describe("+init @e2e @exitcode (error paths)", () => {
+describe("+init @e2e @exitcode (error paths)", { tags: ["generator"] }, () => {
     it("with no `--git` logs an error and exits without action", async () => {
         const ws = makeWorkspace();
 

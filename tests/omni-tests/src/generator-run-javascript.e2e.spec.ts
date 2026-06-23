@@ -69,7 +69,9 @@ function jsGeneratorSpec(): WorkspaceSpec {
     };
 }
 
-describe("+generator @e2e (run-javascript)", () => {
+describe("+generator @e2e (run-javascript)", {
+    tags: ["generator"],
+}, () => {
     it("runs a script through the bridge runner and commits its sys writes", async () => {
         const ws = makeWorkspace(jsGeneratorSpec());
 

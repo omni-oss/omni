@@ -76,8 +76,10 @@ function singleGenerator(inputs: Json[], content: string) {
     });
 }
 
-describe("+input @tui (text input)", () => {
-    it("drives a requestty text input and bakes the answer into output", async () => {
+describe("+input @tui (string input)", {
+    tags: ["generator", "prompt"],
+}, () => {
+    it("drives a requestty string input and bakes the answer into output", async () => {
         const ws = makeWorkspace(promptGeneratorSpec());
 
         const pty = spawnOmniPty(
@@ -105,7 +107,9 @@ describe("+input @tui (text input)", () => {
     });
 });
 
-describe("+input @tui (select input)", () => {
+describe("+input @tui (select input)", {
+    tags: ["generator", "prompt"],
+}, () => {
     it("selecting a different generator from the list runs that one", async () => {
         const ws = generatorWorkspace({
             alpha: {
@@ -158,15 +162,17 @@ describe("+input @tui (select input)", () => {
     });
 });
 
-describe("+input @tui (multi_select input)", () => {
+describe("+input @tui (string-array input)", {
+    tags: ["generator", "prompt"],
+}, () => {
     it("space toggles options and enter submits the selected values", async () => {
         const ws = singleGenerator(
             [
                 {
-                    type: "multi-select",
+                    type: "string-array",
                     name: "tags",
                     message: "Pick tags",
-                    options: [
+                    allowed: [
                         { name: "a", value: "a" },
                         { name: "b", value: "b" },
                         { name: "c", value: "c" },
@@ -194,12 +200,14 @@ describe("+input @tui (multi_select input)", () => {
     });
 });
 
-describe("+input @tui (confirm input)", () => {
+describe("+input @tui (boolean input)", {
+    tags: ["generator", "prompt"],
+}, () => {
     function confirmWorkspace() {
         return singleGenerator(
             [
                 {
-                    type: "confirm",
+                    type: "boolean",
                     name: "flag",
                     message: "Proceed?",
                     default: true,
@@ -243,15 +251,17 @@ describe("+input @tui (confirm input)", () => {
     });
 });
 
-describe("+input @tui (validation)", () => {
+describe("+input @tui (validation)", {
+    tags: ["generator", "prompt"],
+}, () => {
     it("re-prompts on invalid input and proceeds once valid", async () => {
         const ws = singleGenerator(
             [
                 {
-                    type: "text",
+                    type: "string",
                     name: "code",
                     message: "Enter code",
-                    validate: [
+                    validators: [
                         {
                             condition: "{{ value == 'abc' }}",
                             error_message: "must be abc",
@@ -283,18 +293,20 @@ describe("+input @tui (validation)", () => {
     });
 });
 
-describe("+input @tui (if-skip & password)", () => {
+describe("+input @tui (if-skip & secret)", {
+    tags: ["generator", "prompt"],
+}, () => {
     it("an `if: false` prompt is skipped and never rendered", async () => {
         const ws = singleGenerator(
             [
                 {
-                    type: "text",
+                    type: "string",
                     name: "hidden",
                     message: "SHOULD-NOT-APPEAR",
                     if: false,
                     default: "x",
                 },
-                { type: "text", name: "shown", message: "Type value" },
+                { type: "string", name: "shown", message: "Type value" },
             ],
             "hidden={{ inputs.hidden | default(value='MISSING') }} shown={{ inputs.shown }}",
         );
@@ -315,10 +327,17 @@ describe("+input @tui (if-skip & password)", () => {
         expect(ws.read("out/result.txt")).toBe("hidden=MISSING shown=here");
     });
 
-    it("a password input captures input without echoing it", async () => {
+    it("a secret string input captures input without echoing it", async () => {
         const secret = "topsecret-123";
         const ws = singleGenerator(
-            [{ type: "password", name: "secret", message: "Enter secret" }],
+            [
+                {
+                    type: "string",
+                    name: "secret",
+                    secret: true,
+                    message: "Enter secret",
+                },
+            ],
             "secret={{ inputs.secret }}",
         );
 

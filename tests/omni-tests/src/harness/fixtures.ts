@@ -111,7 +111,7 @@ export function multiFormatProjectsSpec(): WorkspaceSpec {
 
 /**
  * A workspace exposing a local generator source plus a single generator that
- * asks one `text` prompt and writes the answer into a file via an inline
+ * asks one `string` prompt and writes the answer into a file via an inline
  * `add-content` action. Driving this with the PTY harness exercises the real
  * `omni_prompt`/requestty interactive path end to end (see the `+prompt @tui`
  * backlog): run it, answer the prompt, then assert the generated file baked the
@@ -129,9 +129,13 @@ export function promptGeneratorSpec(): WorkspaceSpec {
         projects: {
             "generators/greeter/generator.omni.yaml": {
                 name: "greeter",
-                description: "POC text-prompt generator",
+                description: "POC string prompt generator",
                 inputs: [
-                    { type: "text", name: "subject", message: "Who to greet?" },
+                    {
+                        type: "string",
+                        name: "subject",
+                        message: "Who to greet?",
+                    },
                 ],
                 actions: [
                     {
@@ -152,7 +156,7 @@ export function promptGeneratorSpec(): WorkspaceSpec {
 /**
  * A workspace with a local generator source and a `scaffold` generator suited
  * to non-interactive `omni generator run` tests. The generator:
- *   - asks one `text` prompt `subject` (default `"world"`, `remember: true` so
+ *   - asks one `string` prompt `subject` (default `"world"`, `remember: true` so
  *     it is persisted to the session),
  *   - declares a `dest` target rooted at `@output/src` (so `-t dest=<path>` can
  *     redirect output and prove target overrides), and
@@ -175,7 +179,7 @@ export function scaffoldGeneratorSpec(): WorkspaceSpec {
                 description: "scaffolds a greeting file",
                 inputs: [
                     {
-                        type: "text",
+                        type: "string",
                         name: "subject",
                         message: "Who to greet?",
                         default: "world",
@@ -189,6 +193,101 @@ export function scaffoldGeneratorSpec(): WorkspaceSpec {
                         output_path: "greeting.txt",
                         target: "dest",
                         content: "Hello {{ inputs.subject }}!",
+                    },
+                ],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * A generator that invokes itself through a `run-generator` action, forming a
+ * direct recursion cycle (`loop → loop`). Running it must be rejected by the
+ * up-front recursion check before any action executes.
+ *
+ * Used by both `+generator @exitcode (recursion)` and
+ * `+mcp @mcp @cli (generator_run recursion)` tests.
+ */
+export function selfRecursiveGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/loop/generator.omni.yaml": {
+                name: "loop",
+                description: "calls itself, forming a direct recursion cycle",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "loop" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * Two generators that invoke each other (`ping → pong → ping`), forming an
+ * indirect recursion cycle. Running either entry point must be rejected.
+ *
+ * Used by both `+generator @exitcode (recursion)` and
+ * `+mcp @mcp @cli (generator_run recursion)` tests.
+ */
+export function mutualRecursionGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/ping/generator.omni.yaml": {
+                name: "ping",
+                description: "calls pong",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "pong" }],
+            },
+            "generators/pong/generator.omni.yaml": {
+                name: "pong",
+                description: "calls ping",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "ping" }],
+            },
+        },
+        files: { ".omni/sources/generator/.keep": "" },
+    };
+}
+
+/**
+ * A legitimate, non-cyclic composition: `parent` runs `child`, which writes
+ * `nested.txt`. This is the positive control proving the recursion guard does
+ * not false-positive on valid `run-generator` chains.
+ *
+ * Used by `+generator @cli (--max-depth)`, `+mcp @mcp @cli (generator_run
+ * recursion)`, and `+mcp @mcp @cli (generator_run max_depth)` tests.
+ */
+export function nestedGeneratorSpec(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/parent/generator.omni.yaml": {
+                name: "parent",
+                description: "runs the child generator",
+                inputs: [],
+                actions: [{ type: "run-generator", generator: "child" }],
+            },
+            "generators/child/generator.omni.yaml": {
+                name: "child",
+                description: "writes a nested file",
+                inputs: [],
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "nested.txt",
+                        content: "from child",
                     },
                 ],
             },

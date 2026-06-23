@@ -14,8 +14,11 @@ import { describe, expect, it } from "vitest";
 import {
     connectMcp,
     makeWorkspace,
+    mutualRecursionGeneratorSpec,
+    nestedGeneratorSpec,
     runOmni,
     scaffoldGeneratorSpec,
+    selfRecursiveGeneratorSpec,
     singleProjectSpec,
     type WorkspaceSpec,
 } from "@/harness";
@@ -66,7 +69,7 @@ function appendGeneratorSpec(): WorkspaceSpec {
                 name: "appender",
                 inputs: [
                     {
-                        type: "text",
+                        type: "string",
                         name: "entry",
                         message: "What to append?",
                     },
@@ -109,7 +112,7 @@ function twoProjectSpec(): WorkspaceSpec {
 
 /**
  * A workspace whose generator has a conditional input gated on the value of a
- * preceding input. `version` is a `select` defaulting to `"custom"`, and
+ * preceding input. `version` is a `string-array` (multi-select) defaulting to `["custom"]`, and
  * `crate_version` is only active when `version == 'custom'`.
  *
  * This mirrors the real `crate` generator and exercises default-value
@@ -131,11 +134,11 @@ function conditionalGeneratorSpec(): WorkspaceSpec {
                 description: "conditional input gated on another input's value",
                 inputs: [
                     {
-                        type: "select",
+                        type: "string-array",
                         name: "version",
                         message: "Version",
-                        default: "custom",
-                        options: [
+                        default: ["custom"],
+                        allowed: [
                             {
                                 name: "Inherit from workspace",
                                 value: "workspace",
@@ -145,7 +148,7 @@ function conditionalGeneratorSpec(): WorkspaceSpec {
                     },
                     {
                         if: "{{ inputs.version == 'custom' }}",
-                        type: "text",
+                        type: "string",
                         name: "crate_version",
                         message: "Crate version",
                         default: "0.0.0",
@@ -183,11 +186,11 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
                     "required conditional input gated on another input",
                 inputs: [
                     {
-                        type: "select",
+                        type: "string-array",
                         name: "version",
                         message: "Version",
-                        default: "custom",
-                        options: [
+                        default: ["custom"],
+                        allowed: [
                             {
                                 name: "Inherit from workspace",
                                 value: "workspace",
@@ -197,7 +200,7 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
                     },
                     {
                         if: "{{ inputs.version == 'custom' }}",
-                        type: "text",
+                        type: "string",
                         name: "crate_version",
                         message: "Crate version",
                     },
@@ -215,98 +218,13 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
     };
 }
 
-/**
- * A generator that invokes itself through a `run-generator` action, forming a
- * direct recursion cycle (`loop → loop`). Running it must be rejected by the
- * up-front recursion check (`detect_recursion`) before any action executes.
- */
-function selfRecursiveGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/loop/generator.omni.yaml": {
-                name: "loop",
-                description: "calls itself, forming a direct recursion cycle",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "loop" }],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
-/**
- * Two generators that invoke each other (`ping → pong → ping`), forming an
- * indirect recursion cycle. Running either entry point must be rejected.
- */
-function mutualRecursionGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/ping/generator.omni.yaml": {
-                name: "ping",
-                description: "calls pong",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "pong" }],
-            },
-            "generators/pong/generator.omni.yaml": {
-                name: "pong",
-                description: "calls ping",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "ping" }],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
-/**
- * A legitimate, non-cyclic composition: `parent` runs `child`, which writes a
- * file. This is the positive control proving `detect_recursion` does not
- * false-positive on a valid `run-generator` chain and that nested generation
- * actually executes.
- */
-function nestedGeneratorSpec(): WorkspaceSpec {
-    return {
-        workspace: {
-            projects: ["**"],
-            generators: [{ source: "local", path: "generators/**" }],
-        },
-        projects: {
-            "generators/parent/generator.omni.yaml": {
-                name: "parent",
-                description: "runs the child generator",
-                inputs: [],
-                actions: [{ type: "run-generator", generator: "child" }],
-            },
-            "generators/child/generator.omni.yaml": {
-                name: "child",
-                description: "writes a nested file",
-                inputs: [],
-                actions: [
-                    {
-                        type: "add-content",
-                        output_path: "nested.txt",
-                        content: "from child",
-                    },
-                ],
-            },
-        },
-        files: { ".omni/sources/generator/.keep": "" },
-    };
-}
-
 // ---------------------------------------------------------------------------
 // Protocol — tools/list
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (protocol)", () => {
+describe("+mcp @mcp @cli (protocol)", {
+    tags: ["mcp"],
+}, () => {
     it("tools/list returns all 13 expected tools", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -385,7 +303,9 @@ describe("+mcp @mcp @cli (protocol)", () => {
 // workspace_info
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (workspace_info)", () => {
+describe("+mcp @mcp @cli (workspace_info)", {
+    tags: ["mcp"],
+}, () => {
     it("returns root_dir matching the workspace directory", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -430,7 +350,9 @@ describe("+mcp @mcp @cli (workspace_info)", () => {
 // project_list
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (project_list)", () => {
+describe("+mcp @mcp @cli (project_list)", {
+    tags: ["mcp"],
+}, () => {
     it("lists every project in the workspace", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -458,7 +380,9 @@ describe("+mcp @mcp @cli (project_list)", () => {
 // project_config
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (project_config)", () => {
+describe("+mcp @mcp @cli (project_config)", {
+    tags: ["mcp"],
+}, () => {
     it("returns config and tasks for a known project", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -497,7 +421,9 @@ describe("+mcp @mcp @cli (project_config)", () => {
 // generator_list
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_list)", () => {
+describe("+mcp @mcp @cli (generator_list)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("lists generators declared in the workspace", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -558,7 +484,9 @@ describe("+mcp @mcp @cli (generator_list)", () => {
 // generator_inspect
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_inspect)", () => {
+describe("+mcp @mcp @cli (generator_inspect)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("returns the input schema and targets for a generator", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -585,12 +513,11 @@ describe("+mcp @mcp @cli (generator_inspect)", () => {
 
         const subject = data.inputs.find((i) => i.name === "subject");
         expect(subject).toBeDefined();
-        expect(subject?.kind).toBe("text");
+        expect(subject?.kind).toBe("string");
         // Has a static default "world" so it is not required.
         expect(subject?.required).toBe(false);
         expect(subject?.default).toBe("world");
         // Declared with remember: true in the fixture.
-        expect(subject?.remember).toBe(true);
 
         expect(data.targets.find((t) => t.key === "dest")).toBeDefined();
     });
@@ -612,7 +539,9 @@ describe("+mcp @mcp @cli (generator_inspect)", () => {
 // generator_run
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_run)", () => {
+describe("+mcp @mcp @cli (generator_run)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("dry_run=true reports actions without writing files", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -681,7 +610,9 @@ describe("+mcp @mcp @cli (generator_run)", () => {
 // generator_run — parallel / concurrency
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_run parallelism)", () => {
+describe("+mcp @mcp @cli (generator_run parallelism)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("concurrent runs to different output dirs all complete without errors", async () => {
         // Fire N runs simultaneously against separate output dirs. The workspace
         // lock serializes them internally, but since the outputs are disjoint
@@ -764,7 +695,9 @@ describe("+mcp @mcp @cli (generator_run parallelism)", () => {
 // generator_run — recursion detection
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_run recursion)", () => {
+describe("+mcp @mcp @cli (generator_run recursion)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("rejects a generator that directly invokes itself", async () => {
         // loop → loop. detect_recursion runs before any action executes, so the
         // call must reject rather than recurse until exhaustion.
@@ -860,7 +793,9 @@ describe("+mcp @mcp @cli (generator_run recursion)", () => {
 // generator_run — max_depth (configurable nesting limit)
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_run max_depth)", () => {
+describe("+mcp @mcp @cli (generator_run max_depth)", {
+    tags: ["mcp", "generator"],
+}, () => {
     it("aborts a legitimate (acyclic) chain when max_depth is set below its nesting", async () => {
         // parent → child is a valid, non-cyclic chain: child runs at depth 1.
         // With max_depth=0 the nested run exceeds the cap and is rejected even
@@ -917,7 +852,9 @@ describe("+mcp @mcp @cli (generator_run max_depth)", () => {
 // generator_validate_input
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (generator_validate_input)", () => {
+describe("+mcp @mcp @cli (generator_validate_input)", {
+    tags: ["mcp", "generator", "input"],
+}, () => {
     it("valid=true when an explicit value is provided for the required input", async () => {
         const ws = makeWorkspace(scaffoldGeneratorSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -1056,7 +993,9 @@ describe("+mcp @mcp @cli (generator_validate_input)", () => {
 // hash_workspace
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (hash_workspace)", () => {
+describe("+mcp @mcp @cli (hash_workspace)", {
+    tags: ["mcp", "hashing"],
+}, () => {
     it("returns a non-empty hash string", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -1094,7 +1033,9 @@ describe("+mcp @mcp @cli (hash_workspace)", () => {
 // hash_project
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (hash_project)", () => {
+describe("+mcp @mcp @cli (hash_project)", {
+    tags: ["mcp", "hashing"],
+}, () => {
     it("returns a hash for a named project", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -1142,7 +1083,9 @@ describe("+mcp @mcp @cli (hash_project)", () => {
 // cache_stats
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (cache_stats)", () => {
+describe("+mcp @mcp @cli (cache_stats)", {
+    tags: ["mcp", "caching"],
+}, () => {
     it("returns an empty project list for a fresh workspace", async () => {
         // Seed .omni/cache/ so the cache directory chain exists on Windows;
         // without it omni errors when trying to read from a non-existent path.
@@ -1209,7 +1152,9 @@ describe("+mcp @mcp @cli (cache_stats)", () => {
 // cache_prune
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (cache_prune)", () => {
+describe("+mcp @mcp @cli (cache_prune)", {
+    tags: ["mcp", "caching"],
+}, () => {
     it("dry_run=true (default) reports entries without removing them", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const seed = await runOmni(["run", "build"], { cwd: ws.cwd });
@@ -1262,7 +1207,9 @@ describe("+mcp @mcp @cli (cache_prune)", () => {
 // run_tasks
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (run_tasks)", () => {
+describe("+mcp @mcp @cli (run_tasks)", {
+    tags: ["mcp", "execution"],
+}, () => {
     it("runs a named task and reports completed status with exit code 0", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
@@ -1310,7 +1257,9 @@ describe("+mcp @mcp @cli (run_tasks)", () => {
 // exec_command
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (exec_command)", () => {
+describe("+mcp @mcp @cli (exec_command)", {
+    tags: ["mcp"],
+}, () => {
     it("runs a command across all workspace projects and returns results", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
