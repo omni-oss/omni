@@ -2638,6 +2638,16 @@ dependencies = [
 
 [[package]]
 name = "darling"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
+dependencies = [
+ "darling_core 0.21.3",
+ "darling_macro 0.21.3",
+]
+
+[[package]]
+name = "darling"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
@@ -2662,6 +2672,19 @@ dependencies = [
 
 [[package]]
 name = "darling_core"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1247195ecd7e3c85f83c8d2a366e4210d588e802133e1e355180a9870b517ea4"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_core"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0"
@@ -2680,6 +2703,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
  "darling_core 0.20.11",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
+dependencies = [
+ "darling_core 0.21.3",
  "quote",
  "syn 2.0.117",
 ]
@@ -3071,6 +3105,29 @@ version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67c78a4d8fdf9953a5c9d458f9efe940fd97a0cab0941c075a813ac594733827"
 dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "enumset"
+version = "1.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "839c4174b41e75c8f7306110b2c51996a293b8d1d850edd529011841d9fede7d"
+dependencies = [
+ "enumset_derive",
+ "serde",
+]
+
+[[package]]
+name = "enumset_derive"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bd536557b58c682b217b8fb199afdff47cd3eff260623f19e77074eb073d63a"
+dependencies = [
+ "darling 0.21.3",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6829,10 +6886,12 @@ dependencies = [
 name = "omni_generator_configurations"
 version = "0.8.0"
 dependencies = [
+ "bon",
  "config_utils",
  "derive-new",
  "derive_more",
  "enum-map",
+ "enumset",
  "eyre",
  "garde 0.23.0",
  "lazy-regex",
@@ -6841,7 +6900,9 @@ dependencies = [
  "omni_core",
  "omni_expressions",
  "omni_input_provider",
+ "omni_input_schema",
  "omni_serde_validators",
+ "omni_tera",
  "omni_types",
  "regex",
  "schemars",
@@ -6918,6 +6979,7 @@ dependencies = [
  "garde 0.23.0",
  "log",
  "maps",
+ "omni_input_schema",
  "omni_serde_validators",
  "omni_tera",
  "schemars",
@@ -6930,6 +6992,28 @@ dependencies = [
  "tokio 1.52.3",
  "trace",
  "tracing",
+ "value-bag",
+]
+
+[[package]]
+name = "omni_input_schema"
+version = "0.16.0"
+dependencies = [
+ "either",
+ "enumset",
+ "eyre",
+ "garde 0.23.0",
+ "maps",
+ "omni_serde_validators",
+ "omni_tera",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_norway",
+ "serde_validate",
+ "sets",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
  "value-bag",
 ]
 
@@ -6962,6 +7046,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytesize",
+ "either",
  "eyre",
  "humantime-serde",
  "log",
@@ -6969,6 +7054,7 @@ dependencies = [
  "omni_api",
  "omni_context",
  "omni_generator",
+ "omni_generator_configurations",
  "omni_input_provider",
  "omni_messages",
  "omni_task_executor",
@@ -7047,11 +7133,14 @@ dependencies = [
  "either",
  "eyre",
  "log",
+ "omni_generator_configurations",
  "omni_input_provider",
  "omni_tera",
  "requestty",
  "serde",
+ "serde_json",
  "sets",
+ "tokio 1.52.3",
  "trace",
  "tracing",
  "value-bag",

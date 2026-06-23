@@ -1,13 +1,11 @@
-use derive_new::new;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use value_bag::OwnedValueBag;
 
-#[derive(Debug, thiserror::Error, new)]
+#[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct Error(pub ErrorInner);
 
 impl Error {
-    #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
         self.0.discriminant()
     }
@@ -15,12 +13,11 @@ impl Error {
 
 impl<T: Into<ErrorInner>> From<T> for Error {
     fn from(inner: T) -> Self {
-        let inner = inner.into();
-        Self(inner)
+        Self(inner.into())
     }
 }
 
-#[derive(Debug, thiserror::Error, EnumDiscriminants, new)]
+#[derive(Debug, thiserror::Error, EnumDiscriminants)]
 #[strum_discriminants(vis(pub), name(ErrorKind))]
 pub enum ErrorInner {
     #[error(transparent)]
@@ -50,29 +47,17 @@ pub enum ErrorInner {
         "invalid boolean expression result: \"{result}\" for expression: \"{expression}\", expected true or false"
     )]
     InvalidBooleanExpressionResult { result: String, expression: String },
-}
 
-impl From<omni_input_schema::Error> for ErrorInner {
-    fn from(e: omni_input_schema::Error) -> Self {
-        use omni_input_schema::error::ErrorInner as S;
-        match e.0 {
-            S::Custom(r) => Self::Custom(r),
-            S::DuplicateInputName(n) => Self::DuplicateInputName(n),
-            S::Tera(e) => Self::Tera(e),
-            S::ValueBag(e) => Self::ValueBag(e),
-            S::InvalidValue {
-                input_name,
-                value,
-                error_message,
-            } => Self::InvalidValue {
-                input_name,
-                value,
-                error_message,
-            },
-            S::InvalidBooleanExpressionResult { result, expression } => {
-                Self::InvalidBooleanExpressionResult { result, expression }
-            }
-            other => Self::Custom(eyre::eyre!("{other}")),
-        }
-    }
+    #[error(
+        "input '{input_name}' has both secret=true and remember=true, which is contradictory: a secret value must not be persisted"
+    )]
+    SecretRememberConflict { input_name: String },
+
+    #[error(
+        "input '{input_name}' has kind '{kind:?}' which is not supported by this profile"
+    )]
+    UnsupportedInputKind {
+        input_name: String,
+        kind: crate::input::InputKind,
+    },
 }

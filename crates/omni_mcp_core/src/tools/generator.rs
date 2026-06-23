@@ -1,20 +1,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use either::Either;
 use maps::{UnorderedMap, unordered_map};
 use omni_api::{
-    ForwardedInputs, GeneratorInputKind, GeneratorInspectResponse,
-    GeneratorRunRequest, GeneratorValidateInputRequest, InputCondition,
-    InputDefault, StaticInputDefault, SubGeneratorRef,
-    SubGeneratorValidationResult,
+    ForwardedInputs, GeneratorInspectNode, GeneratorInspectResponse,
+    GeneratorRunRequest, GeneratorValidateInputRequest, InspectViewKind,
+    SubGeneratorRef, SubGeneratorValidationResult,
 };
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
+use omni_generator_configurations::Generator;
 use omni_input_provider::{
-    ConfirmInputConfiguration, FloatInputConfiguration, InputProvider,
-    IntegerInputConfiguration, MultiSelectInputConfiguration,
-    PasswordInputConfiguration, SelectInputConfiguration,
-    TextInputConfiguration, error::Error as InputError,
+    BooleanInput, FloatArrayInput, FloatInput, Input, InputKind, InputProvider,
+    InputSchema, IntegerArrayInput, IntegerInput, StringArrayInput,
+    StringInput, error::Error as InputError,
 };
 use omni_messages::OmniEventSubscriber;
 use omni_task_executor::TaskExecutorSys;
@@ -25,8 +25,8 @@ use crate::{
         GeneratorInspectParams, GeneratorInspectResult, GeneratorListResult,
         GeneratorRunParams, GeneratorRunResult, GeneratorSummary,
         GeneratorValidateInputParams, GeneratorValidateInputResult,
-        McpForwardedInputs, McpInputCondition, McpInputFieldError,
-        McpInputOption, McpInputSpec, McpSubGeneratorRef,
+        McpAllowedValue, McpForwardedInputs, McpInputCondition,
+        McpInputFieldError, McpInputSpec, McpSubGeneratorRef,
         McpSubGeneratorValidationResult, McpTargetSpec, McpValidator,
     },
     server::OmniMcpServer,
@@ -64,7 +64,10 @@ where
         &self,
         params: GeneratorInspectParams,
     ) -> eyre::Result<GeneratorInspectResult> {
-        let response = self.make_api().generator_inspect(&params.name).await?;
+        let response = self
+            .make_api()
+            .generator_inspect(&params.name, InspectViewKind::Data)
+            .await?;
         Ok(translate_inspect_response(response))
     }
 
@@ -119,12 +122,24 @@ where
 fn translate_inspect_response(
     resp: GeneratorInspectResponse,
 ) -> GeneratorInspectResult {
+    let node = match resp {
+        GeneratorInspectResponse::Data(node) => node,
+        GeneratorInspectResponse::Widget(_) => {
+            unreachable!("tool_generator_inspect always uses Data view")
+        }
+    };
+    translate_inspect_node(node)
+}
+
+fn translate_inspect_node(
+    node: GeneratorInspectNode<Vec<InputSchema>>,
+) -> GeneratorInspectResult {
     GeneratorInspectResult {
-        name: resp.name,
-        display_name: resp.display_name,
-        description: resp.description,
-        inputs: resp.inputs.into_iter().map(translate_input_spec).collect(),
-        targets: resp
+        name: node.name,
+        display_name: node.display_name,
+        description: node.description,
+        inputs: node.inputs.into_iter().map(input_schema_to_mcp).collect(),
+        targets: node
             .targets
             .into_iter()
             .map(|t| McpTargetSpec {
@@ -132,7 +147,7 @@ fn translate_inspect_response(
                 default_path: t.default_path,
             })
             .collect(),
-        sub_generators: resp
+        sub_generators: node
             .sub_generators
             .into_iter()
             .map(translate_sub_generator_ref)
@@ -140,81 +155,171 @@ fn translate_inspect_response(
     }
 }
 
-fn translate_input_spec(input: omni_api::GeneratorInputSpec) -> McpInputSpec {
-    let kind = match input.kind {
-        GeneratorInputKind::Confirm => "confirm",
-        GeneratorInputKind::Select => "select",
-        GeneratorInputKind::MultiSelect => "multi-select",
-        GeneratorInputKind::Text => "text",
-        GeneratorInputKind::Password => "password",
-        GeneratorInputKind::Float => "float",
-        GeneratorInputKind::Integer => "integer",
+fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
+    let base = input.base();
+    let name = base.name.clone();
+    let description = base.description.clone();
+    let secret = base.secret;
+    let condition = condition_from_if(base.r#if.as_ref());
+    let validators = validators_from_base(base);
+
+    let kind = match input.kind() {
+        InputKind::Boolean => "boolean",
+        InputKind::String => "string",
+        InputKind::Integer => "integer",
+        InputKind::Float => "float",
+        InputKind::StringArray => "string-array",
+        InputKind::IntegerArray => "integer-array",
+        InputKind::FloatArray => "float-array",
+        InputKind::Object => "object",
     }
     .to_string();
 
-    let condition = input.condition.map(|c| match c {
-        InputCondition::AlwaysHidden => McpInputCondition::AlwaysHidden,
-        InputCondition::Expression { expr } => {
-            McpInputCondition::Expression { expr }
-        }
-    });
-
-    let (default_value, has_dynamic_default) = match input.default {
-        None => (None, false),
-        Some(InputDefault::Dynamic { .. }) => (None, true),
-        Some(InputDefault::Static { value }) => (
-            Some(match value {
-                StaticInputDefault::Bool(b) => serde_json::Value::Bool(b),
-                StaticInputDefault::Int(i) => {
-                    serde_json::Value::Number(i.into())
-                }
-                StaticInputDefault::Float(f) => serde_json::Number::from_f64(f)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null),
-                StaticInputDefault::Str(s) => serde_json::Value::String(s),
-                StaticInputDefault::StrList(v) => serde_json::Value::Array(
-                    v.into_iter().map(serde_json::Value::String).collect(),
-                ),
+    let (default, allowed) = match &input {
+        Input::Boolean(b) => (b.default.map(serde_json::Value::Bool), vec![]),
+        Input::String(s) => (
+            s.default
+                .as_ref()
+                .map(|v| serde_json::Value::String(v.clone())),
+            s.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Value::String(a.value.clone()),
+                        description: a.description.clone(),
+                    })
+                    .collect()
             }),
-            false,
         ),
+        Input::Integer(i) => (
+            i.default.map(|v| serde_json::Value::Number(v.into())),
+            i.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Value::Number(a.value.into()),
+                        description: a.description.clone(),
+                    })
+                    .collect()
+            }),
+        ),
+        Input::Float(f) => (
+            f.default
+                .and_then(serde_json::Number::from_f64)
+                .map(serde_json::Value::Number),
+            f.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Number::from_f64(a.value)
+                            .map(serde_json::Value::Number)
+                            .unwrap_or(serde_json::Value::Null),
+                        description: a.description.clone(),
+                    })
+                    .collect()
+            }),
+        ),
+        Input::StringArray(sa) => (
+            sa.body.default.as_ref().map(|v| {
+                serde_json::Value::Array(
+                    v.iter()
+                        .map(|s| serde_json::Value::String(s.clone()))
+                        .collect(),
+                )
+            }),
+            sa.body.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Value::String(a.value.clone()),
+                        description: a.description.clone(),
+                    })
+                    .collect()
+            }),
+        ),
+        Input::IntegerArray(ia) => (
+            ia.body.default.as_ref().map(|v| {
+                serde_json::Value::Array(
+                    v.iter()
+                        .map(|i| serde_json::Value::Number((*i).into()))
+                        .collect(),
+                )
+            }),
+            ia.body.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Value::Number(a.value.into()),
+                        description: a.description.clone(),
+                    })
+                    .collect()
+            }),
+        ),
+        Input::FloatArray(fa) => (
+            fa.body.default.as_ref().map(|v| {
+                serde_json::Value::Array(
+                    v.iter()
+                        .filter_map(|f| serde_json::Number::from_f64(*f))
+                        .map(serde_json::Value::Number)
+                        .collect(),
+                )
+            }),
+            fa.body.allowed.as_ref().map_or_else(Vec::new, |v| {
+                v.iter()
+                    .map(|a| McpAllowedValue {
+                        value: serde_json::Number::from_f64(a.value)
+                            .map(serde_json::Value::Number)
+                            .unwrap_or(serde_json::Value::Null),
+                        description: a.description.clone(),
+                    })
+                    .collect()
+            }),
+        ),
+        Input::Object(_) => (None, vec![]),
     };
 
-    let required = default_value.is_none()
-        && !has_dynamic_default
+    let required = default.is_none()
         && !matches!(&condition, Some(McpInputCondition::AlwaysHidden));
 
     McpInputSpec {
-        name: input.name,
-        message: input.message,
-        description: input.description,
+        name,
         kind,
         required,
-        default: default_value,
-        has_dynamic_default,
-        options: input
-            .options
-            .into_iter()
-            .map(|o| McpInputOption {
-                label: o.label,
-                description: o.description,
-                value: o.value,
-            })
-            .collect(),
+        default,
+        has_dynamic_default: false,
+        secret,
+        allowed,
         condition,
-        validators: input
-            .validators
-            .into_iter()
-            .map(|v| McpValidator {
-                condition: v.condition,
-                error_message: v.error_message,
-            })
-            .collect(),
-        remember: input.remember,
+        validators,
+        description,
     }
 }
 
-fn translate_sub_generator_ref(r: SubGeneratorRef) -> McpSubGeneratorRef {
+fn condition_from_if(
+    if_expr: Option<&Either<bool, String>>,
+) -> Option<McpInputCondition> {
+    match if_expr? {
+        Either::Left(true) => None,
+        Either::Left(false) => Some(McpInputCondition::AlwaysHidden),
+        Either::Right(expr) => {
+            Some(McpInputCondition::Expression { expr: expr.clone() })
+        }
+    }
+}
+
+fn validators_from_base(
+    base: &omni_input_provider::BaseInput,
+) -> Vec<McpValidator> {
+    base.validators
+        .iter()
+        .map(|v| McpValidator {
+            condition: match &v.condition {
+                Either::Left(b) => b.to_string(),
+                Either::Right(expr) => expr.clone(),
+            },
+            error_message: v.error_message.clone(),
+        })
+        .collect()
+}
+
+fn translate_sub_generator_ref(
+    r: SubGeneratorRef<Vec<InputSchema>>,
+) -> McpSubGeneratorRef {
     let forwarded_inputs = match r.forwarded_inputs {
         ForwardedInputs::All => McpForwardedInputs::All,
         ForwardedInputs::None => McpForwardedInputs::None,
@@ -234,9 +339,7 @@ fn translate_sub_generator_ref(r: SubGeneratorRef) -> McpSubGeneratorRef {
         action_condition: r.action_condition,
         forwarded_inputs,
         pre_filled_inputs,
-        generator: r
-            .generator
-            .map(|g| Box::new(translate_inspect_response(*g))),
+        generator: r.generator.map(|g| Box::new(translate_inspect_node(*g))),
     }
 }
 
@@ -284,10 +387,10 @@ fn translate_sub_validation(
 struct NeverInputProvider;
 
 #[async_trait::async_trait]
-impl InputProvider for NeverInputProvider {
-    async fn confirm(
+impl InputProvider<Generator> for NeverInputProvider {
+    async fn boolean(
         &self,
-        _input: &ConfirmInputConfiguration,
+        _input: &BooleanInput<Generator>,
         _ctx: &omni_tera::Context,
     ) -> Result<bool, InputError> {
         Err(
@@ -295,10 +398,9 @@ impl InputProvider for NeverInputProvider {
                 .into(),
         )
     }
-
-    async fn text(
+    async fn string(
         &self,
-        _input: &TextInputConfiguration,
+        _input: &StringInput<Generator>,
         _ctx: &omni_tera::Context,
     ) -> Result<String, InputError> {
         Err(
@@ -306,43 +408,19 @@ impl InputProvider for NeverInputProvider {
                 .into(),
         )
     }
-
-    async fn password(
+    async fn integer(
         &self,
-        _input: &PasswordInputConfiguration,
+        _input: &IntegerInput<Generator>,
         _ctx: &omni_tera::Context,
-    ) -> Result<String, InputError> {
+    ) -> Result<i64, InputError> {
         Err(
             eyre::eyre!("NeverInputProvider: interactive input not supported")
                 .into(),
         )
     }
-
-    async fn select(
+    async fn float(
         &self,
-        _input: &SelectInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<String, InputError> {
-        Err(
-            eyre::eyre!("NeverInputProvider: interactive input not supported")
-                .into(),
-        )
-    }
-
-    async fn multi_select(
-        &self,
-        _input: &MultiSelectInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<Vec<String>, InputError> {
-        Err(
-            eyre::eyre!("NeverInputProvider: interactive input not supported")
-                .into(),
-        )
-    }
-
-    async fn float_number(
-        &self,
-        _input: &FloatInputConfiguration,
+        _input: &FloatInput<Generator>,
         _ctx: &omni_tera::Context,
     ) -> Result<f64, InputError> {
         Err(
@@ -350,15 +428,85 @@ impl InputProvider for NeverInputProvider {
                 .into(),
         )
     }
-
-    async fn integer_number(
+    async fn string_array(
         &self,
-        _input: &IntegerInputConfiguration,
+        _input: &StringArrayInput<Generator>,
         _ctx: &omni_tera::Context,
-    ) -> Result<i64, InputError> {
+    ) -> Result<Vec<String>, InputError> {
         Err(
             eyre::eyre!("NeverInputProvider: interactive input not supported")
                 .into(),
         )
+    }
+    async fn integer_array(
+        &self,
+        _input: &IntegerArrayInput<Generator>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<Vec<i64>, InputError> {
+        Err(
+            eyre::eyre!("NeverInputProvider: interactive input not supported")
+                .into(),
+        )
+    }
+    async fn float_array(
+        &self,
+        _input: &FloatArrayInput<Generator>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<Vec<f64>, InputError> {
+        Err(
+            eyre::eyre!("NeverInputProvider: interactive input not supported")
+                .into(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omni_input_provider::{BaseInput, BooleanInput, InputSchema};
+
+    fn make_base(name: &str) -> BaseInput {
+        serde_json::from_str(&format!(r#"{{"name":"{}"}}"#, name)).unwrap()
+    }
+
+    #[test]
+    fn boolean_input_uses_data_kind() {
+        let input = InputSchema::Boolean(BooleanInput {
+            base: make_base("flag"),
+            default: Some(true),
+            base_extra: (),
+            profile_data: (),
+        });
+        let spec = input_schema_to_mcp(input);
+        assert_eq!(spec.kind, "boolean");
+        assert!(!spec.required); // has default
+        assert_eq!(spec.default, Some(serde_json::Value::Bool(true)));
+        assert!(spec.allowed.is_empty());
+    }
+
+    #[test]
+    fn string_input_with_allowed_uses_data_kind() {
+        let input: InputSchema = serde_json::from_str(
+            r#"{"type":"string","name":"env","allowed":["dev","prod"]}"#,
+        )
+        .unwrap();
+        let spec = input_schema_to_mcp(input);
+        assert_eq!(spec.kind, "string");
+        assert_eq!(spec.allowed.len(), 2);
+        assert_eq!(
+            spec.allowed[0].value,
+            serde_json::Value::String("dev".into())
+        );
+    }
+
+    #[test]
+    fn secret_field_forwarded() {
+        let input: InputSchema = serde_json::from_str(
+            r#"{"type":"string","name":"token","secret":true}"#,
+        )
+        .unwrap();
+        let spec = input_schema_to_mcp(input);
+        assert!(spec.secret);
+        assert_eq!(spec.kind, "string");
     }
 }

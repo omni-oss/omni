@@ -3,19 +3,27 @@ use omni_generator::Action;
 use omni_generator_configurations::ActionConfiguration;
 use omni_generator_configurations::ForAllInputValuesConfiguration;
 use omni_generator_configurations::ForwardInputValuesConfiguration;
+use omni_generator_configurations::GenBase;
+use omni_generator_configurations::Generator;
 use omni_generator_configurations::GeneratorConfiguration;
-use omni_generator_configurations::InputConfigurationExtra;
 use omni_generator_configurations::InputValue;
+use omni_generator_configurations::ListWidget;
 use omni_generator_configurations::OmniPath;
 use omni_generator_configurations::OverwriteConfiguration;
-use omni_input_provider::InputConfiguration;
+use omni_generator_configurations::StringWidget;
+use omni_input_provider::AllowedValue;
+use omni_input_provider::BaseInput;
+use omni_input_provider::BooleanInput;
+use omni_input_provider::Input;
 use omni_input_provider::InputProvider;
-use omni_input_provider::builder;
+use omni_input_provider::InputSchema;
+use omni_input_provider::ValidationConfig;
 use omni_input_provider::collect_one;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -60,7 +68,7 @@ pub struct GeneratorRunRequest {
     pub use_defaults: bool,
     /// Supplies interactive prompts. Use `NoopInputProvider` for non-interactive contexts.
     #[schemars(skip)]
-    pub input_provider: Arc<dyn InputProvider>,
+    pub input_provider: Arc<dyn InputProvider<Generator>>,
     /// Maximum `run-generator` nesting depth before the run is aborted. `None`
     /// uses [`omni_generator::DEFAULT_MAX_GENERATOR_DEPTH`].
     pub max_depth: Option<usize>,
@@ -245,25 +253,34 @@ where
 
 async fn should_save_session(
     save_session: Option<bool>,
-    input_provider: &Arc<dyn InputProvider>,
+    input_provider: &Arc<dyn InputProvider<Generator>>,
 ) -> Result<bool, eyre::Error> {
     if let Some(save) = save_session {
         return Ok(save);
     }
 
-    let prompt = builder::confirm::<()>()
-        .name("save_inputs")
-        .message(
-            "Would you like to save inputs and targets to the output directory?",
-        )
-        .default(true)
-        .build();
+    let prompt = Input::<Generator>::Boolean(BooleanInput {
+        base: BaseInput {
+            name: "save_inputs".to_string(),
+            r#if: None,
+            validators: vec![],
+            secret: false,
+            description: None,
+        },
+        default: Some(true),
+        base_extra: GenBase {
+            message: "Would you like to save inputs and targets to the output directory?".to_string(),
+            remember: false,
+            default_expr: None,
+        },
+        profile_data: (),
+    });
 
     let result = collect_one(
         &prompt,
         None,
         &UnorderedMap::default(),
-        &omni_input_provider::CollectionConfig::default(),
+        &ValidationConfig::default(),
         input_provider.as_ref(),
     )
     .await?
@@ -311,6 +328,8 @@ where
     let omni_path = ctx.omni_dir();
     let generator_sources_path = omni_path.join("./sources/generator");
     let lockfile_path = generator_sources_path.join("lock.json");
+
+    sys.fs_create_dir_all_async(&generator_sources_path).await?;
 
     let remote_sources = Arc::new(
         RemoteSourceManager::new(
@@ -386,20 +405,93 @@ where
     Ok(configurations)
 }
 
-// ── Generator Inspect types ──────────────────────────────────────────────────
+// ── Generator Inspect view types ────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct GeneratorInspectResponse {
+/// Determines which projection `generator_inspect` returns.
+#[derive(
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum InspectViewKind {
+    /// Returns `Input<Generator>` translated to widget specs with inferred
+    /// widget kinds. Default for backward compatibility.
+    #[default]
+    Widget,
+    /// Returns `Input<()>` (data-only projection, no presentation extras).
+    /// Used by MCP and other machine consumers.
+    Data,
+}
+
+/// Trait implemented by the two inspect projections.
+///
+/// The associated type `NodeInputs` is the per-node input representation;
+/// `render` converts a generator's raw `Input<Generator>` slice.
+pub trait InspectView {
+    type NodeInputs: Serialize
+        + for<'de> Deserialize<'de>
+        + JsonSchema
+        + Debug
+        + Clone;
+    fn render(&self, inputs: &[Input<Generator>]) -> Self::NodeInputs;
+}
+
+/// Widget view: maps `Input<Generator>` to `Vec<GeneratorInputSpec>` using
+/// the §5.6 widget inference table.
+pub struct WidgetView;
+
+impl InspectView for WidgetView {
+    type NodeInputs = Vec<GeneratorInputSpec>;
+    fn render(&self, inputs: &[Input<Generator>]) -> Vec<GeneratorInputSpec> {
+        inputs.iter().map(input_to_spec).collect()
+    }
+}
+
+/// Data view: maps `Input<Generator>` to `Vec<Input<()>>` by calling
+/// `to_data()`, stripping all presentation extras.
+pub struct DataView;
+
+impl InspectView for DataView {
+    type NodeInputs = Vec<InputSchema>;
+    fn render(&self, inputs: &[Input<Generator>]) -> Vec<InputSchema> {
+        inputs.iter().map(|i| i.to_data()).collect()
+    }
+}
+
+/// A single node in the generator inspect tree, parameterised by how inputs
+/// are projected (`N = Vec<GeneratorInputSpec>` for widgets, `N = Vec<Input<()>>`
+/// for data).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratorInspectNode<N> {
     pub name: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
-    pub inputs: Vec<GeneratorInputSpec>,
+    pub inputs: N,
     pub targets: Vec<GeneratorTargetSpec>,
     /// Sub-generators invoked by `run-generator` actions, in declaration order.
-    pub sub_generators: Vec<SubGeneratorRef>,
+    pub sub_generators: Vec<SubGeneratorRef<N>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+/// View-tagged response returned by `generator_inspect`.
+///
+/// The `Widget` arm carries `GeneratorInputSpec` (widget kind, message,
+/// options, remember). The `Data` arm carries `Input<()>` (data type,
+/// allowed, secret, validators, condition — no presentation extras).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "view", content = "result", rename_all = "kebab-case")]
+pub enum GeneratorInspectResponse {
+    Widget(GeneratorInspectNode<Vec<GeneratorInputSpec>>),
+    Data(GeneratorInspectNode<Vec<InputSchema>>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorInputSpec {
     pub name: String,
     pub message: String,
@@ -414,56 +506,59 @@ pub struct GeneratorInputSpec {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum GeneratorInputKind {
     Confirm,
     Select,
     MultiSelect,
+    FreeEntryList,
     Text,
     Password,
     Float,
     Integer,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputDefault {
     Static { value: StaticInputDefault },
     Dynamic { expr: String },
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum StaticInputDefault {
     Bool(bool),
     Int(i64),
     Float(f64),
     Str(String),
+    IntList(Vec<i64>),
+    FloatList(Vec<f64>),
     StrList(Vec<String>),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputCondition {
     AlwaysHidden,
     Expression { expr: String },
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InputValidator {
     pub condition: String,
     pub error_message: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct InputOption {
     pub label: String,
     pub description: Option<String>,
     pub value: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GeneratorTargetSpec {
     pub key: String,
     pub default_path: String,
@@ -473,9 +568,13 @@ pub struct GeneratorTargetSpec {
 
 /// Inspect a generator's full input schema, recursing into all sub-generators
 /// invoked by `run-generator` actions. Cycle-safe.
+///
+/// `view` selects the input projection: `Widget` (default) for interactive
+/// consumers, `Data` for machine consumers such as MCP.
 pub async fn handle_generator_inspect<TSys>(
     ctx: &Context<TSys>,
     name: &str,
+    view: InspectViewKind,
 ) -> eyre::Result<GeneratorInspectResponse>
 where
     TSys: ContextSys + GeneratorSys + Clone,
@@ -483,8 +582,18 @@ where
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
     let mut visited = HashSet::new();
-    inspect_generator(name, &generators, &mut visited)
-        .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))
+    match view {
+        InspectViewKind::Widget => {
+            inspect_tree(name, &WidgetView, &generators, &mut visited)
+                .map(GeneratorInspectResponse::Widget)
+                .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))
+        }
+        InspectViewKind::Data => {
+            inspect_tree(name, &DataView, &generators, &mut visited)
+                .map(GeneratorInspectResponse::Data)
+                .ok_or_else(|| eyre::eyre!("generator '{}' not found", name))
+        }
+    }
 }
 
 fn omni_path_to_string(path: &OmniPath) -> String {
@@ -499,69 +608,180 @@ fn omni_path_to_string(path: &OmniPath) -> String {
     }
 }
 
-fn translate_input(
-    input: &InputConfiguration<InputConfigurationExtra>,
-) -> GeneratorInputSpec {
-    let name = input.name().to_string();
-    let message = input.message().to_string();
-    let remember = input.extra().remember;
-    let condition = translate_condition(input.condition());
-    let description = input.description().map(|s| s.to_owned());
+/// Map `Input<Generator>` to `GeneratorInputSpec`
+fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
+    let base = input.base();
+    let gen_base: &GenBase = input.base_extra();
+    let name = base.name.clone();
+    let message = gen_base.message.clone();
+    let remember = gen_base.remember;
+    let condition = condition_from_if(base.r#if.as_ref());
+    let description = base.description.clone();
+    let validators = validators_from_base(base);
 
-    let (kind, default, options, validators) = match input {
-        InputConfiguration::Confirm { input, .. } => (
+    let (kind, default, options) = match input {
+        Input::Boolean(b) => (
             GeneratorInputKind::Confirm,
-            either_to_default_bool(input.default.as_ref()),
-            vec![],
-            vec![],
-        ),
-        InputConfiguration::Select { input, .. } => (
-            GeneratorInputKind::Select,
-            input.default.as_ref().map(|s| InputDefault::Static {
-                value: StaticInputDefault::Str(s.clone()),
-            }),
-            input.options.iter().map(translate_option).collect(),
-            vec![],
-        ),
-        InputConfiguration::MultiSelect { input, .. } => (
-            GeneratorInputKind::MultiSelect,
-            input.default.as_ref().map(|v| InputDefault::Static {
-                value: StaticInputDefault::StrList(v.clone()),
-            }),
-            input.options.iter().map(translate_option).collect(),
-            vec![],
-        ),
-        InputConfiguration::Text { input, .. } => (
-            GeneratorInputKind::Text,
-            input.default.as_ref().map(|s| InputDefault::Static {
-                value: StaticInputDefault::Str(s.clone()),
+            b.default.map(|v| InputDefault::Static {
+                value: StaticInputDefault::Bool(v),
             }),
             vec![],
-            translate_validators(&input.base.validate),
         ),
-        InputConfiguration::Password { input, .. } => (
-            GeneratorInputKind::Password,
-            None,
-            vec![],
-            translate_validators(&input.base.validate),
-        ),
-        InputConfiguration::Float { input, .. } => (
-            GeneratorInputKind::Float,
-            either_to_default_float(input.default.as_ref()),
-            vec![],
-            translate_validators(&input.base.validate),
-        ),
-        InputConfiguration::Integer { input, .. } => (
-            GeneratorInputKind::Integer,
-            either_to_default_int(input.default.as_ref()),
-            vec![],
-            translate_validators(&input.base.validate),
-        ),
+        Input::String(s) => {
+            let kind = match s.profile_data.widget {
+                Some(StringWidget::Password) => GeneratorInputKind::Password,
+                Some(StringWidget::Select) => GeneratorInputKind::Select,
+                Some(StringWidget::Text) | None => {
+                    if base.secret {
+                        GeneratorInputKind::Password
+                    } else if s.allowed.is_some() {
+                        GeneratorInputKind::Select
+                    } else {
+                        GeneratorInputKind::Text
+                    }
+                }
+            };
+            let options: Vec<InputOption> = s
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(string_allowed_to_option)
+                .collect();
+            let default = s.default.as_ref().map(|v| InputDefault::Static {
+                value: StaticInputDefault::Str(v.clone()),
+            });
+            (kind, default, options)
+        }
+        Input::Integer(i) => {
+            let kind = if i.allowed.is_some() {
+                GeneratorInputKind::Select
+            } else {
+                GeneratorInputKind::Integer
+            };
+            let options: Vec<InputOption> = i
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(int_allowed_to_option)
+                .collect();
+            let default = i.default.map(|v| InputDefault::Static {
+                value: StaticInputDefault::Int(v),
+            });
+            (kind, default, options)
+        }
+        Input::Float(f) => {
+            let kind = if f.allowed.is_some() {
+                GeneratorInputKind::Select
+            } else {
+                GeneratorInputKind::Float
+            };
+            let options: Vec<InputOption> = f
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(float_allowed_to_option)
+                .collect();
+            let default = f.default.map(|v| InputDefault::Static {
+                value: StaticInputDefault::Float(v),
+            });
+            (kind, default, options)
+        }
+        Input::StringArray(sa) => {
+            let kind = match sa.profile_data.widget {
+                Some(ListWidget::FreeEntry) => {
+                    GeneratorInputKind::FreeEntryList
+                }
+                Some(ListWidget::MultiSelect) | None => {
+                    if sa.body.allowed.is_some() {
+                        GeneratorInputKind::MultiSelect
+                    } else {
+                        GeneratorInputKind::FreeEntryList
+                    }
+                }
+            };
+            let options: Vec<InputOption> = sa
+                .body
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(string_allowed_to_option)
+                .collect();
+            let default =
+                sa.body.default.as_ref().map(|v| InputDefault::Static {
+                    value: StaticInputDefault::StrList(v.clone()),
+                });
+            (kind, default, options)
+        }
+        Input::IntegerArray(ia) => {
+            let kind = match ia.profile_data.widget {
+                Some(ListWidget::FreeEntry) => {
+                    GeneratorInputKind::FreeEntryList
+                }
+                Some(ListWidget::MultiSelect) | None => {
+                    if ia.body.allowed.is_some() {
+                        GeneratorInputKind::MultiSelect
+                    } else {
+                        GeneratorInputKind::FreeEntryList
+                    }
+                }
+            };
+            let options: Vec<InputOption> = ia
+                .body
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(int_allowed_to_option)
+                .collect();
+            let default =
+                ia.body.default.as_ref().map(|v| InputDefault::Static {
+                    value: StaticInputDefault::IntList(v.clone()),
+                });
+            (kind, default, options)
+        }
+        Input::FloatArray(fa) => {
+            let kind = match fa.profile_data.widget {
+                Some(ListWidget::FreeEntry) => {
+                    GeneratorInputKind::FreeEntryList
+                }
+                Some(ListWidget::MultiSelect) | None => {
+                    if fa.body.allowed.is_some() {
+                        GeneratorInputKind::MultiSelect
+                    } else {
+                        GeneratorInputKind::FreeEntryList
+                    }
+                }
+            };
+            let options: Vec<InputOption> = fa
+                .body
+                .allowed
+                .as_deref()
+                .unwrap_or_default()
+                .iter()
+                .map(float_allowed_to_option)
+                .collect();
+            let default =
+                fa.body.default.as_ref().map(|v| InputDefault::Static {
+                    value: StaticInputDefault::FloatList(v.clone()),
+                });
+            (kind, default, options)
+        }
+        Input::Object(_) => {
+            // Object is excluded from Generator::SUPPORTED; this arm is
+            // unreachable in practice but required for exhaustive match.
+            (GeneratorInputKind::Text, None, vec![])
+        }
     };
 
     let has_dynamic_default =
-        matches!(&default, Some(InputDefault::Dynamic { .. }));
+        default.is_none() && gen_base.default_expr.is_some();
+
     let required = default.is_none()
+        && !has_dynamic_default
         && !matches!(&condition, Some(InputCondition::AlwaysHidden));
 
     GeneratorInputSpec {
@@ -579,10 +799,10 @@ fn translate_input(
     }
 }
 
-fn translate_condition(
-    cond: Option<&Either<bool, String>>,
+fn condition_from_if(
+    if_expr: Option<&Either<bool, String>>,
 ) -> Option<InputCondition> {
-    match cond? {
+    match if_expr? {
         Either::Left(true) => None,
         Either::Left(false) => Some(InputCondition::AlwaysHidden),
         Either::Right(expr) => {
@@ -591,43 +811,8 @@ fn translate_condition(
     }
 }
 
-fn either_to_default_bool(
-    v: Option<&Either<bool, String>>,
-) -> Option<InputDefault> {
-    Some(match v? {
-        Either::Left(b) => InputDefault::Static {
-            value: StaticInputDefault::Bool(*b),
-        },
-        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
-    })
-}
-
-fn either_to_default_int(
-    v: Option<&Either<i64, String>>,
-) -> Option<InputDefault> {
-    Some(match v? {
-        Either::Left(i) => InputDefault::Static {
-            value: StaticInputDefault::Int(*i),
-        },
-        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
-    })
-}
-
-fn either_to_default_float(
-    v: Option<&Either<f64, String>>,
-) -> Option<InputDefault> {
-    Some(match v? {
-        Either::Left(f) => InputDefault::Static {
-            value: StaticInputDefault::Float(*f),
-        },
-        Either::Right(expr) => InputDefault::Dynamic { expr: expr.clone() },
-    })
-}
-
-fn translate_validators(
-    validators: &[omni_input_provider::ValidateConfiguration],
-) -> Vec<InputValidator> {
-    validators
+fn validators_from_base(base: &BaseInput) -> Vec<InputValidator> {
+    base.validators
         .iter()
         .map(|v| InputValidator {
             condition: match &v.condition {
@@ -639,13 +824,41 @@ fn translate_validators(
         .collect()
 }
 
-fn translate_option(
-    opt: &omni_input_provider::OptionConfiguration,
+fn string_allowed_to_option(
+    opt: &AllowedValue<String, Generator>,
 ) -> InputOption {
     InputOption {
-        label: opt.name.clone(),
+        label: opt
+            .base_extra
+            .name
+            .clone()
+            .unwrap_or_else(|| opt.value.clone()),
         description: opt.description.clone(),
         value: opt.value.clone(),
+    }
+}
+
+fn int_allowed_to_option(opt: &AllowedValue<i64, Generator>) -> InputOption {
+    InputOption {
+        label: opt
+            .base_extra
+            .name
+            .clone()
+            .unwrap_or_else(|| opt.value.to_string()),
+        description: opt.description.clone(),
+        value: opt.value.to_string(),
+    }
+}
+
+fn float_allowed_to_option(opt: &AllowedValue<f64, Generator>) -> InputOption {
+    InputOption {
+        label: opt
+            .base_extra
+            .name
+            .clone()
+            .unwrap_or_else(|| opt.value.to_string()),
+        description: opt.description.clone(),
+        value: opt.value.to_string(),
     }
 }
 
@@ -703,7 +916,7 @@ where
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
 
-    let config = omni_input_provider::CollectionConfig {
+    let config = omni_input_provider::ValidationConfig {
         use_defaults: req.use_defaults,
         ..Default::default()
     };
@@ -730,7 +943,7 @@ fn validate_generator(
     name: &str,
     input_values: &UnorderedMap<String, OwnedValueBag>,
     generators: &[Cow<'static, GeneratorConfiguration>],
-    config: &omni_input_provider::CollectionConfig<'_>,
+    config: &omni_input_provider::ValidationConfig<'_>,
     visited: &mut HashSet<String>,
 ) -> Option<(Vec<InputFieldError>, Vec<SubGeneratorValidationResult>)> {
     let generator = generators.iter().find(|g| g.name == name)?;
@@ -838,10 +1051,10 @@ fn input_value_to_owned_value_bag(v: &InputValue) -> OwnedValueBag {
     ValueBag::from_serde1(&input_value_to_json(v)).to_owned()
 }
 
-// ── Sub-generator traversal types ───────────────────────────────────────────
+// ── Sub-generator traversal types ──────────────────────────────────────────────────
 
 /// Describes how the parent generator's inputs flow into a sub-generator.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum ForwardedInputs {
     /// All parent inputs are forwarded into the sub-generator's context.
@@ -853,8 +1066,11 @@ pub enum ForwardedInputs {
 }
 
 /// An invocation of a sub-generator found inside a `run-generator` action.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct SubGeneratorRef {
+///
+/// Generic over `N` (the same type used by `GeneratorInspectNode`) so the
+/// widget and data views can share the recursive tree walk.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SubGeneratorRef<N> {
     /// The generator name as written in the config.
     pub name: String,
     /// The `if` expression on the `run-generator` action, if any.
@@ -864,17 +1080,18 @@ pub struct SubGeneratorRef {
     /// Inputs that are pre-set with static values in the action config (key → JSON value).
     pub pre_filled_inputs: Vec<(String, serde_json::Value)>,
     /// Recursive inspect result; `None` when a cycle was detected.
-    pub generator: Option<Box<GeneratorInspectResponse>>,
+    pub generator: Option<Box<GeneratorInspectNode<N>>>,
 }
 
-fn inspect_generator(
+fn inspect_tree<V: InspectView>(
     name: &str,
+    view: &V,
     generators: &[Cow<'static, GeneratorConfiguration>],
     visited: &mut HashSet<String>,
-) -> Option<GeneratorInspectResponse> {
+) -> Option<GeneratorInspectNode<V::NodeInputs>> {
     let generator = generators.iter().find(|g| g.name == name)?;
 
-    let inputs = generator.inputs.iter().map(translate_input).collect();
+    let inputs = view.render(&generator.inputs);
     let targets = generator
         .targets
         .iter()
@@ -919,7 +1136,7 @@ fn inspect_generator(
             let child_generator = if visited.contains(&action.generator) {
                 None
             } else {
-                inspect_generator(&action.generator, generators, visited)
+                inspect_tree(&action.generator, view, generators, visited)
                     .map(Box::new)
             };
 
@@ -935,7 +1152,7 @@ fn inspect_generator(
 
     visited.remove(name);
 
-    Some(GeneratorInspectResponse {
+    Some(GeneratorInspectNode {
         name: generator.name.clone(),
         display_name: generator.display_name.clone(),
         description: generator.description.clone(),

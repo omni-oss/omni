@@ -5,9 +5,11 @@ use std::{
 
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_generator_configurations::{
-    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
+    Generator, GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
-use omni_input_provider::{CollectionConfig, InputProvider, collect};
+use omni_input_provider::{
+    InputProfile, InputProvider, ValidationConfig, collect,
+};
 use omni_messages::{
     GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
     NoopSubscriber,
@@ -48,7 +50,7 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
     pub use_input_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
-    pub input_provider: &'a dyn InputProvider,
+    pub input_provider: &'a dyn InputProvider<Generator>,
     pub subscriber: &'a S,
     /// Maximum `run-generator` nesting depth before a run is aborted. Use
     /// [`DEFAULT_MAX_GENERATOR_DEPTH`] unless a config legitimately nests deeper.
@@ -194,9 +196,9 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         .into());
     }
 
-    let collection_config = CollectionConfig {
+    let collection_config = ValidationConfig {
         use_defaults: config.use_input_defaults,
-        ..CollectionConfig::default()
+        ..ValidationConfig::default()
     };
 
     let session = GenSession::with_restored(
@@ -283,10 +285,10 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         .inputs
         .iter()
         .filter_map(|p| {
-            if p.extra().remember {
+            if Generator::is_remember(p.base_extra()) {
                 None
             } else {
-                Some(p.name())
+                Some(p.base().name.as_str())
             }
         })
         .collect::<UnorderedSet<_>>();

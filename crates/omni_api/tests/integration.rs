@@ -218,3 +218,178 @@ async fn cache_dir_is_inside_workspace() {
         "cache_dir {dir:?} should be inside workspace {canonical_tmp:?}"
     );
 }
+
+// ── generator inspect helpers ─────────────────────────────────────────────────
+
+/// Write a minimal generator named `gen_name` with a boolean and a string
+/// input into a `generators/` subdirectory of `workspace_dir`.
+fn write_generator(workspace_dir: &Path, gen_name: &str) {
+    let gen_dir = workspace_dir.join("generators").join(gen_name);
+    std::fs::create_dir_all(&gen_dir).unwrap();
+    std::fs::write(
+        gen_dir.join("generator.omni.yaml"),
+        format!(
+            r#"
+name: {gen_name}
+inputs:
+  - type: boolean
+    name: flag
+    message: "Enable?"
+  - type: string
+    name: proj_name
+    message: "Project name"
+actions: []
+"#
+        ),
+    )
+    .unwrap();
+}
+
+/// Build a workspace + generator and return an `OmniApi` for it.
+fn make_api_with_generator(
+    workspace_dir: &Path,
+    gen_name: &str,
+) -> OmniApi<RealSys, NoopSubscriber> {
+    write_workspace(workspace_dir);
+    // Register the generators directory in the workspace config.
+    std::fs::write(
+        workspace_dir.join("workspace.omni.yaml"),
+        "projects:\n  - \"projects/**\"\ngenerators:\n  - source: local\n    path: \"generators/**\"\n",
+    )
+    .unwrap();
+    write_generator(workspace_dir, gen_name);
+    make_api(workspace_dir)
+}
+
+// ── generator inspect ────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn inspect_widget_view_infers_confirm_and_text_kinds() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let api = make_api_with_generator(tmp.path(), "my-gen");
+
+    let resp = api
+        .generator_inspect("my-gen", omni_api::InspectViewKind::Widget)
+        .await
+        .expect("inspect should succeed");
+
+    let omni_api::GeneratorInspectResponse::Widget(node) = resp else {
+        panic!("expected Widget response");
+    };
+    assert_eq!(node.name, "my-gen");
+    assert_eq!(node.inputs.len(), 2);
+
+    let flag = node.inputs.iter().find(|i| i.name == "flag").unwrap();
+    assert!(
+        matches!(flag.kind, omni_api::GeneratorInputKind::Confirm),
+        "boolean should infer Confirm, got {:?}",
+        flag.kind
+    );
+
+    let name_input =
+        node.inputs.iter().find(|i| i.name == "proj_name").unwrap();
+    assert!(
+        matches!(name_input.kind, omni_api::GeneratorInputKind::Text),
+        "string without allowed should infer Text, got {:?}",
+        name_input.kind
+    );
+}
+
+#[tokio::test]
+async fn inspect_data_view_strips_presentation_extras() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let api = make_api_with_generator(tmp.path(), "my-gen");
+
+    let resp = api
+        .generator_inspect("my-gen", omni_api::InspectViewKind::Data)
+        .await
+        .expect("inspect should succeed");
+
+    let omni_api::GeneratorInspectResponse::Data(node) = resp else {
+        panic!("expected Data response");
+    };
+    assert_eq!(node.name, "my-gen");
+    assert_eq!(node.inputs.len(), 2);
+
+    // Data view returns Input<()>; verify kinds match source types.
+    let kinds: Vec<String> = node
+        .inputs
+        .iter()
+        .map(|i| format!("{:?}", i.kind()))
+        .collect();
+    assert!(kinds.contains(&"Boolean".to_string()), "kinds: {kinds:?}");
+    assert!(kinds.contains(&"String".to_string()), "kinds: {kinds:?}");
+
+    // Data view must not leak presentation extras (message, remember).
+    let json = serde_json::to_string(&node).expect("should serialize");
+    assert!(!json.contains("\"message\""), "message leaked: {json}");
+    assert!(!json.contains("remember"), "remember leaked: {json}");
+}
+
+#[tokio::test]
+async fn inspect_widget_view_sets_has_dynamic_default() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    // Write workspace config referencing a generators directory.
+    write_workspace(tmp.path());
+    std::fs::write(
+        tmp.path().join("workspace.omni.yaml"),
+        "projects:\n  - \"projects/**\"\ngenerators:\n  - source: local\n    path: \"generators/**\"\n",
+    )
+    .unwrap();
+    // Write a generator with a boolean that has default_expr but no static
+    // default, and an integer that has only a static default.
+    let gen_dir = tmp.path().join("generators").join("dyndefault");
+    std::fs::create_dir_all(&gen_dir).unwrap();
+    std::fs::write(
+        gen_dir.join("generator.omni.yaml"),
+        r#"
+name: dyndefault
+inputs:
+  - type: boolean
+    name: use_ssl
+    message: Enable SSL?
+    default_expr: "{{ env == 'prod' }}"
+  - type: integer
+    name: port
+    message: Port?
+    default: 8080
+actions: []
+"#,
+    )
+    .unwrap();
+    let api = make_api(tmp.path());
+
+    let resp = api
+        .generator_inspect("dyndefault", omni_api::InspectViewKind::Widget)
+        .await
+        .unwrap();
+    let omni_api::GeneratorInspectResponse::Widget(node) = resp else {
+        panic!("expected Widget response");
+    };
+
+    // use_ssl: has default_expr, no static default → has_dynamic_default=true, required=false
+    let use_ssl = node.inputs.iter().find(|i| i.name == "use_ssl").unwrap();
+    assert!(
+        use_ssl.has_dynamic_default,
+        "expected has_dynamic_default=true"
+    );
+    assert!(!use_ssl.required, "expected required=false");
+    assert!(use_ssl.default.is_none(), "expected no static default");
+
+    // port: has static default=8080 → has_dynamic_default=false, required=false
+    let port = node.inputs.iter().find(|i| i.name == "port").unwrap();
+    assert!(!port.has_dynamic_default);
+    assert!(!port.required);
+}
+
+#[tokio::test]
+async fn inspect_missing_generator_returns_err() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let result = api
+        .generator_inspect("nonexistent", omni_api::InspectViewKind::Widget)
+        .await;
+    assert!(result.is_err(), "should error for unknown generator");
+}

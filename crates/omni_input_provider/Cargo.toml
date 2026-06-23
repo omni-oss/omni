@@ -15,6 +15,7 @@ enable-tracing = ["trace/enabled", "dep:tracing"]
 test-utils = []
 
 [dependencies]
+omni_input_schema = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }

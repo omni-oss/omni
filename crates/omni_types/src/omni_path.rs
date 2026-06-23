@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    fmt::{Debug as _, Display},
+    fmt::Display,
     path::{Path as StdPath, PathBuf},
     str::FromStr,
 };
@@ -85,16 +85,6 @@ impl<T: OmniPathRoot> schemars::JsonSchema for OmniPath<T> {
         generator: &mut schemars::SchemaGenerator,
     ) -> schemars::Schema {
         String::json_schema(generator)
-    }
-}
-
-impl Display for OmniPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(root) = self.root {
-            write!(f, "@{}/{}", root, self.path.display())
-        } else {
-            self.path.fmt(f)
-        }
     }
 }
 
@@ -219,6 +209,16 @@ impl<TRoot: OmniPathRoot> FromStr for OmniPath<TRoot> {
             Ok(Self::new_rooted(path, TRoot::from_str(root)?))
         } else {
             Ok(Self::new(s))
+        }
+    }
+}
+
+impl<TRoot: OmniPathRoot> Display for OmniPath<TRoot> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(root) = self.root {
+            write!(f, "@{}/{}", root, self.path.display())
+        } else {
+            write!(f, "{}", self.path.display())
         }
     }
 }
@@ -363,5 +363,17 @@ mod tests {
                 Path::new("/workspace/foo")
             );
         }
+    }
+
+    #[test]
+    fn test_to_string() {
+        let path = OmniPath::new_rooted("foo", Root::Workspace);
+        assert_eq!(path.to_string(), "@workspace/foo");
+
+        let path = OmniPath::new_rooted("foo", Root::Project);
+        assert_eq!(path.to_string(), "@project/foo");
+
+        let path = OmniPath::<Root>::new("foo");
+        assert_eq!(path.to_string(), "foo");
     }
 }

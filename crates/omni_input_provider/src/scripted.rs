@@ -1,23 +1,16 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-
-use crate::{
-    configuration::{
-        ConfirmInputConfiguration, FloatInputConfiguration,
-        IntegerInputConfiguration, MultiSelectInputConfiguration,
-        PasswordInputConfiguration, SelectInputConfiguration,
-        TextInputConfiguration,
-    },
-    error::Error,
-    provider::InputProvider,
+use omni_input_schema::{
+    BooleanInput, FloatArrayInput, FloatInput, InputProfile, IntegerArrayInput,
+    IntegerInput, StringArrayInput, StringInput,
 };
 
-/// Intended for unit tests and integration harnesses.
-///
-/// Answers are given as raw strings and parsed to the required type, which
-/// mirrors how a CLI user types their responses. A missing key returns an
-/// error so tests fail fast rather than blocking on stdin.
+use crate::{error::Error, provider::InputProvider};
+
+/// Test harness provider. Answers are supplied as raw strings keyed by input
+/// name and parsed to the required type at call time, mirroring how a real
+/// user types responses.  A missing key causes an immediate error.
 #[derive(Debug)]
 pub struct ScriptedInputProvider {
     answers: HashMap<String, String>,
@@ -38,110 +31,115 @@ impl ScriptedInputProvider {
     fn get(&self, name: &str) -> Result<&str, Error> {
         self.answers.get(name).map(|s| s.as_str()).ok_or_else(|| {
             Error::from(eyre::eyre!(
-                "ScriptedInputProvider: no answer configured for input '{name}'"
+                "ScriptedInputProvider: no answer for '{name}'"
             ))
         })
     }
 }
 
 #[async_trait]
-impl InputProvider for ScriptedInputProvider {
-    async fn confirm(
+impl<E: InputProfile + Send + Sync + 'static> InputProvider<E>
+    for ScriptedInputProvider
+{
+    async fn boolean(
         &self,
-        input: &ConfirmInputConfiguration,
+        input: &BooleanInput<E>,
         _ctx: &omni_tera::Context,
     ) -> Result<bool, Error> {
         let raw = self.get(&input.base.name)?;
         raw.parse::<bool>().map_err(|e| {
             Error::from(eyre::eyre!(
-                "ScriptedInputProvider: cannot parse '{}' as bool for input '{}': {e}",
-                raw,
+                "ScriptedInputProvider: cannot parse '{raw}' as bool \
+                 for input '{}': {e}",
                 input.base.name
             ))
         })
     }
 
-    async fn text(
+    async fn string(
         &self,
-        input: &TextInputConfiguration,
+        input: &StringInput<E>,
         _ctx: &omni_tera::Context,
     ) -> Result<String, Error> {
-        Ok(self.get(&input.base.base.name)?.to_string())
+        Ok(self.get(&input.base.name)?.to_string())
     }
 
-    async fn password(
+    async fn integer(
         &self,
-        input: &PasswordInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<String, Error> {
-        Ok(self.get(&input.base.base.name)?.to_string())
-    }
-
-    async fn select(
-        &self,
-        input: &SelectInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<String, Error> {
-        let raw = self.get(&input.base.name)?;
-        // Accept either the option value directly or the option name.
-        let matched = input
-            .options
-            .iter()
-            .find(|o| o.value == raw || o.name == raw)
-            .map(|o| o.value.clone())
-            .unwrap_or_else(|| raw.to_string());
-        Ok(matched)
-    }
-
-    async fn multi_select(
-        &self,
-        input: &MultiSelectInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<Vec<String>, Error> {
-        let raw = self.get(&input.base.base.name)?;
-        // Comma-separated list of values/names.
-        let selected: Vec<String> = raw
-            .split(',')
-            .map(|s| s.trim())
-            .map(|s| {
-                input
-                    .options
-                    .iter()
-                    .find(|o| o.value == s || o.name == s)
-                    .map(|o| o.value.clone())
-                    .unwrap_or_else(|| s.to_string())
-            })
-            .collect();
-        Ok(selected)
-    }
-
-    async fn float_number(
-        &self,
-        input: &FloatInputConfiguration,
-        _ctx: &omni_tera::Context,
-    ) -> Result<f64, Error> {
-        let raw = self.get(&input.base.base.name)?;
-        raw.parse::<f64>().map_err(|e| {
-            Error::from(eyre::eyre!(
-                "ScriptedInputProvider: cannot parse '{}' as f64 for input '{}': {e}",
-                raw,
-                input.base.base.name
-            ))
-        })
-    }
-
-    async fn integer_number(
-        &self,
-        input: &IntegerInputConfiguration,
+        input: &IntegerInput<E>,
         _ctx: &omni_tera::Context,
     ) -> Result<i64, Error> {
-        let raw = self.get(&input.base.base.name)?;
+        let raw = self.get(&input.base.name)?;
         raw.parse::<i64>().map_err(|e| {
             Error::from(eyre::eyre!(
-                "ScriptedInputProvider: cannot parse '{}' as i64 for input '{}': {e}",
-                raw,
-                input.base.base.name
+                "ScriptedInputProvider: cannot parse '{raw}' as i64 \
+                 for input '{}': {e}",
+                input.base.name
             ))
         })
+    }
+
+    async fn float(
+        &self,
+        input: &FloatInput<E>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<f64, Error> {
+        let raw = self.get(&input.base.name)?;
+        raw.parse::<f64>().map_err(|e| {
+            Error::from(eyre::eyre!(
+                "ScriptedInputProvider: cannot parse '{raw}' as f64 \
+                 for input '{}': {e}",
+                input.base.name
+            ))
+        })
+    }
+
+    async fn string_array(
+        &self,
+        input: &StringArrayInput<E>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<Vec<String>, Error> {
+        let raw = self.get(&input.base.name)?;
+        Ok(raw.split(',').map(|s| s.trim().to_string()).collect())
+    }
+
+    async fn integer_array(
+        &self,
+        input: &IntegerArrayInput<E>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<Vec<i64>, Error> {
+        let raw = self.get(&input.base.name)?;
+        raw.split(',')
+            .map(|s| {
+                let s = s.trim();
+                s.parse::<i64>().map_err(|e| {
+                    Error::from(eyre::eyre!(
+                        "ScriptedInputProvider: cannot parse '{s}' as i64 \
+                         for input '{}': {e}",
+                        input.base.name
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    async fn float_array(
+        &self,
+        input: &FloatArrayInput<E>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<Vec<f64>, Error> {
+        let raw = self.get(&input.base.name)?;
+        raw.split(',')
+            .map(|s| {
+                let s = s.trim();
+                s.parse::<f64>().map_err(|e| {
+                    Error::from(eyre::eyre!(
+                        "ScriptedInputProvider: cannot parse '{s}' as f64 \
+                         for input '{}': {e}",
+                        input.base.name
+                    ))
+                })
+            })
+            .collect()
     }
 }

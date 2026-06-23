@@ -1,0 +1,31 @@
+[package]
+name = "omni_input_schema"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_input_schema"
+path = "src/lib.rs"
+
+[dependencies]
+thiserror = { workspace = true }
+eyre = { workspace = true }
+strum = { workspace = true }
+enumset = { workspace = true }
+either = { workspace = true }
+value-bag = { workspace = true }
+maps = { workspace = true }
+sets = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }
+serde_json = { workspace = true }
+garde = { workspace = true }
+omni_tera = { workspace = true }
+omni_serde_validators = { workspace = true }
+serde_validate = { workspace = true }
+
+[dev-dependencies]
+serde_norway = { workspace = true }

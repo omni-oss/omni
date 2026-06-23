@@ -1,626 +1,415 @@
+use either::Either;
+use maps::{UnorderedMap, unordered_map};
+use omni_input_schema::{Input, InputProfile, ValidationConfig};
+use sets::UnorderedSet;
+use value_bag::{OwnedValueBag, ValueBag};
+
 use crate::{
-    configuration::{
-        CollectionConfig, InputConfiguration, InputExtras, InputType,
-        ValidateConfiguration,
-    },
     error::{Error, ErrorInner, ErrorKind},
     provider::InputProvider,
     utils::{validate_boolean_expression_result, validate_value},
 };
-use either::Either;
-use maps::{UnorderedMap, unordered_map};
-use sets::UnorderedSet;
-use strum::IntoDiscriminant as _;
-use value_bag::{OwnedValueBag, ValueBag};
 
-pub async fn collect<TExtra: InputExtras>(
-    inputs: &[InputConfiguration<TExtra>],
+/// Interactively collect values for every active input in `inputs`.
+///
+/// - Pre-exec and default values short-circuit provider calls.
+/// - If a pre-filled value fails validation the provider is called to
+///   re-ask (same behaviour as the previous implementation).
+/// - The Tera context is seeded with `context_values`; collected values
+///   accumulate in it so later `if` expressions can reference them.
+pub async fn collect<E: InputProfile + Send + Sync + 'static>(
+    inputs: &[Input<E>],
     pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
-    config: &CollectionConfig<'_>,
-    provider: &dyn InputProvider,
+    config: &ValidationConfig<'_>,
+    provider: &dyn InputProvider<E>,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
-    validate_input_configurations(inputs)?;
+    check_no_duplicate_names(inputs)?;
     let mut values = UnorderedMap::default();
 
-    let mut ctx_vals = omni_tera::Context::new();
-    for (key, value) in context_values {
-        ctx_vals.insert(key, value);
+    let mut ctx = omni_tera::Context::new();
+    for (k, v) in context_values {
+        ctx.insert(k, v);
     }
 
     for input in inputs {
-        let if_expr = input.condition();
+        let base = input.base();
 
-        if let Some(if_expr) = if_expr
-            && skip(
+        if let Some(if_expr) = &base.r#if {
+            if skip(
                 if_expr,
                 &values,
-                &ctx_vals,
+                &ctx,
                 config.if_expressions_root_property,
-            )?
-        {
-            continue;
+            )? {
+                continue;
+            }
         }
 
-        let key = input.name().to_string();
-        let validators = get_validators(input);
-        let pre_exec_value = pre_exec_values.get(&key);
+        let key = base.name.clone();
+        let pre = pre_exec_values.get(&key);
 
-        let value = get_input_value(
-            config,
-            &ctx_vals,
-            input,
-            validators,
-            &key,
-            pre_exec_value,
-            provider,
-        )
-        .await?;
-
+        let value =
+            get_input_value(config, &ctx, input, &key, pre, provider).await?;
         values.insert(key, value);
     }
 
     Ok(values)
 }
 
-pub async fn collect_one<TExtra: InputExtras>(
-    input: &InputConfiguration<TExtra>,
+/// Collect a single input, respecting its `if` condition.
+/// Returns `None` when the condition gates the input out.
+pub async fn collect_one<E: InputProfile + Send + Sync + 'static>(
+    input: &Input<E>,
     pre_exec_value: Option<&OwnedValueBag>,
     context_values: &UnorderedMap<String, OwnedValueBag>,
-    config: &CollectionConfig<'_>,
-    provider: &dyn InputProvider,
+    config: &ValidationConfig<'_>,
+    provider: &dyn InputProvider<E>,
 ) -> Result<Option<OwnedValueBag>, Error> {
-    let mut ctx_vals = omni_tera::Context::new();
-    for (key, value) in context_values {
-        ctx_vals.insert(key, value);
+    let mut ctx = omni_tera::Context::new();
+    for (k, v) in context_values {
+        ctx.insert(k, v);
     }
 
-    let if_expr = input.condition();
-    let mut pre_exec_values = unordered_map!();
-    if let Some(pre_exec_value) = pre_exec_value {
-        pre_exec_values
-            .insert(input.name().to_string(), pre_exec_value.clone());
+    let base = input.base();
+    let mut pre_map = unordered_map!();
+    if let Some(v) = pre_exec_value {
+        pre_map.insert(base.name.clone(), v.clone());
     }
 
-    if let Some(if_expr) = if_expr
-        && skip(
-            if_expr,
-            &pre_exec_values,
-            &ctx_vals,
-            config.if_expressions_root_property,
-        )?
-    {
-        return Ok(None);
+    if let Some(if_expr) = &base.r#if {
+        if skip(if_expr, &pre_map, &ctx, config.if_expressions_root_property)? {
+            return Ok(None);
+        }
     }
 
-    let validators = get_validators(input);
-    let key = input.name().to_string();
-    let value = get_input_value(
-        config,
-        &ctx_vals,
-        input,
-        validators,
-        &key,
-        pre_exec_value,
-        provider,
-    )
-    .await?;
-
+    let key = base.name.clone();
+    let value =
+        get_input_value(config, &ctx, input, &key, pre_exec_value, provider)
+            .await?;
     Ok(Some(value))
 }
 
-async fn get_input_value<TExtra: InputExtras>(
-    config: &CollectionConfig<'_>,
-    ctx_vals: &omni_tera::Context,
-    input: &InputConfiguration<TExtra>,
-    validators: &[ValidateConfiguration],
+const MAX_RETRIES: usize = 5;
+
+// ── Internals ─────────────────────────────────────────────────────────────────
+
+async fn get_input_value<E: InputProfile + Send + Sync + 'static>(
+    config: &ValidationConfig<'_>,
+    ctx: &omni_tera::Context,
+    input: &Input<E>,
     key: &String,
     pre_exec_value: Option<&OwnedValueBag>,
-    provider: &dyn InputProvider,
+    provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
-    let value = if let Some(pre_exec_value) = pre_exec_value {
-        log::debug!("using pre-exec value for input {key}: {pre_exec_value}");
-        process_pre_filled_value(
-            config,
-            ctx_vals,
-            input,
-            validators,
-            key,
-            pre_exec_value,
-            false,
-            provider,
-        )
-        .await?
+    if let Some(v) = pre_exec_value {
+        log::debug!("using pre-exec value for input {key}: {v}");
+        process_pre_filled_value(config, ctx, input, key, v, false, provider)
+            .await
     } else if config.use_defaults
-        && let Some(value) = input.default_value()
+        && let Some(default) = input.default_value_bag()
     {
-        log::debug!("using default value for input {key}: {value}");
+        log::debug!("using default value for input {key}: {default}");
         process_pre_filled_value(
-            config, ctx_vals, input, validators, key, &value, true, provider,
+            config, ctx, input, key, &default, true, provider,
         )
-        .await?
-    } else {
+        .await
+    } else if config.use_defaults
+        && let Some(expr) = E::dynamic_default_expr(input.base_extra())
+    {
         log::debug!(
-            "no pre-exec or default value for input {key}, collecting from user"
+            "evaluating dynamic default expression for input {key}: {expr}"
         );
-        get_raw_input_value(input, ctx_vals, provider).await?
-    };
-    Ok(value)
+        let expanded = omni_tera::one_off(
+            expr,
+            format!("dynamic default for {key}"),
+            ctx,
+        )?;
+        let rendered = ValueBag::from_str(&expanded).to_owned();
+        process_pre_filled_value(
+            config, ctx, input, key, &rendered, false, provider,
+        )
+        .await
+    } else {
+        log::debug!("collecting input {key} from provider");
+        get_raw_input_value(input, ctx, provider, config, MAX_RETRIES).await
+    }
 }
 
-async fn process_pre_filled_value<TExtra: InputExtras>(
-    config: &CollectionConfig<'_>,
-    ctx_vals: &omni_tera::Context,
-    input: &InputConfiguration<TExtra>,
-    validators: &[ValidateConfiguration],
+async fn process_pre_filled_value<E: InputProfile + Send + Sync + 'static>(
+    config: &ValidationConfig<'_>,
+    ctx: &omni_tera::Context,
+    input: &Input<E>,
     key: &String,
     value: &OwnedValueBag,
-    expand_str_value: bool,
-    provider: &dyn InputProvider,
+    expand_str: bool,
+    provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
-    let value = match input.discriminant() {
-        InputType::Confirm => {
-            let bool = try_parse_bool(value.by_ref()).ok_or_else(|| {
-                make_input_type_error(key, value.by_ref(), "boolean")
-            })?;
-            ValueBag::capture_serde1(&bool).to_owned()
-        }
-        InputType::Float => {
-            let float = try_parse_float(value.by_ref()).ok_or_else(|| {
-                make_input_type_error(key, value.by_ref(), "float")
-            })?;
-            ValueBag::capture_serde1(&float).to_owned()
-        }
-        InputType::Integer => {
-            let int = try_parse_int(value.by_ref()).ok_or_else(|| {
-                make_input_type_error(key, value.by_ref(), "integer")
-            })?;
-            ValueBag::capture_serde1(&int).to_owned()
-        }
-        InputType::Select
-        | InputType::MultiSelect
-        | InputType::Text
-        | InputType::Password => value.clone(),
+    // Coerce the raw value to the correct Rust type (e.g. "true" → bool).
+    let value = match input {
+        Input::Boolean(_) => try_parse_bool(value.by_ref())
+            .ok_or_else(|| make_type_error(key, value.by_ref(), "boolean"))
+            .map(|b| ValueBag::capture_serde1(&b).to_owned())?,
+        Input::Integer(_) => try_parse_int(value.by_ref())
+            .ok_or_else(|| make_type_error(key, value.by_ref(), "integer"))
+            .map(|i| ValueBag::capture_serde1(&i).to_owned())?,
+        Input::Float(_) => try_parse_float(value.by_ref())
+            .ok_or_else(|| make_type_error(key, value.by_ref(), "float"))
+            .map(|f| ValueBag::capture_serde1(&f).to_owned())?,
+        _ => value.clone(),
     };
 
-    let mut is_string_convertible = IsStringConvertible::default();
-    value.by_ref().visit(&mut is_string_convertible)?;
-
-    let value = if expand_str_value && is_string_convertible.value {
-        if let Some(template) = value.by_ref().to_str() {
-            let expanded = omni_tera::one_off(
-                template,
-                format!("default value for {key}"),
-                ctx_vals,
-            )?;
-            ValueBag::from_str(&expanded).to_owned()
+    // Expand Tera templates in default string values.
+    let value = if expand_str {
+        let mut is_str = IsStringConvertible::default();
+        value.by_ref().visit(&mut is_str)?;
+        if is_str.value {
+            if let Some(tmpl) = value.by_ref().to_str() {
+                let expanded = omni_tera::one_off(
+                    tmpl,
+                    format!("default value for {key}"),
+                    ctx,
+                )?;
+                ValueBag::from_str(&expanded).to_owned()
+            } else {
+                log::warn!(
+                    "failed to expand default for {key}: not a string; \
+                     using original value"
+                );
+                value
+            }
         } else {
-            log::warn!(
-                "Failed to expand default value for input {key} because it's not a string, using the original value: {value:#?}"
-            );
             value
         }
     } else {
         value
     };
 
+    // Run validators; re-ask provider on InvalidValue.
+    let validators = input.base().validators.as_slice();
     let result = validate_value(
         key,
         &value,
-        ctx_vals,
+        ctx,
         validators,
         config.validation_value_name,
     );
-    Ok(if let Err(err) = result {
-        if err.kind() == ErrorKind::InvalidValue {
-            log::warn!("re-collecting due to validation error: {err}");
-            get_raw_input_value(input, ctx_vals, provider).await?
-        } else {
-            return Err(err);
+    match result {
+        Ok(()) => Ok(value),
+        Err(e) if e.kind() == ErrorKind::InvalidValue => {
+            get_raw_input_value(input, ctx, provider, config, MAX_RETRIES).await
         }
-    } else {
-        value.clone()
-    })
+        Err(e) => Err(e),
+    }
 }
 
-async fn get_raw_input_value<TExtra: InputExtras>(
-    input: &InputConfiguration<TExtra>,
-    context_values: &omni_tera::Context,
-    provider: &dyn InputProvider,
+async fn get_raw_input_value<E: InputProfile + Send + Sync + 'static>(
+    input: &Input<E>,
+    ctx: &omni_tera::Context,
+    provider: &dyn InputProvider<E>,
+    config: &ValidationConfig<'_>,
+    max_retries: usize,
 ) -> Result<OwnedValueBag, Error> {
-    let value = match input {
-        InputConfiguration::Confirm { input, .. } => {
-            let v = provider.confirm(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::Select { input, .. } => {
-            let v = provider.select(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::MultiSelect { input, .. } => {
-            let v = provider.multi_select(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::Text { input, .. } => {
-            let v = provider.text(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::Password { input, .. } => {
-            let v = provider.password(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::Float { input, .. } => {
-            let v = provider.float_number(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-        InputConfiguration::Integer { input, .. } => {
-            let v = provider.integer_number(input, context_values).await?;
-            ValueBag::capture_serde1(&v).to_owned()
-        }
-    };
-    Ok(value)
-}
+    let mut tries = 0;
+    loop {
+        let result = match input {
+            Input::Boolean(b) => {
+                ValueBag::capture_serde1(&provider.boolean(b, ctx).await?)
+                    .to_owned()
+            }
+            Input::String(s) => {
+                ValueBag::from_serde1(&provider.string(s, ctx).await?)
+                    .to_owned()
+            }
+            Input::Integer(i) => {
+                ValueBag::capture_serde1(&provider.integer(i, ctx).await?)
+                    .to_owned()
+            }
+            Input::Float(f) => {
+                ValueBag::capture_serde1(&provider.float(f, ctx).await?)
+                    .to_owned()
+            }
+            Input::StringArray(sa) => {
+                ValueBag::from_serde1(&provider.string_array(sa, ctx).await?)
+                    .to_owned()
+            }
+            Input::IntegerArray(ia) => {
+                ValueBag::from_serde1(&provider.integer_array(ia, ctx).await?)
+                    .to_owned()
+            }
+            Input::FloatArray(fa) => {
+                ValueBag::from_serde1(&provider.float_array(fa, ctx).await?)
+                    .to_owned()
+            }
+            Input::Object(_) => {
+                return Err(Error::from(eyre::eyre!(
+                    "interactive collection for Object inputs is not yet supported"
+                )));
+            }
+        };
 
-fn get_validators<TExtra: InputExtras>(
-    input: &InputConfiguration<TExtra>,
-) -> &[ValidateConfiguration] {
-    match input {
-        InputConfiguration::Confirm { .. } => &[],
-        InputConfiguration::Select { .. } => &[],
-        InputConfiguration::MultiSelect { .. } => &[],
-        InputConfiguration::Text { input, .. } => &input.base.validate,
-        InputConfiguration::Password { input, .. } => &input.base.validate,
-        InputConfiguration::Float { input, .. } => &input.base.validate,
-        InputConfiguration::Integer { input, .. } => &input.base.validate,
+        let validators = input.base().validators.as_slice();
+        let validation_result = validate_value(
+            &input.base().name,
+            &result,
+            ctx,
+            validators,
+            config.validation_value_name,
+        );
+
+        if let Err(err) = validation_result {
+            tries += 1;
+            if tries >= max_retries {
+                return Err(err);
+            }
+            log::warn!(
+                "re-collecting input {} due to validation error: {}",
+                input.base().name,
+                err
+            );
+            continue;
+        }
+
+        break Ok(result);
     }
 }
 
 fn skip(
     if_expr: &Either<bool, String>,
     values: &UnorderedMap<String, OwnedValueBag>,
-    context_values: &omni_tera::Context,
-    if_expressions_root_property: Option<&str>,
+    ctx: &omni_tera::Context,
+    root_property: Option<&str>,
 ) -> Result<bool, Error> {
     Ok(match if_expr {
-        Either::Left(left) => !*left,
-        Either::Right(if_expr) => {
-            let mut ctx = context_values.clone();
-            ctx.insert(
-                if_expressions_root_property.unwrap_or("inputs"),
-                values,
-            );
-
-            let tera_result = omni_tera::one_off(if_expr, if_expr, &ctx)?;
-            let tera_result = tera_result.trim();
-
-            validate_boolean_expression_result(&tera_result, if_expr)?;
-
-            tera_result != "true"
+        Either::Left(b) => !*b,
+        Either::Right(expr) => {
+            let mut eval_ctx = ctx.clone();
+            eval_ctx.insert(root_property.unwrap_or("inputs"), values);
+            let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
+            let result = result.trim();
+            validate_boolean_expression_result(result, expr)?;
+            result != "true"
         }
     })
 }
 
-fn validate_input_configurations<TExtra: InputExtras>(
-    inputs: &[InputConfiguration<TExtra>],
+fn check_no_duplicate_names<E: InputProfile>(
+    inputs: &[Input<E>],
 ) -> Result<(), Error> {
-    let mut seen_names = UnorderedSet::default();
-
+    let mut seen = UnorderedSet::default();
     for input in inputs {
-        let name = input.name();
-
-        if seen_names.contains(&name) {
+        let name = input.base().name.as_str();
+        if seen.contains(name) {
             return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
         }
-
-        seen_names.insert(name);
+        seen.insert(name);
     }
-
     Ok(())
 }
 
 fn try_parse_bool(value: value_bag::ValueBag<'_>) -> Option<bool> {
-    if let Some(value) = value.to_bool() {
-        return Some(value);
-    }
-    if let Some(value) = value.to_str() {
-        return Some(value.parse::<bool>().ok()?);
-    }
-    None
+    value.to_bool().or_else(|| value.to_str()?.parse().ok())
 }
 
 fn try_parse_float(value: value_bag::ValueBag<'_>) -> Option<f64> {
-    if let Some(value) = value.to_f64() {
-        return Some(value);
-    }
-    if let Some(value) = value.to_str() {
-        return Some(value.parse::<f64>().ok()?);
-    }
-    None
+    value.to_f64().or_else(|| value.to_str()?.parse().ok())
 }
 
 fn try_parse_int(value: value_bag::ValueBag<'_>) -> Option<i64> {
-    if let Some(value) = value.to_i64() {
-        return Some(value);
-    }
-    if let Some(value) = value.to_str() {
-        return Some(value.parse::<i64>().ok()?);
-    }
-    None
+    value.to_i64().or_else(|| value.to_str()?.parse().ok())
 }
 
-fn make_input_type_error<'a>(
-    input_name: &'a str,
-    value: value_bag::ValueBag<'a>,
-    expected_type: &'a str,
+fn make_type_error(
+    input_name: &str,
+    value: value_bag::ValueBag<'_>,
+    expected_type: &str,
 ) -> Error {
     Error::from(eyre::eyre!(
-        "{input_name}: value is not of type {expected_type}: value {value}",
-        value =
-            serde_json::to_string_pretty(&value).expect("should be converted"),
+        "{input_name}: value is not of type {expected_type}: value {}",
+        serde_json::to_string_pretty(&value).expect("should serialize"),
     ))
 }
 
 #[derive(Default)]
 struct IsStringConvertible {
-    pub value: bool,
+    value: bool,
 }
 
 impl<'v> value_bag::visit::Visit<'v> for IsStringConvertible {
     fn visit_borrowed_str(
         &mut self,
-        _value: &'v str,
+        _: &'v str,
     ) -> Result<(), value_bag::Error> {
         self.value = true;
         Ok(())
     }
-
-    fn visit_str(&mut self, _value: &str) -> Result<(), value_bag::Error> {
+    fn visit_str(&mut self, _: &str) -> Result<(), value_bag::Error> {
         self.value = true;
         Ok(())
     }
-
     fn visit_any(
         &mut self,
-        _value: value_bag::ValueBag,
+        _: value_bag::ValueBag,
     ) -> Result<(), value_bag::Error> {
         self.value = false;
         Ok(())
     }
 }
 
-// ── Validate ──────────────────────────────────────────────────────────────────
-
-/// A validation error for a single named input field.
-#[derive(Debug)]
-pub struct ValidationError {
-    pub input_name: String,
-    pub message: String,
-}
-
-/// The outcome of a [`validate`] call.
-pub struct ValidationReport {
-    pub errors: Vec<ValidationError>,
-}
-
-impl ValidationReport {
-    pub fn is_valid(&self) -> bool {
-        self.errors.is_empty()
-    }
-}
-
-/// Validate a set of pre-supplied input values against an input schema without
-/// collecting anything interactively.
-///
-/// For each active (non-skipped) input:
-/// - emits a [`ValidationError`] when the value is missing and no default is
-///   available (accounting for `config.use_defaults`)
-/// - type-checks numeric / boolean inputs
-/// - runs all Tera-based validator expressions via [`validate_value`]
-///
-/// Infrastructure errors (e.g. a malformed Tera template in an `if` condition)
-/// are returned as `Err`.
-pub fn validate<TExtra: InputExtras>(
-    inputs: &[InputConfiguration<TExtra>],
-    input_values: &UnorderedMap<String, OwnedValueBag>,
-    context_values: &UnorderedMap<String, OwnedValueBag>,
-    config: &CollectionConfig<'_>,
-) -> Result<ValidationReport, Error> {
-    validate_input_configurations(inputs)?;
-
-    let mut ctx_vals = omni_tera::Context::new();
-    for (key, value) in context_values {
-        ctx_vals.insert(key, value);
-    }
-
-    let mut errors = Vec::new();
-    // Tracks the resolved effective value for each processed input so that
-    // later condition expressions (e.g. `{{ inputs.version == 'custom' }}`)
-    // can reference earlier inputs' values even when they came from defaults.
-    let mut effective_values: UnorderedMap<String, OwnedValueBag> =
-        input_values.clone();
-
-    for input in inputs {
-        let name = input.name();
-
-        if let Some(if_expr) = input.condition()
-            && skip(
-                if_expr,
-                &effective_values,
-                &ctx_vals,
-                config.if_expressions_root_property,
-            )?
-        {
-            continue;
-        }
-
-        let value = input_values.get(name);
-        let has_default =
-            config.use_defaults && input.default_value().is_some();
-
-        if value.is_none() && !has_default {
-            errors.push(ValidationError {
-                input_name: name.to_string(),
-                message: format!("required input '{name}' is missing"),
-            });
-            continue;
-        }
-
-        // Populate effective_values with the default so subsequent condition
-        // expressions see this input's resolved value.
-        if value.is_none()
-            && has_default
-            && let Some(default) = input.default_value()
-        {
-            effective_values.insert(name.to_string(), default);
-        }
-
-        if let Some(value) = value {
-            let typed_value = match input.discriminant() {
-                InputType::Confirm => try_parse_bool(value.by_ref())
-                    .ok_or_else(|| {
-                        make_input_type_error(name, value.by_ref(), "boolean")
-                    })
-                    .map(|b| ValueBag::capture_serde1(&b).to_owned()),
-                InputType::Float => try_parse_float(value.by_ref())
-                    .ok_or_else(|| {
-                        make_input_type_error(name, value.by_ref(), "float")
-                    })
-                    .map(|f| ValueBag::capture_serde1(&f).to_owned()),
-                InputType::Integer => try_parse_int(value.by_ref())
-                    .ok_or_else(|| {
-                        make_input_type_error(name, value.by_ref(), "integer")
-                    })
-                    .map(|i| ValueBag::capture_serde1(&i).to_owned()),
-                _ => Ok(value.clone()),
-            };
-
-            match typed_value {
-                Err(e) => errors.push(ValidationError {
-                    input_name: name.to_string(),
-                    message: e.to_string(),
-                }),
-                Ok(typed) => {
-                    effective_values.insert(name.to_string(), typed.clone());
-                    if let Err(e) = validate_value(
-                        name,
-                        &typed,
-                        &ctx_vals,
-                        get_validators(input),
-                        config.validation_value_name,
-                    ) {
-                        errors.push(ValidationError {
-                            input_name: name.to_string(),
-                            message: e.to_string(),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(ValidationReport { errors })
-}
-
 #[cfg(test)]
 mod tests {
-    use either::Either;
     use maps::UnorderedMap;
-    use schemars::JsonSchema;
-    use serde::{Deserialize, Serialize};
+    use omni_input_schema::{Input, ValidationConfig};
     use serde_json::json;
     use value_bag::{OwnedValueBag, ValueBag};
 
-    use super::{collect, collect_one, validate};
-    use crate::{
-        configuration::{CollectionConfig, InputConfiguration, builder},
-        scripted::ScriptedInputProvider,
-    };
+    use super::{collect, collect_one};
+    use crate::scripted::ScriptedInputProvider;
 
-    /// Minimal `TExtra` for tests — satisfies `InputExtras` without a full derive.
-    #[derive(
-        Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema,
-    )]
-    struct NoExtra;
+    // ── helpers ───────────────────────────────────────────────────────────────
 
-    impl garde::Validate for NoExtra {
-        type Context = ();
-
-        fn validate_into(
-            &self,
-            _ctx: &Self::Context,
-            _parent: &mut dyn FnMut() -> garde::Path,
-            _report: &mut garde::Report,
-        ) {
-        }
+    fn parse<T: for<'de> serde::Deserialize<'de>>(v: serde_json::Value) -> T {
+        serde_json::from_value(v).expect("parse failed")
     }
 
-    // ── input builders ────────────────────────────────────────────────────────
-
-    fn text(name: &'static str) -> InputConfiguration<NoExtra> {
-        builder::text::<NoExtra>().name(name).message(name).build()
+    fn bool_input(name: &str) -> Input<()> {
+        parse(json!({"type": "boolean", "name": name}))
     }
-
-    fn text_with_default(
-        name: &'static str,
-        default: &'static str,
-    ) -> InputConfiguration<NoExtra> {
-        builder::text::<NoExtra>()
-            .name(name)
-            .message(name)
-            .default(default)
-            .build()
+    fn str_input(name: &str) -> Input<()> {
+        parse(json!({"type": "string", "name": name}))
     }
-
-    fn text_with_condition(
-        name: &'static str,
-        condition: Option<Either<bool, String>>,
-    ) -> InputConfiguration<NoExtra> {
-        builder::text::<NoExtra>()
-            .name(name)
-            .message(name)
-            .maybe_condition(condition.map(builder::ValueOrExpr::from))
-            .build()
+    fn str_input_with_default(name: &str, default: &str) -> Input<()> {
+        parse(json!({"type": "string", "name": name, "default": default}))
     }
-
-    fn text_with_validator(
-        name: &'static str,
-        expr: &'static str,
-    ) -> InputConfiguration<NoExtra> {
-        builder::text::<NoExtra>()
-            .name(name)
-            .message(name)
-            .validate([(expr, "validation failed")])
-            .build()
+    fn str_input_with_condition(
+        name: &str,
+        condition: serde_json::Value,
+    ) -> Input<()> {
+        parse(json!({"type": "string", "name": name, "if": condition}))
     }
-
-    fn confirm(name: &'static str) -> InputConfiguration<NoExtra> {
-        builder::confirm::<NoExtra>()
-            .name(name)
-            .message(name)
-            .build()
+    fn str_input_with_validator(name: &str, expr: &str) -> Input<()> {
+        parse(json!({"type": "string", "name": name,
+            "validators": [{"condition": expr}]}))
     }
-
-    fn integer(name: &'static str) -> InputConfiguration<NoExtra> {
-        builder::integer::<NoExtra>()
-            .name(name)
-            .message(name)
-            .build()
+    fn int_input(name: &str) -> Input<()> {
+        parse(json!({"type": "integer", "name": name}))
     }
-
-    // ── value / map helpers ───────────────────────────────────────────────────
+    fn float_input(name: &str) -> Input<()> {
+        parse(json!({"type": "float", "name": name}))
+    }
+    fn str_array_input(name: &str) -> Input<()> {
+        parse(json!({"type": "string-array", "name": name}))
+    }
+    fn int_array_input(name: &str) -> Input<()> {
+        parse(json!({"type": "integer-array", "name": name}))
+    }
+    fn float_array_input(name: &str) -> Input<()> {
+        parse(json!({"type": "float-array", "name": name}))
+    }
 
     fn str_val(s: &str) -> OwnedValueBag {
-        ValueBag::from_serde1(&s).to_owned()
+        ValueBag::from_serde1(&s.to_string()).to_owned()
     }
-
-    fn bool_val(b: bool) -> OwnedValueBag {
-        ValueBag::from_serde1(&b).to_owned()
-    }
-
-    fn int_val(i: i64) -> OwnedValueBag {
-        ValueBag::from_serde1(&i).to_owned()
-    }
-
     fn one(
         name: &str,
         val: OwnedValueBag,
@@ -629,177 +418,28 @@ mod tests {
         m.insert(name.to_string(), val);
         m
     }
-
-    fn cfg(use_defaults: bool) -> CollectionConfig<'static> {
-        CollectionConfig {
+    fn empty() -> UnorderedMap<String, OwnedValueBag> {
+        UnorderedMap::default()
+    }
+    fn cfg(use_defaults: bool) -> ValidationConfig<'static> {
+        ValidationConfig {
             use_defaults,
             ..Default::default()
         }
     }
-
     fn scripted(answers: &[(&str, &str)]) -> ScriptedInputProvider {
         ScriptedInputProvider::new(answers.iter().copied())
     }
-
-    fn empty() -> UnorderedMap<String, OwnedValueBag> {
-        Default::default()
-    }
-
-    /// Serialize an `OwnedValueBag` to `serde_json::Value` for assertions.
     fn jv(v: &OwnedValueBag) -> serde_json::Value {
-        serde_json::to_value(v).expect("OwnedValueBag must serialize to JSON")
-    }
-
-    // ── validate ──────────────────────────────────────────────────────────────
-
-    #[test]
-    fn missing_required_field_produces_error() {
-        let inputs = [text("name")];
-        let report =
-            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors.len(), 1);
-        assert_eq!(report.errors[0].input_name, "name");
-    }
-
-    #[test]
-    fn provided_required_field_is_valid() {
-        let inputs = [text("name")];
-        let values = one("name", str_val("Alice"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn defaulted_field_not_required_when_use_defaults_true() {
-        let inputs = [text_with_default("env", "development")];
-        let report = validate(&inputs, &empty(), &empty(), &cfg(true)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn defaulted_field_required_when_use_defaults_false() {
-        let inputs = [text_with_default("env", "development")];
-        let report =
-            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors[0].input_name, "env");
-    }
-
-    #[test]
-    fn always_hidden_field_is_never_required() {
-        let inputs = [text_with_condition("secret", Some(Either::Left(false)))];
-        let report =
-            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn conditional_field_skipped_when_tera_condition_is_false() {
-        let inputs = [
-            text("kind"),
-            text_with_condition(
-                "extra",
-                Some(Either::Right(
-                    "{{ inputs.kind == 'advanced' }}".to_string(),
-                )),
-            ),
-        ];
-        let values = one("kind", str_val("basic"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn conditional_field_required_when_tera_condition_is_true() {
-        let inputs = [
-            text("kind"),
-            text_with_condition(
-                "extra",
-                Some(Either::Right(
-                    "{{ inputs.kind == 'advanced' }}".to_string(),
-                )),
-            ),
-        ];
-        let values = one("kind", str_val("advanced"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors[0].input_name, "extra");
-    }
-
-    #[test]
-    fn confirm_rejects_non_bool_string() {
-        let inputs = [confirm("enabled")];
-        let values = one("enabled", str_val("not-a-bool"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors[0].input_name, "enabled");
-    }
-
-    #[test]
-    fn confirm_accepts_bool_value() {
-        let inputs = [confirm("enabled")];
-        let values = one("enabled", bool_val(true));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn integer_rejects_non_numeric_string() {
-        let inputs = [integer("count")];
-        let values = one("count", str_val("not-a-number"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors[0].input_name, "count");
-    }
-
-    #[test]
-    fn integer_accepts_integer_value() {
-        let inputs = [integer("count")];
-        let values = one("count", int_val(42));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn validator_expression_rejects_short_value() {
-        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
-        let values = one("name", str_val("ab"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(!report.is_valid());
-        assert_eq!(report.errors[0].input_name, "name");
-    }
-
-    #[test]
-    fn validator_expression_accepts_valid_value() {
-        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
-        let values = one("name", str_val("Alice"));
-        let report = validate(&inputs, &values, &empty(), &cfg(false)).unwrap();
-        assert!(report.is_valid());
-    }
-
-    #[test]
-    fn all_errors_collected_not_just_first() {
-        let inputs = [text("a"), text("b"), text("c")];
-        let report =
-            validate(&inputs, &empty(), &empty(), &cfg(false)).unwrap();
-        assert_eq!(report.errors.len(), 3);
-    }
-
-    #[test]
-    fn duplicate_input_names_is_infrastructure_error() {
-        let inputs = [text("name"), text("name")];
-        let result = validate(&inputs, &empty(), &empty(), &cfg(false));
-        assert!(result.is_err());
+        serde_json::to_value(v).unwrap()
     }
 
     // ── collect ───────────────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn collect_text_via_provider() {
-        let inputs = [text("name")];
+    async fn collect_string_via_provider() {
         let result = collect(
-            &inputs,
+            &[str_input("name")],
             &empty(),
             &empty(),
             &cfg(false),
@@ -811,50 +451,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_pre_exec_value_shadows_provider() {
-        // Provider has no answer for "name" — would error if called.
-        let inputs = [text("name")];
-        let pre_exec = one("name", str_val("Bob"));
-        let result =
-            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
-                .await
-                .unwrap();
+    async fn collect_pre_exec_shadows_provider() {
+        let result = collect(
+            &[str_input("name")],
+            &one("name", str_val("Bob")),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
         assert_eq!(jv(result.get("name").unwrap()), json!("Bob"));
     }
 
     #[tokio::test]
     async fn collect_uses_default_when_use_defaults_true() {
-        let inputs = [text_with_default("env", "development")];
-        let result =
-            collect(&inputs, &empty(), &empty(), &cfg(true), &scripted(&[]))
-                .await
-                .unwrap();
-        assert_eq!(jv(result.get("env").unwrap()), json!("development"));
+        let result = collect(
+            &[str_input_with_default("env", "dev")],
+            &empty(),
+            &empty(),
+            &cfg(true),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("env").unwrap()), json!("dev"));
     }
 
     #[tokio::test]
     async fn collect_ignores_default_when_use_defaults_false() {
-        let inputs = [text_with_default("env", "development")];
         let result = collect(
-            &inputs,
+            &[str_input_with_default("env", "dev")],
             &empty(),
             &empty(),
             &cfg(false),
-            &scripted(&[("env", "production")]),
+            &scripted(&[("env", "prod")]),
         )
         .await
         .unwrap();
-        assert_eq!(jv(result.get("env").unwrap()), json!("production"));
+        assert_eq!(jv(result.get("env").unwrap()), json!("prod"));
     }
 
     #[tokio::test]
-    async fn collect_skips_always_hidden_field() {
-        let inputs = [
-            text("visible"),
-            text_with_condition("hidden", Some(Either::Left(false))),
-        ];
+    async fn collect_skips_always_hidden() {
         let result = collect(
-            &inputs,
+            &[
+                str_input("visible"),
+                str_input_with_condition("hidden", json!(false)),
+            ],
             &empty(),
             &empty(),
             &cfg(false),
@@ -867,15 +511,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_skips_conditional_field_when_condition_false() {
-        // "extra" condition references the already-collected "kind" value.
+    async fn collect_skips_conditional_when_false() {
         let inputs = [
-            text("kind"),
-            text_with_condition(
+            str_input("kind"),
+            str_input_with_condition(
                 "extra",
-                Some(Either::Right(
-                    "{{ inputs.kind == 'advanced' }}".to_string(),
-                )),
+                json!("{{ inputs.kind == 'advanced' }}"),
             ),
         ];
         let result = collect(
@@ -887,19 +528,16 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(jv(result.get("kind").unwrap()), json!("basic"));
         assert!(result.get("extra").is_none());
     }
 
     #[tokio::test]
-    async fn collect_includes_conditional_field_when_condition_true() {
+    async fn collect_includes_conditional_when_true() {
         let inputs = [
-            text("kind"),
-            text_with_condition(
+            str_input("kind"),
+            str_input_with_condition(
                 "extra",
-                Some(Either::Right(
-                    "{{ inputs.kind == 'advanced' }}".to_string(),
-                )),
+                json!("{{ inputs.kind == 'advanced' }}"),
             ),
         ];
         let result = collect(
@@ -916,34 +554,37 @@ mod tests {
 
     #[tokio::test]
     async fn collect_coerces_string_pre_exec_to_bool() {
-        let inputs = [confirm("enabled")];
-        let pre_exec = one("enabled", str_val("true"));
-        let result =
-            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
-                .await
-                .unwrap();
-        assert_eq!(jv(result.get("enabled").unwrap()), json!(true));
+        let result = collect(
+            &[bool_input("flag")],
+            &one("flag", str_val("true")),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("flag").unwrap()), json!(true));
     }
 
     #[tokio::test]
     async fn collect_coerces_string_pre_exec_to_integer() {
-        let inputs = [integer("count")];
-        let pre_exec = one("count", str_val("42"));
-        let result =
-            collect(&inputs, &pre_exec, &empty(), &cfg(false), &scripted(&[]))
-                .await
-                .unwrap();
+        let result = collect(
+            &[int_input("count")],
+            &one("count", str_val("42")),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
         assert_eq!(jv(result.get("count").unwrap()), json!(42));
     }
 
     #[tokio::test]
-    async fn collect_falls_back_to_provider_when_pre_exec_fails_validation() {
-        // "ab" (length 2) fails the validator; collect() re-asks via provider.
-        let inputs = [text_with_validator("name", "{{ value | length > 3 }}")];
-        let pre_exec = one("name", str_val("ab"));
+    async fn collect_re_asks_provider_when_pre_exec_fails_validation() {
         let result = collect(
-            &inputs,
-            &pre_exec,
+            &[str_input_with_validator("name", "{{ value | length > 3 }}")],
+            &one("name", str_val("ab")),
             &empty(),
             &cfg(false),
             &scripted(&[("name", "Alice")]),
@@ -954,21 +595,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_expands_default_template_using_context() {
-        let inputs = [text_with_default("greeting", "Hello {{ name }}")];
-        let context = one("name", str_val("World"));
-        let result =
-            collect(&inputs, &empty(), &context, &cfg(true), &scripted(&[]))
-                .await
-                .unwrap();
+    async fn collect_expands_default_template() {
+        let result = collect(
+            &[str_input_with_default("greeting", "Hello {{ name }}")],
+            &empty(),
+            &one("name", str_val("World")),
+            &cfg(true),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
         assert_eq!(jv(result.get("greeting").unwrap()), json!("Hello World"));
     }
 
     #[tokio::test]
-    async fn collect_all_inputs_present_in_result() {
-        let inputs = [text("a"), text("b"), text("c")];
+    async fn collect_all_inputs_present() {
         let result = collect(
-            &inputs,
+            &[str_input("a"), str_input("b"), str_input("c")],
             &empty(),
             &empty(),
             &cfg(false),
@@ -982,10 +625,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_duplicate_input_names_returns_error() {
-        let inputs = [text("x"), text("x")];
+    async fn collect_duplicate_names_returns_error() {
         let result = collect(
-            &inputs,
+            &[str_input("x"), str_input("x")],
             &empty(),
             &empty(),
             &cfg(false),
@@ -998,10 +640,9 @@ mod tests {
     // ── collect_one ───────────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn collect_one_prompts_provider_for_active_input() {
-        let input = text("name");
+    async fn collect_one_prompts_provider() {
         let result = collect_one(
-            &input,
+            &str_input("name"),
             None,
             &empty(),
             &cfg(false),
@@ -1013,21 +654,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_one_returns_none_for_always_hidden_input() {
-        let input = text_with_condition("secret", Some(Either::Left(false)));
-        let result =
-            collect_one(&input, None, &empty(), &cfg(false), &scripted(&[]))
-                .await
-                .unwrap();
+    async fn collect_one_returns_none_for_hidden() {
+        let result = collect_one(
+            &str_input_with_condition("x", json!(false)),
+            None,
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
         assert!(result.is_none());
     }
 
     #[tokio::test]
-    async fn collect_one_uses_pre_exec_value() {
-        let input = text("name");
+    async fn collect_one_uses_pre_exec() {
         let pre = str_val("Bob");
         let result = collect_one(
-            &input,
+            &str_input("name"),
             Some(&pre),
             &empty(),
             &cfg(false),
@@ -1038,19 +682,236 @@ mod tests {
         assert_eq!(jv(result.as_ref().unwrap()), json!("Bob"));
     }
 
+    // ── variant routing (all 7 interactive variants) ──────────────────────────
+
     #[tokio::test]
-    async fn collect_one_returns_some_when_condition_is_always_true() {
-        let input = text_with_condition("label", Some(Either::Left(true)));
-        let result = collect_one(
-            &input,
-            None,
+    async fn collect_dispatches_float_variant() {
+        let result = collect(
+            &[float_input("rate")],
+            &empty(),
             &empty(),
             &cfg(false),
-            &scripted(&[("label", "visible")]),
+            &scripted(&[("rate", "3.14")]),
         )
         .await
         .unwrap();
-        assert!(result.is_some());
-        assert_eq!(jv(result.as_ref().unwrap()), json!("visible"));
+        assert_eq!(jv(result.get("rate").unwrap()), json!(3.14));
+    }
+
+    #[tokio::test]
+    async fn collect_dispatches_string_array_variant() {
+        let result = collect(
+            &[str_array_input("tags")],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("tags", "a, b, c")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("tags").unwrap()), json!(["a", "b", "c"]));
+    }
+
+    #[tokio::test]
+    async fn collect_dispatches_integer_array_variant() {
+        let result = collect(
+            &[int_array_input("ids")],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("ids", "1, 2, 3")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("ids").unwrap()), json!([1, 2, 3]));
+    }
+
+    #[tokio::test]
+    async fn collect_dispatches_float_array_variant() {
+        let result = collect(
+            &[float_array_input("vals")],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("vals", "1.1, 2.2")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("vals").unwrap()), json!([1.1, 2.2]));
+    }
+
+    // ── pre-filled value covers all coercible variants ────────────────────────
+
+    #[tokio::test]
+    async fn collect_pre_exec_shadows_provider_for_float() {
+        let result = collect(
+            &[float_input("score")],
+            &one("score", ValueBag::from_serde1(&2.5f64).to_owned()),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("score").unwrap()), json!(2.5));
+    }
+
+    #[tokio::test]
+    async fn collect_coerces_string_pre_exec_to_float() {
+        let result = collect(
+            &[float_input("score")],
+            &one("score", str_val("1.5")),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(jv(result.get("score").unwrap()), json!(1.5));
+    }
+
+    #[tokio::test]
+    async fn collect_uses_default_when_use_defaults_true_integer() {
+        let input: Input<()> = serde_json::from_value(
+            json!({"type": "integer", "name": "count", "default": 7}),
+        )
+        .unwrap();
+        let result =
+            collect(&[input], &empty(), &empty(), &cfg(true), &scripted(&[]))
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("count").unwrap()), json!(7));
+    }
+
+    // ── dynamic_default_expr tests ────────────────────────────────────────────
+    // A minimal InputProfile that carries `default_expr` in its base extras.
+    // Defined locally to avoid a circular dev-dependency: omni_generator_configurations
+    // already depends on omni_input_provider.
+
+    #[derive(
+        Debug,
+        Clone,
+        Copy,
+        Default,
+        PartialEq,
+        serde::Serialize,
+        serde::Deserialize,
+    )]
+    struct DynProfile;
+
+    #[derive(
+        Debug,
+        Clone,
+        Default,
+        PartialEq,
+        serde::Serialize,
+        serde::Deserialize,
+        schemars::JsonSchema,
+    )]
+    struct DynBase {
+        #[serde(default)]
+        default_expr: Option<String>,
+    }
+
+    impl omni_input_schema::InputProfile for DynProfile {
+        type Base = DynBase;
+        type Boolean = ();
+        type String = ();
+        type Numeric = ();
+        type Array = ();
+        type Object = ();
+        type AllowedValueBase = ();
+
+        fn dynamic_default_expr(base_extra: &Self::Base) -> Option<&str> {
+            base_extra.default_expr.as_deref()
+        }
+    }
+
+    #[tokio::test]
+    async fn collect_uses_dynamic_default_expr_for_boolean() {
+        let input: Input<DynProfile> = serde_json::from_value(json!({
+            "type": "boolean",
+            "name": "flag",
+            "default_expr": "{{ mode == 'prod' }}"
+        }))
+        .unwrap();
+
+        let mut ctx_values = UnorderedMap::default();
+        ctx_values
+            .insert("mode".to_string(), ValueBag::from_str("prod").to_owned());
+
+        let result = collect(
+            std::slice::from_ref(&input),
+            &empty(),
+            &ctx_values,
+            &cfg(true),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+
+        // "prod" == "prod" -> true
+        let val = result.get("flag").unwrap();
+        assert_eq!(val.by_ref().to_bool(), Some(true));
+    }
+
+    #[tokio::test]
+    async fn collect_uses_dynamic_default_expr_for_integer() {
+        let input: Input<DynProfile> = serde_json::from_value(json!({
+            "type": "integer",
+            "name": "port",
+            "default_expr": "{{ base_port }}"
+        }))
+        .unwrap();
+
+        let mut ctx_values = UnorderedMap::default();
+        ctx_values.insert(
+            "base_port".to_string(),
+            ValueBag::from_str("8080").to_owned(),
+        );
+
+        let result = collect(
+            std::slice::from_ref(&input),
+            &empty(),
+            &ctx_values,
+            &cfg(true),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+
+        let val = result.get("port").unwrap();
+        assert_eq!(val.by_ref().to_i64(), Some(8080));
+    }
+
+    #[tokio::test]
+    async fn collect_ignores_dynamic_default_when_use_defaults_false() {
+        let input: Input<DynProfile> = serde_json::from_value(json!({
+            "type": "integer",
+            "name": "port",
+            "default_expr": "{{ base_port }}"
+        }))
+        .unwrap();
+
+        let mut ctx_values = UnorderedMap::default();
+        ctx_values.insert(
+            "base_port".to_string(),
+            ValueBag::from_str("9999").to_owned(),
+        );
+
+        // use_defaults=false => dynamic default is skipped; provider is called.
+        let result = collect(
+            std::slice::from_ref(&input),
+            &empty(),
+            &ctx_values,
+            &cfg(false),
+            &scripted(&[("port", "1234")]),
+        )
+        .await
+        .unwrap();
+
+        // Provider returned 1234, not the context value 9999.
+        let val = result.get("port").unwrap();
+        assert_eq!(val.by_ref().to_i64(), Some(1234));
     }
 }

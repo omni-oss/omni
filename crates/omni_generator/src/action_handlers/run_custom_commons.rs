@@ -5,8 +5,8 @@ use std::{
 
 use env::CommandExpansionConfig;
 use maps::Map;
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 use omni_process::ChildProcess;
 
 use crate::{
@@ -23,7 +23,7 @@ pub async fn target_path<S: GeneratorEventSubscriber>(
     common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'_, S>,
     session: &GenSession,
-    sys: &impl GeneratorSys,
+    _sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let bases = get_bases(ctx);
     let result = if let Some(target_name) = common.target.as_deref() {
@@ -35,7 +35,6 @@ pub async fn target_path<S: GeneratorEventSubscriber>(
             ctx.generator_name,
             session,
             ctx.input_provider,
-            sys,
         )
         .await?;
 

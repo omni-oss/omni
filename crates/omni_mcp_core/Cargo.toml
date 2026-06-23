@@ -31,12 +31,14 @@ omni_context = { workspace = true }
 omni_messages = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_generator = { workspace = true }
+omni_generator_configurations = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_tera = { workspace = true }
 async-trait = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }
 bytesize = { workspace = true }
+either = { workspace = true }
 humantime-serde = { workspace = true }
 
 [dev-dependencies]

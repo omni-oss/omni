@@ -1,4 +1,6 @@
-use omni_generator_configurations::{OmniPath, OverwriteConfiguration, Root};
+use omni_generator_configurations::{
+    GenBase, Generator, OmniPath, OverwriteConfiguration, Root, StringExtras,
+};
 use omni_messages::GeneratorEventSubscriber;
 use std::{
     borrow::Cow,
@@ -7,7 +9,8 @@ use std::{
 
 use maps::{UnorderedMap, unordered_map};
 use omni_input_provider::{
-    InputProvider, builder, collect_one, configuration::CollectionConfig,
+    BaseInput, BooleanInput, Input, InputProvider, StringInput,
+    ValidationConfig, collect_one,
 };
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -112,7 +115,7 @@ pub async fn ensure_dir_exists(
 pub async fn should_overwrite(
     path: &Path,
     overwrite: Option<OverwriteConfiguration>,
-    provider: &dyn InputProvider,
+    provider: &dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<bool, Error> {
     if let Some(overwrite) = overwrite {
@@ -127,19 +130,30 @@ pub async fn should_overwrite(
 
     let is_dir = sys.fs_is_dir_async(path).await?;
 
-    let prompt_cfg = builder::confirm::<()>()
-        .name("overwrite_path")
-        .message(if is_dir {
-            format!(
-                "Directory already exists at path: {path:?}. Delete it and all of its contents?"
-            )
-        } else {
-            format!("File already exists at path: {path:?}. Overwrite?")
-        })
-        .default(true)
-        .build();
+    let prompt_cfg = Input::<Generator>::Boolean(BooleanInput {
+        base: BaseInput {
+            name: "overwrite_path".to_string(),
+            r#if: None,
+            validators: vec![],
+            secret: false,
+            description: None,
+        },
+        default: Some(true),
+        base_extra: GenBase {
+            message: if is_dir {
+                format!(
+                    "Directory already exists at path: {path:?}. Delete it and all of its contents?"
+                )
+            } else {
+                format!("File already exists at path: {path:?}. Overwrite?")
+            },
+            remember: false,
+            default_expr: None,
+        },
+        profile_data: (),
+    });
 
-    let cfg = CollectionConfig::default();
+    let cfg = ValidationConfig::default();
 
     let result =
         collect_one(&prompt_cfg, None, &unordered_map!(), &cfg, provider)
@@ -154,7 +168,7 @@ pub async fn should_overwrite(
 pub async fn overwrite(
     output_path: &Path,
     overwrite: Option<OverwriteConfiguration>,
-    provider: &dyn InputProvider,
+    provider: &dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<Option<bool>, Error> {
     if sys.fs_exists_async(&output_path).await? {
@@ -188,8 +202,7 @@ pub async fn get_target_dir<'a>(
     output_dir: &'a Path,
     generator: &'a str,
     session: &'a GenSession,
-    provider: &'a dyn InputProvider,
-    _sys: &'a impl GeneratorSys,
+    provider: &'a dyn InputProvider<Generator>,
 ) -> Result<Cow<'a, OmniPath>, Error> {
     let target = target_overrides
         .get(target_name)
@@ -200,12 +213,25 @@ pub async fn get_target_dir<'a>(
         return Ok(Cow::Borrowed(target));
     }
 
-    let prompt_cfg = builder::text::<()>()
-        .name(target_name)
-        .message(format!("Directory for target {}:", target_name))
-        .build();
+    let prompt_cfg = Input::<Generator>::String(StringInput {
+        base: BaseInput {
+            name: target_name.to_string(),
+            r#if: None,
+            validators: vec![],
+            secret: false,
+            description: None,
+        },
+        allowed: None,
+        default: None,
+        base_extra: GenBase {
+            message: format!("Directory for target {}:", target_name),
+            remember: false,
+            default_expr: None,
+        },
+        profile_data: StringExtras::default(),
+    });
 
-    let cfg = CollectionConfig::default();
+    let cfg = ValidationConfig::default();
 
     loop {
         let result =
@@ -233,7 +259,7 @@ pub async fn get_target_dir<'a>(
 pub async fn get_target_file<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
     ctx: &HandlerContext<'a, S>,
-    provider: &'a dyn InputProvider,
+    provider: &'a dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<Cow<'a, Path>, Error> {
     let base = enum_map::enum_map! {
@@ -257,15 +283,28 @@ pub async fn get_target_file<'a, S: GeneratorEventSubscriber>(
 pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
     target_name: &str,
     ctx: &HandlerContext<'_, S>,
-    provider: &dyn InputProvider,
+    provider: &dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
-    let prompt_cfg = builder::text::<()>()
-        .name(target_name)
-        .message(format!("Directory for target {}:", target_name))
-        .build();
+    let prompt_cfg = Input::<Generator>::String(StringInput {
+        base: BaseInput {
+            name: target_name.to_string(),
+            r#if: None,
+            validators: vec![],
+            secret: false,
+            description: None,
+        },
+        allowed: None,
+        default: None,
+        base_extra: GenBase {
+            message: format!("Directory for target {}:", target_name),
+            remember: false,
+            default_expr: None,
+        },
+        profile_data: StringExtras::default(),
+    });
 
-    let cfg = CollectionConfig::default();
+    let cfg = ValidationConfig::default();
 
     let base = enum_map::enum_map! {
         Root::Workspace => ctx.workspace_dir,
@@ -345,11 +384,11 @@ pub async fn get_output_path<
     expected_output_path: &'a Path,
     base_path: Option<&'a Path>,
     ctx: &HandlerContext<'a, S>,
-    provider: &'a dyn InputProvider,
+    provider: &'a dyn InputProvider<Generator>,
     strip_extensions: &'a [TExt],
     flatten: bool,
     session: &'a GenSession,
-    sys: &'a impl GeneratorSys,
+    _sys: &'a impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
         Some(
@@ -361,7 +400,6 @@ pub async fn get_output_path<
                 ctx.generator_name,
                 session,
                 provider,
-                sys,
             )
             .await?,
         )

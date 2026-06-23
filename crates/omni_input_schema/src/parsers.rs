@@ -1,3 +1,7 @@
+// serde helpers for Either<L, String> fields that accept either
+// a concrete value or a Tera expression string.  Copied from omni_input_provider
+// verbatim; duplicated here so omni_input_schema has no dependency on that crate.
+
 #[allow(unused)]
 pub mod either_value_or_tera_expr {
     use either::{
@@ -21,7 +25,6 @@ pub mod either_value_or_tera_expr {
 
         if let Either::Right(value) = value {
             let result = TeraExprValidator::validate_static(&value);
-
             return match result {
                 Ok(_) => Ok(Right(value)),
                 Err(e) => Err(serde::de::Error::custom(e)),
@@ -39,7 +42,7 @@ pub mod either_value_or_tera_expr {
         S: Serializer,
         L: Serialize,
     {
-        return serde_untagged::serialize(this, serializer);
+        serde_untagged::serialize(this, serializer)
     }
 }
 
@@ -63,12 +66,10 @@ pub mod either_value_or_tera_expr_optional {
 
         if let Some(Either::Right(value)) = value {
             let result = TeraExprValidator::validate_static(&value);
-
             return match result {
                 Ok(_) => Ok(Some(Right(value))),
                 Err(e) => Err(serde::de::Error::custom(e)),
             };
-        } else {
         }
 
         Ok(value)
@@ -82,6 +83,6 @@ pub mod either_value_or_tera_expr_optional {
         S: serde::Serializer,
         L: serde::Serialize,
     {
-        return serde_untagged_optional::serialize(this, serializer);
+        serde_untagged_optional::serialize(this, serializer)
     }
 }

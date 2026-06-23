@@ -13,6 +13,7 @@ use omni_tracing_subscriber::TracingConfig;
 use system_traits::impls::RealSys as RealSysSync;
 use tokio::sync::Mutex;
 
+use crate::operations::generator::InspectViewKind;
 use crate::{
     OmniApiError,
     operations::{
@@ -472,14 +473,20 @@ where
 
     /// Inspect a generator's full input schema, recursing into all
     /// sub-generators it invokes via `run-generator` actions. Cycle-safe.
+    ///
+    /// `view` selects the input projection: use `InspectViewKind::Widget`
+    /// (default) for interactive UIs and `InspectViewKind::Data` for machine
+    /// consumers such as MCP.
     pub async fn generator_inspect(
         &self,
         name: &str,
+        view: InspectViewKind,
     ) -> eyre::Result<GeneratorInspectResponse> {
         let ctx = self.ctx.lock().await;
         crate::operations::generator::handle_generator_inspect(
             ctx.as_context(),
             name,
+            view,
         )
         .await
     }

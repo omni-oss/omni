@@ -162,6 +162,7 @@ omni_bridge_test_service = { path = "services/omni_bridge_test_service" }
 omni_messages = { path = "./crates/omni_messages" }
 omni_api = { path = "./crates/omni_api" }
 omni_mcp_core = { path = "crates/omni_mcp_core" }
+omni_input_schema = { path = "crates/omni_input_schema" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
@@ -277,6 +278,7 @@ target-lexicon = { version = "^0.13.5" }
 interprocess = { version = "^2.4.2", features = ["tokio"] }
 # nom = { version = "^8.0.0" }
 macro_rules_attribute = { version = "^0.2.2" }
+enumset = { version = "^1.1.13", features = ["serde", "proc-macro-crate"] }
 
 
 [patch.crates-io]

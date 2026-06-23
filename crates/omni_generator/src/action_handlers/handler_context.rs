@@ -30,7 +30,9 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub gen_session: &'a GenSession,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
-    pub input_provider: &'a dyn omni_input_provider::InputProvider,
+    pub input_provider: &'a dyn omni_input_provider::InputProvider<
+        omni_generator_configurations::Generator,
+    >,
     pub subscriber: &'a S,
     /// Current `run-generator` nesting depth of this generator.
     pub depth: usize,

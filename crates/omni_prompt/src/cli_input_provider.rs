@@ -1,22 +1,23 @@
 use async_trait::async_trait;
+use omni_generator_configurations::{Generator, ListWidget, StringWidget};
 use omni_input_provider::{
-    configuration::{
-        ConfirmInputConfiguration, FloatInputConfiguration,
-        IntegerInputConfiguration, MultiSelectInputConfiguration,
-        PasswordInputConfiguration, SelectInputConfiguration,
-        TextInputConfiguration,
-    },
+    BooleanInput, FloatArrayInput, FloatInput, InputProvider,
+    IntegerArrayInput, IntegerInput, StringArrayInput, StringInput,
     error::Error,
-    provider::InputProvider,
 };
+use requestty::Question;
 
-/// `requestty::prompt_one` is synchronous blocking; each `async` method calls
-/// it directly. The `async` surface exists for trait compatibility with
-/// non-blocking backends (MCP, UI, …), not because the CLI needs async I/O.
+use crate::make;
+
+/// Interactive CLI input provider using the `requestty` library.
+///
+/// Widget selection follows the inference rules from the RFC:
+/// - `boolean` → confirm
+/// - `string` → password / select / text based on widget hint and `secret`
+/// - `integer` / `float` → select or free-entry number prompt
+/// - `*_array` → multi-select or free-entry loop
 #[derive(Debug)]
 pub struct CliInputProvider {
-    /// Variable name used in inline validator Tera expressions.
-    /// Defaults to `Some("value")`, matching the generator YAML convention.
     validation_value_name: Option<&'static str>,
 }
 
@@ -29,119 +30,256 @@ impl Default for CliInputProvider {
 }
 
 #[async_trait]
-impl InputProvider for CliInputProvider {
-    async fn confirm(
+impl InputProvider<Generator> for CliInputProvider {
+    async fn boolean(
         &self,
-        input: &ConfirmInputConfiguration,
+        input: &BooleanInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<bool, Error> {
-        let question = crate::make::confirm(input, ctx)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
+        let question = make::confirm(input, ctx)?;
+        let answer =
+            tokio::task::block_in_place(|| requestty::prompt_one(question))
+                .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
         answer
-            .as_bool()
-            .ok_or_else(|| Error::from(eyre::eyre!("expected boolean answer")))
+            .try_into_bool()
+            .map_err(|_| eyre::eyre!("expected bool answer").into())
     }
 
-    async fn text(
+    async fn string(
         &self,
-        input: &TextInputConfiguration,
+        input: &StringInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<String, Error> {
-        let question =
-            crate::make::text(input, ctx, self.validation_value_name)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        answer
-            .as_string()
-            .map(str::to_string)
-            .ok_or_else(|| Error::from(eyre::eyre!("expected string answer")))
+        let question = if input.profile_data.widget
+            == Some(StringWidget::Password)
+            || input.base.secret
+        {
+            make::password(input, ctx, self.validation_value_name)?
+        } else if input.profile_data.widget == Some(StringWidget::Select)
+            || input.allowed.is_some()
+        {
+            make::select_string(input, ctx)?
+        } else {
+            make::text(input, ctx, self.validation_value_name)?
+        };
+
+        let answer =
+            tokio::task::block_in_place(|| requestty::prompt_one(question))
+                .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+
+        if input.profile_data.widget == Some(StringWidget::Select)
+            || input.allowed.is_some()
+        {
+            // select returns a ListItem; look up the actual value by index
+            let idx = answer
+                .as_list_item()
+                .ok_or_else(|| eyre::eyre!("expected list item answer"))?
+                .index;
+            let allowed = input.allowed.as_ref().ok_or_else(|| {
+                eyre::eyre!(
+                    "select question produced ListItem but allowed is empty"
+                )
+            })?;
+            Ok(allowed[idx].value.clone())
+        } else {
+            answer
+                .try_into_string()
+                .map_err(|_| eyre::eyre!("expected string answer").into())
+        }
     }
 
-    async fn password(
+    async fn integer(
         &self,
-        input: &PasswordInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<String, Error> {
-        let question =
-            crate::make::password(input, ctx, self.validation_value_name)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        answer
-            .as_string()
-            .map(str::to_string)
-            .ok_or_else(|| Error::from(eyre::eyre!("expected string answer")))
-    }
-
-    async fn select(
-        &self,
-        input: &SelectInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<String, Error> {
-        let question = crate::make::select(input, ctx)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        answer
-            .as_list_item()
-            .map(|i| input.options[i.index].value.clone())
-            .ok_or_else(|| {
-                Error::from(eyre::eyre!("expected list-item answer"))
-            })
-    }
-
-    async fn multi_select(
-        &self,
-        input: &MultiSelectInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<Vec<String>, Error> {
-        let question =
-            crate::make::multi_select(input, ctx, self.validation_value_name)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        let values = answer
-            .as_list_items()
-            .ok_or_else(|| {
-                Error::from(eyre::eyre!("expected list-items answer"))
-            })?
-            .iter()
-            .map(|i| input.options[i.index].value.clone())
-            .collect();
-        Ok(values)
-    }
-
-    async fn float_number(
-        &self,
-        input: &FloatInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<f64, Error> {
-        let question =
-            crate::make::float_number(input, ctx, self.validation_value_name)?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        // float_number uses a text input with parse-time validation
-        let raw = answer.as_string().ok_or_else(|| {
-            Error::from(eyre::eyre!("expected string answer"))
-        })?;
-        raw.parse::<f64>()
-            .map_err(|e| Error::from(eyre::eyre!("cannot parse float: {e}")))
-    }
-
-    async fn integer_number(
-        &self,
-        input: &IntegerInputConfiguration,
+        input: &IntegerInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<i64, Error> {
-        let question = crate::make::integer_number(
-            input,
-            ctx,
-            self.validation_value_name,
-        )?;
-        let answer = requestty::prompt_one(question)
-            .map_err(|e| Error::from(eyre::eyre!("input error: {e}")))?;
-        let raw = answer.as_string().ok_or_else(|| {
-            Error::from(eyre::eyre!("expected string answer"))
-        })?;
-        raw.parse::<i64>()
-            .map_err(|e| Error::from(eyre::eyre!("cannot parse integer: {e}")))
+        if input.allowed.is_some() {
+            let question = make::select_integer(input, ctx)?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let idx = answer
+                .as_list_item()
+                .ok_or_else(|| eyre::eyre!("expected list item answer"))?
+                .index;
+            let allowed = input.allowed.as_ref().unwrap();
+            Ok(allowed[idx].value)
+        } else {
+            let question =
+                make::integer_number(input, ctx, self.validation_value_name)?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let s = answer
+                .try_into_string()
+                .map_err(|_| eyre::eyre!("expected string answer"))?;
+            s.parse::<i64>()
+                .map_err(|e| eyre::eyre!("parse int: {e}").into())
+        }
     }
+
+    async fn float(
+        &self,
+        input: &FloatInput<Generator>,
+        ctx: &omni_tera::Context,
+    ) -> Result<f64, Error> {
+        if input.allowed.is_some() {
+            let question = make::select_float(input, ctx)?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let idx = answer
+                .as_list_item()
+                .ok_or_else(|| eyre::eyre!("expected list item answer"))?
+                .index;
+            let allowed = input.allowed.as_ref().unwrap();
+            Ok(allowed[idx].value)
+        } else {
+            let question =
+                make::float_number(input, ctx, self.validation_value_name)?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let s = answer
+                .try_into_string()
+                .map_err(|_| eyre::eyre!("expected string answer"))?;
+            s.parse::<f64>()
+                .map_err(|e| eyre::eyre!("parse float: {e}").into())
+        }
+    }
+
+    async fn string_array(
+        &self,
+        input: &StringArrayInput<Generator>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<String>, Error> {
+        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+            || input.body.allowed.is_none()
+        {
+            let name = input.base.name.as_str();
+            let message = input.base_extra.message.as_str();
+            tokio::task::block_in_place(|| {
+                prompt_free_entry_list(name, message)
+            })
+            .map_err(|e| eyre::eyre!("prompt error: {e}").into())
+        } else {
+            let question = make::multi_select_string(
+                input,
+                ctx,
+                self.validation_value_name,
+            )?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let items = answer
+                .try_into_list_items()
+                .map_err(|_| eyre::eyre!("expected list items answer"))?;
+            let allowed = input.body.allowed.as_ref().unwrap();
+            Ok(items
+                .iter()
+                .map(|item| allowed[item.index].value.clone())
+                .collect())
+        }
+    }
+
+    async fn integer_array(
+        &self,
+        input: &IntegerArrayInput<Generator>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<i64>, Error> {
+        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+            || input.body.allowed.is_none()
+        {
+            let name = input.base.name.as_str();
+            let message = input.base_extra.message.as_str();
+            let strings = tokio::task::block_in_place(|| {
+                prompt_free_entry_list(name, message)
+            })
+            .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            strings
+                .into_iter()
+                .map(|s| {
+                    s.trim()
+                        .parse::<i64>()
+                        .map_err(|e| eyre::eyre!("parse int: {e}").into())
+                })
+                .collect()
+        } else {
+            let question = make::multi_select_integer(
+                input,
+                ctx,
+                self.validation_value_name,
+            )?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let items = answer
+                .try_into_list_items()
+                .map_err(|_| eyre::eyre!("expected list items answer"))?;
+            let allowed = input.body.allowed.as_ref().unwrap();
+            Ok(items.iter().map(|item| allowed[item.index].value).collect())
+        }
+    }
+
+    async fn float_array(
+        &self,
+        input: &FloatArrayInput<Generator>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<f64>, Error> {
+        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+            || input.body.allowed.is_none()
+        {
+            let name = input.base.name.as_str();
+            let message = input.base_extra.message.as_str();
+            let strings = tokio::task::block_in_place(|| {
+                prompt_free_entry_list(name, message)
+            })
+            .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            strings
+                .into_iter()
+                .map(|s| {
+                    s.trim()
+                        .parse::<f64>()
+                        .map_err(|e| eyre::eyre!("parse float: {e}").into())
+                })
+                .collect()
+        } else {
+            let question = make::multi_select_float(
+                input,
+                ctx,
+                self.validation_value_name,
+            )?;
+            let answer =
+                tokio::task::block_in_place(|| requestty::prompt_one(question))
+                    .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
+            let items = answer
+                .try_into_list_items()
+                .map_err(|_| eyre::eyre!("expected list items answer"))?;
+            let allowed = input.body.allowed.as_ref().unwrap();
+            Ok(items.iter().map(|item| allowed[item.index].value).collect())
+        }
+    }
+}
+
+/// Prompt the user for items one at a time until they submit an empty line.
+fn prompt_free_entry_list(
+    name: &str,
+    message: &str,
+) -> requestty::Result<Vec<String>> {
+    let mut results = Vec::new();
+    loop {
+        let prompt_msg = if results.is_empty() {
+            format!("{} (enter items one at a time, empty to finish)", message)
+        } else {
+            format!("{} (item {}, empty to finish)", message, results.len() + 1)
+        };
+        let question = Question::input(name).message(prompt_msg).build();
+        let answer = requestty::prompt_one(question)?;
+        let text = answer.try_into_string().unwrap_or_default();
+        if text.trim().is_empty() {
+            break;
+        }
+        results.push(text);
+    }
+    Ok(results)
 }

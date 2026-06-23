@@ -1,64 +1,67 @@
 use async_trait::async_trait;
-
-use crate::{
-    configuration::{
-        ConfirmInputConfiguration, FloatInputConfiguration,
-        IntegerInputConfiguration, MultiSelectInputConfiguration,
-        PasswordInputConfiguration, SelectInputConfiguration,
-        TextInputConfiguration,
-    },
-    error::Error,
+use omni_input_schema::{
+    BooleanInput, FloatArrayInput, FloatInput, InputProfile, IntegerArrayInput,
+    IntegerInput, StringArrayInput, StringInput,
 };
 
-/// Implementations are **not** responsible for validation — that is handled
-/// centrally in [`collect`][crate::collect] so that the re-ask-on-invalid
-/// loop works identically across all surfaces (CLI, MCP, UI, …).
+use crate::error::Error;
+
+/// Each method corresponds to one `Input<E>` variant.
 ///
-/// The [`omni_tera::Context`] is provided so implementations can expand
-/// template expressions in default values or dynamic messages if they choose.
+/// The provider receives the **full** variant struct so it can inspect
+/// both data signals (e.g. `allowed`, `secret`) and presentation extras
+/// (e.g. `base_extra.message`, `profile_data.widget`) when deciding how
+/// to collect the value.
+///
+/// Widget / presentation inference — picking password vs text, select vs
+/// free-entry, etc. — lives **here**, not in `collect()`.  `collect()` only
+/// dispatches to the right method based on the variant.
+///
+/// Implementations are **not** responsible for validation; that is handled
+/// by `collect()` using `omni_input_schema::validate`.
 #[async_trait]
-pub trait InputProvider: Send + Sync + std::fmt::Debug {
-    async fn confirm(
+pub trait InputProvider<E: InputProfile + Send + Sync + 'static>:
+    Send + Sync + std::fmt::Debug
+{
+    async fn boolean(
         &self,
-        input: &ConfirmInputConfiguration,
+        input: &BooleanInput<E>,
         ctx: &omni_tera::Context,
     ) -> Result<bool, Error>;
 
-    async fn text(
+    async fn string(
         &self,
-        input: &TextInputConfiguration,
+        input: &StringInput<E>,
         ctx: &omni_tera::Context,
     ) -> Result<String, Error>;
 
-    async fn password(
+    async fn integer(
         &self,
-        input: &PasswordInputConfiguration,
+        input: &IntegerInput<E>,
         ctx: &omni_tera::Context,
-    ) -> Result<String, Error>;
+    ) -> Result<i64, Error>;
 
-    /// Returns the selected option's `value` field.
-    async fn select(
+    async fn float(
         &self,
-        input: &SelectInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<String, Error>;
-
-    /// Returns the selected options' `value` fields.
-    async fn multi_select(
-        &self,
-        input: &MultiSelectInputConfiguration,
-        ctx: &omni_tera::Context,
-    ) -> Result<Vec<String>, Error>;
-
-    async fn float_number(
-        &self,
-        input: &FloatInputConfiguration,
+        input: &FloatInput<E>,
         ctx: &omni_tera::Context,
     ) -> Result<f64, Error>;
 
-    async fn integer_number(
+    async fn string_array(
         &self,
-        input: &IntegerInputConfiguration,
+        input: &StringArrayInput<E>,
         ctx: &omni_tera::Context,
-    ) -> Result<i64, Error>;
+    ) -> Result<Vec<String>, Error>;
+
+    async fn integer_array(
+        &self,
+        input: &IntegerArrayInput<E>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<i64>, Error>;
+
+    async fn float_array(
+        &self,
+        input: &FloatArrayInput<E>,
+        ctx: &omni_tera::Context,
+    ) -> Result<Vec<f64>, Error>;
 }

@@ -32,25 +32,23 @@ pub struct GeneratorInspectResult {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct McpInputSpec {
-    pub name: String,
-    pub message: String,
-    pub kind: String,
-    pub required: bool,
-    pub default: Option<Value>,
-    pub has_dynamic_default: bool,
-    pub options: Vec<McpInputOption>,
-    pub condition: Option<McpInputCondition>,
-    pub validators: Vec<McpValidator>,
-    pub remember: bool,
+pub struct McpAllowedValue {
+    pub value: serde_json::Value,
     pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct McpInputOption {
-    pub label: String,
+pub struct McpInputSpec {
+    pub name: String,
+    pub kind: String,
+    pub required: bool,
+    pub default: Option<Value>,
+    pub has_dynamic_default: bool,
+    pub secret: bool,
+    pub allowed: Vec<McpAllowedValue>,
+    pub condition: Option<McpInputCondition>,
+    pub validators: Vec<McpValidator>,
     pub description: Option<String>,
-    pub value: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, JsonSchema)]

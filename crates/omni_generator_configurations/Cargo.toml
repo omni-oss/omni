@@ -31,9 +31,15 @@ omni_types = { workspace = true }
 garde = { workspace = true }
 system_traits = { workspace = true }
 lazy-regex = { workspace = true }
+omni_input_schema = { workspace = true }
+enumset = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_serde_validators = { workspace = true }
 serde_validate = { workspace = true }
 value-bag = { workspace = true }
 enum-map = { workspace = true }
 regex = { workspace = true }
+bon = { workspace = true }
+
+[dev-dependencies]
+omni_tera = { workspace = true }

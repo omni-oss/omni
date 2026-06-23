@@ -25,4 +25,9 @@ serde       = { workspace = true }
 sets        = { workspace = true }
 value-bag   = { workspace = true }
 omni_tera   = { workspace = true }
+omni_generator_configurations = { workspace = true }
 omni_input_provider = { workspace = true }
+tokio              = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

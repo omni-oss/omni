@@ -18,11 +18,13 @@ use omni_context::Context;
 use omni_core::Project;
 use omni_generator::GeneratorSys;
 use omni_generator_configurations::{
-    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
+    AllowedValueExtras, GenBase, Generator, GeneratorConfiguration, OmniPath,
+    OverwriteConfiguration, allowed_value_extras, gen_base,
 };
-use omni_input_provider::{CollectionConfig, collect_one};
+use omni_input_provider::configuration::builder::{select, text};
+use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
-use omni_prompt::CliInputProvider;
+use omni_prompt::{CliInputProvider, builder::allowed_value};
 use omni_remote_sources::manager::{
     RemoteSourceManager, config::RemoteSourceConfig,
 };
@@ -224,16 +226,30 @@ async fn prompt_output_dir(
     current_dir: &Path,
 ) -> eyre::Result<PathBuf> {
     let context_values = unordered_map!();
-    let prompting_config = CollectionConfig::default();
+    let prompting_config = ValidationConfig::default();
 
-    let prompt = omni_prompt::builder::select::<()>()
+    let prompt = select::<Generator>()
         .name("output_dir_or_project")
-        .message("Where should the generator output be written?")
-        .default("output_dir")
-        .options([
-            ("Output directory", "output_dir"),
-            ("Project directory", "project"),
+        .base_extra(
+            gen_base()
+                .message("Where should the generator output be written?")
+                .build(),
+        )
+        .allowed([
+            allowed_value()
+                .value("output_dir")
+                .base_extra(
+                    allowed_value_extras().name("Output directory").build(),
+                )
+                .build(),
+            allowed_value()
+                .value("project")
+                .base_extra(
+                    allowed_value_extras().name("Project directory").build(),
+                )
+                .build(),
         ])
+        .default("output_dir")
         .build();
 
     let value = collect_one(
@@ -252,9 +268,9 @@ async fn prompt_output_dir(
         .ok_or_else(|| eyre::eyre!("value is not a string"))?;
 
     if value == "output_dir" {
-        let prompt = &omni_input_provider::builder::text::<()>()
+        let prompt = text::<Generator>()
             .name("output_dir")
-            .message("Output directory path")
+            .base_extra(gen_base().message("Output directory path").build())
             .build();
 
         loop {
@@ -278,10 +294,17 @@ async fn prompt_output_dir(
             .map(|p| (p.name.clone(), p.dir.to_string_lossy().to_string()))
             .collect::<Vec<_>>();
 
-        let prompt = omni_prompt::builder::select::<()>()
+        let prompt = select::<Generator>()
             .name("project")
-            .message("Select project")
-            .options(options)
+            .base_extra(GenBase::new("Select project"))
+            .allowed(options.iter().map(|(name, value)| AllowedValue {
+                value: value.clone(),
+                description: None,
+                base_extra: AllowedValueExtras {
+                    name: Some(name.clone()),
+                    separator: false,
+                },
+            }))
             .build();
 
         let value = collect_one(
