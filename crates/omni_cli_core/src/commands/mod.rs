@@ -64,7 +64,7 @@ pub struct Cli {
 pub struct CliArgs {
     #[arg(
         short = 'l',
-        long = "stdout-logs-level",
+        long = "stdout-log-level",
         help = "Max level of logs to stdout",
         value_enum,
         default_value = "info",
