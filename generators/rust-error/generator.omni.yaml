@@ -4,7 +4,7 @@ display_name: Rust Error
 description: Generate a new error type
 
 prompts:
-  - type: text
+  - type: string
     name: error_name
     message: Error Name
     default: Error

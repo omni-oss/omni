@@ -40,4 +40,5 @@ orcs.config.json
 # contributors should have their own todo.txt and agents files
 **/todo.txt
 **/AGENTS.md
+**/.worklog
 .agents

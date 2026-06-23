@@ -5,10 +5,10 @@ description: A TypeScript package generator
 
 prompts:
   - name: package_name
-    type: text
+    type: string
     message: What is the name of your package?
     default: "{{ output_dir | base_name }}"
-    validate:
+    validators:
       - condition: "{{ value | length > 0 }}"
         error_message: Package name must not be empty
       - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
@@ -17,9 +17,9 @@ prompts:
           and must start with a letter
 
   - name: package_type
-    type: select
+    type: string
     message: What type of package is this?
-    options:
+    allowed:
       - name: Library
         value: lib
       - name: Application
@@ -34,15 +34,15 @@ prompts:
 
   - if: "{{ inputs.package_type == 'script' }}"
     name: script_can_be_used_as_lib
-    type: confirm
+    type: boolean
     message: Can this script be used as a library?
     default: false
 
   - if: "{{ inputs.package_type == 'script' }}"
     name: shebang_executor
-    type: select
+    type: string
     message: What shebang should be used for the script?
-    options:
+    allowed:
       - name: Node.js
         value: "node"
       - name: Bun
@@ -52,42 +52,42 @@ prompts:
     default: "node"
 
   - name: package_description
-    type: text
+    type: string
     message: What is the description of your package?
     default: A TypeScript Package
 
   - if: "{{ inputs.package_type != 'e2e-tests' and inputs.package_type != 'service-tests' }}"
     name: unit_test
-    type: confirm
+    type: boolean
     message: Do you want to add unit tests?
     default: true
 
   - if: "{{ inputs.package_type != 'e2e-tests' and inputs.package_type != 'service-tests' }}"
     name: integration_test
-    type: confirm
+    type: boolean
     message: Do you want to add integration tests?
     default: true
 
   - name: package_version
-    type: text
+    type: string
     message: What is the version of your package?
     default: 0.0.0-semantically-released
 
   - name: package_license
-    type: text
+    type: string
     message: What is the license of your package?
     default: MIT
 
   - name: published
-    type: confirm
+    type: boolean
     message: Will the package be published to a registry?
     default: false
 
   - if: "{{ inputs.published }}"
     name: publish_access
-    type: select
+    type: string
     message: What is the publish access of your package?
-    options:
+    allowed:
       - name: Public
         value: public
       - name: Restricted
