@@ -74,7 +74,7 @@ describe("+declspec @output (dump)", () => {
 
         // A couple of representative global options guard against spec drift.
         const longOpts = spec.opts.map((opt) => opt.long);
-        expect(longOpts).toContain("stdout-logs-level");
+        expect(longOpts).toContain("stdout-log-level");
         expect(longOpts).toContain("env-file");
     });
 });

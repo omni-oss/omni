@@ -183,7 +183,7 @@ describe("+cross @e2e @exitcode (empty workspace)", () => {
 });
 
 describe("+cross @output (global flags + run filters)", () => {
-    // The global `-l/--stdout-logs-level` flag sits on the top-level `CliArgs`
+    // The global `-l/--stdout-log-level` flag sits on the top-level `CliArgs`
     // and must precede the subcommand. With `-l off` the `log` facade output
     // (the "Successfully executed ..." summary is a `log::info!`) is silenced,
     // but the task's own echoed payload still streams to stdout. Combining the
