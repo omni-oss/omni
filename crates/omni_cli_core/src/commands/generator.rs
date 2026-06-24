@@ -19,12 +19,12 @@ use omni_core::Project;
 use omni_generator::GeneratorSys;
 use omni_generator_configurations::{
     AllowedValueExtras, GenBase, Generator, GeneratorConfiguration, OmniPath,
-    OverwriteConfiguration, allowed_value_extras, gen_base,
+    OverwriteConfiguration, allowed_extras, gen_base,
 };
-use omni_input_provider::configuration::builder::{select, text};
+use omni_input_provider::configuration::builder::{select, string};
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
-use omni_prompt::{CliInputProvider, builder::allowed_value};
+use omni_prompt::{CliInputProvider, builder::allowed};
 use omni_remote_sources::manager::{
     RemoteSourceManager, config::RemoteSourceConfig,
 };
@@ -236,17 +236,13 @@ async fn prompt_output_dir(
                 .build(),
         )
         .allowed([
-            allowed_value()
+            allowed()
                 .value("output_dir")
-                .base_extra(
-                    allowed_value_extras().name("Output directory").build(),
-                )
+                .base_extra(allowed_extras().name("Output directory").build())
                 .build(),
-            allowed_value()
+            allowed()
                 .value("project")
-                .base_extra(
-                    allowed_value_extras().name("Project directory").build(),
-                )
+                .base_extra(allowed_extras().name("Project directory").build())
                 .build(),
         ])
         .default("output_dir")
@@ -268,7 +264,7 @@ async fn prompt_output_dir(
         .ok_or_else(|| eyre::eyre!("value is not a string"))?;
 
     if value == "output_dir" {
-        let prompt = text::<Generator>()
+        let prompt = string::<Generator>()
             .name("output_dir")
             .base_extra(gen_base().message("Output directory path").build())
             .build();

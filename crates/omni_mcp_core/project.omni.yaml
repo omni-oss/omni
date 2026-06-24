@@ -12,3 +12,4 @@ dependencies:
   - omni_input_provider
   - omni_tera
   - maps
+  - omni_config_types

@@ -4,7 +4,7 @@ use omni_input_schema::{
     IntegerInput, StringArrayInput, StringInput,
 };
 
-use crate::error::Error;
+use crate::error::{Error, ErrorInner};
 
 /// Each method corresponds to one `Input<E>` variant.
 ///
@@ -64,4 +64,20 @@ pub trait InputProvider<E: InputProfile + Send + Sync + 'static>:
         input: &FloatArrayInput<E>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<f64>, Error>;
+
+    fn supports_native_object_input(&self) -> bool {
+        false
+    }
+
+    async fn object(
+        &self,
+        input: &omni_input_schema::ObjectInput<E>,
+        _ctx: &omni_tera::Context,
+    ) -> Result<serde_json::Value, Error> {
+        Err(ErrorInner::new_unsupported_input_kind(
+            input.base.name.clone(),
+            omni_input_schema::InputKind::Object,
+        )
+        .into())
+    }
 }

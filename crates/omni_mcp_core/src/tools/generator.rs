@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use either::Either;
 use maps::{UnorderedMap, unordered_map};
 use omni_api::{
     ForwardedInputs, GeneratorInspectNode, GeneratorInspectResponse,
     GeneratorRunRequest, GeneratorValidateInputRequest, InspectViewKind,
     SubGeneratorRef, SubGeneratorValidationResult,
 };
+use omni_config_types::MaybeExpr;
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
 use omni_generator_configurations::Generator;
@@ -176,7 +176,13 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
     .to_string();
 
     let (default, allowed) = match &input {
-        Input::Boolean(b) => (b.default.map(serde_json::Value::Bool), vec![]),
+        Input::Boolean(b) => (
+            b.default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|b| serde_json::Value::Bool(*b)),
+            vec![],
+        ),
         Input::String(s) => (
             s.default
                 .as_ref()
@@ -191,7 +197,10 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
             }),
         ),
         Input::Integer(i) => (
-            i.default.map(|v| serde_json::Value::Number(v.into())),
+            i.default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| serde_json::Value::Number((*v).into())),
             i.allowed.as_ref().map_or_else(Vec::new, |v| {
                 v.iter()
                     .map(|a| McpAllowedValue {
@@ -203,7 +212,9 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
         ),
         Input::Float(f) => (
             f.default
-                .and_then(serde_json::Number::from_f64)
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .and_then(|f| serde_json::Number::from_f64(*f))
                 .map(serde_json::Value::Number),
             f.allowed.as_ref().map_or_else(Vec::new, |v| {
                 v.iter()
@@ -217,7 +228,7 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
             }),
         ),
         Input::StringArray(sa) => (
-            sa.body.default.as_ref().map(|v| {
+            sa.default.as_ref().map(|v| {
                 serde_json::Value::Array(
                     v.iter()
                         .map(|s| serde_json::Value::String(s.clone()))
@@ -234,7 +245,7 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
             }),
         ),
         Input::IntegerArray(ia) => (
-            ia.body.default.as_ref().map(|v| {
+            ia.default.as_ref().map(|v| {
                 serde_json::Value::Array(
                     v.iter()
                         .map(|i| serde_json::Value::Number((*i).into()))
@@ -251,7 +262,7 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
             }),
         ),
         Input::FloatArray(fa) => (
-            fa.body.default.as_ref().map(|v| {
+            fa.default.as_ref().map(|v| {
                 serde_json::Value::Array(
                     v.iter()
                         .filter_map(|f| serde_json::Number::from_f64(*f))
@@ -291,12 +302,12 @@ fn input_schema_to_mcp(input: InputSchema) -> McpInputSpec {
 }
 
 fn condition_from_if(
-    if_expr: Option<&Either<bool, String>>,
+    if_expr: Option<&MaybeExpr<bool>>,
 ) -> Option<McpInputCondition> {
     match if_expr? {
-        Either::Left(true) => None,
-        Either::Left(false) => Some(McpInputCondition::AlwaysHidden),
-        Either::Right(expr) => {
+        MaybeExpr::Value(true) => None,
+        MaybeExpr::Value(false) => Some(McpInputCondition::AlwaysHidden),
+        MaybeExpr::Expr(expr) => {
             Some(McpInputCondition::Expression { expr: expr.clone() })
         }
     }
@@ -309,8 +320,8 @@ fn validators_from_base(
         .iter()
         .map(|v| McpValidator {
             condition: match &v.condition {
-                Either::Left(b) => b.to_string(),
-                Either::Right(expr) => expr.clone(),
+                MaybeExpr::Value(b) => b.to_string(),
+                MaybeExpr::Expr(expr) => expr.clone(),
             },
             error_message: v.error_message.clone(),
         })
@@ -469,11 +480,15 @@ mod tests {
         serde_json::from_str(&format!(r#"{{"name":"{}"}}"#, name)).unwrap()
     }
 
+    fn value<T>(v: T) -> MaybeExpr<T> {
+        MaybeExpr::Value(v)
+    }
+
     #[test]
     fn boolean_input_uses_data_kind() {
         let input = InputSchema::Boolean(BooleanInput {
             base: make_base("flag"),
-            default: Some(true),
+            default: Some(value(true)),
             base_extra: (),
             profile_data: (),
         });

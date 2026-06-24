@@ -26,6 +26,7 @@ garde = { workspace = true }
 omni_tera = { workspace = true }
 omni_serde_validators = { workspace = true }
 serde_validate = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 serde_norway = { workspace = true }

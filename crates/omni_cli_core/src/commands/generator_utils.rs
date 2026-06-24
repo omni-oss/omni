@@ -2,12 +2,12 @@ use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
-    Generator, GeneratorConfiguration, allowed_value_extras, gen_base,
+    Generator, GeneratorConfiguration, allowed_extras, gen_base,
 };
 use omni_input_provider::configuration::builder::select;
 use omni_input_provider::{ValidationConfig, collect_one};
 use omni_prompt::CliInputProvider;
-use omni_prompt::builder::allowed_value;
+use omni_prompt::builder::allowed;
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub async fn prompt_generator_name(
@@ -20,11 +20,11 @@ pub async fn prompt_generator_name(
         .name("generator_name")
         .base_extra(gen_base().message("Select generator").build())
         .allowed(generators.iter().map(|generator| {
-            allowed_value()
+            allowed()
                 .value(generator.name.clone())
                 .maybe_description(generator.description.clone())
                 .base_extra(
-                    allowed_value_extras()
+                    allowed_extras()
                         .name(
                             generator
                                 .display_name

@@ -14,20 +14,21 @@ default = ["enable-tracing"]
 enable-tracing = ["trace/enabled", "dep:tracing"]
 
 [dependencies]
-eyre        = { workspace = true }
-log         = { workspace = true }
-trace       = { workspace = true }
-tracing     = { workspace = true, optional = true }
+eyre = { workspace = true }
+log = { workspace = true }
+trace = { workspace = true }
+tracing = { workspace = true, optional = true }
 async-trait = { workspace = true }
-requestty   = { workspace = true }
-either      = { workspace = true }
-serde       = { workspace = true }
-sets        = { workspace = true }
-value-bag   = { workspace = true }
-omni_tera   = { workspace = true }
+requestty = { workspace = true }
+either = { workspace = true }
+serde = { workspace = true }
+sets = { workspace = true }
+value-bag = { workspace = true }
+omni_tera = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_input_provider = { workspace = true }
-tokio              = { workspace = true }
+tokio = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

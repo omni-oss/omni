@@ -8,3 +8,4 @@ dependencies:
   - omni_input_provider
   - omni_tera
   - sets
+  - omni_config_types

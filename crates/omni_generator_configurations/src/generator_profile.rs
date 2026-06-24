@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use enumset::{EnumSet, enum_set};
 use omni_input_schema::{
-    FloatArrayInput, InputKind, InputProfile, IntegerArrayInput,
+    FloatArrayInput, Input, InputKind, InputProfile, IntegerArrayInput,
     StringArrayInput, StringInput,
 };
 use schemars::JsonSchema;
@@ -41,11 +41,6 @@ pub struct GenBase {
     /// validation error — they have contradictory semantics.
     #[serde(default)]
     pub remember: bool,
-    /// Tera expression evaluated against the collect context to produce this
-    /// input's default value when no static `default` is set.
-    /// Applies to scalar inputs (boolean, string, integer, float).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_expr: Option<String>,
 }
 
 impl GenBase {
@@ -154,6 +149,7 @@ impl InputProfile for Generator {
             | InputKind::StringArray
             | InputKind::IntegerArray
             | InputKind::FloatArray
+            | InputKind::Object
     );
 
     type Base = GenBase;
@@ -164,12 +160,8 @@ impl InputProfile for Generator {
     type Object = ();
     type AllowedValueBase = AllowedValueExtras;
 
-    fn is_remember(base: &Self::Base) -> bool {
-        base.remember
-    }
-
-    fn dynamic_default_expr(base_extra: &Self::Base) -> Option<&str> {
-        base_extra.default_expr.as_deref()
+    fn is_remember(base: &Input<Self>) -> bool {
+        base.base_extra().remember
     }
 
     /// Widget override takes priority. For `Text` (the default), data signals
@@ -244,7 +236,6 @@ impl InputProfile for Generator {
 mod tests {
     use maps::UnorderedMap;
     use omni_input_schema::{Input, InputKind, ValidationConfig, validate};
-    use schemars::schema_for;
     use value_bag::ValueBag;
 
     use super::*;
@@ -395,33 +386,6 @@ mod tests {
         }
     }
 
-    // ── JSON Schema gates Object arm ──────────────────────────────────────────
-
-    #[test]
-    fn json_schema_excludes_object_arm() {
-        let schema = schema_for!(Input<Generator>);
-        let json =
-            serde_json::to_string_pretty(&schema).expect("schema to json");
-        assert!(
-            !json.contains(r#""const": "object""#),
-            "Object arm present: {json}"
-        );
-        for kind in &[
-            "boolean",
-            "string",
-            "integer",
-            "float",
-            "string-array",
-            "integer-array",
-            "float-array",
-        ] {
-            assert!(
-                json.contains(&format!(r#""const": "{kind}""#)),
-                "Missing arm for '{kind}'"
-            );
-        }
-    }
-
     // ── presentation hints ────────────────────────────────────────────────────
 
     #[test]
@@ -487,37 +451,17 @@ mod tests {
     // ── dynamic_default_expr ──────────────────────────────────────────────────
 
     #[test]
-    fn gen_base_default_expr_round_trips() {
-        let json = r#"{"type":"boolean","name":"flag","message":"Enable?","default_expr":"{{ env == 'prod' }}"}"#;
-        let input: Input<Generator> = serde_json::from_str(json).unwrap();
-        let Input::Boolean(b) = &input else { panic!() };
-        assert_eq!(
-            b.base_extra.default_expr.as_deref(),
-            Some("{{ env == 'prod' }}")
-        );
-        // to_data() must strip default_expr (it lives in base_extra)
-        let data_json = serde_json::to_string(&input.to_data()).unwrap();
-        assert!(
-            !data_json.contains("default_expr"),
-            "default_expr leaked: {data_json}"
-        );
-    }
-
-    #[test]
     fn dynamic_default_expr_returns_none_without_field() {
         let json = r#"{"type":"boolean","name":"flag","message":"Enable?"}"#;
         let input: Input<Generator> = serde_json::from_str(json).unwrap();
-        assert_eq!(Generator::dynamic_default_expr(input.base_extra()), None);
+        assert_eq!(input.dynamic_default_expr(), None);
     }
 
     #[test]
     fn dynamic_default_expr_returns_some_when_set() {
-        let json = r#"{"type":"integer","name":"port","message":"Port?","default_expr":"{{ base_port }}"}"#;
+        let json = r#"{"type":"integer","name":"port","message":"Port?","default":"{{ base_port }}"}"#;
         let input: Input<Generator> = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            Generator::dynamic_default_expr(input.base_extra()),
-            Some("{{ base_port }}")
-        );
+        assert_eq!(input.dynamic_default_expr(), Some("{{ base_port }}"));
     }
 
     // ── validate: secret + remember conflict ──────────────────────────────────

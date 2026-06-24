@@ -9,13 +9,6 @@ use requestty::Question;
 
 use crate::make;
 
-/// Interactive CLI input provider using the `requestty` library.
-///
-/// Widget selection follows the inference rules from the RFC:
-/// - `boolean` → confirm
-/// - `string` → password / select / text based on widget hint and `secret`
-/// - `integer` / `float` → select or free-entry number prompt
-/// - `*_array` → multi-select or free-entry loop
 #[derive(Debug)]
 pub struct CliInputProvider {
     validation_value_name: Option<&'static str>,

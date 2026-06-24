@@ -1,5 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, str::FromStr};
 
+use omni_config_types::MaybeExpr;
 use omni_generator_configurations::Generator;
 use omni_input_provider::{
     AllowedValue, BooleanInput, FloatArrayInput, FloatInput, IntegerArrayInput,
@@ -15,13 +16,15 @@ use value_bag::ValueBag;
 /// Build a `confirm` question for a boolean input.
 pub fn confirm<'a>(
     input: &'a BooleanInput<Generator>,
-    _context_values: &'a omni_tera::Context,
+    context_values: &'a omni_tera::Context,
 ) -> Result<Question<'a>, Error> {
     let name = input.base.name.as_str();
     let question =
         Question::confirm(name).message(input.base_extra.message.as_str());
-    Ok(if let Some(default_value) = input.default {
-        question.default(default_value)
+    Ok(if let Some(default_value) = input.default.as_ref() {
+        let result = parse_value(name, default_value, context_values)?;
+
+        question.default(*result)
     } else {
         question
     }
@@ -121,13 +124,18 @@ pub fn select_string<'a>(
 /// Build a `select` question for an integer input with allowed values.
 pub fn select_integer<'a>(
     input: &'a IntegerInput<Generator>,
-    _context_values: &'a omni_tera::Context,
+    context_values: &'a omni_tera::Context,
 ) -> Result<Question<'a>, Error> {
     let name = input.base.name.as_str();
     let allowed = input.allowed.as_deref().unwrap_or(&[]);
-    let default_index = input
-        .default
-        .and_then(|v| allowed.iter().position(|a| a.value == v));
+
+    let default_index = get_default_index(
+        &input.default,
+        context_values,
+        name,
+        allowed,
+        |a, b| a == b,
+    )?;
 
     let mut question =
         Question::select(name).message(input.base_extra.message.as_str());
@@ -146,15 +154,17 @@ pub fn select_integer<'a>(
 /// Build a `select` question for a float input with allowed values.
 pub fn select_float<'a>(
     input: &'a FloatInput<Generator>,
-    _context_values: &'a omni_tera::Context,
+    context_values: &'a omni_tera::Context,
 ) -> Result<Question<'a>, Error> {
     let name = input.base.name.as_str();
     let allowed = input.allowed.as_deref().unwrap_or(&[]);
-    let default_index = input.default.and_then(|v| {
-        allowed
-            .iter()
-            .position(|a| (a.value - v).abs() < f64::EPSILON)
-    });
+    let default_index = get_default_index(
+        &input.default,
+        context_values,
+        name,
+        allowed,
+        |a, b| (a - b).abs() < f64::EPSILON,
+    )?;
 
     let mut question =
         Question::select(name).message(input.base_extra.message.as_str());
@@ -180,7 +190,7 @@ pub fn multi_select_string<'a>(
     let allowed = input.body.allowed.as_deref().unwrap_or(&[]);
     let validators = input.base.validators.as_slice();
 
-    let default_values = if let Some(defaults) = &input.body.default {
+    let default_values = if let Some(defaults) = &input.default {
         let mut set = unordered_set!();
         for d in defaults {
             set.insert(expand_default_value(d, name, context_values)?);
@@ -268,7 +278,7 @@ pub fn multi_select_integer<'a>(
             )
         });
 
-    let defaults = input.body.default.as_deref().unwrap_or(&[]);
+    let defaults = input.default.as_deref().unwrap_or(&[]);
     for av in allowed.iter() {
         let is_default = defaults.contains(&av.value);
         if is_default {
@@ -314,7 +324,7 @@ pub fn multi_select_float<'a>(
             )
         });
 
-    let defaults = input.body.default.as_deref().unwrap_or(&[]);
+    let defaults = input.default.as_deref().unwrap_or(&[]);
     for av in allowed.iter() {
         let is_default =
             defaults.iter().any(|d| (d - av.value).abs() < f64::EPSILON);
@@ -352,9 +362,9 @@ pub fn integer_number<'a>(
                 Err("value is not an integer".to_string())
             }
         });
-    let default_value = input.default.map(|v| v.to_string());
-    Ok(if let Some(default_value) = default_value {
-        question.default(default_value)
+    Ok(if let Some(default_value) = input.default.as_ref() {
+        let default_value = parse_value(name, default_value, context_values)?;
+        question.default(default_value.to_string())
     } else {
         question
     }
@@ -384,9 +394,9 @@ pub fn float_number<'a>(
                 Err("value is not a float".to_string())
             }
         });
-    let default_value = input.default.map(|v| v.to_string());
-    Ok(if let Some(default_value) = default_value {
-        question.default(default_value)
+    Ok(if let Some(default_value) = input.default.as_ref() {
+        let default_value = parse_value(name, default_value, context_values)?;
+        question.default(default_value.to_string())
     } else {
         question
     }
@@ -477,10 +487,48 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     }
 }
 
+fn get_default_index<'a, T: FromStr + Clone + PartialEq>(
+    default: &Option<MaybeExpr<T>>,
+    context_values: &'a omni_tera::Context,
+    name: &str,
+    allowed: &[AllowedValue<T, Generator>],
+    eq: impl Fn(&T, &T) -> bool,
+) -> Result<Option<usize>, Error> {
+    let default_index = if let Some(default) = default {
+        let default = parse_value(name, default, context_values)?;
+
+        allowed.iter().position(|av| eq(&av.value, &default))
+    } else {
+        None
+    };
+    Ok(default_index)
+}
+
+fn parse_value<'a, T: FromStr + Clone>(
+    name: &'a str,
+    value: &'a MaybeExpr<T>,
+    context_values: &'a omni_tera::Context,
+) -> Result<Cow<'a, T>, Error> {
+    let value = match value {
+        MaybeExpr::Value(value) => Cow::Borrowed(value),
+        MaybeExpr::Expr(expr) => {
+            let expanded = expand_default_value(expr, name, context_values)?;
+            Cow::Owned(expanded.parse::<T>().map_err(|_| {
+                Error::custom(eyre::eyre!(
+                    "failed to parse value from expression: {expr}, result: {expanded}"
+                ))
+            })?)
+        }
+    };
+
+    Ok(value)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
+    use omni_config_types::MaybeExpr;
     use omni_generator_configurations::{GenBase, Generator, StringExtras};
     use omni_input_provider::{BaseInput, BooleanInput, StringInput};
 
@@ -492,15 +540,18 @@ mod tests {
         GenBase {
             message: message.to_string(),
             remember: false,
-            default_expr: None,
         }
+    }
+
+    fn value<T>(v: T) -> Option<MaybeExpr<T>> {
+        Some(MaybeExpr::Value(v))
     }
 
     #[test]
     fn confirm_question_builds_from_boolean_input() {
         let input = BooleanInput::<Generator> {
             base: make_base("flag"),
-            default: Some(true),
+            default: value(true),
             base_extra: make_gen_base("Enable?"),
             profile_data: (),
         };
@@ -543,7 +594,7 @@ mod tests {
         let input = IntegerInput::<Generator> {
             base: make_base("count"),
             allowed: None,
-            default: Some(3),
+            default: value(3),
             base_extra: make_gen_base("How many?"),
             profile_data: (),
         };
@@ -558,7 +609,7 @@ mod tests {
         let input = FloatInput::<Generator> {
             base: make_base("rate"),
             allowed: None,
-            default: Some(1.5),
+            default: value(1.5),
             base_extra: make_gen_base("What rate?"),
             profile_data: (),
         };

@@ -1,6 +1,8 @@
-use either::Either;
+use std::borrow::Borrow;
+
 use maps::{UnorderedMap, unordered_map};
-use omni_input_schema::{Input, InputProfile, ValidationConfig};
+use omni_config_types::MaybeExpr;
+use omni_input_schema::{Input, InputProfile, ObjectInput, ValidationConfig};
 use sets::UnorderedSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -14,7 +16,7 @@ use crate::{
 ///
 /// - Pre-exec and default values short-circuit provider calls.
 /// - If a pre-filled value fails validation the provider is called to
-///   re-ask (same behaviour as the previous implementation).
+///   re-ask.
 /// - The Tera context is seeded with `context_values`; collected values
 ///   accumulate in it so later `if` expressions can reference them.
 pub async fn collect<E: InputProfile + Send + Sync + 'static>(
@@ -24,35 +26,11 @@ pub async fn collect<E: InputProfile + Send + Sync + 'static>(
     config: &ValidationConfig<'_>,
     provider: &dyn InputProvider<E>,
 ) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
-    check_no_duplicate_names(inputs)?;
-    let mut values = UnorderedMap::default();
+    let ctx = to_tera_ctx(context_values);
 
-    let mut ctx = omni_tera::Context::new();
-    for (k, v) in context_values {
-        ctx.insert(k, v);
-    }
-
-    for input in inputs {
-        let base = input.base();
-
-        if let Some(if_expr) = &base.r#if {
-            if skip(
-                if_expr,
-                &values,
-                &ctx,
-                config.if_expressions_root_property,
-            )? {
-                continue;
-            }
-        }
-
-        let key = base.name.clone();
-        let pre = pre_exec_values.get(&key);
-
-        let value =
-            get_input_value(config, &ctx, input, &key, pre, provider).await?;
-        values.insert(key, value);
-    }
+    let values =
+        collect_internal(inputs, pre_exec_values, &ctx, config, provider)
+            .await?;
 
     Ok(values)
 }
@@ -66,56 +44,89 @@ pub async fn collect_one<E: InputProfile + Send + Sync + 'static>(
     config: &ValidationConfig<'_>,
     provider: &dyn InputProvider<E>,
 ) -> Result<Option<OwnedValueBag>, Error> {
-    let mut ctx = omni_tera::Context::new();
-    for (k, v) in context_values {
-        ctx.insert(k, v);
-    }
+    let ctx = to_tera_ctx(context_values);
 
-    let base = input.base();
-    let mut pre_map = unordered_map!();
-    if let Some(v) = pre_exec_value {
-        pre_map.insert(base.name.clone(), v.clone());
-    }
+    let pre_exec_values = match pre_exec_value {
+        Some(v) => unordered_map! { input.base().name.clone() => v.clone() },
+        None => unordered_map!(),
+    };
 
-    if let Some(if_expr) = &base.r#if {
-        if skip(if_expr, &pre_map, &ctx, config.if_expressions_root_property)? {
-            return Ok(None);
-        }
-    }
-
-    let key = base.name.clone();
-    let value =
-        get_input_value(config, &ctx, input, &key, pre_exec_value, provider)
+    let mut values =
+        collect_internal(&[input], &pre_exec_values, &ctx, config, provider)
             .await?;
-    Ok(Some(value))
+
+    Ok(values.remove(&input.base().name))
 }
 
 const MAX_RETRIES: usize = 5;
 
 // ── Internals ─────────────────────────────────────────────────────────────────
+//
 
-async fn get_input_value<E: InputProfile + Send + Sync + 'static>(
+async fn collect_internal<
+    E: InputProfile + Send + Sync + 'static,
+    I: Borrow<Input<E>>,
+>(
+    inputs: &[I],
+    pre_exec_values: &UnorderedMap<String, OwnedValueBag>,
+    ctx: &omni_tera::Context,
+    config: &ValidationConfig<'_>,
+    provider: &dyn InputProvider<E>,
+) -> Result<UnorderedMap<String, OwnedValueBag>, Error> {
+    check_no_duplicate_names(inputs)?;
+
+    let mut values = UnorderedMap::default();
+
+    for input in inputs {
+        let base = input.borrow().base();
+
+        if let Some(if_expr) = &base.r#if {
+            if skip(if_expr, &values, ctx, config.if_expressions_root_property)?
+            {
+                continue;
+            }
+        }
+
+        let key = base.name.clone();
+        let pre = pre_exec_values.get(&key);
+
+        let value =
+            get_input_value(config, ctx, input, &key, pre, provider).await?;
+        values.insert(key, value);
+    }
+
+    Ok(values)
+}
+
+fn to_tera_ctx(
+    context_values: &UnorderedMap<String, OwnedValueBag>,
+) -> omni_tera::Context {
+    let mut ctx = omni_tera::Context::new();
+    for (k, v) in context_values {
+        ctx.insert(k, v);
+    }
+
+    ctx
+}
+
+async fn get_input_value<
+    E: InputProfile + Send + Sync + 'static,
+    I: Borrow<Input<E>>,
+>(
     config: &ValidationConfig<'_>,
     ctx: &omni_tera::Context,
-    input: &Input<E>,
+    input: &I,
     key: &String,
     pre_exec_value: Option<&OwnedValueBag>,
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
+    let input = input.borrow();
     if let Some(v) = pre_exec_value {
         log::debug!("using pre-exec value for input {key}: {v}");
         process_pre_filled_value(config, ctx, input, key, v, false, provider)
             .await
     } else if config.use_defaults
-        && let Some(default) = input.default_value_bag()
-    {
-        log::debug!("using default value for input {key}: {default}");
-        process_pre_filled_value(
-            config, ctx, input, key, &default, true, provider,
-        )
-        .await
-    } else if config.use_defaults
-        && let Some(expr) = E::dynamic_default_expr(input.base_extra())
+        && let Some(expr) = input.dynamic_default_expr()
     {
         log::debug!(
             "evaluating dynamic default expression for input {key}: {expr}"
@@ -130,21 +141,33 @@ async fn get_input_value<E: InputProfile + Send + Sync + 'static>(
             config, ctx, input, key, &rendered, false, provider,
         )
         .await
+    } else if config.use_defaults
+        && let Some(default) = input.static_default_value_bag()
+    {
+        log::debug!("using default value for input {key}: {default}");
+        process_pre_filled_value(
+            config, ctx, input, key, &default, true, provider,
+        )
+        .await
     } else {
         log::debug!("collecting input {key} from provider");
         get_raw_input_value(input, ctx, provider, config, MAX_RETRIES).await
     }
 }
 
-async fn process_pre_filled_value<E: InputProfile + Send + Sync + 'static>(
+async fn process_pre_filled_value<
+    E: InputProfile + Send + Sync + 'static,
+    I: Borrow<Input<E>>,
+>(
     config: &ValidationConfig<'_>,
     ctx: &omni_tera::Context,
-    input: &Input<E>,
+    input: &I,
     key: &String,
     value: &OwnedValueBag,
     expand_str: bool,
     provider: &dyn InputProvider<E>,
 ) -> Result<OwnedValueBag, Error> {
+    let input = input.borrow();
     // Coerce the raw value to the correct Rust type (e.g. "true" → bool).
     let value = match input {
         Input::Boolean(_) => try_parse_bool(value.by_ref())
@@ -160,29 +183,25 @@ async fn process_pre_filled_value<E: InputProfile + Send + Sync + 'static>(
     };
 
     // Expand Tera templates in default string values.
-    let value = if expand_str {
+    let value = 'expand: {
+        if !expand_str {
+            break 'expand value;
+        }
         let mut is_str = IsStringConvertible::default();
         value.by_ref().visit(&mut is_str)?;
-        if is_str.value {
-            if let Some(tmpl) = value.by_ref().to_str() {
-                let expanded = omni_tera::one_off(
-                    tmpl,
-                    format!("default value for {key}"),
-                    ctx,
-                )?;
-                ValueBag::from_str(&expanded).to_owned()
-            } else {
-                log::warn!(
-                    "failed to expand default for {key}: not a string; \
-                     using original value"
-                );
-                value
-            }
-        } else {
-            value
+        if !is_str.value {
+            break 'expand value;
         }
-    } else {
-        value
+        let Some(tmpl) = value.by_ref().to_str() else {
+            log::warn!(
+                "failed to expand default for {key}: not a string; \
+                 using original value"
+            );
+            break 'expand value;
+        };
+        let expanded =
+            omni_tera::one_off(tmpl, format!("default value for {key}"), ctx)?;
+        ValueBag::from_str(&expanded).to_owned()
     };
 
     // Run validators; re-ask provider on InvalidValue.
@@ -203,14 +222,18 @@ async fn process_pre_filled_value<E: InputProfile + Send + Sync + 'static>(
     }
 }
 
-async fn get_raw_input_value<E: InputProfile + Send + Sync + 'static>(
-    input: &Input<E>,
+async fn get_raw_input_value<
+    E: InputProfile + Send + Sync + 'static,
+    I: Borrow<Input<E>>,
+>(
+    input: &I,
     ctx: &omni_tera::Context,
     provider: &dyn InputProvider<E>,
     config: &ValidationConfig<'_>,
     max_retries: usize,
 ) -> Result<OwnedValueBag, Error> {
     let mut tries = 0;
+    let input = input.borrow();
     loop {
         let result = match input {
             Input::Boolean(b) => {
@@ -241,10 +264,12 @@ async fn get_raw_input_value<E: InputProfile + Send + Sync + 'static>(
                 ValueBag::from_serde1(&provider.float_array(fa, ctx).await?)
                     .to_owned()
             }
-            Input::Object(_) => {
-                return Err(Error::from(eyre::eyre!(
-                    "interactive collection for Object inputs is not yet supported"
-                )));
+            Input::Object(a) if provider.supports_native_object_input() => {
+                ValueBag::from_serde1(&provider.object(a, ctx).await?)
+                    .to_owned()
+            }
+            Input::Object(o) => {
+                collect_from_object(o, ctx, config, provider).await?
             }
         };
 
@@ -274,15 +299,33 @@ async fn get_raw_input_value<E: InputProfile + Send + Sync + 'static>(
     }
 }
 
+async fn collect_from_object<E: InputProfile + Send + Sync + 'static>(
+    object_input: &ObjectInput<E>,
+    context: &omni_tera::Context,
+    config: &ValidationConfig<'_>,
+    provider: &dyn InputProvider<E>,
+) -> Result<OwnedValueBag, Error> {
+    let object = Box::pin(collect_internal(
+        object_input.fields.as_slice(),
+        &unordered_map!(),
+        context,
+        config,
+        provider,
+    ))
+    .await?;
+
+    Ok(ValueBag::from_serde1(&object).to_owned())
+}
+
 fn skip(
-    if_expr: &Either<bool, String>,
+    if_expr: &MaybeExpr<bool>,
     values: &UnorderedMap<String, OwnedValueBag>,
     ctx: &omni_tera::Context,
     root_property: Option<&str>,
 ) -> Result<bool, Error> {
     Ok(match if_expr {
-        Either::Left(b) => !*b,
-        Either::Right(expr) => {
+        MaybeExpr::Value(b) => !*b,
+        MaybeExpr::Expr(expr) => {
             let mut eval_ctx = ctx.clone();
             eval_ctx.insert(root_property.unwrap_or("inputs"), values);
             let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
@@ -293,12 +336,12 @@ fn skip(
     })
 }
 
-fn check_no_duplicate_names<E: InputProfile>(
-    inputs: &[Input<E>],
+fn check_no_duplicate_names<E: InputProfile, I: Borrow<Input<E>>>(
+    inputs: &[I],
 ) -> Result<(), Error> {
     let mut seen = UnorderedSet::default();
     for input in inputs {
-        let name = input.base().name.as_str();
+        let name = input.borrow().base().name.as_str();
         if seen.contains(name) {
             return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
         }
@@ -821,10 +864,6 @@ mod tests {
         type Array = ();
         type Object = ();
         type AllowedValueBase = ();
-
-        fn dynamic_default_expr(base_extra: &Self::Base) -> Option<&str> {
-            base_extra.default_expr.as_deref()
-        }
     }
 
     #[tokio::test]
@@ -832,7 +871,7 @@ mod tests {
         let input: Input<DynProfile> = serde_json::from_value(json!({
             "type": "boolean",
             "name": "flag",
-            "default_expr": "{{ mode == 'prod' }}"
+            "default": "{{ mode == 'prod' }}"
         }))
         .unwrap();
 
@@ -860,7 +899,7 @@ mod tests {
         let input: Input<DynProfile> = serde_json::from_value(json!({
             "type": "integer",
             "name": "port",
-            "default_expr": "{{ base_port }}"
+            "default": "{{ base_port }}"
         }))
         .unwrap();
 
@@ -882,6 +921,124 @@ mod tests {
 
         let val = result.get("port").unwrap();
         assert_eq!(val.by_ref().to_i64(), Some(8080));
+    }
+
+    // ── object input helpers ─────────────────────────────────────────────────
+
+    fn object_input_with_fields(
+        name: &str,
+        fields: serde_json::Value,
+    ) -> Input<()> {
+        parse(json!({"type": "object", "name": name, "fields": fields}))
+    }
+
+    /// Provider that handles `Object` inputs natively by returning a
+    /// pre-configured JSON value, and delegates every scalar / array variant
+    /// to an inner [`ScriptedInputProvider`].
+    ///
+    /// Used to test the **native** object path in `get_raw_input_value`:
+    ///
+    /// ```text
+    /// Input::Object(a) if provider.supports_native_object_input() =>
+    ///     provider.object(a, ctx).await
+    /// ```
+    #[derive(Debug)]
+    struct NativeObjectProvider {
+        scripted: ScriptedInputProvider,
+        objects: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl NativeObjectProvider {
+        fn new(
+            scalar_answers: &[(&str, &str)],
+            objects: &[(&str, serde_json::Value)],
+        ) -> Self {
+            Self {
+                scripted: ScriptedInputProvider::new(
+                    scalar_answers.iter().copied(),
+                ),
+                objects: objects
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::provider::InputProvider<()> for NativeObjectProvider {
+        async fn boolean(
+            &self,
+            input: &omni_input_schema::BooleanInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<bool, crate::error::Error> {
+            self.scripted.boolean(input, ctx).await
+        }
+
+        async fn string(
+            &self,
+            input: &omni_input_schema::StringInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<String, crate::error::Error> {
+            self.scripted.string(input, ctx).await
+        }
+
+        async fn integer(
+            &self,
+            input: &omni_input_schema::IntegerInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<i64, crate::error::Error> {
+            self.scripted.integer(input, ctx).await
+        }
+
+        async fn float(
+            &self,
+            input: &omni_input_schema::FloatInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<f64, crate::error::Error> {
+            self.scripted.float(input, ctx).await
+        }
+
+        async fn string_array(
+            &self,
+            input: &omni_input_schema::StringArrayInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<Vec<String>, crate::error::Error> {
+            self.scripted.string_array(input, ctx).await
+        }
+
+        async fn integer_array(
+            &self,
+            input: &omni_input_schema::IntegerArrayInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<Vec<i64>, crate::error::Error> {
+            self.scripted.integer_array(input, ctx).await
+        }
+
+        async fn float_array(
+            &self,
+            input: &omni_input_schema::FloatArrayInput<()>,
+            ctx: &omni_tera::Context,
+        ) -> Result<Vec<f64>, crate::error::Error> {
+            self.scripted.float_array(input, ctx).await
+        }
+
+        fn supports_native_object_input(&self) -> bool {
+            true
+        }
+
+        async fn object(
+            &self,
+            input: &omni_input_schema::ObjectInput<()>,
+            _ctx: &omni_tera::Context,
+        ) -> Result<serde_json::Value, crate::error::Error> {
+            self.objects.get(&input.base.name).cloned().ok_or_else(|| {
+                crate::error::Error::from(eyre::eyre!(
+                    "NativeObjectProvider: no object registered for '{}'",
+                    input.base.name
+                ))
+            })
+        }
     }
 
     #[tokio::test]
@@ -913,5 +1070,220 @@ mod tests {
         // Provider returned 1234, not the context value 9999.
         let val = result.get("port").unwrap();
         assert_eq!(val.by_ref().to_i64(), Some(1234));
+    }
+
+    // ── emulated object path ──────────────────────────────────────────────────
+    //
+    // ScriptedInputProvider.supports_native_object_input() == false, so
+    // collect_from_object() is called and each declared field is collected
+    // individually via the provider.
+
+    #[tokio::test]
+    async fn collect_emulated_object_collects_fields() {
+        // Flat object: two fields are collected field-by-field from the
+        // scripted provider and reassembled into a JSON object.
+        let input = object_input_with_fields(
+            "db",
+            json!([
+                {"type": "string",  "name": "host"},
+                {"type": "integer", "name": "port"},
+            ]),
+        );
+        let result = collect(
+            &[input],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("host", "localhost"), ("port", "5432")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            jv(result.get("db").unwrap()),
+            json!({"host": "localhost", "port": 5432}),
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_emulated_object_uses_top_level_default() {
+        // When use_defaults=true and the object carries a `default` map,
+        // that map is used as-is; field-level collection is skipped entirely.
+        let input: Input<()> = parse(json!({
+            "type": "object",
+            "name": "config",
+            "fields": [{"type": "string", "name": "env"}],
+            "default": {"env": "production"}
+        }));
+        let result = collect(
+            &[input],
+            &empty(),
+            &empty(),
+            &cfg(true),
+            // No scripted answers — proves field collection is bypassed.
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            jv(result.get("config").unwrap()),
+            json!({"env": "production"}),
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_emulated_object_field_skipped_by_condition() {
+        // A field with `"if": false` must be absent from the collected object;
+        // only the unconditional field should appear.
+        let input = object_input_with_fields(
+            "opts",
+            json!([
+                {"type": "string", "name": "required"},
+                {"type": "string", "name": "optional", "if": false},
+            ]),
+        );
+        let result = collect(
+            &[input],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("required", "yes")]),
+        )
+        .await
+        .unwrap();
+        let obj = jv(result.get("opts").unwrap());
+        assert_eq!(obj.get("required"), Some(&json!("yes")));
+        assert!(
+            obj.get("optional").is_none(),
+            "conditional field must be absent from the emulated object"
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_emulated_nested_object_recurses() {
+        // An Object field inside an outer Object triggers a recursive call to
+        // collect_from_object, collecting each level's fields independently.
+        let input = object_input_with_fields(
+            "outer",
+            json!([
+                {"type": "string", "name": "label"},
+                {
+                    "type": "object",
+                    "name": "inner",
+                    "fields": [{"type": "integer", "name": "count"}]
+                },
+            ]),
+        );
+        let result = collect(
+            &[input],
+            &empty(),
+            &empty(),
+            &cfg(false),
+            &scripted(&[("label", "top"), ("count", "7")]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            jv(result.get("outer").unwrap()),
+            json!({"label": "top", "inner": {"count": 7}}),
+        );
+    }
+
+    // ── native object path ────────────────────────────────────────────────────
+    //
+    // NativeObjectProvider.supports_native_object_input() == true, so
+    // provider.object() is called directly; field-level collection is skipped.
+
+    #[tokio::test]
+    async fn collect_native_object_delegates_to_provider_method() {
+        // The JSON returned by provider.object() is used verbatim, including
+        // keys that are not declared in `fields`.  No scalar answers are
+        // supplied — if field collection were attempted it would error.
+        let input = object_input_with_fields(
+            "cfg",
+            json!([{"type": "string", "name": "key"}]),
+        );
+        let provider = NativeObjectProvider::new(
+            &[], // no scalar answers
+            &[("cfg", json!({"key": "native-value", "extra": true}))],
+        );
+        let result =
+            collect(&[input], &empty(), &empty(), &cfg(false), &provider)
+                .await
+                .unwrap();
+        assert_eq!(
+            jv(result.get("cfg").unwrap()),
+            json!({"key": "native-value", "extra": true}),
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_native_object_alongside_scalar_inputs() {
+        // Scalar inputs still go through the normal provider path while the
+        // Object input is handled natively in the same collect call.
+        let inputs = [
+            str_input("name"),
+            object_input_with_fields(
+                "meta",
+                json!([{"type": "boolean", "name": "active"}]),
+            ),
+        ];
+        let provider = NativeObjectProvider::new(
+            &[("name", "Alice")],
+            &[("meta", json!({"active": true, "role": "admin"}))],
+        );
+        let result =
+            collect(&inputs, &empty(), &empty(), &cfg(false), &provider)
+                .await
+                .unwrap();
+        assert_eq!(jv(result.get("name").unwrap()), json!("Alice"));
+        assert_eq!(
+            jv(result.get("meta").unwrap()),
+            json!({"active": true, "role": "admin"}),
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_native_object_error_propagates() {
+        // When the native provider's object() returns an error, collect must
+        // surface it rather than silently falling back to field collection.
+        let input = object_input_with_fields(
+            "missing",
+            json!([{"type": "string", "name": "x"}]),
+        );
+        // No object registered → provider.object() returns an error.
+        let provider = NativeObjectProvider::new(&[], &[]);
+        let result =
+            collect(&[input], &empty(), &empty(), &cfg(false), &provider).await;
+        assert!(
+            result.is_err(),
+            "expected an error when native provider has no answer for the object"
+        );
+    }
+
+    // ── pre-exec bypasses both native and emulated paths ──────────────────────
+
+    #[tokio::test]
+    async fn collect_object_pre_exec_bypasses_collection() {
+        // A pre-exec value for an Object key is used as-is: neither
+        // provider.object() (native) nor collect_from_object() (emulated)
+        // is invoked.  Verified by supplying no scripted answers.
+        let input = object_input_with_fields(
+            "settings",
+            json!([{"type": "string", "name": "theme"}]),
+        );
+        let pre = ValueBag::from_serde1(&json!({"theme": "dark"})).to_owned();
+        let result = collect(
+            &[input],
+            &one("settings", pre),
+            &empty(),
+            &cfg(false),
+            &scripted(&[]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            jv(result.get("settings").unwrap()),
+            json!({"theme": "dark"}),
+        );
     }
 }

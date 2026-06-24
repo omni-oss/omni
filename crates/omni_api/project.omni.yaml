@@ -22,6 +22,7 @@ dependencies:
   - omni_task_context
   - omni_tracing_subscriber
   - omni_tera
+  - omni_config_types
   - system_traits
   - maps
   - sets

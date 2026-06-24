@@ -358,3 +358,44 @@ describe("+input @tui (if-skip & secret)", {
         expect(pty.text()).not.toContain(secret);
     });
 });
+
+describe("+input @tui (object input)", {
+    tags: ["generator", "prompt"],
+}, () => {
+    it("prompts for each field individually and assembles them into an object", async () => {
+        // Object inputs in the CLI use the emulated path: CliInputProvider does
+        // not implement supports_native_object_input(), so collect_from_object()
+        // iterates the declared fields and prompts for each one in turn.
+        const ws = singleGenerator(
+            [
+                {
+                    type: "object",
+                    name: "db",
+                    message: "Database",
+                    fields: [
+                        { type: "string", name: "host", message: "Host" },
+                        { type: "integer", name: "port", message: "Port" },
+                    ],
+                },
+            ],
+            "{{ inputs.db.host }}:{{ inputs.db.port }}",
+        );
+
+        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
+            cwd: ws.cwd,
+        });
+
+        await pty.waitFor("Host");
+        pty.type("myhost");
+        pty.press("enter");
+
+        await pty.waitFor("Port");
+        pty.type("9999");
+        pty.press("enter");
+
+        const exit = await pty.waitForExit();
+
+        expect(exit.exitCode).toBe(0);
+        expect(ws.read("out/result.txt")).toBe("myhost:9999");
+    });
+});

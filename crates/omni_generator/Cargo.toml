@@ -65,6 +65,7 @@ shlex = { workspace = true }
 js_runtime = { workspace = true }
 bridge_rpc_services = { workspace = true }
 bridge_rpc_router = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

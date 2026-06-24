@@ -27,6 +27,7 @@ omni_serde_validators = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 merge = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
+either = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

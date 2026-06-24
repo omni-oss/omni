@@ -1,5 +1,5 @@
-use either::Either::{Left, Right};
 use maps::UnorderedMap;
+use omni_config_types::MaybeExpr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
@@ -93,8 +93,8 @@ pub fn validate<E: InputProfile>(
         let base = input.base();
         let name = &base.name;
 
-        // RFC 0003 decision 15: secret + remember is always a hard error.
-        if base.secret && E::is_remember(&extract_base_extra(input)) {
+        // secret + remember is always a hard error.
+        if base.secret && E::is_remember(input) {
             return Err(ErrorInner::SecretRememberConflict {
                 input_name: name.clone(),
             })?;
@@ -114,7 +114,7 @@ pub fn validate<E: InputProfile>(
 
         let value = values.get(name.as_str());
         let has_default =
-            config.use_defaults && input.default_value_bag().is_some();
+            config.use_defaults && input.static_default_value_bag().is_some();
 
         if value.is_none() && !has_default {
             errors.push(ValidationError {
@@ -126,7 +126,7 @@ pub fn validate<E: InputProfile>(
 
         // Populate effective with the default so subsequent if-expressions see it.
         if value.is_none() {
-            if let Some(default) = input.default_value_bag() {
+            if let Some(default) = input.static_default_value_bag() {
                 effective.insert(name.clone(), default);
             }
         }
@@ -287,8 +287,8 @@ pub fn validate_value(
         eval_ctx.insert(value_name.unwrap_or("value"), value);
 
         let is_error = match &validator.condition {
-            Left(l) => !*l,
-            Right(r) => {
+            MaybeExpr::Value(l) => !*l,
+            MaybeExpr::Expr(r) => {
                 let result = omni_tera::one_off(
                     r,
                     &format!(
@@ -338,14 +338,14 @@ pub fn validate_boolean_expression_result(
 }
 
 fn should_skip(
-    if_expr: &either::Either<bool, String>,
+    if_expr: &MaybeExpr<bool>,
     effective: &UnorderedMap<String, OwnedValueBag>,
     ctx: &omni_tera::Context,
     root_property: Option<&str>,
 ) -> Result<bool, Error> {
     Ok(match if_expr {
-        Left(l) => !*l,
-        Right(expr) => {
+        MaybeExpr::Value(l) => !*l,
+        MaybeExpr::Expr(expr) => {
             let mut eval_ctx = ctx.clone();
             eval_ctx.insert(root_property.unwrap_or("inputs"), effective);
             let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
@@ -368,20 +368,6 @@ fn check_no_duplicate_names<E: InputProfile>(
         seen.insert(name);
     }
     Ok(())
-}
-
-fn extract_base_extra<E: InputProfile>(input: &Input<E>) -> E::Base {
-    // We only need the base_extra for is_remember(); we access it by field projection.
-    match input {
-        Input::Boolean(b) => b.base_extra.clone(),
-        Input::String(s) => s.base_extra.clone(),
-        Input::Integer(i) => i.base_extra.clone(),
-        Input::Float(f) => f.base_extra.clone(),
-        Input::StringArray(sa) => sa.base_extra.clone(),
-        Input::IntegerArray(ia) => ia.base_extra.clone(),
-        Input::FloatArray(fa) => fa.base_extra.clone(),
-        Input::Object(o) => o.base_extra.clone(),
-    }
 }
 
 fn try_parse_bool(value: value_bag::ValueBag<'_>) -> Option<bool> {
@@ -425,7 +411,6 @@ mod tests {
         BooleanInput, FloatInput, Input, IntegerInput, StringInput,
     };
     use crate::profile::InputProfile;
-    use either::Either;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
     use value_bag::ValueBag;
@@ -575,7 +560,7 @@ mod tests {
     fn always_hidden_input_never_required() {
         let input: Input<()> = Input::Boolean(BooleanInput {
             base: BaseInput {
-                r#if: Some(Either::Left(false)),
+                r#if: Some(MaybeExpr::Value(false)),
                 ..base("hidden")
             },
             default: None,
@@ -601,7 +586,7 @@ mod tests {
             string_input("env"),
             Input::Boolean(BooleanInput {
                 base: BaseInput {
-                    r#if: Some(Either::Right(
+                    r#if: Some(MaybeExpr::Expr(
                         "{{ inputs.env == 'prod' }}".to_string(),
                     )),
                     ..base("debug")
@@ -629,7 +614,7 @@ mod tests {
             string_input("env"),
             Input::Boolean(BooleanInput {
                 base: BaseInput {
-                    r#if: Some(Either::Right(
+                    r#if: Some(MaybeExpr::Expr(
                         "{{ inputs.env == 'prod' }}".to_string(),
                     )),
                     ..base("debug")
@@ -854,9 +839,7 @@ mod tests {
         let input: Input<()> = Input::String(StringInput {
             base: BaseInput {
                 validators: vec![ValidateConfiguration {
-                    condition: Either::Right(
-                        "{{ value | length > 3 }}".to_string(),
-                    ),
+                    condition: MaybeExpr::new_expr("{{ value | length > 3 }}"),
                     error_message: Some("too short".to_string()),
                 }],
                 ..base("name")
@@ -880,9 +863,7 @@ mod tests {
         let input: Input<()> = Input::String(StringInput {
             base: BaseInput {
                 validators: vec![ValidateConfiguration {
-                    condition: Either::Right(
-                        "{{ value | length > 3 }}".to_string(),
-                    ),
+                    condition: MaybeExpr::new_expr("{{ value | length > 3 }}"),
                     error_message: None,
                 }],
                 ..base("name")
@@ -956,8 +937,8 @@ mod tests {
             type Object = ();
             type AllowedValueBase = ();
 
-            fn is_remember(base: &Self::Base) -> bool {
-                base.remember
+            fn is_remember(input: &Input<Self>) -> bool {
+                input.base_extra().remember
             }
         }
 

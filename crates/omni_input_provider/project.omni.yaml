@@ -10,3 +10,4 @@ dependencies:
   - serde_validate
   - maps
   - sets
+  - omni_config_types

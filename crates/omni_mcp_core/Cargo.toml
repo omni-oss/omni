@@ -40,6 +40,7 @@ maps = { workspace = true }
 bytesize = { workspace = true }
 either = { workspace = true }
 humantime-serde = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

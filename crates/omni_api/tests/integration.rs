@@ -336,7 +336,7 @@ async fn inspect_widget_view_sets_has_dynamic_default() {
         "projects:\n  - \"projects/**\"\ngenerators:\n  - source: local\n    path: \"generators/**\"\n",
     )
     .unwrap();
-    // Write a generator with a boolean that has default_expr but no static
+    // Write a generator with a boolean that has default but no static
     // default, and an integer that has only a static default.
     let gen_dir = tmp.path().join("generators").join("dyndefault");
     std::fs::create_dir_all(&gen_dir).unwrap();
@@ -348,7 +348,7 @@ inputs:
   - type: boolean
     name: use_ssl
     message: Enable SSL?
-    default_expr: "{{ env == 'prod' }}"
+    default: "{{ env == 'prod' }}"
   - type: integer
     name: port
     message: Port?

@@ -7,6 +7,12 @@ use value_bag::OwnedValueBag;
 pub struct Error(pub ErrorInner);
 
 impl Error {
+    pub fn custom(report: eyre::Report) -> Self {
+        Self(ErrorInner::Custom(report))
+    }
+}
+
+impl Error {
     #[allow(unused)]
     pub fn kind(&self) -> ErrorKind {
         self.0.discriminant()
@@ -50,6 +56,12 @@ pub enum ErrorInner {
         "invalid boolean expression result: \"{result}\" for expression: \"{expression}\", expected true or false"
     )]
     InvalidBooleanExpressionResult { result: String, expression: String },
+
+    #[error("unsupported input kind '{kind:?}' for input '{input_name}'")]
+    UnsupportedInputKind {
+        input_name: String,
+        kind: omni_input_schema::InputKind,
+    },
 }
 
 impl From<omni_input_schema::Error> for ErrorInner {

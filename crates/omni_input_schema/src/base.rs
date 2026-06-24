@@ -1,21 +1,7 @@
-use either::Either;
+use omni_config_types::MaybeExpr;
 use omni_serde_validators::name::validate_name;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use crate::parsers::{
-    either_value_or_tera_expr, either_value_or_tera_expr_optional,
-};
-
-// chemars override helper for Either<L, R> fields.
-// Produces the correct untagged oneOf schema (accepts a bool or a string).
-#[derive(Serialize, Deserialize, JsonSchema)]
-#[schemars(untagged)]
-#[serde(untagged)]
-pub(crate) enum EitherUntaggedDef<L, R> {
-    Left(L),
-    Right(R),
-}
 
 /// A single validator expression applied to an input value.
 ///
@@ -29,9 +15,7 @@ pub struct ValidateConfiguration {
     /// Tera expression evaluated to a boolean; `true` = value is valid.
     ///
     /// Available context: `value` — the candidate value.
-    #[schemars(with = "EitherUntaggedDef<bool, String>")]
-    #[serde(with = "either_value_or_tera_expr")]
-    pub condition: Either<bool, String>,
+    pub condition: MaybeExpr<bool>,
 
     /// Tera expression rendered as the error message when `condition` is false.
     ///
@@ -54,15 +38,7 @@ pub struct BaseInput {
     #[serde(deserialize_with = "validate_name")]
     pub name: String,
 
-    /// Optional condition that gates whether this input is active.
-    /// `false` / an expression evaluating to `"false"` → input is skipped.
-    #[schemars(with = "Option<EitherUntaggedDef<bool, String>>")]
-    #[serde(
-        rename = "if",
-        with = "either_value_or_tera_expr_optional",
-        default
-    )]
-    pub r#if: Option<Either<bool, String>>,
+    pub r#if: Option<MaybeExpr<bool>>,
 
     /// Zero or more Tera validator expressions run against the resolved value.
     #[serde(default)]
@@ -80,7 +56,7 @@ pub struct BaseInput {
 impl From<&str> for ValidateConfiguration {
     fn from(condition: &str) -> Self {
         ValidateConfiguration {
-            condition: Either::Right(condition.to_string()),
+            condition: MaybeExpr::Expr(condition.to_string()),
             error_message: None,
         }
     }
@@ -89,7 +65,7 @@ impl From<&str> for ValidateConfiguration {
 impl From<String> for ValidateConfiguration {
     fn from(condition: String) -> Self {
         ValidateConfiguration {
-            condition: Either::Right(condition),
+            condition: MaybeExpr::Expr(condition),
             error_message: None,
         }
     }
@@ -98,7 +74,7 @@ impl From<String> for ValidateConfiguration {
 impl From<(&str, &str)> for ValidateConfiguration {
     fn from((condition, error_message): (&str, &str)) -> Self {
         ValidateConfiguration {
-            condition: Either::Right(condition.to_string()),
+            condition: MaybeExpr::Expr(condition.to_string()),
             error_message: Some(error_message.to_string()),
         }
     }

@@ -1,3 +1,4 @@
+use omni_config_types::MaybeExpr;
 use schemars::{JsonSchema, Schema, generate::SchemaGenerator};
 use serde_json::{Value, json};
 
@@ -278,9 +279,8 @@ pub fn to_json_schema<E: InputProfile>(inputs: &[Input<E>]) -> Value {
         let prop_schema = input_to_property_schema(input);
         properties.insert(base.name.clone(), prop_schema);
 
-        let always_hidden =
-            matches!(&base.r#if, Some(either::Either::Left(false)));
-        let has_default = input.default_value_bag().is_some();
+        let always_hidden = matches!(&base.r#if, Some(MaybeExpr::Value(false)));
+        let has_default = input.static_default_value_bag().is_some();
         if !always_hidden && !has_default {
             required.push(Value::String(base.name.clone()));
         }

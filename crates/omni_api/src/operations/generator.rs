@@ -1,4 +1,4 @@
-use either::Either;
+use omni_configurations::types::MaybeExpr;
 use omni_generator::Action;
 use omni_generator_configurations::ActionConfiguration;
 use omni_generator_configurations::ForAllInputValuesConfiguration;
@@ -267,11 +267,10 @@ async fn should_save_session(
             secret: false,
             description: None,
         },
-        default: Some(true),
+        default: Some(MaybeExpr::Value(true)),
         base_extra: GenBase {
             message: "Would you like to save inputs and targets to the output directory?".to_string(),
             remember: false,
-            default_expr: None,
         },
         profile_data: (),
     });
@@ -622,9 +621,12 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
     let (kind, default, options) = match input {
         Input::Boolean(b) => (
             GeneratorInputKind::Confirm,
-            b.default.map(|v| InputDefault::Static {
-                value: StaticInputDefault::Bool(v),
-            }),
+            b.default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| InputDefault::Static {
+                    value: StaticInputDefault::Bool(*v),
+                }),
             vec![],
         ),
         Input::String(s) => {
@@ -666,9 +668,13 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
                 .iter()
                 .map(int_allowed_to_option)
                 .collect();
-            let default = i.default.map(|v| InputDefault::Static {
-                value: StaticInputDefault::Int(v),
-            });
+            let default = i
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| InputDefault::Static {
+                    value: StaticInputDefault::Int(*v),
+                });
             (kind, default, options)
         }
         Input::Float(f) => {
@@ -684,9 +690,13 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
                 .iter()
                 .map(float_allowed_to_option)
                 .collect();
-            let default = f.default.map(|v| InputDefault::Static {
-                value: StaticInputDefault::Float(v),
-            });
+            let default = f
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| InputDefault::Static {
+                    value: StaticInputDefault::Float(*v),
+                });
             (kind, default, options)
         }
         Input::StringArray(sa) => {
@@ -710,10 +720,9 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
                 .iter()
                 .map(string_allowed_to_option)
                 .collect();
-            let default =
-                sa.body.default.as_ref().map(|v| InputDefault::Static {
-                    value: StaticInputDefault::StrList(v.clone()),
-                });
+            let default = sa.default.as_ref().map(|v| InputDefault::Static {
+                value: StaticInputDefault::StrList(v.clone()),
+            });
             (kind, default, options)
         }
         Input::IntegerArray(ia) => {
@@ -737,10 +746,9 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
                 .iter()
                 .map(int_allowed_to_option)
                 .collect();
-            let default =
-                ia.body.default.as_ref().map(|v| InputDefault::Static {
-                    value: StaticInputDefault::IntList(v.clone()),
-                });
+            let default = ia.default.as_ref().map(|v| InputDefault::Static {
+                value: StaticInputDefault::IntList(v.clone()),
+            });
             (kind, default, options)
         }
         Input::FloatArray(fa) => {
@@ -764,10 +772,9 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
                 .iter()
                 .map(float_allowed_to_option)
                 .collect();
-            let default =
-                fa.body.default.as_ref().map(|v| InputDefault::Static {
-                    value: StaticInputDefault::FloatList(v.clone()),
-                });
+            let default = fa.default.as_ref().map(|v| InputDefault::Static {
+                value: StaticInputDefault::FloatList(v.clone()),
+            });
             (kind, default, options)
         }
         Input::Object(_) => {
@@ -777,8 +784,7 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
         }
     };
 
-    let has_dynamic_default =
-        default.is_none() && gen_base.default_expr.is_some();
+    let has_dynamic_default = input.dynamic_default_expr().is_some();
 
     let required = default.is_none()
         && !has_dynamic_default
@@ -800,12 +806,12 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
 }
 
 fn condition_from_if(
-    if_expr: Option<&Either<bool, String>>,
+    if_expr: Option<&MaybeExpr<bool>>,
 ) -> Option<InputCondition> {
     match if_expr? {
-        Either::Left(true) => None,
-        Either::Left(false) => Some(InputCondition::AlwaysHidden),
-        Either::Right(expr) => {
+        MaybeExpr::Value(true) => None,
+        MaybeExpr::Value(false) => Some(InputCondition::AlwaysHidden),
+        MaybeExpr::Expr(expr) => {
             Some(InputCondition::Expression { expr: expr.clone() })
         }
     }
@@ -816,8 +822,8 @@ fn validators_from_base(base: &BaseInput) -> Vec<InputValidator> {
         .iter()
         .map(|v| InputValidator {
             condition: match &v.condition {
-                Either::Left(b) => b.to_string(),
-                Either::Right(expr) => expr.clone(),
+                MaybeExpr::Value(b) => b.to_string(),
+                MaybeExpr::Expr(expr) => expr.clone(),
             },
             error_message: v.error_message.clone(),
         })

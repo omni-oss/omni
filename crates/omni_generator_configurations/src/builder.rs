@@ -1,7 +1,7 @@
 use crate::{AllowedValueExtras, ArrayExtras, GenBase, ListWidget};
 
 #[::bon::builder(finish_fn = build)]
-pub fn allowed_value_extras(
+pub fn allowed_extras(
     #[builder(into)] name: Option<String>,
     #[builder(into)] separator: Option<bool>,
 ) -> AllowedValueExtras {
@@ -22,11 +22,6 @@ pub fn array_extras(
 pub fn gen_base(
     #[builder(into)] message: String,
     #[builder(default, into)] remember: bool,
-    #[builder(into)] default_expr: Option<String>,
 ) -> GenBase {
-    GenBase {
-        message,
-        remember,
-        default_expr,
-    }
+    GenBase { message, remember }
 }

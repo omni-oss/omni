@@ -1,3 +1,4 @@
+use omni_config_types::MaybeExpr;
 use omni_generator_configurations::{
     GenBase, Generator, OmniPath, OverwriteConfiguration, Root, StringExtras,
 };
@@ -138,7 +139,7 @@ pub async fn should_overwrite(
             secret: false,
             description: None,
         },
-        default: Some(true),
+        default: Some(MaybeExpr::Value(true)),
         base_extra: GenBase {
             message: if is_dir {
                 format!(
@@ -148,7 +149,6 @@ pub async fn should_overwrite(
                 format!("File already exists at path: {path:?}. Overwrite?")
             },
             remember: false,
-            default_expr: None,
         },
         profile_data: (),
     });
@@ -226,7 +226,6 @@ pub async fn get_target_dir<'a>(
         base_extra: GenBase {
             message: format!("Directory for target {}:", target_name),
             remember: false,
-            default_expr: None,
         },
         profile_data: StringExtras::default(),
     });
@@ -299,7 +298,6 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
         base_extra: GenBase {
             message: format!("Directory for target {}:", target_name),
             remember: false,
-            default_expr: None,
         },
         profile_data: StringExtras::default(),
     });

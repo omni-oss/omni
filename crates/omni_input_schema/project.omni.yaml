@@ -2,3 +2,11 @@
 name: omni_input_schema
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+dependencies:
+  - maps
+  - sets
+  - omni_config_types
+  - omni_tera
+  - serde_validate
+  - omni_serde_validators

@@ -36,6 +36,7 @@ omni_serde_validators = { workspace = true }
 either = { workspace = true }
 serde_json = { workspace = true }
 omni_tera = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

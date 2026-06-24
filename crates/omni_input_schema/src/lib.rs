@@ -32,7 +32,6 @@ pub mod base;
 pub mod error;
 pub mod input;
 mod json_schema;
-mod parsers;
 pub mod profile;
 pub mod validate;
 

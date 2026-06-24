@@ -1,6 +1,8 @@
+use maps::UnorderedMap;
+use omni_config_types::MaybeExpr;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::{EnumDiscriminants, EnumIs};
+use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
 
 use crate::allowed::{AllowedValue, ArrayBody};
 use crate::base::BaseInput;
@@ -8,18 +10,18 @@ use crate::profile::InputProfile;
 
 // ── Named inner structs ───────────────────────────────────────────────────────
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct BooleanInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
-    pub default: Option<bool>,
+    pub default: Option<MaybeExpr<bool>>,
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Boolean,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct StringInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -31,31 +33,33 @@ pub struct StringInput<E: InputProfile = ()> {
     pub profile_data: E::String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct IntegerInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
     pub allowed: Option<Vec<AllowedValue<i64, E>>>,
-    pub default: Option<i64>,
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Numeric,
+    #[serde(default)]
+    pub default: Option<MaybeExpr<i64>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct FloatInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
     pub allowed: Option<Vec<AllowedValue<f64, E>>>,
-    pub default: Option<f64>,
+    #[serde(default)]
+    pub default: Option<MaybeExpr<f64>>,
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Numeric,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct StringArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -65,9 +69,11 @@ pub struct StringArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Array,
+    #[serde(default)]
+    pub default: Option<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct IntegerArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -77,9 +83,11 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Array,
+    #[serde(default)]
+    pub default: Option<Vec<i64>>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct FloatArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -89,6 +97,21 @@ pub struct FloatArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub profile_data: E::Array,
+    #[serde(default)]
+    pub default: Option<Vec<f64>>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum InputValue {
+    Boolean(bool),
+    String(String),
+    Integer(i64),
+    Float(f64),
+    StringArray(Vec<String>),
+    IntegerArray(Vec<i64>),
+    FloatArray(Vec<f64>),
+    Object(UnorderedMap<String, InputValue>),
 }
 
 /// Nested object: a group of typed fields returned as one JSON object value.
@@ -99,6 +122,8 @@ pub struct ObjectInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
     pub fields: Vec<Input<E>>,
+    #[serde(default)]
+    pub default: Option<UnorderedMap<String, InputValue>>,
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
@@ -144,16 +169,7 @@ pub enum Input<E: InputProfile = ()> {
 impl<E: InputProfile> Input<E> {
     /// The data-type discriminant of this input, presentation-free.
     pub fn kind(&self) -> InputKind {
-        match self {
-            Input::Boolean(_) => InputKind::Boolean,
-            Input::String(_) => InputKind::String,
-            Input::Integer(_) => InputKind::Integer,
-            Input::Float(_) => InputKind::Float,
-            Input::StringArray(_) => InputKind::StringArray,
-            Input::IntegerArray(_) => InputKind::IntegerArray,
-            Input::FloatArray(_) => InputKind::FloatArray,
-            Input::Object(_) => InputKind::Object,
-        }
+        self.discriminant()
     }
 
     /// The profile-specific base extras shared by every `Input<E>` variant.
@@ -192,7 +208,7 @@ impl<E: InputProfile> Input<E> {
         match self {
             Input::Boolean(b) => Input::Boolean(BooleanInput {
                 base: b.base.clone(),
-                default: b.default,
+                default: b.default.clone(),
                 base_extra: (),
                 profile_data: (),
             }),
@@ -222,7 +238,7 @@ impl<E: InputProfile> Input<E> {
                         })
                         .collect()
                 }),
-                default: i.default,
+                default: i.default.clone(),
                 base_extra: (),
                 profile_data: (),
             }),
@@ -237,7 +253,7 @@ impl<E: InputProfile> Input<E> {
                         })
                         .collect()
                 }),
-                default: f.default,
+                default: f.default.clone(),
                 base_extra: (),
                 profile_data: (),
             }),
@@ -253,9 +269,9 @@ impl<E: InputProfile> Input<E> {
                             })
                             .collect()
                     }),
-                    default: sa.body.default.clone(),
                 },
                 base_extra: (),
+                default: sa.default.clone(),
                 profile_data: (),
             }),
             Input::IntegerArray(ia) => Input::IntegerArray(IntegerArrayInput {
@@ -270,8 +286,8 @@ impl<E: InputProfile> Input<E> {
                             })
                             .collect()
                     }),
-                    default: ia.body.default.clone(),
                 },
+                default: ia.default.clone(),
                 base_extra: (),
                 profile_data: (),
             }),
@@ -287,8 +303,8 @@ impl<E: InputProfile> Input<E> {
                             })
                             .collect()
                     }),
-                    default: fa.body.default.clone(),
                 },
+                default: fa.default.clone(),
                 base_extra: (),
                 profile_data: (),
             }),
@@ -297,45 +313,93 @@ impl<E: InputProfile> Input<E> {
                 fields: o.fields.iter().map(|f| f.to_data()).collect(),
                 base_extra: (),
                 profile_data: (),
+                default: o.default.clone(),
             }),
         }
     }
 
     /// The static default value, if any, for use by `validate` and `inspect`.
-    pub fn default_value_bag(&self) -> Option<value_bag::OwnedValueBag> {
+    pub fn static_default_value_bag(&self) -> Option<value_bag::OwnedValueBag> {
         use value_bag::ValueBag;
         match self {
-            Input::Boolean(b) => {
-                b.default.map(|v| ValueBag::capture_serde1(&v).to_owned())
-            }
-            Input::String(s) => s
+            Input::Boolean(b) => b
                 .default
                 .as_ref()
-                .map(|v| ValueBag::from_serde1(v).to_owned()),
-            Input::Integer(i) => {
-                i.default.map(|v| ValueBag::capture_serde1(&v).to_owned())
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| ValueBag::capture_serde1(v).to_owned()),
+            Input::String(s) => {
+                if s.default.as_deref().is_some_and(is_string_expr) {
+                    return None;
+                }
+
+                s.default
+                    .as_ref()
+                    .map(|v| ValueBag::from_serde1(v).to_owned())
             }
-            Input::Float(f) => {
-                f.default.map(|v| ValueBag::capture_serde1(&v).to_owned())
-            }
+            Input::Integer(i) => i
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| ValueBag::capture_serde1(v).to_owned()),
+            Input::Float(f) => f
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_value_ref)
+                .map(|v| ValueBag::capture_serde1(v).to_owned()),
             Input::StringArray(sa) => sa
-                .body
                 .default
                 .as_ref()
                 .map(|v| ValueBag::from_serde1(v).to_owned()),
             Input::IntegerArray(ia) => ia
-                .body
                 .default
                 .as_ref()
                 .map(|v| ValueBag::from_serde1(v).to_owned()),
             Input::FloatArray(fa) => fa
-                .body
                 .default
                 .as_ref()
                 .map(|v| ValueBag::from_serde1(v).to_owned()),
+            Input::Object(o) => o
+                .default
+                .as_ref()
+                .map(|v| ValueBag::from_serde1(v).to_owned()),
+        }
+    }
+
+    pub fn dynamic_default_expr(&self) -> Option<&str> {
+        match self {
+            Input::Boolean(b) => b
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_expr_ref)
+                .map(String::as_str),
+            Input::String(s) => {
+                let str = s.default.as_deref();
+                if str.is_some_and(is_string_expr) {
+                    str
+                } else {
+                    None
+                }
+            }
+            Input::Integer(i) => i
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_expr_ref)
+                .map(String::as_str),
+            Input::Float(f) => f
+                .default
+                .as_ref()
+                .and_then(MaybeExpr::try_as_expr_ref)
+                .map(String::as_str),
+            Input::StringArray(_) => None,
+            Input::IntegerArray(_) => None,
+            Input::FloatArray(_) => None,
             Input::Object(_) => None,
         }
     }
+}
+
+fn is_string_expr(value: &str) -> bool {
+    value.contains("{{") || value.contains("{%")
 }
 
 /// Type alias for the pure-data input type used by tools, plugins, and MCP.

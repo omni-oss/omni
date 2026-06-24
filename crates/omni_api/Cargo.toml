@@ -36,7 +36,6 @@ path-clean = { workspace = true }
 value-bag = { workspace = true }
 system_traits = { workspace = true, features = ["real-sync", "real-async-tokio"] }
 either = { workspace = true }
-
 omni_messages = { workspace = true }
 omni_context = { workspace = true }
 omni_task_executor = { workspace = true }
@@ -54,6 +53,7 @@ omni_remote_cache_client = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 omni_core = { workspace = true }
 omni_tera = { workspace = true }
+omni_config_types = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AllowedValue,
+    AllowedValue, Input,
     input::{
         FloatArrayInput, InputKind, IntegerArrayInput, StringArrayInput,
         StringInput,
@@ -115,21 +115,8 @@ pub trait InputProfile: Default + Sized {
     /// Used by `validate` to detect the `secret + remember` conflict.
     /// The default returns `false`; the `Generator` marker overrides this
     /// to inspect `GenBase::remember`.
-    fn is_remember(_base: &Self::Base) -> bool {
+    fn is_remember(_input: &Input<Self>) -> bool {
         false
-    }
-
-    /// Returns the Tera expression to evaluate as this input's default value,
-    /// when no static `default` is present and `use_defaults` is true.
-    ///
-    /// Applies to all scalar input types (Boolean, String, Integer, Float).
-    /// The expression is rendered against the current collect context and the
-    /// result is coerced to the input's type.
-    ///
-    /// The default returns `None`; the `Generator` marker overrides this
-    /// to read `GenBase::default_expr`.
-    fn dynamic_default_expr(_base_extra: &Self::Base) -> Option<&str> {
-        None
     }
 
     /// Ordered presentation preferences for a string scalar input.
@@ -171,6 +158,12 @@ pub trait InputProfile: Default + Sized {
     fn float_array_presentation_hint<'a>(
         _input: &FloatArrayInput<Self>,
     ) -> Vec<Cow<'static, str>> {
+        vec![]
+    }
+
+    fn object_presentation_hint<'a>(
+        _input: &'a crate::input::ObjectInput<Self>,
+    ) -> Vec<Cow<'a, str>> {
         vec![]
     }
 

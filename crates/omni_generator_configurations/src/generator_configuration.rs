@@ -71,13 +71,10 @@ fn default_true() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use maps::UnorderedMap;
-    use omni_input_schema::{Input, InputKind, ValidationConfig, validate};
+    use omni_input_schema::InputKind;
     use serde_json::json;
-    use value_bag::ValueBag;
 
     use super::GeneratorConfiguration;
-    use crate::Generator;
 
     #[test]
     fn deserializes_data_typed_inputs_from_json() {
@@ -87,47 +84,23 @@ mod tests {
                 {"type": "boolean", "name": "dry_run", "message": "Dry run?", "default": false},
                 {"type": "string",  "name": "project_name", "message": "Project name"},
                 {"type": "integer", "name": "port", "message": "Port number", "default": 3000},
-                {"type": "float",   "name": "ratio", "message": "Ratio"}
+                {"type": "float",   "name": "ratio", "message": "Ratio"},
+                {
+                    "type": "object",
+                    "name": "opts",
+                    "message": "Options",
+                    "fields": []
+                }
             ],
             "actions": []
         }))
         .expect("should parse");
-        assert_eq!(config.inputs.len(), 4);
+        assert_eq!(config.inputs.len(), 5);
         assert_eq!(config.inputs[0].base().name, "dry_run");
         assert_eq!(config.inputs[0].kind(), InputKind::Boolean);
         assert_eq!(config.inputs[1].kind(), InputKind::String);
         assert_eq!(config.inputs[2].kind(), InputKind::Integer);
         assert_eq!(config.inputs[3].kind(), InputKind::Float);
-    }
-
-    #[test]
-    fn validate_rejects_object_input_for_generator_profile() {
-        // Object is not in Generator::SUPPORTED — it deserializes (serde is
-        // monomorphic) but validate() must reject it.
-        let object_input: Input<Generator> = serde_json::from_value(json!({
-            "type": "object",
-            "name": "opts",
-            "message": "Options",
-            "fields": []
-        }))
-        .expect("should deserialize");
-
-        let values = UnorderedMap::from_iter([(
-            "opts".to_string(),
-            ValueBag::from_serde1(&json!({})).to_owned(),
-        )]);
-        let ctx = omni_tera::Context::new();
-        let result = validate(
-            &[object_input],
-            &values,
-            &ctx,
-            &ValidationConfig::default(),
-        );
-        assert!(
-            result.is_err(),
-            "validate should reject Object kind for Generator profile"
-        );
-        let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("opts"), "error should name the input: {msg}");
+        assert_eq!(config.inputs[4].kind(), InputKind::Object);
     }
 }

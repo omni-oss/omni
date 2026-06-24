@@ -98,7 +98,6 @@ where
 pub struct ArrayBody<T = String, E: InputProfile = ()> {
     /// When `Some` the input is constrained to this list; `None` → free entry.
     pub allowed: Option<Vec<AllowedValue<T, E>>>,
-    pub default: Option<Vec<T>>,
 }
 
 impl<E: InputProfile> From<&str> for AllowedValue<String, E> {

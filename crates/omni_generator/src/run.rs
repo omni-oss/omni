@@ -285,7 +285,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         .inputs
         .iter()
         .filter_map(|p| {
-            if Generator::is_remember(p.base_extra()) {
+            if Generator::is_remember(p) {
                 None
             } else {
                 Some(p.base().name.as_str())
