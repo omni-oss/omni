@@ -107,23 +107,23 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         Cow::Borrowed(ctx.available_generators)
     };
 
-    let run_config = RunConfig {
-        dry_run: ctx.dry_run,
-        output_dir: &output_dir,
-        workspace_dir: ctx.workspace_dir,
-        overwrite: ctx.overwrite,
-        context_values: ctx.context_values,
-        input_values: input_values.as_ref(),
-        target_overrides: target_overrides.as_ref(),
-        current_dir: ctx.current_dir,
-        env: ctx.env,
-        args: Some(&config.args),
-        use_input_defaults: ctx.use_input_defaults,
-        available_generators: &available_generators,
-        input_provider: ctx.input_provider,
-        subscriber: ctx.subscriber,
-        max_depth: ctx.max_depth,
-    };
+    let run_config = RunConfig::builder()
+        .dry_run(ctx.dry_run)
+        .output_dir(&output_dir)
+        .workspace_dir(ctx.workspace_dir)
+        .maybe_overwrite(ctx.overwrite)
+        .context_values(ctx.context_values)
+        .input_values(input_values.as_ref())
+        .target_overrides(target_overrides.as_ref())
+        .current_dir(ctx.current_dir)
+        .env(ctx.env)
+        .args(&config.args)
+        .use_input_defaults(ctx.use_input_defaults)
+        .available_generators(&available_generators)
+        .input_provider(ctx.input_provider)
+        .subscriber(ctx.subscriber)
+        .max_depth(ctx.max_depth)
+        .build();
 
     let prompted_input_values = Box::pin(run_internal(
         generator,

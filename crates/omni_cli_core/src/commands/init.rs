@@ -100,23 +100,21 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
     };
 
     let input_provider = CliInputProvider::default();
-    let run_config = RunConfig {
-        available_generators: &all_generators[..],
-        output_dir: output_dir,
-        workspace_dir: output_dir,
-        current_dir: &current_dir,
-        target_overrides: &unordered_map!(),
-        context_values: &context_values,
-        env: &map!(),
-        dry_run: false,
-        args: None,
-        overwrite: None,
-        use_input_defaults: command.args.common.use_defaults,
-        input_values: &pre_exec_values,
-        input_provider: &input_provider,
-        subscriber: &omni_messages::NoopSubscriber,
-        max_depth: omni_generator::DEFAULT_MAX_GENERATOR_DEPTH,
-    };
+    let target_overrides = unordered_map!();
+    let env = map!();
+    let run_config = RunConfig::builder()
+        .available_generators(all_generators.as_slice())
+        .output_dir(output_dir)
+        .workspace_dir(output_dir)
+        .target_overrides(&target_overrides)
+        .current_dir(&current_dir)
+        .context_values(&context_values)
+        .env(&env)
+        .use_input_defaults(command.args.common.use_defaults)
+        .input_values(&pre_exec_values)
+        .input_provider(&input_provider)
+        .subscriber(&omni_messages::NoopSubscriber)
+        .build();
 
     omni_generator::run(&generator, &run_config, &sys).await?;
 

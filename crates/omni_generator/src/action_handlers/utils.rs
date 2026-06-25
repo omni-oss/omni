@@ -1,6 +1,5 @@
-use omni_config_types::MaybeExpr;
 use omni_generator_configurations::{
-    GenBase, Generator, OmniPath, OverwriteConfiguration, Root, StringExtras,
+    Generator, OmniPath, OverwriteConfiguration, Root, gen_base,
 };
 use omni_messages::GeneratorEventSubscriber;
 use std::{
@@ -10,8 +9,9 @@ use std::{
 
 use maps::{UnorderedMap, unordered_map};
 use omni_input_provider::{
-    BaseInput, BooleanInput, Input, InputProvider, StringInput,
-    ValidationConfig, collect_one,
+    InputProvider, ValidationConfig,
+    builder::{boolean, string},
+    collect_one,
 };
 use path_clean::clean;
 use strum::{EnumDiscriminants, IntoDiscriminant};
@@ -131,27 +131,20 @@ pub async fn should_overwrite(
 
     let is_dir = sys.fs_is_dir_async(path).await?;
 
-    let prompt_cfg = Input::<Generator>::Boolean(BooleanInput {
-        base: BaseInput {
-            name: "overwrite_path".to_string(),
-            r#if: None,
-            validators: vec![],
-            secret: false,
-            description: None,
-        },
-        default: Some(MaybeExpr::Value(true)),
-        base_extra: GenBase {
-            message: if is_dir {
+    let prompt_cfg = boolean::<Generator>()
+        .name("overwrite_path")
+        .default(true)
+        .base_extra(gen_base()
+            .message(if is_dir {
                 format!(
                     "Directory already exists at path: {path:?}. Delete it and all of its contents?"
                 )
             } else {
                 format!("File already exists at path: {path:?}. Overwrite?")
-            },
-            remember: false,
-        },
-        profile_data: (),
-    });
+            })
+            .build()
+        )
+        .build();
 
     let cfg = ValidationConfig::default();
 
@@ -213,22 +206,15 @@ pub async fn get_target_dir<'a>(
         return Ok(Cow::Borrowed(target));
     }
 
-    let prompt_cfg = Input::<Generator>::String(StringInput {
-        base: BaseInput {
-            name: target_name.to_string(),
-            r#if: None,
-            validators: vec![],
-            secret: false,
-            description: None,
-        },
-        allowed: None,
-        default: None,
-        base_extra: GenBase {
-            message: format!("Directory for target {}:", target_name),
-            remember: false,
-        },
-        profile_data: StringExtras::default(),
-    });
+    let prompt_cfg = string::<Generator>()
+        .name(target_name)
+        .base_extra(
+            gen_base()
+                .message(format!("Directory for target {}:", target_name))
+                .remember(false)
+                .build(),
+        )
+        .build();
 
     let cfg = ValidationConfig::default();
 
@@ -285,22 +271,15 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
     provider: &dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<PathBuf, Error> {
-    let prompt_cfg = Input::<Generator>::String(StringInput {
-        base: BaseInput {
-            name: target_name.to_string(),
-            r#if: None,
-            validators: vec![],
-            secret: false,
-            description: None,
-        },
-        allowed: None,
-        default: None,
-        base_extra: GenBase {
-            message: format!("Directory for target {}:", target_name),
-            remember: false,
-        },
-        profile_data: StringExtras::default(),
-    });
+    let prompt_cfg = string()
+        .name(target_name)
+        .base_extra(
+            gen_base()
+                .message(format!("Directory for target {}:", target_name))
+                .remember(false)
+                .build(),
+        )
+        .build();
 
     let cfg = ValidationConfig::default();
 

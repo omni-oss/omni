@@ -11,13 +11,14 @@ use omni_generator_configurations::ListWidget;
 use omni_generator_configurations::OmniPath;
 use omni_generator_configurations::OverwriteConfiguration;
 use omni_generator_configurations::StringWidget;
+use omni_generator_configurations::gen_base;
 use omni_input_provider::AllowedValue;
 use omni_input_provider::BaseInput;
-use omni_input_provider::BooleanInput;
 use omni_input_provider::Input;
 use omni_input_provider::InputProvider;
 use omni_input_provider::InputSchema;
 use omni_input_provider::ValidationConfig;
+use omni_input_provider::builder::boolean;
 use omni_input_provider::collect_one;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -200,25 +201,22 @@ where
 
     let generators = get_generators(ctx.as_context(), &sys).await?;
 
-    let run_config = RunConfig {
-        dry_run: req.dry_run,
-        output_dir: output_dir.as_path(),
-        overwrite: req.overwrite,
-        workspace_dir: &workspace_dir,
-        target_overrides: &target_overrides,
-        context_values: &context_values,
-        input_values: &pre_exec_values,
-        current_dir: &current_dir,
-        env: env.as_deref().unwrap_or(&default_map),
-        args: None,
-        use_input_defaults: req.use_defaults,
-        available_generators: &generators,
-        input_provider: req.input_provider.as_ref(),
-        subscriber,
-        max_depth: req
-            .max_depth
-            .unwrap_or(omni_generator::DEFAULT_MAX_GENERATOR_DEPTH),
-    };
+    let run_config = RunConfig::builder()
+        .dry_run(req.dry_run)
+        .output_dir(output_dir.as_path())
+        .maybe_overwrite(req.overwrite)
+        .workspace_dir(&workspace_dir)
+        .target_overrides(&target_overrides)
+        .context_values(&context_values)
+        .input_values(&pre_exec_values)
+        .current_dir(&current_dir)
+        .env(env.as_deref().unwrap_or(&default_map))
+        .use_input_defaults(req.use_defaults)
+        .available_generators(&generators)
+        .input_provider(req.input_provider.as_ref())
+        .subscriber(subscriber)
+        .maybe_max_depth(req.max_depth)
+        .build();
 
     let result = omni_generator::run_named(&name, &run_config, &sys).await?;
 
@@ -259,21 +257,15 @@ async fn should_save_session(
         return Ok(save);
     }
 
-    let prompt = Input::<Generator>::Boolean(BooleanInput {
-        base: BaseInput {
-            name: "save_inputs".to_string(),
-            r#if: None,
-            validators: vec![],
-            secret: false,
-            description: None,
-        },
-        default: Some(MaybeExpr::Value(true)),
-        base_extra: GenBase {
-            message: "Would you like to save inputs and targets to the output directory?".to_string(),
-            remember: false,
-        },
-        profile_data: (),
-    });
+    let prompt = boolean::<Generator>()
+        .name("save_inputs")
+        .base_extra(
+            gen_base()
+                .message("Would you like to save inputs and targets to the output directory?")
+                .build(),
+        )
+        .default(true)
+        .build();
 
     let result = collect_one(
         &prompt,

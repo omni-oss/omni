@@ -36,8 +36,9 @@ use crate::{
 /// [`RunConfig::max_depth`] when a config legitimately nests deeper.
 pub const DEFAULT_MAX_GENERATOR_DEPTH: usize = 64;
 
-#[derive(Debug)]
+#[derive(Debug, bon::Builder)]
 pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
+    #[builder(default)]
     pub dry_run: bool,
     pub output_dir: &'a Path,
     pub overwrite: Option<OverwriteConfiguration>,
@@ -48,12 +49,14 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     pub context_values: &'a UnorderedMap<String, OwnedValueBag>,
     pub env: &'a Map<String, String>,
     pub args: Option<&'a UnorderedMap<String, serde_json::Value>>,
+    #[builder(default)]
     pub use_input_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub input_provider: &'a dyn InputProvider<Generator>,
     pub subscriber: &'a S,
     /// Maximum `run-generator` nesting depth before a run is aborted. Use
     /// [`DEFAULT_MAX_GENERATOR_DEPTH`] unless a config legitimately nests deeper.
+    #[builder(default = DEFAULT_MAX_GENERATOR_DEPTH)]
     pub max_depth: usize,
 }
 
