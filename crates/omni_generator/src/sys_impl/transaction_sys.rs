@@ -385,7 +385,7 @@ impl<S: GeneratorSys> BaseFsWriteAsync for TransactionSys<S> {
         data: &[u8],
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: write to {}", cp.display());
+        log::debug!("Transaction: write to {}", cp.display());
         let action = Action::Write {
             path: cp,
             data: data.to_vec(),
@@ -402,7 +402,7 @@ impl<S: GeneratorSys> BaseFsAppendAsync for TransactionSys<S> {
         data: &[u8],
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: append to {}", cp.display());
+        log::debug!("Transaction: append to {}", cp.display());
         let action = Action::Append {
             path: cp,
             data: data.to_vec(),
@@ -419,7 +419,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
         options: &CreateDirOptions,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: create directory {}", cp.display());
+        log::debug!("Transaction: create directory {}", cp.display());
         let action = Action::CreateDir {
             path: cp,
             options: *options,
@@ -432,7 +432,7 @@ impl<S: GeneratorSys> BaseFsCreateDirAsync for TransactionSys<S> {
 impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
     async fn base_fs_remove_file_async(&self, path: &Path) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: remove file {}", cp.display());
+        log::debug!("Transaction: remove file {}", cp.display());
         let action = Action::RemoveFile { path: cp };
         self.record(action).await
     }
@@ -442,7 +442,7 @@ impl<S: GeneratorSys> BaseFsRemoveFileAsync for TransactionSys<S> {
 impl<S: GeneratorSys> BaseFsRemoveDirAsync for TransactionSys<S> {
     async fn base_fs_remove_dir_async(&self, path: &Path) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: remove directory {}", cp.display());
+        log::debug!("Transaction: remove directory {}", cp.display());
         let action = Action::RemoveDir { path: cp };
         self.record(action).await
     }
@@ -455,7 +455,7 @@ impl<S: GeneratorSys> BaseFsRemoveDirAllAsync for TransactionSys<S> {
         path: &Path,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!(
+        log::debug!(
             "Transaction: remove directory and all of its contents {}",
             cp.display()
         );
@@ -473,7 +473,7 @@ impl<S: GeneratorSys> BaseFsRenameAsync for TransactionSys<S> {
     ) -> io::Result<()> {
         let from = self.resolve(from).await;
         let to = self.resolve(to).await;
-        log::info!(
+        log::debug!(
             "Transaction: rename {} -> {}",
             from.display(),
             to.display()
@@ -492,7 +492,7 @@ impl<S: GeneratorSys> BaseFsCopyAsync for TransactionSys<S> {
     ) -> io::Result<u64> {
         let from = self.resolve(from).await;
         let to = self.resolve(to).await;
-        log::info!("Transaction: copy {} -> {}", from.display(), to.display());
+        log::debug!("Transaction: copy {} -> {}", from.display(), to.display());
         let action = Action::Copy { from, to };
         self.record_with_result(action).await
     }
@@ -751,7 +751,7 @@ impl<S: GeneratorSys> BaseEnvSetCurrentDirAsync for TransactionSys<S> {
         path: &Path,
     ) -> io::Result<()> {
         let cp = self.resolve(path).await;
-        log::info!("Transaction: set current dir {}", cp.display());
+        log::debug!("Transaction: set current dir {}", cp.display());
         let mut st = self.state.lock().await;
         st.cwd = Some(cp.clone());
         st.actions.push(Action::SetCurrentDir { path: cp });
