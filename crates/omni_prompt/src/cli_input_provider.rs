@@ -43,12 +43,12 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &StringInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<String, Error> {
-        let question = if input.profile_data.widget
+        let question = if input.string_extra.widget
             == Some(StringWidget::Password)
             || input.base.secret
         {
             make::password(input, ctx, self.validation_value_name)?
-        } else if input.profile_data.widget == Some(StringWidget::Select)
+        } else if input.string_extra.widget == Some(StringWidget::Select)
             || input.allowed.is_some()
         {
             make::select_string(input, ctx)?
@@ -60,7 +60,7 @@ impl InputProvider<Generator> for CliInputProvider {
             tokio::task::block_in_place(|| requestty::prompt_one(question))
                 .map_err(|e| eyre::eyre!("prompt error: {e}"))?;
 
-        if input.profile_data.widget == Some(StringWidget::Select)
+        if input.string_extra.widget == Some(StringWidget::Select)
             || input.allowed.is_some()
         {
             // select returns a ListItem; look up the actual value by index
@@ -146,7 +146,7 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &StringArrayInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<String>, Error> {
-        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+        if input.array_extra.widget == Some(ListWidget::FreeEntry)
             || input.body.allowed.is_none()
         {
             let name = input.base.name.as_str();
@@ -180,7 +180,7 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &IntegerArrayInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<i64>, Error> {
-        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+        if input.array_extra.widget == Some(ListWidget::FreeEntry)
             || input.body.allowed.is_none()
         {
             let name = input.base.name.as_str();
@@ -219,7 +219,7 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &FloatArrayInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<Vec<f64>, Error> {
-        if input.profile_data.widget == Some(ListWidget::FreeEntry)
+        if input.array_extra.widget == Some(ListWidget::FreeEntry)
             || input.body.allowed.is_none()
         {
             let name = input.base.name.as_str();

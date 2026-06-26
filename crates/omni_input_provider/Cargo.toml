@@ -24,6 +24,7 @@ log = { workspace = true }
 tracing = { workspace = true, optional = true }
 derive-new = { workspace = true }
 bon = { workspace = true }
+paste = { workspace = true }
 async-trait = { workspace = true }
 value-bag = { workspace = true }
 maps = { workspace = true }

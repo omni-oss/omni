@@ -21,7 +21,7 @@ use omni_generator_configurations::{
     AllowedValueExtras, GenBase, Generator, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration, allowed_extras, gen_base,
 };
-use omni_input_provider::configuration::builder::{select, string};
+use omni_input_provider::configuration::builder::string;
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::{CliInputProvider, builder::allowed};
@@ -228,7 +228,7 @@ async fn prompt_output_dir(
     let context_values = unordered_map!();
     let prompting_config = ValidationConfig::default();
 
-    let prompt = select::<Generator>()
+    let prompt = string::<Generator>()
         .name("output_dir_or_project")
         .base_extra(
             gen_base()
@@ -290,7 +290,7 @@ async fn prompt_output_dir(
             .map(|p| (p.name.clone(), p.dir.to_string_lossy().to_string()))
             .collect::<Vec<_>>();
 
-        let prompt = select::<Generator>()
+        let prompt = string::<Generator>()
             .name("project")
             .base_extra(GenBase::new("Select project"))
             .allowed(options.iter().map(|(name, value)| AllowedValue {

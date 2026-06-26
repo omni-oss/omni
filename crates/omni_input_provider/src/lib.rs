@@ -1,3 +1,8 @@
+// Hidden re-export so `bon_builder_mixin!` can reference `$crate::paste`
+// without requiring callers to add `paste` to their own dependencies.
+#[doc(hidden)]
+pub use paste;
+
 mod collect;
 pub mod configuration;
 pub mod error;

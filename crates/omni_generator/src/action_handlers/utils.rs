@@ -1,5 +1,6 @@
 use omni_generator_configurations::{
-    Generator, OmniPath, OverwriteConfiguration, Root, gen_base,
+    BooleanBuilderGenBaseExt, Generator, OmniPath, OverwriteConfiguration,
+    Root, StringBuilderGenBaseExt,
 };
 use omni_messages::GeneratorEventSubscriber;
 use std::{
@@ -134,15 +135,16 @@ pub async fn should_overwrite(
     let prompt_cfg = boolean::<Generator>()
         .name("overwrite_path")
         .default(true)
-        .base_extra(gen_base()
-            .message(if is_dir {
-                format!(
-                    "Directory already exists at path: {path:?}. Delete it and all of its contents?"
-                )
-            } else {
-                format!("File already exists at path: {path:?}. Overwrite?")
-            })
-            .build()
+        .gen_base(
+            |b| {
+                b.message(if is_dir {
+                    format!(
+                        "Directory already exists at path: {path:?}. Delete it and all of its contents?"
+                    )
+                } else {
+                    format!("File already exists at path: {path:?}. Overwrite?")
+                })
+            }
         )
         .build();
 
@@ -208,12 +210,10 @@ pub async fn resolve_target_dir<'a>(
 
     let prompt_cfg = string::<Generator>()
         .name(target_name)
-        .base_extra(
-            gen_base()
-                .message(format!("Directory for target {}:", target_name))
+        .gen_base(|b| {
+            b.message(format!("Directory for target {}:", target_name))
                 .remember(false)
-                .build(),
-        )
+        })
         .build();
 
     let cfg = ValidationConfig::default();
@@ -273,12 +273,10 @@ pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
 ) -> Result<PathBuf, Error> {
     let prompt_cfg = string()
         .name(target_name)
-        .base_extra(
-            gen_base()
-                .message(format!("Directory for target {}:", target_name))
+        .gen_base(|b| {
+            b.message(format!("Directory for target {}:", target_name))
                 .remember(false)
-                .build(),
-        )
+        })
         .build();
 
     let cfg = ValidationConfig::default();

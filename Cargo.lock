@@ -6986,6 +6986,7 @@ dependencies = [
  "omni_input_schema",
  "omni_serde_validators",
  "omni_tera",
+ "paste",
  "schemars",
  "serde",
  "serde_json",

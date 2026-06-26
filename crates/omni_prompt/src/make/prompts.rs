@@ -553,7 +553,7 @@ mod tests {
             base: make_base("flag"),
             default: value(true),
             base_extra: make_gen_base("Enable?"),
-            profile_data: (),
+            boolean_extra: (),
         };
         let ctx = omni_tera::Context::new();
         let q = super::confirm(&input, &ctx);
@@ -567,7 +567,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: make_gen_base("Enter name:"),
-            profile_data: StringExtras::default(),
+            string_extra: StringExtras::default(),
         };
         let ctx = omni_tera::Context::new();
         let q = super::text(&input, &ctx, Some("value"));
@@ -581,7 +581,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: make_gen_base("Enter token:"),
-            profile_data: StringExtras::default(),
+            string_extra: StringExtras::default(),
         };
         let ctx = omni_tera::Context::new();
         let q = super::password(&input, &ctx, Some("value"));
@@ -596,7 +596,7 @@ mod tests {
             allowed: None,
             default: value(3),
             base_extra: make_gen_base("How many?"),
-            profile_data: (),
+            numeric_extra: (),
         };
         let ctx = omni_tera::Context::new();
         let q = super::integer_number(&input, &ctx, Some("value"));
@@ -611,7 +611,7 @@ mod tests {
             allowed: None,
             default: value(1.5),
             base_extra: make_gen_base("What rate?"),
-            profile_data: (),
+            numeric_extra: (),
         };
         let ctx = omni_tera::Context::new();
         let q = super::float_number(&input, &ctx, Some("value"));

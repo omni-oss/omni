@@ -2,12 +2,12 @@ use std::borrow::Cow;
 
 use maps::{UnorderedMap, unordered_map};
 use omni_generator_configurations::{
-    Generator, GeneratorConfiguration, allowed_extras, gen_base,
+    AllowedBuilderAllowedExtrasExt, Generator, GeneratorConfiguration,
+    StringBuilderGenBaseExt,
 };
-use omni_input_provider::configuration::builder::select;
 use omni_input_provider::{ValidationConfig, collect_one};
-use omni_prompt::CliInputProvider;
 use omni_prompt::builder::allowed;
+use omni_prompt::{CliInputProvider, builder::string};
 use value_bag::{OwnedValueBag, ValueBag};
 
 pub async fn prompt_generator_name(
@@ -16,24 +16,22 @@ pub async fn prompt_generator_name(
     let context_values = unordered_map!();
     let prompting_config = ValidationConfig::default();
 
-    let prompt = select::<Generator>()
+    let prompt = string::<Generator>()
         .name("generator_name")
-        .base_extra(gen_base().message("Select generator").build())
+        .gen_base(|b| b.message("Select generator"))
         .allowed(generators.iter().map(|generator| {
             allowed()
                 .value(generator.name.clone())
                 .maybe_description(generator.description.clone())
-                .base_extra(
-                    allowed_extras()
-                        .name(
-                            generator
-                                .display_name
-                                .clone()
-                                .unwrap_or_else(|| generator.name.clone()),
-                        )
-                        .separator(false)
-                        .build(),
-                )
+                .allowed_extras(|b| {
+                    b.name(
+                        generator
+                            .display_name
+                            .clone()
+                            .unwrap_or_else(|| generator.name.clone()),
+                    )
+                    .separator(false)
+                })
                 .build()
         }))
         .build();

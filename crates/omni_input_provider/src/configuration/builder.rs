@@ -62,7 +62,7 @@ fn build_base(
 /// Build a [`ValidateConfiguration`] with an optional error message.
 ///
 /// `condition` accepts a literal `bool` or a Tera expression string.
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn validator(
     #[builder(into)] condition: MaybeExpr<bool>,
     #[builder(into)] error_message: Option<String>,
@@ -80,7 +80,7 @@ pub fn validator(
 /// Build an [`AllowedValue<String, OptionExtras>`] entry for select / multi-select inputs.
 ///
 /// `value` defaults to `name` when omitted.
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn allowed<E: InputProfile>(
     #[builder(into)] value: String,
     #[builder(into)] description: Option<String>,
@@ -96,7 +96,7 @@ pub fn allowed<E: InputProfile>(
 // ── Input builders ────────────────────────────────────────────────────────────
 
 /// Build a `Boolean` input (`Input<E>::Boolean`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn boolean<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -107,18 +107,18 @@ pub fn boolean<E: InputProfile>(
     validators: Vec<ValidateConfiguration>,
     #[builder(into)] default: Option<MaybeExpr<bool>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Boolean,
+    #[builder(default)] boolean_extra: E::Boolean,
 ) -> Input<E> {
     Input::Boolean(BooleanInput {
         base: build_base(name, condition, description, secret, validators),
         default,
         base_extra,
-        profile_data,
+        boolean_extra,
     })
 }
 
 /// Build a `String` input (`Input<E>::String`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn string<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -132,19 +132,19 @@ pub fn string<E: InputProfile>(
     allowed: Option<Vec<AllowedValue<String, E>>>,
     #[builder(into)] default: Option<String>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::String,
+    #[builder(default)] string_extra: E::String,
 ) -> Input<E> {
     Input::String(StringInput {
         base: build_base(name, condition, description, secret, validators),
         allowed,
         default,
         base_extra,
-        profile_data,
+        string_extra,
     })
 }
 
 /// Build a `String` input with `secret: true` by default (password widget inferred).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn password<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -155,21 +155,19 @@ pub fn password<E: InputProfile>(
     validators: Vec<ValidateConfiguration>,
     #[builder(into)] default: Option<String>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::String,
+    #[builder(default)] string_extra: E::String,
 ) -> Input<E> {
     Input::String(StringInput {
         base: build_base(name, condition, description, secret, validators),
         allowed: None,
         default,
         base_extra,
-        profile_data,
+        string_extra,
     })
 }
 
-pub use string as select;
-
 /// Build a `StringArray` input (`Input<E>::StringArray`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn string_array<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -185,19 +183,19 @@ pub fn string_array<E: InputProfile>(
         defaults.into_iter().map(Into::into).collect())]
     default: Option<Vec<String>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Array,
+    #[builder(default)] array_extra: E::Array,
 ) -> Input<E> {
     Input::StringArray(StringArrayInput {
         base: build_base(name, condition, description, secret, validators),
         body: ArrayBody { allowed },
         default,
         base_extra,
-        profile_data,
+        array_extra,
     })
 }
 
 /// Build an `Integer` input (`Input<E>::Integer`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn integer<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -211,19 +209,19 @@ pub fn integer<E: InputProfile>(
     allowed: Option<Vec<AllowedValue<i64, E>>>,
     #[builder(into)] default: Option<MaybeExpr<i64>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Numeric,
+    #[builder(default)] numeric_extra: E::Numeric,
 ) -> Input<E> {
     Input::Integer(IntegerInput {
         base: build_base(name, condition, description, secret, validators),
         allowed,
         default,
         base_extra,
-        profile_data,
+        numeric_extra,
     })
 }
 
 /// Build an `IntegerArray` input (`Input<E>::IntegerArray`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn integer_array<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -237,19 +235,19 @@ pub fn integer_array<E: InputProfile>(
     allowed: Option<Vec<AllowedValue<i64, E>>>,
     #[builder(into)] default: Option<Vec<i64>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Array,
+    #[builder(default)] array_extra: E::Array,
 ) -> Input<E> {
     Input::IntegerArray(IntegerArrayInput {
         base: build_base(name, condition, description, secret, validators),
         base_extra,
-        profile_data,
+        array_extra,
         body: ArrayBody { allowed },
         default,
     })
 }
 
 /// Build a `Float` input (`Input<E>::Float`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn float<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -263,19 +261,19 @@ pub fn float<E: InputProfile>(
     allowed: Option<Vec<AllowedValue<f64, E>>>,
     #[builder(into)] default: Option<MaybeExpr<f64>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Numeric,
+    #[builder(default)] numeric_extra: E::Numeric,
 ) -> Input<E> {
     Input::Float(FloatInput {
         base: build_base(name, condition, description, secret, validators),
         allowed,
         default,
         base_extra,
-        profile_data,
+        numeric_extra,
     })
 }
 
 /// Build a `FloatArray` input (`Input<E>::FloatArray`).
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn float_array<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -289,12 +287,12 @@ pub fn float_array<E: InputProfile>(
     allowed: Option<Vec<AllowedValue<f64, E>>>,
     #[builder(into)] default: Option<Vec<f64>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Array,
+    #[builder(default)] array_extra: E::Array,
 ) -> Input<E> {
     Input::FloatArray(FloatArrayInput {
         base: build_base(name, condition, description, secret, validators),
         base_extra,
-        profile_data,
+        array_extra,
         default,
         body: ArrayBody { allowed },
     })
@@ -303,7 +301,7 @@ pub fn float_array<E: InputProfile>(
 /// Build an `Object` input (`Input<E>::Object`).
 ///
 /// `fields` accepts any iterator of `Input<E>` and defaults to an empty list.
-#[::bon::builder(finish_fn = build)]
+#[::bon::builder(finish_fn = build, state_mod(vis = "pub"))]
 pub fn object<E: InputProfile>(
     #[builder(into)] name: String,
     #[builder(into)] condition: Option<MaybeExpr<bool>>,
@@ -317,15 +315,204 @@ pub fn object<E: InputProfile>(
     fields: Vec<Input<E>>,
     #[builder(into)] default: Option<UnorderedMap<String, InputValue>>,
     #[builder(default)] base_extra: E::Base,
-    #[builder(default)] profile_data: E::Object,
+    #[builder(default)] object_extra: E::Object,
 ) -> Input<E> {
     Input::Object(ObjectInput {
         base: build_base(name, condition, description, secret, validators),
         fields,
         base_extra,
-        profile_data,
+        object_extra,
         default,
     })
+}
+
+#[macro_export]
+macro_rules! bon_builder_extend {
+    // ── Minimal form ─────────────────────────────────────────────────────────
+    // Infers everything, including the extension trait name, from four inputs.
+    // Trait name convention: base.builder + PascalCase(mixin.ctor) + "Ext"
+    //   e.g. StringBuilder + gen_base → StringBuilderGenBaseExt
+    //
+    // Use the short form below to supply a custom trait name.
+    (
+        profile = $profile:ident,
+        base = {
+            builder    = $base_ty:ident,
+            set_method = $base_set_method:ident $(,)?
+        },
+        mixin = {
+            ctor = $mixin_ctor:ident $(,)?
+        } $(,)?
+    ) => {
+        $crate::paste::paste! {
+            $crate::bon_builder_extend!(
+                profile = $profile,
+                base = {
+                    builder    = $base_ty,
+                    set_method = $base_set_method,
+                },
+                mixin = {
+                    ctor = $mixin_ctor,
+                },
+                ext = {
+                    trait = [<$base_ty $mixin_ctor:camel Ext>],
+                },
+            );
+        }
+    };
+
+    // ── Short form ───────────────────────────────────────────────────────────
+    // Infers the seven boilerplate identifiers from five inputs
+    // using bon's naming conventions:
+    //
+    //   base.state_mod       = snake_case(base.builder)
+    //   base.state_field     = PascalCase(base.set_method)
+    //   base.state_set_field = "Set" + PascalCase(base.set_method)
+    //   mixin.builder        = PascalCase(mixin.ctor) + "Builder"
+    //   mixin.state_mod      = mixin.ctor + "_builder"
+    //   mixin.finish_fn      = build   (bon's default finish fn name)
+    //   ext.method           = mixin.ctor
+    //
+    // Use the explicit form below when any convention is broken.
+    (
+        profile = $profile:ident,
+        base = {
+            builder    = $base_ty:ident,
+            set_method = $base_set_method:ident $(,)?
+        },
+        mixin = {
+            ctor = $mixin_ctor:ident $(,)?
+        },
+        ext = {
+            trait = $ext_trait_ty:ident $(,)?
+        } $(,)?
+    ) => {
+        $crate::paste::paste! {
+            $crate::bon_builder_extend!(
+                profile = $profile,
+                base = {
+                    builder         = $base_ty,
+                    state_mod       = [<$base_ty:snake>],
+                    set_method      = $base_set_method,
+                    state_field     = [<$base_set_method:camel>],
+                    state_set_field = [<Set $base_set_method:camel>],
+                },
+                mixin = {
+                    builder   = [<$mixin_ctor:camel Builder>],
+                    state_mod = [<$mixin_ctor _builder>],
+                    ctor      = $mixin_ctor,
+                    finish_fn = build,
+                },
+                ext = {
+                    trait  = $ext_trait_ty,
+                    method = $mixin_ctor,
+                },
+            );
+        }
+    };
+
+    // ── Explicit form ─────────────────────────────────────────────────────────
+    // Last resort: supply every identifier directly when conventions don't hold.
+    (
+        profile = $profile:ident,
+        base = {
+            builder         = $base_ty:ident,
+            state_mod       = $base_state_mod:ident,
+            set_method      = $base_set_method:ident,
+            state_field     = $base_state_field:ident,
+            state_set_field = $base_state_set_field:ident $(,)?
+        },
+        mixin = {
+            builder   = $mixin_ty:ident,
+            state_mod = $mixin_state_mod:ident,
+            ctor      = $mixin_ctor:ident,
+            finish_fn = $mixin_finish_fn:ident $(,)?
+        },
+        ext = {
+            trait  = $ext_trait_ty:ident,
+            method = $ext_method:ident $(,)?
+        } $(,)?
+    ) => {
+
+        $crate::paste::paste! {
+            mod [<__ generated_mod_ $ext_trait_ty:snake >] {
+                use super::*;
+                use $crate::configuration::builder::*;
+                pub trait $ext_trait_ty<S: $base_state_mod::State>
+                where
+                    S::$base_state_field: $base_state_mod::IsUnset,
+                {
+                    fn $ext_method<O, F>(
+                        self,
+                        apply: F,
+                    ) -> $base_ty<$profile, $base_state_mod::$base_state_set_field<S>>
+                    where
+                        O: $mixin_state_mod::IsComplete,
+                        F: FnOnce($mixin_ty<$mixin_state_mod::Empty>) -> $mixin_ty<O>;
+                }
+
+                impl<S: $base_state_mod::State> $ext_trait_ty<S>
+                    for $base_ty<$profile, S>
+                where
+                    S::$base_state_field: $base_state_mod::IsUnset,
+                {
+                    #[inline(always)]
+                    fn $ext_method<O, F>(
+                        self,
+                        apply: F,
+                    ) -> $base_ty<$profile, $base_state_mod::$base_state_set_field<S>>
+                    where
+                        O: $mixin_state_mod::IsComplete,
+                        F: FnOnce($mixin_ty<$mixin_state_mod::Empty>) -> $mixin_ty<O>,
+                    {
+                        let mixin = $mixin_ctor();
+                        let mixin = apply(mixin);
+                        let mixin = mixin.$mixin_finish_fn();
+                        self.$base_set_method(mixin)
+                    }
+                }
+            }
+            pub use [<__ generated_mod_ $ext_trait_ty:snake >]::*;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! bon_builder_extend_multiple {
+    // ── Minimal form ─────────────────────────────────────────────────────────
+    // Infers everything, including the extension trait name, from four inputs.
+    // Trait name convention: base.builder + PascalCase(mixin.ctor) + "Ext"
+    //   e.g. StringBuilder + gen_base → StringBuilderGenBaseExt
+    //
+    // Use the short form below to supply a custom trait name.
+    (
+        profile = $profile:ident,
+        bases = [$({
+            builder    = $base_ty:ident,
+            set_method = $base_set_method:ident $(,)?
+        }),*$(,)?],
+        mixin = {
+            ctor = $mixin_ctor:ident $(,)?
+        } $(,)?
+    ) => {
+        $(
+            $crate::paste::paste! {
+                $crate::bon_builder_extend!(
+                    profile = $profile,
+                    base = {
+                        builder    = $base_ty,
+                        set_method = $base_set_method,
+                    },
+                    mixin = {
+                        ctor = $mixin_ctor,
+                    },
+                    ext = {
+                        trait = [<$base_ty $mixin_ctor:camel Ext>],
+                    },
+                );
+            }
+        )*
+    };
 }
 
 #[cfg(test)]
@@ -390,8 +577,8 @@ mod tests {
     // ── select ────────────────────────────────────────────────────────────
 
     #[test]
-    fn select_options_accept_strings_tuples_and_builders() {
-        let input = select::<()>()
+    fn string_options_accept_strings_tuples_and_builders() {
+        let input = string::<()>()
             .name("color")
             .allowed([
                 AllowedValue::<String, ()>::from("red"),

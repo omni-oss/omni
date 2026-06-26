@@ -169,7 +169,7 @@ impl InputProfile for Generator {
     fn string_presentation_hint(
         input: &StringInput<Generator>,
     ) -> Vec<Cow<'static, str>> {
-        if let Some(widget) = input.profile_data.widget {
+        if let Some(widget) = input.string_extra.widget {
             match widget {
                 StringWidget::Text => vec![],
                 StringWidget::Password => vec![Cow::Borrowed("password")],
@@ -185,7 +185,7 @@ impl InputProfile for Generator {
     fn string_array_presentation_hint(
         input: &StringArrayInput<Generator>,
     ) -> Vec<Cow<'static, str>> {
-        if let Some(widget) = input.profile_data.widget {
+        if let Some(widget) = input.array_extra.widget {
             match widget {
                 ListWidget::MultiSelect => vec![],
                 ListWidget::FreeEntry => vec![Cow::Borrowed("free-entry")],
@@ -198,7 +198,7 @@ impl InputProfile for Generator {
     fn integer_array_presentation_hint(
         input: &IntegerArrayInput<Generator>,
     ) -> Vec<Cow<'static, str>> {
-        if let Some(widget) = input.profile_data.widget {
+        if let Some(widget) = input.array_extra.widget {
             match widget {
                 ListWidget::MultiSelect => vec![],
                 ListWidget::FreeEntry => vec![Cow::Borrowed("free-entry")],
@@ -211,7 +211,7 @@ impl InputProfile for Generator {
     fn float_array_presentation_hint(
         input: &FloatArrayInput<Generator>,
     ) -> Vec<Cow<'static, str>> {
-        if let Some(widget) = input.profile_data.widget {
+        if let Some(widget) = input.array_extra.widget {
             match widget {
                 ListWidget::MultiSelect => vec![],
                 ListWidget::FreeEntry => vec![Cow::Borrowed("free-entry")],

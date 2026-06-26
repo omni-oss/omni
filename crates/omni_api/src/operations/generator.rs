@@ -622,7 +622,7 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
             vec![],
         ),
         Input::String(s) => {
-            let kind = match s.profile_data.widget {
+            let kind = match s.string_extra.widget {
                 Some(StringWidget::Password) => GeneratorInputKind::Password,
                 Some(StringWidget::Select) => GeneratorInputKind::Select,
                 Some(StringWidget::Text) | None => {
@@ -692,7 +692,7 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
             (kind, default, options)
         }
         Input::StringArray(sa) => {
-            let kind = match sa.profile_data.widget {
+            let kind = match sa.array_extra.widget {
                 Some(ListWidget::FreeEntry) => {
                     GeneratorInputKind::FreeEntryList
                 }
@@ -718,7 +718,7 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
             (kind, default, options)
         }
         Input::IntegerArray(ia) => {
-            let kind = match ia.profile_data.widget {
+            let kind = match ia.array_extra.widget {
                 Some(ListWidget::FreeEntry) => {
                     GeneratorInputKind::FreeEntryList
                 }
@@ -744,7 +744,7 @@ fn input_to_spec(input: &Input<Generator>) -> GeneratorInputSpec {
             (kind, default, options)
         }
         Input::FloatArray(fa) => {
-            let kind = match fa.profile_data.widget {
+            let kind = match fa.array_extra.widget {
                 Some(ListWidget::FreeEntry) => {
                     GeneratorInputKind::FreeEntryList
                 }

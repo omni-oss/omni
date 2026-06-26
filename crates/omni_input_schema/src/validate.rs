@@ -461,7 +461,7 @@ mod tests {
             base: base(name),
             default: None,
             base_extra: (),
-            profile_data: (),
+            boolean_extra: (),
         })
     }
 
@@ -471,7 +471,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         })
     }
 
@@ -481,7 +481,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: (),
-            profile_data: (),
+            numeric_extra: (),
         })
     }
 
@@ -491,7 +491,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: (),
-            profile_data: (),
+            numeric_extra: (),
         })
     }
 
@@ -525,7 +525,7 @@ mod tests {
             allowed: None,
             default: Some("dev".to_string()),
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         });
         let config = ValidationConfig {
             use_defaults: true,
@@ -543,7 +543,7 @@ mod tests {
             allowed: None,
             default: Some("dev".to_string()),
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         });
         let config = ValidationConfig {
             use_defaults: false,
@@ -565,7 +565,7 @@ mod tests {
             },
             default: None,
             base_extra: (),
-            profile_data: (),
+            boolean_extra: (),
         });
         let report = validate(
             &[input],
@@ -593,7 +593,7 @@ mod tests {
                 },
                 default: None,
                 base_extra: (),
-                profile_data: (),
+                boolean_extra: (),
             }),
         ];
         let mut values = empty_values();
@@ -621,7 +621,7 @@ mod tests {
                 },
                 default: None,
                 base_extra: (),
-                profile_data: (),
+                boolean_extra: (),
             }),
         ];
         let mut values = empty_values();
@@ -763,7 +763,7 @@ mod tests {
             ]),
             default: None,
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         });
         let mut values = empty_values();
         values.insert("env".to_string(), bag_str("staging"));
@@ -792,7 +792,7 @@ mod tests {
             ]),
             default: None,
             base_extra: (),
-            profile_data: (),
+            numeric_extra: (),
         });
         let mut values = empty_values();
         values.insert("port".to_string(), bag_i64(8080));
@@ -821,7 +821,7 @@ mod tests {
             ]),
             default: None,
             base_extra: (),
-            profile_data: (),
+            numeric_extra: (),
         });
         let mut values = empty_values();
         values.insert("ratio".to_string(), bag_f64(0.75));
@@ -847,7 +847,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         });
         let mut values = empty_values();
         values.insert("name".to_string(), bag_str("ab")); // length 2 → fails > 3
@@ -871,7 +871,7 @@ mod tests {
             allowed: None,
             default: None,
             base_extra: (),
-            profile_data: (),
+            string_extra: (),
         });
         let mut values = empty_values();
         values.insert("name".to_string(), bag_str("alice")); // length 5 → passes > 3
@@ -949,7 +949,7 @@ mod tests {
             },
             default: None,
             base_extra: RememberBase { remember: true },
-            profile_data: (),
+            boolean_extra: (),
         });
         let result = validate::<RememberProfile>(
             &[input],

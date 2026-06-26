@@ -490,7 +490,7 @@ mod tests {
             base: make_base("flag"),
             default: Some(value(true)),
             base_extra: (),
-            profile_data: (),
+            boolean_extra: (),
         });
         let spec = input_schema_to_mcp(input);
         assert_eq!(spec.kind, "boolean");

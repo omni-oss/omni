@@ -18,7 +18,7 @@ pub struct BooleanInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Boolean,
+    pub boolean_extra: E::Boolean,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
@@ -30,7 +30,7 @@ pub struct StringInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::String,
+    pub string_extra: E::String,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
@@ -41,7 +41,7 @@ pub struct IntegerInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Numeric,
+    pub numeric_extra: E::Numeric,
     #[serde(default)]
     pub default: Option<MaybeExpr<i64>>,
 }
@@ -56,7 +56,7 @@ pub struct FloatInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Numeric,
+    pub numeric_extra: E::Numeric,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
@@ -68,7 +68,7 @@ pub struct StringArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Array,
+    pub array_extra: E::Array,
     #[serde(default)]
     pub default: Option<Vec<String>>,
 }
@@ -82,7 +82,7 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Array,
+    pub array_extra: E::Array,
     #[serde(default)]
     pub default: Option<Vec<i64>>,
 }
@@ -96,7 +96,7 @@ pub struct FloatArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Array,
+    pub array_extra: E::Array,
     #[serde(default)]
     pub default: Option<Vec<f64>>,
 }
@@ -127,7 +127,7 @@ pub struct ObjectInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base_extra: E::Base,
     #[serde(flatten)]
-    pub profile_data: E::Object,
+    pub object_extra: E::Object,
 }
 
 // ── Input enum ────────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ impl<E: InputProfile> Input<E> {
                 base: b.base.clone(),
                 default: b.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                boolean_extra: (),
             }),
             Input::String(s) => Input::String(StringInput {
                 base: s.base.clone(),
@@ -225,7 +225,7 @@ impl<E: InputProfile> Input<E> {
                 }),
                 default: s.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                string_extra: (),
             }),
             Input::Integer(i) => Input::Integer(IntegerInput {
                 base: i.base.clone(),
@@ -240,7 +240,7 @@ impl<E: InputProfile> Input<E> {
                 }),
                 default: i.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                numeric_extra: (),
             }),
             Input::Float(f) => Input::Float(FloatInput {
                 base: f.base.clone(),
@@ -255,7 +255,7 @@ impl<E: InputProfile> Input<E> {
                 }),
                 default: f.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                numeric_extra: (),
             }),
             Input::StringArray(sa) => Input::StringArray(StringArrayInput {
                 base: sa.base.clone(),
@@ -272,7 +272,7 @@ impl<E: InputProfile> Input<E> {
                 },
                 base_extra: (),
                 default: sa.default.clone(),
-                profile_data: (),
+                array_extra: (),
             }),
             Input::IntegerArray(ia) => Input::IntegerArray(IntegerArrayInput {
                 base: ia.base.clone(),
@@ -289,7 +289,7 @@ impl<E: InputProfile> Input<E> {
                 },
                 default: ia.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                array_extra: (),
             }),
             Input::FloatArray(fa) => Input::FloatArray(FloatArrayInput {
                 base: fa.base.clone(),
@@ -306,13 +306,13 @@ impl<E: InputProfile> Input<E> {
                 },
                 default: fa.default.clone(),
                 base_extra: (),
-                profile_data: (),
+                array_extra: (),
             }),
             Input::Object(o) => Input::Object(ObjectInput {
                 base: o.base.clone(),
                 fields: o.fields.iter().map(|f| f.to_data()).collect(),
                 base_extra: (),
-                profile_data: (),
+                object_extra: (),
                 default: o.default.clone(),
             }),
         }
