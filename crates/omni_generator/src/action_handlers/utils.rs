@@ -24,7 +24,7 @@ use crate::{
     utils::expand_json_value,
 };
 
-pub fn resolve_output_path(
+fn resolve_output_path_inner(
     output_dir: &Path,
     target: Option<&Path>,
     base_path: &Path,
@@ -188,7 +188,7 @@ pub async fn overwrite(
     return Ok(None);
 }
 
-pub async fn get_target_dir<'a>(
+pub async fn resolve_target_dir<'a>(
     target_name: &str,
     target_overrides: &'a UnorderedMap<String, OmniPath>,
     generator_targets: &'a UnorderedMap<String, OmniPath>,
@@ -241,7 +241,7 @@ pub async fn get_target_dir<'a>(
     }
 }
 
-pub async fn get_target_file<'a, S: GeneratorEventSubscriber>(
+pub async fn resolve_target_file<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
     ctx: &HandlerContext<'a, S>,
     provider: &'a dyn InputProvider<Generator>,
@@ -352,7 +352,7 @@ pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
     Cow::Borrowed(path)
 }
 
-pub async fn get_output_path<
+pub async fn resolve_output_path<
     'a,
     TExt: AsRef<str>,
     S: GeneratorEventSubscriber,
@@ -369,7 +369,7 @@ pub async fn get_output_path<
 ) -> Result<PathBuf, Error> {
     let target = if let Some(target_name) = target_name {
         Some(
-            get_target_dir(
+            resolve_target_dir(
                 target_name,
                 &ctx.target_overrides,
                 &ctx.generator_targets,
@@ -402,7 +402,7 @@ pub async fn get_output_path<
         }
     });
 
-    let output_path = resolve_output_path(
+    let output_path = resolve_output_path_inner(
         ctx.output_dir,
         target.as_deref(),
         base_path.unwrap_or(ctx.generator_dir),
@@ -511,7 +511,7 @@ mod tests {
             "/template/files/file"
         });
 
-        let resolved_path = resolve_output_path(
+        let resolved_path = resolve_output_path_inner(
             &output_dir,
             target.as_deref(),
             &base_path,
@@ -549,7 +549,7 @@ mod tests {
             "/template/files/file/file.txt"
         });
 
-        let resolved_path = resolve_output_path(
+        let resolved_path = resolve_output_path_inner(
             &output_dir,
             target.as_deref(),
             &base_path,

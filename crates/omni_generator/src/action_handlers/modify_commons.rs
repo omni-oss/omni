@@ -1,15 +1,15 @@
 use std::{borrow::Cow, path::Path};
 
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::{
     CommonModifyConfiguration, ModifyInlineContentEntry,
 };
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
-        utils::{augment_tera_context, get_target_file},
+        utils::{augment_tera_context, resolve_target_file},
     },
     error::{Error, ErrorInner},
 };
@@ -22,7 +22,7 @@ pub async fn modify_one<'a, S: GeneratorEventSubscriber>(
 ) -> Result<(), Error> {
     let target_name = &common.target;
     let target =
-        get_target_file(target_name, ctx, ctx.input_provider, sys).await?;
+        resolve_target_file(target_name, ctx, ctx.input_provider, sys).await?;
 
     let tera_ctx_with_data =
         augment_tera_context(ctx.tera_context_values, Some(&common.data))?;

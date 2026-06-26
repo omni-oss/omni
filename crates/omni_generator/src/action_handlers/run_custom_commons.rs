@@ -13,7 +13,7 @@ use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
-        utils::{get_bases, get_target_dir},
+        utils::{get_bases, resolve_target_dir},
     },
     error::{Error, ErrorInner},
     gen_session::GenSession,
@@ -27,7 +27,7 @@ pub async fn target_path<S: GeneratorEventSubscriber>(
 ) -> Result<PathBuf, Error> {
     let bases = get_bases(ctx);
     let result = if let Some(target_name) = common.target.as_deref() {
-        let target = get_target_dir(
+        let target = resolve_target_dir(
             target_name,
             ctx.target_overrides,
             ctx.generator_targets,

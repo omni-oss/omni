@@ -1,14 +1,15 @@
 use std::{borrow::Cow, path::Path};
 
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonAddConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,
     action_handlers::{
         HandlerContext,
         utils::{
-            augment_tera_context, ensure_dir_exists, get_output_path, overwrite,
+            augment_tera_context, ensure_dir_exists, overwrite,
+            resolve_output_path,
         },
     },
     error::{Error, ErrorInner},
@@ -31,7 +32,7 @@ where
         + 'a,
     TSys: GeneratorSys,
 {
-    let output_path = get_output_path(
+    let output_path = resolve_output_path(
         common.target.as_deref(),
         &file,
         base_path,
