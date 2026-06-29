@@ -100,7 +100,7 @@ impl Fixture {
             key.to_string(),
             ValueBag::capture_serde1(&value).to_owned(),
         );
-        self.tera_ctx.insert(key, &value);
+        self.tera_ctx.insert(key.to_owned(), &value);
         self
     }
 

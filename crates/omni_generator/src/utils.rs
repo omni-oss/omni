@@ -11,7 +11,7 @@ pub fn get_tera_context(
     let mut context = omni_tera::context::STANDARD.clone();
 
     for (key, value) in context_values.iter() {
-        context.insert(key, value);
+        context.insert(key.clone(), value);
     }
 
     context
@@ -21,10 +21,10 @@ pub fn expand_json_value<'v>(
     tera_ctx: &omni_tera::Context,
     parent_key: Option<&str>,
     key: &str,
-    value: &'v omni_tera::Value,
-) -> Result<Cow<'v, omni_tera::Value>, Error> {
+    value: &'v serde_json::Value,
+) -> Result<Cow<'v, serde_json::Value>, Error> {
     Ok(match value {
-        omni_tera::Value::String(s) => {
+        serde_json::Value::String(s) => {
             let expanded = omni_tera::one_off(
                 &s,
                 &(if let Some(parent_key) = parent_key {
@@ -35,9 +35,9 @@ pub fn expand_json_value<'v>(
                 tera_ctx,
             )?;
 
-            Cow::Owned(omni_tera::Value::String(expanded))
+            Cow::Owned(serde_json::Value::String(expanded))
         }
-        omni_tera::Value::Array(values) => {
+        serde_json::Value::Array(values) => {
             let mut result = Vec::<serde_json::Value>::new();
             for (idx, value) in values.iter().enumerate() {
                 let idx_key = idx.to_string();
@@ -56,9 +56,9 @@ pub fn expand_json_value<'v>(
                 result.push(value);
             }
 
-            Cow::Owned(omni_tera::Value::Array(result))
+            Cow::Owned(serde_json::Value::Array(result))
         }
-        omni_tera::Value::Object(map) => {
+        serde_json::Value::Object(map) => {
             let mut result = serde_json::Map::new();
             for (map_key, value) in map {
                 let value = (*if let Some(parent) = parent_key {
@@ -75,7 +75,7 @@ pub fn expand_json_value<'v>(
                 result.insert(map_key.to_string(), value);
             }
 
-            Cow::Owned(omni_tera::Value::Object(result))
+            Cow::Owned(serde_json::Value::Object(result))
         }
         value @ _ => Cow::Borrowed(value),
     })

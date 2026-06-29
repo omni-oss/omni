@@ -7,25 +7,31 @@ use serde_validate::{StaticValidator, declare_static_validator};
 pub struct TeraExprValidator;
 
 pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
-    let result =
-        omni_tera::Template::new("__validate_template__", None, value.borrow());
+    let value = value.borrow();
+    let result = omni_tera::one_off(
+        value,
+        "__validate_template__",
+        &omni_tera::Context::default(),
+    );
 
-    if let Err(error) = result {
-        return Err(error.to_string());
+    if let Err(error) = result
+        && let omni_tera::ErrorKind::SyntaxError(error) = error.kind()
+    {
+        trace::error!(
+            expr = value,
+            span = ?error.span(),
+            error = error.message(),
+            "tera_syntax_error"
+        );
+        return Err(error.message().to_owned());
     }
 
     Ok(())
 }
 
+#[inline(always)]
 pub fn validate_string<V: Borrow<String>>(value: &V) -> Result<(), String> {
-    let result =
-        omni_tera::Template::new("__validate_template__", None, value.borrow());
-
-    if let Err(error) = result {
-        return Err(error.to_string());
-    }
-
-    Ok(())
+    validate_str(value.borrow())
 }
 
 impl<V: Borrow<String>> StaticValidator<V> for TeraExprValidator {

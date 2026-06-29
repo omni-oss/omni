@@ -1,26 +1,16 @@
 use std::path::Path;
 
-pub use tera::{Context, Error, ErrorKind, Result, Template, Tera, Value};
+pub use tera::{Context, Error, ErrorKind, Tera, TeraResult as Result, Value};
 
 use crate::preset::FULL;
 
 pub mod context;
 pub mod preset;
 
-pub fn new(dir: &str) -> Result<Tera> {
-    let mut tera = tera::Tera::new(dir)?;
-
-    tera.extend(&FULL)?;
-
-    Ok(tera)
-}
-
 pub fn new_with_files<F: AsRef<Path>, N: AsRef<str>>(
     files: &[(F, Option<N>)],
 ) -> Result<Tera> {
-    let mut tera = Tera::default();
-
-    tera.extend(&FULL)?;
+    let mut tera = FULL.clone();
 
     for (f, n) in files {
         tera.add_template_file(
@@ -41,9 +31,7 @@ pub fn one_off<I: AsRef<str>, N: AsRef<str>>(
     name: N,
     context: &tera::Context,
 ) -> Result<String> {
-    let mut tera = Tera::default();
-
-    tera.extend(&FULL)?;
+    let mut tera = FULL.clone();
 
     tera.add_raw_template(name.as_ref(), input.as_ref())?;
 

@@ -284,7 +284,7 @@ pub fn validate_value(
 ) -> Result<(), Error> {
     for (index, validator) in validators.iter().enumerate() {
         let mut eval_ctx = ctx.clone();
-        eval_ctx.insert(value_name.unwrap_or("value"), value);
+        eval_ctx.insert(value_name.unwrap_or("value").to_owned(), value);
 
         let is_error = match &validator.condition {
             MaybeExpr::Value(l) => !*l,
@@ -307,7 +307,9 @@ pub fn validate_value(
             let error_message = validator
                 .error_message
                 .as_ref()
-                .map(|e| omni_tera::Tera::one_off(e, &eval_ctx, true))
+                .map(|expr| {
+                    omni_tera::one_off(expr, "validator_expr", &eval_ctx)
+                })
                 .unwrap_or_else(|| {
                     Ok(format!(
                         "condition '{}' evaluated to false",
@@ -339,7 +341,7 @@ pub fn validate_boolean_expression_result(
 
 fn should_skip(
     if_expr: &MaybeExpr<bool>,
-    effective: &UnorderedMap<String, OwnedValueBag>,
+    effective_inputs: &UnorderedMap<String, OwnedValueBag>,
     ctx: &omni_tera::Context,
     root_property: Option<&str>,
 ) -> Result<bool, Error> {
@@ -347,7 +349,10 @@ fn should_skip(
         MaybeExpr::Value(l) => !*l,
         MaybeExpr::Expr(expr) => {
             let mut eval_ctx = ctx.clone();
-            eval_ctx.insert(root_property.unwrap_or("inputs"), effective);
+            eval_ctx.insert(
+                root_property.unwrap_or("inputs").to_owned(),
+                effective_inputs,
+            );
             let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
             let result = result.trim();
             validate_boolean_expression_result(result, expr)?;

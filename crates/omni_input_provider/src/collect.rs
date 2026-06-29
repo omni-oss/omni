@@ -103,7 +103,7 @@ fn to_tera_ctx(
 ) -> omni_tera::Context {
     let mut ctx = omni_tera::Context::new();
     for (k, v) in context_values {
-        ctx.insert(k, v);
+        ctx.insert(k.to_owned(), v);
     }
 
     ctx
@@ -327,7 +327,8 @@ fn skip(
         MaybeExpr::Value(b) => !*b,
         MaybeExpr::Expr(expr) => {
             let mut eval_ctx = ctx.clone();
-            eval_ctx.insert(root_property.unwrap_or("inputs"), values);
+            eval_ctx
+                .insert(root_property.unwrap_or("inputs").to_owned(), values);
             let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
             let result = result.trim();
             validate_boolean_expression_result(result, expr)?;

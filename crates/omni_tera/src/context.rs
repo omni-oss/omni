@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use serde::Serialize;
 use tera::Context;
+pub use tera::context;
 
 #[derive(Serialize)]
 struct Platform {
