@@ -19,7 +19,9 @@ pub mod fs {
 
     use derive_new::new;
     use serde::de::DeserializeOwned;
-    use strum::{EnumDiscriminants, IntoDiscriminant as _};
+    use strum::{
+        Display, EnumDiscriminants, EnumString, IntoDiscriminant as _,
+    };
     use system_traits::{FsRead, FsReadAsync};
     use thiserror::Error;
 
@@ -40,14 +42,20 @@ pub mod fs {
         let path: &'a Path = path.into();
         let ext = path.extension().unwrap_or_default();
         let content = sys.fs_read_to_string_async(path).await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
-            } else {
-                LoadConfigErrorInner::Io(e)
-            }
+            (
+                PathBuf::from(path),
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
+                } else {
+                    LoadConfigErrorInner::Io(e)
+                },
+            )
         })?;
 
-        deseralize_config(ext, content)
+        deseralize_config(ext, content).map_err(|e| LoadConfigError {
+            error: e,
+            path: PathBuf::from(path),
+        })
     }
 
     pub fn load_config<'a, 'b, TConfig, TPath, TSys: FsRead + Send + Sync>(
@@ -60,15 +68,27 @@ pub mod fs {
     {
         let path: &'a Path = path.into();
         let ext = path.extension().unwrap_or_default();
-        let content = sys.fs_read_to_string(path)?;
+        let content = sys.fs_read_to_string(path).map_err(|e| {
+            (
+                PathBuf::from(path),
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    LoadConfigErrorInner::new_file_not_found(path.to_path_buf())
+                } else {
+                    LoadConfigErrorInner::Io(e)
+                },
+            )
+        })?;
 
-        deseralize_config(ext, content)
+        deseralize_config(ext, content).map_err(|e| LoadConfigError {
+            error: e,
+            path: PathBuf::from(path),
+        })
     }
 
     fn deseralize_config<TConfig>(
         ext: &std::ffi::OsStr,
         content: std::borrow::Cow<'_, str>,
-    ) -> Result<TConfig, LoadConfigError>
+    ) -> Result<TConfig, LoadConfigErrorInner>
     where
         TConfig: DeserializeOwned,
     {
@@ -83,30 +103,37 @@ pub mod fs {
         }
     }
 
-    #[derive(Error, Debug)]
-    #[error("{inner}")]
+    #[derive(Error, Debug, new)]
+    #[error("({kind}) error when loading config from {path}", kind = self.kind())]
     pub struct LoadConfigError {
         #[source]
-        inner: LoadConfigErrorInner,
-        kind: LoadConfigErrorKind,
+        error: LoadConfigErrorInner,
+
+        path: PathBuf,
     }
 
     impl LoadConfigError {
         pub fn kind(&self) -> LoadConfigErrorKind {
-            self.kind
+            self.error.discriminant()
         }
     }
 
-    impl<T: Into<LoadConfigErrorInner>> From<T> for LoadConfigError {
-        fn from(value: T) -> Self {
-            let inner = value.into();
-            let kind = inner.discriminant();
-            Self { inner, kind }
+    impl<T: Into<LoadConfigErrorInner>> From<(PathBuf, T)> for LoadConfigError {
+        fn from(value: (PathBuf, T)) -> Self {
+            let inner = value.1.into();
+            Self {
+                path: value.0,
+                error: inner,
+            }
         }
     }
 
     #[derive(Error, Debug, EnumDiscriminants, new)]
-    #[strum_discriminants(vis(pub), name(LoadConfigErrorKind))]
+    #[strum_discriminants(
+        vis(pub),
+        name(LoadConfigErrorKind),
+        derive(EnumString, Display)
+    )]
     enum LoadConfigErrorInner {
         #[error("unsupported file extension: {0}")]
         UnsupportedFileExtension(String),
