@@ -136,7 +136,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^2.7.3" }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^1.7.0", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "^2.0.0", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
@@ -292,6 +292,7 @@ interprocess = { version = "^2.4.2", features = ["tokio"] }
 # nom = { version = "^8.0.0" }
 macro_rules_attribute = { version = "^0.2.2" }
 enumset = { version = "^1.1.13", features = ["serde", "proc-macro-crate"] }
+indicatif = { version = "^0.18.4" }
 
 
 [patch.crates-io]
