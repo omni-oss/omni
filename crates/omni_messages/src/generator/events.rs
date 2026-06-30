@@ -21,6 +21,29 @@ pub struct GeneratorFileSkippedEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratorActionSkippedEvent {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratorActionInProgressEvent {
+    pub name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratorActionSuccessEvent {
+    pub name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratorActionFailedEvent {
+    pub name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneratorCompletedEvent {
     pub name: String,
 }

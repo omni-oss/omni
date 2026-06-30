@@ -9,6 +9,10 @@ use crate::execution::{
     TaskOutputStreamEvent, TaskRetryingEvent, TaskSkippedEvent,
     TaskStartedEvent,
 };
+use crate::generator::events::{
+    GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
+    GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
+};
 use crate::generator::{
     GeneratorCompletedEvent, GeneratorEventSubscriber,
     GeneratorFileCreatedEvent, GeneratorFileSkippedEvent, GeneratorStartEvent,
@@ -34,6 +38,10 @@ pub enum OmniEventKind {
     Diagnostic(DiagnosticEvent),
     // Generator lifecycle
     GeneratorStarted(GeneratorStartEvent),
+    GeneratorActionSkipped(GeneratorActionSkippedEvent),
+    GeneratorActionInProgress(GeneratorActionInProgressEvent),
+    GeneratorActionSuccess(GeneratorActionSuccessEvent),
+    GeneratorActionFailed(GeneratorActionFailedEvent),
     GeneratorFileCreated(GeneratorFileCreatedEvent),
     GeneratorFileSkipped(GeneratorFileSkippedEvent),
     GeneratorComplete(GeneratorCompletedEvent),
@@ -124,6 +132,18 @@ impl GeneratorEventSubscriber for ChannelSubscriber {
     }
     async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
         self.send(OmniEventKind::GeneratorComplete(e));
+    }
+    async fn on_action_skipped(&self, e: GeneratorActionSkippedEvent) {
+        self.send(OmniEventKind::GeneratorActionSkipped(e));
+    }
+    async fn on_action_in_progress(&self, e: GeneratorActionInProgressEvent) {
+        self.send(OmniEventKind::GeneratorActionInProgress(e));
+    }
+    async fn on_action_failed(&self, e: GeneratorActionFailedEvent) {
+        self.send(OmniEventKind::GeneratorActionFailed(e));
+    }
+    async fn on_action_success(&self, e: GeneratorActionSuccessEvent) {
+        self.send(OmniEventKind::GeneratorActionSuccess(e));
     }
 }
 
