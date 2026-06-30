@@ -5,7 +5,13 @@ use omni_generator_configurations::{
     ActionConfiguration, GeneratorConfiguration, OmniPath,
     OverwriteConfiguration,
 };
-use omni_messages::{GeneratorEventSubscriber, NoopSubscriber};
+use omni_messages::{
+    GeneratorEventSubscriber, NoopSubscriber,
+    generator::events::{
+        GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
+        GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
+    },
+};
 use omni_utils::path::clean;
 use strum::IntoDiscriminant;
 use value_bag::OwnedValueBag;
@@ -78,7 +84,11 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
         let action_name = get_action_name(index, action, &tera_context)?;
 
         if skip(&action_name, action, &tera_context)? {
-            log::info!("Action {}: Skipped", &action_name);
+            args.subscriber
+                .on_action_skipped(GeneratorActionSkippedEvent {
+                    name: action_name.clone(),
+                })
+                .await;
             continue;
         }
 
@@ -110,7 +120,12 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
         let in_progress_message =
             get_in_progress_message(&action_name, action, &tera_context)?;
 
-        log::info!("Action {}: {}", &action_name, in_progress_message);
+        args.subscriber
+            .on_action_in_progress(GeneratorActionInProgressEvent {
+                name: action_name.clone(),
+                message: in_progress_message,
+            })
+            .await;
 
         let result = match action {
             ActionConfiguration::Add { action } => {
@@ -161,14 +176,24 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             let error_message =
                 get_error_message(&action_name, &e, action, &tera_context)?;
 
-            log::error!("Action {}: {}", &action_name, error_message);
+            args.subscriber
+                .on_action_failed(GeneratorActionFailedEvent {
+                    name: action_name.clone(),
+                    message: error_message,
+                })
+                .await;
 
             return Err(e);
         } else {
             let success_message =
                 get_success_message(&action_name, action, &tera_context)?;
 
-            log::info!("Action {}: {}", &action_name, success_message);
+            args.subscriber
+                .on_action_success(GeneratorActionSuccessEvent {
+                    name: action_name.clone(),
+                    message: success_message,
+                })
+                .await;
         }
     }
 

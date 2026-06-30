@@ -1,8 +1,8 @@
 use std::{path::Path, process::Stdio};
 
 use maps::Map;
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
     process::Command,
@@ -35,7 +35,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     // Honour the same dry-run contract as the other "run" actions: skip the
     // (potentially side-effecting) command unless it explicitly opts in.
     if ctx.dry_run && !common.supports_dry_run {
-        log::info!("Skipped transforming {} (dry run)", file.display());
+        log::debug!("Skipped transforming {} (dry run)", file.display());
         return Ok(());
     }
 
@@ -59,7 +59,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     // the command string, mirroring `run-command`'s command expansion.
     let command = ::env::expand(&command, &env);
 
-    log::info!(
+    log::debug!(
         "Transforming {} through command: {}",
         file.display(),
         command
@@ -78,7 +78,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(file, e))?;
 
-    log::info!("Wrote transformed output to {}", file.display());
+    log::debug!("Wrote transformed output to {}", file.display());
 
     Ok(())
 }

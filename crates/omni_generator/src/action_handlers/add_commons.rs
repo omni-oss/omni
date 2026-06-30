@@ -81,7 +81,7 @@ where
         .await
         .map_err(|e| ErrorInner::new_failed_to_write_file(&output_path, e))?;
 
-    log::info!("Wrote to path {}", output_path.display());
+    log::debug!("Wrote to path {}", output_path.display());
 
     Ok(())
 }

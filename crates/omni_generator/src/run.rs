@@ -16,6 +16,7 @@ use omni_messages::{
 };
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
+use strum::EnumDiscriminants;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use omni_utils::lock::LockGuard;
@@ -335,8 +336,16 @@ fn expand_vars(
     Ok(result)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+    EnumDiscriminants,
+)]
 #[serde(tag = "action", rename_all = "kebab-case")]
+#[strum_discriminants(name(ActionType))]
 pub enum Action {
     CreateFile { path: PathBuf },
     ModifyFile { path: PathBuf },

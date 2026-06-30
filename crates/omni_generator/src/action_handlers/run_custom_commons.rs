@@ -107,7 +107,7 @@ pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
         &ctx.tera_context_values,
     )?;
 
-    log::info!("Running command: {}", command);
+    log::debug!("Running command: {}", command);
 
     if common.supports_dry_run || !ctx.dry_run {
         let mut cp =

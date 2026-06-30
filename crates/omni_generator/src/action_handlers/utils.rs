@@ -172,13 +172,13 @@ pub async fn overwrite(
         let output_path_d = output_path.display();
         if overwrite {
             if sys.fs_is_dir_async(&output_path).await? {
-                log::info!(
+                log::debug!(
                     "Removing directory and it's contents at path {}",
                     output_path_d
                 );
                 sys.fs_remove_dir_all_async(&output_path).await?;
             } else {
-                log::info!("Overwriting path at {}", output_path_d);
+                log::debug!("Overwriting path at {}", output_path_d);
             }
 
             return Ok(Some(true));
