@@ -9,7 +9,7 @@ use tera_contrib::{
     format::format,
     json::json_encode,
     rand::{get_random, shuffle},
-    regex::{spaceless, striptags},
+    regex::{Matching, RegexReplace, spaceless, striptags},
     slug::slug,
     urlencode::{urlencode, urlencode_strict},
 };
@@ -33,6 +33,8 @@ pub(crate) fn register_all(tera: &mut Tera) {
     tera.register_filter("date", date);
     tera.register_test("is_after", is_after);
     tera.register_test("is_before", is_before);
+    tera.register_test("matching", Matching::default());
+    tera.register_filter("regex_replace", RegexReplace::default());
     tera.register_filter("format", format);
     tera.register_function("get_random", get_random);
     tera.register_filter("shuffle", shuffle);
