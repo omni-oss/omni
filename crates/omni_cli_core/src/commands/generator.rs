@@ -208,9 +208,86 @@ async fn run_generator_run(
         loaded_context,
         crate::subscriber::CliSubscriber::new_stream(),
     );
-    api.generator_run(req).await?;
+    let response = api.generator_run(req).await?;
+
+    report_generator_output(response);
 
     Ok(())
+}
+
+fn report_generator_output(response: omni_api::GeneratorRunResponse) {
+    let mut files_created = vec![];
+    let mut files_modified = vec![];
+    let mut files_removed = vec![];
+    let mut dirs_created = vec![];
+    let mut dirs_removed = vec![];
+    let mut renamed = vec![];
+    let mut copied = vec![];
+
+    for action in response.actions {
+        match action {
+            omni_generator::Action::CreateFile { path } => {
+                files_created.push(path);
+            }
+            omni_generator::Action::ModifyFile { path } => {
+                files_modified.push(path);
+            }
+            omni_generator::Action::RemoveFile { path } => {
+                files_removed.push(path);
+            }
+            omni_generator::Action::CreateDir { path } => {
+                dirs_created.push(path);
+            }
+            omni_generator::Action::RemoveDir { path } => {
+                dirs_removed.push(path);
+            }
+            omni_generator::Action::RemoveDirAll { path } => {
+                dirs_removed.push(path);
+            }
+            omni_generator::Action::Rename { from, to } => {
+                renamed.push((from, to));
+            }
+            omni_generator::Action::Copy { from, to } => {
+                copied.push((from, to));
+            }
+        }
+    }
+
+    if !files_created.is_empty()
+        || !files_modified.is_empty()
+        || !files_removed.is_empty()
+        || !dirs_created.is_empty()
+        || !dirs_removed.is_empty()
+        || !renamed.is_empty()
+        || !copied.is_empty()
+    {
+        println!("Generated files:");
+        for path in &dirs_created {
+            println!("  created: {}", path.display());
+        }
+        for path in &files_created {
+            println!("  created: {}", path.display());
+        }
+        for path in &files_modified {
+            println!("  modified: {}", path.display());
+        }
+        for path in &dirs_removed {
+            println!("  removed: {}", path.display());
+        }
+        for path in &files_removed {
+            println!("  removed: {}", path.display());
+        }
+        for (from, to) in &renamed {
+            println!("  renamed: {} -> {}", from.display(), to.display());
+        }
+        for (from, to) in &copied {
+            println!("  copied: {} -> {}", from.display(), to.display());
+        }
+    }
+
+    if response.session_saved {
+        println!("Session saved to disk.");
+    }
 }
 
 fn get_target_overrides(
