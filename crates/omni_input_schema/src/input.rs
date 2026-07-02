@@ -1,5 +1,5 @@
 use maps::UnorderedMap;
-use omni_config_types::MaybeExpr;
+use omni_config_types::{MaybeExpr, TeraExpr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
@@ -10,7 +10,15 @@ use crate::profile::InputProfile;
 
 // ── Named inner structs ───────────────────────────────────────────────────────
 
+// **IMPORTANT**
+// Why deserialize and serialize with `bound(deserialize = "", serialize = "")`?
+// Because E: InputProfile is just not actually used as fields.
+// Instead it has associated types that are used as fields, and those associated types
+// already have constraints on them so adding them here is redundant.
+
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct BooleanInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -22,6 +30,8 @@ pub struct BooleanInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -34,6 +44,8 @@ pub struct StringInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -47,6 +59,8 @@ pub struct IntegerInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -60,6 +74,8 @@ pub struct FloatInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -74,6 +90,8 @@ pub struct StringArrayInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -88,6 +106,8 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -117,7 +137,9 @@ pub enum InputValue {
 /// Nested object: a group of typed fields returned as one JSON object value.
 /// Available immediately for tools / plugins / MCP (`Input<()>`).
 /// Gated for generators via `SUPPORTED` until group-prompting is implemented.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(bound(deserialize = "", serialize = ""))]
+#[schemars(bound(deserialize = "", serialize = ""))]
 pub struct ObjectInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
@@ -148,7 +170,11 @@ pub struct ObjectInput<E: InputProfile = ()> {
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, EnumDiscriminants,
 )]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(
+    tag = "type",
+    rename_all = "kebab-case",
+    bound(deserialize = "", serialize = "")
+)]
 #[strum_discriminants(
     derive(EnumIs, enumset::EnumSetType, Serialize, Deserialize, JsonSchema),
     name(InputKind),
@@ -371,7 +397,7 @@ impl<E: InputProfile> Input<E> {
                 .default
                 .as_ref()
                 .and_then(MaybeExpr::try_as_expr_ref)
-                .map(String::as_str),
+                .map(TeraExpr::as_str),
             Input::String(s) => {
                 let str = s.default.as_deref();
                 if str.is_some_and(is_string_expr) {
@@ -384,12 +410,12 @@ impl<E: InputProfile> Input<E> {
                 .default
                 .as_ref()
                 .and_then(MaybeExpr::try_as_expr_ref)
-                .map(String::as_str),
+                .map(TeraExpr::as_str),
             Input::Float(f) => f
                 .default
                 .as_ref()
                 .and_then(MaybeExpr::try_as_expr_ref)
-                .map(String::as_str),
+                .map(TeraExpr::as_str),
             Input::StringArray(_) => None,
             Input::IntegerArray(_) => None,
             Input::FloatArray(_) => None,
@@ -510,6 +536,7 @@ mod tests {
             r#"{"type":"string-array","name":"tags"}"#,
             r#"{"type":"integer-array","name":"ids"}"#,
             r#"{"type":"float-array","name":"scores"}"#,
+            r#"{"type":"object","name":"group","fields":[{"type":"boolean","name":"enabled"}]}"#,
         ];
         for json in cases {
             let input: Input<()> = serde_json::from_str(json).unwrap();

@@ -7,7 +7,7 @@ use crate::{AsInner, AsInnerMut, IntoInner, ToInner, merge::Merge};
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumIs, EnumDiscriminants)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
 pub enum DictConfig<T: Merge> {
     Value(Map<String, T>),
@@ -19,6 +19,43 @@ impl<T: Merge> Default for DictConfig<T> {
     #[inline(always)]
     fn default() -> Self {
         Self::Value(maps::map![])
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
+    for DictConfig<T>
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        serde_untagged::UntaggedEnumVisitor::new()
+            .map(|m| {
+                let value: serde_json::Value = m.deserialize()?;
+
+                if value["merge"].is_object() {
+                    return Ok(DictConfig::merge(
+                        serde_path_to_error::deserialize(
+                            value["merge"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else if value["replace"].is_object() {
+                    return Ok(DictConfig::replace(
+                        serde_path_to_error::deserialize(
+                            value["replace"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else {
+                    return Ok(DictConfig::value(
+                        serde_path_to_error::deserialize(value)
+                            .map_err(serde::de::Error::custom)?,
+                    ));
+                }
+            })
+            .deserialize(deserializer)
     }
 }
 

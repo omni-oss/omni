@@ -40,8 +40,11 @@ pub struct AllowedValue<T = String, E: InputProfile = ()> {
 }
 /// Helper for the bare-value / full-struct untagged deserialization.
 #[derive(Deserialize, JsonSchema)]
-#[serde(bound(deserialize = "T: Deserialize<'de>"))]
-#[schemars(bound(deserialize = "T: JsonSchema"))]
+#[serde(bound(
+    deserialize = "T: Deserialize<'de>",
+    serialize = "T: Serialize"
+))]
+#[schemars(bound(deserialize = "T: JsonSchema", serialize = "T: JsonSchema"))]
 struct AllowedValueFull<T, E: InputProfile> {
     pub value: T,
     #[serde(default)]

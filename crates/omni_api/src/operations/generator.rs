@@ -803,9 +803,9 @@ fn condition_from_if(
     match if_expr? {
         MaybeExpr::Value(true) => None,
         MaybeExpr::Value(false) => Some(InputCondition::AlwaysHidden),
-        MaybeExpr::Expr(expr) => {
-            Some(InputCondition::Expression { expr: expr.clone() })
-        }
+        MaybeExpr::Expr(expr) => Some(InputCondition::Expression {
+            expr: expr.to_string(),
+        }),
     }
 }
 
@@ -815,7 +815,7 @@ fn validators_from_base(base: &BaseInput) -> Vec<InputValidator> {
         .map(|v| InputValidator {
             condition: match &v.condition {
                 MaybeExpr::Value(b) => b.to_string(),
-                MaybeExpr::Expr(expr) => expr.clone(),
+                MaybeExpr::Expr(expr) => expr.to_string(),
             },
             error_message: v.error_message.clone(),
         })

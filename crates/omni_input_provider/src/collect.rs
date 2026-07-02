@@ -329,9 +329,10 @@ fn skip(
             let mut eval_ctx = ctx.clone();
             eval_ctx
                 .insert(root_property.unwrap_or("inputs").to_owned(), values);
-            let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
+            let result =
+                omni_tera::one_off(expr.as_str(), expr.as_str(), &eval_ctx)?;
             let result = result.trim();
-            validate_boolean_expression_result(result, expr)?;
+            validate_boolean_expression_result(result, expr.as_str())?;
             result != "true"
         }
     })

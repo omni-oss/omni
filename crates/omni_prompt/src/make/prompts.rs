@@ -512,7 +512,8 @@ fn parse_value<'a, T: FromStr + Clone>(
     let value = match value {
         MaybeExpr::Value(value) => Cow::Borrowed(value),
         MaybeExpr::Expr(expr) => {
-            let expanded = expand_default_value(expr, name, context_values)?;
+            let expanded =
+                expand_default_value(expr.as_str(), name, context_values)?;
             Cow::Owned(expanded.parse::<T>().map_err(|_| {
                 Error::custom(eyre::eyre!(
                     "failed to parse value from expression: {expr}, result: {expanded}"

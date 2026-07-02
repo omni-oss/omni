@@ -1,9 +1,8 @@
-use std::{fs::OpenOptions, path::PathBuf, process::ExitCode};
+use std::{path::PathBuf, process::ExitCode};
 
 use clap_utils::EnumValueAdapter;
 use eyre::OptionExt;
 use omni_configurations::Ui;
-use serde::Serialize;
 
 use crate::{
     commands::{common_args::RunArgs, common_types::SerializationFormat},
@@ -48,44 +47,6 @@ pub fn get_results_settings(
     } else {
         Ok(None)
     }
-}
-
-pub fn write_serialized_to_file<V: Serialize>(
-    value: V,
-    fmt: SerializationFormat,
-    results_file: PathBuf,
-) -> eyre::Result<()> {
-    let f = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&results_file)
-        .map_err(|e| {
-            eyre::eyre!("failed to open results file '{results_file:?}': {e}")
-        })?;
-
-    write_serialized_to(value, fmt, f)
-}
-
-pub fn write_serialized_to<V: Serialize, W: std::io::Write>(
-    value: V,
-    fmt: SerializationFormat,
-    mut writer: W,
-) -> eyre::Result<()> {
-    match fmt {
-        SerializationFormat::Json => {
-            serde_json::to_writer_pretty(&mut writer, &value)?;
-        }
-        SerializationFormat::Yaml => {
-            serde_norway::to_writer(&mut writer, &value)?;
-        }
-        SerializationFormat::Toml => {
-            let text = toml::ser::to_string_pretty(&value)?;
-            writer.write_all(text.as_bytes())?;
-        }
-    }
-
-    Ok(())
 }
 
 pub fn exit_code(results: &[TaskExecutionResult]) -> ExitCode {

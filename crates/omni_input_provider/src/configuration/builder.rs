@@ -549,7 +549,7 @@ mod tests {
 
         assert_eq!(
             input.base().r#if,
-            Some(MaybeExpr::Expr(
+            Some(MaybeExpr::new_expr(
                 "{{ inputs.mode == 'advanced' }}".to_string()
             ))
         );

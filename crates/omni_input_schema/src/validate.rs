@@ -290,7 +290,7 @@ pub fn validate_value(
             MaybeExpr::Value(l) => !*l,
             MaybeExpr::Expr(r) => {
                 let result = omni_tera::one_off(
-                    r,
+                    r.as_str(),
                     &format!(
                         "condition for input {} at index {}",
                         input_name, index
@@ -298,7 +298,7 @@ pub fn validate_value(
                     &eval_ctx,
                 )?;
                 let result = result.trim();
-                validate_boolean_expression_result(result, r)?;
+                validate_boolean_expression_result(result, r.as_str())?;
                 result != "true"
             }
         };
@@ -353,9 +353,10 @@ fn should_skip(
                 root_property.unwrap_or("inputs").to_owned(),
                 effective_inputs,
             );
-            let result = omni_tera::one_off(expr, expr, &eval_ctx)?;
+            let result =
+                omni_tera::one_off(expr.as_str(), expr.as_str(), &eval_ctx)?;
             let result = result.trim();
-            validate_boolean_expression_result(result, expr)?;
+            validate_boolean_expression_result(result, expr.as_str())?;
             result != "true"
         }
     })
@@ -591,7 +592,7 @@ mod tests {
             string_input("env"),
             Input::Boolean(BooleanInput {
                 base: BaseInput {
-                    r#if: Some(MaybeExpr::Expr(
+                    r#if: Some(MaybeExpr::new_expr(
                         "{{ inputs.env == 'prod' }}".to_string(),
                     )),
                     ..base("debug")
@@ -619,7 +620,7 @@ mod tests {
             string_input("env"),
             Input::Boolean(BooleanInput {
                 base: BaseInput {
-                    r#if: Some(MaybeExpr::Expr(
+                    r#if: Some(MaybeExpr::new_expr(
                         "{{ inputs.env == 'prod' }}".to_string(),
                     )),
                     ..base("debug")

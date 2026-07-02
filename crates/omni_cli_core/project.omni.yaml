@@ -38,3 +38,4 @@ dependencies:
   - clap_utils
   - js_runtime
   - omni_mcp_core
+  - omni_file_data_serde

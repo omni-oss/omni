@@ -7,3 +7,4 @@ extends:
 dependencies:
   - omni_configurations
   - omni_types
+  - omni_file_data_serde

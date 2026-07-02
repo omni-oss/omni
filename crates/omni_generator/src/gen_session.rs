@@ -39,7 +39,7 @@ impl GenSession {
     ) -> Result<Self, omni_file_data_serde::Error>
     where
         TSys: FsReadAsync + Send + Sync,
-        TPath: Into<&'a Path>,
+        TPath: AsRef<Path>,
     {
         let result: UnorderedMap<String, DataImpl> =
             omni_file_data_serde::read_async(path, sys).await?;
@@ -254,7 +254,7 @@ impl GenSession {
     ) -> Result<(), omni_file_data_serde::Error>
     where
         TSys: FsWriteAsync + Send + Sync,
-        TPath: Into<&'a Path>,
+        TPath: AsRef<Path>,
     {
         let data = self.data.lock().await.clone();
         omni_file_data_serde::write_async(path, &data, sys).await?;
@@ -310,7 +310,7 @@ impl GenSession {
     ) -> Result<bool, omni_file_data_serde::Error>
     where
         TSys: FsReadAsync + Send + Sync,
-        TPath: Into<&'a Path>,
+        TPath: AsRef<Path>,
     {
         let data = self.data.lock().await.clone();
         let original: UnorderedMap<String, DataImpl> =

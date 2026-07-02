@@ -295,6 +295,6 @@ describe("+generator @e2e (run-javascript)", {
             process.platform === "win32"
                 ? "The system cannot find the path specified."
                 : "No such file or directory";
-        expect(result).toOutputContaining(fileNotFoundMsg);
+        expect(result).toHaveStderrContaining(fileNotFoundMsg);
     });
 });

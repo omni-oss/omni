@@ -3,10 +3,19 @@ use std::{
     path::Path,
 };
 
+use eyre::Context;
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use system_traits::{FsRead, FsReadAsync, FsWrite, FsWriteAsync};
 use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Format {
+    Yaml,
+    Json,
+    Toml,
+    Bin,
+}
 
 pub async fn read_async<'a, 'b, TData, TPath, TSys: FsReadAsync + Send + Sync>(
     path: TPath,
@@ -14,13 +23,35 @@ pub async fn read_async<'a, 'b, TData, TPath, TSys: FsReadAsync + Send + Sync>(
 ) -> Result<TData, Error>
 where
     TData: for<'de> Deserialize<'de>,
-    TPath: Into<&'a Path>,
+    TPath: AsRef<Path>,
 {
-    let path: &'a Path = path.into();
-    let ext = path.extension().unwrap_or_default();
+    read_with_format_async(
+        ext_to_format(path.as_ref().extension().unwrap_or_default())?,
+        path,
+        sys,
+    )
+    .await
+}
+
+pub async fn read_with_format_async<
+    'a,
+    'b,
+    TData,
+    TPath,
+    TSys: FsReadAsync + Send + Sync,
+>(
+    format: Format,
+    path: TPath,
+    sys: &TSys,
+) -> Result<TData, Error>
+where
+    TData: for<'de> Deserialize<'de>,
+    TPath: AsRef<Path>,
+{
+    let path = path.as_ref();
     let content = sys.fs_read_async(path).await?;
 
-    deserialize(ext, content)
+    from_slice(&content, format)
 }
 
 pub fn read<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
@@ -29,50 +60,120 @@ pub fn read<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
 ) -> Result<TData, Error>
 where
     TData: for<'de> Deserialize<'de>,
-    TPath: Into<&'a Path>,
+    TPath: AsRef<Path>,
 {
-    let path: &'a Path = path.into();
-    let ext = path.extension().unwrap_or_default();
-    let content = sys.fs_read(path)?;
-
-    deserialize(ext, content)
+    read_with_format(
+        ext_to_format(path.as_ref().extension().unwrap_or_default())?,
+        path,
+        sys,
+    )
 }
 
-fn deserialize<TConfig>(
-    ext: &std::ffi::OsStr,
-    content: std::borrow::Cow<'_, [u8]>,
-) -> Result<TConfig, Error>
+pub fn read_with_format<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
+    format: Format,
+    path: TPath,
+    sys: &TSys,
+) -> Result<TData, Error>
 where
-    TConfig: for<'de> Deserialize<'de>,
+    TData: for<'de> Deserialize<'de>,
+    TPath: AsRef<Path>,
 {
-    match ext.to_string_lossy().as_ref() {
-        "yaml" | "yml" => Ok(serde_norway::from_slice(&content)?),
-        "json" => Ok(serde_json::from_slice(&content)?),
-        "toml" => Ok(toml::from_slice(&content)?),
-        "bin" => Ok(rmp_serde::from_slice(&content)?),
-        ext => {
-            Err(ErrorInner::UnsupportedFileExtension(ext.to_string()).into())
+    let path = path.as_ref();
+    let content = sys.fs_read(path)?;
+
+    from_slice(&content, format)
+}
+
+pub fn from_slice<TData>(data: &[u8], format: Format) -> Result<TData, Error>
+where
+    TData: for<'de> Deserialize<'de>,
+{
+    // fast path for TOML, since toml doesn't support from_reader for &[u8]
+    if format == Format::Toml {
+        return read_toml_from_bytes(data);
+    }
+
+    let mut reader = Cursor::new(data);
+    from_reader(&mut reader, format)
+}
+
+pub fn from_reader<TData>(
+    reader: &mut impl std::io::Read,
+    format: Format,
+) -> Result<TData, Error>
+where
+    TData: for<'de> Deserialize<'de>,
+{
+    match format {
+        Format::Yaml => {
+            let value = noyalib::from_reader(reader)?;
+            let deserializer = noyalib::Deserializer::new(&value);
+            Ok(serde_path_to_error::deserialize(deserializer)?)
+        }
+        Format::Json => {
+            let mut deserializer =
+                serde_json::Deserializer::from_reader(reader);
+            Ok(serde_path_to_error::deserialize(&mut deserializer)?)
+        }
+        Format::Toml => {
+            let mut data = Vec::new();
+            reader.read_to_end(&mut data)?;
+            read_toml_from_bytes(&data)
+        }
+        Format::Bin => {
+            let mut deserializer = rmp_serde::Deserializer::new(reader);
+            Ok(serde_path_to_error::deserialize(&mut deserializer)?)
         }
     }
 }
 
-pub fn write<'a, TConfig, TData, TSys: FsWrite + Send + Sync>(
-    path: TData,
-    data: &TConfig,
+fn read_toml_from_bytes<TData>(data: &[u8]) -> Result<TData, Error>
+where
+    TData: for<'de> Deserialize<'de>,
+{
+    let utf8_str = std::str::from_utf8(&data)?;
+    let deserializer =
+        toml::Deserializer::parse(utf8_str).wrap_err("failed to parse TOML")?;
+
+    Ok(serde_path_to_error::deserialize(deserializer)?)
+}
+
+#[inline(always)]
+pub fn write<'a, TData, TPath, TSys: FsWrite + Send + Sync>(
+    path: TPath,
+    data: &TData,
     sys: &TSys,
 ) -> Result<(), Error>
 where
-    TConfig: Serialize,
-    TData: Into<&'a Path>,
+    TData: Serialize,
+    TPath: AsRef<Path>,
 {
-    let path: &Path = path.into();
-    let ext = path.extension().unwrap_or_default();
-    let content = serialize(data, ext)?;
+    write_with_format(
+        ext_to_format(path.as_ref().extension().unwrap_or_default())?,
+        path,
+        data,
+        sys,
+    )
+}
+
+pub fn write_with_format<'a, TData, TPath, TSys: FsWrite + Send + Sync>(
+    format: Format,
+    path: TPath,
+    data: &TData,
+    sys: &TSys,
+) -> Result<(), Error>
+where
+    TData: Serialize,
+    TPath: AsRef<Path>,
+{
+    let path = path.as_ref();
+    let content = to_vec(data, format)?;
     sys.fs_write(path, content)?;
 
     Ok(())
 }
 
+#[inline(always)]
 pub async fn write_async<'a, TData, TPath, TSys: FsWriteAsync + Send + Sync>(
     path: TPath,
     data: &TData,
@@ -80,37 +181,83 @@ pub async fn write_async<'a, TData, TPath, TSys: FsWriteAsync + Send + Sync>(
 ) -> Result<(), Error>
 where
     TData: Serialize,
-    TPath: Into<&'a Path>,
+    TPath: AsRef<Path>,
 {
-    let path: &Path = path.into();
-    let ext = path.extension().unwrap_or_default();
-    let content = serialize(data, ext)?;
+    write_with_format_async(
+        ext_to_format(path.as_ref().extension().unwrap_or_default())?,
+        path,
+        data,
+        sys,
+    )
+    .await
+}
+
+pub async fn write_with_format_async<
+    'a,
+    TData,
+    TPath,
+    TSys: FsWriteAsync + Send + Sync,
+>(
+    format: Format,
+    path: TPath,
+    data: &TData,
+    sys: &TSys,
+) -> Result<(), Error>
+where
+    TData: Serialize,
+    TPath: AsRef<Path>,
+{
+    let path = path.as_ref();
+    let content = to_vec(data, format)?;
     sys.fs_write_async(path, content).await?;
 
     Ok(())
 }
 
-fn serialize<TConfig>(
-    config: &TConfig,
-    ext: &std::ffi::OsStr,
-) -> Result<Vec<u8>, Error>
+pub fn to_vec<TData>(data: &TData, format: Format) -> Result<Vec<u8>, Error>
 where
-    TConfig: Serialize,
+    TData: Serialize,
 {
-    match ext.to_string_lossy().as_ref() {
-        "yaml" | "yml" => {
-            let mut writer = Cursor::new(Vec::new());
-            serde_norway::to_writer(&mut writer, config)?;
-            Ok(writer.into_inner())
-        }
-        "json" => {
-            let mut writer = Cursor::new(Vec::new());
-            serde_json::to_writer_pretty(&mut writer, config)?;
+    let mut buf = Vec::new();
+    to_writer(&mut buf, data, format)?;
+    Ok(buf)
+}
 
-            Ok(writer.into_inner())
+pub fn to_writer<TData>(
+    writer: &mut impl std::io::Write,
+    data: &TData,
+    format: Format,
+) -> Result<(), Error>
+where
+    TData: Serialize,
+{
+    match format {
+        Format::Yaml => {
+            noyalib::to_writer(writer, data)?;
+            Ok(())
         }
-        "toml" => Ok(toml::to_string(config)?.as_bytes().to_vec()),
-        "bin" => Ok(rmp_serde::to_vec(config)?),
+        Format::Json => {
+            serde_json::to_writer_pretty(writer, data)?;
+            Ok(())
+        }
+        Format::Toml => {
+            let s = toml::to_string(data)?;
+            writer.write_all(s.as_bytes())?;
+            Ok(())
+        }
+        Format::Bin => {
+            rmp_serde::encode::write(writer, data)?;
+            Ok(())
+        }
+    }
+}
+
+pub fn ext_to_format(ext: &std::ffi::OsStr) -> Result<Format, Error> {
+    match ext.to_string_lossy().as_ref() {
+        "yaml" | "yml" => Ok(Format::Yaml),
+        "json" => Ok(Format::Json),
+        "toml" => Ok(Format::Toml),
+        "bin" => Ok(Format::Bin),
         ext => {
             Err(ErrorInner::UnsupportedFileExtension(ext.to_string()).into())
         }
@@ -145,22 +292,36 @@ enum ErrorInner {
     Io(#[from] io::Error),
 
     #[error(transparent)]
-    TomlDeserialize(#[from] toml::de::Error),
+    TomlDeserialize(#[from] serde_path_to_error::Error<toml::de::Error>),
 
     #[error(transparent)]
     TomlSerialize(#[from] toml::ser::Error),
 
     #[error(transparent)]
-    YmlSerde(#[from] serde_norway::Error),
+    YmlDeserialize(#[from] serde_path_to_error::Error<noyalib::Error>),
 
     #[error(transparent)]
-    BinDeserialize(#[from] rmp_serde::decode::Error),
+    YmlSerialize(#[from] noyalib::Error),
+
+    #[error(transparent)]
+    BinDeserialize(
+        #[from] serde_path_to_error::Error<rmp_serde::decode::Error>,
+    ),
 
     #[error(transparent)]
     BinSeserialize(#[from] rmp_serde::encode::Error),
 
     #[error(transparent)]
-    JsonSerde(#[from] serde_json::Error),
+    JsonDeserialize(#[from] serde_path_to_error::Error<serde_json::Error>),
+
+    #[error(transparent)]
+    JsonSerialize(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Utf8(#[from] std::str::Utf8Error),
+
+    #[error(transparent)]
+    Unknown(#[from] eyre::Report),
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ pub mod fs {
     };
 
     use derive_new::new;
+    use omni_file_data_serde::ext_to_format;
     use serde::de::DeserializeOwned;
     use strum::{
         Display, EnumDiscriminants, EnumString, IntoDiscriminant as _,
@@ -40,8 +41,9 @@ pub mod fs {
         TPath: Into<&'a Path>,
     {
         let path: &'a Path = path.into();
-        let ext = path.extension().unwrap_or_default();
-        let content = sys.fs_read_to_string_async(path).await.map_err(|e| {
+        let ext = ext_to_format(path.extension().unwrap_or_default())
+            .map_err(|e| (path.to_path_buf(), e))?;
+        let content = sys.fs_read_async(path).await.map_err(|e| {
             (
                 PathBuf::from(path),
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -52,10 +54,8 @@ pub mod fs {
             )
         })?;
 
-        deseralize_config(ext, content).map_err(|e| LoadConfigError {
-            error: e,
-            path: PathBuf::from(path),
-        })
+        Ok(omni_file_data_serde::from_slice(&content, ext)
+            .map_err(|e| (path.to_path_buf(), e))?)
     }
 
     pub fn load_config<'a, 'b, TConfig, TPath, TSys: FsRead + Send + Sync>(
@@ -67,8 +67,9 @@ pub mod fs {
         TPath: Into<&'a Path>,
     {
         let path: &'a Path = path.into();
-        let ext = path.extension().unwrap_or_default();
-        let content = sys.fs_read_to_string(path).map_err(|e| {
+        let ext = ext_to_format(path.extension().unwrap_or_default())
+            .map_err(|e| (path.to_path_buf(), e))?;
+        let content = sys.fs_read(path).map_err(|e| {
             (
                 PathBuf::from(path),
                 if e.kind() == std::io::ErrorKind::NotFound {
@@ -79,28 +80,8 @@ pub mod fs {
             )
         })?;
 
-        deseralize_config(ext, content).map_err(|e| LoadConfigError {
-            error: e,
-            path: PathBuf::from(path),
-        })
-    }
-
-    fn deseralize_config<TConfig>(
-        ext: &std::ffi::OsStr,
-        content: std::borrow::Cow<'_, str>,
-    ) -> Result<TConfig, LoadConfigErrorInner>
-    where
-        TConfig: DeserializeOwned,
-    {
-        match ext.to_string_lossy().as_ref() {
-            "yaml" | "yml" => Ok(serde_norway::from_str(&content)?),
-            "json" => Ok(serde_json::from_str(&content)?),
-            "toml" => Ok(toml::from_str(&content)?),
-            ext => Err(LoadConfigErrorInner::UnsupportedFileExtension(
-                ext.to_string(),
-            )
-            .into()),
-        }
+        Ok(omni_file_data_serde::from_slice(&content, ext)
+            .map_err(|e| (path.to_path_buf(), e))?)
     }
 
     #[derive(Error, Debug, new)]
@@ -135,9 +116,6 @@ pub mod fs {
         derive(EnumString, Display)
     )]
     enum LoadConfigErrorInner {
-        #[error("unsupported file extension: {0}")]
-        UnsupportedFileExtension(String),
-
         #[error(transparent)]
         Io(#[from] io::Error),
 
@@ -145,12 +123,6 @@ pub mod fs {
         FileNotFound { path: PathBuf },
 
         #[error(transparent)]
-        TomlDeserialize(#[from] toml::de::Error),
-
-        #[error(transparent)]
-        YmlDeserialize(#[from] serde_norway::Error),
-
-        #[error(transparent)]
-        JsonDeserialize(#[from] serde_json::Error),
+        FileDataSerde(#[from] omni_file_data_serde::Error),
     }
 }

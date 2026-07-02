@@ -16,3 +16,4 @@ dependencies:
   - omni_config_types
   - serde_validate
   - omni_serde_validators
+  - omni_file_data_serde

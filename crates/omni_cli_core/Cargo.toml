@@ -39,7 +39,6 @@ tracing-futures = { workspace = true, optional = true }
 omni_types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_norway = { workspace = true }
 schemars = { workspace = true }
 globset = { workspace = true }
 regex = { workspace = true }
@@ -113,6 +112,7 @@ omni_api = { workspace = true }
 omni_mcp_core = { workspace = true }
 parking_lot = { workspace = true }
 indicatif = { workspace = true }
+omni_file_data_serde = { workspace = true }
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

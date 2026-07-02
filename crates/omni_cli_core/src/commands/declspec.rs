@@ -1,6 +1,6 @@
-use std::io::Write as _;
+use clap::CommandFactory as _;
 
-use clap::{CommandFactory as _, ValueEnum};
+use crate::commands::common_types::SerializationFormat;
 
 use super::Cli;
 
@@ -37,14 +37,7 @@ pub struct DumpArgs {
         value_enum,
         default_value = "json"
     )]
-    format: Option<DeclspecFormat>,
-}
-
-#[derive(ValueEnum, Clone, Debug, Copy)]
-enum DeclspecFormat {
-    Json,
-    Yaml,
-    Toml,
+    format: Option<SerializationFormat>,
 }
 
 pub async fn run(cmd: &DeclspecCommand) -> eyre::Result<()> {
@@ -76,20 +69,13 @@ async fn run_schema(args: &SchemaArgs) -> eyre::Result<()> {
 
 async fn run_dump(args: &DumpArgs) -> eyre::Result<()> {
     let cli_spec = clap_declspec::to_decspec(&Cli::command());
-    let format = args.format.unwrap_or(DeclspecFormat::Json);
+    let format = args.format.unwrap_or(SerializationFormat::Json);
 
-    match format {
-        DeclspecFormat::Json => {
-            serde_json::to_writer_pretty(std::io::stdout(), &cli_spec)?;
-        }
-        DeclspecFormat::Yaml => {
-            serde_norway::to_writer(std::io::stdout(), &cli_spec)?;
-        }
-        DeclspecFormat::Toml => {
-            let text = toml::ser::to_string(&cli_spec)?;
-            std::io::stdout().write_all(text.as_bytes())?;
-        }
-    }
+    omni_file_data_serde::to_writer(
+        &mut std::io::stdout(),
+        &cli_spec,
+        format.to_serde_format(),
+    )?;
 
     Ok(())
 }

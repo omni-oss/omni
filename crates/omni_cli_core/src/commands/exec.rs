@@ -6,7 +6,7 @@ use omni_task_executor::ExecutionConfigBuilder;
 use crate::{
     commands::{
         common_args::RunArgs,
-        utils::{exit_code, get_results_settings, write_serialized_to_file},
+        utils::{exit_code, get_results_settings},
     },
     context::Context,
     executor::{Call, TaskExecutor},
@@ -67,7 +67,13 @@ pub async fn run(
     // report_execution_results is now handled by CliSubscriber::on_execution_complete
 
     if let Some((fmt, results_file_path)) = output_settings {
-        write_serialized_to_file(&results, fmt, results_file_path)?;
+        omni_file_data_serde::write_with_format_async(
+            fmt.to_serde_format(),
+            &results_file_path,
+            &results,
+            ctx.sys(),
+        )
+        .await?;
     }
 
     Ok(exit_code(&results))

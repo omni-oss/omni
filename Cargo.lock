@@ -2191,7 +2191,9 @@ dependencies = [
  "merge",
  "schemars",
  "serde",
+ "serde-untagged",
  "serde_json",
+ "serde_path_to_error",
  "sets",
  "strum 0.28.0",
 ]
@@ -6226,6 +6228,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
+name = "noyalib"
+version = "0.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70fbde2dc0a7a7573769ff292f54108ea080a2afd73cbfe337033d0aa4bdd3df"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "memchr",
+ "rustc-hash 2.1.1",
+ "ryu",
+ "serde",
+ "serde_ignored",
+ "smallvec 1.15.1",
+]
+
+[[package]]
 name = "ntest"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6571,6 +6589,7 @@ dependencies = [
  "omni_core",
  "omni_execution_plan",
  "omni_expressions",
+ "omni_file_data_serde",
  "omni_generator",
  "omni_generator_configurations",
  "omni_git_utils",
@@ -6596,7 +6615,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_norway",
  "sets",
  "shadow-rs",
  "strum 0.28.0",
@@ -6651,6 +6669,9 @@ dependencies = [
  "omni_serde_validators",
  "schemars",
  "serde",
+ "serde-untagged",
+ "serde_json",
+ "serde_path_to_error",
  "strum 0.28.0",
  "test-log",
  "thiserror 2.0.18",
@@ -6694,13 +6715,14 @@ dependencies = [
  "omni_config_types",
  "omni_core",
  "omni_expressions",
+ "omni_file_data_serde",
  "omni_serde_validators",
  "omni_types",
  "petgraph",
  "schemars",
  "serde",
+ "serde-untagged",
  "serde_json",
- "serde_norway",
  "serde_validate",
  "sets",
  "strum 0.28.0",
@@ -6748,7 +6770,6 @@ dependencies = [
  "path-clean",
  "serde",
  "serde_json",
- "serde_norway",
  "sets",
  "shadow-rs",
  "strum 0.28.0",
@@ -6863,10 +6884,11 @@ name = "omni_file_data_serde"
 version = "0.1.0"
 dependencies = [
  "eyre",
+ "noyalib",
  "rmp-serde",
  "serde",
  "serde_json",
- "serde_norway",
+ "serde_path_to_error",
  "strum 0.28.0",
  "system_traits",
  "thiserror 2.0.18",
@@ -6951,7 +6973,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_norway",
  "serde_validate",
  "strum 0.28.0",
  "system_traits",
@@ -7048,6 +7069,7 @@ dependencies = [
  "enumset",
  "eyre",
  "garde 0.23.0",
+ "log",
  "maps",
  "omni_config_types",
  "omni_serde_validators",
@@ -7055,11 +7077,13 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_norway",
+ "serde_path_to_error",
  "serde_validate",
  "sets",
  "strum 0.28.0",
  "thiserror 2.0.18",
+ "trace",
+ "tracing",
  "value-bag",
 ]
 
@@ -7241,6 +7265,7 @@ dependencies = [
  "http-body 1.0.1",
  "log",
  "maps",
+ "noyalib",
  "omni_path_utils",
  "omni_remote_cache_storage",
  "omni_tracing_subscriber",
@@ -7248,7 +7273,6 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_norway",
  "sets",
  "shadow-rs",
  "sqlx",
@@ -7519,9 +7543,9 @@ dependencies = [
  "derive_builder",
  "eyre",
  "omni_configurations",
+ "omni_file_data_serde",
  "omni_types",
  "serde",
- "serde_norway",
  "strum 0.28.0",
  "thiserror 2.0.18",
  "trace",
@@ -9452,6 +9476,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-untagged"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9faf48a4a2d2693be24c6289dbe26552776eb7737074e6722891fadbe6c5058"
+dependencies = [
+ "erased-serde",
+ "serde",
+ "serde_core",
+ "typeid",
+]
+
+[[package]]
 name = "serde_buf"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9524,6 +9560,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9534,19 +9580,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "serde_norway"
-version = "0.9.42"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e408f29489b5fd500fab51ff1484fc859bb655f32c671f307dcd733b72e8168c"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml-norway",
 ]
 
 [[package]]
@@ -11422,12 +11455,6 @@ name = "unsafe-libyaml"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
-
-[[package]]
-name = "unsafe-libyaml-norway"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b39abd59bf32521c7f2301b52d05a6a2c975b6003521cbd0c6dc1582f0a22104"
 
 [[package]]
 name = "untrusted"

@@ -10,7 +10,15 @@ repository.workspace = true
 name = "omni_input_schema"
 path = "src/lib.rs"
 
+
+[features]
+default = ["enable-tracing"]
+enable-tracing = ["trace/enabled"]
+
 [dependencies]
+trace = { workspace = true }
+log = { workspace = true }
+tracing = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }
@@ -20,6 +28,7 @@ value-bag = { workspace = true }
 maps = { workspace = true }
 sets = { workspace = true }
 serde = { workspace = true }
+serde_path_to_error = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
 garde = { workspace = true }
@@ -27,6 +36,3 @@ omni_tera = { workspace = true }
 omni_serde_validators = { workspace = true }
 serde_validate = { workspace = true }
 omni_config_types = { workspace = true }
-
-[dev-dependencies]
-serde_norway = { workspace = true }

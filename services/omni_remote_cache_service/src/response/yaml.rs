@@ -8,7 +8,7 @@ pub struct Yaml<T>(pub T);
 
 impl<T: Serialize> IntoResponse for Yaml<T> {
     fn into_response(self) -> axum::response::Response {
-        let yaml = serde_norway::to_string(&self.0);
+        let yaml = noyalib::to_string(&self.0);
 
         match yaml {
             Ok(d) => (

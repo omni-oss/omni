@@ -13,7 +13,7 @@ path = "src/lib.rs"
 default = ["enable-tracing", "merge", "serde", "schemars"]
 enable-tracing = ["dep:tracing", "trace/enabled"]
 merge = ["dep:merge"]
-serde = ["dep:serde", "dep:omni_serde_validators"]
+serde = ["dep:serde", "dep:omni_serde_validators", "dep:serde-untagged", "dep:serde_json"]
 
 [dependencies]
 eyre = { workspace = true }
@@ -25,6 +25,9 @@ derive_builder = { workspace = true }
 derive-new = { workspace = true }
 omni_serde_validators = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+serde_path_to_error = { workspace = true }
+serde_json = { workspace = true, optional = true }
+serde-untagged = { workspace = true, optional = true }
 merge = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 either = { workspace = true }

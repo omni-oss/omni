@@ -682,14 +682,14 @@ fn evaluate_bool_expr(
     Ok(match expr {
         TeraExprBoolean::Boolean(b) => *b,
         TeraExprBoolean::Expr(expr) => {
-            let normal = expr.trim().to_lowercase();
+            let normal = expr.as_str().trim().to_lowercase();
             match normal.as_str() {
                 "true" | "yes" | "y" | "1" => return Ok(true),
                 "false" | "no" | "n" | "0" => return Ok(false),
                 _ => {}
             }
 
-            let result = omni_tera::one_off(expr, "expr", &context)?;
+            let result = omni_tera::one_off(expr.as_str(), "expr", &context)?;
 
             result.trim().to_lowercase() == "true"
         }

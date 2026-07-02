@@ -307,9 +307,9 @@ fn condition_from_if(
     match if_expr? {
         MaybeExpr::Value(true) => None,
         MaybeExpr::Value(false) => Some(McpInputCondition::AlwaysHidden),
-        MaybeExpr::Expr(expr) => {
-            Some(McpInputCondition::Expression { expr: expr.clone() })
-        }
+        MaybeExpr::Expr(expr) => Some(McpInputCondition::Expression {
+            expr: expr.to_string(),
+        }),
     }
 }
 
@@ -321,7 +321,7 @@ fn validators_from_base(
         .map(|v| McpValidator {
             condition: match &v.condition {
                 MaybeExpr::Value(b) => b.to_string(),
-                MaybeExpr::Expr(expr) => expr.clone(),
+                MaybeExpr::Expr(expr) => expr.to_string(),
             },
             error_message: v.error_message.clone(),
         })

@@ -13,7 +13,7 @@ use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant};
     EnumDiscriminants,
 )]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(untagged))]
 pub enum ListConfig<T: Merge> {
     Value(Vec<T>),
@@ -21,6 +21,58 @@ pub enum ListConfig<T: Merge> {
     Append { append: Vec<T> },
     Prepend { prepend: Vec<T> },
     Replace { replace: Vec<T> },
+}
+
+#[cfg(feature = "serde")]
+impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
+    for ListConfig<T>
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        serde_untagged::UntaggedEnumVisitor::new()
+            .seq(|s| s.deserialize().map(ListConfig::Value))
+            .map(|m| {
+                let value: serde_json::Value = m.deserialize()?;
+
+                if value.is_object() && value["merge"].is_array() {
+                    return Ok(ListConfig::merge(
+                        serde_path_to_error::deserialize(
+                            value["merge"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else if value.is_object() && value["replace"].is_array() {
+                    return Ok(ListConfig::replace(
+                        serde_path_to_error::deserialize(
+                            value["replace"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else if value.is_object() && value["append"].is_array() {
+                    return Ok(ListConfig::append(
+                        serde_path_to_error::deserialize(
+                            value["append"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else if value.is_object() && value["prepend"].is_array() {
+                    return Ok(ListConfig::prepend(
+                        serde_path_to_error::deserialize(
+                            value["prepend"].clone(),
+                        )
+                        .map_err(serde::de::Error::custom)?,
+                    ));
+                } else {
+                    return Ok(ListConfig::value(
+                        serde_path_to_error::deserialize(value)
+                            .map_err(serde::de::Error::custom)?,
+                    ));
+                }
+            })
+            .deserialize(deserializer)
+    }
 }
 
 impl<T: Merge> Default for ListConfig<T> {

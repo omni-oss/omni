@@ -19,11 +19,16 @@ pub fn validate_str<V: Borrow<str>>(value: &V) -> Result<(), String> {
     {
         trace::error!(
             expr = value,
-            span = ?error.span(),
+            span = %error.span(),
             error = error.message(),
             "tera_syntax_error"
         );
-        return Err(error.message().to_owned());
+        return Err(format!(
+            "tera syntax error in '{}' {}: {}",
+            value,
+            error.span(),
+            error.message(),
+        ));
     }
 
     Ok(())

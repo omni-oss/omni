@@ -152,14 +152,26 @@ impl Default for TaskConfigurationLongForm {
     }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
-)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema, Validate)]
 #[serde(untagged)]
 #[garde(allow_unvalidated)]
 pub enum TaskConfiguration {
     ShortForm(String),
     LongForm(Box<TaskConfigurationLongForm>),
+}
+
+impl<'a> Deserialize<'a> for TaskConfiguration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        serde_untagged::UntaggedEnumVisitor::new()
+            .string(|s| Ok(TaskConfiguration::ShortForm(s.to_string())))
+            .map(|long_form| {
+                long_form.deserialize().map(TaskConfiguration::LongForm)
+            })
+            .deserialize(deserializer)
+    }
 }
 
 #[derive(

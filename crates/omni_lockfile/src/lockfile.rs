@@ -38,8 +38,7 @@ impl Lockfile {
             }
 
             let data = omni_file_data_serde::read_async::<LockfileData, _, _>(
-                file.as_ref(),
-                sys,
+                &file, sys,
             )
             .await?;
             Ok(Lockfile::new(

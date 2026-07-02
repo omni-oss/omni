@@ -7,8 +7,6 @@ use omni_tracing_subscriber::noop_subscriber;
 use serde::Serialize;
 use tracing_futures::WithSubscriber as _;
 
-use crate::commands::utils::write_serialized_to;
-
 use super::common_types::SerializationFormat;
 
 #[derive(Args, Debug)]
@@ -83,10 +81,10 @@ async fn run_print_config(
 
     match result {
         Ok(config) => {
-            write_serialized_to(
-                config,
-                command.args.format,
-                std::io::stdout(),
+            omni_file_data_serde::to_writer(
+                &mut std::io::stdout(),
+                &config,
+                command.args.format.to_serde_format(),
             )?;
         }
         Err(e) => {
@@ -130,13 +128,17 @@ async fn run_list(command: &ListCommand, ctx: &Context) -> eyre::Result<()> {
 
     if let Some(format) = command.args.format {
         if format == SerializationFormat::Toml {
-            write_serialized_to(
-                ProjectNames::new(names),
-                format,
-                std::io::stdout(),
+            omni_file_data_serde::to_writer(
+                &mut std::io::stdout(),
+                &ProjectNames::new(names),
+                format.to_serde_format(),
             )?;
         } else {
-            write_serialized_to(&names, format, std::io::stdout())?;
+            omni_file_data_serde::to_writer(
+                &mut std::io::stdout(),
+                &names,
+                format.to_serde_format(),
+            )?;
         }
     } else {
         for name in &names {
