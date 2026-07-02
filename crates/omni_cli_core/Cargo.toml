@@ -113,6 +113,9 @@ omni_mcp_core = { workspace = true }
 parking_lot = { workspace = true }
 indicatif = { workspace = true }
 omni_file_data_serde = { workspace = true }
+comfy-table = { workspace = true }
+omni_utils = { workspace = true }
+
 
 [build-dependencies]
 shadow-rs = { workspace = true, features = ["default"] }

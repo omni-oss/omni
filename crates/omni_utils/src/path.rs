@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+pub use pathdiff::diff_paths as diff;
 use system_traits::FsMetadata;
 
 pub fn relpath<'a>(path: &'a Path, base: &Path) -> &'a Path {

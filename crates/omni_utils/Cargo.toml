@@ -25,4 +25,5 @@ system_traits = { workspace = true, features = [
 bs58 = { workspace = true }
 maps = { workspace = true }
 path-clean = { workspace = true }
+pathdiff = { workspace = true }
 tokio = { workspace = true }

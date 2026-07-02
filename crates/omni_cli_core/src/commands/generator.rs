@@ -11,6 +11,8 @@ use crate::commands::{
 
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
+use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
+use itertools::Itertools;
 use maps::{UnorderedMap, unordered_map};
 use omni_api::{GeneratorRunRequest, OmniApi};
 use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
@@ -210,12 +212,19 @@ async fn run_generator_run(
     );
     let response = api.generator_run(req).await?;
 
-    report_generator_output(response);
+    report_generator_output(ctx.root_dir(), response);
 
     Ok(())
 }
 
-fn report_generator_output(response: omni_api::GeneratorRunResponse) {
+fn report_generator_output(
+    root_dir: &Path,
+    response: omni_api::GeneratorRunResponse,
+) {
+    use omni_utils::path;
+
+    let root_dir = path::clean(root_dir);
+
     let mut files_created = vec![];
     let mut files_modified = vec![];
     let mut files_removed = vec![];
@@ -224,31 +233,41 @@ fn report_generator_output(response: omni_api::GeneratorRunResponse) {
     let mut renamed = vec![];
     let mut copied = vec![];
 
+    fn clean_diff_path(path: PathBuf, root_dir: &Path) -> PathBuf {
+        path::diff(&path, root_dir).unwrap_or(path)
+    }
+
     for action in response.actions {
         match action {
             omni_generator::Action::CreateFile { path } => {
-                files_created.push(path);
+                files_created.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::ModifyFile { path } => {
-                files_modified.push(path);
+                files_modified.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveFile { path } => {
-                files_removed.push(path);
+                files_removed.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::CreateDir { path } => {
-                dirs_created.push(path);
+                dirs_created.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveDir { path } => {
-                dirs_removed.push(path);
+                dirs_removed.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveDirAll { path } => {
-                dirs_removed.push(path);
+                dirs_removed.push(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::Rename { from, to } => {
-                renamed.push((from, to));
+                renamed.push((
+                    clean_diff_path(from, &root_dir),
+                    clean_diff_path(to, &root_dir),
+                ));
             }
             omni_generator::Action::Copy { from, to } => {
-                copied.push((from, to));
+                copied.push((
+                    clean_diff_path(from, &root_dir),
+                    clean_diff_path(to, &root_dir),
+                ));
             }
         }
     }
@@ -261,28 +280,67 @@ fn report_generator_output(response: omni_api::GeneratorRunResponse) {
         || !renamed.is_empty()
         || !copied.is_empty()
     {
-        println!("Generated files:");
-        for path in &dirs_created {
-            println!("  created: {}", path.display());
+        let mut table = comfy_table::Table::new();
+        table
+            .load_preset(UTF8_FULL)
+            .apply_modifier(UTF8_ROUND_CORNERS)
+            .set_header(vec!["Action", "Paths", "Count"]);
+
+        if !dirs_created.is_empty() || !files_created.is_empty() {
+            table.add_row(vec![
+                "Created".to_string(),
+                dirs_created
+                    .iter()
+                    .map(|p| p.display())
+                    .chain(files_created.iter().map(|p| p.display()))
+                    .join("\n"),
+                format!("{}", dirs_created.len() + files_created.len()),
+            ]);
         }
-        for path in &files_created {
-            println!("  created: {}", path.display());
+
+        if !files_modified.is_empty() {
+            table.add_row(vec![
+                "Modified".to_string(),
+                files_modified.iter().map(|p| p.display()).join("\n"),
+                format!("{}", files_modified.len()),
+            ]);
         }
-        for path in &files_modified {
-            println!("  modified: {}", path.display());
+
+        if !renamed.is_empty() {
+            table.add_row(vec![
+                "Renamed".to_string(),
+                renamed
+                    .iter()
+                    .map(|(from, to)| {
+                        format!("{}\n  ⮡ {}", from.display(), to.display())
+                    })
+                    .join("\n"),
+                format!("{}", renamed.len()),
+            ]);
         }
-        for path in &dirs_removed {
-            println!("  removed: {}", path.display());
+
+        if !copied.is_empty() {
+            table.add_row(vec![
+                "Copied".to_string(),
+                copied
+                    .iter()
+                    .map(|(from, to)| {
+                        format!("{}\n  ⮡ {}", from.display(), to.display())
+                    })
+                    .join("\n"),
+                format!("{}", copied.len()),
+            ]);
         }
-        for path in &files_removed {
-            println!("  removed: {}", path.display());
+
+        if !dirs_removed.is_empty() || !files_removed.is_empty() {
+            table.add_row(vec![
+                "Removed".to_string(),
+                dirs_removed.iter().map(|path| path.display()).join("\n"),
+                format!("{}", dirs_removed.len() + files_removed.len()),
+            ]);
         }
-        for (from, to) in &renamed {
-            println!("  renamed: {} -> {}", from.display(), to.display());
-        }
-        for (from, to) in &copied {
-            println!("  copied: {} -> {}", from.display(), to.display());
-        }
+
+        println!("{table}");
     }
 
     if response.session_saved {

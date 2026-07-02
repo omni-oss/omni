@@ -294,6 +294,7 @@ interprocess = { version = "^2.4.2", features = ["tokio"] }
 macro_rules_attribute = { version = "^0.2.2" }
 enumset = { version = "^1.1.13", features = ["serde", "proc-macro-crate"] }
 indicatif = { version = "^0.18.4" }
+comfy-table = { version = "^7.2.2", features = ["custom_styling"] }
 
 
 [patch.crates-io]
