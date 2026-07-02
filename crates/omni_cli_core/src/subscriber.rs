@@ -1,12 +1,19 @@
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::Duration;
 
+use indicatif::{
+    MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle,
+};
 use omni_messages::execution::events::BatchCompletedEvent;
+use omni_messages::generator::events::{
+    GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
+    GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
+};
 use omni_messages::{
     CacheHitEvent, DiagnosticEvent, DiagnosticLevel, DiagnosticSubscriber,
     ExecutionCompleteEvent, ExecutionEventSubscriber, ExecutionPlanReadyEvent,
-    GeneratorCompletedEvent, GeneratorEventSubscriber,
-    GeneratorFileCreatedEvent, GeneratorFileSkippedEvent, GeneratorStartEvent,
+    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
     TaskCompletedEvent, TaskFailedEvent, TaskOutputStreamEvent,
     TaskRetryingEvent, TaskSkipReason, TaskSkippedEvent, TaskStartedEvent,
 };
@@ -31,6 +38,160 @@ enum CliUiMode {
     Auto,
 }
 
+/// Interval between spinner frames when indicatif rendering is active.
+const SPINNER_TICK: Duration = Duration::from_millis(80);
+
+/// Renders generator progress, transparently choosing between a live
+/// `indicatif` spinner and a plain log-based fallback.
+///
+/// The decision is made once, up front: if `indicatif` cannot draw to the
+/// terminal (e.g. output is piped/redirected, or the terminal is "dumb"), the
+/// draw target reports itself as hidden and we permanently fall back to
+/// ordinary `log` lines. Otherwise we render an animated spinner per action.
+///
+/// Only **top-level** generator actions (nesting `depth == 0`) drive the
+/// progress display. Actions belonging to sub-generators launched via
+/// `run-generator` are subsumed under their parent's progress step, so their
+/// events are ignored here.
+enum GeneratorProgress {
+    /// `indicatif` can render; `current` is the spinner for the in-flight
+    /// top-level action, if any.
+    Indicatif {
+        multi: MultiProgress,
+        current: Option<ProgressBar>,
+    },
+    /// Terminal cannot render `indicatif`; emit plain `log` lines instead.
+    Log,
+}
+
+impl GeneratorProgress {
+    /// Probe whether `indicatif` can actually display on this terminal, and
+    /// pick the matching backend. `ProgressDrawTarget::stderr()` yields a
+    /// hidden target when stderr is not an interactive terminal, which is our
+    /// signal to fall back to log-based progress.
+    fn new() -> Self {
+        if ProgressDrawTarget::stderr().is_hidden() {
+            GeneratorProgress::Log
+        } else {
+            GeneratorProgress::Indicatif {
+                multi: MultiProgress::new(),
+                current: None,
+            }
+        }
+    }
+
+    fn spinner_style() -> ProgressStyle {
+        ProgressStyle::with_template("{spinner:.green} {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_spinner())
+    }
+
+    /// Clear the in-flight spinner (if any) without printing a final line.
+    fn clear_current(current: &mut Option<ProgressBar>) {
+        if let Some(pb) = current.take() {
+            pb.finish_and_clear();
+        }
+    }
+
+    fn generator_start(&mut self, name: &str) {
+        match self {
+            GeneratorProgress::Indicatif { multi, .. } => {
+                let _ = multi.println(
+                    format!("Running generator '{}'", name).bold().to_string(),
+                );
+            }
+            GeneratorProgress::Log => {
+                log::info!("Running generator '{}'", name);
+            }
+        }
+    }
+
+    fn action_in_progress(&mut self, name: &str, message: &str) {
+        let text = format!("{}: {}", name, message);
+        match self {
+            GeneratorProgress::Indicatif { multi, current } => {
+                // Guard against a dangling spinner (should not normally happen
+                // as success/failed always finishes the previous action).
+                Self::clear_current(current);
+                let pb = multi.add(ProgressBar::new_spinner());
+                pb.set_style(Self::spinner_style());
+                pb.enable_steady_tick(SPINNER_TICK);
+                pb.set_message(text);
+                *current = Some(pb);
+            }
+            GeneratorProgress::Log => {
+                log::info!("{}", text);
+            }
+        }
+    }
+
+    fn action_success(&mut self, name: &str, message: &str) {
+        let text = format!("{}: {}", name, message);
+        match self {
+            GeneratorProgress::Indicatif { multi, current } => {
+                Self::clear_current(current);
+                let _ = multi.println(format!(
+                    "{} {}",
+                    "\u{2713}".green(),
+                    text.green()
+                ));
+            }
+            GeneratorProgress::Log => {
+                log::info!("{}", text.green());
+            }
+        }
+    }
+
+    fn action_failed(&mut self, name: &str, message: &str) {
+        let text = format!("{}: {}", name, message);
+        match self {
+            GeneratorProgress::Indicatif { multi, current } => {
+                Self::clear_current(current);
+                let _ = multi.println(format!(
+                    "{} {}",
+                    "\u{2717}".red(),
+                    text.red()
+                ));
+            }
+            GeneratorProgress::Log => {
+                log::error!("{}", text.red());
+            }
+        }
+    }
+
+    fn action_skipped(&mut self, name: &str, reason: Option<&str>) {
+        let msg = if let Some(reason) = reason
+            && !reason.is_empty()
+        {
+            format!("Skipped action '{}' ({})", name, reason)
+        } else {
+            format!("Skipped action '{}'", name)
+        };
+        match self {
+            GeneratorProgress::Indicatif { multi, .. } => {
+                let _ = multi.println(
+                    format!("{} {}", "\u{229d}", msg).dimmed().to_string(),
+                );
+            }
+            GeneratorProgress::Log => {
+                log::debug!("{}", msg);
+            }
+        }
+    }
+
+    fn generator_completed(&mut self, name: &str) {
+        let msg = format!("Generator '{}' complete", name);
+        match self {
+            GeneratorProgress::Indicatif { multi, current } => {
+                Self::clear_current(current);
+                let _ = multi.println(msg.green().bold().to_string());
+            }
+            GeneratorProgress::Log => {
+                log::info!("{}", msg.green().bold());
+            }
+        }
+    }
+}
+
 /// CLI-layer event subscriber — the only place in the codebase that uses
 /// `owo_colors` and `tiny_gradient` for terminal output.
 ///
@@ -44,6 +205,11 @@ pub struct CliSubscriber {
     mux: Arc<OnceLock<MuxOutputPresenterStatic>>,
     mode: CliUiMode,
     tasks: Arc<Mutex<JoinSet<()>>>,
+    /// Generator progress renderer (indicatif spinner or log fallback).
+    ///
+    /// Created lazily on the first generator event so the terminal probe and
+    /// `MultiProgress` allocation are skipped entirely for non-generator runs.
+    generator_progress: Arc<Mutex<Option<GeneratorProgress>>>,
 }
 
 impl CliSubscriber {
@@ -55,6 +221,7 @@ impl CliSubscriber {
             mux,
             mode: CliUiMode::Stream,
             tasks: Arc::new(Mutex::new(JoinSet::new())),
+            generator_progress: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -71,6 +238,7 @@ impl CliSubscriber {
             mux,
             mode: CliUiMode::Tui,
             tasks: Arc::new(Mutex::new(JoinSet::new())),
+            generator_progress: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -86,6 +254,7 @@ impl CliSubscriber {
             mux: Arc::new(OnceLock::new()),
             mode: CliUiMode::Auto,
             tasks: Arc::new(Mutex::new(JoinSet::new())),
+            generator_progress: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -95,6 +264,13 @@ impl CliSubscriber {
     fn get_mux(&self) -> &MuxOutputPresenterStatic {
         self.mux
             .get_or_init(|| MuxOutputPresenterStatic::new_stream())
+    }
+
+    /// Run `f` against the generator progress renderer, creating it on first
+    /// use (this is where the terminal capability probe happens).
+    fn with_progress(&self, f: impl FnOnce(&mut GeneratorProgress)) {
+        let mut guard = self.generator_progress.lock();
+        f(guard.get_or_insert_with(GeneratorProgress::new));
     }
 
     /// Wait for all task output streams to finish draining.
@@ -309,29 +485,38 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
 impl GeneratorEventSubscriber for CliSubscriber {
     async fn on_generator_start(&self, e: GeneratorStartEvent) {
-        log::info!("Running generator '{}'", e.name);
+        self.with_progress(|p| p.generator_start(&e.name));
     }
 
-    async fn on_file_created(&self, e: GeneratorFileCreatedEvent) {
-        log::info!(
-            "{}",
-            format!("[{}] Created: {}", e.generator, e.path.display()).green()
-        );
+    async fn on_action_in_progress(&self, e: GeneratorActionInProgressEvent) {
+        // Only the top-level generator drives the progress display; actions
+        // inside sub-generators are represented by their parent's step.
+        if e.depth == 0 {
+            self.with_progress(|p| p.action_in_progress(&e.name, &e.message));
+        }
     }
 
-    async fn on_file_skipped(&self, e: GeneratorFileSkippedEvent) {
-        log::debug!(
-            "[{}] Skipped: {} ({})",
-            e.generator,
-            e.path.display(),
-            e.reason
-        );
+    async fn on_action_success(&self, e: GeneratorActionSuccessEvent) {
+        if e.depth == 0 {
+            self.with_progress(|p| p.action_success(&e.name, &e.message));
+        }
+    }
+
+    async fn on_action_failed(&self, e: GeneratorActionFailedEvent) {
+        if e.depth == 0 {
+            self.with_progress(|p| p.action_failed(&e.name, &e.message));
+        }
+    }
+
+    async fn on_action_skipped(&self, e: GeneratorActionSkippedEvent) {
+        if e.depth == 0 {
+            self.with_progress(|p| {
+                p.action_skipped(&e.name, e.reason.as_deref())
+            });
+        }
     }
 
     async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
-        log::info!(
-            "{}",
-            format!("Generator '{}' complete", e.name).green().bold()
-        );
+        self.with_progress(|p| p.generator_completed(&e.name));
     }
 }

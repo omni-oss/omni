@@ -87,6 +87,8 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             args.subscriber
                 .on_action_skipped(GeneratorActionSkippedEvent {
                     name: action_name.clone(),
+                    reason: Some("condition not met".to_string()),
+                    depth: args.depth,
                 })
                 .await;
             continue;
@@ -124,6 +126,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             .on_action_in_progress(GeneratorActionInProgressEvent {
                 name: action_name.clone(),
                 message: in_progress_message,
+                depth: args.depth,
             })
             .await;
 
@@ -180,6 +183,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
                 .on_action_failed(GeneratorActionFailedEvent {
                     name: action_name.clone(),
                     message: error_message,
+                    depth: args.depth,
                 })
                 .await;
 
@@ -192,6 +196,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
                 .on_action_success(GeneratorActionSuccessEvent {
                     name: action_name.clone(),
                     message: success_message,
+                    depth: args.depth,
                 })
                 .await;
         }

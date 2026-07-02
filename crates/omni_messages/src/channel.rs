@@ -14,8 +14,7 @@ use crate::generator::events::{
     GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
 };
 use crate::generator::{
-    GeneratorCompletedEvent, GeneratorEventSubscriber,
-    GeneratorFileCreatedEvent, GeneratorFileSkippedEvent, GeneratorStartEvent,
+    GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
 };
 
 /// All events that can travel through the channel.
@@ -42,8 +41,6 @@ pub enum OmniEventKind {
     GeneratorActionInProgress(GeneratorActionInProgressEvent),
     GeneratorActionSuccess(GeneratorActionSuccessEvent),
     GeneratorActionFailed(GeneratorActionFailedEvent),
-    GeneratorFileCreated(GeneratorFileCreatedEvent),
-    GeneratorFileSkipped(GeneratorFileSkippedEvent),
     GeneratorComplete(GeneratorCompletedEvent),
 }
 
@@ -123,12 +120,6 @@ impl ExecutionEventSubscriber for ChannelSubscriber {
 impl GeneratorEventSubscriber for ChannelSubscriber {
     async fn on_generator_start(&self, e: GeneratorStartEvent) {
         self.send(OmniEventKind::GeneratorStarted(e));
-    }
-    async fn on_file_created(&self, e: GeneratorFileCreatedEvent) {
-        self.send(OmniEventKind::GeneratorFileCreated(e));
-    }
-    async fn on_file_skipped(&self, e: GeneratorFileSkippedEvent) {
-        self.send(OmniEventKind::GeneratorFileSkipped(e));
     }
     async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
         self.send(OmniEventKind::GeneratorComplete(e));

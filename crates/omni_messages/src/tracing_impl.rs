@@ -24,10 +24,12 @@ mod tracing_impl {
         ExecutionPlanReadyEvent, TaskCompletedEvent, TaskFailedEvent,
         TaskRetryingEvent, TaskSkippedEvent, TaskStartedEvent,
     };
+    use crate::generator::events::{
+        GeneratorActionFailedEvent, GeneratorActionInProgressEvent,
+        GeneratorActionSkippedEvent, GeneratorActionSuccessEvent,
+    };
     use crate::generator::{
-        GeneratorCompletedEvent, GeneratorEventSubscriber,
-        GeneratorFileCreatedEvent, GeneratorFileSkippedEvent,
-        GeneratorStartEvent,
+        GeneratorCompletedEvent, GeneratorEventSubscriber, GeneratorStartEvent,
     };
 
     pub struct TracingSubscriber;
@@ -107,14 +109,23 @@ mod tracing_impl {
         async fn on_generator_start(&self, e: GeneratorStartEvent) {
             t::debug!(name = %e.name, "generator_started");
         }
-        async fn on_file_created(&self, e: GeneratorFileCreatedEvent) {
-            t::debug!(generator = %e.generator, path = ?e.path, "generator_file_created");
-        }
-        async fn on_file_skipped(&self, e: GeneratorFileSkippedEvent) {
-            t::debug!(generator = %e.generator, path = ?e.path, reason = %e.reason, "generator_file_skipped");
-        }
         async fn on_generator_completed(&self, e: GeneratorCompletedEvent) {
-            t::debug!(name = %e.name, "generator_complete");
+            t::debug!(name = %e.name, "generator_completed");
+        }
+        async fn on_action_in_progress(
+            &self,
+            event: GeneratorActionInProgressEvent,
+        ) {
+            t::debug!(name = %event.name, message = %event.message, depth = event.depth, "action_in_progress");
+        }
+        async fn on_action_skipped(&self, event: GeneratorActionSkippedEvent) {
+            t::debug!(name = %event.name, depth = event.depth, "action_skipped");
+        }
+        async fn on_action_failed(&self, event: GeneratorActionFailedEvent) {
+            t::debug!(name = %event.name, message = %event.message, depth = event.depth, "action_failed");
+        }
+        async fn on_action_success(&self, event: GeneratorActionSuccessEvent) {
+            t::debug!(name = %event.name, message = %event.message, depth = event.depth, "action_success");
         }
     }
 }

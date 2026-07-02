@@ -6,10 +6,7 @@ use crate::{
     },
 };
 
-use super::events::{
-    GeneratorCompletedEvent, GeneratorFileCreatedEvent,
-    GeneratorFileSkippedEvent, GeneratorStartEvent,
-};
+use super::events::{GeneratorCompletedEvent, GeneratorStartEvent};
 
 /// Subscriber for generator lifecycle events.
 ///
@@ -20,8 +17,6 @@ use super::events::{
 /// usage). All methods take `&self`.
 pub trait GeneratorEventSubscriber: DiagnosticSubscriber {
     async fn on_generator_start(&self, _event: GeneratorStartEvent) {}
-    async fn on_file_created(&self, _event: GeneratorFileCreatedEvent) {}
-    async fn on_file_skipped(&self, _event: GeneratorFileSkippedEvent) {}
     async fn on_action_skipped(&self, _event: GeneratorActionSkippedEvent) {}
     async fn on_action_in_progress(
         &self,
@@ -38,12 +33,6 @@ pub trait GeneratorEventSubscriber: DiagnosticSubscriber {
 impl<S: GeneratorEventSubscriber> GeneratorEventSubscriber for &S {
     async fn on_generator_start(&self, event: GeneratorStartEvent) {
         S::on_generator_start(*self, event).await
-    }
-    async fn on_file_created(&self, event: GeneratorFileCreatedEvent) {
-        S::on_file_created(*self, event).await
-    }
-    async fn on_file_skipped(&self, event: GeneratorFileSkippedEvent) {
-        S::on_file_skipped(*self, event).await
     }
     async fn on_action_in_progress(
         &self,
