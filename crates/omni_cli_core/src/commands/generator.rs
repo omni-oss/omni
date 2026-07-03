@@ -234,7 +234,7 @@ fn report_generator_output(
     let mut copied = vec![];
 
     fn clean_diff_path(path: PathBuf, root_dir: &Path) -> PathBuf {
-        path::diff(&path, root_dir).unwrap_or(path)
+        path::diff(&path::clean(&path), root_dir).unwrap_or(path)
     }
 
     for action in response.actions {
