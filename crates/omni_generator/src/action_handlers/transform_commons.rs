@@ -19,7 +19,7 @@ use crate::{
 
 /// Reads `file` through `sys`, pipes its current contents through `command`
 /// (writing the contents to the command's standard input and exposing the
-/// file's path via the `FILENAME` environment variable) and, when the command
+/// file's path via the `FILEPATH` environment variable) and, when the command
 /// exits successfully, replaces the file's contents with the command's standard
 /// output.
 ///
@@ -53,9 +53,9 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     )?;
 
     let mut env = build_command_env(common, ctx, &cwd)?.into_owned();
-    env.insert("FILENAME".to_string(), file.to_string_lossy().into_owned());
+    env.insert("FILEPATH".to_string(), file.to_string_lossy().into_owned());
 
-    // Allow `$FILENAME` (and any other env var) to be referenced directly in
+    // Allow `$FILEPATH` (and any other env var) to be referenced directly in
     // the command string, mirroring `run-command`'s command expansion.
     let command = ::env::expand(&command, &env);
 
@@ -229,13 +229,13 @@ mod tests {
         }
     }
 
-    /// A command that prints the `FILENAME` environment variable to standard
+    /// A command that prints the `FILEPATH` environment variable to standard
     /// output without reading its standard input.
     fn print_filename_cmd() -> &'static str {
         if cfg!(windows) {
-            "cmd /C echo %FILENAME%"
+            "cmd /C echo %FILEPATH%"
         } else {
-            "printenv FILENAME"
+            "printenv FILEPATH"
         }
     }
 
@@ -275,7 +275,7 @@ mod tests {
     #[tokio::test]
     async fn exposes_env_and_ignores_unread_stdin() {
         let mut env = Map::default();
-        env.insert("FILENAME".to_string(), "example.ts".to_string());
+        env.insert("FILEPATH".to_string(), "example.ts".to_string());
 
         // The command never reads stdin and exits immediately; the resulting
         // broken pipe on our writer must be tolerated.

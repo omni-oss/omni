@@ -430,7 +430,7 @@ pub struct TransformActionConfiguration {
     /// written to the command's standard input, and its standard output (when
     /// the command exits successfully) becomes the file's new contents.
     /// The path of the file being processed is exposed to the command via the
-    /// `FILENAME` environment variable.
+    /// `FILEPATH` environment variable.
     #[serde(deserialize_with = "validate_tera_expr")]
     pub command: String,
 
@@ -458,7 +458,7 @@ pub struct TransformManyActionConfiguration {
     /// are written to the command's standard input, and its standard output
     /// (when the command exits successfully) becomes that file's new contents.
     /// The path of the file being processed is exposed to the command via the
-    /// `FILENAME` environment variable.
+    /// `FILEPATH` environment variable.
     #[serde(deserialize_with = "validate_tera_expr")]
     pub command: String,
 
