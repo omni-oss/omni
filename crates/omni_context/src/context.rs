@@ -13,7 +13,7 @@ use trace::Level;
 
 use crate::{
     ContextSys, LoadedContext,
-    constants::{self, CACHE_DIR, OMNI_DIR, TRACE_DIR},
+    constants::{self, CACHE_DIR, OMNI_DIR, SCRATCH_DIR, TRACE_DIR},
     extracted_data_validator::{
         ExtractedDataValidationErrors, ExtractedDataValidator,
     },
@@ -315,6 +315,10 @@ impl<TSys: ContextSys> Context<TSys> {
         self.root_dir.join(CACHE_DIR)
     }
 
+    pub fn scratch_dir(&self) -> PathBuf {
+        self.root_dir.join(SCRATCH_DIR)
+    }
+
     pub fn trace_dir(&self) -> PathBuf {
         self.root_dir.join(TRACE_DIR)
     }
@@ -533,6 +537,38 @@ mod tests {
         let project_3 = projects.iter().find(|p| p.name == "project-3");
 
         assert!(project_3.is_some(), "Can't find project-3");
+    }
+
+    #[tokio::test]
+    async fn test_extractor_resolves_output_logs_project_to_task() {
+        use omni_task_output_logs::LogsDisplay;
+
+        let (tmp, sys) = default_fixture();
+
+        let loaded = ctx("testing", tmp.path(), sys)
+            .into_loaded()
+            .await
+            .expect("can't load projects");
+
+        // Task-level `new: all` overrides the project-level `failed`; the
+        // `cached` facet inherits the project-level `failed`.
+        let run = loaded
+            .get_output_logs("project-1", "run")
+            .expect("run should have resolved output_logs");
+        assert_eq!(
+            run.normalized(),
+            (Some(LogsDisplay::All), Some(LogsDisplay::Failed))
+        );
+
+        // A task with no override inherits the project-level `failed` for both
+        // facets.
+        let build = loaded
+            .get_output_logs("project-1", "build")
+            .expect("build should inherit project output_logs");
+        assert_eq!(
+            build.normalized(),
+            (Some(LogsDisplay::Failed), Some(LogsDisplay::Failed))
+        );
     }
 
     #[tokio::test]

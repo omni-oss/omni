@@ -11,5 +11,6 @@ pub struct TaskContext<'a> {
     pub dependency_hashes: Vec<DefaultHash>,
     pub env_vars: Arc<EnvVars>,
     pub cache_info: Option<Cow<'a, CacheInfo>>,
+    pub output_logs: Option<omni_task_output_logs::OutputLogsConfiguration>,
     pub template_context: omni_tera::Context,
 }

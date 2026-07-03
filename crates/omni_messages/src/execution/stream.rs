@@ -1,5 +1,7 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use omni_task_output_logs::EffectiveOutputLogs;
+
 /// Owned byte streams for a spawned task's stdout/stderr (and optionally stdin).
 /// The subscriber takes ownership and MUST fully consume `reader` (e.g., by
 /// spawning a tokio task). Failure to drain causes the child process to deadlock.
@@ -20,5 +22,11 @@ pub struct TaskOutputStreamEvent {
     pub task: String,
     /// `true` when replaying cached logs, not live output.
     pub is_replay: bool,
+    /// `true` for interactive/persistent tasks, whose streams must stay live
+    /// (never captured to disk).
+    pub is_interactive: bool,
+    /// The resolved per-task display policy for both the fresh and cached
+    /// facets.
+    pub output_logs: EffectiveOutputLogs,
     pub stream: TaskOutputStream,
 }

@@ -5,8 +5,9 @@
  *
  * The task cache lives at `<workspace root>/.omni/cache`, so every test runs in
  * a fresh temp workspace and the cache is naturally isolated. Tasks here use
- * `echo`, which omni caches by default; re-running a cached task replays the
- * recorded stdout unless `-L/--no-replay-logs` is passed.
+ * `echo`, which omni caches by default. Cached output is replayed only when the
+ * `cached` output-logs policy asks for it; the default (`failed`) stays quiet on
+ * successful cache hits, and `--output-cached-logs all` forces replay.
  */
 
 import http from "node:http";
@@ -83,28 +84,47 @@ describe("+cache @cache (cache dir)", () => {
 });
 
 describe("+cache @cache @e2e (run cache hit / log replay)", () => {
-    it("re-running a cached task is a cache hit that replays its logs", async () => {
+    it("`--output-cached-logs all` replays a cache hit's logs", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
         const first = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(first).toHaveSucceeded();
-        expect(first).toOutputContaining("0 results from cache");
+        expect(first.stdout).not.toContain("Cache hits");
 
-        const second = await runOmni(["run", "build"], { cwd: ws.cwd });
+        const second = await runOmni(
+            ["run", "build", "--output-cached-logs", "all"],
+            { cwd: ws.cwd },
+        );
         expect(second).toHaveSucceeded();
         expect(second).toOutputContaining("Cache hit for task 'app#build'");
         expect(second).toOutputContaining("(replaying logs)");
         // The recorded stdout is replayed.
         expect(second).toOutputContaining("build app");
-        expect(second).toOutputContaining("1 results from cache");
+        expect(second).toOutputContaining("Cache hits");
     });
 
-    it("`-L/--no-replay-logs` reports the hit but suppresses replayed logs", async () => {
+    it("a successful cache hit stays quiet by default (failed policy)", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
         await seedCache(ws, ["build"]);
 
-        const replayed = await runOmni(["run", "build", "-L"], { cwd: ws.cwd });
+        const replayed = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(replayed).toHaveSucceeded();
+        expect(replayed).toOutputContaining("Cache hit for task 'app#build'");
+        expect(replayed).toOutputContaining("(skipping logs)");
+        // With the default `failed` policy, a successful cache hit is not replayed.
+        expect(replayed.stdout).not.toContain("build app");
+    });
+
+    it("`--output-cached-logs never` reports the hit but suppresses replayed logs", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+
+        await seedCache(ws, ["build"]);
+
+        const replayed = await runOmni(
+            ["run", "build", "--output-cached-logs", "never"],
+            { cwd: ws.cwd },
+        );
         expect(replayed).toHaveSucceeded();
         expect(replayed).toOutputContaining("Cache hit for task 'app#build'");
         expect(replayed).toOutputContaining("(skipping logs)");
@@ -121,7 +141,7 @@ describe("+cache @cache (run cache persistence)", () => {
             cwd: ws.cwd,
         });
         expect(run).toHaveSucceeded();
-        expect(run).toOutputContaining("0 results from cache");
+        expect(run.stdout).not.toContain("Cache hits");
 
         // Nothing was written to the cache, so stats reports no tasks.
         const stats = await runOmni(["cache", "stats"], { cwd: ws.cwd });
@@ -141,7 +161,7 @@ describe("+cache @cache (run cache persistence)", () => {
         expect(forced).toHaveSucceeded();
         // Forced execution re-runs the task instead of replaying the cache.
         expect(forced).toOutputContaining("Executed task 'app#build'");
-        expect(forced).toOutputContaining("0 results from cache");
+        expect(forced.stdout).not.toContain("Cache hits");
         expect(forced.stdout).not.toContain("Cache hit for task");
     });
 });

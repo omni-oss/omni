@@ -38,6 +38,7 @@ system_traits = { workspace = true, features = ["real-sync", "real-async-tokio"]
 either = { workspace = true }
 omni_messages = { workspace = true }
 omni_context = { workspace = true }
+omni_task_output_logs = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_configurations = { workspace = true }
 omni_generator = { workspace = true }

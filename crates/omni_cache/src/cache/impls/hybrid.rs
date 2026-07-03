@@ -1321,6 +1321,14 @@ impl<'a, T: Context> omni_task_context::Context for ContextWrapper<'a, T> {
         self.inner.get_cache_info(project_name, task_name)
     }
 
+    fn get_output_logs(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_output_logs::OutputLogsConfiguration> {
+        self.inner.get_output_logs(project_name, task_name)
+    }
+
     fn get_task_meta_config(
         &self,
         project_name: &str,

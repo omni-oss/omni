@@ -141,7 +141,15 @@ describe("+context @config (base & extends)", () => {
 
         // `from-base` is only defined on the base; the child gets it via extends.
         const result = await runOmni(
-            ["-l", "off", "run", "from-base", "-p", "child"],
+            [
+                "-l",
+                "off",
+                "run",
+                "from-base",
+                "-p",
+                "child",
+                "--output-logs=all",
+            ],
             {
                 cwd: ws.cwd,
             },
@@ -177,7 +185,7 @@ describe("+context @config (base & extends)", () => {
         });
 
         const result = await runOmni(
-            ["-l", "off", "run", "from-gp", "-p", "child"],
+            ["-l", "off", "run", "from-gp", "-p", "child", "--output-logs=all"],
             { cwd: ws.cwd },
         );
 
@@ -199,12 +207,18 @@ describe("+context @config (base & extends)", () => {
             },
         });
 
-        const short = await runOmni(["-l", "off", "run", "short"], {
-            cwd: ws.cwd,
-        });
-        const long = await runOmni(["-l", "off", "run", "long"], {
-            cwd: ws.cwd,
-        });
+        const short = await runOmni(
+            ["-l", "off", "run", "short", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
+        const long = await runOmni(
+            ["-l", "off", "run", "long", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(short).toOutputContaining("short form ran");
         expect(long).toOutputContaining("long form ran");

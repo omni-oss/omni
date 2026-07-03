@@ -6,5 +6,6 @@ pub const OMNI_IGNORE: &str = ".omniignore";
 pub const CACHE_DIR: &str = ".omni/cache";
 pub const OMNI_DIR: &str = ".omni";
 pub const TRACE_DIR: &str = ".omni/trace";
+pub const SCRATCH_DIR: &str = ".omni/scratch";
 // pub const WORKSPACE_DIR_VAR: &str = "WORKSPACE_DIR";
 // pub const PROJECT_DIR_VAR: &str = "PROJECT_DIR";

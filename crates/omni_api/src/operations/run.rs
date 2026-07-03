@@ -9,6 +9,7 @@ use omni_task_executor::{
     ExecutionConfigBuilder, Force, OnFailure, TaskExecutionResult,
     TaskExecutor, TaskExecutorSys,
 };
+use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -74,8 +75,12 @@ pub struct RunRequest {
     pub on_failure: OnFailure,
     /// Do not persist results to the local cache.
     pub no_cache: bool,
-    /// Do not replay cached task output logs.
-    pub no_replay_logs: bool,
+    /// Output-logs display policy for fresh (cache-miss) output; `None` inherits
+    /// the resolved config (default `failed`).
+    pub output_logs: Option<LogsDisplay>,
+    /// Output-logs display policy for replayed cached (cache-hit) output;
+    /// `None` falls back to `output_logs`, then the resolved config.
+    pub output_cached_logs: Option<LogsDisplay>,
     /// Force re-execution even for cached tasks.
     #[schemars(with = "String")]
     pub force: Force,
@@ -91,7 +96,8 @@ impl Default for RunRequest {
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,
             no_cache: false,
-            no_replay_logs: false,
+            output_logs: None,
+            output_cached_logs: None,
             force: Force::None,
             filters: RunFilters::default(),
         }
@@ -139,8 +145,14 @@ where
         .on_failure(req.on_failure)
         .no_cache(req.no_cache)
         .force(req.force)
-        .replay_cached_logs(!req.no_replay_logs)
         .call(Call::new_tasks(&req.tasks[..]));
+
+    if let Some(output_logs) = req.output_logs {
+        builder.output_logs(output_logs);
+    }
+    if let Some(output_cached_logs) = req.output_cached_logs {
+        builder.output_cached_logs(output_cached_logs);
+    }
 
     apply_filters(&mut builder, &req.filters);
 

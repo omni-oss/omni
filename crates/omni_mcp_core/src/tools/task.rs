@@ -48,7 +48,8 @@ where
             with_dependents: false,
             on_failure: OnFailure::SkipDependents,
             no_cache: false,
-            no_replay_logs: false,
+            output_logs: None,
+            output_cached_logs: None,
         };
         let response = self.make_api().run(req).await?;
         let ok = response.is_success();

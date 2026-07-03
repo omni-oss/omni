@@ -131,6 +131,7 @@ impl ProjectGenerator {
             file: OmniPath::new(project_dir.join("project.omni.yml")),
             base: self.base,
             cache: self.cache.generate(),
+            output_logs: None,
             name: self.name.clone(),
             extends: self
                 .extends

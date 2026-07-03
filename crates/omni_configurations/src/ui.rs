@@ -30,4 +30,8 @@ pub enum Ui {
     #[default]
     #[strum(serialize = "auto")]
     Auto,
+    /// Renders a live progress bar with per-task spinners, capturing task output
+    /// to disk and replaying it according to the output-logs policy.
+    #[strum(serialize = "progress")]
+    Progress,
 }

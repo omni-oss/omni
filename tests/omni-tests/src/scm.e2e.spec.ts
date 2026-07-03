@@ -134,7 +134,16 @@ describe("+scm @scm @e2e (affected selection)", () => {
         await git(ws, ["commit", "-qm", "change-app"]);
 
         const result = await runOmni(
-            ["run", "build", "--affected", "-b", "HEAD~1", "-t", "HEAD"],
+            [
+                "run",
+                "build",
+                "--affected",
+                "-b",
+                "HEAD~1",
+                "-t",
+                "HEAD",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -199,6 +208,7 @@ describe("+scm @scm @e2e (affected + filter combinations)", () => {
                 "HEAD",
                 "-p",
                 "app",
+                "--output-logs=all",
             ],
             { cwd: ws.cwd },
         );
@@ -225,7 +235,7 @@ describe("+scm @scm @e2e (affected + filter combinations)", () => {
 
         // No `--affected`: providing both `-b` and `-t` implicitly enables it.
         const result = await runOmni(
-            ["run", "build", "-b", "HEAD~1", "-t", "HEAD"],
+            ["run", "build", "-b", "HEAD~1", "-t", "HEAD", "--output-logs=all"],
             { cwd: ws.cwd },
         );
 

@@ -22,7 +22,9 @@ describe("+run @e2e (basic execution)", () => {
     it("runs a matching task and exits 0", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
-        const result = await runOmni(["run", "build"], { cwd: ws.cwd });
+        const result = await runOmni(["run", "build", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("build app");
@@ -31,14 +33,17 @@ describe("+run @e2e (basic execution)", () => {
     it("runs every positional task when several are given", async () => {
         const ws = makeWorkspace(singleProjectSpec());
 
-        const result = await runOmni(["run", "build", "test"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "test", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("build app");
         expect(result).toOutputContaining("test app");
-        expect(result).toOutputContaining("Successfully executed 2 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*2/);
     });
 });
 
@@ -70,9 +75,12 @@ describe("+run @e2e (dependencies)", () => {
     it("runs dependencies before the dependent task", async () => {
         const ws = makeWorkspace(dependencyChainSpec());
 
-        const result = await runOmni(["run", "run", "-p", "project-1"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "run", "-p", "project-1", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         const out = result.stdout;
@@ -90,9 +98,12 @@ describe("+run @e2e (dependencies)", () => {
     it("`-i/--ignore-dependencies` skips dependency tasks", async () => {
         const ws = makeWorkspace(dependencyChainSpec());
 
-        const result = await runOmni(["run", "run", "-p", "project-1", "-i"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "run", "-p", "project-1", "-i", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("run project-1");
@@ -123,7 +134,7 @@ describe("+run @e2e (dependencies)", () => {
         });
 
         const withDependents = await runOmni(
-            ["run", "build", "-p", "lib", "-w"],
+            ["run", "build", "-p", "lib", "-w", "--output-logs=all"],
             { cwd: ws.cwd },
         );
         expect(withDependents).toHaveSucceeded();
@@ -131,9 +142,12 @@ describe("+run @e2e (dependencies)", () => {
         expect(withDependents).toOutputContaining("APP-BUILD");
 
         // Without `-w`, only the matched `lib#build` runs.
-        const plain = await runOmni(["run", "build", "-p", "lib"], {
-            cwd: ws.cwd,
-        });
+        const plain = await runOmni(
+            ["run", "build", "-p", "lib", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(plain).toHaveSucceeded();
         expect(plain.stdout).not.toContain("APP-BUILD");
     });
@@ -182,9 +196,12 @@ describe("+run @e2e (dependency syntaxes)", () => {
     it("resolves the `^task` upstream-dependency syntax", async () => {
         const ws = makeWorkspace(crossProjectDepsSpec());
 
-        const result = await runOmni(["run", "test", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         // The upstream `lib#build` ran via `^build`, before `app#test`.
@@ -197,9 +214,12 @@ describe("+run @e2e (dependency syntaxes)", () => {
     it("resolves the explicit `project#task` dependency syntax", async () => {
         const ws = makeWorkspace(crossProjectDepsSpec());
 
-        const result = await runOmni(["run", "test", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "test", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("LIB-COMPILE");
@@ -222,9 +242,12 @@ describe("+run @e2e (dependency syntaxes)", () => {
             },
         });
 
-        const result = await runOmni(["run", "sib", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "sib", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("MAIN-SIB");
@@ -277,9 +300,12 @@ describe("+run @e2e @exitcode (cycles & gating)", () => {
         expect(gated).toOutputContaining("Skipping disabled task 'app#gated'");
         expect(gated.stdout).not.toContain("SHOULD-NOT-RUN");
 
-        const live = await runOmni(["run", "live", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const live = await runOmni(
+            ["run", "live", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(live).toHaveSucceeded();
         expect(live).toOutputContaining("SHOULD-RUN");
     });
@@ -322,7 +348,15 @@ describe("+run @e2e (on-failure)", () => {
         const ws = makeWorkspace(failingDependentSpec());
 
         const result = await runOmni(
-            ["run", "dependent", "-p", "app", "-o", "continue"],
+            [
+                "run",
+                "dependent",
+                "-p",
+                "app",
+                "-o",
+                "continue",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -375,20 +409,26 @@ describe("+run @e2e (retries & persistence)", () => {
             },
         });
 
-        const first = await runOmni(["run", "serve", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const first = await runOmni(
+            ["run", "serve", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(first).toHaveSucceeded();
         expect(first).toOutputContaining("PERSIST-RAN");
 
         // Re-running executes again rather than replaying a cache hit.
-        const second = await runOmni(["run", "serve", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const second = await runOmni(
+            ["run", "serve", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(second).toHaveSucceeded();
         expect(second).toOutputContaining("PERSIST-RAN");
         expect(second.stdout).not.toContain("Cache hit for task");
-        expect(second).toOutputContaining("0 results from cache");
+        expect(second.stdout).not.toContain("Cache hits");
     });
 });
 
@@ -396,16 +436,19 @@ describe("+run @e2e (filter + dependency combinations)", () => {
     it("`-i` + `-p` runs only the matched task in the matched project", async () => {
         const ws = makeWorkspace(dependencyChainSpec());
 
-        const result = await runOmni(["run", "run", "-p", "project-1", "-i"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "run", "-p", "project-1", "-i", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("run project-1");
         // No dependencies run: neither the local `build` nor `project-2#list`.
         expect(result.stdout).not.toContain("build project-1");
         expect(result.stdout).not.toContain("list project-2");
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
     });
 
     it("`-w` + `-m` filters roots by meta, then pulls dependents in by task name", async () => {
@@ -449,7 +492,7 @@ describe("+run @e2e (filter + dependency combinations)", () => {
         });
 
         const result = await runOmni(
-            ["run", "build", "-w", "-m", 'tier == "fast"'],
+            ["run", "build", "-w", "-m", 'tier == "fast"', "--output-logs=all"],
             { cwd: ws.cwd },
         );
 
@@ -486,9 +529,12 @@ describe("+run @e2e (filter + dependency combinations)", () => {
             },
         });
 
-        const result = await runOmni(["run", "build", "test", "-p", "app-*"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "test", "-p", "app-*", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("ONE-BUILD");
@@ -496,7 +542,7 @@ describe("+run @e2e (filter + dependency combinations)", () => {
         expect(result).toOutputContaining("TWO-BUILD");
         expect(result).toOutputContaining("TWO-TEST");
         expect(result.stdout).not.toContain("OTHER-BUILD");
-        expect(result).toOutputContaining("Successfully executed 4 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*4/);
     });
 });
 
@@ -511,23 +557,23 @@ describe("+run @cache (force + cache flag combinations)", () => {
 
         // Forced + non-persisted: executes fresh and writes nothing to the cache.
         const forced = await runOmni(
-            ["run", "build", "--force", "--no-cache"],
+            ["run", "build", "--force", "--no-cache", "--output-logs=all"],
             { cwd: ws.cwd },
         );
         expect(forced).toHaveSucceeded();
         expect(forced).toOutputContaining("BUILD-MARK");
-        expect(forced).toOutputContaining("0 results from cache");
+        expect(forced.stdout).not.toContain("Cache hits");
 
         // Because nothing was persisted, the next plain run is still a miss.
         const miss = await runOmni(["run", "build"], { cwd: ws.cwd });
-        expect(miss).toOutputContaining("0 results from cache");
+        expect(miss.stdout).not.toContain("Cache hits");
 
         // Now that the miss above persisted, a third run is a cache hit.
         const hit = await runOmni(["run", "build"], { cwd: ws.cwd });
-        expect(hit).toOutputContaining("1 results from cache");
+        expect(hit).toOutputContaining("Cache hits");
     });
 
-    it("`-f` + `-L` re-executes and shows fresh (not replayed) logs", async () => {
+    it("`-f` + `--output-logs all` re-executes and shows fresh (not replayed) logs", async () => {
         const ws = makeWorkspace({
             workspace: { projects: ["**"] },
             projects: {
@@ -538,13 +584,16 @@ describe("+run @cache (force + cache flag combinations)", () => {
         const first = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(first).toHaveSucceeded();
 
-        const forced = await runOmni(["run", "build", "-f", "-L"], {
-            cwd: ws.cwd,
-        });
+        const forced = await runOmni(
+            ["run", "build", "-f", "--output-logs", "all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(forced).toHaveSucceeded();
         // Forced re-execution produces fresh output, not a replayed cache hit.
         expect(forced).toOutputContaining("BUILD-MARK");
-        expect(forced).toOutputContaining("0 results from cache");
+        expect(forced.stdout).not.toContain("Cache hits");
         expect(forced.stdout).not.toContain("Cache hit for task");
     });
 });
@@ -566,7 +615,15 @@ describe("+run @e2e (on-failure with independent tasks)", () => {
         });
 
         const result = await runOmni(
-            ["run", "first", "bad", "last", "-o", "continue"],
+            [
+                "run",
+                "first",
+                "bad",
+                "last",
+                "-o",
+                "continue",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -619,7 +676,15 @@ describe("+run @e2e (arg-gated execution)", () => {
         });
 
         const enabled = await runOmni(
-            ["run", "gated", "-p", "app", "-a", "flag=yes"],
+            [
+                "run",
+                "gated",
+                "-p",
+                "app",
+                "-a",
+                "flag=yes",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
         expect(enabled).toHaveSucceeded();
@@ -653,9 +718,12 @@ describe("+run @e2e (template context)", () => {
             },
         });
 
-        const result = await runOmni(["run", "greet", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "greet", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("<hello-from-env>");
@@ -672,9 +740,12 @@ describe("+run @e2e (template context)", () => {
             },
         });
 
-        const result = await runOmni(["run", "plat", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "plat", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         // The exact OS is host-dependent; assert the template rendered to a

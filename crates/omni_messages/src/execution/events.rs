@@ -60,7 +60,8 @@ pub struct CacheHitEvent {
     pub digest: Vec<u8>,
     /// `true` if the subscriber will also receive `on_task_output_stream` with
     /// `is_replay = true` for this task's cached logs; `false` if log replay
-    /// was disabled (e.g. via `-L/--no-replay-logs`).
+    /// was disabled by the resolved `cached` output-logs policy
+    /// (e.g. `--output-cached-logs never`).
     pub replay_logs: bool,
     pub has_logs: bool,
 }

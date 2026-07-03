@@ -5,6 +5,7 @@ use getset::{CloneGetters, CopyGetters, Getters};
 use maps::UnorderedMap;
 
 use omni_execution_plan::{Call, ScmAffectedFilter};
+use omni_task_output_logs::LogsDisplay;
 
 use crate::{Force, OnFailure};
 
@@ -57,9 +58,13 @@ pub struct ExecutionConfig {
     #[getset(get_copy = "pub")]
     dry_run: bool,
 
-    #[builder(default = true)]
+    #[builder(default)]
     #[getset(get_copy = "pub")]
-    replay_cached_logs: bool,
+    output_logs: Option<LogsDisplay>,
+
+    #[builder(default)]
+    #[getset(get_copy = "pub")]
+    output_cached_logs: Option<LogsDisplay>,
 
     #[builder(default)]
     #[getset(get_copy = "pub")]
@@ -116,11 +121,5 @@ impl ExecutionConfigBuilder {
         self.call = Some(call);
 
         self
-    }
-}
-
-impl ExecutionConfig {
-    pub fn should_replay_logs(&self) -> bool {
-        !self.dry_run && self.replay_cached_logs
     }
 }

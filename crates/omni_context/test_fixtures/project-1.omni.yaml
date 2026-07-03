@@ -1,8 +1,12 @@
 name: project-1
 
+output_logs: failed
+
 tasks:
   run:
     exec: ls -la
+    output_logs:
+      new: all
     dependencies:
       - project-2#list
       - build

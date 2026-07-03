@@ -268,6 +268,14 @@ impl<'a, TSys: ContextSys> CacheContext for CacheCtxWrapper<'a, TSys> {
         self.context.get_cache_info(project_name, task_name)
     }
 
+    fn get_output_logs(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_output_logs::OutputLogsConfiguration> {
+        self.context.get_output_logs(project_name, task_name)
+    }
+
     fn root_dir(&self) -> &std::path::Path {
         self.context.root_dir()
     }

@@ -8,6 +8,7 @@ use merge::Merge;
 use omni_config_types::TeraExprBoolean;
 use omni_core::{Task, TaskDependency};
 use omni_serde_validators::tera_expr::option_validate_tera_expr;
+use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +61,9 @@ pub struct TaskConfigurationLongForm {
 
     #[serde(default)]
     pub cache: CacheConfiguration,
+
+    #[serde(default)]
+    pub output_logs: Option<OutputLogsConfiguration>,
 
     #[serde(default)]
     pub output: TaskOutputConfiguration,
@@ -140,6 +144,7 @@ impl Default for TaskConfigurationLongForm {
             args: DictConfig::default(),
             env: TaskEnvConfiguration::default(),
             cache: CacheConfiguration::default(),
+            output_logs: None,
             output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
             enabled: default_if(),
@@ -264,6 +269,16 @@ impl TaskConfiguration {
         }
     }
 
+    pub fn output_logs(&self) -> Option<&OutputLogsConfiguration> {
+        match self {
+            TaskConfiguration::ShortForm(_) => None,
+            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
+                output_logs,
+                ..
+            }) => output_logs.as_ref(),
+        }
+    }
+
     pub fn args(&self) -> Option<&DictConfig<DynValue>> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
@@ -307,6 +322,7 @@ impl Merge for TaskConfiguration {
                     description: a_desc,
                     env: a_env,
                     cache: a_cache,
+                    output_logs: a_output_logs,
                     output: a_output,
                     meta: a_meta,
                     enabled: a_enabled,
@@ -324,6 +340,7 @@ impl Merge for TaskConfiguration {
                     description: b_desc,
                     env: b_env,
                     cache: b_cache,
+                    output_logs: b_output_logs,
                     output: b_output,
                     meta: b_meta,
                     enabled: b_enabled,
@@ -341,6 +358,7 @@ impl Merge for TaskConfiguration {
                 merge::option::recurse(a_desc, b_desc);
                 a_env.merge(b_env);
                 a_cache.merge(b_cache);
+                merge::option::recurse(a_output_logs, b_output_logs);
                 a_output.merge(b_output);
                 a_meta.merge(b_meta);
                 a_args.merge(b_args);
@@ -438,5 +456,42 @@ mod tests {
                 ..Default::default()
             })
         );
+    }
+
+    #[test]
+    fn test_merge_output_logs_per_facet() {
+        use omni_task_output_logs::{
+            LogsDisplay, OutputLogsConfiguration, OutputLogsSplit,
+        };
+
+        let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            output_logs: Some(OutputLogsConfiguration::Uniform(
+                LogsDisplay::Failed,
+            )),
+            ..Default::default()
+        });
+
+        let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            output_logs: Some(OutputLogsConfiguration::Split(
+                OutputLogsSplit {
+                    new: Some(LogsDisplay::All),
+                    cached: None,
+                },
+            )),
+            ..Default::default()
+        });
+
+        a.merge(b);
+
+        assert_eq!(
+            a.output_logs().unwrap().normalized(),
+            (Some(LogsDisplay::All), Some(LogsDisplay::Failed))
+        );
+    }
+
+    #[test]
+    fn test_output_logs_short_form_is_none() {
+        let short = TaskConfiguration::ShortForm("echo hi".to_string());
+        assert!(short.output_logs().is_none());
     }
 }

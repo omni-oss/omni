@@ -463,6 +463,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_task_output_logs]
+path = "crates/omni_task_output_logs"
+include = [
+    "crates/omni_task_output_logs/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

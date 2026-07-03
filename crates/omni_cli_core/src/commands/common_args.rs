@@ -7,6 +7,7 @@ use omni_configurations::{Ui, WorkspaceConfiguration};
 use omni_execution_plan::ScmAffectedFilter;
 use omni_scm::SelectScm;
 use omni_task_executor::ExecutionConfigBuilder;
+use omni_task_output_logs::LogsDisplay;
 
 use crate::commands::{
     common_types::SerializationFormat, parser::parse_key_value,
@@ -115,6 +116,20 @@ pub struct RunArgs {
         value_enum
     )]
     pub ui: Option<EnumValueAdapter<Ui>>,
+
+    #[arg(
+        long,
+        help = "Which task output logs to display: all, failed, or never. Applies to both fresh and cached output",
+        value_enum
+    )]
+    pub output_logs: Option<EnumValueAdapter<LogsDisplay>>,
+
+    #[arg(
+        long,
+        help = "Which cached task output logs to replay: all, failed, or never. Overrides --output-logs for the cached facet",
+        value_enum
+    )]
+    pub output_cached_logs: Option<EnumValueAdapter<LogsDisplay>>,
 }
 
 impl RunArgs {
@@ -169,6 +184,14 @@ impl RunArgs {
                 .collect::<UnorderedMap<_, _>>();
 
             builder.args(hm);
+        }
+
+        if let Some(output_logs) = &self.output_logs {
+            builder.output_logs(output_logs.value());
+        }
+
+        if let Some(output_cached_logs) = &self.output_cached_logs {
+            builder.output_cached_logs(output_cached_logs.value());
         }
     }
 }

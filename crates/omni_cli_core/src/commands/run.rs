@@ -56,13 +56,6 @@ pub struct RunCommand {
 
     #[arg(
         long,
-        short = 'L',
-        help = "Don't replay the logs of cached task executions"
-    )]
-    pub no_replay_logs: bool,
-
-    #[arg(
-        long,
         short,
         num_args = 0..=1,
         help = "Force execution of tasks, even if it's already cached",
@@ -94,7 +87,6 @@ pub async fn run(
         .on_failure(command.on_failure.value())
         .no_cache(command.no_cache)
         .force(command.force.value())
-        .replay_cached_logs(!command.no_replay_logs)
         .call(Call::new_tasks(&command.task[..]));
 
     command
@@ -104,7 +96,7 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let sub = resolve_subscriber(command.run.ui);
+    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir());
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
     let results = executor.run().await?;

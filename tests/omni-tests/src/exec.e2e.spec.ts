@@ -26,14 +26,17 @@ describe("+exec @e2e (run command across projects)", () => {
     it("`exec -- <cmd>` runs the command in every matched project", async () => {
         const ws = makeWorkspace(twoProjectSpec());
 
-        const result = await runOmni(["exec", "--", "echo", "EXEC-MARK"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["exec", "--output-logs=all", "--", "echo", "EXEC-MARK"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("EXEC-MARK");
         // One temp command task per matched project (app + other).
-        expect(result).toOutputContaining("Successfully executed 2 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*2/);
     });
 });
 
@@ -67,7 +70,16 @@ describe("+exec @cli (argument passthrough)", () => {
         const ws = makeWorkspace(twoProjectSpec());
 
         const result = await runOmni(
-            ["exec", "-p", "app", "--", "echo", "--weird", "-x"],
+            [
+                "exec",
+                "-p",
+                "app",
+                "--output-logs=all",
+                "--",
+                "echo",
+                "--weird",
+                "-x",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -87,7 +99,7 @@ describe("+exec @e2e (project & dir filters)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `app` matched, so the command ran once.
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
     });
 
     it("`--dir` limits exec to projects under matching directories", async () => {
@@ -100,7 +112,7 @@ describe("+exec @e2e (project & dir filters)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `apps/app` lives under `apps/**`.
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
     });
 });
 
@@ -167,7 +179,7 @@ describe("+exec @e2e (combined project & dir filters)", () => {
         );
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
     });
 });
 
@@ -199,7 +211,7 @@ describe("+exec @e2e (meta filter)", () => {
 
         expect(result).toHaveSucceeded();
         // Only `app` carries `tier == "fast"`, so the command runs once.
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
     });
 });
 
@@ -220,6 +232,7 @@ describe("+exec @e2e (arg injection)", () => {
                 "exec",
                 "-a",
                 "subject=injected-arg",
+                "--output-logs=all",
                 "--",
                 "echo",
                 "{{ args.subject }}",
@@ -250,7 +263,7 @@ describe("+exec @perf (max concurrency)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Successfully executed 3 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*3/);
     });
 });
 

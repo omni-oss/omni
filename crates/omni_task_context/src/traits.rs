@@ -35,6 +35,12 @@ pub trait Context {
         task_name: &str,
     ) -> Option<&CacheInfo>;
 
+    fn get_output_logs(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_output_logs::OutputLogsConfiguration>;
+
     fn get_task_override_args(
         &self,
         project_name: &str,

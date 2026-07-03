@@ -207,9 +207,10 @@ async fn run_generator_run(
         max_depth: command.args.max_depth,
     };
 
+    let scratch_dir = loaded_context.scratch_dir();
     let api = OmniApi::new_with_loaded_sys(
         loaded_context,
-        crate::subscriber::CliSubscriber::new_stream(),
+        crate::subscriber::CliSubscriber::new_stream(scratch_dir),
     );
     let response = api.generator_run(req).await?;
 

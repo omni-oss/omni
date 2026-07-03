@@ -15,6 +15,7 @@ use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_execution_plan::DefaultExecutionPlanProvider;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
+use omni_task_output_logs::OutputLogsConfiguration;
 use omni_tracing_subscriber::TracingConfig;
 use omni_types::OmniPath;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
@@ -69,6 +70,10 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
         self.unloaded_context.cache_dir()
     }
 
+    pub fn scratch_dir(&self) -> PathBuf {
+        self.unloaded_context.scratch_dir()
+    }
+
     pub fn trace_dir(&self) -> PathBuf {
         self.unloaded_context.trace_dir()
     }
@@ -102,6 +107,16 @@ impl<TSys: ContextSys> LoadedContext<TSys> {
     ) -> Option<&CacheInfo> {
         self.extracted
             .cache_infos
+            .get(&format!("{project_name}#{task_name}"))
+    }
+
+    pub fn get_output_logs(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&OutputLogsConfiguration> {
+        self.extracted
+            .output_logs_configs
             .get(&format!("{project_name}#{task_name}"))
     }
 

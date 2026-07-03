@@ -24,9 +24,12 @@ describe("+run-filters @e2e (project & dir filters)", () => {
     it("`-p/--project` limits execution to matching projects", async () => {
         const ws = makeWorkspace(distinctBuildsSpec());
 
-        const result = await runOmni(["run", "build", "-p", "app"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "-p", "app", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("BUILD-APP");
@@ -48,9 +51,12 @@ describe("+run-filters @e2e (project & dir filters)", () => {
             },
         });
 
-        const result = await runOmni(["run", "build", "--dir", "svc/**"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "--dir", "svc/**", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("BUILD-API");
@@ -99,7 +105,14 @@ describe("+run-filters @e2e (meta filter)", () => {
         });
 
         const result = await runOmni(
-            ["run", "fast", "slow", "-m", 'tier == "fast"'],
+            [
+                "run",
+                "fast",
+                "slow",
+                "-m",
+                'tier == "fast"',
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -125,7 +138,7 @@ describe("+run-filters @perf (max concurrency)", () => {
         });
 
         expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("Successfully executed 3 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*3/);
     });
 });
 
@@ -142,7 +155,7 @@ describe("+run-filters @e2e (arg injection)", () => {
         });
 
         const result = await runOmni(
-            ["run", "greet", "-a", "greeting=hello-arg"],
+            ["run", "greet", "-a", "greeting=hello-arg", "--output-logs=all"],
             { cwd: ws.cwd },
         );
 
@@ -178,9 +191,12 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
     it("splits on the first `=`, keeping the remainder in the value", async () => {
         const ws = makeWorkspace(echoArgSpec());
 
-        const result = await runOmni(["run", "greet", "-a", "x=a=b=c"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "greet", "-a", "x=a=b=c", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("<a=b=c>");
@@ -189,15 +205,21 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
     it("strips one layer of matching surrounding quotes", async () => {
         const ws = makeWorkspace(echoArgSpec());
 
-        const dq = await runOmni(["run", "greet", "-a", 'x="hello world"'], {
-            cwd: ws.cwd,
-        });
+        const dq = await runOmni(
+            ["run", "greet", "-a", 'x="hello world"', "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(dq).toHaveSucceeded();
         expect(dq).toOutputContaining("<hello world>");
 
-        const sq = await runOmni(["run", "greet", "-a", "x='hello world'"], {
-            cwd: ws.cwd,
-        });
+        const sq = await runOmni(
+            ["run", "greet", "-a", "x='hello world'", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(sq).toHaveSucceeded();
         expect(sq).toOutputContaining("<hello world>");
     });
@@ -208,7 +230,7 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
         // Only a *matching* surrounding pair is stripped; a lone leading quote
         // is preserved verbatim.
         const result = await runOmni(
-            ["run", "greet", "-a", "x='only-leading"],
+            ["run", "greet", "-a", "x='only-leading", "--output-logs=all"],
             {
                 cwd: ws.cwd,
             },
@@ -221,9 +243,12 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
     it("accepts an empty value", async () => {
         const ws = makeWorkspace(echoArgSpec());
 
-        const result = await runOmni(["run", "greet", "-a", "x="], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "greet", "-a", "x=", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("<>");
@@ -254,7 +279,15 @@ describe("+run-filters @cli (arg parsing edge cases)", () => {
         });
 
         const result = await runOmni(
-            ["run", "greet", "-a", "first=one", "-a", "second=two"],
+            [
+                "run",
+                "greet",
+                "-a",
+                "first=one",
+                "-a",
+                "second=two",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -272,9 +305,12 @@ describe("+run-filters @e2e (ui mode)", () => {
             },
         });
 
-        const result = await runOmni(["run", "build", "-u", "stream"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "-u", "stream", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("UI-MARK");
@@ -290,9 +326,12 @@ describe("+run-filters @e2e (ui mode)", () => {
 
         // Captured (non-TTY) stdout forces the Stream UI; the run still succeeds
         // and produces the task's output instead of hanging on a TUI.
-        const result = await runOmni(["run", "build", "-u", "tui"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "build", "-u", "tui", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         expect(result).toOutputContaining("UI-MARK");
@@ -437,7 +476,15 @@ describe("+run-filters @e2e (combined filters)", () => {
         // `-p api*` alone matches api + api-tool; `--dir svc/**` alone matches
         // api + web. Their intersection is only `api`.
         const result = await runOmni(
-            ["run", "build", "-p", "api*", "--dir", "svc/**"],
+            [
+                "run",
+                "build",
+                "-p",
+                "api*",
+                "--dir",
+                "svc/**",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -474,7 +521,15 @@ describe("+run-filters @e2e (combined filters)", () => {
 
         // Both projects satisfy the meta filter, but `-p app` narrows to one.
         const result = await runOmni(
-            ["run", "build", "-p", "app", "-m", 'tier == "fast"'],
+            [
+                "run",
+                "build",
+                "-p",
+                "app",
+                "-m",
+                'tier == "fast"',
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -487,7 +542,15 @@ describe("+run-filters @e2e (combined filters)", () => {
         const ws = makeWorkspace(spreadSpec());
 
         const byProject = await runOmni(
-            ["run", "build", "-p", "web", "-p", "api-tool"],
+            [
+                "run",
+                "build",
+                "-p",
+                "web",
+                "-p",
+                "api-tool",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
         expect(byProject).toHaveSucceeded();
@@ -496,7 +559,15 @@ describe("+run-filters @e2e (combined filters)", () => {
         expect(byProject.stdout).not.toContain("BUILD-API");
 
         const byDir = await runOmni(
-            ["run", "build", "--dir", "svc/**", "--dir", "tools/**"],
+            [
+                "run",
+                "build",
+                "--dir",
+                "svc/**",
+                "--dir",
+                "tools/**",
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
         expect(byDir).toHaveSucceeded();
@@ -536,9 +607,12 @@ describe("+run-filters @perf (concurrency + dependencies)", () => {
             },
         });
 
-        const result = await runOmni(["run", "second", "-c", "1"], {
-            cwd: ws.cwd,
-        });
+        const result = await runOmni(
+            ["run", "second", "-c", "1", "--output-logs=all"],
+            {
+                cwd: ws.cwd,
+            },
+        );
 
         expect(result).toHaveSucceeded();
         // The dependency must complete before its dependent, regardless of the
@@ -624,9 +698,9 @@ describe("+run-filters @output (execution summary)", () => {
         });
 
         expect(result).toHaveFailed();
-        expect(result).toOutputContaining("Successfully executed 1 tasks");
-        expect(result).toOutputContaining("Failed to execute 1 tasks");
-        expect(result).toOutputContaining("Skipped 1 tasks");
+        expect(result).toMatchOutput(/Succeeded[^\n]*1/);
+        expect(result).toMatchOutput(/Failed[^\n]*1/);
+        expect(result).toMatchOutput(/Skipped[^\n]*1/);
     });
 
     it("counts results served from the cache", async () => {
@@ -638,10 +712,10 @@ describe("+run-filters @output (execution summary)", () => {
         });
 
         const first = await runOmni(["run", "build"], { cwd: ws.cwd });
-        expect(first).toOutputContaining("0 results from cache");
+        expect(first.stdout).not.toContain("Cache hits");
 
         const second = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(second).toHaveSucceeded();
-        expect(second).toOutputContaining("1 results from cache");
+        expect(second).toOutputContaining("Cache hits");
     });
 });

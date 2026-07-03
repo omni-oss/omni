@@ -16,6 +16,7 @@ use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
 };
 use omni_task_context::CacheInfo;
+use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::OmniPathError;
 use serde::{Deserialize, Serialize};
 use sets::UnorderedSet;
@@ -79,6 +80,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
         let mut task_meta_configs = maps::unordered_map![];
         let mut task_env_var_overrides = maps::unordered_map![];
         let mut cache_infos = maps::unordered_map![];
+        let mut output_logs_configs = maps::unordered_map![];
 
         let project_paths = project_paths
             .iter()
@@ -149,6 +151,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             })?;
 
             let project_cache = &project_config.cache;
+            let project_output_logs = &project_config.output_logs;
             let project_meta = &project_config.meta;
 
             project_meta_configs
@@ -165,12 +168,30 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 }
 
                 let task_cache = task.cache();
+                let task_output_logs = task.output_logs();
                 let task_output = task.output().cloned().unwrap_or_else(|| {
                     TaskOutputConfiguration {
                         files: ListConfig::append(vec![]),
                         logs: true,
                     }
                 });
+
+                let output_logs = match (project_output_logs, task_output_logs)
+                {
+                    (Some(project), Some(task)) => {
+                        let mut resolved = project.clone();
+                        resolved.merge(task.clone());
+                        Some(resolved)
+                    }
+                    (Some(project), None) => Some(project.clone()),
+                    (None, Some(task)) => Some(task.clone()),
+                    (None, None) => None,
+                };
+
+                if let Some(output_logs) = output_logs {
+                    output_logs_configs
+                        .insert(full_task_name.clone(), output_logs);
+                }
 
                 let cache = if let Some(cache_key) = task_cache {
                     let mut pc = project_cache.clone();
@@ -256,6 +277,7 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
             task_env_var_overrides,
             project_meta_configs,
             task_meta_configs,
+            output_logs_configs,
         ))
     }
 }
@@ -267,6 +289,7 @@ pub struct ProjectDataExtractions {
     pub task_env_var_overrides: UnorderedMap<String, Map<String, String>>,
     pub project_meta_configs: UnorderedMap<String, MetaConfiguration>,
     pub task_meta_configs: UnorderedMap<String, MetaConfiguration>,
+    pub output_logs_configs: UnorderedMap<String, OutputLogsConfiguration>,
 }
 
 #[derive(Debug, thiserror::Error)]

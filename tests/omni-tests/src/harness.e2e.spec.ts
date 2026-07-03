@@ -102,7 +102,9 @@ describe("pty harness", () => {
             },
         });
 
-        const pty = spawnOmniPty(["run", "build"], { cwd: ws.cwd });
+        const pty = spawnOmniPty(["run", "build", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
         await pty.waitFor("pty-build-ran");
 
         expect(await pty.waitForExit()).toMatchObject({ exitCode: 0 });

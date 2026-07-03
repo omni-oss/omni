@@ -125,7 +125,7 @@ describe("+cross @cache @perf (concurrent cache access)", () => {
         // A subsequent run still reads a valid entry - the cache wasn't corrupted.
         const replay = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replay).toHaveSucceeded();
-        expect(replay).toOutputContaining("from cache");
+        expect(replay).toOutputContaining("Cache hits");
     });
 });
 
@@ -211,7 +211,17 @@ describe("+cross @output (global flags + run filters)", () => {
         });
 
         const result = await runOmni(
-            ["-l", "off", "run", "build", "-p", "app", "-m", 'tier == "fast"'],
+            [
+                "-l",
+                "off",
+                "run",
+                "build",
+                "-p",
+                "app",
+                "-m",
+                'tier == "fast"',
+                "--output-logs=all",
+            ],
             { cwd: ws.cwd },
         );
 
@@ -238,17 +248,20 @@ describe("+cross @cache (run + exec coexistence)", () => {
         // Prime the run cache.
         const first = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(first).toHaveSucceeded();
-        expect(first).toOutputContaining("0 results from cache");
+        expect(first.stdout).not.toContain("Cache hits");
 
         // The second run is served from the cache.
         const cached = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(cached).toHaveSucceeded();
-        expect(cached).toOutputContaining("1 results from cache");
+        expect(cached).toOutputContaining("Cache hits");
 
         // exec runs an entirely different ad-hoc command, bypassing the cache.
-        const exec = await runOmni(["exec", "--", "echo", "EXEC-MARKER"], {
-            cwd: ws.cwd,
-        });
+        const exec = await runOmni(
+            ["exec", "--output-logs=all", "--", "echo", "EXEC-MARKER"],
+            {
+                cwd: ws.cwd,
+            },
+        );
         expect(exec).toHaveSucceeded();
         expect(exec).toOutputContaining("EXEC-MARKER");
         // exec did not replay the cached run output.
@@ -257,7 +270,7 @@ describe("+cross @cache (run + exec coexistence)", () => {
         // The run cache is still intact after the exec.
         const replay = await runOmni(["run", "build"], { cwd: ws.cwd });
         expect(replay).toHaveSucceeded();
-        expect(replay).toOutputContaining("1 results from cache");
+        expect(replay).toOutputContaining("Cache hits");
     });
 });
 
@@ -277,12 +290,16 @@ describe("+cross @cli (task selector glob matching)", () => {
         });
 
         // A glob wildcard expands to the matching task and runs it.
-        const glob = await runOmni(["run", "bui*"], { cwd: ws.cwd });
+        const glob = await runOmni(["run", "bui*", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
         expect(glob).toHaveSucceeded();
         expect(glob).toOutputContaining("BUILT");
 
         // An exact name matches itself.
-        const literal = await runOmni(["run", "build"], { cwd: ws.cwd });
+        const literal = await runOmni(["run", "build", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
         expect(literal).toHaveSucceeded();
         expect(literal).toOutputContaining("BUILT");
 
@@ -316,7 +333,9 @@ describe("+cross @output (unicode round-trip)", () => {
         expect(lines(list.out)).toContain(projectName);
 
         // The unicode task output round-trips through stdout intact.
-        const run = await runOmni(["run", "greet"], { cwd: ws.cwd });
+        const run = await runOmni(["run", "greet", "--output-logs=all"], {
+            cwd: ws.cwd,
+        });
         expect(run).toHaveSucceeded();
         expect(run).toOutputContaining(taskOutput);
     });
@@ -359,6 +378,7 @@ describe("+cross @cli (many args + long values)", () => {
                 "off",
                 "run",
                 "greet",
+                "--output-logs=all",
                 ...argFlags,
                 "-a",
                 `long=${longValue}`,

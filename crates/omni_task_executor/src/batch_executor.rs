@@ -17,6 +17,7 @@ use omni_process::{
     ChildProcessError, TaskChildProcess, TaskChildProcessResult,
 };
 use omni_task_context::{TaskContext, TaskContextProviderExt as _};
+use omni_task_output_logs::{EffectiveOutputLogs, LogsDisplay};
 use omni_types::{OmniPath, Root, RootMap, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 use trace::Level;
@@ -43,7 +44,8 @@ where
     ignore_dependencies: bool,
     on_failure: OnFailure,
     dry_run: bool,
-    replay_cached_logs: bool,
+    output_logs: Option<LogsDisplay>,
+    output_cached_logs: Option<LogsDisplay>,
     max_retries: Option<u8>,
     retry_interval: Option<Duration>,
     no_cache: bool,
@@ -67,7 +69,8 @@ where
         ignore_dependencies: bool,
         on_failure: OnFailure,
         dry_run: bool,
-        replay_cached_logs: bool,
+        output_logs: Option<LogsDisplay>,
+        output_cached_logs: Option<LogsDisplay>,
         max_retries: Option<u8>,
         retry_interval: Option<Duration>,
         no_cache: bool,
@@ -85,7 +88,8 @@ where
             ignore_dependencies,
             on_failure,
             dry_run,
-            replay_cached_logs,
+            output_logs,
+            output_cached_logs,
             max_retries,
             retry_interval,
             no_cache,
@@ -137,11 +141,29 @@ where
             .cloned()
     }
 
+    fn resolve_output_logs(
+        &self,
+        task_ctx: &TaskContext<'_>,
+    ) -> EffectiveOutputLogs {
+        EffectiveOutputLogs::resolve(
+            self.output_logs,
+            self.output_cached_logs,
+            task_ctx.output_logs.as_ref(),
+            LogsDisplay::Failed,
+        )
+    }
+
     async fn replay_cached_results(
         &self,
         task_ctx: &TaskContext<'_>,
         res: &CachedTaskExecution,
     ) -> Result<(), BatchExecutorError> {
+        let effective = self.resolve_output_logs(task_ctx);
+        let cached_failed = res.exit_code != 0;
+        let should_replay = !self.dry_run
+            && self.wants_task_output_stream
+            && effective.cached.should_show(cached_failed);
+
         // Emit cache hit event
         self.subscriber
             .on_cache_hit(CacheHitEvent {
@@ -149,16 +171,12 @@ where
                 project: task_ctx.node.project_name().to_string(),
                 task: task_ctx.node.task_name().to_string(),
                 digest: res.digest.to_vec(),
-                replay_logs: self.replay_cached_logs
-                    && self.wants_task_output_stream,
+                replay_logs: should_replay,
                 has_logs: res.logs_path.is_some(),
             })
             .await;
 
-        if self.replay_cached_logs
-            && self.wants_task_output_stream
-            && let Some(logs_path) = &res.logs_path
-        {
+        if should_replay && let Some(logs_path) = &res.logs_path {
             let file = tokio::fs::OpenOptions::new()
                 .read(true)
                 .open(logs_path)
@@ -170,6 +188,8 @@ where
                     project: task_ctx.node.project_name().to_string(),
                     task: task_ctx.node.task_name().to_string(),
                     is_replay: true,
+                    is_interactive: false,
+                    output_logs: effective,
                     stream: TaskOutputStream {
                         reader: Box::new(file),
                         writer: None,
@@ -518,6 +538,7 @@ where
                     override_command,
                     override_retry_command,
                     record_logs,
+                    self.resolve_output_logs(task_ctx),
                     self.max_retries
                         .unwrap_or(task_ctx.node.max_retries().unwrap_or(0)),
                     self.retry_interval.or(task_ctx.node.retry_interval()),
@@ -728,6 +749,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
     override_command: Option<String>,
     override_retry_command: Option<String>,
     record_logs: bool,
+    output_logs: EffectiveOutputLogs,
     max_retries: u8,
     retry_duration: Option<Duration>,
 ) -> TaskResultContext<'a> {
@@ -793,6 +815,8 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
                         is_replay: false,
+                        is_interactive,
+                        output_logs,
                         stream: TaskOutputStream {
                             reader: Box::new(reader_end),
                             writer: Some(Box::new(stdin_writer)),
@@ -808,6 +832,8 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                         project: task_ctx.node.project_name().to_string(),
                         task: task_ctx.node.task_name().to_string(),
                         is_replay: false,
+                        is_interactive,
+                        output_logs,
                         stream: TaskOutputStream {
                             reader: Box::new(reader_end),
                             writer: None,
@@ -953,4 +979,75 @@ pub(crate) enum BatchExecutorErrorInner {
 
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use omni_task_output_logs::{
+        EffectiveOutputLogs, LogsDisplay, OutputLogsConfiguration,
+        OutputLogsSplit,
+    };
+
+    /// The built-in default the executor applies when no flag or config sets a
+    /// facet.
+    const DEFAULT: LogsDisplay = LogsDisplay::Failed;
+
+    // Mirrors BatchExecutor::resolve_output_logs.
+    fn resolve(
+        flag_new: Option<LogsDisplay>,
+        flag_cached: Option<LogsDisplay>,
+        task_cfg: Option<&OutputLogsConfiguration>,
+    ) -> EffectiveOutputLogs {
+        EffectiveOutputLogs::resolve(flag_new, flag_cached, task_cfg, DEFAULT)
+    }
+
+    // Mirrors the replay predicate in replay_cached_results.
+    fn should_replay(cached: LogsDisplay, cached_failed: bool) -> bool {
+        cached.should_show(cached_failed)
+    }
+
+    #[test]
+    fn resolution_defaults_to_failed_when_unset() {
+        let e = resolve(None, None, None);
+        assert_eq!(e.new, LogsDisplay::Failed);
+        assert_eq!(e.cached, LogsDisplay::Failed);
+    }
+
+    #[test]
+    fn resolution_flag_beats_task_config() {
+        let cfg = OutputLogsConfiguration::Uniform(LogsDisplay::Never);
+        let e = resolve(Some(LogsDisplay::All), None, Some(&cfg));
+        assert_eq!(e.new, LogsDisplay::All);
+        // cached falls back to flag_new before the config
+        assert_eq!(e.cached, LogsDisplay::All);
+    }
+
+    #[test]
+    fn resolution_task_config_beats_default() {
+        let cfg = OutputLogsConfiguration::Split(OutputLogsSplit {
+            new: Some(LogsDisplay::All),
+            cached: Some(LogsDisplay::Never),
+        });
+        let e = resolve(None, None, Some(&cfg));
+        assert_eq!(e.new, LogsDisplay::All);
+        assert_eq!(e.cached, LogsDisplay::Never);
+    }
+
+    #[test]
+    fn cached_replay_all_always_replays() {
+        assert!(should_replay(LogsDisplay::All, false));
+        assert!(should_replay(LogsDisplay::All, true));
+    }
+
+    #[test]
+    fn cached_replay_failed_only_on_failed_exit() {
+        assert!(!should_replay(LogsDisplay::Failed, false));
+        assert!(should_replay(LogsDisplay::Failed, true));
+    }
+
+    #[test]
+    fn cached_replay_never_never_replays() {
+        assert!(!should_replay(LogsDisplay::Never, false));
+        assert!(!should_replay(LogsDisplay::Never, true));
+    }
 }

@@ -57,7 +57,7 @@ pub async fn run(
     let config = builder.build()?;
 
     let ctx = ctx.clone().into_loaded().await?;
-    let sub = resolve_subscriber(command.run.ui);
+    let sub = resolve_subscriber(command.run.ui, ctx.scratch_dir());
     let executor = TaskExecutor::new(config, &ctx, &sub);
 
     let results = executor.run().await?;

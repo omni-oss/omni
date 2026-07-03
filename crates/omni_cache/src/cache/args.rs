@@ -87,6 +87,12 @@ pub trait Context: Send + Sync {
         task_name: &str,
     ) -> Option<&omni_task_context::CacheInfo>;
 
+    fn get_output_logs(
+        &self,
+        project_name: &str,
+        task_name: &str,
+    ) -> Option<&omni_task_output_logs::OutputLogsConfiguration>;
+
     fn root_dir(&self) -> &Path;
 }
 
@@ -128,6 +134,14 @@ impl Context for () {
         _project_name: &str,
         _task_name: &str,
     ) -> Option<&omni_task_context::CacheInfo> {
+        panic!("should not be used")
+    }
+
+    fn get_output_logs(
+        &self,
+        _project_name: &str,
+        _task_name: &str,
+    ) -> Option<&omni_task_output_logs::OutputLogsConfiguration> {
         panic!("should not be used")
     }
 

@@ -6,4 +6,5 @@ pub mod context;
 pub mod core;
 pub mod executor;
 pub mod subscriber;
+pub mod task_output_capture;
 pub mod utils;

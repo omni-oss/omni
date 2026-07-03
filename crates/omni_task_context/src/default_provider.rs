@@ -50,6 +50,11 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
             .get_cache_info(node.project_name(), node.task_name())
             .map(|ci| Cow::Borrowed(ci));
 
+        let output_logs = self
+            .context
+            .get_output_logs(node.project_name(), node.task_name())
+            .copied();
+
         let dependency_hashes = if !ignore_dependencies {
             node.dependencies()
                 .iter()
@@ -70,6 +75,7 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
             node,
             env_vars,
             cache_info,
+            output_logs,
             dependency_hashes,
             template_context,
         };

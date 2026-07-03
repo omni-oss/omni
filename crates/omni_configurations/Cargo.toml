@@ -37,6 +37,7 @@ lazy-regex = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 omni_config_types = { workspace = true }
+omni_task_output_logs = { workspace = true }
 serde_validate = { workspace = true }
 omni_serde_validators = { workspace = true }
 omni_file_data_serde = { workspace = true }
