@@ -31,6 +31,7 @@ use omni_remote_sources::manager::{
     RemoteSourceManager, config::RemoteSourceConfig,
 };
 use owo_colors::OwoColorize;
+use sets::OrderedSet;
 use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, clap::Args)]
@@ -225,13 +226,13 @@ fn report_generator_output(
 
     let root_dir = path::clean(root_dir);
 
-    let mut files_created = vec![];
-    let mut files_modified = vec![];
-    let mut files_removed = vec![];
-    let mut dirs_created = vec![];
-    let mut dirs_removed = vec![];
-    let mut renamed = vec![];
-    let mut copied = vec![];
+    let mut files_created = OrderedSet::new();
+    let mut files_modified = OrderedSet::new();
+    let mut files_removed = OrderedSet::new();
+    let mut dirs_created = OrderedSet::new();
+    let mut dirs_removed = OrderedSet::new();
+    let mut renamed = OrderedSet::new();
+    let mut copied = OrderedSet::new();
 
     fn clean_diff_path(path: PathBuf, root_dir: &Path) -> PathBuf {
         path::diff(&path::clean(&path), root_dir).unwrap_or(path)
@@ -240,31 +241,31 @@ fn report_generator_output(
     for action in response.actions {
         match action {
             omni_generator::Action::CreateFile { path } => {
-                files_created.push(clean_diff_path(path, &root_dir));
+                files_created.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::ModifyFile { path } => {
-                files_modified.push(clean_diff_path(path, &root_dir));
+                files_modified.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveFile { path } => {
-                files_removed.push(clean_diff_path(path, &root_dir));
+                files_removed.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::CreateDir { path } => {
-                dirs_created.push(clean_diff_path(path, &root_dir));
+                dirs_created.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveDir { path } => {
-                dirs_removed.push(clean_diff_path(path, &root_dir));
+                dirs_removed.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::RemoveDirAll { path } => {
-                dirs_removed.push(clean_diff_path(path, &root_dir));
+                dirs_removed.insert(clean_diff_path(path, &root_dir));
             }
             omni_generator::Action::Rename { from, to } => {
-                renamed.push((
+                renamed.insert((
                     clean_diff_path(from, &root_dir),
                     clean_diff_path(to, &root_dir),
                 ));
             }
             omni_generator::Action::Copy { from, to } => {
-                copied.push((
+                copied.insert((
                     clean_diff_path(from, &root_dir),
                     clean_diff_path(to, &root_dir),
                 ));
