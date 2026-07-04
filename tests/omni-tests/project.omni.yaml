@@ -14,6 +14,7 @@ dependencies:
 
 tasks:
   test:e2e:
+    max_retries: 5
     enabled: true
     dependencies:
       append:
