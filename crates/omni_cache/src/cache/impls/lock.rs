@@ -22,6 +22,10 @@ pub(crate) const LOCKS_DIR: &str = ".locks";
 pub(crate) const PRUNE_LOCK_FILE: &str = "prune.lock";
 /// Lock file guarding the last-used-timestamps database.
 pub(crate) const LAST_USED_LOCK_FILE: &str = "last-used.lock";
+/// Lock file serializing in-place replacement of an already-published cache
+/// entry (e.g. upgrading a cached failure to a later successful re-execution
+/// of the same digest).
+pub(crate) const REPLACE_LOCK_FILE: &str = "replace.lock";
 
 /// Builds the path of a lock file inside the cache directory's lock folder.
 pub(crate) fn lock_file_path(cache_dir: &Path, name: &str) -> PathBuf {

@@ -740,3 +740,85 @@ describe("+cache @cache (remote setup)", () => {
         expect(ws.exists(".omni/remote-cache.omni.yaml")).toBe(false);
     });
 });
+
+describe("+cache @cache @e2e (flaky failure superseded by a later success)", () => {
+    /**
+     * The task's outcome is driven by `FLAKY_SHOULD_FAIL`, an env var that is
+     * never declared as a cache-key input, so it does not enter the task
+     * digest. A failure and a later success therefore resolve to the same
+     * content-addressed cache entry, exercising the failure -> success
+     * replacement path in `HybridTaskExecutionCacheStore::cache_many`.
+     */
+    const flakyProjectSpec: WorkspaceSpec = {
+        workspace: { projects: ["**"] },
+        projects: {
+            app: { name: "app", tasks: { flaky: "node flaky.js" } },
+        },
+        files: {
+            "app/flaky.js": [
+                "if (process.env.FLAKY_SHOULD_FAIL === '1') {",
+                "  console.error('flaky: intentional failure');",
+                "  process.exit(1);",
+                "}",
+                "console.log('flaky: success');",
+                "",
+            ].join("\n"),
+        },
+    };
+
+    it("a `-f=failed` re-run that succeeds replaces the cached failure", async () => {
+        const ws = makeWorkspace(flakyProjectSpec);
+
+        // The task inherits the parent env, so the control var reaches it
+        // without being tracked; `-i` keeps that behavior explicit.
+        const failed = await runOmni(["-i", "run", "flaky"], {
+            cwd: ws.cwd,
+            env: { FLAKY_SHOULD_FAIL: "1" },
+        });
+        expect(failed).toHaveFailed();
+
+        // `-f=failed` ignores the cached failure and re-runs; with the control
+        // var unset the task now succeeds and its success must be persisted.
+        const recovered = await runOmni(["-i", "run", "flaky", "-f=failed"], {
+            cwd: ws.cwd,
+        });
+        expect(recovered).toHaveSucceeded();
+        expect(recovered.stdout).not.toContain("Cache hit for task");
+
+        // With the success cached, another `-f=failed` run serves it from the
+        // cache instead of re-executing. The control var would fail a fresh
+        // run, so a success here proves the cached success superseded the
+        // earlier failure (before the fix the failure stayed sticky and the
+        // task was re-run every time).
+        const served = await runOmni(["-i", "run", "flaky", "-f=failed"], {
+            cwd: ws.cwd,
+            env: { FLAKY_SHOULD_FAIL: "1" },
+        });
+        expect(served).toHaveSucceeded();
+        expect(served).toOutputContaining("Cache hit for task 'app#flaky'");
+    });
+
+    it("a later failure never overwrites a cached success", async () => {
+        const ws = makeWorkspace(flakyProjectSpec);
+
+        const success = await runOmni(["-i", "run", "flaky"], { cwd: ws.cwd });
+        expect(success).toHaveSucceeded();
+
+        // Force a fresh (failing) execution of the same digest. `--force=all`
+        // re-runs regardless of the cached outcome, and the failing result
+        // must not replace the cached success.
+        const forcedFailure = await runOmni(["-i", "run", "flaky", "-f"], {
+            cwd: ws.cwd,
+            env: { FLAKY_SHOULD_FAIL: "1" },
+        });
+        expect(forcedFailure).toHaveFailed();
+
+        // A subsequent `-f=failed` run still finds the success in the cache.
+        const served = await runOmni(["-i", "run", "flaky", "-f=failed"], {
+            cwd: ws.cwd,
+            env: { FLAKY_SHOULD_FAIL: "1" },
+        });
+        expect(served).toHaveSucceeded();
+        expect(served).toOutputContaining("Cache hit for task 'app#flaky'");
+    });
+});

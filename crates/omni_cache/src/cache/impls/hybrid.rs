@@ -53,7 +53,7 @@ use crate::{
         last_used_db::{LocalLastUsedDb, LocalLastUsedDbError},
         lock::{
             CacheLockGuard, LAST_USED_LOCK_FILE, PRUNE_LOCK_FILE,
-            lock_file_path,
+            REPLACE_LOCK_FILE, lock_file_path,
         },
     },
 };
@@ -248,17 +248,46 @@ impl HybridTaskExecutionCacheStore {
         Ok(())
     }
 
+    /// Reads the recorded exit code of a published cache entry.
+    ///
+    /// Returns `None` when no complete entry is present at `metadata_path`.
+    /// The exit code is used to decide whether a freshly-produced result may
+    /// replace an existing entry: entries are addressed only by their input
+    /// digest, which does not encode the execution outcome, so a cached
+    /// failure and a later success of the same flaky task resolve to the same
+    /// location.
+    async fn read_cached_exit_code(
+        &self,
+        metadata_path: &Path,
+    ) -> Result<Option<u32>, LocalTaskExecutionCacheStoreError> {
+        if !self.sys.fs_exists_async(metadata_path).await? {
+            return Ok(None);
+        }
+
+        let bytes = self.sys.fs_read_async(metadata_path).await?;
+        let metadata: CachedTaskExecution =
+            rmp_serde::decode::from_slice(&bytes)?;
+
+        Ok(Some(metadata.exit_code))
+    }
+
     /// Atomically publishes a fully-populated staging directory to its final
     /// content-addressed location.
     ///
-    /// Because entries are content-addressed, an entry that already exists is
-    /// equivalent to ours, so a publish that loses the race is still a
-    /// success. Returns once the destination holds a complete entry.
+    /// When `replace` is `false` an entry that already exists is assumed to be
+    /// equivalent to ours (same digest, same outcome), so a publish that loses
+    /// the race is still a success. When `replace` is `true` the caller is
+    /// intentionally overwriting a non-equivalent existing entry (e.g. an
+    /// upgrade from a cached failure to a successful re-execution), so an
+    /// existing complete entry is cleared and replaced rather than kept.
+    ///
+    /// Returns once the destination holds a complete entry.
     async fn publish_staging(
         &self,
         staging_dir: &Path,
         output_dir: &Path,
         metadata_path: &Path,
+        replace: bool,
     ) -> Result<(), LocalTaskExecutionCacheStoreError> {
         const MAX_ATTEMPTS: usize = 5;
 
@@ -267,16 +296,21 @@ impl HybridTaskExecutionCacheStore {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     // A peer published an identical entry first. Discard our
-                    // staging copy and treat this as success.
-                    if self.sys.fs_exists_async(metadata_path).await? {
+                    // staging copy and treat this as success. Skipped when
+                    // replacing, since there we mean to overwrite whatever
+                    // occupies the destination.
+                    if !replace
+                        && self.sys.fs_exists_async(metadata_path).await?
+                    {
                         let _ =
                             self.sys.fs_remove_dir_all_async(staging_dir).await;
                         return Ok(());
                     }
 
-                    // A stale/partial directory (no metadata sentinel) is
-                    // occupying the destination, e.g. left by an older omni
-                    // version or a crashed run. Clear it and retry.
+                    // Either a stale/partial directory (no metadata sentinel,
+                    // e.g. left by an older omni version or a crashed run) or,
+                    // when replacing, the prior entry we intend to overwrite is
+                    // occupying the destination. Clear it and retry.
                     if self.sys.fs_exists_async(output_dir).await? {
                         let _ =
                             self.sys.fs_remove_dir_all_async(output_dir).await;
@@ -484,21 +518,60 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             let log_content = logs_map[&result.task.project_name];
             let digest = result.digest.expect("should be some");
 
-            // Cache entries are content-addressed by their digest, so an
-            // existing complete entry is byte-for-byte equivalent to what we
-            // would write. Reuse it instead of rewriting (which would race
-            // with peers reading or publishing the same digest).
-            let already_published =
-                self.sys.fs_exists_async(&metadata_path).await?;
+            let tfqn = format!(
+                "{}#{}",
+                result.task.project_name, result.task.task_name
+            );
+            let new_cache_info =
+                cache_info_map.get(&tfqn).expect("should be some");
 
-            if !already_published {
-                let tfqn = format!(
-                    "{}#{}",
-                    result.task.project_name, result.task.task_name
-                );
-                let new_cache_info =
-                    cache_info_map.get(&tfqn).expect("should be some");
+            // Entries are addressed only by their input digest, which does not
+            // encode the execution outcome. A flaky task can therefore produce
+            // a failed entry and, on a later `-f=failed` re-run, a successful
+            // one at the same content-addressed location. A success must be
+            // allowed to replace a previously cached failure; a failure must
+            // never overwrite a success, and identical outcomes are left as-is
+            // (reusing an existing entry avoids racing peers reading it).
+            let existing_exit_code =
+                self.read_cached_exit_code(&metadata_path).await?;
 
+            // Overwriting an existing entry is only ever needed to upgrade a
+            // cached failure to a success. Serialize those replacements with a
+            // dedicated exclusive lock so two concurrent upgrades of the same
+            // digest cannot race, then re-read under the lock so we never
+            // downgrade an entry a peer just upgraded.
+            let upgrading = existing_exit_code.is_some_and(|c| c != 0)
+                && new_cache_info.exit_code == 0;
+
+            let _replace_guard = if upgrading {
+                Some(
+                    CacheLockGuard::acquire_exclusive(lock_file_path(
+                        &self.cache_dir,
+                        REPLACE_LOCK_FILE,
+                    ))
+                    .await?,
+                )
+            } else {
+                None
+            };
+
+            let existing_exit_code = if upgrading {
+                self.read_cached_exit_code(&metadata_path).await?
+            } else {
+                existing_exit_code
+            };
+
+            let should_write = match existing_exit_code {
+                // Nothing cached yet: write a fresh entry.
+                None => true,
+                // A cached success is authoritative and never overwritten.
+                Some(0) => false,
+                // A cached failure is replaced only by a success.
+                Some(_) => new_cache_info.exit_code == 0,
+            };
+            let replacing = should_write && existing_exit_code.is_some();
+
+            if should_write {
                 // Build the entry in an isolated staging directory and then
                 // atomically rename it into place, so readers only ever see a
                 // fully-formed entry.
@@ -590,8 +663,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                     return Err(e);
                 }
 
-                self.publish_staging(&staging_dir, output_dir, &metadata_path)
-                    .await?;
+                self.publish_staging(
+                    &staging_dir,
+                    output_dir,
+                    &metadata_path,
+                    replacing,
+                )
+                .await?;
             }
 
             let execution_hash = CachedTaskExecutionHash {
@@ -603,7 +681,11 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             cache_exec_hashes.push(execution_hash);
 
             if self.remote_config.is_enabled() {
-                cached_results.push((execution_hash, output_dir.to_path_buf()));
+                cached_results.push((
+                    execution_hash,
+                    output_dir.to_path_buf(),
+                    replacing,
+                ));
             }
         }
 
@@ -612,7 +694,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         {
             log::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
-            for (hash, output_dir) in cached_results {
+            for (hash, output_dir, replacing) in cached_results {
                 let client = self.client.clone();
                 let conf = conf.clone();
                 let digest = bs58::encode(hash.digest).into_string();
@@ -630,7 +712,13 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         ws: &conf.workspace_code,
                     };
 
-                    if client.artifact_exists(&config, &digest).await? {
+                    // A remote artifact is keyed by digest, so an existing one
+                    // would carry the superseded (failed) execution. Skip the
+                    // existence check when replacing so the successful entry
+                    // overwrites it; otherwise avoid a redundant re-upload.
+                    if !replacing
+                        && client.artifact_exists(&config, &digest).await?
+                    {
                         return Ok::<_, LocalTaskExecutionCacheStoreError>(());
                     }
 
@@ -1651,6 +1739,20 @@ mod tests {
         }
     }
 
+    fn new_cache_info_with_exit_code<'a>(
+        logs: Option<&'a Bytes>,
+        task: TaskExecutionInfo<'a>,
+        exit_code: u32,
+    ) -> NewCacheInfo<'a> {
+        NewCacheInfo {
+            logs,
+            task,
+            exit_code,
+            execution_duration: std::time::Duration::from_millis(100),
+            tries: 1,
+        }
+    }
+
     #[tokio::test]
     async fn test_cache_unchanged() {
         let temp = fixture(&["project1"]).await;
@@ -1709,6 +1811,93 @@ mod tests {
 
         assert!(cached_output1.is_none(), "cached output should not exist");
         assert!(cached_output2.is_some(), "cached output should exist");
+    }
+
+    #[tokio::test]
+    async fn test_success_replaces_cached_failure() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        // A flaky task fails first and its failure is cached.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                task.get().clone(),
+                1,
+            ))
+            .await
+            .expect("failed to cache failure");
+
+        let cached_failure = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output")
+            .expect("cached failure should exist");
+        assert_eq!(
+            cached_failure.exit_code, 1,
+            "cached entry should record the failure"
+        );
+
+        // A later (forced) re-execution succeeds; it must replace the failure
+        // even though it resolves to the same content-addressed digest.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                task.get().clone(),
+                0,
+            ))
+            .await
+            .expect("failed to cache success");
+
+        let cached_success = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output")
+            .expect("cached success should exist");
+        assert_eq!(
+            cached_success.exit_code, 0,
+            "successful execution should supersede the cached failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_failure_does_not_replace_cached_success() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        // A successful execution is cached first.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                task.get().clone(),
+                0,
+            ))
+            .await
+            .expect("failed to cache success");
+
+        // A later failure of the same digest must not overwrite the success.
+        cache
+            .cache(&new_cache_info_with_exit_code(
+                Some(&LOGS_CONTENT),
+                task.get().clone(),
+                1,
+            ))
+            .await
+            .expect("failed to cache failure");
+
+        let cached = cache
+            .get(task.get())
+            .await
+            .expect("failed to get cached output")
+            .expect("cached success should still exist");
+        assert_eq!(
+            cached.exit_code, 0,
+            "a cached success must never be downgraded to a failure"
+        );
     }
 
     #[tokio::test]
