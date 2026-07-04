@@ -9,8 +9,7 @@ use env_loader::EnvLoaderError;
 use maps::{Map, UnorderedMap};
 use merge::Merge as _;
 use omni_configurations::{
-    MetaConfiguration, ProjectConfiguration, TaskOutputConfiguration,
-    WorkspaceConfiguration,
+    MetaConfiguration, ProjectConfiguration, WorkspaceConfiguration,
 };
 use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
@@ -169,12 +168,6 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                 let task_cache = task.cache();
                 let task_output_logs = task.output_logs();
-                let task_output = task.output().cloned().unwrap_or_else(|| {
-                    TaskOutputConfiguration {
-                        files: ListConfig::append(vec![]),
-                        logs: true,
-                    }
-                });
 
                 let output_logs = match (project_output_logs, task_output_logs)
                 {
@@ -226,8 +219,8 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                         key_defaults: use_defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
                         key_input_files: key_files,
-                        cache_output_files: task_output.files.to_vec(),
-                        cache_logs: task_output.logs,
+                        cache_output_files: cache.output.files.to_vec(),
+                        cache_logs: cache.output.logs,
                         args: task
                             .args()
                             .map(|args| {

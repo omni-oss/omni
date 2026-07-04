@@ -5,7 +5,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Merge,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Merge,
 )]
 #[serde(deny_unknown_fields)]
 pub struct TaskOutputConfiguration {

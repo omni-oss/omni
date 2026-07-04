@@ -10,6 +10,7 @@
  * successful cache hits, and `--output-cached-logs all` forces replay.
  */
 
+import { rmSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
@@ -820,5 +821,132 @@ describe("+cache @cache @e2e (flaky failure superseded by a later success)", () 
         });
         expect(served).toHaveSucceeded();
         expect(served).toOutputContaining("Cache hit for task 'app#flaky'");
+    });
+});
+
+describe("+cache @cache @output @e2e (output artifact caching)", () => {
+    /**
+     * Writes each path passed as an argument (relative to the task's working
+     * directory) with a fresh random body. The randomness is the crux of these
+     * tests: a genuine cache restore reproduces the *original* body byte-for-
+     * byte, whereas a re-execution would emit a different one.
+     */
+    const artifactWriter = [
+        'const fs = require("node:fs");',
+        'const path = require("node:path");',
+        "for (const rel of process.argv.slice(2)) {",
+        "  const abs = path.join(process.cwd(), rel);",
+        "  fs.mkdirSync(path.dirname(abs), { recursive: true });",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: expected to be a raw string template literal
+        "  fs.writeFileSync(abs, `artifact ${Date.now()}-${Math.random()}`);",
+        "}",
+        'console.log("built artifact");',
+        "",
+    ].join("\n");
+
+    it("restores a task's cached output file on a cache hit", async () => {
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    tasks: {
+                        build: {
+                            exec: "node build.js dist/artifact.txt",
+                            cache: { output: { files: ["dist/**/*"] } },
+                        },
+                    },
+                },
+            },
+            files: { "app/build.js": artifactWriter },
+        });
+
+        const first = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(first).toHaveSucceeded();
+
+        const artifact = "app/dist/artifact.txt";
+        const original = ws.read(artifact);
+        rmSync(ws.path(artifact));
+        expect(ws.exists(artifact)).toBe(false);
+
+        const second = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(second).toHaveSucceeded();
+        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+
+        // The task body is random per run, so a matching restored body proves
+        // the file came from the cache rather than a re-execution.
+        expect(ws.exists(artifact)).toBe(true);
+        expect(ws.read(artifact)).toBe(original);
+    });
+
+    it("restores files declared by a project-wide `cache.output`", async () => {
+        // The task carries no `output` of its own; the artifact is caught,
+        // cached, and restored solely via the project-level `cache.output`.
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    cache: { output: { files: ["dist/**/*"] } },
+                    tasks: { build: "node build.js dist/artifact.txt" },
+                },
+            },
+            files: { "app/build.js": artifactWriter },
+        });
+
+        const first = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(first).toHaveSucceeded();
+
+        const artifact = "app/dist/artifact.txt";
+        const original = ws.read(artifact);
+        rmSync(ws.path(artifact));
+
+        const second = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(second).toHaveSucceeded();
+        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+
+        expect(ws.exists(artifact)).toBe(true);
+        expect(ws.read(artifact)).toBe(original);
+    });
+
+    it("appends a task's `cache.output` files to the project-wide ones", async () => {
+        // The project catches `shared/**/*`; the task appends `dist/**/*`. Both
+        // artifacts must be cached and restored, proving the task list adds to
+        // (rather than replaces) the project list.
+        const ws = makeWorkspace({
+            workspace: { projects: ["**"] },
+            projects: {
+                app: {
+                    name: "app",
+                    cache: { output: { files: ["shared/**/*"] } },
+                    tasks: {
+                        build: {
+                            exec: "node build.js dist/app.txt shared/lib.txt",
+                            cache: {
+                                output: { files: { append: ["dist/**/*"] } },
+                            },
+                        },
+                    },
+                },
+            },
+            files: { "app/build.js": artifactWriter },
+        });
+
+        const first = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(first).toHaveSucceeded();
+
+        const taskArtifact = "app/dist/app.txt";
+        const projectArtifact = "app/shared/lib.txt";
+        const originalTask = ws.read(taskArtifact);
+        const originalProject = ws.read(projectArtifact);
+        rmSync(ws.path(taskArtifact));
+        rmSync(ws.path(projectArtifact));
+
+        const second = await runOmni(["run", "build"], { cwd: ws.cwd });
+        expect(second).toHaveSucceeded();
+        expect(second).toOutputContaining("Cache hit for task 'app#build'");
+
+        expect(ws.read(taskArtifact)).toBe(originalTask);
+        expect(ws.read(projectArtifact)).toBe(originalProject);
     });
 });

@@ -12,7 +12,7 @@ use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{CacheConfiguration, MetaConfiguration, TaskOutputConfiguration};
+use crate::{CacheConfiguration, MetaConfiguration};
 
 use super::TaskDependencyConfiguration;
 
@@ -65,9 +65,6 @@ pub struct TaskConfigurationLongForm {
 
     #[serde(default)]
     pub output_logs: Option<OutputLogsConfiguration>,
-
-    #[serde(default)]
-    pub output: TaskOutputConfiguration,
 
     #[serde(default)]
     pub meta: MetaConfiguration,
@@ -146,7 +143,6 @@ impl Default for TaskConfigurationLongForm {
             env: TaskEnvConfiguration::default(),
             cache: CacheConfiguration::default(),
             output_logs: None,
-            output: TaskOutputConfiguration::default(),
             meta: MetaConfiguration::default(),
             enabled: default_if(),
             interactive: default_interactive(),
@@ -261,16 +257,6 @@ impl TaskConfiguration {
         }
     }
 
-    pub fn output(&self) -> Option<&TaskOutputConfiguration> {
-        match self {
-            TaskConfiguration::ShortForm(_) => None,
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                output,
-                ..
-            }) => Some(output),
-        }
-    }
-
     pub fn output_logs(&self) -> Option<&OutputLogsConfiguration> {
         match self {
             TaskConfiguration::ShortForm(_) => None,
@@ -325,7 +311,6 @@ impl Merge for TaskConfiguration {
                     env: a_env,
                     cache: a_cache,
                     output_logs: a_output_logs,
-                    output: a_output,
                     meta: a_meta,
                     enabled: a_enabled,
                     interactive: a_interactive,
@@ -343,7 +328,6 @@ impl Merge for TaskConfiguration {
                     env: b_env,
                     cache: b_cache,
                     output_logs: b_output_logs,
-                    output: b_output,
                     meta: b_meta,
                     enabled: b_enabled,
                     interactive: b_interactive,
@@ -361,7 +345,6 @@ impl Merge for TaskConfiguration {
                 a_env.merge(b_env);
                 a_cache.merge(b_cache);
                 merge::option::recurse(a_output_logs, b_output_logs);
-                a_output.merge(b_output);
                 a_meta.merge(b_meta);
                 a_args.merge(b_args);
                 merge::option::recurse(a_enabled, b_enabled);
@@ -404,7 +387,6 @@ mod tests {
             description: Some(Replace::new(String::from("a description"))),
             env: Default::default(),
             cache: Default::default(),
-            output: TaskOutputConfiguration::default(),
             meta: Default::default(),
             interactive: Some(Replace::new(false)),
             persistent: Some(Replace::new(true)),
@@ -426,7 +408,6 @@ mod tests {
             description: None,
             env: Default::default(),
             cache: Default::default(),
-            output: TaskOutputConfiguration::default(),
             meta: Default::default(),
             interactive: Some(Replace::new(true)),
             persistent: Some(Replace::new(false)),
@@ -447,7 +428,6 @@ mod tests {
                 description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),
                 cache: Default::default(),
-                output: Default::default(),
                 meta: Default::default(),
                 interactive: Some(Replace::new(true)),
                 persistent: Some(Replace::new(false)),

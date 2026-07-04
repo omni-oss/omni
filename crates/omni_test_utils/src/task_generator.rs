@@ -97,13 +97,15 @@ impl TaskGenerator {
 
 impl TaskGenerator {
     pub fn generate(&self) -> TaskConfiguration {
+        let mut cache = self.cache.generate();
+        cache.output = self.output.generate();
+
         TaskConfiguration::LongForm(Box::new(TaskConfigurationLongForm {
             exec: Some(Replace::new(self.command.clone())),
-            cache: self.cache.generate(),
+            cache,
             description: self.description.clone().map(|e| Replace::new(e)),
             env: self.env.generate(),
             meta: self.meta.generate(),
-            output: self.output.generate(),
             dependencies: ListConfig::append(
                 self.dependencies
                     .iter()

@@ -40,6 +40,7 @@ impl CacheConfigurationGenerator {
         CacheConfiguration {
             enabled: Some(Replace::new(self.enabled)),
             key: self.key.generate(),
+            output: Default::default(),
         }
     }
 }

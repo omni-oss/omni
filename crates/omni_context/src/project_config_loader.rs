@@ -107,6 +107,12 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                 }
             });
 
+            project.cache.output.files.iter_mut().for_each(|a| {
+                if a.is_rooted(Root::Project) {
+                    a.resolve_in_place(&bases);
+                }
+            });
+
             project.tasks.values_mut().for_each(|a| {
                 if let TaskConfiguration::LongForm(a) = a {
                     a.cache.key.files.iter_mut().for_each(|a| {
@@ -115,7 +121,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                         }
                     });
 
-                    a.output.files.iter_mut().for_each(|a| {
+                    a.cache.output.files.iter_mut().for_each(|a| {
                         if a.is_rooted(Root::Project) {
                             a.resolve_in_place(&bases);
                         }

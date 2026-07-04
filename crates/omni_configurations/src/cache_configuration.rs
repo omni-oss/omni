@@ -4,7 +4,7 @@ use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::list_config_default;
+use crate::{TaskOutputConfiguration, utils::list_config_default};
 
 #[derive(
     Debug,
@@ -25,6 +25,8 @@ pub struct CacheConfiguration {
     #[serde(default = "default_enabled")]
     #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
+    #[serde(default)]
+    pub output: TaskOutputConfiguration,
 }
 
 #[inline(always)]
@@ -42,6 +44,7 @@ impl Default for CacheConfiguration {
         Self {
             key: Default::default(),
             enabled: default_enabled(),
+            output: Default::default(),
         }
     }
 }
@@ -122,6 +125,7 @@ mod tests {
                 ..Default::default()
             },
             enabled: Some(Replace::new(false)),
+            output: Default::default(),
         };
 
         let b = CacheConfiguration {
@@ -130,6 +134,7 @@ mod tests {
                 ..Default::default()
             },
             enabled: None,
+            output: Default::default(),
         };
 
         a.merge(b);
