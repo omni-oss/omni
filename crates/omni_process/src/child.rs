@@ -319,6 +319,7 @@ pub(crate) enum ChildErrorInner {
     CantSpawnCommand(String),
 
     #[error("can't open pty")]
+    #[allow(dead_code)]
     CantOpenPty,
 
     #[error("can't take output reader: {0}")]
@@ -347,32 +348,56 @@ fn create_inner(
     env: HashMap<OsString, OsString>,
 ) -> Result<Command, ChildErrorInner> {
     if should_use_pty() {
-        let pty_sys = native_pty_system();
-        let pty = pty_sys
-            .openpty(get_pty_size())
-            .map_err(|_e| ChildErrorInner::CantOpenPty)?;
+        // Only consume command/args/env/cwd once we know the pty actually
+        // opened; otherwise fall through to the piped path with them intact
+        // (e.g. Windows builds older than 1809 with no ConPTY).
+        match native_pty_system().openpty(get_pty_size()) {
+            Ok(pty) => {
+                // On Windows, launch through the command processor. Handing a
+                // .cmd/.bat shim (e.g. vite.cmd) or a bare name straight to
+                // ConPTY's CreateProcess fails DLL init with
+                // STATUS_DLL_INIT_FAILED (exit code 3221225794); cmd.exe /C
+                // gives ConPTY a real console program to attach to and
+                // resolves shims via PATHEXT.
+                let mut pty_cmd = if cfg!(windows) {
+                    let mut c = portable_pty::CommandBuilder::new("cmd.exe");
+                    c.arg("/C");
+                    c.arg(&command);
+                    for arg in &args {
+                        c.arg(arg);
+                    }
+                    c
+                } else {
+                    let mut c = portable_pty::CommandBuilder::new(&command);
+                    c.args(&args);
+                    c
+                };
+                pty_cmd.cwd(cwd);
+                for (k, v) in env.into_iter() {
+                    pty_cmd.env(k, v);
+                }
 
-        let mut pty_cmd = portable_pty::CommandBuilder::new(&command);
-        pty_cmd.args(args);
-        pty_cmd.cwd(cwd);
-        for (k, v) in env.into_iter() {
-            pty_cmd.env(k, v);
+                return Ok(Command::Pty(PtyCommand {
+                    cmd: pty_cmd,
+                    slave: pty.slave,
+                    master: pty.master,
+                }));
+            }
+            Err(e) => {
+                log::warn!(
+                    "failed to open pty ({e}); falling back to a piped process"
+                );
+            }
         }
-
-        Ok(Command::Pty(PtyCommand {
-            cmd: pty_cmd,
-            slave: pty.slave,
-            master: pty.master,
-        }))
-    } else {
-        let mut std_cmd = tokio::process::Command::new(command);
-
-        std_cmd.args(args);
-        std_cmd.current_dir(cwd);
-        std_cmd.envs(env);
-
-        Ok(Command::Normal(StdCommand { cmd: std_cmd }))
     }
+
+    let mut std_cmd = tokio::process::Command::new(command);
+
+    std_cmd.args(args);
+    std_cmd.current_dir(cwd);
+    std_cmd.envs(env);
+
+    Ok(Command::Normal(StdCommand { cmd: std_cmd }))
 }
 
 struct PtyCommand {

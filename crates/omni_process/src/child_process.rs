@@ -170,7 +170,7 @@ impl<C: for<'a> CommandProvider<'a>, D: for<'a> CurrentDirProvider<'a>>
             unexpanded_comand.as_ref()
         };
 
-        let parsed = shlex::split(command).ok_or_else(|| {
+        let parsed = split_command(command).ok_or_else(|| {
             ChildProcessErrorInner::CantParseCommand(command.to_string())
         })?;
 
@@ -310,6 +310,113 @@ fn vars_os(vars: &Map<String, String>) -> HashMap<OsString, OsString> {
         .collect::<HashMap<_, _>>()
 }
 
+/// Split a command string into program + args.
+///
+/// The two platforms follow different command-line conventions, so we parse
+/// with the matching rules instead of forcing one lexer everywhere:
+///
+/// * Unix uses [`shlex`] (POSIX shell word-splitting), where `\` escapes the
+///   next character.
+/// * Windows uses [`split_command_windows`], which follows the
+///   `CommandLineToArgvW`/MSVCRT rules the OS itself uses. There `\` is an
+///   ordinary character (so paths like `C:\Users` survive) and is only
+///   special immediately before a `"`.
+fn split_command(command: &str) -> Option<Vec<String>> {
+    #[cfg(windows)]
+    {
+        Some(split_command_windows(command))
+    }
+    #[cfg(not(windows))]
+    {
+        shlex::split(command)
+    }
+}
+
+/// Split a Windows command line into arguments using the same algorithm as
+/// `CommandLineToArgvW` / the MSVCRT runtime.
+///
+/// Rules:
+/// * Arguments are separated by unquoted whitespace (space or tab).
+/// * A `"` toggles "in quotes" mode; inside quotes, whitespace is literal.
+/// * A run of backslashes is only special when immediately followed by a `"`:
+///   - `2n` backslashes + `"` => `n` backslashes, and the `"` is a delimiter.
+///   - `2n+1` backslashes + `"` => `n` backslashes followed by a literal `"`.
+///   - Backslashes not followed by `"` are all literal.
+/// * Inside quotes, a doubled `""` emits a single literal `"` and stays quoted.
+///
+/// Unlike the OS, we apply these rules uniformly to every argument (including
+/// the program name); the program-name special-case only matters for embedded
+/// backslashes, which we want kept literally anyway.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn split_command_windows(command: &str) -> Vec<String> {
+    let chars: Vec<char> = command.chars().collect();
+    let mut args: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut in_arg = false;
+    let mut in_quotes = false;
+    let mut i = 0;
+
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => {
+                // Count the run of backslashes.
+                let mut backslashes = 0;
+                while i < chars.len() && chars[i] == '\\' {
+                    backslashes += 1;
+                    i += 1;
+                }
+                in_arg = true;
+                if i < chars.len() && chars[i] == '"' {
+                    // Backslashes escape each other and possibly the quote.
+                    for _ in 0..(backslashes / 2) {
+                        cur.push('\\');
+                    }
+                    if backslashes % 2 == 1 {
+                        // Odd: the quote is escaped -> literal, consume it.
+                        cur.push('"');
+                        i += 1;
+                    }
+                    // Even: leave the quote for the next iteration to toggle.
+                } else {
+                    // Not before a quote: all backslashes are literal.
+                    for _ in 0..backslashes {
+                        cur.push('\\');
+                    }
+                }
+            }
+            '"' => {
+                in_arg = true;
+                if in_quotes && i + 1 < chars.len() && chars[i + 1] == '"' {
+                    // "" inside quotes -> a single literal quote.
+                    cur.push('"');
+                    i += 2;
+                } else {
+                    in_quotes = !in_quotes;
+                    i += 1;
+                }
+            }
+            c if (c == ' ' || c == '\t') && !in_quotes => {
+                if in_arg {
+                    args.push(std::mem::take(&mut cur));
+                    in_arg = false;
+                }
+                i += 1;
+            }
+            c => {
+                cur.push(c);
+                in_arg = true;
+                i += 1;
+            }
+        }
+    }
+
+    if in_arg {
+        args.push(cur);
+    }
+
+    args
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct ChildProcessError(pub(crate) ChildProcessErrorInner);
@@ -375,4 +482,73 @@ pub(crate) enum ChildProcessErrorInner {
 
     #[error("no command is provided")]
     NoCommandProvided,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_command_windows as split;
+
+    fn v(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn simple_words() {
+        assert_eq!(split("vite dev"), v(&["vite", "dev"]));
+    }
+
+    #[test]
+    fn collapses_and_trims_whitespace() {
+        assert_eq!(split("  a\t b   c "), v(&["a", "b", "c"]));
+        assert_eq!(split(""), Vec::<String>::new());
+        assert_eq!(split("   "), Vec::<String>::new());
+    }
+
+    #[test]
+    fn backslashes_are_literal_in_paths() {
+        // The whole point: Windows paths must survive intact.
+        assert_eq!(
+            split(r"app --path C:\Users\P12C423\bin"),
+            v(&["app", "--path", r"C:\Users\P12C423\bin"]),
+        );
+        assert_eq!(split(r"C:\tools\vite.exe"), v(&[r"C:\tools\vite.exe"]));
+    }
+
+    #[test]
+    fn unc_path() {
+        assert_eq!(
+            split(r"copy \\server\share\file"),
+            v(&["copy", r"\\server\share\file"]),
+        );
+    }
+
+    #[test]
+    fn quoted_arg_with_spaces() {
+        assert_eq!(
+            split(r#"app "C:\Program Files\app.exe" --flag"#),
+            v(&["app", r"C:\Program Files\app.exe", "--flag"]),
+        );
+    }
+
+    #[test]
+    fn trailing_backslashes_before_closing_quote() {
+        // 2n backslashes + " => n backslashes and the quote is a delimiter.
+        assert_eq!(split(r#""C:\dir\\" x"#), v(&[r"C:\dir\", "x"]));
+    }
+
+    #[test]
+    fn escaped_quote_is_literal() {
+        // 2n+1 backslashes + " => n backslashes + a literal quote.
+        assert_eq!(split(r#"echo \"hi\""#), v(&["echo", r#""hi""#]));
+    }
+
+    #[test]
+    fn doubled_quote_inside_quotes_is_literal() {
+        assert_eq!(split(r#""a""b""#), v(&[r#"a"b"#]));
+    }
+
+    #[test]
+    fn empty_quoted_string_is_an_arg() {
+        assert_eq!(split(r#"app "" x"#), v(&["app", "", "x"]));
+    }
 }

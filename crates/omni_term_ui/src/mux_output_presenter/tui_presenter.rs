@@ -124,6 +124,28 @@ impl TuiPresenter {
             inputs_task,
         }
     }
+
+    /// Stop the rendering loop and restore the terminal (leave the alternate
+    /// screen, disable raw mode) **without** consuming the presenter.
+    ///
+    /// Unlike [`close`](MuxOutputPresenter::close) this does not join the
+    /// stream-draining tasks or the input task; it only tears down the UI so
+    /// the terminal is usable again for plain output. It is idempotent: the
+    /// shutdown signal and UI-task handle are taken from their slots on the
+    /// first call, so later calls are no-ops.
+    pub async fn shutdown(&self) {
+        if let Some(tx) = self.ui_shutdown_tx.lock().await.take() {
+            let _ = tx.send(());
+        }
+
+        let ui_task = self.ui_task.write().await.take();
+        if let Some(ui_task) = ui_task
+            && !ui_task.is_finished()
+            && let Err(e) = ui_task.await
+        {
+            log::error!("UI task exited with error: {:?}", e);
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -233,19 +255,10 @@ impl MuxOutputPresenter for TuiPresenter {
     }
 
     async fn close(self) -> Result<(), Self::Error> {
-        // signal UI shutdown
-        if let Some(tx) = self.ui_shutdown_tx.lock().await.take() {
-            let _ = tx.send(());
-        }
+        // Signal UI shutdown and restore the terminal.
+        self.shutdown().await;
 
-        let ui_task = self.ui_task.write().await.take();
-
-        if let Some(ui_task) = ui_task
-            && !ui_task.is_finished()
-            && let Err(e) = ui_task.await
-        {
-            log::error!("UI task exited with error: {:?}", e);
-        }
+        // Then join the stream-draining and input tasks.
         wait(&self.tasks.clone()).await?;
         self.inputs_task.await??;
         Ok(())

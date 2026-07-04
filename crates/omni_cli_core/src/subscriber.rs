@@ -339,6 +339,10 @@ pub struct CliSubscriber {
     generator_progress: Arc<Mutex<Option<GeneratorProgress>>>,
     /// Task progress renderer, seeded in `progress` mode at plan-ready.
     task_progress: Arc<Mutex<Option<TaskProgress>>>,
+    /// Lifecycle lines buffered while the TUI owns the terminal, flushed once
+    /// the UI is torn down (see `emit` and `flush_emit_buffer`). Each entry is
+    /// `(message, is_error)`.
+    emit_buffer: Arc<Mutex<Vec<(String, bool)>>>,
 }
 
 impl CliSubscriber {
@@ -357,6 +361,7 @@ impl CliSubscriber {
             multi: Arc::new(OnceLock::new()),
             generator_progress: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new(None)),
+            emit_buffer: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -446,12 +451,39 @@ impl CliSubscriber {
     /// Emit a lifecycle line, routing through the progress bar in `progress`
     /// mode so the bar is not corrupted, and through `log` otherwise.
     fn emit(&self, msg: String, is_error: bool) {
-        if self.resolved_mode() == CliUiMode::Progress {
-            self.with_task_progress(|tp| tp.println(&msg));
-        } else if is_error {
-            log::error!("{}", msg);
-        } else {
-            log::info!("{}", msg);
+        match self.resolved_mode() {
+            CliUiMode::Progress => {
+                self.with_task_progress(|tp| tp.println(&msg));
+            }
+            // The TUI owns the terminal (alternate screen + raw mode), so
+            // writing log lines here would bleed straight onto/under the UI
+            // and corrupt it. Buffer them instead and flush once the TUI has
+            // been torn down (see `flush_emit_buffer`, called from
+            // `on_execution_complete`).
+            CliUiMode::Tui => {
+                self.emit_buffer.lock().push((msg, is_error));
+            }
+            _ => {
+                if is_error {
+                    log::error!("{}", msg);
+                } else {
+                    log::info!("{}", msg);
+                }
+            }
+        }
+    }
+
+    /// Flush any lifecycle lines buffered while the TUI was live. Must be
+    /// called only after the TUI has been torn down and the terminal restored
+    /// (otherwise the lines would corrupt the alternate screen). No-op when
+    /// nothing was buffered.
+    fn flush_emit_buffer(&self) {
+        for (msg, is_error) in self.emit_buffer.lock().drain(..) {
+            if is_error {
+                log::error!("{}", msg);
+            } else {
+                log::info!("{}", msg);
+            }
         }
     }
 
@@ -499,6 +531,14 @@ impl CliSubscriber {
 
         let mut tasks = self.tasks.lock();
         while tasks.join_next().await.is_some() {}
+        drop(tasks);
+
+        // Belt-and-suspenders: on early-exit paths `on_execution_complete` may
+        // never fire, leaving TUI-buffered lifecycle lines unflushed. Restore
+        // the terminal (idempotent) and flush anything still buffered so it is
+        // not lost. No-op when the buffer is already empty.
+        self.get_mux().shutdown().await;
+        self.flush_emit_buffer();
     }
 }
 
@@ -553,14 +593,24 @@ impl ExecutionEventSubscriber for CliSubscriber {
         };
         let _ = self.resolved_mode.set(resolved);
 
-        // Initialise the multiplexer for the resolved mode (no-op if already
-        // set at construction for explicit Stream/Tui).
-        let presenter = if resolved == CliUiMode::Tui {
-            MuxOutputPresenterStatic::new_tui()
-        } else {
-            MuxOutputPresenterStatic::new_stream()
-        };
-        let _ = self.mux.set(presenter);
+        // Initialise the multiplexer for the resolved mode, but only when it
+        // was not already set at construction (explicit Stream/Tui). Merely
+        // *constructing* `new_tui()` spawns a second `TuiPresenter` whose
+        // `run_tui` loop grabs the terminal (raw mode + alternate screen); the
+        // `set()` below then silently drops it because the `OnceLock` is
+        // already populated, and that drop tears the terminal back down
+        // (disable raw mode + leave alternate screen) out from under the
+        // still-live presenter. The result is a visible-but-dead TUI: rendering
+        // continues without raw mode, so keypresses never reach the active
+        // task. Guard the construction itself, not just the `set`.
+        if self.mux.get().is_none() {
+            let presenter = if resolved == CliUiMode::Tui {
+                MuxOutputPresenterStatic::new_tui()
+            } else {
+                MuxOutputPresenterStatic::new_stream()
+            };
+            let _ = self.mux.set(presenter);
+        }
 
         // Seed the aggregate progress bar in progress mode.
         if resolved == CliUiMode::Progress {
@@ -761,7 +811,17 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
     async fn on_execution_complete(&self, e: ExecutionCompleteEvent) {
         // Flush all task output streams before printing the summary.
-        let _ = self.get_mux().wait().await;
+        _ = self.get_mux().wait().await;
+
+        // Tear down the interactive UI (if any) so the terminal is restored
+        // from the alternate screen before we print the summary table. Without
+        // this the table is written into the about-to-be-discarded TUI screen
+        // and never reaches the user. No-op outside TUI mode.
+        self.get_mux().shutdown().await;
+
+        // Now that the terminal is restored, flush any lifecycle lines that
+        // were buffered while the TUI was live so they precede the summary.
+        self.flush_emit_buffer();
 
         if e.total > 0 {
             let mut table = Table::new();

@@ -3,7 +3,7 @@ use derive_new::new;
 use ratatui::widgets::Paragraph;
 use strum::{Display, EnumDiscriminants, EnumIs};
 
-use crate::mux_output_presenter::ansi_parser::AnsiParser;
+use crate::mux_output_presenter::ansi_parser::{AnsiParser, Flag};
 
 #[derive(Debug, Clone, Copy, EnumIs, Default, Display)]
 pub enum TaskScreenStatus {
@@ -22,7 +22,11 @@ pub struct TaskScreen {
     #[new(default)]
     pub status: TaskScreenStatus,
     pub actions: crossbeam_channel::Receiver<ScreenAction>,
-    #[new(default)]
+    // Emulate a terminal's ONLCR: treat a bare line-feed as CR+LF so output
+    // that ends lines with `\n` alone (as programs do when their stdout is a
+    // pipe rather than a tty) starts each new line at column 0 instead of
+    // "staircasing" from the previous line's end column.
+    #[new(value = "AnsiParser::new(Flag::Onlcr.into())")]
     pub parser: AnsiParser,
 }
 

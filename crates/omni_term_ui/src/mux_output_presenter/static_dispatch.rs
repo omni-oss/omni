@@ -20,6 +20,15 @@ impl MuxOutputPresenterStatic {
     pub fn new_tui() -> Self {
         Self::Tui(TuiPresenter::new())
     }
+
+    /// Tear down the interactive UI (if any) and restore the terminal, without
+    /// consuming the presenter. No-op for the stream presenter, which does not
+    /// own the terminal.
+    pub async fn shutdown(&self) {
+        if let MuxOutputPresenterStatic::Tui(t) = self {
+            t.shutdown().await;
+        }
+    }
 }
 
 impl From<StreamPresenter> for MuxOutputPresenterStatic {
