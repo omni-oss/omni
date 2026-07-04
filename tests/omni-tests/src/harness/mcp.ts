@@ -6,7 +6,8 @@
  * MCP protocol, and disconnect without boilerplate.
  */
 
-import { Client, StdioClientTransport } from "@modelcontextprotocol/client";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { onTestFinished } from "vitest";
 import { resolveOmniBin } from "./binary";
 
