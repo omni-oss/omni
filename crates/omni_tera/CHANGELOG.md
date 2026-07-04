@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tera-v0.7.0 - 2026-06-30
+#### Features
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+#### Bug Fixes
+- (**omni_tera**) add matching and regex_replace test to preset - (8df6432) - Clarence Manuel
+#### Miscellaneous Chores
+- improve error message for pipe - (4f71e18) - Clarence Manuel
+
+- - -
+
 ## omni_tera-v0.6.1 - 2026-05-24
 #### Bug Fixes
 - generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel

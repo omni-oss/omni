@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_mcp_core-v0.2.0 - 2026-07-03
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
+
+- - -
+
 ## omni_mcp_core-v0.1.0 - 2026-06-21
 #### Features
 - add initial mcp support - (a5c8b6e) - Clarence Manuel

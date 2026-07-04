@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_utils-v0.1.3 - 2026-07-02
+#### Bug Fixes
+- (**omni_cli_core**) improve generator output summary - (e6b4ca5) - Clarence Manuel
+
+- - -
+
 ## omni_utils-v0.1.2 - 2026-06-20
 #### Bug Fixes
 - (**omni_utils**) add LockGuard file lock - (e5010ad) - Clarence Manuel

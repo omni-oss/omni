@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_lockfile-v0.1.2 - 2026-07-02
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+#### Refactoring
+- (**omni_lockfile**) use async mutex for data handling - (fca88f2) - Clarence Manuel
+#### Miscellaneous Chores
+- format files - (3b49082) - Clarence Manuel
+
+- - -
+
 ## omni_lockfile-v0.1.1 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

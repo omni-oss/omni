@@ -2,25 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
-## omni_config_types-v0.2.0 - 2026-07-02
+## omni_input_schema-v0.1.0 - 2026-07-04
 #### Features
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
 - remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
 #### Bug Fixes
+- skip serializing null values - (e25f20a) - Clarence Manuel
+- apply deny_unknown_fields for configuration types - (3acf7b6) - Clarence Manuel
 - swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
-
-- - -
-
-## omni_config_types-v0.1.1 - 2026-05-24
-#### Bug Fixes
-- support multiple paths for local generator source - (8757b00) - Clarence Manuel
-#### Miscellaneous Chores
-- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
-
-- - -
-
-## omni_config_types-v0.1.0 - 2026-02-03
-#### Features
-- support if expressions for task condition - (cb1c87d) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
 
 - - -
 

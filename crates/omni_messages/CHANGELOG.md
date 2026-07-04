@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_messages-v0.1.0 - 2026-07-03
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+#### Bug Fixes
+- (**omni_messages**) add additional generator events - (791d4c8) - Clarence Manuel
+- use progress indicators for generator progress - (2022354) - Clarence Manuel
+
+- - -
+
 ## omni_messages-v0.0.1 - 2026-06-19
 #### Bug Fixes
 - (**omni_messages**) add total time saved calculation field - (fbcc278) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_process-v0.3.2 - 2026-07-04
+#### Bug Fixes
+- broken tui mode - (b055007) - Clarence Manuel
+
+- - -
+
 ## omni_process-v0.3.1 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

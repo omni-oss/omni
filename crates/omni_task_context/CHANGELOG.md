@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_context-v0.7.0 - 2026-07-03
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+
+- - -
+
 ## omni_task_context-v0.6.0 - 2026-05-22
 #### Features
 - add and utilize standard values for tera context - (92c8e38) - Clarence Manuel

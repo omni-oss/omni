@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.9.0 - 2026-07-03
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.8.3 - 2026-06-21
 #### Bug Fixes
 - (**omni_task_executor**) populate total time saved calculation - (659a5c8) - Clarence Manuel

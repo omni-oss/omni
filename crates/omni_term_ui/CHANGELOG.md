@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_term_ui-v0.1.3 - 2026-07-04
+#### Bug Fixes
+- broken tui mode - (b055007) - Clarence Manuel
+#### Refactoring
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_term_ui-v0.1.2 - 2026-03-14
 #### Bug Fixes
 - auto UI mode bypasses the in memory tracing - (b20ba37) - Clarence Manuel

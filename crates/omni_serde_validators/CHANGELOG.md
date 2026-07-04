@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_serde_validators-v0.3.0 - 2026-07-02
+#### Features
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+
+- - -
+
 ## omni_serde_validators-v0.2.1 - 2026-05-24
 #### Bug Fixes
 - generator tera instance have no access to custom filters - (b8ff87b) - Clarence Manuel

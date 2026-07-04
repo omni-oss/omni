@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_types-v0.2.1 - 2026-06-23
+#### Bug Fixes
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_types-v0.2.0 - 2026-02-13
 #### Features
 - support generator sessions - (7595efb) - Clarence Manuel

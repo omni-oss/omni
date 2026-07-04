@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_cache_service-v0.2.1 - 2026-07-02
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+
+- - -
+
 ## omni_remote_cache_service-v0.2.0 - 2026-06-20
 #### Features
 - convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel

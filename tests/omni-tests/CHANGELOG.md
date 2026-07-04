@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/omni-tests-v0.2.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- move output configuration under cache field - (ed633c0) - Clarence Manuel
+- flaky task success should supersede earlier failure - (a912b54) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) upgrade mcp ts sdk version - (753cab6) - Clarence Manuel
+- (**@omni-oss/omni-tests**) update tests to accomodate new generator behaviour - (28c4ec4) - Clarence Manuel
+- (**@omni-oss/omni-tests**) fix failing tests due to flag rename - (fd75c91) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/omni-tests**) add retries to omni-tests - (7b23db1) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/omni-tests-v0.1.0 - 2026-06-21
 #### Features
 - convert --stderr-log-enabled flag to --stderr-log-evel - (d99be87) - Clarence Manuel

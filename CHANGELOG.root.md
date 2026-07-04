@@ -2,6 +2,27 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.12.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- (**omni_cli_core**) improve generator output summary - (e6b4ca5) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) upgrade mcp ts sdk version - (753cab6) - Clarence Manuel
+#### Continuous Integration
+- update omni version - (66afad9) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
+#### Miscellaneous Chores
+- update noyalib version - (354fa04) - Clarence Manuel
+- update rmcp version - (7ca2538) - Clarence Manuel
+
+- - -
+
 ## root-v0.11.0 - 2026-06-21
 #### Features
 - (**@omni-oss/bridge-rpc-system-interface**) refactor system interface implementation into it's own package - (43044bd) - Clarence Manuel

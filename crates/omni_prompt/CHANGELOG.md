@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_prompt-v0.6.0 - 2026-07-02
+#### Features
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
+
+- - -
+
 ## omni_prompt-v0.5.1 - 2026-06-15
 #### Bug Fixes
 - (**omni_prompt**) implement proper runtime typecheck for prompt values - (157b928) - Clarence Manuel

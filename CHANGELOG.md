@@ -2,6 +2,60 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.17.0 - 2026-07-04
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.17.0
+- omni_configurations bumped to omni_configurations-v0.9.0
+- omni_tera bumped to omni_tera-v0.7.0
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.2.1
+- omni_test_utils bumped to omni_test_utils-v0.5.0
+- omni_prompt bumped to omni_prompt-v0.6.0
+- omni_input_provider bumped to omni_input_provider-v0.2.0
+- omni_cache bumped to omni_cache-v0.7.0
+- omni_lockfile bumped to omni_lockfile-v0.1.2
+- omni_config_types bumped to omni_config_types-v0.2.0
+- omni_file_data_serde bumped to omni_file_data_serde-v0.1.1
+- omni_generator_configurations bumped to omni_generator_configurations-v0.9.0
+- omni_generator bumped to omni_generator-v0.10.0
+- omni_task_executor bumped to omni_task_executor-v0.9.0
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.2.0
+- omni_context bumped to omni_context-v0.5.0
+- config_utils bumped to config_utils-v0.3.1
+- omni_process bumped to omni_process-v0.3.2
+- omni_utils bumped to omni_utils-v0.1.3
+- omni_task_context bumped to omni_task_context-v0.7.0
+- omni bumped to omni-v0.17.0
+- omni_mcp_core bumped to omni_mcp_core-v0.2.0
+- root bumped to root-v0.12.0
+- omni_term_ui bumped to omni_term_ui-v0.1.3
+- omni_serde_validators bumped to omni_serde_validators-v0.3.0
+- omni_messages bumped to omni_messages-v0.1.0
+- omni_input_schema bumped to omni_input_schema-v0.1.0
+- omni_types bumped to omni_types-v0.2.1
+- omni_task_output_logs bumped to omni_task_output_logs-v0.1.0
+### Global changes
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- (**omni_cli_core**) improve generator output summary - (e6b4ca5) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) upgrade mcp ts sdk version - (753cab6) - Clarence Manuel
+#### Continuous Integration
+- update omni version - (66afad9) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
+- use builder for creating inputs - (e59d909) - Clarence Manuel
+#### Miscellaneous Chores
+- update noyalib version - (354fa04) - Clarence Manuel
+- update rmcp version - (7ca2538) - Clarence Manuel
+- update generators to use new input schema - (93eeb41) - Clarence Manuel
+
+- - -
+
 ## v0.16.0 - 2026-06-21
 ### Package updates
 - bridge_rpc_core bumped to bridge_rpc_core-v0.0.1

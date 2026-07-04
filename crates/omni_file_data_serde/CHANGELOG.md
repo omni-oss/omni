@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_file_data_serde-v0.1.1 - 2026-07-02
+#### Bug Fixes
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+#### Miscellaneous Chores
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_file_data_serde-v0.1.0 - 2026-01-31
 #### Features
 - secure storage for remote cache config - (9d9317b) - Clarence Manuel

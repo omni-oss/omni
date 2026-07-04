@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.9.0 - 2026-07-04
+#### Features
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- skip serializing null values - (e25f20a) - Clarence Manuel
+- apply deny_unknown_fields for configuration types - (3acf7b6) - Clarence Manuel
+- rename FILENAME to FILEPATH environmental variable in transform-many action - (7f7eb0c) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- create builder extensions - (635d671) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.8.0 - 2026-06-21
 #### Features
 - implement run-javascript action - (7800281) - Clarence Manuel

@@ -2,6 +2,42 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.17.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- (**omni_cli_core**) update loading text on retry - (3176613) - Clarence Manuel
+- (**omni_cli_core**) deduplicate paths in generator reporting - (5d63f3d) - Clarence Manuel
+- (**omni_cli_core**) update path diff on generator report - (76a41dd) - Clarence Manuel
+- (**omni_cli_core**) improve generator output summary - (e6b4ca5) - Clarence Manuel
+- (**omni_cli_core**) print output summary after generator completes - (1f1bdcf) - Clarence Manuel
+- (**omni_cli_core**) rename stdout-logs-level to stdout-log-level - (9241915) - Clarence Manuel
+- (**omni_configurations**) improve error messages in load_config - (3f54c90) - Clarence Manuel
+- (**omni_generator**) utilize new generator events and convert info logs to debug logs - (5d588ce) - Clarence Manuel
+- (**omni_generator**) TransactionSys info logs should be debug - (20dc6dc) - Clarence Manuel
+- (**omni_messages**) add additional generator events - (791d4c8) - Clarence Manuel
+- (**omni_tera**) add matching and regex_replace test to preset - (8df6432) - Clarence Manuel
+- skip serializing null values - (e25f20a) - Clarence Manuel
+- move output configuration under cache field - (ed633c0) - Clarence Manuel
+- flaky task success should supersede earlier failure - (a912b54) - Clarence Manuel
+- apply deny_unknown_fields for configuration types - (3acf7b6) - Clarence Manuel
+- broken tui mode - (b055007) - Clarence Manuel
+- rename FILENAME to FILEPATH environmental variable in transform-many action - (7f7eb0c) - Clarence Manuel
+- use progress indicators for generator progress - (2022354) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- (**omni_generator**) rename utility methods - (8def5d5) - Clarence Manuel
+- create builder extensions - (635d671) - Clarence Manuel
+- use builder for creating inputs - (e59d909) - Clarence Manuel
+#### Miscellaneous Chores
+- format vitest config files - (019f6bd) - Clarence Manuel
+- update configuration to publish js packages - (f46a1de) - Clarence Manuel
+
+- - -
+
 ## omni-v0.16.0 - 2026-06-21
 #### Features
 - (**@omni-oss/bridge-rpc-services**) implement BridgeRpcSystem - (74a4e07) - Clarence Manuel

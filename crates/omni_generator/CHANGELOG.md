@@ -2,6 +2,24 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.10.0 - 2026-07-03
+#### Features
+- upgrade tera version and update presets - (c097dc8) - Clarence Manuel
+- remove default_expr and support Object input - (8f7e84a) - Clarence Manuel
+#### Bug Fixes
+- (**omni_generator**) utilize new generator events and convert info logs to debug logs - (5d588ce) - Clarence Manuel
+- (**omni_generator**) TransactionSys info logs should be debug - (20dc6dc) - Clarence Manuel
+- rename FILENAME to FILEPATH environmental variable in transform-many action - (7f7eb0c) - Clarence Manuel
+- use progress indicators for generator progress - (2022354) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+- rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel
+#### Refactoring
+- (**omni_generator**) rename utility methods - (8def5d5) - Clarence Manuel
+- create builder extensions - (635d671) - Clarence Manuel
+- use builder for creating inputs - (e59d909) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.9.0 - 2026-06-21
 #### Features
 - (**omni_generator**) implement transform and transform-many actions - (f14e39f) - Clarence Manuel

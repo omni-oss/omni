@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.5.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+#### Bug Fixes
+- move output configuration under cache field - (ed633c0) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.4.2 - 2026-06-21
 #### Bug Fixes
 - (**omni_context**) add ensure_loaded method to MaybeLoaded - (94b1bf5) - Clarence Manuel

@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.9.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+#### Bug Fixes
+- (**omni_configurations**) improve error messages in load_config - (3f54c90) - Clarence Manuel
+- skip serializing null values - (e25f20a) - Clarence Manuel
+- move output configuration under cache field - (ed633c0) - Clarence Manuel
+- apply deny_unknown_fields for configuration types - (3acf7b6) - Clarence Manuel
+- swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.8.1 - 2026-05-24
 #### Bug Fixes
 - support multiple paths for local generator source - (8757b00) - Clarence Manuel

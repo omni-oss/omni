@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cache-v0.7.0 - 2026-07-04
+#### Features
+- implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel
+#### Bug Fixes
+- flaky task success should supersede earlier failure - (a912b54) - Clarence Manuel
+
+- - -
+
 ## omni_cache-v0.6.0 - 2026-06-21
 #### Features
 - implement meta --meta filter on cache prune and stats - (d019202) - Clarence Manuel
