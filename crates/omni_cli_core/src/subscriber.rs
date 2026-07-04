@@ -262,6 +262,17 @@ impl TaskProgress {
         }
     }
 
+    fn task_retrying(&self, id: &str, attempt: usize, max_retries: usize) {
+        if let TaskProgress::Indicatif { running, .. } = self {
+            if let Some(pb) = running.get(id) {
+                pb.set_message(format!(
+                    "{} (retrying: attempt {}/{})",
+                    id, attempt, max_retries
+                ));
+            }
+        }
+    }
+
     /// Write captured bytes to stdout without corrupting the bar. In the
     /// `indicatif` backend the write happens inside `multi.suspend` so the bar
     /// is temporarily cleared; the `Log` backend writes directly.
@@ -342,7 +353,14 @@ pub struct CliSubscriber {
     /// Lifecycle lines buffered while the TUI owns the terminal, flushed once
     /// the UI is torn down (see `emit` and `flush_emit_buffer`). Each entry is
     /// `(message, is_error)`.
-    emit_buffer: Arc<Mutex<Vec<(String, bool)>>>,
+    emit_buffer: Arc<Mutex<Vec<(String, EmitLevel)>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmitLevel {
+    Info,
+    Error,
+    Warn,
 }
 
 impl CliSubscriber {
@@ -450,7 +468,7 @@ impl CliSubscriber {
 
     /// Emit a lifecycle line, routing through the progress bar in `progress`
     /// mode so the bar is not corrupted, and through `log` otherwise.
-    fn emit(&self, msg: String, is_error: bool) {
+    fn emit(&self, msg: String, level: EmitLevel) {
         match self.resolved_mode() {
             CliUiMode::Progress => {
                 self.with_task_progress(|tp| tp.println(&msg));
@@ -461,15 +479,13 @@ impl CliSubscriber {
             // been torn down (see `flush_emit_buffer`, called from
             // `on_execution_complete`).
             CliUiMode::Tui => {
-                self.emit_buffer.lock().push((msg, is_error));
+                self.emit_buffer.lock().push((msg, level));
             }
-            _ => {
-                if is_error {
-                    log::error!("{}", msg);
-                } else {
-                    log::info!("{}", msg);
-                }
-            }
+            _ => match level {
+                EmitLevel::Error => log::error!("{}", msg),
+                EmitLevel::Warn => log::warn!("{}", msg),
+                EmitLevel::Info => log::info!("{}", msg),
+            },
         }
     }
 
@@ -478,11 +494,11 @@ impl CliSubscriber {
     /// (otherwise the lines would corrupt the alternate screen). No-op when
     /// nothing was buffered.
     fn flush_emit_buffer(&self) {
-        for (msg, is_error) in self.emit_buffer.lock().drain(..) {
-            if is_error {
-                log::error!("{}", msg);
-            } else {
-                log::info!("{}", msg);
+        for (msg, level) in self.emit_buffer.lock().drain(..) {
+            match level {
+                EmitLevel::Error => log::error!("{}", msg),
+                EmitLevel::Warn => log::warn!("{}", msg),
+                EmitLevel::Info => log::info!("{}", msg),
             }
         }
     }
@@ -716,13 +732,13 @@ impl ExecutionEventSubscriber for CliSubscriber {
                     )
                     .red()
                     .to_string(),
-                    true,
+                    EmitLevel::Error,
                 );
             }
         } else if !failed {
             self.emit(
                 format!("Executed task '{}'", e.task_id).green().to_string(),
-                false,
+                EmitLevel::Info,
             );
         } else {
             self.emit(
@@ -732,7 +748,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 )
                 .red()
                 .to_string(),
-                true,
+                EmitLevel::Error,
             );
         }
     }
@@ -743,7 +759,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
             format!("Task '{}' error: {}", e.task_id, e.error)
                 .red()
                 .to_string(),
-            true,
+            EmitLevel::Error,
         );
     }
 
@@ -775,17 +791,23 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 }
             }
         };
-        self.emit(msg.white().dimmed().to_string(), false);
+        self.emit(msg.white().dimmed().to_string(), EmitLevel::Info);
         self.with_task_progress(|tp| tp.task_finished(&e.task_id));
     }
 
     async fn on_task_retrying(&self, e: TaskRetryingEvent) {
-        log::warn!(
+        let msg = format!(
             "Task '{}' is retrying... (attempt {}/{})",
-            e.task_id,
-            e.attempt,
-            e.max_retries
+            e.task_id, e.attempt, e.max_retries
         );
+        self.emit(msg.yellow().dimmed().to_string(), EmitLevel::Warn);
+        self.with_task_progress(|tp| {
+            tp.task_retrying(
+                &e.task_id,
+                e.attempt as usize,
+                e.max_retries as usize,
+            )
+        });
     }
 
     async fn on_cache_hit(&self, e: CacheHitEvent) {
@@ -804,7 +826,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
                 .green()
                 .to_string()
         };
-        self.emit(msg, false);
+        self.emit(msg, EmitLevel::Info);
         // Cache hits emit no terminal event, so advance the aggregate bar here.
         self.with_task_progress(|tp| tp.task_finished(&e.task_id));
     }
