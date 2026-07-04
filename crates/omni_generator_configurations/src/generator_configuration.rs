@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct GeneratorConfiguration {
     /// Absolute path to the configuration file where this is serialized from
     #[serde(default)]

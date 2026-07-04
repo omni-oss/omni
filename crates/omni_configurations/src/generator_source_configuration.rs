@@ -16,7 +16,7 @@ use url::Url;
     Validate,
     new,
 )]
-#[serde(tag = "source", rename_all = "kebab-case")]
+#[serde(tag = "source", rename_all = "kebab-case", deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub enum GeneratorSourceConfiguration {
     Local(LocalGeneratorSourceConfiguration),
@@ -34,6 +34,7 @@ pub enum GeneratorSourceConfiguration {
     Validate,
     new,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct LocalGeneratorSourceConfiguration {
     #[new(into)]
@@ -51,6 +52,7 @@ pub struct LocalGeneratorSourceConfiguration {
     Validate,
     new,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct GitGeneratorSourceConfiguration {
     #[new(into)]

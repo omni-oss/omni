@@ -12,6 +12,7 @@ use crate::{LoadConfigError, utils};
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Merge, Validate,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct RemoteCacheConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub api_key: String,

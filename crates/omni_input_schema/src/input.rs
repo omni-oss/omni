@@ -17,7 +17,7 @@ use crate::profile::InputProfile;
 // already have constraints on them so adding them here is redundant.
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct BooleanInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -30,7 +30,7 @@ pub struct BooleanInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -44,7 +44,7 @@ pub struct StringInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -59,7 +59,7 @@ pub struct IntegerInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -74,7 +74,7 @@ pub struct FloatInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct StringArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -90,7 +90,7 @@ pub struct StringArrayInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct IntegerArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -106,7 +106,7 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct FloatArrayInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -121,24 +121,11 @@ pub struct FloatArrayInput<E: InputProfile = ()> {
     pub default: Option<Vec<f64>>,
 }
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(untagged)]
-pub enum InputValue {
-    Boolean(bool),
-    String(String),
-    Integer(i64),
-    Float(f64),
-    StringArray(Vec<String>),
-    IntegerArray(Vec<i64>),
-    FloatArray(Vec<f64>),
-    Object(UnorderedMap<String, InputValue>),
-}
-
 /// Nested object: a group of typed fields returned as one JSON object value.
 /// Available immediately for tools / plugins / MCP (`Input<()>`).
 /// Gated for generators via `SUPPORTED` until group-prompting is implemented.
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
-#[serde(bound(deserialize = "", serialize = ""))]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
 #[schemars(bound(deserialize = "", serialize = ""))]
 pub struct ObjectInput<E: InputProfile = ()> {
     #[serde(flatten)]
@@ -150,6 +137,19 @@ pub struct ObjectInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub object_extra: E::Object,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum InputValue {
+    Boolean(bool),
+    String(String),
+    Integer(i64),
+    Float(f64),
+    StringArray(Vec<String>),
+    IntegerArray(Vec<i64>),
+    FloatArray(Vec<f64>),
+    Object(UnorderedMap<String, InputValue>),
 }
 
 // ── Input enum ────────────────────────────────────────────────────────────────
@@ -546,6 +546,61 @@ mod tests {
                 "to_data() not identity for {json}"
             );
         }
+    }
+
+    // ── flatten / deny_unknown_fields behavior ────────────────────────────────
+
+    /// `name`, `if`, `validators`, `secret`, and `description` all live in the
+    /// flattened `BaseInput`, reached through the internally-tagged `Input`
+    /// enum -> variant struct -> `#[serde(flatten)] base`. This asserts those
+    /// deeply-flattened fields are respected on deserialization.
+    #[test]
+    fn unit_profile_accepts_deeply_nested_flattened_base_fields() {
+        let json = r#"{
+            "type": "string",
+            "name": "token",
+            "if": true,
+            "secret": true,
+            "description": "an API token",
+            "validators": [{"condition": true, "error_message": "bad"}],
+            "default": "abc"
+        }"#;
+        let input: Input<()> =
+            serde_json::from_str(json).expect("should parse");
+        let base = input.base();
+        assert_eq!(base.name, "token");
+        assert!(base.r#if.is_some());
+        assert!(base.secret);
+        assert_eq!(base.description.as_deref(), Some("an API token"));
+        assert_eq!(base.validators.len(), 1);
+        let Input::String(s) = &input else {
+            panic!("expected String variant")
+        };
+        assert_eq!(s.default.as_deref(), Some("abc"));
+    }
+
+    /// `deny_unknown_fields` on every `*Input` struct must reject keys that
+    /// belong to none of the (possibly deeply-flattened) sub-structs.
+    #[test]
+    fn unit_profile_rejects_unknown_field() {
+        let json = r#"{"type":"string","name":"x","totally_unknown":true}"#;
+        let result: Result<Input<()>, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, got: {result:?}"
+        );
+    }
+
+    /// `ValidateConfiguration` is `#[serde(deny_unknown_fields)]`; unknown keys
+    /// inside a validator entry must be rejected.
+    #[test]
+    fn validator_rejects_unknown_field() {
+        let json = r#"{"type":"string","name":"x","validators":[{"condition":true,"bogus":1}]}"#;
+        let result: Result<Input<()>, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown validator field should be rejected, got: {result:?}"
+        );
     }
 
     #[test]

@@ -19,6 +19,7 @@ use crate::{
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct WorkspaceConfiguration {
     #[garde(pattern(*WORKSPACE_NAME_REGEX))]
@@ -55,6 +56,7 @@ impl WorkspaceConfiguration {
 #[derive(
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Eq, Validate,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct WorkspaceEnvConfiguration {
     #[serde(default = "default_files")]
@@ -79,5 +81,34 @@ impl Default for WorkspaceEnvConfiguration {
             files: default_files(),
             vars: Default::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_workspace_configuration_deserializes_valid() {
+        let result = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "env": {"vars": {"A": "b"}}}"#,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_workspace_configuration_rejects_unknown_field() {
+        let result = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "nope": 1}"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_workspace_env_rejects_unknown_field() {
+        let result = serde_json::from_str::<WorkspaceEnvConfiguration>(
+            r#"{"files": [], "bogus": true}"#,
+        );
+        assert!(result.is_err());
     }
 }

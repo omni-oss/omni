@@ -11,6 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[derive(
     Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash,
 )]
+#[serde(deny_unknown_fields)]
 pub struct ValidateConfiguration {
     /// Tera expression evaluated to a boolean; `true` = value is valid.
     ///

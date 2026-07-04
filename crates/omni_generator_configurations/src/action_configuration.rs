@@ -93,6 +93,7 @@ pub struct CommonAddConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct BaseAddActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -169,6 +170,7 @@ pub struct AddManyActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct RunGeneratorActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -215,6 +217,7 @@ pub struct CommonModifyConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct ModifyInlineContentEntry {
     #[serde(deserialize_with = "validate_regex")]
     pub pattern: String,
@@ -227,6 +230,7 @@ pub struct ModifyInlineContentEntry {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct ModifyFileContentEntry {
     #[serde(deserialize_with = "validate_regex")]
     pub pattern: String,
@@ -239,6 +243,7 @@ pub struct ModifyFileContentEntry {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct ModifyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -253,6 +258,7 @@ pub struct ModifyActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct ModifyContentActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -297,6 +303,7 @@ fn default_unique() -> bool {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct AppendActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -311,6 +318,7 @@ pub struct AppendActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct InsertInlineContentEntry {
     #[serde(deserialize_with = "validate_regex")]
     pub pattern: String,
@@ -323,6 +331,7 @@ pub struct InsertInlineContentEntry {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct InsertFileContentEntry {
     #[serde(deserialize_with = "validate_regex")]
     pub pattern: String,
@@ -335,6 +344,7 @@ pub struct InsertFileContentEntry {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct AppendContentActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -349,6 +359,7 @@ pub struct AppendContentActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct PrependActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -363,6 +374,7 @@ pub struct PrependActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct PrependContentActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -404,6 +416,7 @@ pub struct CommonRunCustomActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct RunCommandActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -420,6 +433,7 @@ pub struct RunCommandActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 /// Transform a single file's contents by piping them through a command,
 /// replacing the file's contents with the command's standard output.
 pub struct TransformActionConfiguration {
@@ -447,6 +461,7 @@ pub struct TransformActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 /// Transform the contents of every file matching a set of glob patterns by
 /// piping them through a command, replacing each matched file's contents with
 /// the command's standard output.
@@ -475,6 +490,7 @@ pub struct TransformManyActionConfiguration {
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Validate, new,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct RunJavaScriptActionConfiguration {
     #[serde(flatten)]
     pub base: BaseActionConfiguration,
@@ -523,6 +539,7 @@ pub enum JsRuntimeOption {
     Default,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct InputValuesConfiguration {
     #[serde(default)]
     pub forward: ForwardInputValuesConfiguration,
@@ -757,4 +774,202 @@ pub enum OverwriteConfiguration {
     /// Never overwrite existing files.
     #[strum(serialize = "never")]
     Never,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test: `add*` actions must accept the fields that come from
+    /// the deeply-flattened `CommonAddConfiguration` (`target`, `overwrite`,
+    /// `data`, `render`). These were wrongly rejected while
+    /// `deny_unknown_fields` sat on the leaf structs, because serde only
+    /// expands `flatten` one level when building the known-field set.
+    #[test]
+    fn add_content_accepts_common_fields() {
+        let json = r#"{
+            "type": "add-content",
+            "content": "hello",
+            "output_path": "out.txt",
+            "target": "my-target",
+            "overwrite": "always",
+            "render": false,
+            "data": { "a": 1 }
+        }"#;
+
+        let action: ActionConfiguration = serde_json::from_str(json)
+            .expect("add-content should accept common add fields");
+
+        match action {
+            ActionConfiguration::AddContent { action } => {
+                assert_eq!(action.output_path, PathBuf::from("out.txt"));
+                assert_eq!(
+                    action.base.common.target.as_deref(),
+                    Some("my-target")
+                );
+                assert_eq!(
+                    action.base.common.overwrite,
+                    Some(OverwriteConfiguration::Always)
+                );
+                assert!(!action.base.common.render);
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    /// Strict validation must still reject genuinely unknown fields.
+    #[test]
+    fn add_content_rejects_unknown_fields() {
+        let json = r#"{
+            "type": "add-content",
+            "content": "hello",
+            "output_path": "out.txt",
+            "totally_bogus": true
+        }"#;
+
+        let result: Result<ActionConfiguration, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, got: {result:?}"
+        );
+    }
+
+    /// The `add` variant reaches `BaseActionConfiguration` (`if`, `name`) and
+    /// `CommonAddConfiguration` (`target`, `overwrite`) through TWO flatten
+    /// hops: `AddActionConfiguration` -> `BaseAddActionConfiguration` -> those
+    /// leaf structs. All must be accepted.
+    #[test]
+    fn add_accepts_deeply_nested_base_and_common_fields() {
+        let json = r#"{
+            "type": "add",
+            "file": "template.txt",
+            "name": "scaffold",
+            "if": "true",
+            "target": "src",
+            "overwrite": "never"
+        }"#;
+
+        let action: ActionConfiguration =
+            serde_json::from_str(json).expect("add should parse");
+
+        match action {
+            ActionConfiguration::Add { action } => {
+                assert_eq!(action.file, PathBuf::from("template.txt"));
+                assert_eq!(action.base.base.name.as_deref(), Some("scaffold"));
+                assert!(action.base.base.r#if.is_some());
+                assert_eq!(action.base.common.target.as_deref(), Some("src"));
+                assert_eq!(
+                    action.base.common.overwrite,
+                    Some(OverwriteConfiguration::Never)
+                );
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn add_rejects_unknown_field() {
+        let json = r#"{"type":"add","file":"t.txt","bogus":true}"#;
+        let result: Result<ActionConfiguration, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, got: {result:?}"
+        );
+    }
+
+    /// `modify` uses the single-level two-flatten shape
+    /// (`BaseActionConfiguration` + `CommonModifyConfiguration`). Flattened
+    /// fields must be accepted and unknown keys rejected.
+    #[test]
+    fn modify_accepts_flattened_fields_and_rejects_unknown() {
+        let json = r#"{
+            "type": "modify",
+            "name": "tweak",
+            "target": "src/main.rs",
+            "entries": [{"pattern": "foo", "file": "bar.txt"}]
+        }"#;
+        let action: ActionConfiguration =
+            serde_json::from_str(json).expect("modify should parse");
+        let ActionConfiguration::Modify { action } = action else {
+            panic!("expected Modify variant")
+        };
+        assert_eq!(action.base.name.as_deref(), Some("tweak"));
+        assert_eq!(action.common.target, "src/main.rs");
+        assert_eq!(action.entries.len(), 1);
+
+        let bad = r#"{"type":"modify","target":"x","entries":[],"bogus":1}"#;
+        let result: Result<ActionConfiguration, _> = serde_json::from_str(bad);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, got: {result:?}"
+        );
+    }
+
+    /// `InputValuesConfiguration` is `#[serde(deny_unknown_fields)]`; an unknown
+    /// key nested inside `input_values` must be rejected.
+    #[test]
+    fn run_generator_input_values_rejects_unknown_field() {
+        let json = r#"{"type":"run-generator","generator":"g","input_values":{"bogus":1}}"#;
+        let result: Result<ActionConfiguration, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown input_values field should be rejected, got: {result:?}"
+        );
+    }
+
+    /// Minimal-valid JSON for every deserializable action variant, each
+    /// additionally carrying a flattened `BaseActionConfiguration` field
+    /// (`name`) plus, where applicable, a field from the variant's flattened
+    /// `Common*` config. The `run-command` variant is `#[serde(skip)]` and so
+    /// cannot be deserialized through the enum — it is intentionally omitted.
+    const VALID_VARIANT_CASES: &[&str] = &[
+        r#"{"type":"add","file":"t.txt","name":"n","target":"x"}"#,
+        r#"{"type":"add-content","content":"c","output_path":"o.txt","name":"n","overwrite":"never"}"#,
+        r#"{"type":"add-many","files":["a.txt"],"name":"n","target":"x"}"#,
+        r#"{"type":"run-generator","generator":"g","name":"n"}"#,
+        r#"{"type":"modify","target":"t","entries":[],"name":"n","render":false}"#,
+        r#"{"type":"modify-content","target":"t","entries":[],"name":"n","render":false}"#,
+        r#"{"type":"append","target":"t","entries":[],"name":"n","separator":","}"#,
+        r#"{"type":"append-content","target":"t","entries":[],"name":"n","separator":","}"#,
+        r#"{"type":"prepend","target":"t","entries":[],"name":"n","separator":","}"#,
+        r#"{"type":"prepend-content","target":"t","entries":[],"name":"n","separator":","}"#,
+        r#"{"type":"transform","command":"cmd","file":"f.txt","name":"n","show_output":false}"#,
+        r#"{"type":"transform-many","command":"cmd","files":["*.txt"],"name":"n","show_output":false}"#,
+        r#"{"type":"run-javascript","script":"s.js","name":"n"}"#,
+    ];
+
+    /// Every action variant flattens `BaseActionConfiguration` (directly, or
+    /// through `BaseAddActionConfiguration` for the `add*` family). The
+    /// flattened `name` — and any flattened `Common*` field in the case — must
+    /// be accepted rather than rejected by `deny_unknown_fields`.
+    #[test]
+    fn all_variants_accept_flattened_fields() {
+        for json in VALID_VARIANT_CASES {
+            let action: ActionConfiguration = serde_json::from_str(json)
+                .unwrap_or_else(|e| panic!("{json} should parse: {e}"));
+            assert_eq!(
+                action.base().name.as_deref(),
+                Some("n"),
+                "flattened `name` not respected for {json}"
+            );
+        }
+    }
+
+    /// Every deserializable action variant is `#[serde(deny_unknown_fields)]`
+    /// (via `BaseAddActionConfiguration` for the `add*` family), so an
+    /// unrecognized key must be rejected regardless of which variant, and
+    /// regardless of how deeply the recognized fields are flattened.
+    #[test]
+    fn all_variants_reject_unknown_field() {
+        for base in VALID_VARIANT_CASES {
+            // Splice a bogus key into the otherwise-valid object.
+            let json = base.replacen('{', r#"{"totally_bogus":true,"#, 1);
+            let result: Result<ActionConfiguration, _> =
+                serde_json::from_str(&json);
+            assert!(
+                result.is_err(),
+                "unknown field should be rejected for {json}"
+            );
+        }
+    }
 }

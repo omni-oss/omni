@@ -19,6 +19,7 @@ use super::TaskDependencyConfiguration;
 #[derive(
     Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Validate,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
     #[serde(
@@ -190,6 +191,7 @@ impl<'a> Deserialize<'a> for TaskConfiguration {
     Merge,
     Default,
 )]
+#[serde(deny_unknown_fields)]
 pub struct TaskEnvConfiguration {
     #[merge(strategy = merge::option::recurse)]
     pub vars: Option<DictConfig<Replace<String>>>,
@@ -493,5 +495,31 @@ mod tests {
     fn test_output_logs_short_form_is_none() {
         let short = TaskConfiguration::ShortForm("echo hi".to_string());
         assert!(short.output_logs().is_none());
+    }
+
+    #[test]
+    fn test_task_long_form_rejects_unknown_field() {
+        let result = serde_json::from_str::<TaskConfigurationLongForm>(
+            r#"{"exec": "echo hi", "bogus": 1}"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_task_env_rejects_unknown_field() {
+        let result = serde_json::from_str::<TaskEnvConfiguration>(
+            r#"{"vars": {}, "bogus": 1}"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_meta_configuration_accepts_arbitrary_keys() {
+        // MetaConfiguration is a catch-all (#[serde(transparent)] over
+        // DictConfig<DynValue>) and must accept arbitrary unknown keys.
+        let result = serde_json::from_str::<MetaConfiguration>(
+            r#"{"anything": 1, "custom_key": "value"}"#,
+        );
+        assert!(result.is_ok());
     }
 }

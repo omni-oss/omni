@@ -466,6 +466,48 @@ mod tests {
 
     // ── validate: secret + remember conflict ──────────────────────────────────
 
+    // ── deeply-nested flatten + deny_unknown_fields ────────────────────
+
+    /// `Input<Generator>` is the deepest flatten shape in the codebase:
+    /// internally-tagged `Input` enum -> `StringInput<Generator>` (which is
+    /// `#[serde(deny_unknown_fields)]`) -> `#[serde(flatten)]` of `BaseInput`
+    /// (`name`, `secret`, ...), `GenBase` (`message`, `remember`), and
+    /// `StringExtras` (`widget`). Every one of those flattened fields must be
+    /// accepted even though they live behind two flatten hops.
+    #[test]
+    fn generator_accepts_deeply_nested_flattened_fields() {
+        let json = r#"{
+            "type": "string",
+            "name": "token",
+            "secret": true,
+            "message": "Enter token",
+            "remember": true,
+            "widget": "password"
+        }"#;
+        let input: Input<Generator> =
+            serde_json::from_str(json).expect("should parse");
+        assert_eq!(input.base().name, "token");
+        assert!(input.base().secret);
+        assert_eq!(input.base_extra().message, "Enter token");
+        assert!(input.base_extra().remember);
+        let Input::String(s) = &input else {
+            panic!("expected String variant")
+        };
+        assert_eq!(s.string_extra.widget, Some(StringWidget::Password));
+    }
+
+    /// A key belonging to none of the flattened sub-structs must be rejected
+    /// by the `deny_unknown_fields` leftover check.
+    #[test]
+    fn generator_rejects_unknown_field() {
+        let json = r#"{"type":"string","name":"x","message":"m","totally_unknown":true}"#;
+        let result: Result<Input<Generator>, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "unknown field should be rejected, got: {result:?}"
+        );
+    }
+
     #[test]
     fn secret_plus_remember_is_hard_error() {
         let input: Input<Generator> = serde_json::from_str(

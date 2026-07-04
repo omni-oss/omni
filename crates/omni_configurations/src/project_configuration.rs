@@ -18,6 +18,7 @@ use super::TaskConfiguration;
     Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq, Merge, Validate,
 )]
 #[garde(allow_unvalidated)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectConfiguration {
     #[serde(default, skip)]
     pub file: OmniPath,
@@ -92,6 +93,7 @@ impl ProjectConfiguration {
     Default,
     Validate,
 )]
+#[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct ProjectEnvConfiguration {
     #[serde(default)]

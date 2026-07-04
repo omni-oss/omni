@@ -18,6 +18,7 @@ use crate::utils::list_config_default;
     PartialOrd,
     Ord,
 )]
+#[serde(deny_unknown_fields)]
 pub struct CacheConfiguration {
     #[serde(default)]
     pub key: CacheKeyConfiguration,
@@ -57,6 +58,7 @@ impl Default for CacheConfiguration {
     PartialOrd,
     Ord,
 )]
+#[serde(deny_unknown_fields)]
 pub struct CacheKeyConfiguration {
     #[serde(default = "default_defaults")]
     #[merge(strategy = config_utils::replace_if_some)]
@@ -134,5 +136,29 @@ mod tests {
 
         assert_eq!(a.key.defaults, Some(true));
         assert_eq!(a.enabled, Some(Replace::new(false)));
+    }
+
+    #[test]
+    fn test_cache_key_deserializes_valid() {
+        let result = serde_json::from_str::<CacheKeyConfiguration>(
+            r#"{"defaults": true}"#,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cache_key_rejects_unknown_field() {
+        let result = serde_json::from_str::<CacheKeyConfiguration>(
+            r#"{"defaults": true, "bogus": 1}"#,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cache_configuration_rejects_unknown_field() {
+        let result = serde_json::from_str::<CacheConfiguration>(
+            r#"{"enabled": true, "bogus": 1}"#,
+        );
+        assert!(result.is_err());
     }
 }
