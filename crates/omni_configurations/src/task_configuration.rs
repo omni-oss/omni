@@ -25,11 +25,16 @@ pub struct TaskConfigurationLongForm {
     #[serde(
         default,
         deserialize_with = "option_validate_tera_expr",
-        alias = "command"
+        alias = "command",
+        skip_serializing_if = "Option::is_none"
     )]
     pub exec: Option<Replace<String>>,
 
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub retry_exec: Option<Replace<String>>,
 
     #[serde(default)]
@@ -45,16 +50,26 @@ pub struct TaskConfigurationLongForm {
     )]
     pub with: ListConfig<TaskDependencyConfiguration>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<Replace<String>>,
 
-    #[serde(default = "default_if", alias = "if")]
+    #[serde(
+        default = "default_if",
+        alias = "if",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub enabled: Option<TeraExprBoolean>,
 
-    #[serde(default = "default_interactive")]
+    #[serde(
+        default = "default_interactive",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub interactive: Option<Replace<bool>>,
 
-    #[serde(default = "default_persistent")]
+    #[serde(
+        default = "default_persistent",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub persistent: Option<Replace<bool>>,
 
     #[serde(default)]
@@ -63,16 +78,20 @@ pub struct TaskConfigurationLongForm {
     #[serde(default)]
     pub cache: CacheConfiguration,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_logs: Option<OutputLogsConfiguration>,
 
     #[serde(default)]
     pub meta: MetaConfiguration,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<Replace<u8>>,
 
-    #[serde(default, with = "retry_interval")]
+    #[serde(
+        default,
+        with = "retry_interval",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[schemars(with = "Option<Replace<String>>")]
     pub retry_interval: Option<Replace<Duration>>,
 }
@@ -190,6 +209,7 @@ impl<'a> Deserialize<'a> for TaskConfiguration {
 #[serde(deny_unknown_fields)]
 pub struct TaskEnvConfiguration {
     #[merge(strategy = merge::option::recurse)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vars: Option<DictConfig<Replace<String>>>,
 }
 

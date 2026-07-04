@@ -38,6 +38,7 @@ pub struct ProjectConfiguration {
     pub name: String,
 
     #[merge(strategy = merge::option::recurse)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<Replace<String>>,
 
     #[serde(default = "list_config_default::<Replace<String>>")]
@@ -49,7 +50,7 @@ pub struct ProjectConfiguration {
     #[serde(default)]
     pub cache: CacheConfiguration,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[merge(strategy = merge::option::recurse)]
     pub output_logs: Option<omni_task_output_logs::OutputLogsConfiguration>,
 

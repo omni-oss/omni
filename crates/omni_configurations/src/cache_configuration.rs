@@ -22,7 +22,10 @@ use crate::{TaskOutputConfiguration, utils::list_config_default};
 pub struct CacheConfiguration {
     #[serde(default)]
     pub key: CacheKeyConfiguration,
-    #[serde(default = "default_enabled")]
+    #[serde(
+        default = "default_enabled",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[merge(strategy = merge::option::recurse)]
     pub enabled: Option<Replace<bool>>,
     #[serde(default)]
@@ -63,7 +66,10 @@ impl Default for CacheConfiguration {
 )]
 #[serde(deny_unknown_fields)]
 pub struct CacheKeyConfiguration {
-    #[serde(default = "default_defaults")]
+    #[serde(
+        default = "default_defaults",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[merge(strategy = config_utils::replace_if_some)]
     pub defaults: Option<bool>,
 

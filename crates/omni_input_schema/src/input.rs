@@ -54,7 +54,7 @@ pub struct IntegerInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub numeric_extra: E::Numeric,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<MaybeExpr<i64>>,
 }
 
@@ -65,7 +65,7 @@ pub struct FloatInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
     pub allowed: Option<Vec<AllowedValue<f64, E>>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<MaybeExpr<f64>>,
     #[serde(flatten)]
     pub base_extra: E::Base,
@@ -85,7 +85,7 @@ pub struct StringArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub array_extra: E::Array,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Vec<String>>,
 }
 
@@ -101,7 +101,7 @@ pub struct IntegerArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub array_extra: E::Array,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Vec<i64>>,
 }
 
@@ -117,7 +117,7 @@ pub struct FloatArrayInput<E: InputProfile = ()> {
     pub base_extra: E::Base,
     #[serde(flatten)]
     pub array_extra: E::Array,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Vec<f64>>,
 }
 
@@ -131,7 +131,7 @@ pub struct ObjectInput<E: InputProfile = ()> {
     #[serde(flatten)]
     pub base: BaseInput,
     pub fields: Vec<Input<E>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<UnorderedMap<String, InputValue>>,
     #[serde(flatten)]
     pub base_extra: E::Base,

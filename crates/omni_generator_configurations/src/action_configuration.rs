@@ -30,7 +30,11 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub r#if: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a name for the action.
@@ -39,7 +43,11 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub name: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a progress message.
@@ -47,7 +55,11 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub in_progress_message: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a success message.
@@ -55,7 +67,11 @@ pub struct BaseActionConfiguration {
     /// Available Context
     /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub success_message: Option<String>,
 
     /// Accepts a tera template that should evaluate to a string that will be used as a failure message.
@@ -64,7 +80,11 @@ pub struct BaseActionConfiguration {
     /// - `inputs`: A dictionary containing the values of the prompts that were asked previously.
     /// - `env`: A dictionary containing the environment variables available for the output directory.
     /// - `error`: A string containing the error message that was returned by the action.
-    #[serde(default, deserialize_with = "option_validate_tera_expr")]
+    #[serde(
+        default,
+        deserialize_with = "option_validate_tera_expr",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub error_message: Option<String>,
 }
 
@@ -74,10 +94,10 @@ pub struct BaseActionConfiguration {
 #[garde(allow_unvalidated)]
 pub struct CommonAddConfiguration {
     /// How to handle overwriting existing files.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overwrite: Option<OverwriteConfiguration>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 
     #[serde(default, deserialize_with = "validate_umap_serde_json")]
@@ -117,7 +137,7 @@ pub struct AddActionConfiguration {
     /// If provided, it will be stripped from the file names of the template files.
     /// If absent, use the generator's directory as the base path.
     #[new(into)]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_path: Option<PathBuf>,
 
     /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
@@ -162,7 +182,7 @@ pub struct AddManyActionConfiguration {
 
     /// If provided, it will be stripped from the file names of the template files.
     /// If absent, use the generator's directory as the base path.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_path: Option<PathBuf>,
 }
 
@@ -186,7 +206,7 @@ pub struct RunGeneratorActionConfiguration {
 
     /// Override the output directory for the generator. If relative, it will be resolved to the output directory of the calling generator.
     /// If not provided, defaults to the current output directory.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "option_validate_target_path")]
     pub output_dir: Option<OmniPath>,
 
@@ -400,7 +420,7 @@ pub struct CommonRunCustomActionConfiguration {
     pub supports_dry_run: bool,
 
     /// Will be used as the working directory for the action execution.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 
     /// Additional environment variables to expose to the script/command.
