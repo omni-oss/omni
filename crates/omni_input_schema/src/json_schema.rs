@@ -71,8 +71,18 @@ fn make_arm(tag_value: &str, base: Value, extras: Vec<Value>) -> Value {
         }),
         base,
     ];
-    all_of.extend(extras);
+    // Unit-type extras (e.g. `E::Boolean = ()`) produce a `{"type": "null"}`
+    // schema that carries no fields. Including it in this object `allOf` would
+    // make the arm unsatisfiable, since a value cannot be both an object and
+    // null, so drop such no-op extras.
+    all_of.extend(extras.into_iter().filter(|schema| !is_null_schema(schema)));
     json!({ "allOf": all_of })
+}
+
+/// Whether `schema` is the unit schema (`{"type": "null"}`) emitted for `()`
+/// profile extras that contribute no fields.
+fn is_null_schema(schema: &Value) -> bool {
+    schema.get("type") == Some(&Value::String("null".to_owned()))
 }
 
 fn schema_val<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
@@ -730,6 +740,70 @@ mod tests {
             !has_object_arm,
             "Object arm must be excluded when not in SUPPORTED"
         );
+    }
+
+    // ── null-schema filtering: unit (`()`) extras ────────────────────────────
+
+    #[test]
+    fn is_null_schema_detects_unit_schema() {
+        assert!(is_null_schema(&json!({ "type": "null" })));
+    }
+
+    #[test]
+    fn is_null_schema_rejects_object_and_ref_schemas() {
+        assert!(!is_null_schema(&json!({ "type": "object" })));
+        assert!(!is_null_schema(&json!({ "$ref": "#/$defs/GenBase" })));
+        assert!(!is_null_schema(&json!({})));
+    }
+
+    #[test]
+    fn make_arm_drops_null_extras_but_keeps_real_ones() {
+        let base = json!({ "$ref": "#/$defs/BaseInput" });
+        let real_extra = json!({
+            "type": "object",
+            "properties": { "default": { "type": "boolean" } }
+        });
+        let arm = make_arm(
+            "boolean",
+            base.clone(),
+            vec![real_extra.clone(), json!({ "type": "null" })],
+        );
+
+        let all_of = arm["allOf"].as_array().expect("allOf array");
+        assert!(
+            !all_of.iter().any(is_null_schema),
+            "null-type extras must be filtered out of allOf: {all_of:#?}"
+        );
+        // Tag const object + base + the single real extra.
+        assert_eq!(all_of.len(), 3, "unexpected allOf members: {all_of:#?}");
+        assert!(all_of.contains(&base));
+        assert!(all_of.contains(&real_extra));
+    }
+
+    #[test]
+    fn json_schema_arms_never_contain_null_type_from_unit_extras() {
+        use schemars::generate::SchemaSettings;
+
+        // The default profile `()` has every extra associated type set to `()`,
+        // which schemars renders as `{"type": "null"}`. None of those no-op
+        // extras should leak into any arm's `allOf`.
+        let mut generator = SchemaSettings::default().into_generator();
+        let schema =
+            <Input<()> as schemars::JsonSchema>::json_schema(&mut generator);
+        let value = serde_json::to_value(&schema).unwrap();
+
+        let one_of = value["oneOf"]
+            .as_array()
+            .expect("expected oneOf at root of Input schema");
+        assert!(!one_of.is_empty(), "expected at least one arm");
+
+        for arm in one_of {
+            let all_of = arm["allOf"].as_array().expect("each arm is an allOf");
+            assert!(
+                !all_of.iter().any(is_null_schema),
+                "arm must not contain a null-type unit extra: {arm:#?}"
+            );
+        }
     }
 
     // ── snapshot test: complex fixture ───────────────────────────────────────

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use enumset::{EnumSet, enum_set};
+use enumset::EnumSet;
 use omni_input_schema::{
     FloatArrayInput, Input, InputKind, InputProfile, IntegerArrayInput,
     StringArrayInput, StringInput,
@@ -140,17 +140,7 @@ pub struct AllowedValueExtras {
 }
 
 impl InputProfile for Generator {
-    /// Object inputs are not yet supported in the interactive collect loop.
-    const SUPPORTED: EnumSet<InputKind> = enum_set!(
-        InputKind::Boolean
-            | InputKind::String
-            | InputKind::Integer
-            | InputKind::Float
-            | InputKind::StringArray
-            | InputKind::IntegerArray
-            | InputKind::FloatArray
-            | InputKind::Object
-    );
+    const SUPPORTED: EnumSet<InputKind> = EnumSet::all();
 
     type Base = GenBase;
     type Boolean = ();

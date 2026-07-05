@@ -43,16 +43,20 @@ pub struct BaseInput {
     /// Unique key used in the resolved-value map.  Must match `[a-zA-Z_][a-zA-Z0-9_]*`.
     pub name: String,
 
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#if: Option<MaybeExpr<bool>>,
 
     /// Zero or more Tera validator expressions run against the resolved value.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub validators: Vec<ValidateConfiguration>,
 
     /// When `true` the value must not be logged, echoed, cached, or persisted.
     /// Maps to `writeOnly: true` in the JSON Schema projection.
+    #[serde(default)]
     pub secret: bool,
 
     /// Machine-facing help text; emitted as `description` in JSON Schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
