@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../../.artifacts/generator.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/generator.json
 name: ts-package
 display_name: TypeScript Package
 description: A TypeScript package generator
