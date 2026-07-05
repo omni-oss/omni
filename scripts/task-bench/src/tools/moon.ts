@@ -31,6 +31,9 @@ export function moonWorkspaceConfig(): string {
     return stringifyYaml({
         $schema: WORKSPACE_SCHEMA,
         projects: ["packages/*"],
+        // Pin the default branch so moon's CI touched-files detection has a
+        // stable base (the generated repo is initialized on `master`).
+        vcs: { defaultBranch: "master" },
     });
 }
 

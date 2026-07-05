@@ -136,7 +136,7 @@ export function formatReport(result: BenchmarkResult): string {
 /** A one-line summary of the resolved tool versions used. */
 function formatVersions(result: BenchmarkResult): string {
     const parts = result.tools.map(
-        (t) => `\`${t.tool} ${result.versions[t.tool] ?? "?"}\``,
+        (t) => `${t.tool} ${result.versions[t.tool] ?? "?"}`,
     );
     return `versions: ${parts.join(", ")}`;
 }

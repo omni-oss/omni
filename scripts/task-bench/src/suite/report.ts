@@ -18,9 +18,9 @@ function formatSuiteVersions(suite: SuiteResult, tools: Tool[]): string {
         const version = suite.scenarios
             .map((s) => s.result.versions[tool])
             .find((v) => v != null);
-        return `\`${tool} ${version ?? "?"}\``;
+        return `${tool} ${version ?? "?"}`;
     });
-    return `Tool versions:\n\n${parts.join("\n\n")}`;
+    return `Tool versions: ${parts.join(", ")}`;
 }
 
 function warmCell(scenario: SuiteScenarioResult, tool: Tool): string {

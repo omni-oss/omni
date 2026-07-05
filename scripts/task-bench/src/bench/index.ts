@@ -12,7 +12,8 @@ import { computeStats, type Stats } from "./stats";
 export interface RunSample {
     durationMs: number;
     exitCode: number;
-    stdoutBytes: number;
+    stdout: string;
+    stderr: string;
     /** Number of tasks that actually executed (0 == a full cache hit). */
     executed: number;
     ok: boolean;
@@ -59,7 +60,12 @@ export type BenchEvent =
           total: number;
           sample: RunSample;
       }
-    | { kind: "tool-error"; tool: Tool; error: string };
+    | { kind: "tool-error"; tool: Tool; error: string }
+    | {
+          kind: "tool-unsuccessful";
+          tool: Tool;
+          sample: RunSample;
+      };
 
 export interface RunBenchmarkOptions {
     tools?: Tool[] | undefined;
@@ -118,12 +124,15 @@ async function timeRun(
             ...extraEnv,
         },
     });
+
     const durationMs = performance.now() - start;
     const stdout = typeof result.stdout === "string" ? result.stdout : "";
+    const stderr = typeof result.stderr === "string" ? result.stderr : "";
     return {
         durationMs,
         exitCode: result.exitCode ?? -1,
-        stdoutBytes: Buffer.byteLength(stdout),
+        stdout,
+        stderr,
         executed: countLines(execLog),
         ok: result.exitCode === 0,
     };
@@ -224,6 +233,13 @@ export async function runBenchmark(
                     total: coldRuns,
                     sample,
                 });
+                if (sample.exitCode !== 0) {
+                    emit({
+                        kind: "tool-unsuccessful",
+                        tool,
+                        sample,
+                    });
+                }
             }
 
             // Warm scenario: prime once (unmeasured, also warms the daemon),
@@ -253,6 +269,13 @@ export async function runBenchmark(
                     total: warmRuns,
                     sample,
                 });
+                if (sample.exitCode !== 0) {
+                    emit({
+                        kind: "tool-unsuccessful",
+                        tool,
+                        sample,
+                    });
+                }
             }
 
             const taskGraphSize = Math.max(

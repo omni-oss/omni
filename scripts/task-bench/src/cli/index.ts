@@ -170,6 +170,20 @@ function progressHandler(): (event: BenchEvent) => void {
             process.stderr.write(`\n▶ ${event.tool}\n`);
         } else if (event.kind === "tool-error") {
             process.stderr.write(`  ✖ ${event.tool}: ${event.error}\n`);
+        } else if (event.kind === "tool-unsuccessful") {
+            process.stderr.write(
+                `  ✖ ${event.tool}: exit ${event.sample.exitCode}\n`,
+            );
+            if (event.sample.stdout) {
+                process.stderr.write(
+                    `     === stdout ===\n${event.sample.stdout}\n`,
+                );
+            }
+            if (event.sample.stderr) {
+                process.stderr.write(
+                    `     === stderr ===\n${event.sample.stderr}\n`,
+                );
+            }
         } else {
             const status = event.sample.ok
                 ? "ok"

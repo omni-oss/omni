@@ -112,24 +112,33 @@ function readme(config: HarnessConfig): string {
 
 /**
  * moon only enables its cache when the workspace is a git repository, so
- * initialize + commit one. This is harmless (and realistic) for the other
- * runners. Failures (e.g. git missing) are ignored.
+ * initialize + commit one. Two commits (an empty root + the workspace) are
+ * created on a `master` branch so that moon's CI touched-files detection
+ * (which diffs `HEAD~1..HEAD` against the default branch) has a valid base;
+ * the second commit adds every file, so nothing is spuriously "unaffected".
+ * This is harmless (and realistic) for the other runners. Failures (e.g. git
+ * missing) are ignored.
  */
 async function initGitRepo(rootDir: string): Promise<void> {
     const opts = { cwd: rootDir, reject: false, stdio: "ignore" as const };
+    const author = [
+        "-c",
+        "user.email=bench@task-bench.local",
+        "-c",
+        "user.name=task-bench",
+    ];
     await execa("git", ["init", "-q"], opts);
+    await execa(
+        "git",
+        [...author, "commit", "--allow-empty", "-qm", "root"],
+        opts,
+    );
+    // Normalize the branch name to moon's configured default branch.
+    await execa("git", ["branch", "-M", "master"], opts);
     await execa("git", ["add", "-A"], opts);
     await execa(
         "git",
-        [
-            "-c",
-            "user.email=bench@task-bench.local",
-            "-c",
-            "user.name=task-bench",
-            "commit",
-            "-qm",
-            "generated benchmark workspace",
-        ],
+        [...author, "commit", "-qm", "generated benchmark workspace"],
         opts,
     );
 }
