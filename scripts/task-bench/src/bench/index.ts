@@ -306,6 +306,8 @@ export async function runBenchmark(
             // Always clean up the daemon so it does not leak between tools or
             // outlive the benchmark.
             await adapter.stopDaemon(ctx);
+            // clean caches so they do not leak between tools.
+            await adapter.clearCaches(ctx);
         }
     }
 
