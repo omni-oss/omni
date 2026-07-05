@@ -106,8 +106,10 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
     lines.push("## Details");
     lines.push("");
     for (const s of suite.scenarios) {
-        const heading = s.description ? `${s.name} — ${s.description}` : s.name;
-        lines.push(`### ${heading}`);
+        lines.push(`### ${s.name}`);
+        if (s.description) {
+            lines.push(`> ${s.description}`);
+        }
         lines.push(
             `Config: ${s.config.projects} projects × ${s.config.tasksPerProject} tasks, ` +
                 `strategy \`${s.config.dependency.strategy}\`.`,

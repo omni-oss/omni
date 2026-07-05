@@ -111,6 +111,44 @@ const DEPENDENCY_STRATEGIES_FOR_SWEEP = [
     "random",
 ] as const;
 
+type SweepStrategy = (typeof DEPENDENCY_STRATEGIES_FOR_SWEEP)[number];
+
+/** What each dependency-graph shape stresses in a task runner. */
+const STRATEGY_DESCRIPTIONS: Record<SweepStrategy, string> = {
+    isolated:
+        "No inter-project dependencies — every task is independent, so the runner can schedule everything in parallel (baseline, minimal graph traversal).",
+    chain: "Each project depends on the previous one — a deep, serial dependency chain that minimizes parallelism and maximizes scheduling depth.",
+    "fan-out":
+        "Every project depends on a single shared root — a wide star graph that stresses fan-out from one common dependency.",
+    layered:
+        "Projects grouped into dependency layers — a balanced, realistic monorepo graph mixing breadth and depth.",
+    random: "Randomized (seeded) dependency edges — an irregular, uneven graph that mimics organically-grown repos.",
+};
+
+/** Describe a scale-sweep data point (project count → workspace size band). */
+function scaleDescription(projects: number): string {
+    const band =
+        projects <= 50
+            ? "small"
+            : projects <= 150
+              ? "medium"
+              : projects <= 300
+                ? "large"
+                : "very large";
+    return `${band} workspace (${projects} projects) — shows how discovery + caching overhead scales with graph size.`;
+}
+
+/** Describe a task-density data point (tasks per project). */
+function densityDescription(tasksPerProject: number): string {
+    const band =
+        tasksPerProject <= 2
+            ? "sparse"
+            : tasksPerProject <= 5
+              ? "moderate"
+              : "dense";
+    return `${band} per-project graphs (${tasksPerProject} tasks each) — isolates the cost of more tasks per project at a fixed project count.`;
+}
+
 const shapes: SuiteConfigInput = {
     name: "dependency-shape sweep",
     description:
@@ -121,6 +159,7 @@ const shapes: SuiteConfigInput = {
     },
     scenarios: DEPENDENCY_STRATEGIES_FOR_SWEEP.map((strategy) => ({
         name: `shape-${strategy}`,
+        description: STRATEGY_DESCRIPTIONS[strategy],
         config: { dependency: { strategy } },
     })),
 };
@@ -137,6 +176,7 @@ const scale: SuiteConfigInput = {
     },
     scenarios: [50, 150, 300, 600].map((projects) => ({
         name: `scale-${projects}`,
+        description: scaleDescription(projects),
         config: { projects },
     })),
 };
@@ -150,6 +190,7 @@ const density: SuiteConfigInput = {
     },
     scenarios: [2, 5, 10].map((tasksPerProject) => ({
         name: `density-${tasksPerProject}`,
+        description: densityDescription(tasksPerProject),
         config: { tasksPerProject },
     })),
 };
@@ -167,8 +208,18 @@ const daemon: SuiteConfigInput = {
         run: { concurrency: 8, coldRuns: 2, warmRuns: 3 },
     },
     scenarios: [
-        { name: "daemon-on", run: { daemon: true } },
-        { name: "daemon-off", run: { daemon: false } },
+        {
+            name: "daemon-on",
+            description:
+                "Daemons enabled — each tool may use its persistent background process (Turbo/Nx) to speed up warm runs.",
+            run: { daemon: true },
+        },
+        {
+            name: "daemon-off",
+            description:
+                "Daemons disabled — every invocation is a cold process, exposing raw start-up + discovery overhead.",
+            run: { daemon: false },
+        },
     ],
 };
 
@@ -182,10 +233,12 @@ const quick: SuiteConfigInput = {
     scenarios: [
         {
             name: "quick-isolated",
+            description: STRATEGY_DESCRIPTIONS.isolated,
             config: { dependency: { strategy: "isolated" } },
         },
         {
             name: "quick-layered",
+            description: STRATEGY_DESCRIPTIONS.layered,
             config: { dependency: { strategy: "layered" } },
         },
     ],
@@ -198,6 +251,7 @@ const full: SuiteConfigInput = {
     scenarios: [
         ...DEPENDENCY_STRATEGIES_FOR_SWEEP.map((strategy) => ({
             name: `shape-${strategy}`,
+            description: STRATEGY_DESCRIPTIONS[strategy],
             config: {
                 projects: 120,
                 tasksPerProject: 3,
@@ -206,6 +260,7 @@ const full: SuiteConfigInput = {
         })),
         ...[50, 150, 300].map((projects) => ({
             name: `scale-${projects}`,
+            description: scaleDescription(projects),
             config: {
                 projects,
                 tasksPerProject: 3,
@@ -214,6 +269,7 @@ const full: SuiteConfigInput = {
         })),
         ...[2, 5, 10].map((tasksPerProject) => ({
             name: `density-${tasksPerProject}`,
+            description: densityDescription(tasksPerProject),
             config: {
                 projects: 120,
                 tasksPerProject,
