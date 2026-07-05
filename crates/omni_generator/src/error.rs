@@ -39,8 +39,12 @@ pub(crate) enum ErrorInner {
     #[error("generator '{name}' not found")]
     GeneratorNotFound { name: String },
 
-    #[error(transparent)]
-    LoadConfig(#[from] omni_file_data_serde::Error),
+    #[error("failed to load config from '{path}'")]
+    LoadConfig {
+        path: PathBuf,
+        #[source]
+        inner: omni_file_data_serde::Error,
+    },
 
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),

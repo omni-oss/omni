@@ -4,7 +4,10 @@ use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_generator_configurations::GeneratorConfiguration;
 use tokio::task::JoinSet;
 
-use crate::{GeneratorSys, error::Error};
+use crate::{
+    GeneratorSys,
+    error::{Error, ErrorInner},
+};
 
 static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
     vec![
@@ -39,7 +42,12 @@ pub async fn discover<G: AsRef<str>>(
         let sys = sys.clone();
         results.spawn(async move {
             let mut conf: GeneratorConfiguration =
-                omni_file_data_serde::read_async(file.as_path(), &sys).await?;
+                omni_file_data_serde::read_async(file.as_path(), &sys)
+                    .await
+                    .map_err(|e| ErrorInner::LoadConfig {
+                        path: file.to_path_buf(),
+                        inner: e,
+                    })?;
 
             conf.config_path = file;
 
@@ -73,7 +81,12 @@ pub async fn discover_one_in_dir<D: AsRef<Path>>(
     for file in files {
         if sys.fs_exists_no_err_async(&file).await {
             let mut conf: GeneratorConfiguration =
-                omni_file_data_serde::read_async(file.as_path(), sys).await?;
+                omni_file_data_serde::read_async(file.as_path(), sys)
+                    .await
+                    .map_err(|e| ErrorInner::LoadConfig {
+                        path: file.to_path_buf(),
+                        inner: e,
+                    })?;
 
             conf.config_path = file;
             return Ok(Some(conf));
