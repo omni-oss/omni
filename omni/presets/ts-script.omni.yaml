@@ -12,9 +12,10 @@ tasks:
     enabled: false
 
   build:
-    output:
-      files:
-        - "./bin/**/*"
+    cache:
+      output:
+        files:
+          - "./bin/**/*"
 
 cache:
   key:

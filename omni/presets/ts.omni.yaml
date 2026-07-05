@@ -30,9 +30,10 @@ tasks:
     dependencies:
       - test
       - ^build
-    output:
-      files:
-        - dist/**/*
+    cache:
+      output:
+        files:
+          - dist/**/*
 
 meta:
   language: typescript

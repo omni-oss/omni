@@ -23,9 +23,10 @@ tasks:
 
   gen:declspec:
     exec: bun run gen:declspec
-    output:
-      files:
-        - ./omni-declspec.json
+    cache:
+      output:
+        files:
+          - ./omni-declspec.json
 
   gen:refdocs:
     cache:
@@ -34,13 +35,13 @@ tasks:
           append:
             - ./scripts/generate-references/**/*
             - ./omni-declspec.json
+      output:
+        files:
+          - content/docs/references/**/*
 
     dependencies:
       - gen:declspec
     exec: bun run gen:refdocs
-    output:
-      files:
-        - content/docs/references/**/*
 
   gen:
     dependencies:
@@ -54,6 +55,7 @@ tasks:
       - prepare
       - gen:refdocs
 
-    output:
-      files:
-        - .vercel/**/*
+    cache:
+      output:
+        files:
+          - .vercel/**/*
