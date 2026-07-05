@@ -1,0 +1,38 @@
+{
+    "name": "@omni-oss/task-bench",
+    "description": "Generate configurable test workspaces and benchmark omni/turbo/nx task execution performance",
+    "version": "0.0.0-semantically-released",
+    "bin": "./dist/task-bench-cli.mjs",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            }
+        }
+    },
+    "dependencies": {
+        "commander": "catalog:",
+        "@commander-js/extra-typings": "catalog:",
+        "@omni-oss/log": "workspace:^",
+        "execa": "catalog:",
+        "semver": "catalog:",
+        "yaml": "catalog:",
+        "zod": "catalog:"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+        "@types/node": "catalog:",
+        "@types/semver": "catalog:",
+        "typescript": "catalog:"
+    }
+}

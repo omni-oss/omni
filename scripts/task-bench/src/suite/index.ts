@@ -1,0 +1,110 @@
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { type BenchEvent, type BenchmarkResult, runBenchmark } from "../bench";
+import { installWorkspace } from "../bench/install";
+import type { HarnessConfig } from "../config";
+import { generateWorkspace } from "../generate";
+import { type RunOptions, resolveScenario, type SuiteConfig } from "./preset";
+
+export interface SuiteScenarioResult {
+    name: string;
+    description?: string | undefined;
+    config: HarnessConfig;
+    run: RunOptions;
+    result: BenchmarkResult;
+}
+
+export interface SuiteResult {
+    name: string;
+    description?: string | undefined;
+    generatedAt: string;
+    scenarios: SuiteScenarioResult[];
+}
+
+export type SuiteEvent =
+    | { kind: "scenario-start"; name: string; index: number; total: number }
+    | { kind: "scenario-done"; name: string; index: number; total: number }
+    | { kind: "bench"; name: string; event: BenchEvent };
+
+export interface RunSuiteOptions {
+    /** Base directory under which each scenario workspace is generated. */
+    workdir: string;
+    /** Run `bun install` in each generated workspace (default true). */
+    install?: boolean | undefined;
+    /** Keep generated workspaces on disk instead of removing them (default false). */
+    keep?: boolean | undefined;
+    /** Global run-option overrides applied to every scenario. */
+    overrides?: Partial<RunOptions> | undefined;
+    onEvent?: ((event: SuiteEvent) => void) | undefined;
+}
+
+/**
+ * Run every scenario in a suite: generate a workspace, install, benchmark, and
+ * collect the results. Workspaces are removed afterwards unless `keep` is set.
+ */
+export async function runSuite(
+    suite: SuiteConfig,
+    options: RunSuiteOptions,
+): Promise<SuiteResult> {
+    const emit = options.onEvent ?? (() => {});
+    const scenarios: SuiteScenarioResult[] = [];
+    const total = suite.scenarios.length;
+
+    for (let index = 0; index < total; index++) {
+        const scenario = suite.scenarios[index];
+        if (!scenario) continue;
+        const resolved = resolveScenario(suite, scenario);
+        const { config, run } = resolved;
+
+        // Global overrides win over per-scenario/defaults.
+        const tools = options.overrides?.tools ?? run.tools ?? config.tools;
+        // Keep generation and execution tool sets consistent.
+        config.tools = tools;
+
+        const dir = join(options.workdir, resolved.name);
+
+        emit({
+            kind: "scenario-start",
+            name: resolved.name,
+            index,
+            total,
+        });
+
+        await generateWorkspace(dir, config);
+        if (options.install !== false) {
+            await installWorkspace(dir, { quiet: true });
+        }
+
+        const result = await runBenchmark(dir, {
+            tools,
+            task: options.overrides?.task ?? run.task,
+            coldRuns: options.overrides?.coldRuns ?? run.coldRuns,
+            warmRuns: options.overrides?.warmRuns ?? run.warmRuns,
+            concurrency: options.overrides?.concurrency ?? run.concurrency,
+            daemon: options.overrides?.daemon ?? run.daemon,
+            onEvent: (event) =>
+                emit({ kind: "bench", name: resolved.name, event }),
+        });
+
+        scenarios.push({
+            name: resolved.name,
+            description: resolved.description,
+            config,
+            run,
+            result,
+        });
+
+        if (!options.keep) {
+            await rm(dir, { recursive: true, force: true });
+        }
+
+        emit({ kind: "scenario-done", name: resolved.name, index, total });
+    }
+
+    return {
+        name: suite.name,
+        description: suite.description,
+        generatedAt: new Date().toISOString(),
+        scenarios,
+    };
+}

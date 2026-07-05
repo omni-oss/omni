@@ -611,6 +611,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages."@omni-oss/task-bench"]
+path = "scripts/task-bench"
+include = [
+    "scripts/task-bench/**",
+]
+public_api = false
+
 #@anchor:new-typescript-package
 
 [monorepo.packages.root]
