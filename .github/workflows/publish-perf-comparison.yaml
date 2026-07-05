@@ -40,7 +40,7 @@ jobs:
 
       - name: Generate Benchmarks
         shell: bash
-        run: bun x @omni-oss/task-bench suite -p full -o /tmp/pc --json /tmp/pc/perf-comparison.json --md /tmp/pc/PERF_COMPARISON.md
+        run: bun x @omni-oss/task-bench suite -p full -o /tmp/pc --json /tmp/pc/data.json --md /tmp/pc/README.md
 
       - name: Publish Performance Comparison
         uses: peaceiris/actions-gh-pages@v4
