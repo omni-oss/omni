@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { computeStats, formatMs } from "./stats";
+import { computeStats, formatMs, median } from "./stats";
+
+describe("median", () => {
+    it("returns 0 for an empty set", () => {
+        expect(median([])).toBe(0);
+    });
+
+    it("handles odd and even counts and is order-independent", () => {
+        expect(median([3, 1, 2])).toBe(2);
+        expect(median([4, 1, 3, 2])).toBe(2.5);
+    });
+});
 
 describe("computeStats", () => {
     it("handles the empty case", () => {

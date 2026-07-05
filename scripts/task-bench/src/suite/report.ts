@@ -1,3 +1,5 @@
+import { formatVersionList, renderTable } from "../bench/format";
+import { CACHE_HIT_THRESHOLD, cacheHitRatio } from "../bench/metrics";
 import { formatReport } from "../bench/report";
 import { formatMs } from "../bench/stats";
 import { TOOLS, type Tool } from "../config";
@@ -14,44 +16,27 @@ function toolsInSuite(suite: SuiteResult): Tool[] {
 
 /** One-line summary of the resolved tool versions used across the suite. */
 function formatSuiteVersions(suite: SuiteResult, tools: Tool[]): string {
-    const parts = tools.map((tool) => {
+    const pairs = tools.map((tool) => {
         const version = suite.scenarios
             .map((s) => s.result.versions[tool])
             .find((v) => v != null);
-        return `${tool} ${version ?? "?"}`;
+        return [tool, version] as const;
     });
-    return `Tool versions: ${parts.join(", ")}`;
+    return formatVersionList(pairs, "Tool versions");
 }
 
 function warmCell(scenario: SuiteScenarioResult, tool: Tool): string {
     const t = scenario.result.tools.find((r) => r.tool === tool);
     if (!t || t.error) return t?.error ? "err" : "—";
-    const hits =
-        t.taskGraphSize > 0
-            ? (t.taskGraphSize - t.warm.executedMedian) / t.taskGraphSize
-            : 1;
+    const ratio = cacheHitRatio(t) ?? 1;
     const value = formatMs(t.warm.stats.median);
-    return hits < 0.995 ? `${value}⚠` : value;
+    return ratio < CACHE_HIT_THRESHOLD ? `${value}⚠` : value;
 }
 
 function coldCell(scenario: SuiteScenarioResult, tool: Tool): string {
     const t = scenario.result.tools.find((r) => r.tool === tool);
     if (!t || t.error) return t?.error ? "err" : "—";
     return formatMs(t.cold.stats.median);
-}
-
-function table(headers: string[], rows: string[][]): string[] {
-    const widths = headers.map((h, i) =>
-        Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)),
-    );
-    const pad = (v: string, w: number) => v.padEnd(w);
-    const line = (cells: string[]) =>
-        `| ${cells.map((c, i) => pad(c, widths[i] ?? 0)).join(" | ")} |`;
-    return [
-        line(headers),
-        `| ${widths.map((w) => "-".repeat(w)).join(" | ")} |`,
-        ...rows.map(line),
-    ];
 }
 
 /**
@@ -88,7 +73,7 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
     lines.push("## Summary — warm median");
     lines.push("");
     lines.push(
-        ...table(
+        ...renderTable(
             ["scenario", "nodes", "conc", "daemon", ...tools],
             suite.scenarios.map((s) => [
                 s.name,
@@ -105,7 +90,7 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
     lines.push("## Summary — cold median");
     lines.push("");
     lines.push(
-        ...table(
+        ...renderTable(
             ["scenario", "nodes", "conc", ...tools],
             suite.scenarios.map((s) => [
                 s.name,

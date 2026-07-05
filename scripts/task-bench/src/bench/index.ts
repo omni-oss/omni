@@ -6,8 +6,13 @@ import { performance } from "node:perf_hooks";
 import { execa } from "execa";
 import { HarnessConfigSchema, type Tool } from "../config";
 import { buildGraph, taskNames } from "../graph";
-import { getAdapter, resolveToolVersions, type ToolContext } from "../tools";
-import { computeStats, type Stats } from "./stats";
+import {
+    getAdapter,
+    resolveToolVersions,
+    type ToolAdapter,
+    type ToolContext,
+} from "../tools";
+import { computeStats, median, type Stats } from "./stats";
 
 export interface RunSample {
     durationMs: number;
@@ -61,11 +66,7 @@ export type BenchEvent =
           sample: RunSample;
       }
     | { kind: "tool-error"; tool: Tool; error: string }
-    | {
-          kind: "tool-unsuccessful";
-          tool: Tool;
-          sample: RunSample;
-      };
+    | { kind: "tool-unsuccessful"; tool: Tool; sample: RunSample };
 
 export interface RunBenchmarkOptions {
     tools?: Tool[] | undefined;
@@ -78,19 +79,20 @@ export interface RunBenchmarkOptions {
     onEvent?: ((event: BenchEvent) => void) | undefined;
 }
 
-function median(values: number[]): number {
-    if (values.length === 0) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0
-        ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2
-        : (sorted[mid] ?? 0);
-}
+/** Base environment applied to every benchmarked process. */
+const BASE_ENV = {
+    FORCE_COLOR: "0",
+    TURBO_TELEMETRY_DISABLED: "1",
+    DO_NOT_TRACK: "1",
+    NX_TUI: "false",
+} as const;
+
+/** A zero-argument runner that executes one measured invocation. */
+type RunOnce = () => Promise<RunSample>;
 
 function countLines(path: string): number {
     try {
         const text = readFileSync(path, "utf8");
-        if (text.length === 0) return 0;
         // Each executed task appends exactly one newline-terminated line.
         let count = 0;
         for (let i = 0; i < text.length; i++) {
@@ -115,24 +117,14 @@ async function timeRun(
     const result = await execa(file, args, {
         cwd: rootDir,
         reject: false,
-        env: {
-            FORCE_COLOR: "0",
-            TURBO_TELEMETRY_DISABLED: "1",
-            DO_NOT_TRACK: "1",
-            NX_TUI: "false",
-            TASK_BENCH_EXEC_LOG: execLog,
-            ...extraEnv,
-        },
+        env: { ...BASE_ENV, TASK_BENCH_EXEC_LOG: execLog, ...extraEnv },
     });
-
     const durationMs = performance.now() - start;
-    const stdout = typeof result.stdout === "string" ? result.stdout : "";
-    const stderr = typeof result.stderr === "string" ? result.stderr : "";
     return {
         durationMs,
         exitCode: result.exitCode ?? -1,
-        stdout,
-        stderr,
+        stdout: typeof result.stdout === "string" ? result.stdout : "",
+        stderr: typeof result.stderr === "string" ? result.stderr : "",
         executed: countLines(execLog),
         ok: result.exitCode === 0,
     };
@@ -145,6 +137,115 @@ function scenarioFromSamples(samples: RunSample[]): ScenarioResult {
         stats: computeStats(samples.map((s) => s.durationMs)),
         executedMedian: median(samples.map((s) => s.executed)),
     };
+}
+
+/** Run one scenario `runs` times, calling `before` (if any) before each run. */
+async function runScenario(
+    runOnce: RunOnce,
+    runs: number,
+    onSample: (run: number, sample: RunSample) => void,
+    before?: () => Promise<void>,
+): Promise<RunSample[]> {
+    const samples: RunSample[] = [];
+    for (let run = 1; run <= runs; run++) {
+        if (before) await before();
+        const sample = await runOnce();
+        samples.push(sample);
+        onSample(run, sample);
+    }
+    return samples;
+}
+
+/** Benchmark a single tool (cold + warm), always cleaning up afterwards. */
+async function benchmarkTool(
+    adapter: ToolAdapter,
+    ctx: ToolContext,
+    task: string,
+    coldRuns: number,
+    warmRuns: number,
+    execLog: string,
+    emit: (event: BenchEvent) => void,
+): Promise<ToolResult> {
+    const invocation = adapter.run(task, ctx);
+    const env = adapter.env(ctx);
+    const runOnce: RunOnce = () =>
+        timeRun(invocation.file, invocation.args, ctx.rootDir, execLog, env);
+
+    // Emits the per-run scenario event plus a failure event on non-zero exits.
+    const sampleEmitter =
+        (scenario: "cold" | "warm", total: number) =>
+        (run: number, sample: RunSample) => {
+            emit({
+                kind: "scenario",
+                tool: adapter.tool,
+                scenario,
+                run,
+                total,
+                sample,
+            });
+            if (sample.exitCode !== 0) {
+                emit({ kind: "tool-unsuccessful", tool: adapter.tool, sample });
+            }
+        };
+
+    try {
+        // In no-daemon mode make sure no stale daemon lingers first.
+        if (!ctx.daemon && adapter.hasDaemon) {
+            await adapter.stopDaemon(ctx);
+        }
+
+        // Cold: a fresh start each run — caches + outputs wiped, and (in daemon
+        // mode) the daemon torn down so cold includes its startup cost.
+        const coldSamples = await runScenario(
+            runOnce,
+            coldRuns,
+            sampleEmitter("cold", coldRuns),
+            async () => {
+                await adapter.clearCaches(ctx);
+                if (ctx.daemon && adapter.hasDaemon) {
+                    await adapter.stopDaemon(ctx);
+                }
+            },
+        );
+
+        // Warm: prime once (unmeasured, also warms the daemon), then measure
+        // while caches + daemon stay hot.
+        await runOnce();
+        const warmSamples = await runScenario(
+            runOnce,
+            warmRuns,
+            sampleEmitter("warm", warmRuns),
+        );
+
+        const taskGraphSize = Math.max(
+            0,
+            ...coldSamples.map((s) => s.executed),
+            ...warmSamples.map((s) => s.executed),
+        );
+
+        return {
+            tool: adapter.tool,
+            task,
+            taskGraphSize,
+            cold: scenarioFromSamples(coldSamples),
+            warm: scenarioFromSamples(warmSamples),
+        };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        emit({ kind: "tool-error", tool: adapter.tool, error: message });
+        return {
+            tool: adapter.tool,
+            task,
+            taskGraphSize: 0,
+            cold: scenarioFromSamples([]),
+            warm: scenarioFromSamples([]),
+            error: message,
+        };
+    } finally {
+        // Always clean up so nothing leaks between tools or outlives the run.
+        await adapter.stopDaemon(ctx);
+        await adapter.clearCaches(ctx);
+    }
 }
 
 /**
@@ -191,124 +292,23 @@ export async function runBenchmark(
 
     // Resolve (and re-validate) the version of each tool actually used.
     const versionMap = await resolveToolVersions(config, rootDir, tools);
-    const versions: Record<string, string | null> = {};
-    for (const [tool, version] of versionMap) versions[tool] = version;
+    const versions: Record<string, string | null> =
+        Object.fromEntries(versionMap);
 
     const results: ToolResult[] = [];
-
     for (const tool of tools) {
         emit({ kind: "tool-start", tool });
-        const adapter = getAdapter(tool);
-        const invocation = adapter.run(task, ctx);
-        const env = adapter.env(ctx);
-
-        try {
-            // In no-daemon mode make sure no stale daemon lingers first.
-            if (!daemon && adapter.hasDaemon) {
-                await adapter.stopDaemon(ctx);
-            }
-
-            // Cold scenario: a fresh start each run. Caches + outputs are wiped,
-            // and (in daemon mode) the daemon is torn down so cold includes its
-            // startup cost. Warm runs below deliberately keep the daemon alive.
-            const coldSamples: RunSample[] = [];
-            for (let run = 1; run <= coldRuns; run++) {
-                await adapter.clearCaches(ctx);
-                if (daemon && adapter.hasDaemon) {
-                    await adapter.stopDaemon(ctx);
-                }
-                const sample = await timeRun(
-                    invocation.file,
-                    invocation.args,
-                    rootDir,
-                    execLog,
-                    env,
-                );
-                coldSamples.push(sample);
-                emit({
-                    kind: "scenario",
-                    tool,
-                    scenario: "cold",
-                    run,
-                    total: coldRuns,
-                    sample,
-                });
-                if (sample.exitCode !== 0) {
-                    emit({
-                        kind: "tool-unsuccessful",
-                        tool,
-                        sample,
-                    });
-                }
-            }
-
-            // Warm scenario: prime once (unmeasured, also warms the daemon),
-            // then measure while caches + daemon stay hot.
-            await timeRun(
-                invocation.file,
-                invocation.args,
-                rootDir,
+        results.push(
+            await benchmarkTool(
+                getAdapter(tool),
+                ctx,
+                task,
+                coldRuns,
+                warmRuns,
                 execLog,
-                env,
-            );
-            const warmSamples: RunSample[] = [];
-            for (let run = 1; run <= warmRuns; run++) {
-                const sample = await timeRun(
-                    invocation.file,
-                    invocation.args,
-                    rootDir,
-                    execLog,
-                    env,
-                );
-                warmSamples.push(sample);
-                emit({
-                    kind: "scenario",
-                    tool,
-                    scenario: "warm",
-                    run,
-                    total: warmRuns,
-                    sample,
-                });
-                if (sample.exitCode !== 0) {
-                    emit({
-                        kind: "tool-unsuccessful",
-                        tool,
-                        sample,
-                    });
-                }
-            }
-
-            const taskGraphSize = Math.max(
-                0,
-                ...coldSamples.map((s) => s.executed),
-                ...warmSamples.map((s) => s.executed),
-            );
-
-            results.push({
-                tool,
-                task,
-                taskGraphSize,
-                cold: scenarioFromSamples(coldSamples),
-                warm: scenarioFromSamples(warmSamples),
-            });
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            emit({ kind: "tool-error", tool, error: message });
-            results.push({
-                tool,
-                task,
-                taskGraphSize: 0,
-                cold: scenarioFromSamples([]),
-                warm: scenarioFromSamples([]),
-                error: message,
-            });
-        } finally {
-            // Always clean up the daemon so it does not leak between tools or
-            // outlive the benchmark.
-            await adapter.stopDaemon(ctx);
-            // clean caches so they do not leak between tools.
-            await adapter.clearCaches(ctx);
-        }
+                emit,
+            ),
+        );
     }
 
     return {

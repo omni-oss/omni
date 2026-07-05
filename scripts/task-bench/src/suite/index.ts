@@ -40,6 +40,13 @@ export interface RunSuiteOptions {
     onEvent?: ((event: SuiteEvent) => void) | undefined;
 }
 
+/** Drop `undefined` values so an override map only carries explicit settings. */
+function compact<T extends object>(obj: T): Partial<T> {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([, v]) => v !== undefined),
+    ) as Partial<T>;
+}
+
 /**
  * Run every scenario in a suite: generate a workspace, install, benchmark, and
  * collect the results. Workspaces are removed afterwards unless `keep` is set.
@@ -52,25 +59,22 @@ export async function runSuite(
     const scenarios: SuiteScenarioResult[] = [];
     const total = suite.scenarios.length;
 
-    for (let index = 0; index < total; index++) {
-        const scenario = suite.scenarios[index];
-        if (!scenario) continue;
+    for (const [index, scenario] of suite.scenarios.entries()) {
         const resolved = resolveScenario(suite, scenario);
-        const { config, run } = resolved;
+        const { config, description, name } = resolved;
 
         // Global overrides win over per-scenario/defaults.
-        const tools = options.overrides?.tools ?? run.tools ?? config.tools;
+        const run: RunOptions = {
+            ...resolved.run,
+            ...compact(options.overrides ?? {}),
+        };
         // Keep generation and execution tool sets consistent.
+        const tools = run.tools ?? config.tools;
         config.tools = tools;
 
-        const dir = join(options.workdir, resolved.name);
+        const dir = join(options.workdir, name);
 
-        emit({
-            kind: "scenario-start",
-            name: resolved.name,
-            index,
-            total,
-        });
+        emit({ kind: "scenario-start", name, index, total });
 
         await generateWorkspace(dir, config);
         if (options.install !== false) {
@@ -78,29 +82,18 @@ export async function runSuite(
         }
 
         const result = await runBenchmark(dir, {
+            ...run,
             tools,
-            task: options.overrides?.task ?? run.task,
-            coldRuns: options.overrides?.coldRuns ?? run.coldRuns,
-            warmRuns: options.overrides?.warmRuns ?? run.warmRuns,
-            concurrency: options.overrides?.concurrency ?? run.concurrency,
-            daemon: options.overrides?.daemon ?? run.daemon,
-            onEvent: (event) =>
-                emit({ kind: "bench", name: resolved.name, event }),
+            onEvent: (event) => emit({ kind: "bench", name, event }),
         });
 
-        scenarios.push({
-            name: resolved.name,
-            description: resolved.description,
-            config,
-            run,
-            result,
-        });
+        scenarios.push({ name, description, config, run, result });
 
         if (!options.keep) {
             await rm(dir, { recursive: true, force: true });
         }
 
-        emit({ kind: "scenario-done", name: resolved.name, index, total });
+        emit({ kind: "scenario-done", name, index, total });
     }
 
     return {
