@@ -6437,7 +6437,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6461,7 +6461,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "bytesize",
  "derive-new",
@@ -6581,7 +6581,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6988,7 +6988,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator_configurations"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bon",
  "config_utils",
@@ -7024,7 +7024,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7102,7 +7102,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "either",
  "enumset",
@@ -7186,7 +7186,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7526,7 +7526,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "merge",
  "schemars",
