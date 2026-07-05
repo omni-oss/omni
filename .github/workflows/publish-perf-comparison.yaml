@@ -1,0 +1,56 @@
+name: Publish Performance Comparison
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: false
+        type: string
+        description: "Version to publish"
+
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: "latest"
+        description: "Version to publish"
+
+permissions:
+  contents: write
+
+jobs:
+  publish-benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Omni
+        uses: omni-oss/setup-omni@v2
+        with:
+          version: ${{ inputs.version || 'latest' }}
+          github-token: ${{ github.token }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          check-latest: true
+          node-version: latest
+
+      - name: Generate Benchmarks
+        shell: bash
+        run: bun x @omni-oss/task-bench suite --keep -p full -o /tmp/pc --json /tmp/pc/perf-comparison.json --md /tmp/pc/PERF_COMPARISON.md
+
+      - name: Publish Performance Comparison
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          external_repository: omni-oss/performance-comparison
+          publish_branch: main
+          #github_token: ${{ secrets.GITHUB_TOKEN }}
+          deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          publish_dir: /tmp/pc
+          destination_dir: .
+          keep_files: true
+          tag_name: ${{ inputs.version || 'latest' }}
+          tag_message: "Publish version ${{ inputs.version || 'latest' }}"
