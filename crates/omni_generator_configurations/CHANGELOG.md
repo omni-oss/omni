@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.9.1 - 2026-07-05
+#### Bug Fixes
+- incorrect generator schema - (16ee36e) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.9.0 - 2026-07-04
 #### Features
 - remove default_expr and support Object input - (8f7e84a) - Clarence Manuel

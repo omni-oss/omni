@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_input_schema-v0.1.1 - 2026-07-05
+#### Bug Fixes
+- incorrect generator schema - (16ee36e) - Clarence Manuel
+
+- - -
+
 ## omni_input_schema-v0.1.0 - 2026-07-04
 #### Features
 - upgrade tera version and update presets - (c097dc8) - Clarence Manuel

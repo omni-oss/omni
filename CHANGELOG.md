@@ -2,6 +2,26 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.17.1 - 2026-07-05
+### Package updates
+- omni_input_schema bumped to omni_input_schema-v0.1.1
+- omni_generator_configurations bumped to omni_generator_configurations-v0.9.1
+- omni bumped to omni-v0.17.1
+- root bumped to root-v0.12.1
+- omni_cli_core bumped to omni_cli_core-v0.17.1
+### Global changes
+#### Bug Fixes
+- incorrect generator schema - (16ee36e) - Clarence Manuel
+#### Continuous Integration
+- update omni run flags - (982e480) - Clarence Manuel
+- update omni version [skip ci] - (b5f1c6f) - Clarence Manuel
+#### Miscellaneous Chores
+- update generators - (78fb7df) - Clarence Manuel
+- update generators - (8e535c8) - Clarence Manuel
+- update omni presets - (17da549) - Clarence Manuel
+
+- - -
+
 ## v0.17.0 - 2026-07-04
 ### Package updates
 - omni_cli_core bumped to omni_cli_core-v0.17.0
