@@ -64,6 +64,8 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
 
     lines.push(`# ${suite.name}`);
     lines.push("");
+    lines.push(`TaskBench v${suite.taskBenchVersion}`);
+    lines.push("");
     if (suite.description) {
         lines.push(suite.description);
         lines.push("");
