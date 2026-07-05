@@ -1,9 +1,9 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/generator.json
+# yaml-language-server: $schema=../../.artifacts/generator.json
 name: ts-package
 display_name: TypeScript Package
 description: A TypeScript package generator
 
-prompts:
+inputs:
   - name: package_name
     type: string
     message: What is the name of your package?
@@ -11,7 +11,7 @@ prompts:
     validators:
       - condition: "{{ value | length > 0 }}"
         error_message: Package name must not be empty
-      - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
+      - condition: "{{ value is matching(pat='^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
         error_message: >
           Package name must only contain alphanumeric characters, underscores, and hyphens,
           and must start with a letter
@@ -99,7 +99,7 @@ targets:
 
 vars:
   full_package_name: "@omni-oss/{{ inputs.package_name }}"
-  generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\', to='/') }}"
+  generated_dir: "{{ output_dir | relative_path(root=workspace_dir) | replace(from='\\\\', to='/') }}"
 
 actions:
   - type: add-many

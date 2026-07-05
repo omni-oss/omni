@@ -1,9 +1,9 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/generator.json
+# yaml-language-server: $schema=../../.artifacts/generator.json
 name: crate
 display_name: Rust Crate
 description: Generate a new rust crate
 
-prompts:
+inputs:
   - type: boolean
     name: use_tracing
     message: Use tracing
@@ -26,7 +26,7 @@ prompts:
     validators:
       - condition: "{{ value | length > 0 }}"
         error_message: Crate name must not be empty
-      - condition: "{{ value is matching('^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
+      - condition: "{{ value is matching(pat='^[a-zA-Z_]{1}[a-zA-Z0-9_-]*$') }}"
         error_message: >
           Crate name must only contain alphanumeric characters, underscores, and hyphens,
           and must start with a letter
@@ -51,7 +51,7 @@ prompts:
     validators:
       - condition: "{{ value | length > 0 }}"
         error_message: Crate version must not be empty
-      - condition: "{{ value is matching('^\\d+\\.\\d+\\.\\d+(?:-(?:[\\w\\d]+)(?:(?:\\.[\\w\\d]*)*(?:\\+[\\d\\w]+)?)?)?$') }}"
+      - condition: "{{ value is matching(pat='^\\\\d+\\\\.\\\\d+\\\\.\\\\d+(?:-(?:[\\\\w\\\\d]+)(?:(?:\\\\.[\\\\w\\\\d]*)*(?:\\\\+[\\\\d\\\\w]+)?)?)?$') }}"
         error_message: Crate version must be in the format of x.y.z
 
   - type: boolean
@@ -94,7 +94,7 @@ actions:
     generator: rust-error
     targets:
       root: ./src
-    prompt_values:
+    input_values:
       forward: all
 
   - if: "{{ inputs.add_error_type }}"
@@ -115,7 +115,7 @@ actions:
       - content: '{{ inputs.crate_name }} = { path = "{{ data.generated_dir }}" }'
         pattern: "@anchor:new-crate"
     data:
-      generated_dir: "{{ output_dir | replace(from='\\', to='/') }}"
+      generated_dir: "{{ output_dir | replace(from='\\\\', to='/') }}"
 
   - type: prepend-content
     target: cog_config
@@ -129,7 +129,7 @@ actions:
           public_api = false
         pattern: "@anchor:new-rust-package"
     data:
-      generated_dir: "{{ output_dir | replace(from='\\', to='/') }}"
+      generated_dir: "{{ output_dir | replace(from='\\\\', to='/') }}"
 
   - type: transform-many
     command: rustfmt

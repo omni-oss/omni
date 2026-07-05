@@ -28,7 +28,7 @@ export default createConfig({
                 formats: ["es"],
                 fileName: (format, entryName) =>
                     `${entryName || "{{ inputs.package_name }}"}.${format === "cjs" ? "cjs" : "mjs"}`,
-                name: "{{ inputs.package_name | upper_camel_case }}",
+                name: "{{ inputs.package_name | pascal_case }}",
             },
         },
     },
