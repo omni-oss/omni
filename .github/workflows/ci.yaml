@@ -68,7 +68,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Dry Run Results
-        run: omni -i run -L -f=failed -d --result=result.json test build publish
+        run: omni -i run -f=failed -d --result=result.json test build publish
 
       - name: Create Plan
         id: plan
