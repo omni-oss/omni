@@ -1886,6 +1886,7 @@ checksum = "6ed39583e427bf41d93c28c7f27c943a93bcb8697220ff3575fd53a9e13f3814"
 dependencies = [
  "antlr4rust",
  "base64",
+ "bytes 1.11.1",
  "chrono",
  "lazy_static",
  "nom",
@@ -6503,6 +6504,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_bench"
+version = "0.0.0"
+dependencies = [
+ "criterion",
+ "eyre",
+ "num_cpus",
+ "omni_context",
+ "omni_messages",
+ "omni_task_executor",
+ "omni_test_utils",
+ "omni_tracing_subscriber",
+ "system_traits",
+ "tempfile",
+ "tokio 1.52.3",
+]
+
+[[package]]
 name = "omni_bridge_test_service"
 version = "0.1.0"
 dependencies = [
@@ -7486,6 +7504,7 @@ dependencies = [
  "bs58",
  "bytes 1.11.1",
  "config_utils",
+ "criterion",
  "derive-new",
  "derive_builder",
  "env",
@@ -7510,6 +7529,8 @@ dependencies = [
  "omni_task_context",
  "omni_task_output_logs",
  "omni_tera",
+ "omni_test_utils",
+ "omni_tracing_subscriber",
  "omni_types",
  "schemars",
  "serde",
@@ -7517,6 +7538,7 @@ dependencies = [
  "shlex 2.0.1",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "tokio-util",
@@ -7593,15 +7615,16 @@ dependencies = [
 name = "omni_test_utils"
 version = "0.5.0"
 dependencies = [
+ "bon",
  "bs58",
  "config_utils",
- "derive_builder",
  "eyre",
  "omni_configurations",
  "omni_file_data_serde",
  "omni_types",
  "serde",
  "strum 0.28.0",
+ "tempfile",
  "thiserror 2.0.18",
  "trace",
  "tracing",

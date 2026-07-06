@@ -27,7 +27,8 @@ impl Evaluator {
             | cel::Value::Map(_)
             | cel::Value::Function(_, _)
             | cel::Value::Bytes(_)
-            | cel::Value::Opaque(_) => true,
+            | cel::Value::Opaque(_)
+            | cel::Value::Struct(_) => true,
             cel::Value::Int(i) => i != 0,
             cel::Value::UInt(i) => i != 0,
             cel::Value::Float(f) => f != 0.0,
@@ -107,7 +108,7 @@ mod tests {
     #[test]
     fn test_simple_expression_with_simple_variables() {
         let evaluator = parse(
-            "a == 1 && b == \"test\" && b.startsWith(\"tes\") && c.contains(1) && d.a == 1",
+            "a == 1 && b == \"test\" && b.startsWith(\"tes\") && 1 in c && d.a == 1",
         )
         .unwrap();
         let mut context = Context::default();

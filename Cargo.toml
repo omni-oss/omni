@@ -151,7 +151,7 @@ owo-colors = { version = "^4.3.0" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
-cel = { version = "^0.14.0", features = ["json", "regex"] }
+cel = { version = "^0.14.0", features = ["chrono", "json", "regex", "bytes", "structs"] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
 crossbeam-channel = { version = "^0.5.15" }
 shlex = { version = "^2.0.1" }
@@ -177,6 +177,7 @@ omni_api = { path = "./crates/omni_api" }
 omni_mcp_core = { path = "crates/omni_mcp_core" }
 omni_input_schema = { path = "crates/omni_input_schema" }
 omni_task_output_logs = { path = "crates/omni_task_output_logs" }
+# omni_bench = { path = "crates/omni_bench" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
