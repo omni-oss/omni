@@ -13,14 +13,14 @@ import {
     type BenchmarkResult,
     DEPENDENCY_STRATEGIES,
     formatMs,
-    formatReport,
-    formatSuiteMarkdown,
     generateWorkspace,
     getPreset,
     type HarnessConfigInput,
     installWorkspace,
     listPresets,
     parseSuite,
+    renderReport,
+    renderSuiteMarkdown,
     resolveConfig,
     runBenchmark,
     runSuite,
@@ -236,6 +236,12 @@ program
     .option("--cold-runs <n>", "Cold (uncached) runs per tool.", int, 3)
     .option("--warm-runs <n>", "Warm (cached) runs per tool.", int, 5)
     .option(
+        "--resource-runs <n>",
+        "Resource-measurement passes (RSS/CPU) per scenario; 0 disables.",
+        int,
+        3,
+    )
+    .option(
         "--concurrency <n>",
         "Max parallel tasks, applied identically to all tools (default: CPU count).",
         int,
@@ -251,9 +257,10 @@ program
             daemon: opts.daemon,
             coldRuns: opts.coldRuns,
             warmRuns: opts.warmRuns,
+            resourceRuns: opts.resourceRuns,
             onEvent: progressHandler(),
         });
-        process.stdout.write(formatReport(result));
+        process.stdout.write(renderReport(result).join("\n"));
         writeJson(opts.json, result);
     });
 
@@ -275,6 +282,12 @@ addGenerateOptions(
         .option("--cold-runs <n>", "Cold (uncached) runs per tool.", int, 3)
         .option("--warm-runs <n>", "Warm (cached) runs per tool.", int, 5)
         .option(
+            "--resource-runs <n>",
+            "Resource-measurement passes (RSS/CPU) per scenario; 0 disables.",
+            int,
+            3,
+        )
+        .option(
             "--concurrency <n>",
             "Max parallel tasks, applied identically to all tools (default: CPU count).",
             int,
@@ -283,7 +296,11 @@ addGenerateOptions(
             "--no-daemon",
             "Disable each tool's persistent daemon (turbo, nx).",
         )
-        .option("--json <file>", "Write full results as JSON to this file."),
+        .option("--json <file>", "Write full results as JSON to this file.")
+        .option(
+            "--md <file>",
+            "Write a human-readable Markdown report to this file.",
+        ),
 ).action(async (opts) => {
     const out = resolve(opts.out);
     const input = buildInput(opts);
@@ -301,11 +318,17 @@ addGenerateOptions(
         task: opts.task,
         coldRuns: opts.coldRuns,
         warmRuns: opts.warmRuns,
+        resourceRuns: opts.resourceRuns,
         concurrency: opts.concurrency,
         daemon: opts.daemon,
         onEvent: progressHandler(),
     });
-    process.stdout.write(formatReport(result));
+    const md = renderReport(result).join("\n");
+    process.stdout.write(md);
+    if (opts.md) {
+        writeFileSync(opts.md, `${md}\n`);
+        process.stderr.write(`\nWrote Markdown report to ${opts.md}\n`);
+    }
     writeJson(opts.json, result);
 });
 
@@ -352,6 +375,11 @@ program
     .option("--cold-runs <n>", "Override cold runs for every scenario.", int)
     .option("--warm-runs <n>", "Override warm runs for every scenario.", int)
     .option(
+        "--resource-runs <n>",
+        "Override resource-measurement passes (RSS/CPU) for every scenario.",
+        int,
+    )
+    .option(
         "--concurrency <n>",
         "Override concurrency for every scenario.",
         int,
@@ -382,6 +410,9 @@ program
             ...(opts.tools ? { tools: opts.tools } : {}),
             ...(opts.coldRuns !== undefined ? { coldRuns: opts.coldRuns } : {}),
             ...(opts.warmRuns !== undefined ? { warmRuns: opts.warmRuns } : {}),
+            ...(opts.resourceRuns !== undefined
+                ? { resourceRuns: opts.resourceRuns }
+                : {}),
             ...(opts.concurrency !== undefined
                 ? { concurrency: opts.concurrency }
                 : {}),
@@ -395,7 +426,7 @@ program
             onEvent: suiteProgressHandler(),
         });
 
-        const md = formatSuiteMarkdown(result);
+        const md = renderSuiteMarkdown(result).join("\n");
         process.stdout.write(`\n${md}\n`);
         if (opts.md) {
             writeFileSync(opts.md, `${md}\n`);

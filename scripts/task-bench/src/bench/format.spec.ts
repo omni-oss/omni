@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatVersionList, pad, renderTable } from "./format";
+import { pad, renderTable, renderVersionList } from "./format";
 
 describe("pad", () => {
     it("right-pads to a width and leaves longer strings alone", () => {
@@ -29,13 +29,13 @@ describe("renderTable", () => {
 describe("formatVersionList", () => {
     it("joins tool/version pairs with a prefix and ? for unknowns", () => {
         expect(
-            formatVersionList(
+            renderVersionList(
                 [
                     ["omni", "0.17.1"],
                     ["turbo", null],
                 ],
                 "versions",
-            ),
+            ).join("\n"),
         ).toBe("versions: omni 0.17.1, turbo ?");
     });
 });

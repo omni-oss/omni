@@ -73,6 +73,22 @@ export interface ToolAdapter {
     clearCaches(ctx: ToolContext): Promise<void>;
     /** Stop the persistent daemon, if any. Used for cold runs and cleanup. */
     stopDaemon(ctx: ToolContext): Promise<void>;
+
+    /**
+     * Best-effort PIDs of long-lived helper processes (typically this tool's
+     * persistent daemon) that belong to "the tool" and should be measured
+     * together with the invoked CLI process. The daemon detaches from the CLI
+     * process, so it can't be reached by walking children — each adapter knows
+     * how to locate its own (e.g. `turbo daemon status`, `nx daemon`).
+     *
+     * Contract:
+     *   - Only meaningful when `hasDaemon` is true and `ctx.daemon` is set.
+     *   - Resolved before a measured run and, on cold runs, once shortly after
+     *     launch to catch a daemon the invocation starts itself — never on
+     *     every sampling tick, so it should stay cheap.
+     *   - Must never throw; return [] when nothing can be located.
+     */
+    daemonPids?(ctx: ToolContext): Promise<number[]>;
 }
 
 /** Resolve a locally-installed binary, falling back to the global name. */

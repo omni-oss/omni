@@ -9,6 +9,7 @@ import { type RunOptions, resolveScenario, type SuiteConfig } from "./preset";
 
 export interface SuiteScenarioResult {
     name: string;
+    displayName: string;
     description?: string | undefined;
     config: HarnessConfig;
     run: RunOptions;
@@ -17,6 +18,7 @@ export interface SuiteScenarioResult {
 
 export interface SuiteResult {
     name: string;
+    displayName: string;
     description?: string | undefined;
     generatedAt: string;
     scenarios: SuiteScenarioResult[];
@@ -61,7 +63,7 @@ export async function runSuite(
 
     for (const [index, scenario] of suite.scenarios.entries()) {
         const resolved = resolveScenario(suite, scenario);
-        const { config, description, name } = resolved;
+        const { config, description, displayName, name } = resolved;
 
         // Global overrides win over per-scenario/defaults.
         const run: RunOptions = {
@@ -87,7 +89,7 @@ export async function runSuite(
             onEvent: (event) => emit({ kind: "bench", name, event }),
         });
 
-        scenarios.push({ name, description, config, run, result });
+        scenarios.push({ name, displayName, description, config, run, result });
 
         if (!options.keep) {
             await rm(dir, { recursive: true, force: true });
@@ -98,6 +100,7 @@ export async function runSuite(
 
     return {
         name: suite.name,
+        displayName: suite.displayName ?? suite.name,
         description: suite.description,
         generatedAt: new Date().toISOString(),
         scenarios,

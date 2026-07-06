@@ -41,3 +41,11 @@ export function formatMs(ms: number): string {
     if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
     return `${ms.toFixed(0)}ms`;
 }
+
+/** Human-readable byte size (KB/MB/GB, base-1024). */
+export function formatBytes(bytes: number): string {
+    if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)}GB`;
+    if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)}MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+    return `${bytes.toFixed(0)}B`;
+}

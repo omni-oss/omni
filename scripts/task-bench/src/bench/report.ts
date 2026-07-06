@@ -1,12 +1,26 @@
-import { formatVersionList, renderTable } from "./format";
-import type { BenchmarkResult, ToolResult } from "./index";
+import { renderTable, renderVersionList } from "./format";
+import type { BenchmarkResult, ScenarioResult, ToolResult } from "./index";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio, isFullyCached } from "./metrics";
-import { formatMs, type Stats } from "./stats";
+import type { PlatformInfo } from "./platform-info";
+import { formatBytes, formatMs, type Stats } from "./stats";
 
 function statCell(stats: Stats, failures: number): string {
     if (stats.samples.length === 0) return "—";
     const base = `${formatMs(stats.median)} ±${formatMs(stats.stddev)}`;
     return failures > 0 ? `${base} ⚠${failures}` : base;
+}
+
+/** Median peak RSS for a scenario (or "—" when not measured). */
+function memCell(scenario: ScenarioResult): string {
+    const r = scenario.resources;
+    return r ? formatBytes(r.peakRssBytes.median) : "—";
+}
+
+/** Median CPU time + average parallelism for a scenario (or "—"). */
+function cpuCell(scenario: ScenarioResult): string {
+    const r = scenario.resources;
+    if (!r) return "—";
+    return `${formatMs(r.cpuTimeMs.median)} (${r.parallelism.median.toFixed(1)}×)`;
 }
 
 function cacheCell(tool: ToolResult): string {
@@ -32,34 +46,69 @@ function overheadLine(
     );
 }
 
+export function renderPlatformInfo(platform: PlatformInfo): string[] {
+    const lines: string[] = [];
+
+    lines.push("Platform: ");
+
+    lines.push(
+        `* OS: ${platform.os.platform} ${platform.os.release} (${platform.os.arch})`,
+    );
+
+    const cpuModelSet = new Set(platform.cpus.map((cpu) => cpu.model));
+    const cpuSpeedSet = new Set(platform.cpus.map((cpu) => cpu.speedMHz));
+
+    if (cpuModelSet.size === 1 && cpuSpeedSet.size === 1) {
+        lines.push(
+            `* CPU: ${platform.cpus.length} × ${platform.cpus[0]?.model ?? "unknown"} @ ${platform.cpus[0]?.speedMHz ?? "unknown"} MHz`,
+        );
+    } else {
+        lines.push(
+            `* CPU: ${platform.cpus.length} × [${[...cpuModelSet].join(", ")}] @ [${[...cpuSpeedSet].join(", ")} MHz]`,
+        );
+    }
+
+    lines.push(
+        `* Memory: ${Math.round(platform.memory.totalBytes / (1024 * 1024))} MB total, ${Math.round(platform.memory.freeBytes / (1024 * 1024))} MB free`,
+    );
+
+    return lines;
+}
+
 /**
  * Render a human-readable comparison table plus short takeaways. The warm
  * column is the key metric: with all tasks cached it approximates each tool's
  * discovery + cache-restore overhead. The warm-cache-hit column verifies that
  * assumption held (should be 100%).
  */
-export function formatReport(result: BenchmarkResult): string {
+export function renderReport(result: BenchmarkResult): string[] {
     const lines: string[] = [];
     const graphSize = Math.max(0, ...result.tools.map((t) => t.taskGraphSize));
     lines.push("");
     lines.push(
-        `task-bench: ${result.projects} projects × ${result.tasksPerProject} tasks ` +
+        `* task-bench: ${result.projects} projects × ${result.tasksPerProject} tasks ` +
             `(${graphSize} task-graph nodes), running "${result.task}" ` +
             `at concurrency ${result.concurrency} ` +
             `(daemons ${result.daemon ? "on" : "off"})`,
     );
     lines.push(
-        formatVersionList(
+        ...renderVersionList(
             result.tools.map((t) => [t.tool, result.versions[t.tool]] as const),
-            "versions",
+            "* versions",
         ),
     );
+    lines.push("");
+    lines.push(...renderPlatformInfo(result.platform));
     lines.push("");
 
     const headers = [
         "tool",
         "cold (median)",
         "warm (median)",
+        "cold mem",
+        "warm mem",
+        "cold cpu",
+        "warm cpu",
         "warm cache-hit",
         "notes",
     ];
@@ -67,6 +116,10 @@ export function formatReport(result: BenchmarkResult): string {
         t.tool,
         statCell(t.cold.stats, t.cold.failures),
         statCell(t.warm.stats, t.warm.failures),
+        memCell(t.cold),
+        memCell(t.warm),
+        cpuCell(t.cold),
+        cpuCell(t.warm),
         cacheCell(t),
         t.error ? `error: ${(t.error.split("\n")[0] ?? "").slice(0, 40)}` : "",
     ]);
@@ -103,5 +156,5 @@ export function formatReport(result: BenchmarkResult): string {
     if (warmLine) lines.push(warmLine, "");
     if (coldLine) lines.push(coldLine, "");
 
-    return lines.join("\n");
+    return lines;
 }

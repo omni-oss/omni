@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { cpus, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { execa } from "execa";
@@ -12,6 +12,10 @@ import {
     type ToolAdapter,
     type ToolContext,
 } from "../tools";
+import { BASE_ENV } from "./env";
+import { getPlatformInfo, type PlatformInfo } from "./platform-info";
+import { createProcessProbe, type ProcessProbe } from "./process-probe";
+import { measureRun, type ResourceSample } from "./resource-usage";
 import { computeStats, median, type Stats } from "./stats";
 
 export interface RunSample {
@@ -24,12 +28,29 @@ export interface RunSample {
     ok: boolean;
 }
 
+/**
+ * Resource usage for a scenario, collected in dedicated passes separate from
+ * the timed runs (so sampling can't taint `stats`). All three are summarized
+ * with the same median/stddev machinery as durations.
+ */
+export interface ResourceStats {
+    runs: number;
+    /** Peak summed RSS (bytes) of the tool + daemon processes. */
+    peakRssBytes: Stats;
+    /** Total CPU time (user+sys, ms) attributed to the run. */
+    cpuTimeMs: Stats;
+    /** Average cores used (cpuTimeMs / wallMs). */
+    parallelism: Stats;
+}
+
 export interface ScenarioResult {
     runs: number;
     failures: number;
     stats: Stats;
     /** Median number of tasks that actually executed across the runs. */
     executedMedian: number;
+    /** Resource usage (RSS/CPU), when measured; omitted if resourceRuns is 0. */
+    resources?: ResourceStats;
 }
 
 export interface ToolResult {
@@ -53,6 +74,7 @@ export interface BenchmarkResult {
     versions: Record<string, string | null>;
     generatedAt: string;
     tools: ToolResult[];
+    platform: PlatformInfo;
 }
 
 export type BenchEvent =
@@ -73,19 +95,16 @@ export interface RunBenchmarkOptions {
     task?: string | undefined;
     coldRuns?: number | undefined;
     warmRuns?: number | undefined;
+    /**
+     * Dedicated resource-measurement passes per scenario (RSS/CPU). Each pass
+     * is a full extra invocation, so cold passes are costly. 0 disables it.
+     */
+    resourceRuns?: number | undefined;
     concurrency?: number | undefined;
     /** Allow each tool's persistent daemon (default true). */
     daemon?: boolean | undefined;
     onEvent?: ((event: BenchEvent) => void) | undefined;
 }
-
-/** Base environment applied to every benchmarked process. */
-const BASE_ENV = {
-    FORCE_COLOR: "0",
-    TURBO_TELEMETRY_DISABLED: "1",
-    DO_NOT_TRACK: "1",
-    NX_TUI: "false",
-} as const;
 
 /** A zero-argument runner that executes one measured invocation. */
 type RunOnce = () => Promise<RunSample>;
@@ -130,12 +149,29 @@ async function timeRun(
     };
 }
 
-function scenarioFromSamples(samples: RunSample[]): ScenarioResult {
+function scenarioFromSamples(
+    samples: RunSample[],
+    resources?: ResourceStats,
+): ScenarioResult {
     return {
         runs: samples.length,
         failures: samples.filter((s) => !s.ok).length,
         stats: computeStats(samples.map((s) => s.durationMs)),
         executedMedian: median(samples.map((s) => s.executed)),
+        ...(resources ? { resources } : {}),
+    };
+}
+
+/** Summarize resource samples, or undefined when none were collected. */
+function resourceStatsFrom(
+    samples: ResourceSample[],
+): ResourceStats | undefined {
+    if (samples.length === 0) return undefined;
+    return {
+        runs: samples.length,
+        peakRssBytes: computeStats(samples.map((s) => s.peakRssBytes)),
+        cpuTimeMs: computeStats(samples.map((s) => s.cpuTimeMs)),
+        parallelism: computeStats(samples.map((s) => s.parallelism)),
     };
 }
 
@@ -163,6 +199,7 @@ async function benchmarkTool(
     task: string,
     coldRuns: number,
     warmRuns: number,
+    resourceRuns: number,
     execLog: string,
     emit: (event: BenchEvent) => void,
 ): Promise<ToolResult> {
@@ -170,6 +207,53 @@ async function benchmarkTool(
     const env = adapter.env(ctx);
     const runOnce: RunOnce = () =>
         timeRun(invocation.file, invocation.args, ctx.rootDir, execLog, env);
+
+    // A single resource-measurement pass. Any persistent daemon is resolved
+    // up-front (it is only already up on warm passes); a `resolveDaemonPids`
+    // callback lets `measureRun` discover a daemon the invocation starts for
+    // itself (cold passes) so the whole process tree can be sampled.
+    const daemonResolver =
+        ctx.daemon && adapter.daemonPids
+            ? () =>
+                  adapter.daemonPids?.(ctx).catch(() => []) ??
+                  Promise.resolve([])
+            : undefined;
+    const measureOnce = async (
+        probe: ProcessProbe,
+    ): Promise<ResourceSample> => {
+        const daemonPids = daemonResolver ? await daemonResolver() : [];
+        return measureRun(
+            probe,
+            invocation.file,
+            invocation.args,
+            ctx.rootDir,
+            execLog,
+            env,
+            daemonPids,
+            daemonResolver,
+        );
+    };
+    const runResource = async (
+        probe: ProcessProbe,
+        runs: number,
+        before?: () => Promise<void>,
+    ): Promise<ResourceSample[]> => {
+        const samples: ResourceSample[] = [];
+        for (let i = 0; i < runs; i++) {
+            if (before) await before();
+            samples.push(await measureOnce(probe));
+        }
+        return samples;
+    };
+
+    // Cold reset applied before every cold run/pass: wipe caches + outputs and
+    // (in daemon mode) tear the daemon down so cold includes its startup cost.
+    const coldBefore = async (): Promise<void> => {
+        await adapter.clearCaches(ctx);
+        if (ctx.daemon && adapter.hasDaemon) {
+            await adapter.stopDaemon(ctx);
+        }
+    };
 
     // Emits the per-run scenario event plus a failure event on non-zero exits.
     const sampleEmitter =
@@ -200,12 +284,7 @@ async function benchmarkTool(
             runOnce,
             coldRuns,
             sampleEmitter("cold", coldRuns),
-            async () => {
-                await adapter.clearCaches(ctx);
-                if (ctx.daemon && adapter.hasDaemon) {
-                    await adapter.stopDaemon(ctx);
-                }
-            },
+            coldBefore,
         );
 
         // Warm: prime once (unmeasured, also warms the daemon), then measure
@@ -217,6 +296,28 @@ async function benchmarkTool(
             sampleEmitter("warm", warmRuns),
         );
 
+        // Resource usage is collected in dedicated passes (never during timed
+        // runs) so the resource probe can't perturb the timing numbers. Warm
+        // passes run first while caches + daemon are still hot; cold passes
+        // reuse the cold reset hook. One warmed sampler is reused across all
+        // passes so its startup cost is paid once.
+        let coldResources: ResourceStats | undefined;
+        let warmResources: ResourceStats | undefined;
+        if (resourceRuns > 0) {
+            const probe = createProcessProbe();
+            try {
+                await probe.warmup();
+                warmResources = resourceStatsFrom(
+                    await runResource(probe, resourceRuns),
+                );
+                coldResources = resourceStatsFrom(
+                    await runResource(probe, resourceRuns, coldBefore),
+                );
+            } finally {
+                await probe.dispose();
+            }
+        }
+
         const taskGraphSize = Math.max(
             0,
             ...coldSamples.map((s) => s.executed),
@@ -227,8 +328,8 @@ async function benchmarkTool(
             tool: adapter.tool,
             task,
             taskGraphSize,
-            cold: scenarioFromSamples(coldSamples),
-            warm: scenarioFromSamples(warmSamples),
+            cold: scenarioFromSamples(coldSamples, coldResources),
+            warm: scenarioFromSamples(warmSamples, warmResources),
         };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -275,7 +376,10 @@ export async function runBenchmark(
     const task = options.task ?? tasks[tasks.length - 1] ?? "t0";
     const coldRuns = options.coldRuns ?? 3;
     const warmRuns = options.warmRuns ?? 5;
-    const concurrency = options.concurrency ?? Math.max(1, cpus().length);
+    const resourceRuns = options.resourceRuns ?? 3;
+    const platform = getPlatformInfo();
+    const concurrency =
+        options.concurrency ?? Math.max(1, platform.cpus.length);
     const daemon = options.daemon ?? true;
     const emit = options.onEvent ?? (() => {});
     const execLog = join(
@@ -305,6 +409,7 @@ export async function runBenchmark(
                 task,
                 coldRuns,
                 warmRuns,
+                resourceRuns,
                 execLog,
                 emit,
             ),
@@ -321,5 +426,6 @@ export async function runBenchmark(
         versions,
         generatedAt: new Date().toISOString(),
         tools: results,
+        platform,
     };
 }

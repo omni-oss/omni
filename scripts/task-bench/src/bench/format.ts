@@ -23,10 +23,10 @@ export function renderTable(headers: string[], rows: string[][]): string[] {
 }
 
 /** Format a `prefix: tool ver, tool ver` version summary line. */
-export function formatVersionList(
+export function renderVersionList(
     pairs: Array<readonly [string, string | null | undefined]>,
     prefix: string,
-): string {
+): string[] {
     const parts = pairs.map(([tool, version]) => `${tool} ${version ?? "?"}`);
-    return `${prefix}: ${parts.join(", ")}`;
+    return [`${prefix}: ${parts.join(", ")}`];
 }

@@ -39,9 +39,11 @@ describe("built-in presets", () => {
     it("every built-in preset parses and resolves", () => {
         for (const name of listPresets()) {
             const suite = getPreset(name);
+            expect(suite.displayName).toBeTruthy();
             for (const scenario of suite.scenarios) {
                 const resolved = resolveScenario(suite, scenario);
                 expect(resolved.config.projects).toBeGreaterThan(0);
+                expect(resolved.displayName).toBeTruthy();
             }
         }
     });
@@ -66,6 +68,24 @@ describe("resolveScenario", () => {
         const off = suite.scenarios.find((s) => s.name === "daemon-off");
         // biome-ignore lint/style/noNonNullAssertion: for testing
         expect(resolveScenario(suite, off!).run.daemon).toBe(false);
+    });
+
+    it("resolves displayName, falling back to name when omitted", () => {
+        const suite = parseSuite({
+            name: "custom",
+            scenarios: [
+                { name: "a", displayName: "Scenario A", config: {} },
+                { name: "b", config: {} },
+            ],
+        });
+        // biome-ignore lint/style/noNonNullAssertion: for testing
+        expect(resolveScenario(suite, suite.scenarios[0]!).displayName).toBe(
+            "Scenario A",
+        );
+        // biome-ignore lint/style/noNonNullAssertion: for testing
+        expect(resolveScenario(suite, suite.scenarios[1]!).displayName).toBe(
+            "b",
+        );
     });
 });
 

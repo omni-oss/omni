@@ -1,7 +1,7 @@
-import { formatVersionList, renderTable } from "../bench/format";
+import { renderTable, renderVersionList } from "../bench/format";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio } from "../bench/metrics";
-import { formatReport } from "../bench/report";
-import { formatMs } from "../bench/stats";
+import { renderReport } from "../bench/report";
+import { formatBytes, formatMs } from "../bench/stats";
 import { TOOLS, type Tool } from "../config";
 import type { SuiteResult, SuiteScenarioResult } from "./index";
 
@@ -15,14 +15,14 @@ function toolsInSuite(suite: SuiteResult): Tool[] {
 }
 
 /** One-line summary of the resolved tool versions used across the suite. */
-function formatSuiteVersions(suite: SuiteResult, tools: Tool[]): string {
+function renderSuiteVersions(suite: SuiteResult, tools: Tool[]): string[] {
     const pairs = tools.map((tool) => {
         const version = suite.scenarios
             .map((s) => s.result.versions[tool])
             .find((v) => v != null);
         return [tool, version] as const;
     });
-    return formatVersionList(pairs, "Tool versions");
+    return renderVersionList(pairs, "Tool versions");
 }
 
 function warmCell(scenario: SuiteScenarioResult, tool: Tool): string {
@@ -39,15 +39,52 @@ function coldCell(scenario: SuiteScenarioResult, tool: Tool): string {
     return formatMs(t.cold.stats.median);
 }
 
+/** Median peak RSS for a tool's cold/warm scenario (or a placeholder). */
+function memCell(
+    scenario: SuiteScenarioResult,
+    tool: Tool,
+    phase: "cold" | "warm",
+): string {
+    const t = scenario.result.tools.find((r) => r.tool === tool);
+    if (!t || t.error) return t?.error ? "err" : "—";
+    const r = t[phase].resources;
+    return r ? formatBytes(r.peakRssBytes.median) : "—";
+}
+
+/** Median CPU time + average parallelism for a tool's cold/warm scenario. */
+function cpuCell(
+    scenario: SuiteScenarioResult,
+    tool: Tool,
+    phase: "cold" | "warm",
+): string {
+    const t = scenario.result.tools.find((r) => r.tool === tool);
+    if (!t || t.error) return t?.error ? "err" : "—";
+    const r = t[phase].resources;
+    if (!r) return "—";
+    return `${formatMs(r.cpuTimeMs.median)} (${r.parallelism.median.toFixed(1)}×)`;
+}
+
+/** Whether any tool in any scenario carries measured resource stats. */
+function suiteHasResources(suite: SuiteResult): boolean {
+    return suite.scenarios.some((s) =>
+        s.result.tools.some(
+            (t) =>
+                t.warm.resources !== undefined ||
+                t.cold.resources !== undefined,
+        ),
+    );
+}
+
 /**
- * Render a full suite as Markdown: two summary matrices (warm + cold median per
- * tool per scenario) followed by the detailed per-scenario report tables.
+ * Render a full suite as Markdown: warm + cold median wall-time matrices, then
+ * (when measured) warm + cold memory and CPU matrices, followed by the detailed
+ * per-scenario report tables.
  */
-export function formatSuiteMarkdown(suite: SuiteResult): string {
+export function renderSuiteMarkdown(suite: SuiteResult): string[] {
     const tools = toolsInSuite(suite);
     const lines: string[] = [];
 
-    lines.push(`# ${suite.name}`);
+    lines.push(`# ${suite.displayName}`);
     lines.push("");
     lines.push(`TaskBench v${suite.taskBenchVersion}`);
     lines.push("");
@@ -59,7 +96,7 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
         `Generated ${suite.generatedAt} · ${suite.scenarios.length} scenario(s).`,
     );
     lines.push("");
-    lines.push(formatSuiteVersions(suite, tools));
+    lines.push(...renderSuiteVersions(suite, tools));
     lines.push("");
     lines.push(
         "`warm` = median wall time with a verified 100% cache hit " +
@@ -76,7 +113,7 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
         ...renderTable(
             ["scenario", "nodes", "conc", "daemon", ...tools],
             suite.scenarios.map((s) => [
-                s.name,
+                s.displayName,
                 String(s.result.tools[0]?.taskGraphSize ?? 0),
                 String(s.result.concurrency),
                 s.result.daemon ? "on" : "off",
@@ -93,7 +130,7 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
         ...renderTable(
             ["scenario", "nodes", "conc", ...tools],
             suite.scenarios.map((s) => [
-                s.name,
+                s.displayName,
                 String(s.result.tools[0]?.taskGraphSize ?? 0),
                 String(s.result.concurrency),
                 ...tools.map((t) => coldCell(s, t)),
@@ -102,21 +139,64 @@ export function formatSuiteMarkdown(suite: SuiteResult): string {
     );
     lines.push("");
 
+    // Resource summaries (only when at least one scenario measured them).
+    if (suiteHasResources(suite)) {
+        lines.push(
+            "`mem` = median peak RSS of the tool + daemon (a sampled lower " +
+                "bound). `cpu` = median CPU time with average parallelism " +
+                "(`cpu-time / wall-time`).",
+        );
+        lines.push("");
+
+        const resourceMatrix = (
+            cell: (s: SuiteScenarioResult, t: Tool) => string,
+        ): string[] =>
+            renderTable(
+                ["scenario", "nodes", "conc", ...tools],
+                suite.scenarios.map((s) => [
+                    s.displayName,
+                    String(s.result.tools[0]?.taskGraphSize ?? 0),
+                    String(s.result.concurrency),
+                    ...tools.map((t) => cell(s, t)),
+                ]),
+            );
+
+        lines.push("## Summary — warm memory (median peak RSS)");
+        lines.push("");
+        lines.push(...resourceMatrix((s, t) => memCell(s, t, "warm")));
+        lines.push("");
+
+        lines.push("## Summary — warm CPU (median CPU-time · parallelism)");
+        lines.push("");
+        lines.push(...resourceMatrix((s, t) => cpuCell(s, t, "warm")));
+        lines.push("");
+
+        lines.push("## Summary — cold memory (median peak RSS)");
+        lines.push("");
+        lines.push(...resourceMatrix((s, t) => memCell(s, t, "cold")));
+        lines.push("");
+
+        lines.push("## Summary — cold CPU (median CPU-time · parallelism)");
+        lines.push("");
+        lines.push(...resourceMatrix((s, t) => cpuCell(s, t, "cold")));
+        lines.push("");
+    }
+
     // Details.
     lines.push("## Details");
     lines.push("");
     for (const s of suite.scenarios) {
-        lines.push(`### ${s.name}`);
+        lines.push(`### ${s.displayName}`);
         if (s.description) {
             lines.push(`> ${s.description}`);
         }
         lines.push(
-            `Config: ${s.config.projects} projects × ${s.config.tasksPerProject} tasks, ` +
+            `* Config: ${s.config.projects} projects × ${s.config.tasksPerProject} tasks, ` +
                 `strategy \`${s.config.dependency.strategy}\`.`,
         );
-        lines.push(formatReport(s.result).trimEnd());
+        lines.push(...renderReport(s.result));
         lines.push("");
     }
 
-    return lines.join("\n");
+    return lines;
 }

@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execa } from "execa";
 import type { HarnessConfig } from "../config";
@@ -74,5 +74,28 @@ export const turboAdapter: ToolAdapter = {
             reject: false,
             stdio: "ignore",
         });
+    },
+    daemonPids: async (ctx: ToolContext) => {
+        if (!ctx.daemon) return [];
+        // `turbo daemon status` reports the running daemon, including its pid
+        // file. Prefer reading that file; fall back to an inline pid if present.
+        const result = await execa(
+            resolveBin(ctx.rootDir, "turbo"),
+            ["daemon", "status"],
+            { cwd: ctx.rootDir, reject: false },
+        ).catch(() => null);
+        if (!result) return [];
+        const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+
+        const pidFile = text.match(/([^\s"]+\.pid)/i)?.[1];
+        if (pidFile) {
+            const raw = await readFile(pidFile, "utf8").catch(() => "");
+            const filePid = Number.parseInt(raw.trim(), 10);
+            if (Number.isInteger(filePid) && filePid > 0) return [filePid];
+        }
+
+        const inline = text.match(/\bpid[^\d]*(\d+)/i);
+        const pid = inline ? Number(inline[1]) : Number.NaN;
+        return Number.isInteger(pid) && pid > 0 ? [pid] : [];
     },
 };

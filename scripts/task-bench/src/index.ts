@@ -5,7 +5,7 @@ export {
     cacheHitRatio,
     isFullyCached,
 } from "./bench/metrics";
-export { formatReport } from "./bench/report";
+export { renderReport } from "./bench/report";
 export type { Stats } from "./bench/stats";
 export { computeStats, formatMs, median } from "./bench/stats";
 export * from "./config";
@@ -20,7 +20,7 @@ export type {
 } from "./suite";
 export { runSuite } from "./suite";
 export * from "./suite/preset";
-export { formatSuiteMarkdown } from "./suite/report";
+export { renderSuiteMarkdown } from "./suite/report";
 export type {
     GenerationContext,
     RunInvocation,

@@ -103,4 +103,19 @@ export const nxAdapter: ToolAdapter = {
             env: { NX_DAEMON: "false" },
         });
     },
+    daemonPids: async (ctx: ToolContext) => {
+        if (!ctx.daemon) return [];
+        // `nx daemon` prints the running daemon's background process ID and log
+        // path (see https://nx.dev/concepts/nx-daemon#logs). Parse the PID.
+        const result = await execa(resolveBin(ctx.rootDir, "nx"), ["daemon"], {
+            cwd: ctx.rootDir,
+            reject: false,
+            env: { NX_DAEMON: "true", NX_TUI: "false" },
+        }).catch(() => null);
+        if (!result) return [];
+        const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+        const match = text.match(/process id[^\d]*(\d+)/i);
+        const pid = match ? Number(match[1]) : Number.NaN;
+        return Number.isInteger(pid) && pid > 0 ? [pid] : [];
+    },
 };

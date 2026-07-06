@@ -54,6 +54,22 @@ It then benchmarks each enabled tool in two scenarios:
   no daemon.
 - **Statistics.** Reports median ± standard deviation; full per-run samples
   (duration, exit code, executed-task count) are written to the JSON output.
+- **Resource usage.** Peak RSS and CPU time of the *entire process tree an
+  invocation spawns* — the CLI, its task workers, and any persistent daemon —
+  are measured in dedicated passes, kept separate from the timed runs so the
+  resource probe can never inflate the reported durations. Sampling uses a
+  native, cross-platform probe: `/proc` on Linux, `ps` on macOS, and on Windows
+  a persistent PowerShell `Get-Process` sampler (fast per-PID RSS/CPU) plus an
+  occasional `Get-CimInstance` tree walk for parent/child discovery — no `wmic`,
+  so it works on Windows 11 24H2+. The tree is rooted at the CLI process and any
+  daemon PID each adapter locates (`turbo daemon status`, `nx daemon`); omni and
+  moon have none. CPU is summed from each process's cumulative CPU-time counter
+  (immune to short-lived spikes) and reported with average parallelism
+  (`cpu-time / wall-time`); a *persistent* daemon only contributes its `ctime`
+  delta for the run, while a daemon the run starts itself (cold) counts in full.
+  Peak RSS is a *sampled maximum* and both metrics are lower bounds: a process
+  that spawns and exits entirely between two samples is missed. Set
+  `--resource-runs 0` to skip it.
 
 ## CLI
 
@@ -93,6 +109,7 @@ task-bench inspect --projects 50 --strategy chain
 | `--tools <list>` | Comma-separated `omni,turbo,nx,moon`. |
 | `--turbo-version` / `--nx-version` / `--moon-version` / `--bun-version` | Pin the version of each tool to install. |
 | `--concurrency <n>` | Max parallel tasks, applied identically to every runner (default: CPU count). |
+| `--resource-runs <n>` | Dedicated RSS/CPU measurement passes per scenario (`0` disables). |
 | `--no-daemon` | Disable each tool's persistent daemon (Turbo, Nx). |
 | `--no-chain` / `--no-fan-upstream` | Disable intra/inter-project task deps. |
 | `--config <file>` | JSON config to use as a base for overrides. |
@@ -129,6 +146,9 @@ task-bench suite --preset full --json suite.json --md suite.md
 # Override run parameters for every scenario in the preset.
 task-bench suite --preset scale --cold-runs 3 --warm-runs 5 --concurrency 8
 
+# Skip (or tune) resource measurement across the whole suite.
+task-bench suite --preset scale --resource-runs 0
+
 # Run only two tools, and keep the generated workspaces around.
 task-bench suite --preset shapes --tools omni,turbo --keep -o /tmp/suite
 
@@ -143,22 +163,30 @@ density). A custom preset file looks like:
 
 ```jsonc
 {
-  "name": "my sweep",
+  "name": "my-sweep",
+  "displayName": "My Sweep",
   "defaults": {
     "config": { "tasksPerProject": 3, "dependency": { "strategy": "layered" } },
-    "run": { "concurrency": 8, "coldRuns": 2, "warmRuns": 3 }
+    "run": { "concurrency": 8, "coldRuns": 2, "warmRuns": 3, "resourceRuns": 3 }
   },
   "scenarios": [
-    { "name": "small", "config": { "projects": 50 } },
-    { "name": "large", "config": { "projects": 500 } },
+    { "name": "small", "displayName": "50 projects", "config": { "projects": 50 } },
+    { "name": "large", "displayName": "500 projects", "config": { "projects": 500 } },
     { "name": "large-nodaemon", "config": { "projects": 500 }, "run": { "daemon": false } }
   ]
 }
 ```
 
-The Markdown report contains two summary matrices (warm + cold median per tool
-per scenario) followed by the detailed per-scenario tables; the JSON contains
-the full resolved config, run options, and per-run samples for every scenario.
+Both the suite and each scenario accept an optional `displayName` used as the
+label in the JSON output and Markdown report; it falls back to `name` when
+omitted (`displayName ?? name`). `name` stays filesystem-safe (it names the
+generated workspace directory), while `displayName` is free-form.
+
+The Markdown report contains warm + cold median wall-time matrices (per tool
+per scenario) and, when resource measurement is enabled (`resourceRuns > 0`),
+warm + cold memory and CPU matrices, followed by the detailed per-scenario
+tables; the JSON contains the full resolved config, run options, and per-run
+samples for every scenario.
 
 ### Scripting it yourself
 
@@ -302,6 +330,8 @@ decoupled. An adapter declares:
   `projects` (e.g. `turbo.json`, `nx.json` + `project.json`, `.moon/*.yml` +
   `moon.yml`, `workspace.omni.yaml` + `project.omni.yaml`).
 - `run` / `env` / `clearCaches` / `stopDaemon` — the runtime behavior.
+- `daemonPids` (optional) — locate this tool's persistent daemon PID(s) so
+  resource measurement can include them (omni/moon omit it).
 
 The generator only writes the neutral workspace (projects, `src/index.js`,
 `task.mjs`), then hands the project list to each enabled adapter. Adding a new

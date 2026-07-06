@@ -13,6 +13,7 @@ export const RunOptionsSchema = z
         task: z.string().optional(),
         coldRuns: z.number().int().nonnegative().optional(),
         warmRuns: z.number().int().nonnegative().optional(),
+        resourceRuns: z.number().int().nonnegative().optional(),
         concurrency: z.number().int().positive().optional(),
         daemon: z.boolean().optional(),
     })
@@ -33,6 +34,8 @@ export const ScenarioSchema = z.object({
             /^[a-zA-Z0-9._-]+$/,
             "scenario name must be filesystem-safe (letters, digits, . _ -)",
         ),
+    /** Human-friendly label for reports; falls back to `name` when omitted. */
+    displayName: z.string().optional(),
     description: z.string().optional(),
     config: ConfigFragmentSchema,
     run: RunOptionsSchema,
@@ -40,6 +43,8 @@ export const ScenarioSchema = z.object({
 
 export const SuiteSchema = z.object({
     name: z.string().default("task-bench suite"),
+    /** Human-friendly label for reports; falls back to `name` when omitted. */
+    displayName: z.string().optional(),
     description: z.string().optional(),
     defaults: z
         .object({
@@ -76,6 +81,8 @@ export function deepMerge(
 
 export interface ResolvedScenario {
     name: string;
+    /** Resolved display label (`displayName ?? name`). */
+    displayName: string;
     description?: string | undefined;
     config: HarnessConfig;
     run: RunOptions;
@@ -93,6 +100,7 @@ export function resolveScenario(
     const run: RunOptions = { ...suite.defaults.run, ...scenario.run };
     return {
         name: scenario.name,
+        displayName: scenario.displayName ?? scenario.name,
         description: scenario.description,
         config: resolveConfig(mergedConfig),
         run,
@@ -112,6 +120,15 @@ const DEPENDENCY_STRATEGIES_FOR_SWEEP = [
 ] as const;
 
 type SweepStrategy = (typeof DEPENDENCY_STRATEGIES_FOR_SWEEP)[number];
+
+/** Short, human-friendly label for each dependency-graph shape. */
+const STRATEGY_LABELS: Record<SweepStrategy, string> = {
+    isolated: "Isolated",
+    chain: "Chain",
+    "fan-out": "Fan-out",
+    layered: "Layered",
+    random: "Random",
+};
 
 /** What each dependency-graph shape stresses in a task runner. */
 const STRATEGY_DESCRIPTIONS: Record<SweepStrategy, string> = {
@@ -151,6 +168,7 @@ function densityDescription(tasksPerProject: number): string {
 
 const shapes: SuiteConfigInput = {
     name: "dependency-shape sweep",
+    displayName: "Dependency-shape sweep",
     description:
         "How the dependency-graph shape affects discovery/scheduling overhead at a fixed scale.",
     defaults: {
@@ -159,6 +177,7 @@ const shapes: SuiteConfigInput = {
     },
     scenarios: DEPENDENCY_STRATEGIES_FOR_SWEEP.map((strategy) => ({
         name: `shape-${strategy}`,
+        displayName: STRATEGY_LABELS[strategy],
         description: STRATEGY_DESCRIPTIONS[strategy],
         config: { dependency: { strategy } },
     })),
@@ -166,6 +185,7 @@ const shapes: SuiteConfigInput = {
 
 const scale: SuiteConfigInput = {
     name: "scale sweep",
+    displayName: "Scale sweep",
     description: "How overhead grows with workspace size (layered graph).",
     defaults: {
         config: {
@@ -176,6 +196,7 @@ const scale: SuiteConfigInput = {
     },
     scenarios: [50, 150, 300, 600].map((projects) => ({
         name: `scale-${projects}`,
+        displayName: `${projects} projects`,
         description: scaleDescription(projects),
         config: { projects },
     })),
@@ -183,6 +204,7 @@ const scale: SuiteConfigInput = {
 
 const density: SuiteConfigInput = {
     name: "task-density sweep",
+    displayName: "Task-density sweep",
     description: "How the number of tasks per project affects overhead.",
     defaults: {
         config: { projects: 120, dependency: { strategy: "layered" } },
@@ -190,6 +212,7 @@ const density: SuiteConfigInput = {
     },
     scenarios: [2, 5, 10].map((tasksPerProject) => ({
         name: `density-${tasksPerProject}`,
+        displayName: `${tasksPerProject} tasks/project`,
         description: densityDescription(tasksPerProject),
         config: { tasksPerProject },
     })),
@@ -197,6 +220,7 @@ const density: SuiteConfigInput = {
 
 const daemon: SuiteConfigInput = {
     name: "daemon on vs off",
+    displayName: "Daemon on vs off",
     description:
         "Whether each tool's persistent daemon changes warm/cold overhead.",
     defaults: {
@@ -210,12 +234,14 @@ const daemon: SuiteConfigInput = {
     scenarios: [
         {
             name: "daemon-on",
+            displayName: "Daemon on",
             description:
                 "Daemons enabled — each tool may use its persistent background process (Turbo/Nx) to speed up warm runs.",
             run: { daemon: true },
         },
         {
             name: "daemon-off",
+            displayName: "Daemon off",
             description:
                 "Daemons disabled — every invocation is a cold process, exposing raw start-up + discovery overhead.",
             run: { daemon: false },
@@ -225,6 +251,7 @@ const daemon: SuiteConfigInput = {
 
 const quick: SuiteConfigInput = {
     name: "quick smoke suite",
+    displayName: "Quick smoke suite",
     description: "Tiny, fast sanity sweep across two shapes.",
     defaults: {
         config: { projects: 30, tasksPerProject: 2 },
@@ -233,11 +260,13 @@ const quick: SuiteConfigInput = {
     scenarios: [
         {
             name: "quick-isolated",
+            displayName: STRATEGY_LABELS.isolated,
             description: STRATEGY_DESCRIPTIONS.isolated,
             config: { dependency: { strategy: "isolated" } },
         },
         {
             name: "quick-layered",
+            displayName: STRATEGY_LABELS.layered,
             description: STRATEGY_DESCRIPTIONS.layered,
             config: { dependency: { strategy: "layered" } },
         },
@@ -246,11 +275,13 @@ const quick: SuiteConfigInput = {
 
 const full: SuiteConfigInput = {
     name: "full suite",
+    displayName: "Full suite",
     description: "Shapes + scale + density in one run.",
     defaults: { run: { concurrency: 8, coldRuns: 2, warmRuns: 3 } },
     scenarios: [
         ...DEPENDENCY_STRATEGIES_FOR_SWEEP.map((strategy) => ({
             name: `shape-${strategy}`,
+            displayName: `Shape: ${STRATEGY_LABELS[strategy]}`,
             description: STRATEGY_DESCRIPTIONS[strategy],
             config: {
                 projects: 120,
@@ -260,6 +291,7 @@ const full: SuiteConfigInput = {
         })),
         ...[50, 150, 300].map((projects) => ({
             name: `scale-${projects}`,
+            displayName: `Scale: ${projects} projects`,
             description: scaleDescription(projects),
             config: {
                 projects,
@@ -269,6 +301,7 @@ const full: SuiteConfigInput = {
         })),
         ...[2, 5, 10].map((tasksPerProject) => ({
             name: `density-${tasksPerProject}`,
+            displayName: `Density: ${tasksPerProject} tasks/project`,
             description: densityDescription(tasksPerProject),
             config: {
                 projects: 120,
