@@ -44,7 +44,7 @@ on:
       task_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks (default: 0)"
+        description: "Maximum number of retries for failed tasks (default: 5)"
         default: 5
 
   workflow_call:
@@ -82,7 +82,7 @@ on:
       task_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks (default: 0)"
+        description: "Maximum number of retries for failed tasks (default: 5)"
         default: 5
 
 permissions:
