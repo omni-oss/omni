@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: omni_bench
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+
+tasks:
+  bench:
+    enabled: true
+
+  profile:
+    enabled: true
+
+dependencies:
+  - omni_task_executor
+  - omni_context
+  - omni_test_utils
+  - omni_messages
+  - omni_tracing_subscriber
+  - system_traits

@@ -1,0 +1,38 @@
+[package]
+name = "omni_bench"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "omni_bench"
+path = "src/lib.rs"
+
+[[bench]]
+name = "task_execution"
+path = "benches/task_execution.rs"
+harness = false
+
+[features]
+default = []
+# Expand the scenario matrix with larger scales/shapes. Off by default so the
+# suite stays runnable in a few minutes / in CI.
+full-matrix = []
+
+[dependencies]
+eyre = { workspace = true }
+num_cpus = { workspace = true }
+tempfile = { workspace = true }
+omni_task_executor = { workspace = true }
+omni_context = { workspace = true }
+omni_test_utils = { workspace = true }
+omni_messages = { workspace = true }
+omni_tracing_subscriber = { workspace = true }
+system_traits = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tokio = { workspace = true }

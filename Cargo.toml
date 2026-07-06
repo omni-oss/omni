@@ -177,7 +177,7 @@ omni_api = { path = "./crates/omni_api" }
 omni_mcp_core = { path = "crates/omni_mcp_core" }
 omni_input_schema = { path = "crates/omni_input_schema" }
 omni_task_output_logs = { path = "crates/omni_task_output_logs" }
-# omni_bench = { path = "crates/omni_bench" }
+omni_bench = { path = "crates/omni_bench" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
