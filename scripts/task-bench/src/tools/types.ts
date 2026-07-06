@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { platform } from "node:os";
 import { join } from "node:path";
 import type { HarnessConfig, Tool } from "../config";
 import type { ProjectNode } from "../graph";
@@ -76,8 +77,22 @@ export interface ToolAdapter {
 
 /** Resolve a locally-installed binary, falling back to the global name. */
 export function resolveBin(rootDir: string, name: string): string {
-    const local = join(rootDir, "node_modules", ".bin", name);
-    return existsSync(local) ? local : name;
+    let binNames: string[] = [];
+    if (platform() === "win32") {
+        binNames = [`${name}.exe`, `${name}.cmd`, `${name}.bat`];
+    } else {
+        binNames = [name];
+    }
+
+    const locals = [
+        ...binNames.map((bin) => join(rootDir, "node_modules", ".bin", bin)),
+        ...binNames,
+    ];
+    for (const local of locals) {
+        if (existsSync(local)) return local;
+    }
+
+    return name;
 }
 
 /** Remove the `dist/` output directory of every project. */

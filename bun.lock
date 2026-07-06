@@ -391,7 +391,7 @@
     },
     "scripts/task-bench": {
       "name": "@omni-oss/task-bench",
-      "version": "0.0.0-semantically-released",
+      "version": "0.0.0-beta.2",
       "bin": "./dist/task-bench-cli.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "catalog:",
