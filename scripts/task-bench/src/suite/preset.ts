@@ -15,6 +15,7 @@ export const RunOptionsSchema = z
         warmRuns: z.number().int().nonnegative().optional(),
         resourceRuns: z.number().int().nonnegative().optional(),
         concurrency: z.number().int().positive().optional(),
+        maxRetries: z.number().int().nonnegative().optional(),
         daemon: z.boolean().optional(),
     })
     .default({});

@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import { execa } from "execa";
@@ -15,6 +15,27 @@ export interface ResourceSample {
     wallMs: number;
     /** Derived average cores used = cpuTimeMs / wallMs. */
     parallelism: number;
+    /** Exit code of the invocation (-1 if unknown). */
+    exitCode: number;
+    /** Whether the invocation exited cleanly. */
+    ok: boolean;
+    /** Number of tasks that actually executed (0 == a full cache hit). */
+    executed: number;
+}
+
+/** Count newline-terminated lines in the execution-marker log (0 on any error). */
+export function countExecLogLines(path: string): number {
+    try {
+        const text = readFileSync(path, "utf8");
+        // Each executed task appends exactly one newline-terminated line.
+        let count = 0;
+        for (let i = 0; i < text.length; i++) {
+            if (text[i] === "\n") count++;
+        }
+        return count;
+    } catch {
+        return 0;
+    }
 }
 
 /** How often (ms) to re-discover the process tree; see `measureRun`. */
@@ -143,7 +164,7 @@ export async function measureRun(
         }
     })();
 
-    await subprocess;
+    const result = await subprocess;
     done = true;
     await loop;
     // Final reading: the CLI is gone (its last live sample stands), but any
@@ -158,10 +179,14 @@ export async function measureRun(
             : ctime;
     }
 
+    const exitCode = result.exitCode ?? -1;
     return {
         peakRssBytes,
         cpuTimeMs,
         wallMs,
         parallelism: wallMs > 0 ? cpuTimeMs / wallMs : 0,
+        exitCode,
+        ok: exitCode === 0,
+        executed: countExecLogLines(execLog),
     };
 }

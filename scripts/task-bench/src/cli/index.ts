@@ -11,6 +11,7 @@ import { description, name, version } from "../../package.json";
 import {
     type BenchEvent,
     type BenchmarkResult,
+    DEFAULT_MAX_RETRIES,
     DEPENDENCY_STRATEGIES,
     formatMs,
     generateWorkspace,
@@ -184,6 +185,15 @@ function progressHandler(): (event: BenchEvent) => void {
                     `     === stderr ===\n${event.sample.stderr}\n`,
                 );
             }
+        } else if (event.kind === "run-retry") {
+            const why =
+                event.reason === "exit"
+                    ? `exit ${event.sample.exitCode}`
+                    : `verification failed (ran ${event.sample.executed} tasks)`;
+            process.stderr.write(
+                `  ↻ ${event.tool} ${event.scenario} ${event.phase} ${event.run}: ` +
+                    `attempt ${event.attempt}/${event.maxRetries + 1} ${why}, retrying\n`,
+            );
         } else {
             const status = event.sample.ok
                 ? "ok"
@@ -246,6 +256,12 @@ program
         "Max parallel tasks, applied identically to all tools (default: CPU count).",
         int,
     )
+    .option(
+        "--max-retries <n>",
+        "Retries for a run that fails or is not fully cached (warm) / uncached (cold).",
+        int,
+        DEFAULT_MAX_RETRIES,
+    )
     .option("--no-daemon", "Disable each tool's persistent daemon (turbo, nx).")
     .option("--json <file>", "Write full results as JSON to this file.")
     .action(async (opts) => {
@@ -258,6 +274,7 @@ program
             coldRuns: opts.coldRuns,
             warmRuns: opts.warmRuns,
             resourceRuns: opts.resourceRuns,
+            maxRetries: opts.maxRetries,
             onEvent: progressHandler(),
         });
         process.stdout.write(renderReport(result).join("\n"));
@@ -293,6 +310,12 @@ addGenerateOptions(
             int,
         )
         .option(
+            "--max-retries <n>",
+            "Retries for a run that fails or is not fully cached (warm) / uncached (cold).",
+            int,
+            DEFAULT_MAX_RETRIES,
+        )
+        .option(
             "--no-daemon",
             "Disable each tool's persistent daemon (turbo, nx).",
         )
@@ -320,6 +343,7 @@ addGenerateOptions(
         warmRuns: opts.warmRuns,
         resourceRuns: opts.resourceRuns,
         concurrency: opts.concurrency,
+        maxRetries: opts.maxRetries,
         daemon: opts.daemon,
         onEvent: progressHandler(),
     });
@@ -384,6 +408,11 @@ program
         "Override concurrency for every scenario.",
         int,
     )
+    .option(
+        "--max-retries <n>",
+        "Override the retry budget for every scenario (highest precedence).",
+        int,
+    )
     .option("--no-install", "Skip `bun install` in generated workspaces.")
     .option("--keep", "Keep generated workspaces instead of removing them.")
     .option("--list", "List the built-in presets and exit.")
@@ -415,6 +444,9 @@ program
                 : {}),
             ...(opts.concurrency !== undefined
                 ? { concurrency: opts.concurrency }
+                : {}),
+            ...(opts.maxRetries !== undefined
+                ? { maxRetries: opts.maxRetries }
                 : {}),
         };
 

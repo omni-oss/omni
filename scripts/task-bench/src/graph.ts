@@ -118,3 +118,28 @@ export function buildGraph(config: HarnessConfig): ProjectNode[] {
 export function taskNames(config: HarnessConfig): string[] {
     return Array.from({ length: config.tasksPerProject }, (_, i) => `t${i}`);
 }
+
+/**
+ * Number of task executions a *correct* cold run performs when invoking `task`
+ * across every project. `task` is scheduled for all projects, so intra-project
+ * chaining pulls in each project's whole `t0..tK` prefix, while upstream
+ * (`^tK`) edges add no new nodes (every project already runs `tK`). Hence:
+ *
+ *   projects × (chainWithinProject ? K + 1 : 1)
+ *
+ * Returns null when `task` isn't a recognized `tN` within range, so callers can
+ * fall back to a looser check.
+ */
+export function expectedColdExecuted(
+    config: HarnessConfig,
+    task: string,
+): number | null {
+    const match = /^t(\d+)$/.exec(task);
+    if (!match) return null;
+    const k = Number(match[1]);
+    if (!Number.isInteger(k) || k < 0 || k >= config.tasksPerProject) {
+        return null;
+    }
+    const perProject = config.task.chainWithinProject ? k + 1 : 1;
+    return config.projects * perProject;
+}

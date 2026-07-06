@@ -1,7 +1,7 @@
 {
     "name": "@omni-oss/task-bench",
     "description": "Generate configurable test workspaces and benchmark omni/turbo/nx task execution performance",
-    "version": "0.0.0-beta.3",
+    "version": "0.0.0-beta.4",
     "bin": "./dist/task-bench-cli.mjs",
     "publishConfig": {
         "access": "public"

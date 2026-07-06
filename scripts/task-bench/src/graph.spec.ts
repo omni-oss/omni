@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { resolveConfig } from "./config";
-import { buildGraph, projectName, taskNames } from "./graph";
+import {
+    buildGraph,
+    expectedColdExecuted,
+    projectName,
+    taskNames,
+} from "./graph";
 
 describe("resolveConfig", () => {
     it("applies defaults", () => {
@@ -41,6 +46,32 @@ describe("taskNames", () => {
             "t1",
             "t2",
         ]);
+    });
+});
+
+describe("expectedColdExecuted", () => {
+    it("counts each project's t0..tK prefix when chaining is on", () => {
+        const config = resolveConfig({ projects: 10, tasksPerProject: 3 });
+        // Running t2 cold runs t0,t1,t2 in every project: 10 * 3 = 30.
+        expect(expectedColdExecuted(config, "t2")).toBe(30);
+        // Running t0 has no prefix: 10 * 1 = 10.
+        expect(expectedColdExecuted(config, "t0")).toBe(10);
+    });
+
+    it("counts one task per project when chaining is off", () => {
+        const config = resolveConfig({
+            projects: 8,
+            tasksPerProject: 4,
+            task: { chainWithinProject: false },
+        });
+        expect(expectedColdExecuted(config, "t3")).toBe(8);
+    });
+
+    it("returns null for an unknown or out-of-range task", () => {
+        const config = resolveConfig({ projects: 5, tasksPerProject: 3 });
+        expect(expectedColdExecuted(config, "build")).toBeNull();
+        expect(expectedColdExecuted(config, "t3")).toBeNull();
+        expect(expectedColdExecuted(config, "t-1")).toBeNull();
     });
 });
 

@@ -1,11 +1,11 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { execa } from "execa";
 import { HarnessConfigSchema, type Tool } from "../config";
-import { buildGraph, taskNames } from "../graph";
+import { buildGraph, expectedColdExecuted, taskNames } from "../graph";
 import {
     getAdapter,
     resolveToolVersions,
@@ -15,18 +15,37 @@ import {
 import { BASE_ENV } from "./env";
 import { getPlatformInfo, type PlatformInfo } from "./platform-info";
 import { createProcessProbe, type ProcessProbe } from "./process-probe";
-import { measureRun, type ResourceSample } from "./resource-usage";
+import {
+    countExecLogLines,
+    measureRun,
+    type ResourceSample,
+} from "./resource-usage";
 import { computeStats, median, type Stats } from "./stats";
 
-export interface RunSample {
-    durationMs: number;
+/**
+ * Success + verification signals shared by timed ({@link RunSample}) and
+ * resource ({@link ResourceSample}) passes, so both can flow through the same
+ * retry machinery.
+ */
+export interface RunOutcome {
+    /** Whether the invocation exited cleanly. */
+    ok: boolean;
     exitCode: number;
-    stdout: string;
-    stderr: string;
     /** Number of tasks that actually executed (0 == a full cache hit). */
     executed: number;
-    ok: boolean;
 }
+
+export interface RunSample extends RunOutcome {
+    durationMs: number;
+    stdout: string;
+    stderr: string;
+}
+
+/** Default number of extra attempts for a run that fails or fails verification. */
+export const DEFAULT_MAX_RETRIES = 2;
+
+/** Why a measured run was rejected and (possibly) retried. */
+export type RetryReason = "exit" | "verification";
 
 /**
  * Resource usage for a scenario, collected in dedicated passes separate from
@@ -88,7 +107,20 @@ export type BenchEvent =
           sample: RunSample;
       }
     | { kind: "tool-error"; tool: Tool; error: string }
-    | { kind: "tool-unsuccessful"; tool: Tool; sample: RunSample };
+    | { kind: "tool-unsuccessful"; tool: Tool; sample: RunSample }
+    | {
+          kind: "run-retry";
+          tool: Tool;
+          scenario: "cold" | "warm";
+          /** Which phase the retried invocation belongs to. */
+          phase: "timed" | "resource";
+          run: number;
+          /** Which attempt just failed (1 == the first, pre-retry attempt). */
+          attempt: number;
+          maxRetries: number;
+          reason: RetryReason;
+          sample: RunOutcome;
+      };
 
 export interface RunBenchmarkOptions {
     tools?: Tool[] | undefined;
@@ -103,23 +135,87 @@ export interface RunBenchmarkOptions {
     concurrency?: number | undefined;
     /** Allow each tool's persistent daemon (default true). */
     daemon?: boolean | undefined;
+    /**
+     * Extra attempts for a measured run that exits non-zero or fails its
+     * scenario's verification (cold must execute the expected number of tasks,
+     * warm must be fully cached). Defaults to {@link DEFAULT_MAX_RETRIES}. 0
+     * disables retries.
+     */
+    maxRetries?: number | undefined;
     onEvent?: ((event: BenchEvent) => void) | undefined;
 }
 
 /** A zero-argument runner that executes one measured invocation. */
 type RunOnce = () => Promise<RunSample>;
 
-function countLines(path: string): number {
-    try {
-        const text = readFileSync(path, "utf8");
-        // Each executed task appends exactly one newline-terminated line.
-        let count = 0;
-        for (let i = 0; i < text.length; i++) {
-            if (text[i] === "\n") count++;
-        }
-        return count;
-    } catch {
-        return 0;
+/**
+ * Per-scenario retry policy for timed runs. A run is accepted when it exits
+ * cleanly *and* satisfies `verify`; otherwise it is retried (re-running
+ * `before` first, so a cold reset is reapplied) until it passes or the
+ * attempts are exhausted.
+ */
+interface RetryPolicy {
+    maxRetries: number;
+    /** Scenario-specific check (e.g. warm runs must be fully cached). */
+    verify: (sample: RunOutcome) => boolean;
+    onRetry: (
+        run: number,
+        attempt: number,
+        sample: RunSample,
+        reason: RetryReason,
+    ) => void;
+}
+
+/** Reason a sample is unacceptable, or null when it passed all checks. */
+function rejectionReason<T extends RunOutcome>(
+    sample: T,
+    verify: (sample: T) => boolean,
+): RetryReason | null {
+    if (!sample.ok) return "exit";
+    if (!verify(sample)) return "verification";
+    return null;
+}
+
+/**
+ * Verification requirement for a scenario. A warm pass must be a full cache hit
+ * (nothing re-ran). A cold pass must execute exactly `expectedCold` tasks (the
+ * whole graph re-ran); when that count is unknown (`null`) it falls back to
+ * "at least one task ran", which still catches a failed cache wipe. Works for
+ * both timed and resource samples via {@link RunOutcome}.
+ */
+function verifyScenario(
+    scenario: "cold" | "warm",
+    expectedCold: number | null,
+) {
+    return (sample: RunOutcome): boolean => {
+        if (scenario === "warm") return sample.executed === 0;
+        return expectedCold === null
+            ? sample.executed > 0
+            : sample.executed === expectedCold;
+    };
+}
+
+/**
+ * Run a single measured invocation, retrying while it exits non-zero or fails
+ * `verify`. `before` (if any) runs before every attempt so a cold reset is
+ * reapplied on each retry. The final attempt's sample is returned even if it
+ * never passed, so an exhausted budget still surfaces downstream.
+ */
+async function runWithRetry<T extends RunOutcome>(
+    once: () => Promise<T>,
+    verify: (sample: T) => boolean,
+    maxRetries: number,
+    onRetry: (attempt: number, sample: T, reason: RetryReason) => void,
+    before?: () => Promise<void>,
+): Promise<T> {
+    let attempt = 0;
+    for (;;) {
+        if (before) await before();
+        const sample = await once();
+        attempt++;
+        const reason = rejectionReason(sample, verify);
+        if (reason === null || attempt > maxRetries) return sample;
+        onRetry(attempt, sample, reason);
     }
 }
 
@@ -144,7 +240,7 @@ async function timeRun(
         exitCode: result.exitCode ?? -1,
         stdout: typeof result.stdout === "string" ? result.stdout : "",
         stderr: typeof result.stderr === "string" ? result.stderr : "",
-        executed: countLines(execLog),
+        executed: countExecLogLines(execLog),
         ok: result.exitCode === 0,
     };
 }
@@ -175,17 +271,28 @@ function resourceStatsFrom(
     };
 }
 
-/** Run one scenario `runs` times, calling `before` (if any) before each run. */
+/**
+ * Run one scenario `runs` times, calling `before` (if any) before each attempt.
+ * Each run is retried per `retry` while it exits non-zero or fails verification;
+ * the final attempt's sample is kept (and still counted) even if it never
+ * passed, so an exhausted retry budget surfaces in the reported failures.
+ */
 async function runScenario(
     runOnce: RunOnce,
     runs: number,
     onSample: (run: number, sample: RunSample) => void,
+    retry: RetryPolicy,
     before?: () => Promise<void>,
 ): Promise<RunSample[]> {
     const samples: RunSample[] = [];
     for (let run = 1; run <= runs; run++) {
-        if (before) await before();
-        const sample = await runOnce();
+        const sample = await runWithRetry(
+            runOnce,
+            retry.verify,
+            retry.maxRetries,
+            (attempt, s, reason) => retry.onRetry(run, attempt, s, reason),
+            before,
+        );
         samples.push(sample);
         onSample(run, sample);
     }
@@ -200,6 +307,8 @@ async function benchmarkTool(
     coldRuns: number,
     warmRuns: number,
     resourceRuns: number,
+    maxRetries: number,
+    expectedCold: number | null,
     execLog: string,
     emit: (event: BenchEvent) => void,
 ): Promise<ToolResult> {
@@ -236,12 +345,31 @@ async function benchmarkTool(
     const runResource = async (
         probe: ProcessProbe,
         runs: number,
+        scenario: "cold" | "warm",
         before?: () => Promise<void>,
     ): Promise<ResourceSample[]> => {
         const samples: ResourceSample[] = [];
         for (let i = 0; i < runs; i++) {
-            if (before) await before();
-            samples.push(await measureOnce(probe));
+            const run = i + 1;
+            const sample = await runWithRetry(
+                () => measureOnce(probe),
+                verifyScenario(scenario, expectedCold),
+                maxRetries,
+                (attempt, s, reason) =>
+                    emit({
+                        kind: "run-retry",
+                        tool: adapter.tool,
+                        scenario,
+                        phase: "resource",
+                        run,
+                        attempt,
+                        maxRetries,
+                        reason,
+                        sample: s,
+                    }),
+                before,
+            );
+            samples.push(sample);
         }
         return samples;
     };
@@ -272,6 +400,26 @@ async function benchmarkTool(
             }
         };
 
+    // Verification requirements per scenario: a cold run must execute the whole
+    // task graph (the expected count), a warm run must be a full cache hit
+    // (nothing re-ran). Failing either — or a non-zero exit — triggers a retry.
+    const retryPolicy = (scenario: "cold" | "warm"): RetryPolicy => ({
+        maxRetries,
+        verify: verifyScenario(scenario, expectedCold),
+        onRetry: (run, attempt, sample, reason) =>
+            emit({
+                kind: "run-retry",
+                tool: adapter.tool,
+                scenario,
+                phase: "timed",
+                run,
+                attempt,
+                maxRetries,
+                reason,
+                sample,
+            }),
+    });
+
     try {
         // In no-daemon mode make sure no stale daemon lingers first.
         if (!ctx.daemon && adapter.hasDaemon) {
@@ -284,6 +432,7 @@ async function benchmarkTool(
             runOnce,
             coldRuns,
             sampleEmitter("cold", coldRuns),
+            retryPolicy("cold"),
             coldBefore,
         );
 
@@ -294,6 +443,7 @@ async function benchmarkTool(
             runOnce,
             warmRuns,
             sampleEmitter("warm", warmRuns),
+            retryPolicy("warm"),
         );
 
         // Resource usage is collected in dedicated passes (never during timed
@@ -308,10 +458,10 @@ async function benchmarkTool(
             try {
                 await probe.warmup();
                 warmResources = resourceStatsFrom(
-                    await runResource(probe, resourceRuns),
+                    await runResource(probe, resourceRuns, "warm"),
                 );
                 coldResources = resourceStatsFrom(
-                    await runResource(probe, resourceRuns, coldBefore),
+                    await runResource(probe, resourceRuns, "cold", coldBefore),
                 );
             } finally {
                 await probe.dispose();
@@ -377,6 +527,10 @@ export async function runBenchmark(
     const coldRuns = options.coldRuns ?? 3;
     const warmRuns = options.warmRuns ?? 5;
     const resourceRuns = options.resourceRuns ?? 3;
+    const maxRetries = Math.max(0, options.maxRetries ?? DEFAULT_MAX_RETRIES);
+    // Expected task count for a correct cold run of `task`, used to verify that
+    // cold runs re-ran the whole graph (and to retry them when they didn't).
+    const expectedCold = expectedColdExecuted(config, task);
     const platform = getPlatformInfo();
     const concurrency =
         options.concurrency ?? Math.max(1, platform.cpus.length);
@@ -410,6 +564,8 @@ export async function runBenchmark(
                 coldRuns,
                 warmRuns,
                 resourceRuns,
+                maxRetries,
+                expectedCold,
                 execLog,
                 emit,
             ),
