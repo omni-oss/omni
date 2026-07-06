@@ -7,6 +7,40 @@ on:
         required: false
         type: string
         description: "Version to publish"
+      preset:
+        required: false
+        default: full
+        type: string
+        description: "Preset to use for the benchmark (default: full)"
+        options:
+          - quick
+          - shapes
+          - scale
+          - density
+          - daemon
+          - full
+      publish_to:
+        required: false
+        type: string
+        description: "Whether to publish to an external repository or actions summary (default: external_repo)"
+        options:
+          - external_repo
+          - summary
+      publish_repo:
+        default: "omni-oss/performance-comparison"
+        required: false
+        type: string
+        description: "Repository to publish to (default: omni-oss/performance-comparison)"
+      publish_branch:
+        default: "main"
+        required: false
+        type: string
+        description: "Branch to publish to (default: main)"
+      resource_runs:
+        required: false
+        type: number
+        description: "Number of runs for resource usage measurement (default: 3)"
+        default: 3
 
   workflow_call:
     inputs:
@@ -15,14 +49,79 @@ on:
         type: string
         default: "latest"
         description: "Version to publish"
+      preset:
+        required: false
+        default: full
+        type: string
+        description: "Preset to use for the benchmark (default: full)"
+      publish_repo:
+        default: "omni-oss/performance-comparison"
+        required: false
+        type: string
+        description: "Repository to publish to (default: omni-oss/performance-comparison)"
+      publish_branch:
+        default: "main"
+        required: false
+        type: string
+        description: "Branch to publish to (default: main)"
+      publish_to:
+        default: "external_repo"
+        required: false
+        type: string
+        description: "Whether to publish to an external repository or actions summary (default: external)"
+      resources_runs:
+        required: false
+        type: number
+        description: "Number of runs for resource usage measurement (default: 3)"
+        default: 3
 
 permissions:
   contents: write
 
+env:
+  # Shared constants so the artifact contract is defined once and reused
+  # across the benchmark and publish jobs.
+  ARTIFACT_PREFIX: performance-comparison-
+  SUMMARY_FILE: SUMMARY.md
+  DATA_FILE: data.json
+  DEFAULT_PUBLISH_REPO: omni-oss/performance-comparison
+  # AI analysis is intentionally provider-agnostic: any OpenAI-compatible
+  # chat-completions endpoint works. Override per repo/org via Variables
+  # (vars.*) and Secrets (secrets.*); defaults use GitHub Models.
+  AI_BASE_URL: ${{ vars.ANALYSIS_AI_API_BASE_URL || 'https://models.github.ai/inference' }}
+  AI_API_KEY: ${{ secrets.ANALYSIS_AI_API_KEY || github.token }}
+  AI_MODEL: ${{ vars.ANALYSIS_AI_MODEL || 'openai/gpt-4o-mini' }}
+  # Number of attempts for the AI request before giving up on transient errors.
+  AI_ANALYSIS_MAX_ATTEMPT: ${{ vars.ANALYSIS_AI_MAX_ATTEMPT || '4' }}
+  AI_SYSTEM_PROMPT: >-
+    You are a performance engineer analyzing benchmark results for
+    monorepo task runners (omni, turbo, nx, moon, etc.) across multiple
+    platforms. Write a concise Markdown analysis that compares the
+    tools and platforms, highlights standout results, regressions,
+    and resource-usage trade-offs. Note any weirdness or red-flags that may
+    indicate measurement issues. Prefer short paragraphs and bullet
+    lists. Do not reproduce large tables verbatim and do not include a
+    top-level heading.
+
 jobs:
-  publish-benchmarks:
-    runs-on: ubuntu-latest
+  benchmark:
+    name: Benchmark (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
     steps:
+      - name: Configure Output Directory
+        shell: bash
+        run: echo "PERF_OUTPUT_DIR=${{ runner.temp }}/perf-comparison" >> "$GITHUB_ENV"
+
       - name: Setup Omni
         uses: omni-oss/setup-omni@v2
         with:
@@ -40,17 +139,274 @@ jobs:
 
       - name: Generate Benchmarks
         shell: bash
-        run: bun x @omni-oss/task-bench suite -p full -o /tmp/pc --json /tmp/pc/data.json --md /tmp/pc/README.md
+        run: >-
+          bun x @omni-oss/task-bench suite
+          -p ${{ inputs.preset || 'full' }}
+          -o "$PERF_OUTPUT_DIR"
+          --json "$PERF_OUTPUT_DIR/$DATA_FILE"
+          --md "$PERF_OUTPUT_DIR/$SUMMARY_FILE"
+          --resource-runs ${{ inputs.resource_runs || inputs.resources_runs || '0' }}
 
-      - name: Publish Performance Comparison
+      - name: Upload Performance Comparison Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}${{ matrix.target }}
+          path: |
+            ${{ env.PERF_OUTPUT_DIR }}/${{ env.SUMMARY_FILE }}
+            ${{ env.PERF_OUTPUT_DIR }}/${{ env.DATA_FILE }}
+          if-no-files-found: warn
+
+  publish:
+    name: Publish Performance Comparison
+    needs: benchmark
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      models: read
+    steps:
+      - name: Configure Directories
+        shell: bash
+        run: |
+          echo "PERF_DOWNLOAD_DIR=${{ runner.temp }}/perf-artifacts" >> "$GITHUB_ENV"
+          echo "PERF_PUBLISH_DIR=${{ runner.temp }}/perf-publish" >> "$GITHUB_ENV"
+          echo "PERF_ANALYSIS_FILE=${{ runner.temp }}/ai-analysis.md" >> "$GITHUB_ENV"
+
+      - name: Download Performance Comparison Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.PERF_DOWNLOAD_DIR }}
+          pattern: ${{ env.ARTIFACT_PREFIX }}*
+
+      - if: ${{ inputs.publish_to == 'summary' || inputs.publish_to == 'external_repo' }}
+        name: Generate AI Analysis
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const downloadDir = process.env.PERF_DOWNLOAD_DIR;
+            const artifactPrefix = process.env.ARTIFACT_PREFIX;
+            const summaryFile = process.env.SUMMARY_FILE;
+            const dataFile = process.env.DATA_FILE;
+            const analysisFile = process.env.PERF_ANALYSIS_FILE;
+            const baseUrl = process.env.AI_BASE_URL;
+            const model = process.env.AI_MODEL;
+            const apiKey = process.env.AI_API_KEY;
+            const systemPrompt = process.env.AI_SYSTEM_PROMPT;
+
+            // Build a single consolidated input from the raw per-target
+            // summaries (the raw SUMMARY.md files are left untouched).
+            let entries = [];
+            try {
+              entries = fs.readdirSync(downloadDir, { withFileTypes: true });
+            } catch {
+              core.info(`No artifacts directory (${downloadDir}); skipping AI analysis.`);
+              return;
+            }
+
+            const targets = entries
+              .filter((e) => e.isDirectory() && e.name.startsWith(artifactPrefix))
+              .map((e) => e.name.slice(artifactPrefix.length))
+              .sort((a, b) => a.localeCompare(b));
+
+            let input = '';
+            for (const target of targets) {
+              const summaryPath = path.join(downloadDir, artifactPrefix + target, summaryFile);
+              let body = '(no summary available)';
+              try {
+                body = fs.readFileSync(summaryPath, 'utf8');
+              } catch {}
+              input += `## Target: ${target}\n\n${body}\n\n`;
+            }
+
+            if (!input.trim()) {
+              core.info('No benchmark summaries found; skipping AI analysis.');
+              return;
+            }
+
+            let content;
+            try {
+              // Retry transient failures (rate limits / temporary overload)
+              // with exponential backoff; give up on non-retryable errors.
+              const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+              const maxAttempts = Math.max(1, Number(process.env.AI_ANALYSIS_MAX_ATTEMPT) || 4);
+              let res;
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                res = await fetch(`${baseUrl}/chat/completions`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    model,
+                    temperature: 0.2,
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: input },
+                    ],
+                  }),
+                });
+
+                if (res.ok || !RETRYABLE.has(res.status) || attempt === maxAttempts) {
+                  break;
+                }
+
+                // Honor Retry-After when provided, else exponential backoff.
+                const retryAfter = Number(res.headers.get('retry-after'));
+                const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+                  ? retryAfter * 1000
+                  : 2000 * 2 ** (attempt - 1);
+                core.info(`AI request attempt ${attempt} failed (${res.status}); retrying in ${delayMs}ms.`);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+              }
+
+              if (!res.ok) {
+                core.warning(`AI request failed (${res.status}): ${await res.text()}`);
+                return;
+              }
+              const data = await res.json();
+              content = data.choices?.[0]?.message?.content?.trim();
+            } catch (err) {
+              core.warning(`AI request error: ${err.message}`);
+              return;
+            }
+
+            if (!content) {
+              core.info('AI returned no content; skipping AI analysis.');
+              return;
+            }
+
+            // Self-contained section (heading + disclaimer + analysis) so every
+            // consumer can splice it in verbatim.
+            const disclaimer = `> **Disclaimer:** This section was generated automatically by an LLM (\`${model}\`) from the benchmark results below. It may contain inaccuracies or misinterpretations — the raw benchmark tables and \`${dataFile}\` artifacts are the authoritative source of truth.`;
+            fs.writeFileSync(analysisFile, `## AI Analysis\n\n${disclaimer}\n\n${content}\n`);
+            core.info(`Wrote AI analysis to ${analysisFile}`);
+
+      - if: ${{ inputs.publish_to == 'external_repo' }}
+        name: Assemble External Repo Layout
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ inputs.version || 'latest' }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const downloadDir = process.env.PERF_DOWNLOAD_DIR;
+            const publishDir = process.env.PERF_PUBLISH_DIR;
+            const artifactPrefix = process.env.ARTIFACT_PREFIX;
+            const summaryFile = process.env.SUMMARY_FILE;
+            const dataFile = process.env.DATA_FILE;
+            const analysisFile = process.env.PERF_ANALYSIS_FILE;
+            const version = process.env.VERSION;
+
+            fs.rmSync(publishDir, { recursive: true, force: true });
+            fs.mkdirSync(publishDir, { recursive: true });
+
+            const targets = fs.readdirSync(downloadDir, { withFileTypes: true })
+              .filter((e) => e.isDirectory() && e.name.startsWith(artifactPrefix))
+              .map((e) => e.name.slice(artifactPrefix.length))
+              .sort((a, b) => a.localeCompare(b));
+
+            for (const target of targets) {
+              const srcDir = path.join(downloadDir, artifactPrefix + target);
+              const destDir = path.join(publishDir, target);
+              fs.mkdirSync(destDir, { recursive: true });
+              for (const file of [summaryFile, dataFile]) {
+                try {
+                  fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+                } catch {}
+              }
+            }
+
+            let readme = `# Performance Comparison\n\nVersion: \`${version}\`\n\n## Targets\n\n`;
+            for (const target of targets) {
+              readme += `- \`${target}\` — [SUMMARY](${target}/${summaryFile}) · [data.json](${target}/${dataFile})\n`;
+            }
+
+            // Append the AI analysis to the root README only; per-target raw
+            // files are left untouched.
+            if (fs.existsSync(analysisFile) && fs.statSync(analysisFile).size > 0) {
+              readme += `\n${fs.readFileSync(analysisFile, 'utf8')}`;
+            }
+
+            fs.writeFileSync(path.join(publishDir, 'README.md'), readme);
+            core.info(`Assembled external repo layout at ${publishDir}`);
+
+      - if: ${{ inputs.publish_to == 'external_repo' }}
+        name: Publish to External Repository
         uses: peaceiris/actions-gh-pages@v4
         with:
-          external_repository: omni-oss/performance-comparison
-          publish_branch: main
+          external_repository: ${{ inputs.publish_repo || env.DEFAULT_PUBLISH_REPO }}
+          publish_branch: ${{ inputs.publish_branch || 'main' }}
           #github_token: ${{ secrets.GITHUB_TOKEN }}
           deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
-          publish_dir: /tmp/pc
+          publish_dir: ${{ env.PERF_PUBLISH_DIR }}
           destination_dir: .
           keep_files: true
           tag_name: ${{ inputs.version || 'latest' }}
           tag_message: "Publish version ${{ inputs.version || 'latest' }}"
+
+      - if: ${{ inputs.publish_to == 'summary' }}
+        name: Publish Performance Comparison to Actions Summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { owner, repo } = context.repo;
+            const runId = context.runId;
+
+            const artifactPrefix = process.env.ARTIFACT_PREFIX;
+            const summaryFile = process.env.SUMMARY_FILE;
+            const downloadDir = process.env.PERF_DOWNLOAD_DIR;
+
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner,
+              repo,
+              run_id: runId,
+              per_page: 100,
+            });
+
+            const artifacts = data.artifacts
+              .filter((a) => a.name.startsWith(artifactPrefix))
+              .sort((a, b) => a.name.localeCompare(b.name));
+
+            if (artifacts.length === 0) {
+              core.summary.addRaw('No performance comparison artifacts found.', true);
+              await core.summary.write();
+              return;
+            }
+
+            core.summary.addRaw('# Performance Comparison\n');
+
+            // Consolidated AI analysis only; raw per-target summaries below
+            // are reproduced verbatim and left untouched.
+            const analysisFile = process.env.PERF_ANALYSIS_FILE;
+            if (analysisFile && fs.existsSync(analysisFile) && fs.statSync(analysisFile).size > 0) {
+              core.summary.addRaw(fs.readFileSync(analysisFile, 'utf8'), true);
+              core.summary.addRaw('\n---\n');
+            }
+
+            for (const art of artifacts) {
+              const target = art.name.slice(artifactPrefix.length);
+              const artifactUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${runId}/artifacts/${art.id}`;
+
+              core.summary.addRaw(`## ${target}\n`);
+              core.summary.addRaw(`Artifact: [${art.name}](${artifactUrl})\n`, true);
+
+              const summaryPath = path.join(downloadDir, art.name, summaryFile);
+              if (fs.existsSync(summaryPath)) {
+                core.summary.addRaw(fs.readFileSync(summaryPath, 'utf8'), true);
+              } else {
+                core.summary.addRaw(`\`${summaryFile}\` not found for \`${target}\`.`, true);
+              }
+
+              core.summary.addRaw('\n---\n');
+            }
+
+            await core.summary.write();
