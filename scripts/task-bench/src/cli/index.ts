@@ -194,6 +194,12 @@ function progressHandler(): (event: BenchEvent) => void {
                 `  ↻ ${event.tool} ${event.scenario} ${event.phase} ${event.run}: ` +
                     `attempt ${event.attempt}/${event.maxRetries + 1} ${why}, retrying\n`,
             );
+        } else if (event.kind === "run-aborted") {
+            process.stderr.write(
+                `  ✖ ${event.tool} ${event.scenario} ${event.phase} ${event.run}: ` +
+                    `unrecoverable exit ${event.exitCode}, not retrying\n` +
+                    `     ${event.reason}\n`,
+            );
         } else {
             const status = event.sample.ok
                 ? "ok"

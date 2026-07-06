@@ -92,6 +92,25 @@ const WIN_SAMPLE_DRIVER = [
     "}",
 ].join("\n");
 
+// Persistent read-loop driver for the parent-map query. Each stdin line (any
+// non-'q' value) triggers one `Get-CimInstance Win32_Process` snapshot printed
+// as compact JSON, then a marker line. Reusing one long-lived PowerShell keeps
+// its WMI/CIM session warm instead of cold-starting a fresh powershell.exe
+// (plus a WmiPrvSE host) on every refresh — the process churn that exhausts
+// Windows CI runners and yields STATUS_DLL_INIT_FAILED (0xC0000142).
+const WIN_PARENTS_DRIVER = [
+    "$ErrorActionPreference='SilentlyContinue'",
+    "while ($true) {",
+    "  $line = [Console]::In.ReadLine()",
+    "  if ($null -eq $line -or $line -eq 'q') { break }",
+    "  $json = Get-CimInstance Win32_Process | Select-Object " +
+        "ProcessId,ParentProcessId | ConvertTo-Json -Compress",
+    '  [Console]::Out.Write("$json`n")',
+    `  [Console]::Out.Write("${WIN_EOF}\`n")`,
+    "  [Console]::Out.Flush()",
+    "}",
+].join("\n");
+
 /** Parse the fast sampler's "pid rss cpuMs" lines into stats. */
 export function parseWindowsSample(text: string): Map<number, ProcStat> {
     const out = new Map<number, ProcStat>();
@@ -132,26 +151,27 @@ export function parseWindowsParents(json: string): Map<number, number> {
     return out;
 }
 
-class WindowsProbe implements ProcessProbe {
+/**
+ * A reusable, long-lived PowerShell process running a stdin/stdout read-loop
+ * driver script. Each `request(line)` writes one line and resolves with
+ * everything the driver prints up to the next `WIN_EOF` marker. Keeping the
+ * process alive avoids paying PowerShell (and, for CIM queries, WMI) startup
+ * on every call.
+ */
+class WinPsDriver {
     private proc: ChildProcess | null = null;
     private buffer = "";
     private queue: Array<(payload: string) => void> = [];
     private failed = false;
-    private warmed = false;
+    private disposed = false;
 
-    async warmup(): Promise<void> {
-        if (this.warmed) return;
-        this.warmed = true;
-        // Force the persistent PowerShell to spawn and JIT its first query now,
-        // so the first sample of a (possibly short-lived) run isn't paid then.
-        await this.sample([process.pid]);
-    }
+    constructor(private readonly script: string) {}
 
     private ensure(): ChildProcess | null {
-        if (this.failed) return null;
+        if (this.failed || this.disposed) return null;
         if (this.proc) return this.proc;
         try {
-            const encoded = Buffer.from(WIN_SAMPLE_DRIVER, "utf16le").toString(
+            const encoded = Buffer.from(this.script, "utf16le").toString(
                 "base64",
             );
             const proc = spawn(
@@ -167,8 +187,10 @@ class WindowsProbe implements ProcessProbe {
             );
             proc.stdout?.setEncoding("utf8");
             proc.stdout?.on("data", (chunk: string) => this.onData(chunk));
-            proc.once("error", () => this.fail());
-            proc.once("exit", () => this.fail());
+            // On exit/error the process is dropped (a later request respawns it)
+            // and any waiters are unblocked with an empty payload.
+            proc.once("error", () => this.drop());
+            proc.once("exit", () => this.drop());
             this.proc = proc;
             return proc;
         } catch {
@@ -177,7 +199,7 @@ class WindowsProbe implements ProcessProbe {
         }
     }
 
-    private fail(): void {
+    private drop(): void {
         this.proc = null;
         for (const resolve of this.queue.splice(0)) resolve("");
     }
@@ -193,13 +215,12 @@ class WindowsProbe implements ProcessProbe {
         }
     }
 
-    async sample(pids: number[]): Promise<Map<number, ProcStat>> {
-        if (pids.length === 0) return new Map();
+    async request(line: string): Promise<string> {
         const proc = this.ensure();
-        if (!proc?.stdin) return new Map();
-        const payload = await new Promise<string>((resolve) => {
+        if (!proc?.stdin) return "";
+        return new Promise<string>((resolve) => {
             this.queue.push(resolve);
-            proc.stdin?.write(`${pids.join(",")}\n`, (err) => {
+            proc.stdin?.write(`${line}\n`, (err) => {
                 if (err) {
                     const i = this.queue.indexOf(resolve);
                     if (i !== -1) this.queue.splice(i, 1);
@@ -207,35 +228,12 @@ class WindowsProbe implements ProcessProbe {
                 }
             });
         });
-        return parseWindowsSample(payload);
-    }
-
-    async parents(): Promise<Map<number, number>> {
-        // One-shot CIM query (slow, ~1s incl. startup) on a *separate* process
-        // so it never blocks the persistent fast sampler above.
-        try {
-            const { stdout } = await execFileAsync(
-                "powershell.exe",
-                [
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-NoLogo",
-                    "-Command",
-                    "Get-CimInstance Win32_Process | Select-Object " +
-                        "ProcessId,ParentProcessId | ConvertTo-Json -Compress",
-                ],
-                { windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
-            );
-            return parseWindowsParents(stdout);
-        } catch {
-            return new Map();
-        }
     }
 
     async dispose(): Promise<void> {
         const proc = this.proc;
         this.proc = null;
-        this.failed = true;
+        this.disposed = true;
         if (!proc) return;
         try {
             proc.stdin?.end("q\n");
@@ -243,6 +241,40 @@ class WindowsProbe implements ProcessProbe {
             // ignore
         }
         proc.kill();
+    }
+}
+
+class WindowsProbe implements ProcessProbe {
+    // Two persistent drivers: a fast per-PID sampler and a (warm-CIM) parent-map
+    // query. Reusing both avoids the per-call powershell.exe/WMI process churn.
+    private readonly sampler = new WinPsDriver(WIN_SAMPLE_DRIVER);
+    private readonly parentsDriver = new WinPsDriver(WIN_PARENTS_DRIVER);
+    private warmed = false;
+
+    async warmup(): Promise<void> {
+        if (this.warmed) return;
+        this.warmed = true;
+        // Force the persistent PowerShell to spawn and JIT its first query now,
+        // so the first sample of a (possibly short-lived) run isn't paid then.
+        await this.sample([process.pid]);
+    }
+
+    async sample(pids: number[]): Promise<Map<number, ProcStat>> {
+        if (pids.length === 0) return new Map();
+        return parseWindowsSample(await this.sampler.request(pids.join(",")));
+    }
+
+    async parents(): Promise<Map<number, number>> {
+        // Reuses a persistent PowerShell whose CIM/WMI session stays warm rather
+        // than cold-starting a fresh powershell.exe (+ WmiPrvSE) each refresh.
+        return parseWindowsParents(await this.parentsDriver.request("p"));
+    }
+
+    async dispose(): Promise<void> {
+        await Promise.all([
+            this.sampler.dispose(),
+            this.parentsDriver.dispose(),
+        ]);
     }
 }
 

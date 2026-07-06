@@ -21,6 +21,7 @@ import {
     type ResourceSample,
 } from "./resource-usage";
 import { computeStats, median, type Stats } from "./stats";
+import { unrecoverableExitReason } from "./unrecoverable";
 
 /**
  * Success + verification signals shared by timed ({@link RunSample}) and
@@ -120,6 +121,19 @@ export type BenchEvent =
           maxRetries: number;
           reason: RetryReason;
           sample: RunOutcome;
+      }
+    | {
+          kind: "run-aborted";
+          tool: Tool;
+          scenario: "cold" | "warm";
+          phase: "timed" | "resource";
+          run: number;
+          /** Which attempt hit the unrecoverable exit code. */
+          attempt: number;
+          exitCode: number;
+          /** Why the code is treated as unrecoverable (from the code map). */
+          reason: string;
+          sample: RunOutcome;
       };
 
 export interface RunBenchmarkOptions {
@@ -152,7 +166,8 @@ type RunOnce = () => Promise<RunSample>;
  * Per-scenario retry policy for timed runs. A run is accepted when it exits
  * cleanly *and* satisfies `verify`; otherwise it is retried (re-running
  * `before` first, so a cold reset is reapplied) until it passes or the
- * attempts are exhausted.
+ * attempts are exhausted. A run that fails with an unrecoverable exit code
+ * (see `unrecoverableExitReason`) is never retried — `onAbort` fires instead.
  */
 interface RetryPolicy {
     maxRetries: number;
@@ -163,6 +178,12 @@ interface RetryPolicy {
         attempt: number,
         sample: RunSample,
         reason: RetryReason,
+    ) => void;
+    onAbort: (
+        run: number,
+        attempt: number,
+        sample: RunSample,
+        reason: string,
     ) => void;
 }
 
@@ -198,14 +219,17 @@ function verifyScenario(
 /**
  * Run a single measured invocation, retrying while it exits non-zero or fails
  * `verify`. `before` (if any) runs before every attempt so a cold reset is
- * reapplied on each retry. The final attempt's sample is returned even if it
- * never passed, so an exhausted budget still surfaces downstream.
+ * reapplied on each retry. Retrying stops early (and `onAbort` fires) when the
+ * failure is an unrecoverable host error, since retrying would be futile or
+ * harmful. The final attempt's sample is returned even if it never passed, so
+ * an exhausted budget (or an abort) still surfaces downstream.
  */
 async function runWithRetry<T extends RunOutcome>(
     once: () => Promise<T>,
     verify: (sample: T) => boolean,
     maxRetries: number,
     onRetry: (attempt: number, sample: T, reason: RetryReason) => void,
+    onAbort: (attempt: number, sample: T, reason: string) => void,
     before?: () => Promise<void>,
 ): Promise<T> {
     let attempt = 0;
@@ -214,7 +238,15 @@ async function runWithRetry<T extends RunOutcome>(
         const sample = await once();
         attempt++;
         const reason = rejectionReason(sample, verify);
-        if (reason === null || attempt > maxRetries) return sample;
+        if (reason === null) return sample;
+        // Host-level failures won't recover by retrying — and on Windows a
+        // retry deepens the process-exhaustion that caused it — so bail out.
+        const unrecoverable = unrecoverableExitReason(sample.exitCode);
+        if (unrecoverable !== null) {
+            onAbort(attempt, sample, unrecoverable);
+            return sample;
+        }
+        if (attempt > maxRetries) return sample;
         onRetry(attempt, sample, reason);
     }
 }
@@ -291,6 +323,7 @@ async function runScenario(
             retry.verify,
             retry.maxRetries,
             (attempt, s, reason) => retry.onRetry(run, attempt, s, reason),
+            (attempt, s, reason) => retry.onAbort(run, attempt, s, reason),
             before,
         );
         samples.push(sample);
@@ -367,6 +400,18 @@ async function benchmarkTool(
                         reason,
                         sample: s,
                     }),
+                (attempt, s, reason) =>
+                    emit({
+                        kind: "run-aborted",
+                        tool: adapter.tool,
+                        scenario,
+                        phase: "resource",
+                        run,
+                        attempt,
+                        exitCode: s.exitCode,
+                        reason,
+                        sample: s,
+                    }),
                 before,
             );
             samples.push(sample);
@@ -415,6 +460,18 @@ async function benchmarkTool(
                 run,
                 attempt,
                 maxRetries,
+                reason,
+                sample,
+            }),
+        onAbort: (run, attempt, sample, reason) =>
+            emit({
+                kind: "run-aborted",
+                tool: adapter.tool,
+                scenario,
+                phase: "timed",
+                run,
+                attempt,
+                exitCode: sample.exitCode,
                 reason,
                 sample,
             }),
