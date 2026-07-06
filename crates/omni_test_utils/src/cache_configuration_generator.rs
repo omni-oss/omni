@@ -1,38 +1,14 @@
 use config_utils::Replace;
-use derive_builder::Builder;
 use omni_configurations::CacheConfiguration;
 
-use crate::{
-    CacheKeyConfigurationGenerator, CacheKeyConfigurationGeneratorBuilder,
-};
+use crate::CacheKeyConfigurationGenerator;
 
-#[derive(Debug, Clone, Builder, Default)]
-#[builder(setter(into, strip_option), derive(Debug))]
+#[derive(Debug, Clone, Default, bon::Builder)]
 pub struct CacheConfigurationGenerator {
+    #[builder(default)]
     enabled: bool,
-    #[builder(setter(custom), default)]
+    #[builder(default)]
     key: CacheKeyConfigurationGenerator,
-}
-
-impl CacheConfigurationGeneratorBuilder {
-    pub fn key(
-        &mut self,
-        f: impl FnOnce(
-            &mut CacheKeyConfigurationGeneratorBuilder,
-        ) -> eyre::Result<()>,
-    ) -> eyre::Result<&mut Self> {
-        let mut key = CacheKeyConfigurationGeneratorBuilder::default();
-        f(&mut key)?;
-        self.key = Some(key.build()?);
-
-        Ok(self)
-    }
-}
-
-impl CacheConfigurationGenerator {
-    pub fn builder() -> CacheConfigurationGeneratorBuilder {
-        CacheConfigurationGeneratorBuilder::default()
-    }
 }
 
 impl CacheConfigurationGenerator {

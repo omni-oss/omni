@@ -1,25 +1,16 @@
 use std::path::Path;
 
 use config_utils::{ListConfig, Replace};
-use derive_builder::Builder;
 use omni_configurations::CacheKeyConfiguration;
 use omni_types::OmniPath;
 
-#[derive(Debug, Clone, Builder, Default)]
-#[builder(setter(into, strip_option), derive(Debug))]
+#[derive(Debug, Clone, Default, bon::Builder)]
 pub struct CacheKeyConfigurationGenerator {
-    #[builder(default)]
     defaults: Option<bool>,
     #[builder(default)]
     env: Vec<String>,
     #[builder(default)]
     files: Vec<String>,
-}
-
-impl CacheKeyConfigurationGenerator {
-    pub fn builder() -> CacheKeyConfigurationGeneratorBuilder {
-        CacheKeyConfigurationGeneratorBuilder::default()
-    }
 }
 
 impl CacheKeyConfigurationGenerator {
@@ -35,7 +26,7 @@ impl CacheKeyConfigurationGenerator {
             files: ListConfig::append(
                 self.files
                     .iter()
-                    .map(|env| OmniPath::new(Path::new(env)))
+                    .map(|file| OmniPath::new(Path::new(file)))
                     .collect(),
             ),
         }

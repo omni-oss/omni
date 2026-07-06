@@ -1,5 +1,9 @@
 mod cache_configuration_generator;
 mod cache_key_configuration_generator;
+mod config;
+mod graph;
+mod harness;
+mod launcher;
 mod meta_configuration_generator;
 pub mod presets;
 mod project_env_configuration_generator;
@@ -11,6 +15,10 @@ mod workspace_generator;
 
 pub use cache_configuration_generator::*;
 pub use cache_key_configuration_generator::*;
+pub use config::*;
+pub use graph::*;
+pub use harness::*;
+pub use launcher::*;
 pub use meta_configuration_generator::*;
 pub use project_env_configuration_generator::*;
 pub use project_generator::*;

@@ -1,36 +1,16 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use config_utils::{DictConfig, DynValue};
-use derive_builder::Builder;
 use omni_configurations::MetaConfiguration;
 
-#[derive(Debug, Clone, Default, Builder)]
-#[builder(setter(into, strip_option), derive(Debug))]
+/// Meta configuration generator.
+///
+/// Uses a [`BTreeMap`] so entries serialize in a stable, sorted order,
+/// guaranteeing byte-identical output across runs.
+#[derive(Debug, Clone, Default, bon::Builder)]
 pub struct MetaConfigurationGenerator {
-    #[builder(default, setter(custom))]
-    values: HashMap<String, DynValue>,
-}
-
-impl MetaConfigurationGeneratorBuilder {
-    pub fn value(
-        &mut self,
-        key: impl Into<String>,
-        value: DynValue,
-    ) -> &mut Self {
-        if let Some(values) = &mut self.values {
-            values.insert(key.into(), value);
-        } else {
-            self.values = Some(HashMap::from([(key.into(), value)]));
-        }
-
-        self
-    }
-}
-
-impl MetaConfigurationGenerator {
-    pub fn builder() -> MetaConfigurationGeneratorBuilder {
-        MetaConfigurationGeneratorBuilder::default()
-    }
+    #[builder(default)]
+    values: BTreeMap<String, DynValue>,
 }
 
 impl MetaConfigurationGenerator {

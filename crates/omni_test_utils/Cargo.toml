@@ -20,7 +20,7 @@ serde = { workspace = true }
 omni_types = { workspace = true }
 omni_configurations = { workspace = true }
 #tempfile = { workspace = true }
-derive_builder = { workspace = true }
+bon = { workspace = true }
 config_utils = { workspace = true, features = [
     "serde",
     "schemars",
@@ -28,3 +28,6 @@ config_utils = { workspace = true, features = [
 ] }
 bs58 = { workspace = true }
 omni_file_data_serde = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,36 +1,16 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use config_utils::{DictConfig, Replace};
-use derive_builder::Builder;
 use omni_configurations::ProjectEnvConfiguration;
 
-#[derive(Debug, Clone, Default, Builder)]
-#[builder(setter(into, strip_option), derive(Debug))]
+/// Project-level env configuration generator.
+///
+/// Uses a [`BTreeMap`] so vars serialize in a stable, sorted order for
+/// deterministic output.
+#[derive(Debug, Clone, Default, bon::Builder)]
 pub struct ProjectEnvConfigurationGenerator {
     #[builder(default)]
-    vars: HashMap<String, String>,
-}
-
-impl ProjectEnvConfigurationGeneratorBuilder {
-    pub fn var(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> &mut Self {
-        if let Some(vars) = &mut self.vars {
-            vars.insert(key.into(), value.into());
-        } else {
-            self.vars = Some(HashMap::from([(key.into(), value.into())]));
-        }
-
-        self
-    }
-}
-
-impl ProjectEnvConfigurationGenerator {
-    pub fn builder() -> ProjectEnvConfigurationGeneratorBuilder {
-        ProjectEnvConfigurationGeneratorBuilder::default()
-    }
+    vars: BTreeMap<String, String>,
 }
 
 impl ProjectEnvConfigurationGenerator {

@@ -1,68 +1,19 @@
 use std::fs;
 
-use derive_builder::Builder;
-
-use crate::{ProjectGenerator, ProjectGeneratorBuilder};
+use crate::ProjectGenerator;
 use omni_configurations::{
     GeneratorSourceConfiguration, LocalGeneratorSourceConfiguration, Ui,
     WorkspaceConfiguration,
 };
 
-#[derive(Builder, Debug)]
-#[builder(setter(into, strip_option))]
+#[derive(Debug, bon::Builder)]
 pub struct WorkspaceGenerator {
+    #[builder(into)]
     name: Option<String>,
-    #[builder(setter(custom), default)]
+    #[builder(default)]
     projects: Vec<ProjectGenerator>,
-    #[builder(setter(custom), default)]
+    #[builder(default)]
     bases: Vec<ProjectGenerator>,
-}
-
-impl WorkspaceGeneratorBuilder {
-    fn add_project(
-        projects: &mut Option<Vec<ProjectGenerator>>,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
-        base: Option<bool>,
-    ) -> eyre::Result<()> {
-        let mut project = ProjectGeneratorBuilder::default();
-        f(&mut project)?;
-
-        if let Some(base) = base {
-            project.base(base);
-        }
-
-        if let Some(projects) = projects {
-            projects.push(project.build()?);
-        } else {
-            *projects = Some(vec![project.build()?]);
-        }
-
-        Ok(())
-    }
-
-    pub fn project(
-        &mut self,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
-    ) -> eyre::Result<&mut Self> {
-        Self::add_project(&mut self.projects, f, None)?;
-
-        Ok(self)
-    }
-
-    pub fn base(
-        &mut self,
-        f: impl FnOnce(&mut ProjectGeneratorBuilder) -> eyre::Result<()>,
-    ) -> eyre::Result<&mut Self> {
-        Self::add_project(&mut self.bases, f, Some(true))?;
-
-        Ok(self)
-    }
-}
-
-impl WorkspaceGenerator {
-    pub fn builder() -> WorkspaceGeneratorBuilder {
-        WorkspaceGeneratorBuilder::default()
-    }
 }
 
 impl WorkspaceGenerator {
