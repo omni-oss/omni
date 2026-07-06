@@ -3,6 +3,13 @@ name: omni_context
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
+tasks:
+  profile:
+    enabled: true
+
+  bench:
+    enabled: true
+
 dependencies:
   - omni_configurations
   - omni_core

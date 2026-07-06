@@ -29,6 +29,7 @@ tasks:
           append: ["./tests/**/*.rs"]
 
   bench:
+    enabled: false
     exec: cargo bench -p ${PROJECT_NAME} ${RUST_BENCH_ADDITIONAL_ARGS:-}
     dependencies:
       - test
@@ -39,6 +40,7 @@ tasks:
           append: ["./benches/**/*.rs"]
 
   profile:
+    enabled: false
     exec: >
       cargo flamegraph
         --profile=${profile:-bench-with-debug}

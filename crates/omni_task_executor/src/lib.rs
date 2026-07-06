@@ -21,3 +21,18 @@ pub use omni_execution_plan::Call;
 pub use on_failure::*;
 pub use result::*;
 pub use sys::*;
+
+/// Internal pipeline components exposed for the crate's own benchmarks
+/// (`benches/`). Enabled via the `bench-support` feature; not part of the
+/// stable public API.
+#[cfg(feature = "bench-support")]
+pub mod bench_support {
+    pub use crate::cache_manager::{
+        CacheManager, CacheManagerBuilder, TaskResultContext,
+    };
+    pub use crate::cache_store_provider::{
+        CacheStoreProvider, ContextCacheStoreProvider,
+    };
+    pub use crate::execution_plan_provider::ContextExecutionPlanProvider;
+    pub use crate::task_context_provider::DefaultTaskContextProvider;
+}

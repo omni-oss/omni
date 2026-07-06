@@ -8,11 +8,27 @@ repository.workspace = true
 [features]
 default = ["enable-tracing"]
 enable-tracing = ["trace/enabled"]
+# Exposes internal pipeline components (plan provider, cache manager, task
+# context provider) so the crate's own criterion benches can measure
+# individual stages in isolation. Not for production use.
+bench-support = []
 vendored-openssl = [
     "omni_cache/vendored-openssl",
     "omni_context/vendored-openssl",
     "omni_execution_plan/vendored-openssl",
 ]
+
+[[bench]]
+name = "plan_building"
+path = "benches/plan_building.rs"
+harness = false
+required-features = ["bench-support"]
+
+[[bench]]
+name = "cache_lookup"
+path = "benches/cache_lookup.rs"
+harness = false
+required-features = ["bench-support"]
 
 [dependencies]
 eyre = { workspace = true }
@@ -60,3 +76,9 @@ omni_tera = { workspace = true }
 omni_config_types = { workspace = true }
 bon = { workspace = true }
 schemars = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+omni_test_utils = { workspace = true }
+omni_tracing_subscriber = { workspace = true }

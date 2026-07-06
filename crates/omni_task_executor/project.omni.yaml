@@ -4,6 +4,13 @@ name: omni_task_executor
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 
+tasks:
+  bench:
+    enabled: true
+
+  profile:
+    enabled: true
+
 dependencies:
   - omni_core
   - omni_configurations
