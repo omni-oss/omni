@@ -60,6 +60,8 @@ export const nxAdapter: ToolAdapter = {
     tool: "nx",
     hasDaemon: true,
     supportedVersions: [">=21.0.0 <24.0.0"],
+    description:
+        "Nx. Uses the Nx Daemon (a background process plus a results database) to accelerate repeated runs, toggled via the NX_DAEMON env var; installed as a workspace devDependency.",
 
     pinnedVersion: (config) => config.versions.nx,
     devDependencies: (config) => ({ nx: config.versions.nx }),

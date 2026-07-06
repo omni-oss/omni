@@ -7,10 +7,12 @@ import { execa } from "execa";
 import { HarnessConfigSchema, type Tool } from "../config";
 import { buildGraph, expectedColdExecuted, taskNames } from "../graph";
 import {
+    describeTool,
     getAdapter,
     resolveToolVersions,
     type ToolAdapter,
     type ToolContext,
+    type ToolInfo,
 } from "../tools";
 import { BASE_ENV } from "./env";
 import { getPlatformInfo, type PlatformInfo } from "./platform-info";
@@ -92,6 +94,8 @@ export interface BenchmarkResult {
     daemon: boolean;
     /** Resolved version of each benchmarked tool (detected for omni). */
     versions: Record<string, string | null>;
+    /** Noteworthy attributes of each benchmarked tool (daemon, provisioning, …). */
+    toolInfo: ToolInfo[];
     generatedAt: string;
     tools: ToolResult[];
     platform: PlatformInfo;
@@ -609,6 +613,9 @@ export async function runBenchmark(
     const versionMap = await resolveToolVersions(config, rootDir, tools);
     const versions: Record<string, string | null> =
         Object.fromEntries(versionMap);
+    const toolInfo: ToolInfo[] = tools.map((tool) =>
+        describeTool(tool, config, versionMap.get(tool) ?? null),
+    );
 
     const results: ToolResult[] = [];
     for (const tool of tools) {
@@ -637,6 +644,7 @@ export async function runBenchmark(
         concurrency,
         daemon,
         versions,
+        toolInfo,
         generatedAt: new Date().toISOString(),
         tools: results,
         platform,

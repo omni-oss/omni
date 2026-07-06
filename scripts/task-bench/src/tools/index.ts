@@ -4,7 +4,7 @@ import { moonAdapter } from "./moon";
 import { nxAdapter } from "./nx";
 import { omniAdapter } from "./omni";
 import { turboAdapter } from "./turbo";
-import type { ToolAdapter } from "./types";
+import type { ToolAdapter, ToolInfo } from "./types";
 
 const ADAPTERS: Record<Tool, ToolAdapter> = {
     omni: omniAdapter,
@@ -19,6 +19,29 @@ export function getAdapter(tool: Tool): ToolAdapter {
 
 export function getAdapters(tools: Tool[]): ToolAdapter[] {
     return tools.map(getAdapter);
+}
+
+/**
+ * Summarize a tool's noteworthy attributes (version plus daemon/provisioning/
+ * supported ranges and a description). `provisioning` is derived from whether
+ * the adapter contributes any workspace devDependencies.
+ */
+export function describeTool(
+    tool: Tool,
+    config: HarnessConfig,
+    version: string | null,
+): ToolInfo {
+    const adapter = getAdapter(tool);
+    const installsDeps =
+        Object.keys(adapter.devDependencies(config)).length > 0;
+    return {
+        tool,
+        version,
+        daemon: adapter.hasDaemon,
+        provisioning: installsDeps ? "workspace-dependency" : "host-binary",
+        supportedVersions: [...adapter.supportedVersions],
+        description: adapter.description,
+    };
 }
 
 /** Throw if `version` does not satisfy any of the adapter's supported ranges. */

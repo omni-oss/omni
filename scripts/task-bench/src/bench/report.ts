@@ -1,8 +1,28 @@
+import type { ToolInfo } from "../tools";
 import { renderTable, renderVersionList } from "./format";
 import type { BenchmarkResult, ScenarioResult, ToolResult } from "./index";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio, isFullyCached } from "./metrics";
 import type { PlatformInfo } from "./platform-info";
 import { formatBytes, formatMs, type Stats } from "./stats";
+
+/**
+ * Render a per-tool attribute list (daemon, provisioning, supported versions,
+ * plus a short description) so readers can interpret the numbers in context.
+ * Returns just the bullet lines; callers supply their own label/heading.
+ */
+export function renderToolInfo(infos: ToolInfo[]): string[] {
+    const lines: string[] = [];
+    for (const info of infos) {
+        const attrs = [
+            `daemon: ${info.daemon ? "yes" : "no"}`,
+            `provisioning: ${info.provisioning}`,
+            `supported: ${info.supportedVersions.join(" || ") || "?"}`,
+        ].join(" \u00b7 ");
+        lines.push(`* **${info.tool}** ${info.version ?? "?"} — ${attrs}`);
+        lines.push(`  ${info.description}`);
+    }
+    return lines;
+}
 
 function statCell(stats: Stats, failures: number): string {
     if (stats.samples.length === 0) return "—";
@@ -81,7 +101,11 @@ export function renderPlatformInfo(platform: PlatformInfo): string[] {
  * discovery + cache-restore overhead. The warm-cache-hit column verifies that
  * assumption held (should be 100%).
  */
-export function renderReport(result: BenchmarkResult): string[] {
+export function renderReport(
+    result: BenchmarkResult,
+    options: { includeToolInfo?: boolean } = {},
+): string[] {
+    const includeToolInfo = options.includeToolInfo ?? true;
     const lines: string[] = [];
     const graphSize = Math.max(0, ...result.tools.map((t) => t.taskGraphSize));
     lines.push("");
@@ -100,6 +124,13 @@ export function renderReport(result: BenchmarkResult): string[] {
     lines.push("");
     lines.push(...renderPlatformInfo(result.platform));
     lines.push("");
+
+    const toolInfo = result.toolInfo ?? [];
+    if (includeToolInfo && toolInfo.length > 0) {
+        lines.push("Tool info:");
+        lines.push(...renderToolInfo(toolInfo));
+        lines.push("");
+    }
 
     const headers = [
         "tool",

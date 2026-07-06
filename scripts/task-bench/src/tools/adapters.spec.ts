@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { resolveConfig } from "../config";
-import { assertSupportedVersion, getAdapter, type ToolContext } from "./index";
+import {
+    assertSupportedVersion,
+    describeTool,
+    getAdapter,
+    type ToolContext,
+} from "./index";
 
 const ctx = (daemon: boolean): ToolContext => ({
     rootDir: "/tmp/x",
@@ -91,5 +96,33 @@ describe("tool adapters (versions & dependencies)", () => {
         expect(() =>
             assertSupportedVersion(getAdapter("moon"), "1.0.0"),
         ).toThrow(/not supported/);
+    });
+});
+
+describe("describeTool", () => {
+    const config = resolveConfig();
+
+    it("summarizes daemon + provisioning for a workspace-installed tool", () => {
+        const info = describeTool("turbo", config, "2.10.3");
+        expect(info).toMatchObject({
+            tool: "turbo",
+            version: "2.10.3",
+            daemon: true,
+            provisioning: "workspace-dependency",
+            supportedVersions: ["^2.0.0"],
+        });
+        expect(info.description).toBeTruthy();
+    });
+
+    it("marks omni as a host binary with no daemon", () => {
+        const info = describeTool("omni", config, null);
+        expect(info.daemon).toBe(false);
+        expect(info.provisioning).toBe("host-binary");
+        expect(info.version).toBeNull();
+    });
+
+    it("reflects each runner's daemon attribute", () => {
+        expect(describeTool("nx", config, "23.0.1").daemon).toBe(true);
+        expect(describeTool("moon", config, "2.3.5").daemon).toBe(false);
     });
 });

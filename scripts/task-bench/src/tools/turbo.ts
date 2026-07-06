@@ -39,6 +39,8 @@ export const turboAdapter: ToolAdapter = {
     tool: "turbo",
     hasDaemon: true,
     supportedVersions: ["^2.0.0"],
+    description:
+        "Vercel Turborepo. Runs a persistent daemon (turbod) to speed up warm runs, toggled per invocation via --daemon/--no-daemon; installed as a workspace devDependency.",
 
     pinnedVersion: (config) => config.versions.turbo,
     devDependencies: (config) => ({ turbo: config.versions.turbo }),

@@ -55,6 +55,8 @@ export const omniAdapter: ToolAdapter = {
     hasDaemon: false,
     // omni is a host-provided binary, not installed per-workspace.
     supportedVersions: [">=0.16.0"],
+    description:
+        "The Rust task runner under test. Host-provided binary (not pinned by the workspace); no persistent daemon, so every run is a fresh process.",
 
     pinnedVersion: () => null,
     detectVersion: async (rootDir) => {

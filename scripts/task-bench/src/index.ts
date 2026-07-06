@@ -5,7 +5,7 @@ export {
     cacheHitRatio,
     isFullyCached,
 } from "./bench/metrics";
-export { renderReport } from "./bench/report";
+export { renderReport, renderToolInfo } from "./bench/report";
 export type { Stats } from "./bench/stats";
 export { computeStats, formatMs, median } from "./bench/stats";
 export * from "./config";
@@ -26,10 +26,12 @@ export type {
     RunInvocation,
     ToolAdapter,
     ToolContext,
+    ToolInfo,
     WorkspaceWriter,
 } from "./tools";
 export {
     assertSupportedVersion,
+    describeTool,
     getAdapter,
     getAdapters,
     resolveToolVersions,

@@ -77,6 +77,8 @@ export const moonAdapter: ToolAdapter = {
     tool: "moon",
     hasDaemon: false,
     supportedVersions: ["^2.0.0"],
+    description:
+        "moonrepo. No persistent daemon — every invocation is a fresh process; installed as a workspace devDependency (@moonrepo/cli) and requires a git repo to enable caching.",
 
     pinnedVersion: (config) => config.versions.moon,
     devDependencies: (config) => ({ "@moonrepo/cli": config.versions.moon }),

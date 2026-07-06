@@ -1,8 +1,9 @@
 import { renderTable, renderVersionList } from "../bench/format";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio } from "../bench/metrics";
-import { renderReport } from "../bench/report";
+import { renderReport, renderToolInfo } from "../bench/report";
 import { formatBytes, formatMs } from "../bench/stats";
 import { TOOLS, type Tool } from "../config";
+import type { ToolInfo } from "../tools";
 import type { SuiteResult, SuiteScenarioResult } from "./index";
 
 /** Tools that appear in at least one scenario, in canonical order. */
@@ -23,6 +24,18 @@ function renderSuiteVersions(suite: SuiteResult, tools: Tool[]): string[] {
         return [tool, version] as const;
     });
     return renderVersionList(pairs, "Tool versions");
+}
+
+/** Pick each tool's info from the first scenario that reports it. */
+function suiteToolInfo(suite: SuiteResult, tools: Tool[]): ToolInfo[] {
+    const infos: ToolInfo[] = [];
+    for (const tool of tools) {
+        const info = suite.scenarios
+            .flatMap((s) => s.result.toolInfo ?? [])
+            .find((i) => i.tool === tool);
+        if (info) infos.push(info);
+    }
+    return infos;
 }
 
 function warmCell(scenario: SuiteScenarioResult, tool: Tool): string {
@@ -98,6 +111,14 @@ export function renderSuiteMarkdown(suite: SuiteResult): string[] {
     lines.push("");
     lines.push(...renderSuiteVersions(suite, tools));
     lines.push("");
+
+    const toolInfo = suiteToolInfo(suite, tools);
+    if (toolInfo.length > 0) {
+        lines.push("## Tool info");
+        lines.push("");
+        lines.push(...renderToolInfo(toolInfo));
+        lines.push("");
+    }
     lines.push(
         "`warm` = median wall time with a verified 100% cache hit " +
             "(discovery + cache-restore overhead). `⚠` marks a scenario whose " +
@@ -194,7 +215,7 @@ export function renderSuiteMarkdown(suite: SuiteResult): string[] {
             `* Config: ${s.config.projects} projects × ${s.config.tasksPerProject} tasks, ` +
                 `strategy \`${s.config.dependency.strategy}\`.`,
         );
-        lines.push(...renderReport(s.result));
+        lines.push(...renderReport(s.result, { includeToolInfo: false }));
         lines.push("");
     }
 

@@ -42,6 +42,26 @@ export interface RunInvocation {
 }
 
 /**
+ * A snapshot of a runner's noteworthy attributes for reports — more than just
+ * the resolved version, so readers can interpret the numbers in context (e.g.
+ * a daemon-backed runner has a warm-run advantage; a host-provided binary
+ * isn't pinned by the workspace).
+ */
+export interface ToolInfo {
+    tool: Tool;
+    /** Resolved version used in this run (pinned or detected), or null. */
+    version: string | null;
+    /** Whether the runner relies on a persistent background daemon. */
+    daemon: boolean;
+    /** How the tool is provided: an npm workspace dep, or a host binary. */
+    provisioning: "workspace-dependency" | "host-binary";
+    /** Semver ranges of the tool this harness supports. */
+    supportedVersions: string[];
+    /** One-line human-readable summary of the runner. */
+    description: string;
+}
+
+/**
  * A self-contained integration for one task runner. Each adapter owns:
  *   - which tool versions it supports (`supportedVersions`),
  *   - the npm dependencies it needs (`devDependencies`),
@@ -55,6 +75,12 @@ export interface ToolAdapter {
     hasDaemon: boolean;
     /** Semver ranges of the tool version this adapter supports. */
     supportedVersions: readonly string[];
+    /**
+     * One-line, human-readable summary of the runner — notable traits worth
+     * knowing when reading its benchmark numbers (implementation, caching
+     * model, how its daemon is controlled, etc.).
+     */
+    description: string;
 
     /** Version pinned via config for installable tools; null for external ones. */
     pinnedVersion(config: HarnessConfig): string | null;
