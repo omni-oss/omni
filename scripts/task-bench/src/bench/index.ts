@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { execa } from "execa";
 import { HarnessConfigSchema, type Tool } from "../config";
-import { buildGraph, expectedColdExecuted, taskNames } from "../graph";
+import { buildModel, expectedColdExecuted, taskNames } from "../model";
 import {
     describeTool,
     getAdapter,
@@ -580,7 +580,8 @@ export async function runBenchmark(
         await readFile(join(rootDir, "bench.config.json"), "utf8"),
     );
     const config = HarnessConfigSchema.parse(raw);
-    const projects = buildGraph(config);
+    const model = buildModel(config);
+    const projects = model.projects;
     const tasks = taskNames(config);
 
     const tools = options.tools ?? config.tools;
@@ -591,7 +592,7 @@ export async function runBenchmark(
     const maxRetries = Math.max(0, options.maxRetries ?? DEFAULT_MAX_RETRIES);
     // Expected task count for a correct cold run of `task`, used to verify that
     // cold runs re-ran the whole graph (and to retry them when they didn't).
-    const expectedCold = expectedColdExecuted(config, task);
+    const expectedCold = expectedColdExecuted(model, task);
     const platform = getPlatformInfo();
     const concurrency =
         options.concurrency ?? Math.max(1, platform.cpus.length);

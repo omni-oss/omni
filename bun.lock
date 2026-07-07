@@ -328,6 +328,10 @@
         "vitest": "^4.0.18",
       },
     },
+    "packages/workspace-gen": {
+      "name": "@omni-oss/workspace-gen",
+      "version": "0.0.0",
+    },
     "scripts/create-jobs": {
       "name": "@omni-oss/create-jobs",
       "version": "0.1.12",
@@ -391,11 +395,12 @@
     },
     "scripts/task-bench": {
       "name": "@omni-oss/task-bench",
-      "version": "0.0.0-beta.3",
+      "version": "0.0.0-beta.7",
       "bin": "./dist/task-bench-cli.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "catalog:",
         "@omni-oss/log": "workspace:^",
+        "@omni-oss/workspace-gen": "workspace:^",
         "commander": "catalog:",
         "execa": "catalog:",
         "semver": "catalog:",
@@ -784,6 +789,8 @@
     "@omni-oss/vite-config": ["@omni-oss/vite-config@workspace:packages/vite-config"],
 
     "@omni-oss/vitest-config": ["@omni-oss/vitest-config@workspace:packages/vitest-config"],
+
+    "@omni-oss/workspace-gen": ["@omni-oss/workspace-gen@workspace:packages/workspace-gen"],
 
     "@oozcitak/dom": ["@oozcitak/dom@2.0.2", "", { "dependencies": { "@oozcitak/infra": "^2.0.2", "@oozcitak/url": "^3.0.0", "@oozcitak/util": "^10.0.0" } }, "sha512-GjpKhkSYC3Mj4+lfwEyI1dqnsKTgwGy48ytZEhm4A/xnH/8z9M3ZVXKr/YGQi3uCLs1AEBS+x5T2JPiueEDW8w=="],
 

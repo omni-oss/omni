@@ -2,7 +2,6 @@
 name: "@omni-oss/task-bench"
 
 extends:
-
   - "@workspace/omni/presets/ts-vite-script.omni.yaml"
 
 
@@ -11,14 +10,20 @@ dependencies:
     - "@omni-oss/tsconfig"
     - "@omni-oss/vite-config"
     - "@omni-oss/vitest-config"
+    - "@omni-oss/workspace-gen"
 
 tasks:
-
   test:unit:
     enabled: true
+    dependencies:
+      append:
+        - ^build
 
   test:integration:
     enabled: false
+    dependencies:
+      append:
+        - ^build
 
   test:
     enabled: true

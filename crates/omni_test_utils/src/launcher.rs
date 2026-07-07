@@ -36,15 +36,17 @@ pub fn project_launcher(project: &str, output_files: usize) -> Launcher {
     }
 }
 
-/// The command that runs a task's launcher for `task`.
-pub fn task_command(script_name: &str, task: &str) -> String {
+/// The omni task-command template for the host OS, with the `{task_id}`
+/// placeholder [`omni_workspace_gen::render_omni`] expands to each task name.
+/// Mirrors the launcher script name produced by [`project_launcher`].
+pub fn task_command_template() -> String {
     #[cfg(windows)]
     {
-        format!("cmd /C {script_name} {task}")
+        "cmd /C run.cmd {task_id}".to_string()
     }
     #[cfg(not(windows))]
     {
-        format!("sh {script_name} {task}")
+        "sh run.sh {task_id}".to_string()
     }
 }
 

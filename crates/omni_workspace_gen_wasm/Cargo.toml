@@ -1,0 +1,24 @@
+[package]
+name = "omni_workspace_gen_wasm"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_workspace_gen_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+omni_workspace_gen = { workspace = true }
+wasm-bindgen = { workspace = true }
+serde = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+serde_json = { workspace = true }
+heck = { workspace = true }
+console_error_panic_hook = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

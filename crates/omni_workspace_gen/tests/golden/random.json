@@ -1,0 +1,345 @@
+{
+  "model": {
+    "config": {
+      "cache_enabled": true,
+      "content": {
+        "file_content": "File content %i%",
+        "file_extension": "txt",
+        "files_per_leaf_folder": 10,
+        "folder_nesting": 2,
+        "leaf_folder_count": 5
+      },
+      "dependency": {
+        "edge_probability": 0.4,
+        "fanout": 3,
+        "layers": 5,
+        "strategy": "random"
+      },
+      "project_name_template": "p-{project_id}",
+      "projects": 10,
+      "seed": 1234,
+      "task": {
+        "chain_within_project": true,
+        "fan_upstream": true,
+        "output_files": 1
+      },
+      "tasks_per_project": 2,
+      "workspace_name": "harness"
+    },
+    "expected_cold_executed": {
+      "t0": 10,
+      "t1": 20
+    },
+    "model_version": 1,
+    "projects": [
+      {
+        "dependencies": [],
+        "dir": "packages/p-00",
+        "index": 0,
+        "name": "p-00",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-00"
+        ],
+        "dir": "packages/p-01",
+        "index": 1,
+        "name": "p-01",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [],
+        "dir": "packages/p-02",
+        "index": 2,
+        "name": "p-02",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-01",
+          "p-02"
+        ],
+        "dir": "packages/p-03",
+        "index": 3,
+        "name": "p-03",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-00",
+          "p-02",
+          "p-03"
+        ],
+        "dir": "packages/p-04",
+        "index": 4,
+        "name": "p-04",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-01",
+          "p-04"
+        ],
+        "dir": "packages/p-05",
+        "index": 5,
+        "name": "p-05",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-02"
+        ],
+        "dir": "packages/p-06",
+        "index": 6,
+        "name": "p-06",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-02",
+          "p-04"
+        ],
+        "dir": "packages/p-07",
+        "index": 7,
+        "name": "p-07",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-02",
+          "p-03",
+          "p-05"
+        ],
+        "dir": "packages/p-08",
+        "index": 8,
+        "name": "p-08",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      },
+      {
+        "dependencies": [
+          "p-02",
+          "p-07",
+          "p-08"
+        ],
+        "dir": "packages/p-09",
+        "index": 9,
+        "name": "p-09",
+        "tasks": [
+          {
+            "dependencies": [
+              "^t0"
+            ],
+            "name": "t0",
+            "output_globs": [
+              "dist/t0.*"
+            ]
+          },
+          {
+            "dependencies": [
+              "t0",
+              "^t1"
+            ],
+            "name": "t1",
+            "output_globs": [
+              "dist/t1.*"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "omni": {
+    "packages/p-00/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-00\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-01/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-01\ndependencies:\n  - p-00\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-02/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-02\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-03/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-03\ndependencies:\n  - p-01\n  - p-02\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-04/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-04\ndependencies:\n  - p-00\n  - p-02\n  - p-03\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-05/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-05\ndependencies:\n  - p-01\n  - p-04\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-06/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-06\ndependencies:\n  - p-02\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-07/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-07\ndependencies:\n  - p-02\n  - p-04\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-08/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-08\ndependencies:\n  - p-02\n  - p-03\n  - p-05\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "packages/p-09/project.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json\nname: p-09\ndependencies:\n  - p-02\n  - p-07\n  - p-08\ncache:\n  key:\n    files:\n      - package.json\n      - task.mjs\n      - src/**/*.js\ntasks:\n  t0:\n    exec: node ./task.mjs t0\n    dependencies:\n      - ^t0\n    cache:\n      output:\n        files:\n          - dist/t0.*\n  t1:\n    exec: node ./task.mjs t1\n    dependencies:\n      - t0\n      - ^t1\n    cache:\n      output:\n        files:\n          - dist/t1.*",
+    "workspace.omni.yaml": "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/workspace.json\nui: stream\nprojects:\n  - packages/*"
+  }
+}

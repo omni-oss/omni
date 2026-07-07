@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/workspace-gen"
+
+extends:
+  - "@workspace/omni/presets/ts-lib.omni.yaml"
+
+dependencies:
+  - omni_workspace_gen_wasm
+
+tasks:
+  build:
+    enabled: true
+    exec: wasm-pack build ../../crates/omni_workspace_gen_wasm --target nodejs --out-name index --out-dir ../../packages/workspace-gen/dist
+    cache:
+      key:
+        files:
+          - "../../crates/omni_workspace_gen_wasm/Cargo.toml"
+          - "../../crates/omni_workspace_gen_wasm/src/**/*.rs"
+          - "../../crates/omni_workspace_gen/Cargo.toml"
+          - "../../crates/omni_workspace_gen/src/**/*.rs"
+      output:
+        files:
+          - "dist/**"
+
+  test:unit:
+    enabled: false
+
+  test:integration:
+    enabled: false
+
+  test:
+    enabled: false
+
+  publish:
+    enabled: true
+
+meta:
+  publish: true

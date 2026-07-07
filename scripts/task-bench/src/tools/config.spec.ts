@@ -1,27 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import { resolveConfig } from "../config";
-import { buildGraph, type ProjectNode } from "../graph";
+import { buildModel, type ProjectModel, renderOmni } from "../model";
 import { moonProjectConfig } from "./moon";
 import { nxProjectConfig, nxRootConfig } from "./nx";
-import { omniProjectConfig } from "./omni";
+import { OMNI_RENDER_OPTIONS } from "./omni";
 import { turboRootConfig } from "./turbo";
-import { taskDependencies } from "./types";
-
-describe("taskDependencies", () => {
-    it("chains within a project and fans upstream by default", () => {
-        const config = resolveConfig();
-        expect(taskDependencies(config, 0)).toEqual(["^t0"]);
-        expect(taskDependencies(config, 2)).toEqual(["t1", "^t2"]);
-    });
-
-    it("respects disabled chaining / fan-out", () => {
-        const config = resolveConfig({
-            task: { chainWithinProject: false, fanUpstream: false },
-        });
-        expect(taskDependencies(config, 2)).toEqual([]);
-    });
-});
 
 describe("equivalence across runners", () => {
     const config = resolveConfig({
@@ -29,12 +13,17 @@ describe("equivalence across runners", () => {
         tasksPerProject: 2,
         dependency: { strategy: "chain" },
     });
-    const projects = buildGraph(config);
-    const project = projects[3] as ProjectNode;
-    const parent = projects[2] as ProjectNode;
+    const model = buildModel(config);
+    const project = model.projects[3] as ProjectModel;
+    const parent = model.projects[2] as ProjectModel;
 
-    it("omni encodes the same task deps and project deps", () => {
-        const doc = parseYaml(omniProjectConfig(config, project, projects));
+    it("omni (shared core) encodes the same task deps and project deps", () => {
+        const files = renderOmni(model, OMNI_RENDER_OPTIONS);
+        const entry = files.find(
+            ([rel]) => rel === `${project.dir}/project.omni.yaml`,
+        );
+        expect(entry).toBeDefined();
+        const doc = parseYaml((entry as [string, string])[1]);
         expect(doc.name).toBe(project.name);
         expect(doc.dependencies).toEqual([parent.name]);
         expect(doc.tasks.t1.dependencies).toEqual(["t0", "^t1"]);
@@ -42,28 +31,28 @@ describe("equivalence across runners", () => {
     });
 
     it("turbo encodes matching dependsOn / outputs", () => {
-        const turbo = JSON.parse(turboRootConfig(config));
+        const turbo = JSON.parse(turboRootConfig(model));
         expect(turbo.tasks.t1.dependsOn).toEqual(["t0", "^t1"]);
         expect(turbo.tasks.t1.outputs).toEqual(["dist/t1.*"]);
         expect(turbo.globalPassThroughEnv).toContain("TASK_BENCH_EXEC_LOG");
     });
 
     it("nx encodes matching dependsOn / outputs and per-project targets", () => {
-        const nx = JSON.parse(nxRootConfig(config));
+        const nx = JSON.parse(nxRootConfig(model));
         expect(nx.targetDefaults.t1.dependsOn).toEqual(["t0", "^t1"]);
         expect(nx.targetDefaults.t1.outputs).toEqual([
             "{projectRoot}/dist/t1.*",
         ]);
         expect(nx.targetDefaults.t1.cache).toBe(true);
 
-        const proj = JSON.parse(nxProjectConfig(config, project));
+        const proj = JSON.parse(nxProjectConfig(project));
         expect(proj.name).toBe(project.name);
         expect(proj.targets.t1.executor).toBe("nx:run-commands");
         expect(proj.targets.t1.options.command).toBe("node ./task.mjs t1");
     });
 
     it("moon encodes matching deps / outputs and project deps", () => {
-        const doc = parseYaml(moonProjectConfig(config, project, projects));
+        const doc = parseYaml(moonProjectConfig(project));
         expect(doc.id).toBe(project.name);
         expect(doc.dependsOn).toEqual([parent.name]);
         expect(doc.tasks.t1.deps).toEqual(["~:t0", "^:t1"]);

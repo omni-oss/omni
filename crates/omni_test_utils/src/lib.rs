@@ -1,28 +1,20 @@
-mod cache_configuration_generator;
-mod cache_key_configuration_generator;
-mod config;
-mod graph;
+//! Host-side benchmark workspace generation.
+//!
+//! The pure, filesystem-free logic (config surface, seeded graph, task-graph
+//! edges, workspace model, and omni-config rendering) lives in
+//! [`omni_workspace_gen`] and is re-exported here so existing consumers keep
+//! importing `HarnessConfig`, `DependencyStrategy`, etc. from `omni_test_utils`.
+//! This crate adds the host concerns: writing the rendered omni files plus the
+//! neutral base (launcher scripts + `src/**` content tree) to disk.
+
+mod content;
 mod harness;
 mod launcher;
-mod meta_configuration_generator;
 pub mod presets;
-mod project_env_configuration_generator;
-mod project_generator;
-mod task_env_configuration_generator;
-mod task_generator;
-mod task_output_configuration;
-mod workspace_generator;
 
-pub use cache_configuration_generator::*;
-pub use cache_key_configuration_generator::*;
-pub use config::*;
-pub use graph::*;
 pub use harness::*;
 pub use launcher::*;
-pub use meta_configuration_generator::*;
-pub use project_env_configuration_generator::*;
-pub use project_generator::*;
-pub use task_env_configuration_generator::*;
-pub use task_generator::*;
-pub use task_output_configuration::*;
-pub use workspace_generator::*;
+
+pub use omni_workspace_gen::*;
+
+pub(crate) use content::write_content_tree;

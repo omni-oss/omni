@@ -1,54 +1,25 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execa } from "execa";
-import { stringify as stringifyYaml } from "yaml";
-import type { HarnessConfig } from "../config";
-import { type ProjectNode, taskNames } from "../graph";
+import { type OmniRenderOptions, renderOmni } from "../model";
 import {
-    dependencyNames,
     type GenerationContext,
     removeDist,
     type ToolAdapter,
     type ToolContext,
-    taskDependencies,
 } from "./types";
 
-const SCHEMA =
-    "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json";
-const WORKSPACE_SCHEMA =
-    "# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/workspace.json";
-
-export function omniWorkspaceConfig(): string {
-    const body = stringifyYaml({ ui: "stream", projects: ["packages/*"] });
-    return `${WORKSPACE_SCHEMA}\n${body}`;
-}
-
-export function omniProjectConfig(
-    config: HarnessConfig,
-    project: ProjectNode,
-    projects: ProjectNode[],
-): string {
-    const tasks: Record<string, unknown> = {};
-    taskNames(config).forEach((task, k) => {
-        const deps = taskDependencies(config, k);
-        tasks[task] = {
-            exec: `node ./task.mjs ${task}`,
-            ...(deps.length ? { dependencies: deps } : {}),
-            cache: { output: { files: [`dist/${task}.*`] } },
-        };
-    });
-
-    const doc: Record<string, unknown> = {
-        name: project.name,
-        ...(project.dependencies.length
-            ? { dependencies: dependencyNames(project, projects) }
-            : {}),
-        cache: { key: { files: ["package.json", "task.mjs", "src/**/*.js"] } },
-        tasks,
-    };
-
-    return `${SCHEMA}\n${stringifyYaml(doc)}`;
-}
+/**
+ * How omni tasks are invoked in the generated workspace and which files feed a
+ * project's cache key. Passed to the shared `renderOmni` core so the omni layer
+ * is generated identically to the in-process Rust bench (only these host-
+ * specific bits differ: the launcher/`task.mjs` command and the neutral-base
+ * cache inputs).
+ */
+export const OMNI_RENDER_OPTIONS: OmniRenderOptions = {
+    taskCommandTemplate: "node ./task.mjs {task_id}",
+    projectCacheKeyFiles: ["package.json", "task.mjs", "src/**/*.js"],
+};
 
 export const omniAdapter: ToolAdapter = {
     tool: "omni",
@@ -71,12 +42,13 @@ export const omniAdapter: ToolAdapter = {
     },
     devDependencies: () => ({}),
     setup: async (ctx: GenerationContext) => {
-        await ctx.write("workspace.omni.yaml", omniWorkspaceConfig());
-        for (const project of ctx.projects) {
-            await ctx.write(
-                `${project.dir}/project.omni.yaml`,
-                omniProjectConfig(ctx.config, project, ctx.projects),
-            );
+        // The omni layer (workspace + per-project configs) is rendered by the
+        // shared Rust core, so it can never drift from the in-process bench.
+        for (const [relPath, contents] of renderOmni(
+            ctx.model,
+            OMNI_RENDER_OPTIONS,
+        )) {
+            await ctx.write(relPath, contents);
         }
     },
 

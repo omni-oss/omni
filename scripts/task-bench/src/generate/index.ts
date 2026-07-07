@@ -6,14 +6,14 @@ import {
     type HarnessConfigInput,
     resolveConfig,
 } from "../config";
-import { buildGraph, type ProjectNode, taskNames } from "../graph";
+import { buildModel, type ProjectModel, taskNames } from "../model";
 import { getAdapters, resolveToolVersions, type ToolAdapter } from "../tools";
 import { sourceFile, taskRunner } from "./templates";
 
 export interface GenerateResult {
     rootDir: string;
     config: HarnessConfig;
-    projects: ProjectNode[];
+    projects: ProjectModel[];
     /** Every file written, workspace-relative. */
     files: string[];
 }
@@ -55,17 +55,15 @@ function rootPackageJson(
 
 function projectPackageJson(
     config: HarnessConfig,
-    project: ProjectNode,
-    projects: ProjectNode[],
+    project: ProjectModel,
 ): string {
     const scripts: Record<string, string> = {};
     for (const task of taskNames(config)) {
         scripts[task] = `node ./task.mjs ${task}`;
     }
     const dependencies: Record<string, string> = {};
-    for (const depIndex of project.dependencies) {
-        const dep = projects[depIndex];
-        if (dep) dependencies[dep.name] = "workspace:*";
+    for (const depName of project.dependencies) {
+        dependencies[depName] = "workspace:*";
     }
     return `${JSON.stringify(
         {
@@ -156,7 +154,8 @@ export async function generateWorkspace(
     input?: HarnessConfigInput,
 ): Promise<GenerateResult> {
     const config = resolveConfig(input);
-    const projects = buildGraph(config);
+    const model = buildModel(config);
+    const projects = model.projects;
     const written: string[] = [];
     const adapters = getAdapters(config.tools);
 
@@ -187,7 +186,7 @@ export async function generateWorkspace(
         await writeText(
             rootDir,
             `${dir}/package.json`,
-            projectPackageJson(config, project, projects),
+            projectPackageJson(config, project),
             written,
         );
         await writeText(
@@ -211,6 +210,7 @@ export async function generateWorkspace(
         await adapter.setup({
             rootDir,
             config,
+            model,
             projects,
             version: versions.get(adapter.tool) ?? null,
             write,

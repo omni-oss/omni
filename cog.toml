@@ -477,6 +477,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_workspace_gen]
+path = "crates/omni_workspace_gen"
+include = [
+    "crates/omni_workspace_gen/**",
+]
+public_api = false
+
+[monorepo.packages.omni_workspace_gen_wasm]
+path = "crates/omni_workspace_gen_wasm"
+include = [
+    "crates/omni_workspace_gen_wasm/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

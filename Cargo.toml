@@ -178,6 +178,12 @@ omni_mcp_core = { path = "crates/omni_mcp_core" }
 omni_input_schema = { path = "crates/omni_input_schema" }
 omni_task_output_logs = { path = "crates/omni_task_output_logs" }
 omni_bench = { path = "crates/omni_bench" }
+omni_workspace_gen = { path = "crates/omni_workspace_gen" }
+omni_workspace_gen_wasm = { path = "crates/omni_workspace_gen_wasm" }
+wasm-bindgen = { version = "^0.2.100" }
+serde-wasm-bindgen = { version = "^0.6.5" }
+console_error_panic_hook = { version = "^0.1.7" }
+wasm-bindgen-test = { version = "^0.3.50" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

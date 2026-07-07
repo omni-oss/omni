@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { platform } from "node:os";
 import { join } from "node:path";
 import type { HarnessConfig, Tool } from "../config";
-import type { ProjectNode } from "../graph";
+import type { ProjectModel, WorkspaceModel } from "../model";
 
 /** Writes a workspace-relative file (creating parent dirs) and records it. */
 export type WorkspaceWriter = (
@@ -16,8 +16,10 @@ export interface GenerationContext {
     /** Absolute path to the generated workspace root. */
     rootDir: string;
     config: HarnessConfig;
-    /** All generated projects, in index order. */
-    projects: ProjectNode[];
+    /** The shared workspace model (graph, task edges, outputs). */
+    model: WorkspaceModel;
+    /** All generated projects, in index order (`model.projects`). */
+    projects: ProjectModel[];
     /** The resolved version of this tool (pinned or detected), if known. */
     version: string | null;
     /** Write a file into the workspace. */
@@ -150,24 +152,12 @@ export async function removeDist(ctx: ToolContext): Promise<void> {
 }
 
 /**
- * Dependency edges for task index `k`, shared by omni/turbo/nx so their graphs
- * stay equivalent:
- *   - within-project: `t{k-1}` (if enabled and k > 0)
- *   - upstream:       `^t{k}`  (if enabled)
+ * Map a shared task-dependency edge (`t{k-1}` / `^t{k}`) to moon's target
+ * syntax (`~:t{k-1}` / `^:t{k}`). Other runners (omni/turbo/nx) consume the
+ * shared `TaskModel.dependencies` verbatim.
  */
-export function taskDependencies(config: HarnessConfig, k: number): string[] {
-    const deps: string[] = [];
-    if (config.task.chainWithinProject && k > 0) deps.push(`t${k - 1}`);
-    if (config.task.fanUpstream) deps.push(`^t${k}`);
-    return deps;
-}
-
-/** Map upstream project indices to their names for a project's dependencies. */
-export function dependencyNames(
-    project: ProjectNode,
-    projects: ProjectNode[],
-): string[] {
-    return project.dependencies.map((i) => projects[i]?.name ?? "");
+export function moonDependency(dep: string): string {
+    return dep.startsWith("^") ? `^:${dep.slice(1)}` : `~:${dep}`;
 }
 
 export type { Tool };

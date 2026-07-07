@@ -102,11 +102,12 @@ export const HarnessConfigSchema = z.object({
         .nonnegative()
         .default(1)
         .describe("Seed for deterministic graph generation."),
-    projectPrefix: z
+    projectNameTemplate: z
         .string()
-        .regex(/^[a-z][a-z0-9-]*$/)
-        .default("bench-p")
-        .describe("Prefix used for generated package names."),
+        .default("p-{project_id}")
+        .describe(
+            "Template for generated project names; `{project_id}` is replaced by the zero-padded project index.",
+        ),
     projects: z
         .number()
         .int()

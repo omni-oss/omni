@@ -11,7 +11,7 @@ export { computeStats, formatMs, median } from "./bench/stats";
 export * from "./config";
 export type { GenerateResult } from "./generate";
 export { generateWorkspace } from "./generate";
-export * from "./graph";
+export * from "./model";
 export type {
     RunSuiteOptions,
     SuiteEvent,

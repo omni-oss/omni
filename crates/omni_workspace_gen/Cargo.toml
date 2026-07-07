@@ -1,0 +1,20 @@
+[package]
+name = "omni_workspace_gen"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_workspace_gen"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+strum = { workspace = true }
+bon = { workspace = true }
+noyalib = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

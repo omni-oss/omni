@@ -6,28 +6,9 @@ version = "0.5.0"
 authors.workspace = true
 repository.workspace = true
 
-[features]
-default = ["enable-tracing"]
-enable-tracing = ["dep:tracing"]
-
 [dependencies]
 eyre = { workspace = true }
-thiserror = { workspace = true }
-strum = { workspace = true }
-trace = { workspace = true, optional = true }
-tracing = { workspace = true, optional = true }
-serde = { workspace = true }
-omni_types = { workspace = true }
-omni_configurations = { workspace = true }
-#tempfile = { workspace = true }
-bon = { workspace = true }
-config_utils = { workspace = true, features = [
-    "serde",
-    "schemars",
-    "validator-garde",
-] }
-bs58 = { workspace = true }
-omni_file_data_serde = { workspace = true }
+omni_workspace_gen = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

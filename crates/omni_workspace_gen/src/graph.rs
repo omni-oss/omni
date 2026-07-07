@@ -1,10 +1,11 @@
 //! Deterministic project-dependency graph generation.
 //!
-//! This is a Rust port of `scripts/task-bench/src/graph.ts`. It produces the
-//! same graph shapes (isolated / chain / fan-out / layered / random) so that
-//! generated omni workspaces mirror the ones the cross-tool `task-bench`
-//! harness produces. `Random` graphs are reproducible for a given seed via a
-//! `mulberry32` PRNG whose arithmetic matches the TypeScript `makeRng`.
+//! Produces the supported graph shapes (isolated / chain / fan-out / layered /
+//! random) so generated omni workspaces mirror the ones the cross-tool
+//! `task-bench` harness produces. `Random` graphs are reproducible for a given
+//! seed via a `mulberry32` PRNG.
+
+use serde::{Deserialize, Serialize};
 
 use crate::HarnessConfig;
 
@@ -12,7 +13,12 @@ use crate::HarnessConfig;
 ///
 /// These control how much of a task graph the executor has to walk during
 /// scheduling, which is what the benchmarks exercise.
+///
+/// The wire representation is kebab-case (`fan-out`) so it matches the JS
+/// ecosystem across the wasm boundary; `strum` shares that spelling.
 #[derive(
+    Serialize,
+    Deserialize,
     Debug,
     Clone,
     Copy,
@@ -24,6 +30,7 @@ use crate::HarnessConfig;
     strum::EnumIs,
     strum::EnumString,
 )]
+#[serde(rename_all = "kebab-case")]
 pub enum DependencyStrategy {
     /// No dependencies between projects.
     #[strum(serialize = "isolated")]
@@ -32,7 +39,7 @@ pub enum DependencyStrategy {
     #[strum(serialize = "chain")]
     Chain,
     /// Every project (except the root) depends on the single root project.
-    #[strum(serialize = "fan_out")]
+    #[strum(serialize = "fan-out")]
     FanOut,
     /// Projects are grouped into layers; each depends on an evenly-sampled
     /// subset of the previous layer.
@@ -49,14 +56,14 @@ pub enum DependencyStrategy {
 pub struct ProjectNode {
     /// Zero-based index in the generated set.
     pub index: usize,
-    /// Package name, e.g. `bench-p0007`.
+    /// Project name, e.g. `p-0007`.
     pub name: String,
     /// Indices of upstream projects this project depends on.
     pub dependencies: Vec<usize>,
 }
 
 /// Deterministic PRNG (`mulberry32`) so a given seed always yields the same
-/// graph. Ported bit-for-bit from `scripts/task-bench/src/graph.ts`.
+/// graph. Its arithmetic matches the TypeScript `makeRng`.
 struct Mulberry32 {
     a: u32,
 }
@@ -75,15 +82,18 @@ impl Mulberry32 {
     }
 }
 
-fn pad_width(count: usize) -> usize {
-    let digits = count.saturating_sub(1).to_string().len();
-    digits.max(4)
+/// Zero-padding width for project indices: the number of decimal digits in the
+/// project count, so names sort lexicographically.
+fn pad_width(projects: usize) -> usize {
+    projects.to_string().len()
 }
 
-/// The name of the project at `index`, zero-padded for stable sorting.
+/// The name of the project at `index`, expanding the configured
+/// `project_name_template` (`{project_id}` -> zero-padded index).
 pub fn project_name(config: &HarnessConfig, index: usize) -> String {
     let width = pad_width(config.projects);
-    format!("{}{:0width$}", config.project_prefix, index, width = width)
+    let id = format!("{index:0width$}");
+    config.project_name_template.replace("{project_id}", &id)
 }
 
 /// The task names generated for every project: `t0`, `t1`, ...
@@ -236,5 +246,38 @@ mod tests {
     #[test]
     fn task_names_are_sequential() {
         assert_eq!(task_names(3), vec!["t0", "t1", "t2"]);
+    }
+
+    #[test]
+    fn project_name_uses_template_and_digit_padding() {
+        let c = HarnessConfig::builder().projects(12).build();
+        assert_eq!(project_name(&c, 7), "p-07");
+
+        let c = HarnessConfig::builder().projects(1000).build();
+        assert_eq!(project_name(&c, 7), "p-0007");
+
+        let c = HarnessConfig::builder().projects(5).build();
+        assert_eq!(project_name(&c, 3), "p-3");
+    }
+
+    #[test]
+    fn project_name_respects_custom_template() {
+        let c = HarnessConfig::builder()
+            .projects(100)
+            .project_name_template("bench-p{project_id}")
+            .build();
+        assert_eq!(project_name(&c, 4), "bench-p004");
+    }
+
+    #[test]
+    fn strategy_serializes_as_kebab_case() {
+        assert_eq!(
+            serde_json::to_string(&DependencyStrategy::FanOut).unwrap(),
+            "\"fan-out\""
+        );
+        assert_eq!(
+            serde_json::from_str::<DependencyStrategy>("\"fan-out\"").unwrap(),
+            DependencyStrategy::FanOut
+        );
     }
 }

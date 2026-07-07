@@ -1,29 +1,27 @@
 import { execa } from "execa";
-import type { HarnessConfig } from "../config";
-import { type ProjectNode, taskNames } from "../graph";
+import type { ProjectModel, WorkspaceModel } from "../model";
 import {
     type GenerationContext,
     removeDist,
     resolveBin,
     type ToolAdapter,
     type ToolContext,
-    taskDependencies,
 } from "./types";
 
-export function nxRootConfig(config: HarnessConfig): string {
+export function nxRootConfig(model: WorkspaceModel): string {
     const targetDefaults: Record<string, unknown> = {};
-    taskNames(config).forEach((task, k) => {
-        targetDefaults[task] = {
-            dependsOn: taskDependencies(config, k),
+    for (const task of model.projects[0]?.tasks ?? []) {
+        targetDefaults[task.name] = {
+            dependsOn: task.dependencies,
             cache: true,
-            outputs: [`{projectRoot}/dist/${task}.*`],
+            outputs: task.outputGlobs.map((glob) => `{projectRoot}/${glob}`),
             inputs: [
                 "{projectRoot}/package.json",
                 "{projectRoot}/task.mjs",
                 "{projectRoot}/src/**/*",
             ],
         };
-    });
+    }
     return `${JSON.stringify(
         {
             $schema: "./node_modules/nx/schemas/nx-schema.json",
@@ -34,15 +32,15 @@ export function nxRootConfig(config: HarnessConfig): string {
     )}\n`;
 }
 
-export function nxProjectConfig(
-    config: HarnessConfig,
-    project: ProjectNode,
-): string {
+export function nxProjectConfig(project: ProjectModel): string {
     const targets: Record<string, unknown> = {};
-    for (const task of taskNames(config)) {
-        targets[task] = {
+    for (const task of project.tasks) {
+        targets[task.name] = {
             executor: "nx:run-commands",
-            options: { command: `node ./task.mjs ${task}`, cwd: project.dir },
+            options: {
+                command: `node ./task.mjs ${task.name}`,
+                cwd: project.dir,
+            },
         };
     }
     return `${JSON.stringify(
@@ -66,11 +64,11 @@ export const nxAdapter: ToolAdapter = {
     pinnedVersion: (config) => config.versions.nx,
     devDependencies: (config) => ({ nx: config.versions.nx }),
     setup: async (ctx: GenerationContext) => {
-        await ctx.write("nx.json", nxRootConfig(ctx.config));
+        await ctx.write("nx.json", nxRootConfig(ctx.model));
         for (const project of ctx.projects) {
             await ctx.write(
                 `${project.dir}/project.json`,
-                nxProjectConfig(ctx.config, project),
+                nxProjectConfig(project),
             );
         }
     },

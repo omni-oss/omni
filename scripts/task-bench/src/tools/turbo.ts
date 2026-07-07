@@ -1,26 +1,24 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execa } from "execa";
-import type { HarnessConfig } from "../config";
-import { taskNames } from "../graph";
+import type { WorkspaceModel } from "../model";
 import {
     type GenerationContext,
     removeDist,
     resolveBin,
     type ToolAdapter,
     type ToolContext,
-    taskDependencies,
 } from "./types";
 
-export function turboRootConfig(config: HarnessConfig): string {
+export function turboRootConfig(model: WorkspaceModel): string {
     const tasks: Record<string, unknown> = {};
-    taskNames(config).forEach((task, k) => {
-        tasks[task] = {
-            dependsOn: taskDependencies(config, k),
-            outputs: [`dist/${task}.*`],
+    for (const task of model.projects[0]?.tasks ?? []) {
+        tasks[task.name] = {
+            dependsOn: task.dependencies,
+            outputs: task.outputGlobs,
             inputs: ["package.json", "task.mjs", "src/**"],
         };
-    });
+    }
     return `${JSON.stringify(
         {
             $schema: "https://turbo.build/schema.json",
@@ -45,7 +43,7 @@ export const turboAdapter: ToolAdapter = {
     pinnedVersion: (config) => config.versions.turbo,
     devDependencies: (config) => ({ turbo: config.versions.turbo }),
     setup: async (ctx: GenerationContext) => {
-        await ctx.write("turbo.json", turboRootConfig(ctx.config));
+        await ctx.write("turbo.json", turboRootConfig(ctx.model));
     },
 
     run: (task, ctx) => ({

@@ -1,11 +1,11 @@
 import type { HarnessConfig } from "../config";
-import type { ProjectNode } from "../graph";
+import type { ProjectModel } from "../model";
 
 /**
  * The minimal source file each project ships. It exists so that every runner
  * has a real input file to hash for cache keys.
  */
-export function sourceFile(project: ProjectNode): string {
+export function sourceFile(project: ProjectModel): string {
     return [
         `// Auto-generated source for ${project.name}.`,
         `// Edit the harness config, not this file.`,
@@ -29,7 +29,7 @@ export function sourceFile(project: ProjectNode): string {
  */
 export function taskRunner(
     config: HarnessConfig,
-    project: ProjectNode,
+    project: ProjectModel,
 ): string {
     const { logLines, workIterations, outputFiles } = config.task;
     return `#!/usr/bin/env node

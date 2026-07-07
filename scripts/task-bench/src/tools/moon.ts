@@ -1,11 +1,10 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
-import type { HarnessConfig } from "../config";
-import { type ProjectNode, taskNames } from "../graph";
+import type { ProjectModel } from "../model";
 import {
-    dependencyNames,
     type GenerationContext,
+    moonDependency,
     removeDist,
     resolveBin,
     type ToolAdapter,
@@ -15,17 +14,6 @@ import {
 const WORKSPACE_SCHEMA = "https://moonrepo.dev/schemas/workspace.json";
 const TOOLCHAIN_SCHEMA = "https://moonrepo.dev/schemas/toolchain.json";
 const PROJECT_SCHEMA = "https://moonrepo.dev/schemas/project.json";
-
-/** moon dependency edges for task index `k`, using moon's target syntax. */
-export function moonTaskDependencies(
-    config: HarnessConfig,
-    k: number,
-): string[] {
-    const deps: string[] = [];
-    if (config.task.chainWithinProject && k > 0) deps.push(`~:t${k - 1}`);
-    if (config.task.fanUpstream) deps.push(`^:t${k}`);
-    return deps;
-}
 
 export function moonWorkspaceConfig(): string {
     return stringifyYaml({
@@ -43,21 +31,17 @@ export function moonToolchainConfig(): string {
     return stringifyYaml({ $schema: TOOLCHAIN_SCHEMA });
 }
 
-export function moonProjectConfig(
-    config: HarnessConfig,
-    project: ProjectNode,
-    projects: ProjectNode[],
-): string {
+export function moonProjectConfig(project: ProjectModel): string {
     const tasks: Record<string, unknown> = {};
-    taskNames(config).forEach((task, k) => {
-        const deps = moonTaskDependencies(config, k);
-        tasks[task] = {
-            command: `node ./task.mjs ${task}`,
+    for (const task of project.tasks) {
+        const deps = task.dependencies.map(moonDependency);
+        tasks[task.name] = {
+            command: `node ./task.mjs ${task.name}`,
             ...(deps.length ? { deps } : {}),
             inputs: ["package.json", "task.mjs", "src/**/*"],
-            outputs: [`dist/${task}.*`],
+            outputs: task.outputGlobs,
         };
-    });
+    }
 
     const doc: Record<string, unknown> = {
         $schema: PROJECT_SCHEMA,
@@ -65,7 +49,7 @@ export function moonProjectConfig(
         layer: "library",
         language: "javascript",
         ...(project.dependencies.length
-            ? { dependsOn: dependencyNames(project, projects) }
+            ? { dependsOn: project.dependencies }
             : {}),
         tasks,
     };
@@ -88,7 +72,7 @@ export const moonAdapter: ToolAdapter = {
         for (const project of ctx.projects) {
             await ctx.write(
                 `${project.dir}/moon.yml`,
-                moonProjectConfig(ctx.config, project, ctx.projects),
+                moonProjectConfig(project),
             );
         }
     },

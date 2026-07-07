@@ -89,11 +89,10 @@ export async function resolveToolVersions(
 export {
     moonAdapter,
     moonProjectConfig,
-    moonTaskDependencies,
     moonToolchainConfig,
     moonWorkspaceConfig,
 } from "./moon";
 export { nxAdapter, nxProjectConfig, nxRootConfig } from "./nx";
-export { omniAdapter, omniProjectConfig, omniWorkspaceConfig } from "./omni";
+export { OMNI_RENDER_OPTIONS, omniAdapter } from "./omni";
 export { turboAdapter, turboRootConfig } from "./turbo";
 export * from "./types";

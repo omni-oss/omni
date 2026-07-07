@@ -1,0 +1,19 @@
+{
+    "name": "@omni-oss/workspace-gen",
+    "version": "0.0.0",
+    "publishConfig": {
+        "access": "public"
+    },
+    "description": "WASM front-end over the omni workspace-generation core (buildModel / renderOmni).",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist"
+    ]
+}
