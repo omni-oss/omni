@@ -1,3 +1,5 @@
+cargo-features = ["profile-rustflags"]
+
 [workspace]
 resolver = "3"
 members = [
@@ -326,10 +328,14 @@ split-debuginfo = "packed"
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+strip = "none"
 
 [profile.bench-with-debug]
 inherits = "bench"
 debug = true
+strip = "none"
+split-debuginfo = "off"                        # embed DWARF so perf always finds symbols
+rustflags = ["-C", "force-frame-pointers=yes"] # reliable stack unwinding for flamegraphs (requires -Zprofile-rustflags)
 
 # Faster to compile than `release` but with similar performance.
 [profile.release-lite]

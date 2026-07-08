@@ -1,5 +1,9 @@
 [unstable]
 codegen-backend = true
+# Allow per-profile `rustflags` (used to enable frame pointers only for the
+# profiling build, see `bench-with-debug` in Cargo.toml).
+profile-rustflags = true
+profile-rustflags = true
 
 [profile.dev]
 codegen-backend = "cranelift"

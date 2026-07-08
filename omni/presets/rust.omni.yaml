@@ -45,6 +45,7 @@ tasks:
       cargo flamegraph
         --profile=${profile:-bench-with-debug}
         --bench ${bench:-${PROJECT_NAME}_benchmarks}
+        -c "record -F 997 --call-graph fp -g -e cycles:u"
         -p ${project:-${PROJECT_NAME}}
         --
         --bench --profile-time=${profile_time:-5}
