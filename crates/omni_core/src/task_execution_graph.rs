@@ -10,7 +10,7 @@ use petgraph::{
     Direction,
     algo::is_cyclic_directed,
     graph::{DiGraph, NodeIndex},
-    visit::{Dfs, IntoNeighborsDirected as _, Reversed, Topo, Walker},
+    visit::{Dfs, IntoNeighborsDirected as _, Topo, Walker},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -768,19 +768,62 @@ impl TaskExecutionGraph {
         }
 
         // add sibling nodes
+        //
+        // Every task in a sibling-connected component must be co-scheduled
+        // into the same batch. The shared level is the MAXIMUM dependency
+        // level among the component's already-placed members: using the max
+        // (rather than the min) guarantees no member is ever scheduled before
+        // its own dependencies, which always live in strictly lower levels.
+        //
+        // Components are discovered by an undirected traversal of the sibling
+        // graph seeded from every placed node, visited in sorted order, so
+        // the result is fully deterministic regardless of hash iteration
+        // order.
         let sibling_graph = filtered_graph!(&self.di_graph, EdgeType::Sibling);
-        let reversed = Reversed(&sibling_graph);
-        for (node, level) in levels.clone() {
-            let dfs = Dfs::new(reversed, node);
 
-            for n in dfs.iter(reversed) {
-                // bring down the level of the existing node to the level of the sibling node if it is higher
-                if let Some(n) = levels.get_mut(&n)
-                    && *n > level
+        let mut seeds = levels.keys().copied().collect::<Vec<_>>();
+        seeds.sort();
+
+        let mut visited: HashSet<NodeIndex> = HashSet::new();
+        for seed in seeds {
+            if visited.contains(&seed) {
+                continue;
+            }
+
+            // Collect the full sibling-connected component containing `seed`,
+            // following sibling edges in both directions.
+            let mut component = Vec::new();
+            let mut stack = vec![seed];
+            while let Some(node) = stack.pop() {
+                if !visited.insert(node) {
+                    continue;
+                }
+                component.push(node);
+
+                for neighbor in sibling_graph
+                    .neighbors_directed(node, Direction::Outgoing)
+                    .chain(
+                        sibling_graph
+                            .neighbors_directed(node, Direction::Incoming),
+                    )
                 {
-                    *n = level;
-                } else {
-                    levels.insert(n, level);
+                    if !visited.contains(&neighbor) {
+                        stack.push(neighbor);
+                    }
+                }
+            }
+
+            // The target level for the whole component is the max level over
+            // its already-leveled members. Members pulled in purely through
+            // sibling edges (with no dependency level of their own) inherit
+            // that same level.
+            if let Some(target) = component
+                .iter()
+                .filter_map(|n| levels.get(n).copied())
+                .max()
+            {
+                for node in component {
+                    levels.insert(node, target);
                 }
             }
         }
@@ -1318,6 +1361,450 @@ mod tests {
                 assert!(
                     !task.persistent,
                     "persistent task should not be included in the plan"
+                );
+            }
+        }
+    }
+
+    // -- Scheduling invariants -------------------------------------------
+    //
+    // These tests lock in the correctness/determinism contract of the
+    // batched execution plan. The barrier-based executor relies on these
+    // invariants for free, but they are the *specification* that any future
+    // scheduler (e.g. a continuous cross-batch scheduler) MUST also satisfy:
+    //
+    //   1. Topological order: for every `Dependency` edge, the dependee runs
+    //      in a strictly earlier batch than the dependent. This is what lets
+    //      a task safely read its dependencies' digests at dispatch time.
+    //   2. Sibling co-scheduling: `Sibling`-linked tasks land in the same
+    //      batch (co-scheduled, not ordered).
+    //   3. Determinism: repeated planning of the same graph yields the same
+    //      number of batches and the same membership per batch.
+    //   4. Completeness & partition: every reachable task appears exactly
+    //      once across all batches.
+
+    use petgraph::visit::EdgeRef as _;
+
+    /// Maps every task in the plan to the index of the batch it appears in.
+    fn batch_index_by_task(
+        plan: &BatchedExecutionPlan,
+    ) -> HashMap<String, usize> {
+        let mut map = HashMap::new();
+        for (i, batch) in plan.iter().enumerate() {
+            for node in batch {
+                map.insert(node.full_task_name().to_string(), i);
+            }
+        }
+        map
+    }
+
+    /// Asserts every `Dependency` edge whose endpoints are both present in
+    /// the plan places the dependee in a strictly earlier batch than the
+    /// dependent. Edges in the graph store `dependee -> dependent`.
+    fn assert_topological_order(
+        task_graph: &TaskExecutionGraph,
+        plan: &BatchedExecutionPlan,
+    ) {
+        let batch_of = batch_index_by_task(plan);
+
+        for edge in task_graph.di_graph.edge_references() {
+            if *edge.weight() != EdgeType::Dependency {
+                continue;
+            }
+
+            let dependee = task_graph.di_graph[edge.source()].full_task_name();
+            let dependent = task_graph.di_graph[edge.target()].full_task_name();
+
+            if let (Some(&dependee_batch), Some(&dependent_batch)) =
+                (batch_of.get(dependee), batch_of.get(dependent))
+            {
+                assert!(
+                    dependee_batch < dependent_batch,
+                    "dependency `{dependee}` (batch {dependee_batch}) must \
+                     run strictly before dependent `{dependent}` (batch \
+                     {dependent_batch})"
+                );
+            }
+        }
+    }
+
+    /// Asserts every `Sibling` edge whose endpoints are both present in the
+    /// plan places both tasks in the very same batch.
+    fn assert_siblings_co_scheduled(
+        task_graph: &TaskExecutionGraph,
+        plan: &BatchedExecutionPlan,
+    ) {
+        let batch_of = batch_index_by_task(plan);
+
+        for edge in task_graph.di_graph.edge_references() {
+            if *edge.weight() != EdgeType::Sibling {
+                continue;
+            }
+
+            let a = task_graph.di_graph[edge.source()].full_task_name();
+            let b = task_graph.di_graph[edge.target()].full_task_name();
+
+            if let (Some(&a_batch), Some(&b_batch)) =
+                (batch_of.get(a), batch_of.get(b))
+            {
+                assert_eq!(
+                    a_batch, b_batch,
+                    "siblings `{a}` and `{b}` must be co-scheduled in the \
+                     same batch (got {a_batch} vs {b_batch})"
+                );
+            }
+        }
+    }
+
+    /// Returns the sorted `full_task_name`s of each batch, giving a
+    /// canonical, within-batch-order-independent view of a plan.
+    fn canonical_batches(plan: &BatchedExecutionPlan) -> Vec<Vec<String>> {
+        plan.iter()
+            .map(|batch| {
+                let mut names = batch
+                    .iter()
+                    .map(|n| n.full_task_name().to_string())
+                    .collect::<Vec<_>>();
+                names.sort();
+                names
+            })
+            .collect()
+    }
+
+    /// Single project holding a strict linear chain a <- b <- c <- d.
+    fn linear_chain_project_graph() -> ProjectGraph {
+        let project = Project {
+            tasks: TasksBuilder::new()
+                .task("a", "echo a", |b| b)
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b.own_dependency("b"))
+                .task("d", "echo d", |b| b.own_dependency("c"))
+                .build(),
+            ..create_project("proj")
+        };
+
+        ProjectGraph::from_projects(vec![project]).expect("Can't create graph")
+    }
+
+    /// Single project with a fan-out: root `a` and three dependents b, c, d
+    /// that each depend only on `a`.
+    fn fan_out_project_graph() -> ProjectGraph {
+        let project = Project {
+            tasks: TasksBuilder::new()
+                .task("a", "echo a", |b| b)
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b.own_dependency("a"))
+                .task("d", "echo d", |b| b.own_dependency("a"))
+                .build(),
+            ..create_project("proj")
+        };
+
+        ProjectGraph::from_projects(vec![project]).expect("Can't create graph")
+    }
+
+    #[test]
+    fn full_plan_preserves_topological_order() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        // `Ok(true)` selects every node as a possible root, so the resulting
+        // plan spans the entire reachable graph.
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+    }
+
+    #[test]
+    fn full_plan_co_schedules_siblings() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_siblings_co_scheduled(&task_graph, &plan);
+    }
+
+    #[test]
+    fn full_plan_partitions_every_task_exactly_once() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        let mut seen = HashSet::new();
+        let mut total = 0;
+        for batch in &plan {
+            for node in batch {
+                total += 1;
+                assert!(
+                    seen.insert(node.full_task_name().to_string()),
+                    "task `{}` appears in more than one batch",
+                    node.full_task_name()
+                );
+            }
+        }
+
+        // Every node in the fixture is reachable from a sink, so the plan
+        // must cover the whole graph with no duplicates.
+        assert_eq!(total, seen.len());
+        assert_eq!(
+            total,
+            task_graph.count(),
+            "the full plan must contain every task exactly once"
+        );
+    }
+
+    #[test]
+    fn plan_is_deterministic_across_repeated_calls() {
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let baseline = canonical_batches(
+            &task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap(),
+        );
+
+        // The plan uses hash-based intermediate collections; re-planning many
+        // times must always yield the same batch count and membership.
+        for _ in 0..25 {
+            let plan = canonical_batches(
+                &task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap(),
+            );
+            assert_eq!(
+                plan, baseline,
+                "batched execution plan is not deterministic"
+            );
+        }
+    }
+
+    #[test]
+    fn linear_chain_is_fully_serialized() {
+        let project_graph = linear_chain_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+
+        // A strict chain must produce one task per batch, in order.
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#a".to_string()],
+                vec!["proj#b".to_string()],
+                vec!["proj#c".to_string()],
+                vec!["proj#d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn fan_out_dependents_share_one_batch_after_root() {
+        let project_graph = fan_out_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#a".to_string()],
+                vec![
+                    "proj#b".to_string(),
+                    "proj#c".to_string(),
+                    "proj#d".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn filtered_plan_still_preserves_topological_order() {
+        // Uses the same non-trivial filter as `test_batched_execution_plan`
+        // to guard the ordering invariant on a partial (root-selected) plan.
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph
+            .get_batched_execution_plan(|n| {
+                Ok(n.task_name == "p1t4" || n.task_name == "sibling-1")
+            })
+            .unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+        assert_siblings_co_scheduled(&task_graph, &plan);
+    }
+
+    #[test]
+    fn diamond_dependency_levels_are_asap() {
+        // a <- {b, c} <- d  (classic split/join diamond)
+        let project = Project {
+            tasks: TasksBuilder::new()
+                .task("a", "echo a", |b| b)
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b.own_dependency("a"))
+                .task("d", "echo d", |b| {
+                    b.own_dependency("b").own_dependency("c")
+                })
+                .build(),
+            ..create_project("proj")
+        };
+        let project_graph = ProjectGraph::from_projects(vec![project])
+            .expect("Can't create graph");
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#a".to_string()],
+                vec!["proj#b".to_string(), "proj#c".to_string()],
+                vec!["proj#d".to_string()],
+            ]
+        );
+    }
+
+    /// Minimal deterministic xorshift PRNG so property tests are reproducible
+    /// (no external crate, no reliance on hash seeds).
+    struct Rng(u32);
+
+    impl Rng {
+        fn new(seed: u32) -> Self {
+            // Avoid the zero state, which is a fixed point for xorshift.
+            Rng(seed | 1)
+        }
+
+        fn next_u32(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            self.0 = x;
+            x
+        }
+    }
+
+    /// Builds a random acyclic single-project task graph with `n` tasks.
+    /// Dependency edges only ever point from a lower index to a higher one,
+    /// which makes cycles impossible by construction. Returns the graph plus
+    /// the adjacency list (`deps_of[j]` = indices task `j` depends on) so the
+    /// expected longest-path levels can be computed independently.
+    fn random_dag(seed: u32, n: usize) -> (ProjectGraph, Vec<Vec<usize>>) {
+        let mut rng = Rng::new(seed);
+
+        let mut deps_of: Vec<Vec<usize>> = Vec::with_capacity(n);
+        for j in 0..n {
+            let mut ds = Vec::new();
+            for i in 0..j {
+                // ~40% edge density.
+                if rng.next_u32() % 100 < 40 {
+                    ds.push(i);
+                }
+            }
+            deps_of.push(ds);
+        }
+
+        let mut builder = TasksBuilder::new();
+        for (j, deps) in deps_of.iter().enumerate() {
+            let name = format!("t{j}");
+            let exec = format!("echo {name}");
+            let deps = deps.iter().map(|i| format!("t{i}")).collect::<Vec<_>>();
+            builder = builder.task(name, exec, move |mut b| {
+                for dep in &deps {
+                    b = b.own_dependency(dep.clone());
+                }
+                b
+            });
+        }
+
+        let project = Project {
+            tasks: builder.build(),
+            ..create_project("proj")
+        };
+
+        let graph = ProjectGraph::from_projects(vec![project])
+            .expect("Can't create graph");
+
+        (graph, deps_of)
+    }
+
+    /// Longest dependency-path length ending at each task (roots = 1). This is
+    /// exactly the ASAP level the planner is expected to assign.
+    fn longest_path_levels(deps_of: &[Vec<usize>]) -> Vec<usize> {
+        let mut level = vec![0usize; deps_of.len()];
+        // deps_of[j] only references indices < j, so a single forward pass
+        // resolves every predecessor before its dependents.
+        for j in 0..deps_of.len() {
+            let pred_max =
+                deps_of[j].iter().map(|&i| level[i]).max().unwrap_or(0);
+            level[j] = pred_max + 1;
+        }
+        level
+    }
+
+    #[test]
+    fn random_dags_satisfy_scheduling_invariants() {
+        for seed in 1u32..=60 {
+            let n = 8 + (seed as usize % 25); // 8..=32 tasks
+            let (project_graph, deps_of) = random_dag(seed, n);
+            let task_graph =
+                TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+            let plan =
+                task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+            // 1. Dependencies always precede dependents.
+            assert_topological_order(&task_graph, &plan);
+
+            // 2. Every task appears exactly once.
+            let batch_of = batch_index_by_task(&plan);
+            assert_eq!(
+                batch_of.len(),
+                n,
+                "seed {seed}: plan must contain every task exactly once"
+            );
+
+            // 3. ASAP leveling: each task's batch index equals its longest
+            //    dependency-path length minus one, and the batch count equals
+            //    the overall longest path.
+            let expected = longest_path_levels(&deps_of);
+            let expected_batches = *expected.iter().max().unwrap();
+            assert_eq!(
+                plan.len(),
+                expected_batches,
+                "seed {seed}: unexpected batch count"
+            );
+            for (j, &lvl) in expected.iter().enumerate() {
+                let name = format!("proj#t{j}");
+                assert_eq!(
+                    batch_of.get(&name).copied(),
+                    Some(lvl - 1),
+                    "seed {seed}: task {name} placed in the wrong batch"
+                );
+            }
+
+            // 4. Determinism: re-planning is identical.
+            let baseline = canonical_batches(&plan);
+            for _ in 0..5 {
+                let again = canonical_batches(
+                    &task_graph
+                        .get_batched_execution_plan(|_| Ok(true))
+                        .unwrap(),
+                );
+                assert_eq!(
+                    again, baseline,
+                    "seed {seed}: plan is not deterministic"
                 );
             }
         }

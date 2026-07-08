@@ -1,6 +1,6 @@
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, future::Future, time::Duration};
 
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
 use omni_config_types::TeraExprBoolean;
@@ -544,15 +544,15 @@ where
                     self.retry_interval.or(task_ctx.node.retry_interval()),
                 ));
             }
-
-            if futs.len() >= self.max_concurrent_tasks {
-                fut_results.extend(join_all(futs.drain(..)).await);
-            }
         }
 
-        if !futs.is_empty() {
-            fut_results.extend(join_all(futs.drain(..)).await);
-        }
+        // Run the batch's tasks with at most `max_concurrent_tasks` in flight,
+        // refilling a slot the instant any task finishes (no `join_all` convoy
+        // stalls where a straggler idles the other slots). The inter-batch
+        // barrier is unaffected: the pipeline still awaits the whole batch
+        // before starting the next one, so cross-batch dependency ordering is
+        // preserved exactly as before.
+        fut_results.extend(run_bounded(futs, self.max_concurrent_tasks).await);
 
         let hashes = self
             .cache_manager
@@ -739,6 +739,56 @@ fn expand_omni_path(
     } else {
         OmniPath::new(expanded)
     })
+}
+
+/// Drives every future in `futures` to completion while keeping at most
+/// `max_concurrency` (clamped to a minimum of 1) in flight at once, returning
+/// all of their outputs.
+///
+/// A permit is acquired before a future is allowed to make progress and is
+/// released the instant it completes, so a freed slot is refilled immediately
+/// rather than waiting for a fixed-size chunk to drain (which would idle slots
+/// behind a straggler). Outputs are returned in completion order; callers that
+/// need a stable result must key them (the batch executor keys by task name),
+/// which keeps the overall result deterministic regardless of the order in
+/// which tasks happen to finish.
+///
+/// Invariants (see tests):
+/// - the number of futures past the permit gate never exceeds
+///   `max(max_concurrency, 1)`;
+/// - every future is polled to completion exactly once and all outputs are
+///   returned;
+/// - an empty input completes immediately without acquiring anything.
+async fn run_bounded<F>(
+    futures: Vec<F>,
+    max_concurrency: usize,
+) -> Vec<F::Output>
+where
+    F: Future,
+{
+    if futures.is_empty() {
+        return Vec::new();
+    }
+
+    let semaphore = tokio::sync::Semaphore::new(max_concurrency.max(1));
+    let mut running = FuturesUnordered::new();
+
+    for fut in futures {
+        let semaphore = &semaphore;
+        running.push(async move {
+            let _permit = semaphore
+                .acquire()
+                .await
+                .expect("task semaphore is never closed");
+            fut.await
+        });
+    }
+
+    let mut results = Vec::with_capacity(running.len());
+    while let Some(result) = running.next().await {
+        results.push(result);
+    }
+    results
 }
 
 async fn run_process<'a, S: ExecutionEventSubscriber>(
@@ -1049,5 +1099,167 @@ mod tests {
     fn cached_replay_never_never_replays() {
         assert!(!should_replay(LogsDisplay::Never, false));
         assert!(!should_replay(LogsDisplay::Never, true));
+    }
+
+    // ---- Scheduling invariants for `run_bounded` (intra-batch execution) ----
+    //
+    // These lock in the guarantees Tier A relies on: the concurrency bound is
+    // never exceeded, every task runs to completion exactly once, and the
+    // collected result set is independent of the order tasks finish in (so the
+    // batch executor's name-keyed aggregation stays deterministic). Tests use
+    // the default current-thread tokio runtime, making the interleaving
+    // deterministic.
+    use std::{
+        future::Future,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    /// Builds `n` instrumented futures that track live concurrency, assert the
+    /// bound from the inside, and yield `yields_for(i)` times before completing
+    /// (to control completion order). Each future returns its own index.
+    fn instrumented_futs(
+        n: usize,
+        assert_limit: usize,
+        current: Arc<AtomicUsize>,
+        max_seen: Arc<AtomicUsize>,
+        yields_for: impl Fn(usize) -> usize,
+    ) -> Vec<impl Future<Output = usize>> {
+        (0..n)
+            .map(move |i| {
+                let current = current.clone();
+                let max_seen = max_seen.clone();
+                let yields = yields_for(i);
+                async move {
+                    let cur = current.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_seen.fetch_max(cur, Ordering::SeqCst);
+                    assert!(
+                        cur <= assert_limit,
+                        "live concurrency {cur} exceeded limit {assert_limit}"
+                    );
+                    for _ in 0..yields {
+                        tokio::task::yield_now().await;
+                    }
+                    current.fetch_sub(1, Ordering::SeqCst);
+                    i
+                }
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn run_bounded_runs_every_task_exactly_once() {
+        let n = 50;
+        let current = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let futs = instrumented_futs(n, 8, current, max_seen, |_| 2);
+
+        let mut out = super::run_bounded(futs, 8).await;
+        out.sort();
+
+        // Completeness: no dropped or duplicated tasks.
+        assert_eq!(out, (0..n).collect::<Vec<_>>());
+    }
+
+    #[tokio::test]
+    async fn run_bounded_never_exceeds_and_saturates_limit() {
+        let n = 20;
+        let limit = 4;
+        let current = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let futs =
+            instrumented_futs(n, limit, current, max_seen.clone(), |_| 3);
+
+        let out = super::run_bounded(futs, limit).await;
+
+        assert_eq!(out.len(), n, "all tasks completed");
+        // The in-task assertion already guards the upper bound; also assert the
+        // scheduler actually fills every available slot (peak == limit).
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            limit,
+            "should saturate all {limit} slots"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_bounded_limit_one_is_strictly_serial() {
+        let n = 8;
+        let current = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let futs = instrumented_futs(n, 1, current, max_seen.clone(), |_| 2);
+
+        let out = super::run_bounded(futs, 1).await;
+
+        assert_eq!(out.len(), n);
+        assert_eq!(
+            max_seen.load(Ordering::SeqCst),
+            1,
+            "limit of 1 must never run two tasks at once"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_bounded_limit_above_task_count_runs_all_at_once() {
+        let n = 5;
+        let current = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let futs = instrumented_futs(n, n, current, max_seen.clone(), |_| 2);
+
+        let out = super::run_bounded(futs, 100).await;
+
+        assert_eq!(out.len(), n);
+        assert_eq!(max_seen.load(Ordering::SeqCst), n);
+    }
+
+    #[tokio::test]
+    async fn run_bounded_zero_limit_is_clamped_to_one() {
+        let n = 3;
+        let current = Arc::new(AtomicUsize::new(0));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        // Effective limit is clamped to 1, so the in-task assertion uses 1.
+        let futs = instrumented_futs(n, 1, current, max_seen.clone(), |_| 1);
+
+        // Must make progress (not deadlock) despite a 0 request.
+        let out = super::run_bounded(futs, 0).await;
+
+        assert_eq!(out.len(), n);
+        assert_eq!(max_seen.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn run_bounded_empty_input_returns_empty() {
+        let futs: Vec<std::pin::Pin<Box<dyn Future<Output = usize>>>> =
+            Vec::new();
+        let out = super::run_bounded(futs, 8).await;
+        assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_bounded_result_set_is_independent_of_completion_order() {
+        let n = 16;
+        let limit = 4;
+
+        // Forward: earlier tasks finish first (fewer yields for low indices).
+        let c1 = Arc::new(AtomicUsize::new(0));
+        let m1 = Arc::new(AtomicUsize::new(0));
+        let forward = instrumented_futs(n, limit, c1, m1, |i| i % 4);
+        let mut forward_out = super::run_bounded(forward, limit).await;
+        forward_out.sort();
+
+        // Reverse: later tasks finish first (more yields for low indices).
+        let c2 = Arc::new(AtomicUsize::new(0));
+        let m2 = Arc::new(AtomicUsize::new(0));
+        let reverse = instrumented_futs(n, limit, c2, m2, |i| (n - i) % 4);
+        let mut reverse_out = super::run_bounded(reverse, limit).await;
+        reverse_out.sort();
+
+        // Regardless of completion order, the complete set is returned; the
+        // batch executor keys these by task name, so the final result is
+        // deterministic.
+        assert_eq!(forward_out, (0..n).collect::<Vec<_>>());
+        assert_eq!(forward_out, reverse_out);
     }
 }
