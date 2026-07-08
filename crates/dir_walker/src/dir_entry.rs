@@ -6,6 +6,17 @@ use std::{
 
 use crate::Metadata;
 
+/// The kind of a directory entry, as reported cheaply by the walker
+/// (typically the `readdir`/`getdents` `d_type` field) without an extra
+/// `stat`/`statx` syscall.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileType {
+    Dir,
+    File,
+    Symlink,
+    Other,
+}
+
 pub trait DirEntry {
     type Error: Error + Send + Sync + 'static;
     type Metadata: Metadata;
@@ -23,12 +34,37 @@ pub trait DirEntry {
     /// Return the metadata for the file that this entry points to.
     fn metadata(&self) -> Result<Self::Metadata, Self::Error>;
 
+    /// The file type of this entry, if it can be determined *without* an
+    /// extra syscall. Walkers backed by `readdir`/`getdents` return this
+    /// cheaply; `None` means a `stat` would be required (e.g. the traversal
+    /// root or a filesystem that doesn't fill `d_type`).
+    ///
+    /// Like `std::fs::DirEntry::file_type`, this does not follow symlinks.
+    fn file_type(&self) -> Option<FileType> {
+        None
+    }
+
     fn is_dir(&self) -> bool {
-        self.metadata().map(|m| m.is_dir()).unwrap_or(false)
+        match self.file_type() {
+            // Fast path: type known from the directory read, no syscall.
+            Some(FileType::Dir) => true,
+            Some(FileType::File) | Some(FileType::Other) => false,
+            // Preserve old behavior: symlinks (and unknown) still stat and
+            // follow the link.
+            Some(FileType::Symlink) | None => {
+                self.metadata().map(|m| m.is_dir()).unwrap_or(false)
+            }
+        }
     }
 
     fn is_file(&self) -> bool {
-        self.metadata().map(|m| m.is_file()).unwrap_or(false)
+        match self.file_type() {
+            Some(FileType::File) => true,
+            Some(FileType::Dir) | Some(FileType::Other) => false,
+            Some(FileType::Symlink) | None => {
+                self.metadata().map(|m| m.is_file()).unwrap_or(false)
+            }
+        }
     }
 
     /// Return the file name of this entry.

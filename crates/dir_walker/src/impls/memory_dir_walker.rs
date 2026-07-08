@@ -82,6 +82,18 @@ impl DirEntry for InMemoryDirEntry {
         Ok(self.metadata.clone())
     }
 
+    fn file_type(&self) -> Option<crate::FileType> {
+        if self.is_symlink {
+            Some(crate::FileType::Symlink)
+        } else if self.metadata.dir {
+            Some(crate::FileType::Dir)
+        } else if self.metadata.file {
+            Some(crate::FileType::File)
+        } else {
+            None
+        }
+    }
+
     fn file_name(&self) -> &std::ffi::OsStr {
         self.path.file_name().expect("Can't get file name")
     }

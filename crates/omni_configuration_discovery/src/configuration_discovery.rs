@@ -5,7 +5,7 @@ use std::{
 
 use derive_new::new;
 use dir_walker::{
-    DirEntry as _, DirWalker, Metadata as _,
+    DirEntry as _, DirWalker,
     impls::{IgnoreRealDirWalker, IgnoreRealDirWalkerConfig},
 };
 use omni_discovery_utils::glob::GlobMatcher;
@@ -83,14 +83,7 @@ where
             let f = f.map_err(ErrorInner::new_failed_to_get_dir_entry)?;
             trace::trace!(path = ?f.path(), "checking_path");
 
-            let meta = f.metadata().map_err(|e| {
-                ErrorInner::new_failed_to_get_metadata(
-                    f.path().to_path_buf(),
-                    e,
-                )
-            })?;
-
-            if meta.is_dir() {
+            if f.is_dir() {
                 continue;
             }
 

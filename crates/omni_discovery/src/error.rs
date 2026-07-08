@@ -36,14 +36,6 @@ pub(crate) enum ErrorInner {
         source: eyre::Report,
     },
 
-    #[error("failed to get metadata for path: {path}")]
-    FailedToGetMetadata {
-        path: PathBuf,
-        #[new(into)]
-        #[source]
-        source: eyre::Report,
-    },
-
     #[error("failed to get dir entry")]
     FailedToGetDirEntry {
         #[new(into)]
