@@ -39,10 +39,17 @@ pub trait EnvCacheExt: EnvCache {
 
 impl<TCache: EnvCache> EnvCacheExt for TCache {}
 
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-
+#[derive(Clone, Debug, Default)]
 pub struct DefaultEnvCache<TSys: EnvCacheSys> {
     inner: Map<PathBuf, Option<Arc<Map<String, String>>>>,
+    /// Memoized `path -> canonicalized path` mappings.
+    ///
+    /// Canonicalizing a path is a `readlink`-based syscall, and the same
+    /// directories are looked up repeatedly across projects (every project
+    /// walks up to the shared workspace root). Since the filesystem layout is
+    /// stable for the lifetime of a cache, we memoize the results to avoid
+    /// re-issuing the syscall for paths we've already normalized.
+    canonical: Map<PathBuf, PathBuf>,
     sys: TSys,
 }
 
@@ -50,10 +57,46 @@ impl<TSys: EnvCacheSys> DefaultEnvCache<TSys> {
     pub fn new(sys: TSys) -> Self {
         Self {
             inner: maps::map!(),
+            canonical: maps::map!(),
             sys,
         }
     }
+
+    /// Canonicalize `path`, reusing a previously memoized result when possible.
+    ///
+    /// This takes `&self`, so it can be used from read-only cache operations.
+    /// On a memo miss it falls back to a live canonicalization but does not
+    /// store the result (that only happens through the mutating cache paths).
+    fn canonical_key(&self, path: &Path) -> PathBuf {
+        if let Some(canonical) = self.canonical.get(path) {
+            return canonical.clone();
+        }
+
+        canonicalize(path, &self.sys)
+    }
+
+    /// Canonicalize `path`, memoizing the result for future lookups.
+    fn canonical_key_memoized(&mut self, path: &Path) -> PathBuf {
+        if let Some(canonical) = self.canonical.get(path) {
+            return canonical.clone();
+        }
+
+        let canonical = canonicalize(path, &self.sys);
+        self.canonical.insert(path.to_path_buf(), canonical.clone());
+        canonical
+    }
 }
+
+/// Two caches are considered equal when they hold the same data and system;
+/// the canonicalization memo is a pure-function cache and is intentionally
+/// excluded from equality.
+impl<TSys: EnvCacheSys + PartialEq> PartialEq for DefaultEnvCache<TSys> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.sys == other.sys
+    }
+}
+
+impl<TSys: EnvCacheSys + Eq> Eq for DefaultEnvCache<TSys> {}
 
 impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
     fn insert(
@@ -61,13 +104,13 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
         path: PathBuf,
         vars: Option<Arc<Map<String, String>>>,
     ) {
-        let key = key(path, &self.sys);
+        let key = self.canonical_key_memoized(&path);
 
         self.inner.insert(key, vars);
     }
 
     fn is_cached(&self, path: &Path) -> bool {
-        let k = key(path.to_path_buf(), &self.sys);
+        let k = self.canonical_key(path);
         let value = if let Some(value) = self.inner.get(&k) {
             value
         } else {
@@ -78,7 +121,7 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
             return true;
         } else {
             for p in path.ancestors() {
-                let key = key(p.to_path_buf(), &self.sys);
+                let key = self.canonical_key(p);
 
                 match self.inner.get(&key) {
                     Some(Some(_)) => return true,
@@ -94,14 +137,14 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
     }
 
     fn get(&self, path: &Path) -> Option<Arc<Map<String, String>>> {
-        let k = key(path.to_path_buf(), &self.sys);
+        let k = self.canonical_key(path);
         let value = self.inner.get(&k)?;
 
         if let Some(value) = value {
             return Some(value.clone());
         } else {
             for p in path.ancestors() {
-                let key = key(p.to_path_buf(), &self.sys);
+                let key = self.canonical_key(p);
 
                 match self.inner.get(&key) {
                     Some(Some(value)) => return Some(value.clone()),
@@ -117,7 +160,7 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
     }
 
     fn clear(&mut self, path: &Path) {
-        let k = key(path.to_path_buf(), &self.sys);
+        let k = self.canonical_key(path);
         self.inner.swap_remove(&k);
     }
 
@@ -126,8 +169,9 @@ impl<TSys: EnvCacheSys> EnvCache for DefaultEnvCache<TSys> {
     }
 }
 
-fn key(path: PathBuf, sys: &impl EnvCacheSys) -> PathBuf {
-    sys.fs_canonicalize(&path).unwrap_or(path)
+fn canonicalize(path: &Path, sys: &impl EnvCacheSys) -> PathBuf {
+    sys.fs_canonicalize(path)
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]

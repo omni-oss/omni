@@ -47,8 +47,10 @@ tasks:
         --bench ${bench:-${PROJECT_NAME}_benchmarks}
         -c "record -F 997 --call-graph fp -g -e cycles:u"
         -p ${project:-${PROJECT_NAME}}
+        ${RUST_PROFILE_ADDITIONAL_ARGS:-}
         --
         --bench --profile-time=${profile_time:-5}
+        ${RUST_PROFILE_ADDITIONAL_TRAILING_ARGS:-}
 
 meta:
   language: rust

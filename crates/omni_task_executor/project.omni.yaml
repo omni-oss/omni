@@ -9,6 +9,10 @@ tasks:
     enabled: true
 
   profile:
+    env:
+      vars:
+        RUST_PROFILE_ADDITIONAL_ARGS: --features=bench-support
+        bench: cache_lookup
     enabled: true
 
 dependencies:

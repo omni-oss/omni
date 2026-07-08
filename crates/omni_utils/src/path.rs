@@ -27,6 +27,58 @@ pub fn has_globs(path: &str) -> bool {
     return false;
 }
 
+/// Fast equivalent of [`Path::starts_with`] for **absolute, normalized**
+/// paths (no `.`/`..` components, no redundant separators).
+///
+/// [`Path::starts_with`] drives the `std::path::Components` state machine over
+/// both operands, which is comparatively expensive and shows up as a dominant
+/// cost when it is called for every walked file against every project prefix
+/// (see `omni_collector`). Because the collector only ever compares canonical
+/// absolute paths produced by the directory walker and `std::path::absolute`,
+/// a byte-level prefix comparison with a component-boundary check is
+/// semantically equivalent and avoids the component iteration entirely.
+///
+/// On non-unix targets this falls back to [`Path::starts_with`] to sidestep
+/// separator/case-folding subtleties.
+pub fn starts_with_path(path: &Path, base: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        let path_bytes = path.as_os_str().as_bytes();
+        let mut base_bytes = base.as_os_str().as_bytes();
+
+        // Mirror `Path::starts_with`, which ignores a single trailing
+        // separator on the base (e.g. `/foo/` is a prefix of `/foo/bar`).
+        while base_bytes.len() > 1 && base_bytes[base_bytes.len() - 1] == b'/' {
+            base_bytes = &base_bytes[..base_bytes.len() - 1];
+        }
+
+        if base_bytes.is_empty() {
+            return true;
+        }
+
+        if path_bytes.len() < base_bytes.len()
+            || path_bytes[..base_bytes.len()] != *base_bytes
+        {
+            return false;
+        }
+
+        // Only match on a component boundary so `/foo` is not treated as a
+        // prefix of `/foobar`. The boundary holds when the paths are equal,
+        // when `base` is the root (ends in a separator), or when the next
+        // byte of `path` is a separator.
+        path_bytes.len() == base_bytes.len()
+            || base_bytes[base_bytes.len() - 1] == b'/'
+            || path_bytes[base_bytes.len()] == b'/'
+    }
+
+    #[cfg(not(unix))]
+    {
+        path.starts_with(base)
+    }
+}
+
 pub fn remove_globs(path: &Path) -> &Path {
     if !has_globs(path.to_string_lossy().as_ref()) {
         return path;
@@ -270,6 +322,39 @@ mod tests {
         let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
 
         assert_eq!(result, &[Path::new("/root")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_starts_with_path_matches_std() {
+        let cases = [
+            ("/foo/bar", "/foo", true),
+            ("/foo/bar", "/foo/", true),
+            ("/foo/bar", "/foo/bar", true),
+            ("/foo/bar", "/foo/ba", false),
+            ("/foobar", "/foo", false),
+            ("/foo/bar/baz", "/foo/bar", true),
+            ("/foo", "/foo/bar", false),
+            ("/foo/bar", "/", true),
+            ("/foo/bar", "/other", false),
+            ("/foo/bar", "", true),
+        ];
+
+        for (path, base, expected) in cases {
+            let path = Path::new(path);
+            let base = Path::new(base);
+            assert_eq!(
+                starts_with_path(path, base),
+                expected,
+                "starts_with_path({path:?}, {base:?})"
+            );
+            // Parity with the std implementation it replaces.
+            assert_eq!(
+                starts_with_path(path, base),
+                path.starts_with(base),
+                "std parity for ({path:?}, {base:?})"
+            );
+        }
     }
 
     #[test]

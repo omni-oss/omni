@@ -3,9 +3,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use dir_walker::{DirEntry as _, DirWalker as _, impls::RealGlobDirWalker};
+use dir_walker::{
+    DirEntry as _, DirWalker as _, FileType, impls::RealGlobDirWalker,
+};
 use enum_map::enum_map;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Candidate, Glob, GlobSet, GlobSetBuilder};
 use maps::Map;
 use omni_hasher::{
     Hasher,
@@ -14,7 +16,7 @@ use omni_hasher::{
 };
 use omni_types::{OmniPath, Root, RootMap};
 use omni_utils::path::{
-    has_globs, path_safe, relpath, remove_globs, topmost_dirs,
+    has_globs, path_safe, relpath, remove_globs, starts_with_path, topmost_dirs,
 };
 use system_traits::{FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys};
 use trace::Level;
@@ -81,6 +83,11 @@ struct Holder<'a> {
     resolved_output_files: Option<Vec<OmniPath>>,
     input_files_globset: Option<GlobSet>,
     resolved_input_files: Option<Vec<OmniPath>>,
+    /// Literal (glob-free) prefixes of this project's include paths. A walked
+    /// file can only match one of the globsets if it lives under one of these
+    /// directories, so it acts as a cheap rejection filter before the more
+    /// expensive glob match.
+    match_bases: Vec<PathBuf>,
     task: ProjectTaskInfo<'a>,
     roots: RootMap<'a>,
     digest: Option<DefaultHash>,
@@ -278,6 +285,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 Root::Project => project.project_dir,
             };
 
+            let mut match_bases = Vec::new();
+
             let mut output_files_globset = None;
             if should_collect_output_files {
                 let mut output_glob = GlobSetBuilder::new();
@@ -286,6 +295,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.output_files,
                     project.project_dir,
                     &mut includes,
+                    &mut match_bases,
                     &roots,
                     &mut output_glob,
                 )?;
@@ -302,6 +312,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     project.input_files,
                     project.project_dir,
                     &mut includes,
+                    &mut match_bases,
                     &roots,
                     &mut input_glob,
                 )?;
@@ -313,6 +324,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 input_files_globset,
                 output_files_globset,
                 output_files_glob: project.output_files.to_vec(),
+                match_bases,
                 resolved_input_files: if should_collect_input_files {
                     // just in the collected input files will be the same as the
                     // original input files
@@ -397,22 +409,57 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                 log::trace!("walked path {original_file_abs_path:?}");
 
-                if !self.sys.fs_is_file_async(original_file_abs_path).await? {
+                // Prefer the cheap `d_type` reported by the walker's
+                // `readdir`/`getdents` to avoid a per-entry `stat` syscall
+                // (dispatched via `spawn_blocking`) for the common case.
+                // Symlinks and unknown types still fall back to a
+                // symlink-following stat to preserve previous behavior.
+                let is_file = match res.file_type() {
+                    Some(FileType::File) => true,
+                    Some(FileType::Dir | FileType::Other) => false,
+                    Some(FileType::Symlink) | None => {
+                        self.sys
+                            .fs_is_file_async(original_file_abs_path)
+                            .await?
+                    }
+                };
+
+                if !is_file {
                     continue;
                 }
 
+                // Build the match candidate once per file instead of letting
+                // `GlobSet::is_match` rebuild it (path normalization, basename
+                // and extension extraction, plus allocations) for every
+                // project's input and output globset below.
+                let candidate = Candidate::new(original_file_abs_path);
+
                 for project in &mut to_process {
+                    // Cheap rejection: a file can only match this project's
+                    // input/output globsets if it lives under one of the
+                    // literal prefixes of those globs. This skips the far more
+                    // expensive `is_match_candidate` glob search (and the
+                    // rooted-path construction below) for the many projects
+                    // that cannot own this file.
+                    if !project.match_bases.iter().any(|base| {
+                        starts_with_path(original_file_abs_path, base)
+                    }) {
+                        continue;
+                    }
+
                     let project_dir = project.roots[Root::Project];
-                    let rooted_path = if original_file_abs_path
-                        .starts_with(project_dir)
-                    {
+                    let rooted_path = if starts_with_path(
+                        original_file_abs_path,
+                        project_dir,
+                    ) {
                         OmniPath::new_rooted(
                             relpath(original_file_abs_path, project_dir),
                             Root::Project,
                         )
-                    } else if original_file_abs_path
-                        .starts_with(self.ws_root_dir)
-                    {
+                    } else if starts_with_path(
+                        original_file_abs_path,
+                        self.ws_root_dir,
+                    ) {
                         OmniPath::new_rooted(
                             relpath(original_file_abs_path, self.ws_root_dir),
                             Root::Workspace,
@@ -423,7 +470,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                     if let Some(input_files_globset) =
                         project.input_files_globset.as_ref()
-                        && input_files_globset.is_match(original_file_abs_path)
+                        && input_files_globset.is_match_candidate(&candidate)
                         && let Some(resolved_input_files) =
                             project.resolved_input_files.as_mut()
                     {
@@ -436,7 +483,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                     if let Some(output_files_globset) =
                         project.output_files_globset.as_ref()
-                        && output_files_globset.is_match(original_file_abs_path)
+                        && output_files_globset.is_match_candidate(&candidate)
                         && let Some(resolved_output_files) =
                             project.resolved_output_files.as_mut()
                     {
@@ -506,6 +553,7 @@ fn populate_includes_and_globset(
     files: &[OmniPath],
     project_dir: &Path,
     includes: &mut Vec<PathBuf>,
+    match_bases: &mut Vec<PathBuf>,
     roots: &RootMap,
     output_globset: &mut GlobSetBuilder,
 ) -> Result<(), Error> {
@@ -526,7 +574,483 @@ fn populate_includes_and_globset(
 
         let glob = Glob::new(path.to_string_lossy().as_ref())?;
         output_globset.add(glob);
+        // The literal prefix bounds where this glob can match: any matching
+        // path must live under it.
+        match_bases.push(remove_globs(&path).to_path_buf());
         includes.push(path);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::BTreeSet,
+        sync::atomic::{AtomicU32, Ordering},
+    };
+
+    use super::*;
+
+    // Ensures each collect that must observe fresh on-disk state uses its own
+    // hash index, sidestepping the hasher's mtime-based cache.
+    static CACHE_SEQ: AtomicU32 = AtomicU32::new(0);
+
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(path, content).expect("write file");
+    }
+
+    fn fresh_cache_dir(root: &Path) -> PathBuf {
+        let n = CACHE_SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = root.join(".omni").join(format!("cache{n}"));
+        std::fs::create_dir_all(&dir).expect("create cache dir");
+        dir
+    }
+
+    /// Owns the backing data so we can hand out borrowed [`ProjectTaskInfo`]s.
+    struct Project {
+        project_name: String,
+        project_dir: PathBuf,
+        task_name: String,
+        input_files: Vec<OmniPath>,
+        output_files: Vec<OmniPath>,
+        input_env_keys: Vec<String>,
+        env_vars: Map<String, String>,
+        dependency_digests: Vec<DefaultHash>,
+        args: Map<String, serde_json::Value>,
+    }
+
+    impl Project {
+        fn new(root: &Path, name: &str) -> Self {
+            Self {
+                project_name: name.to_string(),
+                project_dir: root.join(name),
+                task_name: "build".to_string(),
+                input_files: vec![],
+                output_files: vec![],
+                input_env_keys: vec![],
+                env_vars: Map::default(),
+                dependency_digests: vec![],
+                args: Map::default(),
+            }
+        }
+
+        fn info(&self) -> ProjectTaskInfo<'_> {
+            ProjectTaskInfo {
+                project_name: &self.project_name,
+                project_dir: &self.project_dir,
+                task_name: &self.task_name,
+                task_exec: None,
+                task_retry_exec: None,
+                output_files: &self.output_files,
+                input_files: &self.input_files,
+                input_env_keys: &self.input_env_keys,
+                env_vars: &self.env_vars,
+                dependency_digests: &self.dependency_digests,
+                args: &self.args,
+            }
+        }
+    }
+
+    /// Owned, borrow-free view of a [`CollectResult`] so assertions can run
+    /// after the collector (and its borrows) are dropped.
+    struct Collected {
+        input_files: Option<Vec<PathBuf>>,
+        output_files: Option<Vec<PathBuf>>,
+        digest: Option<DefaultHash>,
+        cache_output_dir: Option<PathBuf>,
+    }
+
+    impl From<CollectResult<'_>> for Collected {
+        fn from(r: CollectResult<'_>) -> Self {
+            let sorted = |v: Option<Vec<OmniPath>>| {
+                v.map(|files| {
+                    let mut paths = files
+                        .iter()
+                        .map(|p| p.unresolved_path().to_path_buf())
+                        .collect::<Vec<_>>();
+                    paths.sort();
+                    paths
+                })
+            };
+
+            Collected {
+                input_files: sorted(r.input_files),
+                output_files: sorted(r.output_files),
+                digest: r.digest,
+                cache_output_dir: r.cache_output_dir,
+            }
+        }
+    }
+
+    async fn run_collect(
+        root: &Path,
+        cache_dir: &Path,
+        projects: &[&Project],
+        config: &CollectConfig,
+    ) -> Vec<Collected> {
+        let collector = Collector::new(root, cache_dir, RealSys);
+        let infos = projects.iter().map(|p| p.info()).collect::<Vec<_>>();
+        collector
+            .collect(&infos, config)
+            .await
+            .expect("collect failed")
+            .into_iter()
+            .map(Collected::from)
+            .collect()
+    }
+
+    async fn collect_one(
+        root: &Path,
+        cache_dir: &Path,
+        project: &Project,
+        config: &CollectConfig,
+    ) -> Collected {
+        let mut results =
+            run_collect(root, cache_dir, &[project], config).await;
+        assert_eq!(results.len(), 1, "expected exactly one result");
+        results.pop().unwrap()
+    }
+
+    fn rel_paths(paths: &[&str]) -> BTreeSet<PathBuf> {
+        paths
+            .iter()
+            .map(|p| p.split('/').collect::<PathBuf>())
+            .collect()
+    }
+
+    fn as_set(paths: &Option<Vec<PathBuf>>) -> BTreeSet<PathBuf> {
+        paths
+            .as_ref()
+            .expect("expected Some(files)")
+            .iter()
+            .cloned()
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn resolves_matching_input_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+        write_file(&root.join("proj/src/nested/b.txt"), "b");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["src/a.txt", "src/nested/b.txt"]),
+        );
+        // Output collection was not requested.
+        assert!(result.output_files.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolves_matching_output_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/dist/a.js"), "a");
+        write_file(&root.join("proj/dist/b.js"), "b");
+        write_file(&root.join("proj/dist/skip.map"), "m");
+
+        let mut project = Project::new(root, "proj");
+        project.output_files = vec![OmniPath::new("dist/**/*.js")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                output_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.output_files),
+            rel_paths(&["dist/a.js", "dist/b.js"]),
+        );
+    }
+
+    #[tokio::test]
+    async fn excludes_files_not_matching_glob() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/keep.txt"), "keep");
+        write_file(&root.join("proj/src/ignore.md"), "ignore");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(as_set(&result.input_files), rel_paths(&["src/keep.txt"]));
+    }
+
+    // A glob such as `src/*` matches the directory entry `src/sub` as well as
+    // `src/keep.txt`. Only regular files must be collected, exercising the
+    // walker's cheap `d_type` file-type check.
+    #[tokio::test]
+    async fn excludes_directories_matching_glob() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/keep.txt"), "keep");
+        write_file(&root.join("proj/src/sub/inner.txt"), "inner");
+
+        let mut project = Project::new(root, "proj");
+        // `*` does not cross `/`, so this matches `src/keep.txt` and the
+        // directory `src/sub`, but not `src/sub/inner.txt`.
+        project.input_files = vec![OmniPath::new("src/*")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["src/keep.txt"]),
+            "directory entries must not be collected",
+        );
+    }
+
+    #[tokio::test]
+    async fn collects_nothing_with_empty_config() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig::default(),
+        )
+        .await;
+
+        assert!(result.input_files.is_none());
+        assert!(result.output_files.is_none());
+        assert!(result.digest.is_none());
+        assert!(result.cache_output_dir.is_none());
+    }
+
+    #[tokio::test]
+    async fn computes_digest_when_requested() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                digests: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(result.digest.is_some());
+        // Requesting digests implies collecting input files.
+        assert!(result.input_files.is_some());
+    }
+
+    #[tokio::test]
+    async fn digest_is_stable_for_identical_inputs() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let cfg = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+        let cache_dir = fresh_cache_dir(root);
+
+        let first = collect_one(root, &cache_dir, &project, &cfg).await;
+        let second = collect_one(root, &cache_dir, &project, &cfg).await;
+
+        assert_eq!(first.digest, second.digest);
+    }
+
+    #[tokio::test]
+    async fn digest_changes_when_file_content_changes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let file = root.join("proj/src/a.txt");
+
+        write_file(&file, "original");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let cfg = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+
+        // Fresh index dirs avoid the hasher's mtime-based cache so the digest
+        // reflects the actual file content on each run.
+        let before =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+
+        write_file(&file, "a completely different, longer body");
+
+        let after =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+
+        assert_ne!(before.digest, after.digest);
+    }
+
+    #[tokio::test]
+    async fn digest_changes_with_env_var_values() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+        project.input_env_keys = vec!["KEY".to_string()];
+        project
+            .env_vars
+            .insert("KEY".to_string(), "one".to_string());
+
+        let cfg = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+        let cache_dir = fresh_cache_dir(root);
+
+        let first = collect_one(root, &cache_dir, &project, &cfg).await.digest;
+
+        project
+            .env_vars
+            .insert("KEY".to_string(), "two".to_string());
+        let second = collect_one(root, &cache_dir, &project, &cfg).await.digest;
+
+        assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn sets_cache_output_dir_from_digest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let cache_dir = fresh_cache_dir(root);
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &cache_dir,
+            &project,
+            &CollectConfig {
+                cache_output_dirs: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        let output_dir = result
+            .cache_output_dir
+            .expect("cache output dir should be set");
+        // Layout: <cache_dir>/<path_safe(project)>/output/<bs58(digest)>
+        assert!(output_dir.starts_with(&cache_dir));
+        assert!(
+            output_dir
+                .components()
+                .any(|c| c.as_os_str() == path_safe("proj").as_str()),
+            "expected the path-safe project name as a component",
+        );
+        assert!(output_dir.components().any(|c| c.as_os_str() == "output"));
+        // The leaf directory is the bs58-encoded digest.
+        assert!(output_dir.file_name().is_some());
+    }
+
+    #[tokio::test]
+    async fn buckets_files_to_owning_project() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("project1/src/one.txt"), "one");
+        write_file(&root.join("project2/src/two.txt"), "two");
+
+        let mut p1 = Project::new(root, "project1");
+        p1.input_files = vec![OmniPath::new("src/**/*.txt")];
+        let mut p2 = Project::new(root, "project2");
+        p2.input_files = vec![OmniPath::new("src/**/*.txt")];
+
+        let results = run_collect(
+            root,
+            &fresh_cache_dir(root),
+            &[&p1, &p2],
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(results.len(), 2);
+        // Each project only sees files under its own directory even though the
+        // glob patterns are identical.
+        assert_eq!(
+            as_set(&results[0].input_files),
+            rel_paths(&["src/one.txt"])
+        );
+        assert_eq!(
+            as_set(&results[1].input_files),
+            rel_paths(&["src/two.txt"])
+        );
+    }
 }
