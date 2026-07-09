@@ -10,14 +10,15 @@ dependencies:
 tasks:
   build:
     enabled: true
-    exec: wasm-pack build ../../crates/omni_workspace_gen_wasm --target nodejs --out-name index --out-dir ../../packages/workspace-gen/dist
+    dependencies:
+      append:
+        - omni_workspace_gen_wasm#build
+    exec: bun exec 'cp -r ../../crates/omni_workspace_gen_wasm/dist ./dist'
     cache:
       key:
         files:
+          - "../../crates/omni_workspace_gen_wasm/src/**"
           - "../../crates/omni_workspace_gen_wasm/Cargo.toml"
-          - "../../crates/omni_workspace_gen_wasm/src/**/*.rs"
-          - "../../crates/omni_workspace_gen/Cargo.toml"
-          - "../../crates/omni_workspace_gen/src/**/*.rs"
       output:
         files:
           - "dist/**"
