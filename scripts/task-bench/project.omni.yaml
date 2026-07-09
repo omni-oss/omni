@@ -17,16 +17,19 @@ tasks:
     enabled: true
     dependencies:
       append:
-        - ^build
+        - "@omni-oss/workspace-gen#build"
 
   test:integration:
     enabled: false
     dependencies:
       append:
-        - ^build
+        - "@omni-oss/workspace-gen#build"
 
   test:
     enabled: true
+    dependencies:
+      append:
+        - "@omni-oss/workspace-gen#build"
 
   build:
     enabled: true
