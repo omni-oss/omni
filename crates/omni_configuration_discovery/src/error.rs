@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use derive_new::new;
-use dir_walker::impls::IgnoreRealDirWalkerConfigBuilderError;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(thiserror::Error, Debug)]
@@ -48,10 +47,5 @@ pub(crate) enum ErrorInner {
         #[new(into)]
         #[from]
         eyre::Report,
-    ),
-
-    #[error(transparent)]
-    IgnoreRealDirWalkerConfigBuilderError(
-        #[from] IgnoreRealDirWalkerConfigBuilderError,
     ),
 }

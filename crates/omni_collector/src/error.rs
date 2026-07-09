@@ -1,6 +1,4 @@
-use dir_walker::impls::{
-    IgnoreRealDirWalkerError, RealGlobDirWalkerConfigBuilderError,
-};
+use dir_walker::impls::IgnoreRealDirWalkerError;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(Debug, thiserror::Error)]
@@ -35,11 +33,6 @@ pub(crate) enum ErrorInner {
 
     #[error(transparent)]
     Ignore(#[from] dir_walker::impls::IgnoreError),
-
-    #[error(transparent)]
-    RealGlobGlobDirWalkerConfigBuilder(
-        #[from] RealGlobDirWalkerConfigBuilderError,
-    ),
 
     #[error(transparent)]
     IgnoreRealDirWalker(#[from] IgnoreRealDirWalkerError),

@@ -24,4 +24,6 @@ derive_builder = { workspace = true }
 derive-new = { workspace = true }
 dir_walker = { workspace = true }
 globset = { workspace = true }
+bon = { workspace = true }
+
 omni_discovery_utils = { workspace = true }

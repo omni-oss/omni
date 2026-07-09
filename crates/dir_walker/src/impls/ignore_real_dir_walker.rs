@@ -1,38 +1,51 @@
 use std::{result::Result, sync::Arc};
 
-use derive_builder::Builder;
 use ignore::{WalkState, overrides::OverrideBuilder};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
+use self::ignore_real_dir_walker_config_builder::{
+    IsUnset, SetFilterEntry, State,
+};
 use crate::{DirEntry, DirWalkerBase, Metadata};
 
 pub type Predicate =
     Arc<dyn Fn(&ignore::DirEntry) -> bool + Send + Sync + 'static>;
 
-#[derive(Clone, Builder)]
-#[builder(setter(into, strip_option))]
+#[derive(Clone, bon::Builder)]
 pub struct IgnoreRealDirWalkerConfig {
-    pub standard_filters: bool,
+    #[builder(into)]
+    pub standard_filters: Option<bool>,
+    #[builder(into)]
+    pub hidden: Option<bool>,
+    #[builder(into)]
+    pub ignore: Option<bool>,
+    #[builder(into)]
+    pub git_ignore: Option<bool>,
+    #[builder(into)]
+    pub git_exclude: Option<bool>,
+    #[builder(into)]
+    pub git_global: Option<bool>,
+    #[builder(into)]
+    pub ignore_case_insensitive: Option<bool>,
+    #[builder(into, default)]
     pub custom_ignore_filenames: Vec<String>,
-    #[builder(default)]
+    #[builder(into)]
     pub overrides: Option<IgnoreOverridesConfig>,
-    #[builder(setter(custom), default)]
+    #[builder(setters(vis = "", name = filter_entry_internal))]
     pub filter_entry: Option<Predicate>,
 }
 
-impl IgnoreRealDirWalkerConfigBuilder {
-    pub fn filter_entry<F>(&mut self, filter_entry: F) -> &mut Self
+impl<S: State> IgnoreRealDirWalkerConfigBuilder<S> {
+    pub fn filter_entry<F>(
+        self,
+        filter_entry: F,
+    ) -> IgnoreRealDirWalkerConfigBuilder<SetFilterEntry<S>>
     where
         F: Fn(&ignore::DirEntry) -> bool + Send + Sync + 'static,
+        S::FilterEntry: IsUnset,
     {
-        self.filter_entry = Some(Some(Arc::new(filter_entry)));
-        self
-    }
-}
-
-impl IgnoreRealDirWalkerConfig {
-    pub fn builder() -> IgnoreRealDirWalkerConfigBuilder {
-        IgnoreRealDirWalkerConfigBuilder::default()
+        let x = Arc::new(filter_entry);
+        self.filter_entry_internal(x)
     }
 }
 
@@ -46,7 +59,13 @@ pub struct IgnoreOverridesConfig {
 impl Default for IgnoreRealDirWalkerConfig {
     fn default() -> Self {
         Self {
-            standard_filters: true,
+            ignore_case_insensitive: None,
+            standard_filters: Some(true),
+            git_ignore: None,
+            hidden: None,
+            ignore: None,
+            git_exclude: None,
+            git_global: None,
             custom_ignore_filenames: vec![],
             overrides: None,
             filter_entry: None,
@@ -80,7 +99,29 @@ impl IgnoreRealDirWalkerConfig {
             trace::trace!("added_overrides_to_ignore_builder");
             builder.overrides(overrides);
         }
-        builder.standard_filters(self.standard_filters);
+
+        if let Some(standard_filters) = self.standard_filters {
+            builder.standard_filters(standard_filters);
+        }
+        if let Some(ignore_case_insensitive) = self.ignore_case_insensitive {
+            builder.ignore_case_insensitive(ignore_case_insensitive);
+        }
+        if let Some(ignore) = self.ignore {
+            builder.ignore(ignore);
+        }
+        if let Some(git_ignore) = self.git_ignore {
+            builder.git_ignore(git_ignore);
+        }
+        if let Some(git_global) = self.git_global {
+            builder.git_global(git_global);
+        }
+        if let Some(git_exclude) = self.git_exclude {
+            builder.git_exclude(git_exclude);
+        }
+        if let Some(hidden) = self.hidden {
+            builder.hidden(hidden);
+        }
+
         for ignore_filename in self.custom_ignore_filenames.iter() {
             builder.add_custom_ignore_filename(ignore_filename);
         }

@@ -23,7 +23,6 @@ enable-tracing = ["trace/enabled"]
 ignore = { workspace = true, optional = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
-derive_builder = { workspace = true }
 globset = { workspace = true, optional = true }
 strum = { workspace = true }
 trace = { workspace = true }
@@ -33,3 +32,4 @@ derive-new = { workspace = true }
 crossbeam-channel = { workspace = true }
 num_cpus = { workspace = true }
 path-slash = { workspace = true }
+bon = { workspace = true }

@@ -400,7 +400,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 .include(forced_includes)
                 .root_dir(self.ws_root_dir)
                 .custom_ignore_filenames(vec![".omniignore".to_string()])
-                .build()?
+                .build()
                 .build_walker()?;
 
             for res in dirwalker.walk_dir(&topmost)? {

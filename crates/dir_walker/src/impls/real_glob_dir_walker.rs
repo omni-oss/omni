@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use derive_builder::Builder;
 pub use globset::Error as GlobsetError;
 pub use ignore::Error as IgnoreError;
 use path_slash::PathExt;
@@ -14,31 +13,33 @@ use crate::{
     },
 };
 
-#[derive(Builder)]
-#[builder(setter(into, strip_option), name = "RealGlobDirWalkerConfigBuilder")]
-#[derive(Default)]
+#[derive(bon::Builder, Default)]
 pub struct RealGlobDirWalkerConfig {
-    #[builder(default = "true")]
-    standard_filters: bool,
-
-    #[builder(default)]
-    custom_ignore_filenames: Vec<String>,
-
-    #[builder(setter(into), default)]
-    include: Vec<PathBuf>,
-
-    #[builder(setter(into), default)]
-    exclude: Vec<PathBuf>,
-
-    #[builder(setter(into))]
-    root_dir: PathBuf,
+    #[builder(into)]
+    pub standard_filters: Option<bool>,
+    #[builder(into)]
+    pub hidden: Option<bool>,
+    #[builder(into)]
+    pub ignore: Option<bool>,
+    #[builder(into)]
+    pub git_ignore: Option<bool>,
+    #[builder(into)]
+    pub git_exclude: Option<bool>,
+    #[builder(into)]
+    pub git_global: Option<bool>,
+    #[builder(into)]
+    pub ignore_case_insensitive: Option<bool>,
+    #[builder(into, default)]
+    pub custom_ignore_filenames: Vec<String>,
+    #[builder(into, default)]
+    pub include: Vec<PathBuf>,
+    #[builder(into, default)]
+    pub exclude: Vec<PathBuf>,
+    #[builder(into)]
+    pub root_dir: PathBuf,
 }
 
 impl RealGlobDirWalkerConfig {
-    pub fn builder() -> RealGlobDirWalkerConfigBuilder {
-        RealGlobDirWalkerConfigBuilder::default()
-    }
-
     fn build_base(
         &self,
     ) -> Result<IgnoreRealDirWalker, IgnoreRealDirWalkerError> {
@@ -47,6 +48,12 @@ impl RealGlobDirWalkerConfig {
                 standard_filters: self.standard_filters,
                 custom_ignore_filenames: self.custom_ignore_filenames.clone(),
                 filter_entry: None,
+                git_exclude: self.git_exclude,
+                git_global: self.git_global,
+                ignore_case_insensitive: self.ignore_case_insensitive,
+                hidden: self.hidden,
+                git_ignore: self.git_ignore,
+                ignore: self.ignore,
                 overrides: Some(IgnoreOverridesConfig {
                     root: self.root_dir.to_string_lossy().to_string(),
                     excludes: self
@@ -87,7 +94,7 @@ pub struct RealGlobDirWalker {
 
 impl RealGlobDirWalker {
     pub fn config() -> RealGlobDirWalkerConfigBuilder {
-        RealGlobDirWalkerConfigBuilder::default()
+        RealGlobDirWalkerConfig::builder()
     }
 
     pub fn new(

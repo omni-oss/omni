@@ -117,9 +117,6 @@ enum RealDirHasherErrorInner {
     Globset(#[from] dir_walker::impls::GlobsetError),
 
     #[error(transparent)]
-    Builder(#[from] dir_walker::impls::RealGlobDirWalkerConfigBuilderError),
-
-    #[error(transparent)]
     Ignore(#[from] dir_walker::impls::IgnoreError),
 
     #[error(transparent)]

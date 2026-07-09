@@ -12,7 +12,6 @@ use std::{
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use dir_walker::impls::RealGlobDirWalkerConfigBuilderError;
 use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_collector::{CollectConfig, CollectResult, Collector};
@@ -1491,9 +1490,6 @@ pub(crate) enum LocalTaskExecutionCacheStoreErrorInner {
 
     #[error(transparent)]
     Globset(#[from] globset::Error),
-
-    #[error(transparent)]
-    RealGlobDirWalkerBuilder(#[from] RealGlobDirWalkerConfigBuilderError),
 
     #[error(transparent)]
     Ignore(#[from] dir_walker::impls::IgnoreError),

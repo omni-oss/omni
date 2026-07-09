@@ -44,7 +44,7 @@ where
     fn create_default_dir_walker(
         &self,
     ) -> Result<impl DirWalker + 'static, Error> {
-        let mut cfg_builder = IgnoreRealDirWalkerConfig::builder();
+        let cfg_builder = IgnoreRealDirWalkerConfig::builder();
 
         let cfg = cfg_builder
             .standard_filters(true)
@@ -54,7 +54,7 @@ where
                     .map(|s| s.as_ref().to_string())
                     .collect::<Vec<_>>(),
             )
-            .build()?;
+            .build();
 
         Ok(IgnoreRealDirWalker::new_with_config(cfg))
     }
