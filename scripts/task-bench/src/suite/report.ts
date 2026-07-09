@@ -1,4 +1,4 @@
-import { renderTable, renderVersionList } from "../bench/format";
+import { renderTable } from "../bench/format";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio } from "../bench/metrics";
 import { renderReport, renderToolInfo } from "../bench/report";
 import { formatBytes, formatMs } from "../bench/stats";
@@ -13,17 +13,6 @@ function toolsInSuite(suite: SuiteResult): Tool[] {
         for (const t of s.result.tools) present.add(t.tool);
     }
     return TOOLS.filter((t) => present.has(t));
-}
-
-/** One-line summary of the resolved tool versions used across the suite. */
-function renderSuiteVersions(suite: SuiteResult, tools: Tool[]): string[] {
-    const pairs = tools.map((tool) => {
-        const version = suite.scenarios
-            .map((s) => s.result.versions[tool])
-            .find((v) => v != null);
-        return [tool, version] as const;
-    });
-    return renderVersionList(pairs, "Tool versions");
 }
 
 /** Pick each tool's info from the first scenario that reports it. */
@@ -108,8 +97,6 @@ export function renderSuiteMarkdown(suite: SuiteResult): string[] {
     lines.push(
         `Generated ${suite.generatedAt} · ${suite.scenarios.length} scenario(s).`,
     );
-    lines.push("");
-    lines.push(...renderSuiteVersions(suite, tools));
     lines.push("");
 
     const toolInfo = suiteToolInfo(suite, tools);

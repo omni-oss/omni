@@ -1,5 +1,5 @@
 import type { ToolInfo } from "../tools";
-import { renderTable, renderVersionList } from "./format";
+import { renderTable } from "./format";
 import type { BenchmarkResult, ScenarioResult, ToolResult } from "./index";
 import { CACHE_HIT_THRESHOLD, cacheHitRatio, isFullyCached } from "./metrics";
 import type { PlatformInfo } from "./platform-info";
@@ -115,12 +115,6 @@ export function renderReport(
             `(${graphSize} task-graph nodes), running "${result.task}" ` +
             `at concurrency ${result.concurrency} ` +
             `(daemons ${result.daemon ? "on" : "off"})`,
-    );
-    lines.push(
-        ...renderVersionList(
-            result.tools.map((t) => [t.tool, result.versions[t.tool]] as const),
-            "* versions",
-        ),
     );
     lines.push("");
     lines.push(...renderPlatformInfo(result.platform));
