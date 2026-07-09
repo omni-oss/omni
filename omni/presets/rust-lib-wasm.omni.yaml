@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: rust-lib
+
+extends:
+  - "./rust-lib.omni.yaml"
+
+tasks:
+  build:
+    exec: wasm-pack build --target nodejs --out-name index --out-dir ./dist
+    cache:
+      output:
+        files:
+          - "dist/**"
+
+meta:
+  type: lib
+  arch: wasm
