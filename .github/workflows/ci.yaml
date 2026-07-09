@@ -260,5 +260,6 @@ jobs:
               ref: tag,
               inputs: {
                 version: tag,
+                resource_runs: 0,
               },
             });
