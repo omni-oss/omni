@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.9.1 - 2026-07-08
+#### Bug Fixes
+- bug in task_execution_graph for sibling tasks - (c658103) - Clarence Manuel
+#### Performance Improvements
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+#### Tests
+- update/add benchmarks - (6cd34dd) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.9.0 - 2026-07-03
 #### Features
 - implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel

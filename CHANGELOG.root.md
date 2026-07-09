@@ -2,6 +2,27 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.13.0 - 2026-07-09
+#### Features
+- (**@omni-oss/task-bench**) implement task-bench script - (feb0abf) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/task-bench**) add resource usage metrics - (bb0112a) - Clarence Manuel
+- (**@omni-oss/task-bench**) bin handling in windows - (83b395d) - Clarence Manuel
+#### Performance Improvements
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+#### Tests
+- (**omni_bench**) implement benchmark crate - (b085d32) - Clarence Manuel
+- (**omni_expressions**) update failing tests - (bdb6d7e) - Clarence Manuel
+#### Refactoring
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+- implement omni_workspace_gen common crate - (e81bde3) - Clarence Manuel
+#### Miscellaneous Chores
+- upgrade to ts 7 - (228df74) - Clarence Manuel
+- update profile and bench setup - (d419c1c) - Clarence Manuel
+- update Cargo.lock - (868b2b0) - Clarence Manuel
+
+- - -
+
 ## root-v0.12.1 - 2026-07-05
 #### Bug Fixes
 - incorrect generator schema - (16ee36e) - Clarence Manuel

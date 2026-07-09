@@ -2,6 +2,55 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.18.0 - 2026-07-09
+### Package updates
+- omni_core bumped to omni_core-v0.3.3
+- omni_workspace_gen_wasm bumped to omni_workspace_gen_wasm-v0.0.1
+- omni_generator bumped to omni_generator-v0.10.1
+- omni_cli_core bumped to omni_cli_core-v0.17.2
+- @omni-oss/task-bench bumped to @omni-oss/task-bench-v0.1.0
+- omni_task_executor bumped to omni_task_executor-v0.9.1
+- root bumped to root-v0.13.0
+- omni bumped to omni-v0.17.2
+### Global changes
+#### Features
+- (**@omni-oss/task-bench**) implement task-bench script - (feb0abf) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/task-bench**) add resource usage metrics - (bb0112a) - Clarence Manuel
+- (**@omni-oss/task-bench**) bin handling in windows - (83b395d) - Clarence Manuel
+- (**@omni-oss/workspace-gen**) copy dist from rust wasm package - (1bba298) - Clarence Manuel
+- (**omni_workspace_gen**) build script for wasm-pack - (c342744) - Clarence Manuel
+#### Performance Improvements
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+#### Tests
+- (**omni_bench**) implement benchmark crate - (b085d32) - Clarence Manuel
+- (**omni_expressions**) update failing tests - (bdb6d7e) - Clarence Manuel
+- update/add benchmarks - (6cd34dd) - Clarence Manuel
+#### Continuous Integration
+- update cog action version - (824f5ab) - Clarence Manuel
+- update ci [skip ci] - (334f56c) - Clarence Manuel
+- disable resource_runs on publish - (3862097) - Clarence Manuel
+- add wasm-pack install step - (0986400) - Clarence Manuel
+- update publish-perf-comparison - (cee5303) - Clarence Manuel
+- update publish-perf-comparison workflow - (5d6e2c0) - Clarence Manuel
+- update publish-perf-comparison workflow - (1615bca) - Clarence Manuel
+- update publish-perf-comparison workflow - (ff7fa52) - Clarence Manuel
+- update publish-perf-comparison workflow [skip ci] - (8960b79) - Clarence Manuel
+- add perf-comparison workflow - (a046f04) - Clarence Manuel
+- update omni version [skip ci] - (a7b6068) - Clarence Manuel
+#### Refactoring
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+- implement omni_workspace_gen common crate - (e81bde3) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+- upgrade to ts 7 - (228df74) - Clarence Manuel
+- update ts-package generator - (d5913d0) - Clarence Manuel
+- update profile and bench setup - (d419c1c) - Clarence Manuel
+- update generators - (f7d5b32) - Clarence Manuel
+- update Cargo.lock - (868b2b0) - Clarence Manuel
+
+- - -
+
 ## v0.17.1 - 2026-07-05
 ### Package updates
 - omni_input_schema bumped to omni_input_schema-v0.1.1

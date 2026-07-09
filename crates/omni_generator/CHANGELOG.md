@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.10.1 - 2026-07-09
+#### Bug Fixes
+- (**omni_generator**) add_many ignoring hidden files - (2f2cc69) - Clarence Manuel
+- (**omni_generator**) improve error message for deserialization error - (858460c) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.10.0 - 2026-07-03
 #### Features
 - upgrade tera version and update presets - (c097dc8) - Clarence Manuel

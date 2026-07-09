@@ -2,6 +2,29 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.17.2 - 2026-07-09
+#### Bug Fixes
+- (**@omni-oss/workspace-gen**) copy dist from rust wasm package - (1bba298) - Clarence Manuel
+- (**omni_generator**) add_many ignoring hidden files - (2f2cc69) - Clarence Manuel
+- (**omni_generator**) improve error message for deserialization error - (858460c) - Clarence Manuel
+- (**omni_workspace_gen**) build script for wasm-pack - (c342744) - Clarence Manuel
+- bug in task_execution_graph for sibling tasks - (c658103) - Clarence Manuel
+#### Performance Improvements
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+- improve performance by removing unnecessary statx calls - (56efa53) - Clarence Manuel
+#### Tests
+- (**omni_bench**) implement benchmark crate - (b085d32) - Clarence Manuel
+- (**omni_expressions**) update failing tests - (bdb6d7e) - Clarence Manuel
+- (**omni_test_utils**) refactor test utils - (de096d6) - Clarence Manuel
+- update/add benchmarks - (6cd34dd) - Clarence Manuel
+#### Refactoring
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+- implement omni_workspace_gen common crate - (e81bde3) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.17.1 - 2026-07-05
 #### Bug Fixes
 - incorrect generator schema - (16ee36e) - Clarence Manuel

@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_core-v0.3.3 - 2026-07-08
+#### Bug Fixes
+- bug in task_execution_graph for sibling tasks - (c658103) - Clarence Manuel
+#### Miscellaneous Chores
+- add JsonSchema derives - (526dcd1) - Clarence Manuel
+
+- - -
+
 ## omni_core-v0.3.2 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel
