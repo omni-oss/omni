@@ -99,7 +99,8 @@ export function renderPlatformInfo(platform: PlatformInfo): string[] {
  * Render a human-readable comparison table plus short takeaways. The warm
  * column is the key metric: with all tasks cached it approximates each tool's
  * discovery + cache-restore overhead. The warm-cache-hit column verifies that
- * assumption held (should be 100%).
+ * assumption held (should be 100%). The resource columns (mem/cpu) are only
+ * included when at least one tool reported resource usage.
  */
 export function renderReport(
     result: BenchmarkResult,
@@ -132,14 +133,21 @@ export function renderReport(
         lines.push("");
     }
 
+    // Only surface the resource columns when at least one tool reported
+    // resource usage. If every entry lacks RSS/CPU data (e.g. resourceRuns was
+    // 0), those columns would be all "—", so we drop them entirely. When any
+    // tool has data we keep the columns and fill gaps with "—".
+    const hasResourceInfo = result.tools.some(
+        (t) => t.cold.resources || t.warm.resources,
+    );
+
     const headers = [
         "tool",
         "cold (median)",
         "warm (median)",
-        "cold mem",
-        "warm mem",
-        "cold cpu",
-        "warm cpu",
+        ...(hasResourceInfo
+            ? ["cold mem", "warm mem", "cold cpu", "warm cpu"]
+            : []),
         "warm cache-hit",
         "notes",
     ];
@@ -147,10 +155,14 @@ export function renderReport(
         t.tool,
         statCell(t.cold.stats, t.cold.failures),
         statCell(t.warm.stats, t.warm.failures),
-        memCell(t.cold),
-        memCell(t.warm),
-        cpuCell(t.cold),
-        cpuCell(t.warm),
+        ...(hasResourceInfo
+            ? [
+                  memCell(t.cold),
+                  memCell(t.warm),
+                  cpuCell(t.cold),
+                  cpuCell(t.warm),
+              ]
+            : []),
         cacheCell(t),
         t.error ? `error: ${(t.error.split("\n")[0] ?? "").slice(0, 40)}` : "",
     ]);
