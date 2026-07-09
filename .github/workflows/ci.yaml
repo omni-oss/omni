@@ -174,9 +174,69 @@ jobs:
       save-outputs: true
       artifacts-name: build-typescript
 
+  resolve-versions:
+    needs:
+      - plan
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    outputs:
+      # Add a new output here (and a matching entry in VERSION_SPECS below)
+      # to expose another package's version to downstream jobs.
+      omni_version: ${{ steps.resolve.outputs.omni_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve versions from tags
+        id: resolve
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { execSync } = require('child_process');
+
+            // Registry of package versions to resolve from the tags at the
+            // current commit. To support a new package, add an entry here and
+            // declare a matching job output above.
+            //
+            //   output: the job output name to expose the version as.
+            //   prefix: the tag prefix that precedes the `v<semver>` portion.
+            //
+            // e.g. the `omni-` prefix on the tag `omni-v0.17.1` yields the
+            // exposed value `v0.17.1`.
+            const VERSION_SPECS = [
+              { output: 'omni_version', prefix: 'omni-' },
+            ];
+
+            // Gather all tags that point at the current (tagged) commit.
+            const tags = execSync('git tag --points-at HEAD', { encoding: 'utf8' })
+              .split('\n')
+              .map((tag) => tag.trim())
+              .filter(Boolean);
+
+            core.info(`Tags at current commit:\n${tags.join('\n') || '(none)'}`);
+
+            for (const { output, prefix } of VERSION_SPECS) {
+              // Match `<prefix>v<semver>` and expose only the `v<semver>` part.
+              const pattern = new RegExp(`^${prefix}(v\\d+\\.\\d+\\.\\d+.*)$`);
+              const match = tags.map((tag) => tag.match(pattern)).find(Boolean);
+              const version = match ? match[1] : '';
+
+              if (version) {
+                core.info(`Resolved ${output}: ${version}`);
+              } else {
+                core.info(`No tag matching ${prefix}v<semver> found for ${output}`);
+              }
+
+              core.setOutput(output, version);
+            }
+
   publish-generic:
     needs:
       - plan
+      - resolve-versions
       - build-rust
       - build-typescript
     if: ${{ needs.plan.outputs.jobs_publish_generic_count > 0 && startsWith(github.ref, 'refs/tags/') }}
@@ -197,6 +257,7 @@ jobs:
   publish-npm:
     needs:
       - plan
+      - resolve-versions
       - build-typescript
     if: ${{ needs.plan.outputs.jobs_publish_npm_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/run-omni-jobs.yaml
@@ -212,6 +273,7 @@ jobs:
   publish-rust-github:
     needs:
       - plan
+      - resolve-versions
       - build-rust
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
     uses: ./.github/workflows/publish-rust-github.yaml
@@ -226,6 +288,7 @@ jobs:
   publish-json-schemas:
     needs:
       - plan
+      - resolve-versions
       - build-rust
       - publish-rust-github
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
@@ -235,11 +298,12 @@ jobs:
       actions: read
       contents: write
     with:
-      version: ${{ github.ref_name }}
+      version: ${{ needs.resolve-versions.outputs.omni_version }}
 
   publish-perf-comparison:
     needs:
       - plan
+      - resolve-versions
       - publish-rust-github
       - publish-npm
     if: ${{ needs.plan.outputs.jobs_publish_rust_github_count > 0 && startsWith(github.ref, 'refs/tags/') }}
@@ -250,6 +314,8 @@ jobs:
     steps:
       - name: Dispatch Publish Performance Comparison
         uses: actions/github-script@v7
+        env:
+          OMNI_VERSION: ${{ needs.resolve-versions.outputs.omni_version }}
         with:
           script: |
             const tag = context.ref.replace('refs/tags/', '');
@@ -259,7 +325,7 @@ jobs:
               workflow_id: 'publish-perf-comparison.yaml',
               ref: tag,
               inputs: {
-                version: tag,
-                resource_runs: 0,
+                version: process.env.OMNI_VERSION,
+                resource_runs: '0',
               },
             });
