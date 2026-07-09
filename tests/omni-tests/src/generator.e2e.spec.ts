@@ -713,6 +713,105 @@ describe("+generator @e2e (transform actions)", {
     );
 });
 
+/**
+ * A workspace whose `copier` generator uses an `add-many` action to copy every
+ * file under its `templates/` dir into the output. `add-many` runs file
+ * discovery with the walker's standard ignore filters turned off, so hidden
+ * dotfiles and files under dot-directories - normally skipped as "hidden" - are
+ * still consumed. `templates` is used as `base_path` so it's stripped from the
+ * written paths. It has no inputs, so the session stays empty and no save
+ * confirm appears.
+ */
+function addManyGeneratorSpec(
+    templates: Record<string, string>,
+): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            generators: [{ source: "local", path: "generators/**" }],
+        },
+        projects: {
+            "generators/copier/generator.omni.yaml": {
+                name: "copier",
+                description: "copies template files via add-many",
+                actions: [
+                    {
+                        type: "add-many",
+                        base_path: "templates",
+                        files: ["templates/**"],
+                    },
+                ],
+            },
+        },
+        files: {
+            ".omni/sources/generator/.keep": "",
+            ...Object.fromEntries(
+                Object.entries(templates).map(([path, content]) => [
+                    `generators/copier/templates/${path}`,
+                    content,
+                ]),
+            ),
+        },
+    };
+}
+
+describe("+generator @e2e (add-many discovery)", {
+    tags: ["generator"],
+}, () => {
+    it("consumes hidden template files that standard filters would skip", async () => {
+        const ws = makeWorkspace(
+            addManyGeneratorSpec({
+                "visible.txt": "visible",
+                ".hidden.txt": "hidden dotfile",
+                ".config/settings.ini": "under a dot-directory",
+                "nested/.env": "SECRET=1",
+            }),
+        );
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "copier", "-o", "out"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/visible.txt")).toBe("visible");
+        // Dotfiles and files nested under dot-directories are copied because
+        // add-many discovery disables the walker's standard filters, which
+        // would otherwise treat these as hidden and skip them.
+        expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
+        expect(ws.read("out/.config/settings.ini")).toBe(
+            "under a dot-directory",
+        );
+        expect(ws.read("out/nested/.env")).toBe("SECRET=1");
+    });
+
+    it("still honors .omniignore even with standard filters disabled", async () => {
+        const ws = makeWorkspace(
+            addManyGeneratorSpec({
+                ".omniignore": "ignored.txt\nsecret/\n",
+                "kept.txt": "kept",
+                ".hidden.txt": "hidden dotfile",
+                "ignored.txt": "should not be copied",
+                "secret/token.txt": "should not be copied",
+            }),
+        );
+
+        const result = await runOmni(
+            ["generator", "run", "-n", "copier", "-o", "out"],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        // Regular and hidden files are still copied...
+        expect(ws.read("out/kept.txt")).toBe("kept");
+        expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
+        // ...but `.omniignore` patterns are honored: add-many disables the
+        // *standard* filters, not the custom ignore file passed to discovery.
+        expect(ws.exists("out/ignored.txt")).toBe(false);
+        expect(ws.exists("out/secret/token.txt")).toBe(false);
+    });
+});
+
 describe("+generator @tui (interactive run via PTY)", {
     tags: ["generator"],
 }, () => {
