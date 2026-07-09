@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use super::add_commons::add_one;
-use omni_discovery::Discovery;
-use omni_messages::GeneratorEventSubscriber;
+use omni_discovery::{Discovery, DiscoveryConfig};
 use omni_generator_configurations::AddManyActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{GeneratorSys, action_handlers::HandlerContext, error::Error};
 
@@ -18,10 +18,11 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>();
     let ignore_files = [".omniignore".to_string()];
-    let discovery = Discovery::new(
+    let discovery = Discovery::new_with_config(
         ctx.generator_dir,
         glob_patterns.as_slice(),
         ignore_files.as_slice(),
+        DiscoveryConfig::builder().standard_filters(false).build(),
     );
 
     let templates = discovery.discover().await?;
