@@ -49,6 +49,9 @@ pub(crate) enum ErrorInner {
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),
 
+    #[error(transparent)]
+    Resolve(#[from] omni_command_config::ResolveError),
+
     #[error(
         "expression '{expr}' in '{expr_name}' did not evaluate to a boolean, result: {result}"
     )]

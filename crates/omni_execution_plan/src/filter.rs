@@ -403,6 +403,7 @@ pub(crate) enum FilterErrorInner {
 mod tests {
     use super::*;
     use config_utils::{DictConfig, DynValue};
+    use omni_command_config::CommandConfig;
     use omni_core::TaskExecutionNode;
 
     #[test_log::test]
@@ -423,8 +424,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            Some("echo test"),
-            None::<String>,
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
             "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
@@ -456,8 +457,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            Some("echo test"),
-            None::<String>,
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
             "project1".to_string(),
             std::path::PathBuf::from(""),
             vec![],
@@ -489,8 +490,8 @@ mod tests {
 
         let node = TaskExecutionNode::new(
             "test".to_string(),
-            Some("echo test"),
-            None::<String>,
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
             "project2".to_string(),
             std::path::PathBuf::from(""),
             vec![],

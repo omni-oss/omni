@@ -135,10 +135,27 @@ impl Child {
         });
 
         let reader_async_bridge = tokio::task::spawn(async move {
+            // The consumer of `out_writer` (e.g. the logs/output task) may drop
+            // its reader before the child finishes producing output. When that
+            // happens writing fails with `BrokenPipe`; that's an expected
+            // condition, not a spawn failure, so keep draining the channel
+            // (to avoid stalling the blocking reader task on a full channel)
+            // and stop forwarding.
+            let mut consumer_gone = false;
             while let Some(buff) = out_rx.recv().await
                 && buff.len() > 0
             {
-                out_writer.write_all(&buff).await?;
+                if consumer_gone {
+                    continue;
+                }
+
+                if let Err(e) = out_writer.write_all(&buff).await {
+                    if e.kind() == io::ErrorKind::BrokenPipe {
+                        consumer_gone = true;
+                        continue;
+                    }
+                    return Err(e.into());
+                }
             }
             Ok::<(), ChildError>(())
         });
@@ -149,7 +166,16 @@ impl Child {
                 let n = in_reader.read(&mut buff).await?;
 
                 if n > 0 {
-                    writer.write_all(&buff[..n])?;
+                    // The child may exit while we still have input buffered;
+                    // writing to the pty master then fails with `BrokenPipe`
+                    // (or the platform equivalent). Treat a gone-away child as
+                    // a normal end-of-input rather than a spawn error.
+                    if let Err(e) = writer.write_all(&buff[..n]) {
+                        if e.kind() == io::ErrorKind::BrokenPipe {
+                            break;
+                        }
+                        return Err(e.into());
+                    }
                 } else {
                     break;
                 }

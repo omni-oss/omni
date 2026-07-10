@@ -5,9 +5,9 @@ use config_utils::{
 };
 use garde::Validate;
 use merge::Merge;
+use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use omni_core::{Task, TaskDependency};
-use omni_serde_validators::tera_expr::option_validate_tera_expr;
 use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,18 +24,13 @@ use super::TaskDependencyConfiguration;
 pub struct TaskConfigurationLongForm {
     #[serde(
         default,
-        deserialize_with = "option_validate_tera_expr",
         alias = "command",
         skip_serializing_if = "Option::is_none"
     )]
-    pub exec: Option<Replace<String>>,
+    pub exec: Option<Replace<CommandConfig>>,
 
-    #[serde(
-        default,
-        deserialize_with = "option_validate_tera_expr",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub retry_exec: Option<Replace<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_exec: Option<Replace<CommandConfig>>,
 
     #[serde(default)]
     pub args: DictConfig<DynValue>,
@@ -177,7 +172,7 @@ impl Default for TaskConfigurationLongForm {
 #[serde(untagged)]
 #[garde(allow_unvalidated)]
 pub enum TaskConfiguration {
-    ShortForm(String),
+    ShortForm(CommandConfig),
     LongForm(Box<TaskConfigurationLongForm>),
 }
 
@@ -186,8 +181,21 @@ impl<'a> Deserialize<'a> for TaskConfiguration {
     where
         D: serde::Deserializer<'a>,
     {
+        use omni_serde_validators::tera_expr::validate_str;
         serde_untagged::UntaggedEnumVisitor::new()
-            .string(|s| Ok(TaskConfiguration::ShortForm(s.to_string())))
+            .string(|s| {
+                validate_str(&s).map_err(serde::de::Error::custom)?;
+                Ok(TaskConfiguration::ShortForm(CommandConfig::Shell(
+                    s.to_string(),
+                )))
+            })
+            .seq(|seq| {
+                let items: Vec<String> = seq.deserialize()?;
+                for item in &items {
+                    validate_str(item).map_err(serde::de::Error::custom)?;
+                }
+                Ok(TaskConfiguration::ShortForm(CommandConfig::Argv(items)))
+            })
             .map(|long_form| {
                 long_form.deserialize().map(TaskConfiguration::LongForm)
             })
@@ -214,8 +222,8 @@ pub struct TaskEnvConfiguration {
 }
 
 impl TaskConfiguration {
-    pub fn short_form(command: String) -> Self {
-        Self::ShortForm(command)
+    pub fn short_form(command: impl Into<CommandConfig>) -> Self {
+        Self::ShortForm(command.into())
     }
 
     pub fn long_form(long_form: TaskConfigurationLongForm) -> Self {
@@ -387,12 +395,39 @@ mod tests {
 
     #[test]
     fn test_merge_short_form() {
-        let mut a = TaskConfiguration::ShortForm("a".to_string());
-        let b = TaskConfiguration::ShortForm("b".to_string());
+        let mut a =
+            TaskConfiguration::ShortForm(CommandConfig::Shell("a".to_string()));
+        let b =
+            TaskConfiguration::ShortForm(CommandConfig::Shell("b".to_string()));
 
         a.merge(b);
 
-        assert_eq!(a, TaskConfiguration::ShortForm("b".to_string()));
+        assert_eq!(
+            a,
+            TaskConfiguration::ShortForm(CommandConfig::Shell("b".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_short_form_string_is_shell_sequence_is_argv() {
+        let shell: TaskConfiguration =
+            serde_json::from_str(r#""echo hi""#).unwrap();
+        assert_eq!(
+            shell,
+            TaskConfiguration::ShortForm(CommandConfig::Shell(
+                "echo hi".to_string()
+            ))
+        );
+
+        let argv: TaskConfiguration =
+            serde_json::from_str(r#"["echo", "a b"]"#).unwrap();
+        assert_eq!(
+            argv,
+            TaskConfiguration::ShortForm(CommandConfig::Argv(vec![
+                "echo".to_string(),
+                "a b".to_string(),
+            ]))
+        );
     }
 
     #[test]
@@ -402,7 +437,7 @@ mod tests {
         };
 
         let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            exec: Some(Replace::new("a".to_string())),
+            exec: Some(Replace::new(CommandConfig::Shell("a".to_string()))),
             dependencies: ListConfig::value(vec![a_tdc.clone()]),
             description: Some(Replace::new(String::from("a description"))),
             env: Default::default(),
@@ -423,7 +458,7 @@ mod tests {
         };
 
         let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
-            exec: Some(Replace::new("b".to_string())),
+            exec: Some(Replace::new(CommandConfig::Shell("b".to_string()))),
             dependencies: ListConfig::append(vec![b_tdc.clone()]),
             description: None,
             env: Default::default(),
@@ -443,7 +478,7 @@ mod tests {
         assert_eq!(
             a,
             TaskConfiguration::long_form(TaskConfigurationLongForm {
-                exec: Some(Replace::new("b".to_string())),
+                exec: Some(Replace::new(CommandConfig::Shell("b".to_string()))),
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),
@@ -493,7 +528,9 @@ mod tests {
 
     #[test]
     fn test_output_logs_short_form_is_none() {
-        let short = TaskConfiguration::ShortForm("echo hi".to_string());
+        let short = TaskConfiguration::ShortForm(CommandConfig::Shell(
+            "echo hi".to_string(),
+        ));
         assert!(short.output_logs().is_none());
     }
 

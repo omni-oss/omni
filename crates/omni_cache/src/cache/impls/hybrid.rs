@@ -627,11 +627,14 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                         files: cache_output_files,
                         task_name: result.task.task_name.to_string(),
                         digest,
-                        task_exec: result.task.task_exec.map(|c| c.to_string()),
+                        task_exec: result
+                            .task
+                            .task_exec
+                            .map(|c| c.canonical().into_owned()),
                         task_retry_exec: result
                             .task
                             .task_retry_exec
-                            .map(|c| c.to_string()),
+                            .map(|c| c.canonical().into_owned()),
                         execution_duration: new_cache_info.execution_duration,
                         exit_code: new_cache_info.exit_code,
                         execution_time: OffsetDateTime::now_utc(),
@@ -1533,6 +1536,7 @@ mod tests {
     use crate::{NewCacheInfo, cache::impls::HybridTaskExecutionCacheStore};
     use bytes::Bytes;
     use derive_new::new;
+    use omni_command_config::CommandConfig;
     use omni_types::{OmniPath, Root};
     use std::path::Path;
     use system_traits::{FsRename, FsRenameAsync, impls::RealSys};
@@ -1628,7 +1632,7 @@ mod tests {
     #[derive(new, Debug)]
     struct TaskExecutionInfoStatic {
         task_name: String,
-        task_exec: String,
+        task_exec: CommandConfig,
         project_name: String,
         project_dir: PathBuf,
         input_files: Vec<OmniPath>,
@@ -1644,7 +1648,7 @@ mod tests {
     ) -> TaskExecutionInfo<'a> {
         TaskExecutionInfo::new(
             task.task_name.as_str(),
-            Some(task.task_exec.as_str()),
+            Some(&task.task_exec),
             None,
             &task.project_name,
             &task.project_dir,
@@ -1666,7 +1670,7 @@ mod tests {
         let project_dir = root_dir.join(project_name);
         let mut owned = TaskExecutionInfoStatic {
             task_name: task_name.to_string(),
-            task_exec: format!("ls {}", task_name),
+            task_exec: CommandConfig::Shell(format!("ls {}", task_name)),
             project_name: project_name.to_string(),
             input_files: vec![OmniPath::new("src/**/*.txt")],
             output_files: vec![OmniPath::new("dist/**/*.js")],

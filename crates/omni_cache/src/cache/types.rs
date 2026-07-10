@@ -4,6 +4,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
 use maps::Map;
+use omni_command_config::CommandConfig;
 use omni_hasher::impls::DefaultHash;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
@@ -15,9 +16,9 @@ use yoke::Yokeable;
 pub struct TaskExecutionInfo<'a> {
     pub task_name: &'a str,
     #[serde(alias = "task_command")]
-    pub task_exec: Option<&'a str>,
+    pub task_exec: Option<&'a CommandConfig>,
     #[serde(alias = "task_retry_command")]
-    pub task_retry_exec: Option<&'a str>,
+    pub task_retry_exec: Option<&'a CommandConfig>,
     pub project_name: &'a str,
     pub project_dir: &'a Path,
     pub output_files: &'a [OmniPath],

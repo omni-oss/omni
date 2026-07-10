@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use bytes::Bytes;
 use derive_new::new;
 use maps::Map;
@@ -12,18 +10,19 @@ use crate::{ChildProcess, ChildProcessError};
 
 pub struct TaskChildProcess {
     task: TaskExecutionNode,
-    child_process: ChildProcess<String, PathBuf>,
+    child_process: ChildProcess,
 }
 
 impl TaskChildProcess {
     pub fn new(
         task: TaskExecutionNode,
-        command: &str,
+        program: String,
+        args: Vec<String>,
     ) -> Result<Self, ChildProcessError> {
         let current_dir = task.project_dir().to_owned();
         Ok(Self {
             task,
-            child_process: ChildProcess::new(command, current_dir),
+            child_process: ChildProcess::new(program, args, current_dir),
         })
     }
 }

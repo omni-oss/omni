@@ -23,6 +23,7 @@ log = { workspace = true }
 tracing = { workspace = true }
 omni_configurations = { workspace = true }
 omni_core = { workspace = true }
+omni_command_config = { workspace = true }
 omni_expressions = { workspace = true }
 config_utils = { workspace = true }
 maps = { workspace = true }

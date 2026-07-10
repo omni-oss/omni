@@ -39,6 +39,7 @@ tracing = { workspace = true }
 time = { workspace = true }
 omni_utils = { workspace = true }
 omni_collector = { workspace = true }
+omni_command_config = { workspace = true }
 tokio = { workspace = true }
 bytesize = { workspace = true }
 omni_execution_plan = { workspace = true }

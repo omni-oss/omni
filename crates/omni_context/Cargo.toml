@@ -36,6 +36,7 @@ config_utils = { workspace = true }
 omni_hasher = { workspace = true }
 omni_cache = { workspace = true }
 omni_collector = { workspace = true }
+omni_command_config = { workspace = true }
 omni_types = { workspace = true }
 dir_walker = { workspace = true }
 merge = { workspace = true }

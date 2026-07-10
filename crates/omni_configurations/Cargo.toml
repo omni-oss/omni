@@ -27,6 +27,7 @@ maps = { workspace = true }
 sets =  { workspace=true }
 merge = { workspace = true }
 omni_core = { workspace = true }
+omni_command_config = { workspace = true }
 omni_expressions = { workspace = true }
 config_utils = { workspace = true }
 omni_types = { workspace = true }

@@ -2,6 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use derive_new::new;
 use maps::OrderedMap;
+use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,8 +20,8 @@ pub struct Project {
     Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema, new,
 )]
 pub struct Task {
-    pub exec: Option<String>,
-    pub retry_exec: Option<String>,
+    pub exec: Option<CommandConfig>,
+    pub retry_exec: Option<CommandConfig>,
     pub dependencies: Vec<TaskDependency>,
     pub description: Option<String>,
     pub enabled: TeraExprBoolean,
@@ -33,8 +34,8 @@ pub struct Task {
 
 #[cfg(test)]
 pub(crate) struct TaskBuilder {
-    exec: Option<String>,
-    retry_exec: Option<String>,
+    exec: Option<CommandConfig>,
+    retry_exec: Option<CommandConfig>,
     dependencies: Vec<TaskDependency>,
     description: Option<String>,
     enabled: TeraExprBoolean,
@@ -49,7 +50,7 @@ pub(crate) struct TaskBuilder {
 impl TaskBuilder {
     pub fn new(exec: String) -> Self {
         Self {
-            exec: Some(exec),
+            exec: Some(CommandConfig::Shell(exec)),
             retry_exec: None,
             dependencies: Default::default(),
             description: Default::default(),
@@ -193,4 +194,43 @@ pub enum TaskDependency {
     Own { task: String },
     ExplicitProject { project: String, task: String },
     Upstream { task: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_round_trips_shell_and_argv_exec() {
+        let json = r#"{
+            "exec": "echo hi",
+            "retry_exec": ["echo", "retry hi"],
+            "dependencies": [],
+            "description": null,
+            "enabled": true,
+            "interactive": false,
+            "persistent": false,
+            "siblings": [],
+            "max_retries": null,
+            "retry_interval": null
+        }"#;
+
+        let task: Task = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            task.exec,
+            Some(CommandConfig::Shell("echo hi".to_string()))
+        );
+        assert_eq!(
+            task.retry_exec,
+            Some(CommandConfig::Argv(vec![
+                "echo".to_string(),
+                "retry hi".to_string(),
+            ]))
+        );
+
+        // Serialize then deserialize again; the value must be stable.
+        let reserialized = serde_json::to_string(&task).unwrap();
+        let round_tripped: Task = serde_json::from_str(&reserialized).unwrap();
+        assert_eq!(task, round_tripped);
+    }
 }

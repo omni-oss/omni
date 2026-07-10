@@ -6282,9 +6282,9 @@ checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
 name = "noyalib"
-version = "0.0.13"
+version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2095d0b3b6017ebbdaffedf83ffb2bff7e468ab379ac391239abea4880833290"
+checksum = "12ed62e7f82a103cc3c01c43d8fbbe8d0591731e5625dc85661298aede7d6c3d"
 dependencies = [
  "indexmap",
  "itoa",
@@ -6459,7 +6459,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6483,7 +6483,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "bytesize",
  "derive-new",
@@ -6593,6 +6593,7 @@ dependencies = [
  "maps",
  "mockall",
  "omni_collector",
+ "omni_command_config",
  "omni_configurations",
  "omni_core",
  "omni_execution_plan",
@@ -6620,7 +6621,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.17.1"
+version = "0.17.2"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6722,6 +6723,7 @@ dependencies = [
  "globset",
  "log",
  "maps",
+ "omni_command_config",
  "omni_hasher",
  "omni_types",
  "omni_utils",
@@ -6733,6 +6735,26 @@ dependencies = [
  "tokio 1.52.3",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_command_config"
+version = "0.0.0"
+dependencies = [
+ "derive-new",
+ "env",
+ "maps",
+ "merge",
+ "omni_serde_validators",
+ "omni_tera",
+ "schemars",
+ "serde",
+ "serde-untagged",
+ "serde_json",
+ "shlex 2.0.1",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -6790,6 +6812,7 @@ dependencies = [
  "lazy-regex",
  "maps",
  "merge",
+ "omni_command_config",
  "omni_config_types",
  "omni_core",
  "omni_expressions",
@@ -6834,6 +6857,7 @@ dependencies = [
  "merge",
  "omni_cache",
  "omni_collector",
+ "omni_command_config",
  "omni_configuration_discovery",
  "omni_configurations",
  "omni_core",
@@ -6864,17 +6888,19 @@ dependencies = [
 
 [[package]]
 name = "omni_core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "derive-new",
  "derive_more",
  "eyre",
  "maps",
  "merge",
+ "omni_command_config",
  "omni_config_types",
  "petgraph",
  "schemars",
  "serde",
+ "serde_json",
  "sets",
  "strum 0.28.0",
  "thiserror 2.0.18",
@@ -6928,6 +6954,7 @@ dependencies = [
  "globset",
  "log",
  "maps",
+ "omni_command_config",
  "omni_config_types",
  "omni_configurations",
  "omni_core",
@@ -6981,7 +7008,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "async-trait",
  "bon",
@@ -6996,6 +7023,7 @@ dependencies = [
  "js_runtime",
  "log",
  "maps",
+ "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
  "omni_discovery",
@@ -7066,7 +7094,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7144,7 +7172,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "either",
  "enumset",
@@ -7228,7 +7256,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7256,9 +7284,9 @@ name = "omni_process"
 version = "0.3.2"
 dependencies = [
  "atty",
+ "bon",
  "bytes 1.11.1",
  "derive-new",
- "env",
  "eyre",
  "futures 0.3.32",
  "log",
@@ -7267,7 +7295,6 @@ dependencies = [
  "omni_core",
  "omni_hasher",
  "portable-pty",
- "shlex 2.0.1",
  "strum 0.28.0",
  "system_traits",
  "terminal_size",
@@ -7520,7 +7547,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ahash 0.8.12",
  "base64",
@@ -7541,6 +7568,7 @@ dependencies = [
  "num_cpus",
  "omni_cache",
  "omni_collector",
+ "omni_command_config",
  "omni_config_types",
  "omni_configurations",
  "omni_context",
@@ -7572,7 +7600,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.17.1"
+version = "0.18.0"
 dependencies = [
  "merge",
  "schemars",
@@ -7704,7 +7732,7 @@ dependencies = [
 
 [[package]]
 name = "omni_workspace_gen_wasm"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "console_error_panic_hook",
  "heck",

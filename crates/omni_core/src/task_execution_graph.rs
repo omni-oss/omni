@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use petgraph::{
     Direction,
@@ -32,8 +33,8 @@ use crate::{Project, ProjectGraph, ProjectGraphError};
 )]
 pub struct TaskExecutionNode {
     task_name: String,
-    task_exec: Option<String>,
-    task_retry_exec: Option<String>,
+    task_exec: Option<CommandConfig>,
+    task_retry_exec: Option<CommandConfig>,
     project_name: String,
     project_dir: PathBuf,
     full_task_name: String,
@@ -49,8 +50,8 @@ impl TaskExecutionNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         task_name: impl Into<String>,
-        task_exec: Option<impl Into<String>>,
-        task_retry_exec: Option<impl Into<String>>,
+        task_exec: Option<CommandConfig>,
+        task_retry_exec: Option<CommandConfig>,
         project_name: impl Into<String>,
         project_dir: impl Into<PathBuf>,
         dependencies: Vec<String>,
@@ -65,8 +66,8 @@ impl TaskExecutionNode {
         Self {
             full_task_name: format!("{}#{}", &project_name, &task_name),
             task_name,
-            task_exec: task_exec.map(|c| c.into()),
-            task_retry_exec: task_retry_exec.map(|c| c.into()),
+            task_exec,
+            task_retry_exec,
             project_name,
             project_dir: project_dir.into(),
             dependencies,
@@ -84,12 +85,12 @@ impl TaskExecutionNode {
         self.task_name.as_str()
     }
 
-    pub fn task_exec(&self) -> Option<&str> {
-        self.task_exec.as_deref()
+    pub fn task_exec_config(&self) -> Option<&CommandConfig> {
+        self.task_exec.as_ref()
     }
 
-    pub fn task_retry_exec(&self) -> Option<&str> {
-        self.task_retry_exec.as_deref()
+    pub fn task_retry_exec_config(&self) -> Option<&CommandConfig> {
+        self.task_retry_exec.as_ref()
     }
 
     pub fn project_name(&self) -> &str {
@@ -133,8 +134,8 @@ impl TaskExecutionNode {
         self,
     ) -> (
         String,
-        Option<String>,
-        Option<String>,
+        Option<CommandConfig>,
+        Option<CommandConfig>,
         String,
         PathBuf,
         String,
@@ -217,7 +218,7 @@ impl TaskExecutionGraph {
                 let task_execution_node = TaskExecutionNode::new(
                     task_name.to_string(),
                     task.1.exec.clone(),
-                    None::<String>,
+                    None,
                     project_name.to_string(),
                     project_dir.to_path_buf(),
                     vec![],
@@ -1251,8 +1252,8 @@ mod tests {
     ) -> TaskExecutionNode {
         return TaskExecutionNode::new(
             task_name.to_string(),
-            Some(task_exec.to_string()),
-            None::<String>,
+            Some(CommandConfig::Shell(task_exec.to_string())),
+            None,
             project_name.to_string(),
             PathBuf::from(""),
             vec![],

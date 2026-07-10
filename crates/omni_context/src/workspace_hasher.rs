@@ -3,6 +3,7 @@ use std::{collections::HashSet, path::Path};
 use derive_new::new;
 use maps::Map;
 use omni_collector::{CollectConfig, Collector, CollectorSys, ProjectTaskInfo};
+use omni_command_config::CommandConfig;
 use omni_hasher::{
     Hasher as _,
     impls::{DefaultHash, DefaultHasher},
@@ -37,8 +38,8 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
             project_name: &'a str,
             project_dir: &'a Path,
             task_name: &'a str,
-            task_exec: Option<&'a str>,
-            task_retry_exec: Option<&'a str>,
+            task_exec: Option<&'a CommandConfig>,
+            task_retry_exec: Option<&'a CommandConfig>,
             input_files: Vec<OmniPath>,
             env_vars: Map<String, String>,
             input_env_keys: Vec<String>,

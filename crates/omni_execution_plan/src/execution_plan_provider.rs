@@ -4,6 +4,7 @@ use std::{
 };
 
 use derive_new::new;
+use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use omni_configurations::MetaConfiguration;
 use omni_core::{
@@ -84,7 +85,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         let filtered = match call {
             Call::Command { command, args } => {
                 let tfqn = temp_task_name("exec", command, args);
-                let full_cmd = format!("{command} {}", args.join(" "));
+                let command_config = command_call_config(command, args);
 
                 // Apply the project/dir/meta filters to the synthetic command
                 // task too, so `exec` honors `--dir`/`-m` (not just `-p`).
@@ -102,8 +103,8 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 for p in projects.iter() {
                     let node = TaskExecutionNode::new(
                         tfqn.clone(),
-                        Some(&full_cmd),
-                        None::<String>,
+                        Some(command_config.clone()),
+                        None,
                         p.name.clone(),
                         p.dir.clone(),
                         vec![],
@@ -272,13 +273,13 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         let task_names = match call {
             Call::Command { command, args } => {
                 let task_name = temp_task_name("exec", command, args);
-                let full_cmd = format!("{command} {}", args.join(" "));
+                let command_config = command_call_config(command, args);
 
                 project_graph.mutate_nodes(|p| {
                     p.tasks.insert(
                         task_name.clone(),
                         Task::new(
-                            Some(full_cmd.clone()),
+                            Some(command_config.clone()),
                             None,
                             vec![TaskDependency::Upstream {
                                 task: task_name.clone(),
@@ -364,6 +365,16 @@ fn temp_task_name(prefix: &str, command: &str, args: &[String]) -> String {
     format!("{prefix}-{enc}")
 }
 
+/// Build the synthetic command for a `Call::Command` as an explicit argv so
+/// that arguments containing spaces survive intact (no join + re-split).
+fn command_call_config(command: &str, args: &[String]) -> CommandConfig {
+    CommandConfig::Argv(
+        std::iter::once(command.to_string())
+            .chain(args.iter().cloned())
+            .collect(),
+    )
+}
+
 #[derive(thiserror::Error, Debug)]
 #[error(transparent)]
 pub struct ExecutionPlanProviderError(
@@ -403,4 +414,24 @@ pub(crate) enum ExecutionPlanProviderErrorInner {
 
     #[error(transparent)]
     FilterError(#[from] FilterError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_call_preserves_spaced_argument() {
+        // `omni exec echo "hello world"` must run ["echo", "hello world"],
+        // not split the quoted argument back apart.
+        let cfg = command_call_config("echo", &["hello world".to_string()]);
+
+        assert_eq!(
+            cfg,
+            CommandConfig::Argv(vec![
+                "echo".to_string(),
+                "hello world".to_string(),
+            ])
+        );
+    }
 }

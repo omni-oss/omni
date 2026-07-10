@@ -37,6 +37,7 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 omni_core = { workspace = true }
+omni_command_config = { workspace = true }
 
 trace = { workspace = true }
 log = { workspace = true }

@@ -24,3 +24,7 @@ maps = { workspace = true }
 merge = { workspace = true }
 sets = { workspace = true }
 omni_config_types = { workspace = true }
+omni_command_config = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

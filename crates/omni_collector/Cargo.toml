@@ -15,6 +15,7 @@ thiserror = { workspace = true }
 strum = { workspace = true }
 dir_walker = { workspace = true }
 omni_types = { workspace = true }
+omni_command_config = { workspace = true }
 omni_hasher = { workspace = true }
 system_traits = { workspace = true }
 trace = { workspace = true }

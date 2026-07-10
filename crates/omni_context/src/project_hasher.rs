@@ -4,6 +4,7 @@ use derive_new::new;
 use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
+use omni_command_config::CommandConfig;
 use omni_execution_plan::{Call, ExecutionPlanProvider};
 use omni_hasher::{
     Hasher as _,
@@ -61,8 +62,8 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             project_name: &'a str,
             project_dir: &'a Path,
             task_name: &'a str,
-            task_exec: Option<&'a str>,
-            task_retry_exec: Option<&'a str>,
+            task_exec: Option<&'a CommandConfig>,
+            task_retry_exec: Option<&'a CommandConfig>,
             input_files: &'a [OmniPath],
             output_files: &'a [OmniPath],
             env_vars: Arc<Map<String, String>>,
@@ -124,11 +125,11 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     task_exec: project
                         .tasks
                         .get(task.task_name())
-                        .and_then(|t| t.exec.as_deref()),
+                        .and_then(|t| t.exec.as_ref()),
                     task_retry_exec: project
                         .tasks
                         .get(task.task_name())
-                        .and_then(|t| t.retry_exec.as_deref()),
+                        .and_then(|t| t.retry_exec.as_ref()),
                     output_files: &ci.cache_output_files,
                     input_files: &ci.key_input_files,
                     dependency_digests: task

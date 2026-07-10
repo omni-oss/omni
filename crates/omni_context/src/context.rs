@@ -619,11 +619,19 @@ mod tests {
 
         assert_eq!(project3.tasks.len(), 2, "Should be 2 tasks");
         assert_eq!(
-            project3.tasks["from-base-1"].exec.as_deref().unwrap(),
+            project3.tasks["from-base-1"]
+                .exec
+                .as_ref()
+                .unwrap()
+                .canonical(),
             "echo \"from base-1\""
         );
         assert_eq!(
-            project3.tasks["from-base-2"].exec.as_deref().unwrap(),
+            project3.tasks["from-base-2"]
+                .exec
+                .as_ref()
+                .unwrap()
+                .canonical(),
             "echo \"from base-2\""
         );
     }

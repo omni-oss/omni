@@ -88,7 +88,7 @@ embed-manifest = { version = "^1.3" }
 convert_case = { version = "^0.11.0" }
 schemars = { version = "^1.2.1", features = ["indexmap2", "either1", "url2"] }
 walkdir = { version = "^2.5.0" }
-noyalib = { version = "^0.0.13" }
+noyalib = { version = "^0.0.14" }
 ignore = { version = "^0.4.25" }
 regex = { version = "^1.12.3" }
 lazy-regex = { version = "^3.6.0" }
@@ -186,6 +186,7 @@ wasm-bindgen = { version = "^0.2.100" }
 serde-wasm-bindgen = { version = "^0.6.5" }
 console_error_panic_hook = { version = "^0.1.7" }
 wasm-bindgen-test = { version = "^0.3.50" }
+omni_command_config = { path = "crates/omni_command_config" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

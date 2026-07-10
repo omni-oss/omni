@@ -3,6 +3,7 @@ use std::{borrow::Cow, future::Future, time::Duration};
 use futures::stream::{FuturesUnordered, StreamExt as _};
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{CachedTaskExecution, TaskExecutionCacheStore};
+use omni_command_config::{Command, CommandConfig, resolve_command};
 use omni_config_types::TeraExprBoolean;
 use omni_context::LoadedContext;
 use omni_core::TaskExecutionNode;
@@ -407,7 +408,7 @@ where
         let mut futs = Vec::with_capacity(task_contexts.len());
 
         for task_ctx in task_contexts {
-            if task_ctx.node.task_exec().is_none() {
+            if task_ctx.node.task_exec_config().is_none() {
                 new_results.insert(
                     task_ctx.node.full_task_name().to_string(),
                     TaskExecutionResult::new_skipped(
@@ -519,15 +520,13 @@ where
                     0,
                 ));
             } else {
-                let override_command = get_expanded_override_command(
-                    task_ctx.node.task_exec(),
-                    "command",
+                let override_command = resolve_task_command(
+                    task_ctx.node.task_exec_config(),
                     task_ctx,
                 )?;
 
-                let override_retry_command = get_expanded_override_command(
-                    task_ctx.node.task_retry_exec(),
-                    "retry_command",
+                let override_retry_command = resolve_task_command(
+                    task_ctx.node.task_retry_exec_config(),
                     task_ctx,
                 )?;
                 futs.push(run_process(
@@ -677,23 +676,21 @@ where
     }
 }
 
-fn get_expanded_override_command<'a>(
-    command: Option<&'a str>,
-    template_name: &str,
+/// Resolve a task's [`CommandConfig`] into a concrete argv at execution time,
+/// applying Tera rendering (via the task's template context) and env-var
+/// expansion. Returns `None` when the task has no command configured.
+fn resolve_task_command<'a>(
+    spec: Option<&CommandConfig>,
     task_ctx: &Cow<'_, TaskContext<'a>>,
-) -> Result<Option<String>, BatchExecutorError> {
-    let override_command = if let Some(cmd) = command {
-        let expanded =
-            omni_tera::one_off(cmd, template_name, &task_ctx.template_context)?;
-        if expanded != cmd {
-            Some(expanded)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    Ok(override_command)
+) -> Result<Option<Command>, BatchExecutorError> {
+    match spec {
+        Some(spec) => Ok(Some(resolve_command(
+            spec,
+            Some(&task_ctx.template_context),
+            Some(&task_ctx.env_vars),
+        )?)),
+        None => Ok(None),
+    }
 }
 
 fn evaluate_bool_expr(
@@ -796,8 +793,8 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
     wants_task_output_stream: bool,
     wants_task_input_stream: bool,
     task_ctx: &'a TaskContext<'a>,
-    override_command: Option<String>,
-    override_retry_command: Option<String>,
+    override_command: Option<Command>,
+    override_retry_command: Option<Command>,
     record_logs: bool,
     output_logs: EffectiveOutputLogs,
     max_retries: u8,
@@ -805,11 +802,9 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
 ) -> TaskResultContext<'a> {
     let mut tries = 0u8;
 
-    let reg_cmd = override_command.as_deref().or(task_ctx.node.task_exec());
-    let retry_cmd = override_retry_command
-        .as_deref()
-        .or(task_ctx.node.task_retry_exec())
-        .or(reg_cmd);
+    let reg_cmd: Option<&Command> = override_command.as_ref();
+    let retry_cmd: Option<&Command> =
+        override_retry_command.as_ref().or(reg_cmd);
 
     subscriber
         .on_task_started(TaskStartedEvent {
@@ -834,8 +829,13 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             );
         };
 
+        let (prog, args) = match command.prog.clone() {
+            Some(prog) => (prog, command.args.clone()),
+            None => (String::new(), Vec::new()),
+        };
+
         let mut proc =
-            match TaskChildProcess::new(task_ctx.node.clone(), command) {
+            match TaskChildProcess::new(task_ctx.node.clone(), prog, args) {
                 Ok(o) => o,
                 Err(e) => {
                     return TaskResultContext::new_error(
@@ -1029,6 +1029,9 @@ pub(crate) enum BatchExecutorErrorInner {
 
     #[error(transparent)]
     Tera(#[from] omni_tera::Error),
+
+    #[error(transparent)]
+    Resolve(#[from] omni_command_config::ResolveError),
 }
 
 #[cfg(test)]

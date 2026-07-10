@@ -5,6 +5,7 @@ use std::{
 
 use env::CommandExpansionConfig;
 use maps::Map;
+use omni_command_config::{CommandConfig, resolve_command};
 use omni_generator_configurations::CommonRunCustomActionConfiguration;
 use omni_messages::GeneratorEventSubscriber;
 use omni_process::ChildProcess;
@@ -110,10 +111,20 @@ pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
     log::debug!("Running command: {}", command);
 
     if common.supports_dry_run || !ctx.dry_run {
-        let mut cp =
-            ChildProcess::<String, PathBuf>::new(command.clone(), target);
-
         let env = build_command_env(common, ctx, target)?;
+
+        // Tera was already applied above; here we only env-expand and split the
+        // rendered shell string into argv.
+        let resolved = resolve_command(
+            &CommandConfig::Shell(command.clone()),
+            None,
+            Some(env.as_ref()),
+        )?;
+
+        let prog = resolved.prog.unwrap_or_default();
+        let args = resolved.args;
+
+        let mut cp = ChildProcess::new(prog, args, target.to_path_buf());
 
         cp.env_vars(env.as_ref())
             .keep_stdin_open(false)
