@@ -13,7 +13,20 @@ tasks:
     dependencies:
       append:
         - omni_workspace_gen_wasm#build
-    exec: bun exec 'cp -r ../../crates/omni_workspace_gen_wasm/dist ./dist'
+    exec: >
+      bun -e '
+        import { $ } from "bun";
+        await $`cp -r ../../crates/omni_workspace_gen_wasm/dist ./dist`;
+        if (await Bun.file("./dist/package.json").exists()) {
+          await $`rm ./dist/package.json`;
+        }
+        if (await Bun.file("./dist/.gitignore").exists()) {
+          await $`rm ./dist/.gitignore`;
+        }
+        if (await Bun.file("./dist/dist").exists()) {
+          await $`rm -r ./dist/dist`;
+        }
+      '
     cache:
       key:
         files:
