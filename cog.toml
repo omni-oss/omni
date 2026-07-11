@@ -646,6 +646,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages."@omni-oss/perf-dashboard"]
+path = "scripts/perf-dashboard"
+include = [
+    "scripts/perf-dashboard/**",
+]
+public_api = true
+
 #@anchor:new-typescript-package
 
 [monorepo.packages.root]

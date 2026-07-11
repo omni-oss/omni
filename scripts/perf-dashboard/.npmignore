@@ -1,0 +1,10 @@
+vite.config.ts
+vite.config.*.ts
+vitest.config.ts
+vitest.config.*.ts
+project.omni.yaml
+src/**/*.*
+tsconfig.json
+tsconfig.types.json
+tsconfig.*.json
+node_modules

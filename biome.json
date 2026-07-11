@@ -45,7 +45,8 @@
             "!**/*.config.js",
             "!./**/*.gen.*",
             "!./**/*.generated.*",
-            "!./**/bin/**/*"
+            "!./**/bin/**/*",
+            "!**/render/html/template.html"
         ]
     }
 }

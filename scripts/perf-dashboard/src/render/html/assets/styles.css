@@ -1,0 +1,260 @@
+:root {
+    --fg: #111827;
+    --muted: #6b7280;
+    --bd: #e5e7eb;
+    --bg: #fff;
+    --accent: #4f46e5;
+    --warn: #b45309;
+    --warnbg: #fffbeb;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font:
+        14px / 1.5 system-ui,
+        -apple-system,
+        "Segoe UI",
+        Roboto,
+        sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+}
+
+main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+h1 {
+    font-size: 22px;
+    margin: 0 0 4px;
+}
+
+h2 {
+    font-size: 18px;
+    margin: 0;
+}
+
+h3 {
+    font-size: 15px;
+    margin: 20px 0 8px;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--bd);
+    margin: 16px 0;
+}
+
+.tab {
+    border: 0;
+    background: none;
+    padding: 8px 14px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+
+.panel {
+    display: none;
+}
+
+.panel.active {
+    display: block;
+}
+
+.callout {
+    background: var(--warnbg);
+    border: 1px solid #fcd34d;
+    border-left: 4px solid var(--warn);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 12px 0;
+}
+
+.callout h4 {
+    margin: 0 0 4px;
+    color: var(--warn);
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+    font-size: 13px;
+}
+
+th,
+td {
+    border: 1px solid var(--bd);
+    padding: 5px 8px;
+    text-align: left;
+}
+
+th {
+    background: #f9fafb;
+}
+
+.chart {
+    margin: 20px 0;
+    padding: 12px;
+    border: 1px solid var(--bd);
+    border-radius: 8px;
+}
+
+.analysis {
+    font-size: 13px;
+    margin: 6px 0 12px;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+}
+
+.analysis.overall {
+    margin: 10px 0 0;
+}
+
+.analysis.ai {
+    padding: 8px 10px;
+}
+
+.analysis code {
+    background: #eef2ff;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.facet {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 12px 0;
+    font-size: 13px;
+}
+
+.facet select {
+    font: inherit;
+    padding: 3px 6px;
+    border: 1px solid var(--bd);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+.echart {
+    width: 100%;
+    height: 360px;
+}
+
+details {
+    margin-top: 8px;
+}
+
+summary {
+    cursor: pointer;
+    color: var(--muted);
+}
+
+.analysis.ai summary {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+a {
+    color: var(--accent);
+}
+
+.badge {
+    display: inline-block;
+    background: #eef2ff;
+    color: var(--accent);
+    border-radius: 10px;
+    padding: 0 7px;
+    font-size: 11px;
+    margin-right: 4px;
+}
+
+/* ── Markdown content rendered inside .analysis blocks ───────────────────
+   Scoped so these rules never affect tables, callouts, or other elements
+   outside an analysis block. ─────────────────────────────────────────── */
+.analysis p {
+    margin: 4px 0;
+}
+
+.analysis p:first-child {
+    margin-top: 0;
+}
+
+.analysis p:last-child {
+    margin-bottom: 0;
+}
+
+.analysis h2 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 10px 0 4px;
+}
+
+.analysis h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 8px 0 4px;
+}
+
+.analysis h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 6px 0 2px;
+    color: var(--muted);
+}
+
+.analysis ul,
+.analysis ol {
+    margin: 4px 0;
+    padding-left: 20px;
+}
+
+.analysis li {
+    margin: 2px 0;
+}
+
+.analysis pre {
+    background: #f1f5f9;
+    border: 1px solid var(--bd);
+    border-radius: 4px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    margin: 6px 0;
+    font-size: 12px;
+}
+
+.analysis pre code {
+    background: none;
+    padding: 0;
+}
+
+.analysis blockquote {
+    border-left: 3px solid var(--bd);
+    margin: 6px 0;
+    padding: 2px 10px;
+    color: var(--muted);
+    font-style: italic;
+}

@@ -1,0 +1,47 @@
+{
+    "name": "@omni-oss/perf-dashboard",
+    "description": "Graphs and dashboards for omni task-bench performance comparisons",
+    "version": "0.1.0",
+
+    "bin": "./dist/perf-dashboard-cli.mjs",
+
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            },
+            "require": {
+                "development": "./src/index.ts",
+                "default": "./dist/index.mjs"
+            }
+        }
+    },
+
+    "publishConfig": {
+        "access": "public"
+    },
+
+    "dependencies": {
+        "commander": "catalog:",
+        "@commander-js/extra-typings": "catalog:",
+
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/task-bench": "workspace:^",
+        "semver": "catalog:",
+        "zod": "catalog:"
+    },
+    "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+
+        "@types/node": "catalog:",
+        "@types/semver": "catalog:",
+
+        "typescript": "catalog:"
+    }
+}

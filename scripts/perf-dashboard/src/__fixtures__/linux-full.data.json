@@ -1,0 +1,218 @@
+{
+    "name": "full",
+    "displayName": "Full",
+    "generatedAt": "2026-05-01T12:00:00.000Z",
+    "taskBenchVersion": "0.1.0",
+    "scenarios": [
+        {
+            "name": "scale-300",
+            "displayName": "300 projects",
+            "result": {
+                "task": "t2",
+                "projects": 300,
+                "tasksPerProject": 3,
+                "concurrency": 8,
+                "daemon": true,
+                "versions": { "omni": "0.4.1", "turbo": "2.5.0", "nx": null },
+                "generatedAt": "2026-05-01T12:00:00.000Z",
+                "toolInfo": [
+                    {
+                        "tool": "omni",
+                        "version": "0.4.1",
+                        "daemon": false,
+                        "provisioning": "host-binary",
+                        "supportedVersions": [">=0.1.0"],
+                        "description": "omni task runner"
+                    },
+                    {
+                        "tool": "turbo",
+                        "version": "2.5.0",
+                        "daemon": true,
+                        "provisioning": "workspace-dependency",
+                        "supportedVersions": ["^2"],
+                        "description": "Turborepo"
+                    }
+                ],
+                "platform": {
+                    "cpus": [
+                        {
+                            "model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+                            "speedMHz": 2200
+                        },
+                        {
+                            "model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+                            "speedMHz": 2200
+                        },
+                        {
+                            "model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+                            "speedMHz": 2200
+                        },
+                        {
+                            "model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+                            "speedMHz": 2200
+                        }
+                    ],
+                    "memory": {
+                        "totalBytes": 16777216000,
+                        "freeBytes": 8388608000
+                    },
+                    "os": {
+                        "platform": "linux",
+                        "release": "6.8.0",
+                        "arch": "x64"
+                    }
+                },
+                "tools": [
+                    {
+                        "tool": "omni",
+                        "task": "t2",
+                        "taskGraphSize": 900,
+                        "cold": {
+                            "runs": 2,
+                            "failures": 0,
+                            "executedMedian": 900,
+                            "stats": {
+                                "samples": [8600, 8700],
+                                "min": 8600,
+                                "max": 8700,
+                                "mean": 8650,
+                                "median": 8650,
+                                "stddev": 50
+                            },
+                            "resources": {
+                                "runs": 3,
+                                "peakRssBytes": {
+                                    "samples": [120000000],
+                                    "min": 120000000,
+                                    "max": 120000000,
+                                    "mean": 120000000,
+                                    "median": 120000000,
+                                    "stddev": 0
+                                },
+                                "cpuTimeMs": {
+                                    "samples": [15000],
+                                    "min": 15000,
+                                    "max": 15000,
+                                    "mean": 15000,
+                                    "median": 15000,
+                                    "stddev": 0
+                                },
+                                "parallelism": {
+                                    "samples": [1.7],
+                                    "min": 1.7,
+                                    "max": 1.7,
+                                    "mean": 1.7,
+                                    "median": 1.7,
+                                    "stddev": 0
+                                }
+                            }
+                        },
+                        "warm": {
+                            "runs": 3,
+                            "failures": 0,
+                            "executedMedian": 0,
+                            "stats": {
+                                "samples": [700, 720, 715],
+                                "min": 700,
+                                "max": 720,
+                                "mean": 711.67,
+                                "median": 715,
+                                "stddev": 8.5
+                            },
+                            "resources": {
+                                "runs": 3,
+                                "peakRssBytes": {
+                                    "samples": [90000000],
+                                    "min": 90000000,
+                                    "max": 90000000,
+                                    "mean": 90000000,
+                                    "median": 90000000,
+                                    "stddev": 0
+                                },
+                                "cpuTimeMs": {
+                                    "samples": [1200],
+                                    "min": 1200,
+                                    "max": 1200,
+                                    "mean": 1200,
+                                    "median": 1200,
+                                    "stddev": 0
+                                },
+                                "parallelism": {
+                                    "samples": [1.6],
+                                    "min": 1.6,
+                                    "max": 1.6,
+                                    "mean": 1.6,
+                                    "median": 1.6,
+                                    "stddev": 0
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "tool": "turbo",
+                        "task": "t2",
+                        "taskGraphSize": 900,
+                        "cold": {
+                            "runs": 2,
+                            "failures": 0,
+                            "executedMedian": 900,
+                            "stats": {
+                                "samples": [6400, 6480],
+                                "min": 6400,
+                                "max": 6480,
+                                "mean": 6440,
+                                "median": 6440,
+                                "stddev": 40
+                            }
+                        },
+                        "warm": {
+                            "runs": 3,
+                            "failures": 0,
+                            "executedMedian": 0,
+                            "stats": {
+                                "samples": [520, 530, 523],
+                                "min": 520,
+                                "max": 530,
+                                "mean": 524.33,
+                                "median": 523,
+                                "stddev": 4.2
+                            }
+                        }
+                    },
+                    {
+                        "tool": "nx",
+                        "task": "t2",
+                        "taskGraphSize": 900,
+                        "cold": {
+                            "runs": 0,
+                            "failures": 2,
+                            "executedMedian": 0,
+                            "stats": {
+                                "samples": [],
+                                "min": 0,
+                                "max": 0,
+                                "mean": 0,
+                                "median": 0,
+                                "stddev": 0
+                            }
+                        },
+                        "warm": {
+                            "runs": 0,
+                            "failures": 2,
+                            "executedMedian": 0,
+                            "stats": {
+                                "samples": [],
+                                "min": 0,
+                                "max": 0,
+                                "mean": 0,
+                                "median": 0,
+                                "stddev": 0
+                            }
+                        },
+                        "error": "nx exited with code 1 on every attempt"
+                    }
+                ]
+            }
+        }
+    ]
+}

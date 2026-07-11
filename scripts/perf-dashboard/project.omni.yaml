@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: "@omni-oss/perf-dashboard"
+
+extends:
+
+  - "@workspace/omni/presets/ts-vite-script.omni.yaml"
+
+
+dependencies:
+  append:
+    - "@omni-oss/tsconfig"
+    - "@omni-oss/vite-config"
+    - "@omni-oss/vitest-config"
+    - "@omni-oss/task-bench"
+
+tasks:
+
+  test:unit:
+    enabled: true
+
+  test:integration:
+    enabled: false
+
+  test:
+    enabled: true
+
+  build:
+    enabled: true
+
+  publish:
+    enabled: true
+
+
+
+
+meta:
+  publish: true

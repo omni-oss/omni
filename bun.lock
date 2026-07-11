@@ -351,6 +351,29 @@
         "typescript": "catalog:",
       },
     },
+    "scripts/perf-dashboard": {
+      "name": "@omni-oss/perf-dashboard",
+      "version": "0.1.0",
+      "bin": "./dist/perf-dashboard-cli.mjs",
+      "dependencies": {
+        "@commander-js/extra-typings": "catalog:",
+        "@omni-oss/log": "workspace:^",
+        "@omni-oss/task-bench": "workspace:^",
+        "commander": "catalog:",
+        "semver": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@omni-oss/tsconfig": "workspace:^",
+        "@omni-oss/vite-config": "workspace:^",
+        "@omni-oss/vitest-config": "workspace:^",
+        "@types/node": "catalog:",
+        "@types/semver": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:",
+      },
+    },
     "scripts/set-version": {
       "name": "@omni-oss/set-version",
       "version": "0.2.1",
@@ -775,6 +798,8 @@
     "@omni-oss/omni-remote-cache-service-tests": ["@omni-oss/omni-remote-cache-service-tests@workspace:tests/omni-remote-cache-service-tests"],
 
     "@omni-oss/omni-tests": ["@omni-oss/omni-tests@workspace:tests/omni-tests"],
+
+    "@omni-oss/perf-dashboard": ["@omni-oss/perf-dashboard@workspace:scripts/perf-dashboard"],
 
     "@omni-oss/runtime-utils": ["@omni-oss/runtime-utils@workspace:packages/runtime-utils"],
 
