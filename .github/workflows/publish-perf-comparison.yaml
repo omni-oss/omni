@@ -11,7 +11,7 @@ on:
         required: false
         default: full
         type: string
-        description: "Preset to use for the benchmark (default: full)"
+        description: "Preset to use for the benchmark"
         options:
           - quick
           - shapes
@@ -22,7 +22,7 @@ on:
       publish_to:
         required: false
         type: string
-        description: "Whether to publish to an external repository or actions summary (default: external_repo)"
+        description: "Whether to publish to an external repository or actions summary"
         options:
           - external_repo
           - summary
@@ -30,7 +30,7 @@ on:
         default: "omni-oss/performance-comparison"
         required: false
         type: string
-        description: "Repository to publish to (default: omni-oss/performance-comparison)"
+        description: "Repository to publish to"
       publish_branch:
         default: "main"
         required: false
@@ -39,13 +39,28 @@ on:
       resource_runs:
         required: false
         type: number
-        description: "Number of runs for resource usage measurement (default: 3)"
+        description: "Number of runs for resource usage measurement"
         default: 3
       task_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks (default: 5)"
+        description: "Maximum number of retries for failed tasks"
         default: 5
+      run_for_linux:
+        required: false
+        type: boolean
+        default: true
+        description: "Run the benchmark on Linux (x86_64-unknown-linux-gnu)"
+      run_for_windows:
+        required: false
+        type: boolean
+        default: false
+        description: "Run the benchmark on Windows (x86_64-pc-windows-msvc)"
+      run_for_macos:
+        required: false
+        type: boolean
+        default: true
+        description: "Run the benchmark on macOS (aarch64-apple-darwin)"
 
   workflow_call:
     inputs:
@@ -58,32 +73,47 @@ on:
         required: false
         default: full
         type: string
-        description: "Preset to use for the benchmark (default: full)"
+        description: "Preset to use for the benchmark"
       publish_repo:
         default: "omni-oss/performance-comparison"
         required: false
         type: string
-        description: "Repository to publish to (default: omni-oss/performance-comparison)"
+        description: "Repository to publish to"
       publish_branch:
         default: "main"
         required: false
         type: string
-        description: "Branch to publish to (default: main)"
+        description: "Branch to publish to"
       publish_to:
         default: "external_repo"
         required: false
         type: string
-        description: "Whether to publish to an external repository or actions summary (default: external)"
+        description: "Whether to publish to an external repository or actions summary"
       resources_runs:
         required: false
         type: number
-        description: "Number of runs for resource usage measurement (default: 3)"
+        description: "Number of runs for resource usage measurement"
         default: 3
       task_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks (default: 5)"
+        description: "Maximum number of retries for failed tasks"
         default: 5
+      run_for_linux:
+        required: false
+        type: boolean
+        default: true
+        description: "Run the benchmark on Linux (x86_64-unknown-linux-gnu)"
+      run_for_windows:
+        required: false
+        type: boolean
+        default: false
+        description: "Run the benchmark on Windows (x86_64-pc-windows-msvc)"
+      run_for_macos:
+        required: false
+        type: boolean
+        default: true
+        description: "Run the benchmark on macOS (aarch64-apple-darwin)"
 
 permissions:
   contents: write
@@ -114,19 +144,41 @@ env:
     top-level heading.
 
 jobs:
+  setup:
+    name: Configure Benchmark Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Build Matrix
+        id: matrix
+        shell: bash
+        env:
+          RUN_FOR_LINUX: ${{ inputs.run_for_linux }}
+          RUN_FOR_WINDOWS: ${{ inputs.run_for_windows }}
+          RUN_FOR_MACOS: ${{ inputs.run_for_macos }}
+        run: |
+          set -euo pipefail
+          include='[]'
+          if [ "$RUN_FOR_LINUX" != "false" ]; then
+            include=$(echo "$include" | jq -c '. += [{"target":"x86_64-unknown-linux-gnu","runner":"ubuntu-latest"}]')
+          fi
+          if [ "$RUN_FOR_WINDOWS" != "false" ]; then
+            include=$(echo "$include" | jq -c '. += [{"target":"x86_64-pc-windows-msvc","runner":"windows-latest"}]')
+          fi
+          if [ "$RUN_FOR_MACOS" != "false" ]; then
+            include=$(echo "$include" | jq -c '. += [{"target":"aarch64-apple-darwin","runner":"macos-latest"}]')
+          fi
+          echo "Selected matrix: {\"include\":$include}"
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
   benchmark:
     name: Benchmark (${{ matrix.target }})
+    needs: setup
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-          - target: aarch64-apple-darwin
-            runner: macos-latest
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     steps:
       - name: Configure Output Directory
         shell: bash

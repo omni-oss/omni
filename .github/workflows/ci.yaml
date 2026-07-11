@@ -326,6 +326,6 @@ jobs:
               ref: tag,
               inputs: {
                 version: process.env.OMNI_VERSION,
-                resource_runs: '0',
+                resource_runs: '3',
               },
             });
