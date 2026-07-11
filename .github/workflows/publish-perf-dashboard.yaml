@@ -1,0 +1,135 @@
+name: Publish Performance Dashboard
+
+# Builds the graphs/dashboard from the published performance-comparison data
+# (see scripts/perf-dashboard) and publishes a single self-contained HTML page
+# alongside the raw artifacts. Runs after "Publish Performance Comparison", or
+# manually.
+
+on:
+  # Run automatically once a comparison publish completes.
+  # workflow_run:
+  #   workflows: ["Publish Performance Comparison"]
+  #   types:
+  #     - completed
+
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        required: false
+        type: string
+        description: "Repo holding the published comparison data"
+        default: omni-oss/performance-comparison
+      publish_repo:
+        required: false
+        type: string
+        description: "Repo to publish the dashboard to"
+        default: omni-oss/performance-dashboard
+      publish_branch:
+        required: false
+        type: string
+        description: "Branch to publish to"
+        default: main
+      publish_dir:
+        required: false
+        type: string
+        description: "Destination subdirectory in the publish repo"
+        default: .
+      spotlight:
+        required: false
+        type: string
+        description: "omni version to spotlight in the cross-tool view"
+
+  workflow_call:
+    inputs:
+      source_repo:
+        required: false
+        type: string
+        default: omni-oss/performance-comparison
+      publish_repo:
+        required: false
+        type: string
+        default: omni-oss/performance-dashboard
+      publish_branch:
+        required: false
+        type: string
+        default: main
+      publish_dir:
+        required: false
+        type: string
+        default: .
+      spotlight:
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_REPO: ${{ inputs.source_repo || 'omni-oss/performance-comparison' }}
+  PUBLISH_REPO: ${{ inputs.publish_repo || 'omni-oss/performance-dashboard' }}
+  PUBLISH_BRANCH: ${{ inputs.publish_branch || 'main' }}
+  PUBLISH_DIR: ${{ inputs.publish_dir || '.' }}
+  SITE_DIR: dashboard-site
+  DASHBOARD_CLI: x @omni-oss/perf-dashboard
+  AI_ANALYSIS_API_BASE_URL: ${{ vars.ANALYSIS_AI_API_BASE_URL || 'https://models.github.ai/inference' }}
+  AI_ANALYSIS_API_KEY: ${{ secrets.ANALYSIS_AI_API_KEY || github.token }}
+  AI_ANALYSIS_MODEL: ${{ vars.ANALYSIS_AI_MODEL || 'openai/gpt-4o-mini' }}
+
+jobs:
+  publish:
+    name: Publish Performance Dashboard
+    runs-on: ubuntu-latest
+    # For the automatic trigger, only proceed when the upstream run succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          check-latest: true
+          node-version: latest
+
+      - name: Build Dashboard
+        shell: bash
+        env:
+          AI_ANALYSIS_MODEL: ${{ env.AI_ANALYSIS_MODEL }}
+          AI_ANALYSIS_API_KEY: ${{ env.AI_ANALYSIS_API_KEY }}
+          AI_ANALYSIS_API_BASE_URL: ${{ env.AI_ANALYSIS_API_BASE_URL }}
+        run: |
+          mkdir -p "$SITE_DIR"
+          COMMON=(
+            $DASHBOARD_CLI
+            report
+            --source github
+            --repo "$SOURCE_REPO"
+            --token "${{ github.token }}"
+          )
+          if [ -n "${{ inputs.spotlight }}" ]; then
+            COMMON+=(--spotlight "${{ inputs.spotlight }}")
+          fi
+
+          # write .env file
+          ENV_FILE=.env.local
+          echo "AI_ANALYSIS_MODEL=$AI_ANALYSIS_MODEL" > "$ENV_FILE"
+          echo "AI_ANALYSIS_API_KEY=$AI_ANALYSIS_API_KEY" >> "$ENV_FILE"
+          echo "AI_ANALYSIS_API_BASE_URL=$AI_ANALYSIS_API_BASE_URL" >> "$ENV_FILE"
+
+          # One self-contained page plus machine-readable + markdown companions.
+          bun ${COMMON[@]} --renderer html,json,markdown --out "$SITE_DIR"
+          ls -la "$SITE_DIR"
+
+      - name: Publish Dashboard
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          external_repository: ${{ env.PUBLISH_REPO }}
+          publish_branch: ${{ env.PUBLISH_BRANCH }}
+          deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          publish_dir: ${{ env.SITE_DIR }}
+          destination_dir: ${{ env.PUBLISH_DIR }}
+          keep_files: true
+          commit_message: "Publish performance dashboard"
