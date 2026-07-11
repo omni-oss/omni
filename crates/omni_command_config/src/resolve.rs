@@ -90,7 +90,7 @@ pub struct CommandRef<'a> {
 /// literal strings.
 #[inline]
 fn has_template_markers(s: &str) -> bool {
-    s.contains("{{") || s.contains("{%")
+    s.contains("{{") || s.contains("{%") || s.contains("{#")
 }
 
 /// Render a string through Tera only when a context is provided *and* the
@@ -253,6 +253,18 @@ mod tests {
     }
 
     #[test]
+    fn shell_remove_tera_comments() {
+        let resolved = resolve_command(
+            &shell("echo {# comment #}"),
+            Some(&Context::new()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(resolved.prog.as_deref(), Some("echo"));
+        assert!(resolved.args.is_empty());
+    }
+
+    #[test]
     fn shell_none_contexts_skip_steps() {
         let resolved =
             resolve_command(&shell("echo $NOPE {{ nope }}"), None, None)
@@ -313,6 +325,19 @@ mod tests {
                 .unwrap();
         assert_eq!(resolved.prog.as_deref(), Some("echo"));
         assert_eq!(resolved.args, vec!["a b c"]);
+    }
+
+    #[test]
+    fn argv_remove_tera_comments() {
+        let resolved = resolve_command(
+            &argv(&["echo", "{# comment #}"]),
+            Some(&Context::new()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(resolved.prog.as_deref(), Some("echo"));
+        assert!(resolved.args.len() == 1);
+        assert!(resolved.args[0].is_empty());
     }
 
     #[test]
