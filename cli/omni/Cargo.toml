@@ -28,6 +28,11 @@ clap = { workspace = true }
 system_traits = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
 
+# Not enabled on Windows: libmimalloc-sys compiles against the dynamic CRT
+# while other deps ship static-CRT objects; MSVC /failifmismatch rejects both.
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+mimalloc = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 criterion = { workspace = true }

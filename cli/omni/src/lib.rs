@@ -17,6 +17,10 @@ use trace::Level;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+#[cfg(all(not(feature = "dhat-heap"), not(target_os = "windows")))]
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(feature = "enable-tracing")]
 fn init_tracing(
     config: &omni_tracing_subscriber::TracingConfig,
