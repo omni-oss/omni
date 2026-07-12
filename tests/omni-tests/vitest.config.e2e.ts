@@ -43,6 +43,9 @@ export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
             {
                 name: "execution",
             },
+            {
+                name: "output",
+            },
         ],
         strictTags: true,
     },

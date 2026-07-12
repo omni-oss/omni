@@ -28,7 +28,7 @@ pub use operations::{
         WidgetView,
     },
     hash::HashResponse,
-    run::{RunFilters, RunRequest, RunResponse},
+    task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
 };
 
 pub use operations::config_schema::handle_config_schema;

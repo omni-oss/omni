@@ -9,6 +9,7 @@ declare module "vitest" {
             | "mcp"
             | "hashing"
             | "caching"
-            | "execution";
+            | "execution"
+            | "output";
     }
 }

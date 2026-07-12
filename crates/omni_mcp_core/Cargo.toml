@@ -41,6 +41,7 @@ bytesize = { workspace = true }
 either = { workspace = true }
 humantime-serde = { workspace = true }
 omni_config_types = { workspace = true }
+omni_task_output_logs = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

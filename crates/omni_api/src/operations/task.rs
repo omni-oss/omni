@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// Filters common to `run` and `exec` operations.
 #[derive(Debug, Clone, JsonSchema)]
-pub struct RunFilters {
+pub struct TaskRunFilters {
     /// CEL expression to match against task meta configuration.
     pub meta: Option<String>,
     /// Glob patterns to match project names.
@@ -43,7 +43,7 @@ pub struct RunFilters {
     pub args: Vec<(String, String)>,
 }
 
-impl Default for RunFilters {
+impl Default for TaskRunFilters {
     fn default() -> Self {
         Self {
             meta: None,
@@ -63,7 +63,7 @@ impl Default for RunFilters {
 
 /// Request to run one or more named tasks.
 #[derive(Debug, Clone, JsonSchema)]
-pub struct RunRequest {
+pub struct TaskRunRequest {
     /// Task names to execute.
     pub tasks: Vec<String>,
     /// Skip dependency resolution and run only the requested tasks.
@@ -85,10 +85,10 @@ pub struct RunRequest {
     #[schemars(with = "String")]
     pub force: Force,
     /// Filters that narrow down which projects/tasks are in scope.
-    pub filters: RunFilters,
+    pub filters: TaskRunFilters,
 }
 
-impl Default for RunRequest {
+impl Default for TaskRunRequest {
     fn default() -> Self {
         Self {
             tasks: vec![],
@@ -99,7 +99,7 @@ impl Default for RunRequest {
             output_logs: None,
             output_cached_logs: None,
             force: Force::None,
-            filters: RunFilters::default(),
+            filters: TaskRunFilters::default(),
         }
     }
 }
@@ -108,14 +108,14 @@ impl Default for RunRequest {
 
 /// Results of a `run` operation.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct RunResponse {
+pub struct TaskRunResponse {
     // `TaskExecutionResult` lives in `omni_task_executor` and does not
     // implement `JsonSchema`; represent it opaquely here.
     #[schemars(with = "Vec<serde_json::Value>")]
     pub results: Vec<TaskExecutionResult>,
 }
 
-impl RunResponse {
+impl TaskRunResponse {
     /// Returns `true` if every task either succeeded or was a clean cache hit.
     pub fn is_success(&self) -> bool {
         !self.results.iter().any(|r| r.is_failure())
@@ -128,11 +128,11 @@ impl RunResponse {
 ///
 /// `subscriber` is passed by reference; `&S` implements
 /// [`ExecutionEventSubscriber`] via the blanket impl in `omni_messages`.
-pub async fn handle_run<TSys, S>(
+pub async fn handle_task_run<TSys, S>(
     ctx: &LoadedContext<TSys>,
     subscriber: &S,
-    req: RunRequest,
-) -> eyre::Result<RunResponse>
+    req: TaskRunRequest,
+) -> eyre::Result<TaskRunResponse>
 where
     TSys: TaskExecutorSys + Clone,
     S: ExecutionEventSubscriber,
@@ -160,7 +160,7 @@ where
     let executor = TaskExecutor::new(config, ctx, subscriber);
     let results = executor.run().await?;
 
-    Ok(RunResponse { results })
+    Ok(TaskRunResponse { results })
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ where
 /// Apply [`RunFilters`] onto an [`ExecutionConfigBuilder`].
 pub(crate) fn apply_filters(
     builder: &mut ExecutionConfigBuilder,
-    filters: &RunFilters,
+    filters: &TaskRunFilters,
 ) {
     if let Some(meta) = &filters.meta {
         builder.meta_filter(meta);

@@ -30,7 +30,7 @@ use crate::{
             GeneratorValidateInputRequest, GeneratorValidateInputResponse,
         },
         hash::HashResponse,
-        run::{RunRequest, RunResponse},
+        task::{TaskRunRequest, TaskRunResponse},
     },
     setup_guard::SetupGuard,
 };
@@ -270,9 +270,12 @@ where
     S: OmniEventSubscriber,
 {
     /// Execute one or more named tasks.
-    pub async fn run(&self, req: RunRequest) -> eyre::Result<RunResponse> {
+    pub async fn task_run(
+        &self,
+        req: TaskRunRequest,
+    ) -> eyre::Result<TaskRunResponse> {
         let mut ctx = self.ctx.lock().await;
-        crate::operations::run::handle_run(
+        crate::operations::task::handle_task_run(
             ctx.ensure_loaded().await?,
             &self.subscriber,
             req,

@@ -1,7 +1,6 @@
 use std::{path::PathBuf, time::Duration};
 
 use bytes::Bytes;
-use derive_builder::Builder;
 use derive_new::new;
 use maps::{UnorderedMap, unordered_map};
 use omni_cache::{
@@ -15,8 +14,7 @@ use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::Force;
 
-#[derive(Debug, Builder, new)]
-#[builder(setter(into, strip_option))]
+#[derive(Debug, bon::Builder, new)]
 pub struct CacheManager<TCacheStore, TSys>
 where
     TCacheStore: TaskExecutionCacheStore,

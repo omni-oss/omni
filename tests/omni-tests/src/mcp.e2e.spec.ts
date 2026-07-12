@@ -111,6 +111,43 @@ function twoProjectSpec(): WorkspaceSpec {
 }
 
 /**
+ * Single-project workspace whose task prints a marker to stdout via `node`,
+ * which passes arguments through verbatim on every platform (unlike `echo`,
+ * whose availability and quote-handling vary across shells).
+ */
+function loggingTaskSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["**"] },
+        projects: {
+            app: {
+                name: "app",
+                tasks: { build: `node -e "console.log('OUT-MARK')"` },
+            },
+        },
+    };
+}
+
+/**
+ * Single-project workspace whose task prints a marker and then exits non-zero.
+ * Used to exercise the `failed` log-capture policy, which surfaces output only
+ * when a task fails. `node -e` guarantees the marker is emitted and the
+ * non-zero exit is observed on every platform.
+ */
+function failingTaskSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["**"] },
+        projects: {
+            app: {
+                name: "app",
+                tasks: {
+                    build: `node -e "console.log('FAIL-MARK'); process.exit(1)"`,
+                },
+            },
+        },
+    };
+}
+
+/**
  * A workspace whose generator has a conditional input gated on the value of a
  * preceding input. `version` is a `string-array` (multi-select) defaulting to `["custom"]`, and
  * `crate_version` is only active when `version == 'custom'`.
@@ -245,7 +282,7 @@ describe("+mcp @mcp @cli (protocol)", {
                 "hash_workspace",
                 "project_config",
                 "project_list",
-                "run_tasks",
+                "task_run",
                 "workspace_info",
             ].sort(),
         );
@@ -287,7 +324,7 @@ describe("+mcp @mcp @cli (protocol)", {
         const writeTools = [
             "generator_run",
             "cache_prune",
-            "run_tasks",
+            "task_run",
             "exec_command",
         ];
         for (const name of writeTools) {
@@ -1204,10 +1241,10 @@ describe("+mcp @mcp @cli (cache_prune)", {
 });
 
 // ---------------------------------------------------------------------------
-// run_tasks
+// task_run
 // ---------------------------------------------------------------------------
 
-describe("+mcp @mcp @cli (run_tasks)", {
+describe("+mcp @mcp @cli (task_run)", {
     tags: ["mcp", "execution"],
 }, () => {
     it("runs a named task and reports completed status with exit code 0", async () => {
@@ -1215,7 +1252,7 @@ describe("+mcp @mcp @cli (run_tasks)", {
         const { client } = await connectMcp({ cwd: ws.cwd });
 
         const result = await client.callTool({
-            name: "run_tasks",
+            name: "task_run",
             arguments: { tasks: ["build"] },
         });
         const data = getContent<{
@@ -1240,7 +1277,7 @@ describe("+mcp @mcp @cli (run_tasks)", {
         const { client } = await connectMcp({ cwd: ws.cwd });
 
         const result = await client.callTool({
-            name: "run_tasks",
+            name: "task_run",
             arguments: { tasks: ["build"], project: ["alpha"] },
         });
         const data = getContent<{
@@ -1294,5 +1331,168 @@ describe("+mcp @mcp @cli (exec_command)", {
         }>(result);
 
         expect(data.results.every((r) => r.project === "alpha")).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// task_run include_logs
+// ---------------------------------------------------------------------------
+
+// The `include_logs` policy mirrors `LogsDisplay`: `failed` (default) surfaces
+// captured output only when a task fails, `all` always surfaces it, and `never`
+// suppresses it. Omitted logs serialize to `null`, so `?? null` collapses the
+// null/undefined ambiguity for the assertions below.
+describe("+mcp @mcp @cli (task_run include_logs)", {
+    tags: ["mcp", "execution", "output"],
+}, () => {
+    it("omits logs for a successful task under the default (failed) policy", async () => {
+        const ws = makeWorkspace(loggingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: { tasks: ["build"] },
+        });
+        const data = getContent<{
+            results: Array<{ task: string; logs?: string | null }>;
+        }>(result);
+
+        const buildResult = data.results.find((r) => r.task === "build");
+        expect(buildResult).toBeDefined();
+        expect(buildResult?.logs ?? null).toBeNull();
+    });
+
+    it("includes a successful task's output when include_logs is 'all'", async () => {
+        const ws = makeWorkspace(loggingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: { tasks: ["build"], include_logs: "all" },
+        });
+        const data = getContent<{
+            results: Array<{ task: string; logs?: string | null }>;
+        }>(result);
+
+        const buildResult = data.results.find((r) => r.task === "build");
+        expect(buildResult?.logs).toContain("OUT-MARK");
+    });
+
+    it("includes a failing task's output under the default (failed) policy", async () => {
+        const ws = makeWorkspace(failingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: { tasks: ["build"] },
+        });
+        const data = getContent<{
+            ok: boolean;
+            results: Array<{
+                task: string;
+                exit_code?: number;
+                logs?: string | null;
+            }>;
+        }>(result);
+
+        expect(data.ok).toBe(false);
+        const buildResult = data.results.find((r) => r.task === "build");
+        expect(buildResult?.exit_code).toBe(1);
+        expect(buildResult?.logs).toContain("FAIL-MARK");
+    });
+
+    it("suppresses a failing task's output when include_logs is 'never'", async () => {
+        const ws = makeWorkspace(failingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: { tasks: ["build"], include_logs: "never" },
+        });
+        const data = getContent<{
+            ok: boolean;
+            results: Array<{ task: string; logs?: string | null }>;
+        }>(result);
+
+        expect(data.ok).toBe(false);
+        const buildResult = data.results.find((r) => r.task === "build");
+        expect(buildResult?.logs ?? null).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// exec_command include_logs
+// ---------------------------------------------------------------------------
+
+// `node -e` is used so the command reliably runs (and, for the failure case,
+// exits non-zero) and prints markers verbatim on every platform, unlike `echo`
+// whose availability and quote-handling vary across shells.
+describe("+mcp @mcp @cli (exec_command include_logs)", {
+    tags: ["mcp", "output"],
+}, () => {
+    it("includes command output in logs when include_logs is 'all'", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "exec_command",
+            arguments: {
+                cmd: ["node", "-e", "console.log('EXEC-LOG-MARK')"],
+                include_logs: "all",
+            },
+        });
+        const data = getContent<{
+            ok: boolean;
+            results: Array<{ logs?: string | null }>;
+        }>(result);
+
+        expect(data.ok).toBe(true);
+        expect(
+            data.results.some((r) => (r.logs ?? "").includes("EXEC-LOG-MARK")),
+        ).toBe(true);
+    });
+
+    it("captures a failing command's output under the default (failed) policy", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "exec_command",
+            arguments: {
+                cmd: [
+                    "node",
+                    "-e",
+                    "console.log('EXEC-FAIL-MARK'); process.exit(1)",
+                ],
+            },
+        });
+        const data = getContent<{
+            ok: boolean;
+            results: Array<{ logs?: string | null }>;
+        }>(result);
+
+        expect(data.ok).toBe(false);
+        expect(
+            data.results.some((r) => (r.logs ?? "").includes("EXEC-FAIL-MARK")),
+        ).toBe(true);
+    });
+
+    it("omits a successful command's output under the default (failed) policy", async () => {
+        const ws = makeWorkspace(singleProjectSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const result = await client.callTool({
+            name: "exec_command",
+            arguments: {
+                cmd: ["node", "-e", "console.log('EXEC-QUIET-MARK')"],
+            },
+        });
+        const data = getContent<{
+            ok: boolean;
+            results: Array<{ logs?: string | null }>;
+        }>(result);
+
+        expect(data.ok).toBe(true);
+        expect(data.results.every((r) => (r.logs ?? null) === null)).toBe(true);
     });
 });

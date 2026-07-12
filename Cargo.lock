@@ -7257,6 +7257,7 @@ dependencies = [
  "omni_input_provider",
  "omni_messages",
  "omni_task_executor",
+ "omni_task_output_logs",
  "omni_tera",
  "rmcp",
  "rstest",

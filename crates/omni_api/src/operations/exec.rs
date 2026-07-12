@@ -4,10 +4,13 @@ use omni_messages::ExecutionEventSubscriber;
 use omni_task_executor::{
     ExecutionConfigBuilder, TaskExecutionResult, TaskExecutor, TaskExecutorSys,
 };
+use omni_task_output_logs::LogsDisplay;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::run::{RunFilters, apply_filters};
+use crate::operations::task::apply_filters;
+
+use super::task::TaskRunFilters;
 
 // ── Request ────────────────────────────────────────────────────────────────────
 
@@ -17,14 +20,19 @@ pub struct ExecRequest {
     /// The command and its arguments (e.g. `["echo", "hello"]`).
     pub cmd: Vec<String>,
     /// Filters that narrow down which projects are in scope.
-    pub filters: RunFilters,
+    pub filters: TaskRunFilters,
+    /// Output logs to display to the user.
+    pub output_logs: Option<LogsDisplay>,
+    pub output_cached_logs: Option<LogsDisplay>,
 }
 
 impl Default for ExecRequest {
     fn default() -> Self {
         Self {
             cmd: vec![],
-            filters: RunFilters::default(),
+            filters: TaskRunFilters::default(),
+            output_logs: None,
+            output_cached_logs: None,
         }
     }
 }
@@ -66,6 +74,14 @@ where
     let mut builder = ExecutionConfigBuilder::default();
 
     builder.call(Call::new_command(req.cmd[0].clone(), req.cmd[1..].to_vec()));
+
+    if let Some(output_logs) = req.output_logs {
+        builder.output_logs(output_logs);
+    }
+
+    if let Some(output_logs) = req.output_cached_logs {
+        builder.output_cached_logs(output_logs);
+    }
 
     apply_filters(&mut builder, &req.filters);
 

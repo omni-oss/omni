@@ -16,7 +16,6 @@ use omni_input_provider::{
     InputSchema, IntegerArrayInput, IntegerInput, StringArrayInput,
     StringInput, error::Error as InputError,
 };
-use omni_messages::OmniEventSubscriber;
 use omni_task_executor::TaskExecutorSys;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -32,7 +31,7 @@ use crate::{
     server::OmniMcpServer,
 };
 
-impl<TSys, S> OmniMcpServer<TSys, S>
+impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
         + GeneratorSys
@@ -41,7 +40,6 @@ where
         + Send
         + Sync
         + 'static,
-    S: OmniEventSubscriber + Send + Sync + 'static,
 {
     pub(crate) async fn tool_generator_list(
         &self,

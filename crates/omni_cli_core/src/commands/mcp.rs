@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use clap::Args;
 use omni_mcp_core::{OmniMcpServer, serve_stdio};
-use omni_messages::NoopSubscriber;
 use omni_tracing_subscriber::{Level, TracingSubscriber};
 use system_traits::impls::RealSys;
 use tracing_futures::WithSubscriber;
@@ -26,7 +25,7 @@ pub async fn run(cmd: &McpCommand, ctx: &Context<RealSys>) -> eyre::Result<()> {
     if let Some(root) = &cmd.root_dir {
         std::env::set_current_dir(root)?;
     }
-    let server = OmniMcpServer::new(ctx.clone(), NoopSubscriber);
+    let server = OmniMcpServer::new(ctx.clone());
     let mut config = ctx.tracing_config().clone();
     config.stdout_level = Level::Off;
     // stdio logging is used for the MCP protocol, so we don't want to log anything to stdout.

@@ -1,7 +1,6 @@
 use omni_api::{CachePruneRequest, CacheStatsRequest};
 use omni_context::ContextSys;
 use omni_generator::GeneratorSys;
-use omni_messages::OmniEventSubscriber;
 use omni_task_executor::TaskExecutorSys;
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
     server::OmniMcpServer,
 };
 
-impl<TSys, S> OmniMcpServer<TSys, S>
+impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
         + GeneratorSys
@@ -21,7 +20,6 @@ where
         + Send
         + Sync
         + 'static,
-    S: OmniEventSubscriber + Send + Sync + 'static,
 {
     pub(crate) async fn tool_cache_stats(
         &self,

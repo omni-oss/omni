@@ -64,8 +64,8 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
             "Prune stale cache entries. dry_run=true (default) shows what would be deleted without deleting",
             false,
         ),
-        tool_typed::<RunTasksParams>(
-            "run_tasks",
+        tool_typed::<TaskRunParams>(
+            "task_run",
             "Execute named tasks with optional project/dir/dry_run filters",
             false,
         ),

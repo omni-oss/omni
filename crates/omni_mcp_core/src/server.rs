@@ -22,13 +22,11 @@ use serde_json::Value;
 /// workspace files are always read from disk and never stale. The stored
 /// subscriber is used only at the server level; tool operations always use
 /// [`NoopSubscriber`] so that their futures are unconditionally `Send`.
-pub struct OmniMcpServer<TSys: ContextSys, S = NoopSubscriber> {
+pub struct OmniMcpServer<TSys: ContextSys> {
     pub(crate) ctx: Context<TSys>,
-    /// Stored for completeness / future use at the server level.
-    _subscriber: S,
 }
 
-impl<TSys, S> OmniMcpServer<TSys, S>
+impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
         + GeneratorSys
@@ -37,13 +35,9 @@ where
         + Send
         + Sync
         + 'static,
-    S: OmniEventSubscriber + Send + Sync + 'static,
 {
-    pub fn new(ctx: Context<TSys>, subscriber: S) -> Self {
-        Self {
-            ctx,
-            _subscriber: subscriber,
-        }
+    pub fn new(ctx: Context<TSys>) -> Self {
+        Self { ctx }
     }
 
     /// Creates a fresh API for each tool call using [`NoopSubscriber`], ensuring
@@ -51,9 +45,16 @@ where
     pub(crate) fn make_api(&self) -> OmniApi<TSys, NoopSubscriber> {
         OmniApi::new_with_sys(self.ctx.clone(), NoopSubscriber)
     }
+
+    pub(crate) fn make_api_with_subscriber<TSub: OmniEventSubscriber>(
+        &self,
+        subscriber: TSub,
+    ) -> OmniApi<TSys, TSub> {
+        OmniApi::new_with_sys(self.ctx.clone(), subscriber)
+    }
 }
 
-impl<TSys, S> ServerHandler for OmniMcpServer<TSys, S>
+impl<TSys> ServerHandler for OmniMcpServer<TSys>
 where
     TSys: ContextSys
         + GeneratorSys
@@ -62,7 +63,6 @@ where
         + Send
         + Sync
         + 'static,
-    S: OmniEventSubscriber + Send + Sync + 'static,
 {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
@@ -106,7 +106,7 @@ where
     }
 }
 
-impl<TSys, S> OmniMcpServer<TSys, S>
+impl<TSys> OmniMcpServer<TSys>
 where
     TSys: ContextSys
         + GeneratorSys
@@ -115,7 +115,6 @@ where
         + Send
         + Sync
         + 'static,
-    S: OmniEventSubscriber + Send + Sync + 'static,
 {
     async fn dispatch(
         &self,
@@ -143,7 +142,7 @@ where
             "hash_project" => call1(args, |p| self.tool_hash_project(p)).await,
             "cache_stats" => call1(args, |p| self.tool_cache_stats(p)).await,
             "cache_prune" => call1(args, |p| self.tool_cache_prune(p)).await,
-            "run_tasks" => call1(args, |p| self.tool_run_tasks(p)).await,
+            "task_run" => call1(args, |p| self.tool_task_run(p)).await,
             "exec_command" => call1(args, |p| self.tool_exec_command(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
