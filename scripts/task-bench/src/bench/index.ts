@@ -63,6 +63,14 @@ export interface ResourceStats {
     cpuTimeMs: Stats;
     /** Average cores used (cpuTimeMs / wallMs). */
     parallelism: Stats;
+    /**
+     * Daemon process PIDs resolved and measured in each resource run.
+     * One entry per run; each entry is the set of PIDs tracked as daemons
+     * (pre-existing or discovered) for that run. Omitted entirely when no
+     * run found any daemon PIDs (e.g. daemon-less tools, or when the daemon
+     * lookup fails).
+     */
+    daemonPids?: number[][];
 }
 
 export interface ScenarioResult {
@@ -299,11 +307,14 @@ function resourceStatsFrom(
     samples: ResourceSample[],
 ): ResourceStats | undefined {
     if (samples.length === 0) return undefined;
+    const daemonPidSamples = samples.map((s) => s.daemonPids);
+    const hasDaemonPids = daemonPidSamples.some((pids) => pids.length > 0);
     return {
         runs: samples.length,
         peakRssBytes: computeStats(samples.map((s) => s.peakRssBytes)),
         cpuTimeMs: computeStats(samples.map((s) => s.cpuTimeMs)),
         parallelism: computeStats(samples.map((s) => s.parallelism)),
+        ...(hasDaemonPids ? { daemonPids: daemonPidSamples } : {}),
     };
 }
 
@@ -359,9 +370,9 @@ async function benchmarkTool(
     // callback lets `measureRun` discover a daemon the invocation starts for
     // itself (cold passes) so the whole process tree can be sampled.
     const daemonResolver =
-        ctx.daemon && adapter.daemonPids
+        ctx.daemon && adapter.daemon?.hasDaemon
             ? () =>
-                  adapter.daemonPids?.(ctx).catch(() => []) ??
+                  adapter.daemon?.daemonPids?.(ctx).catch(() => []) ??
                   Promise.resolve([])
             : undefined;
     const measureOnce = async (
@@ -427,8 +438,10 @@ async function benchmarkTool(
     // (in daemon mode) tear the daemon down so cold includes its startup cost.
     const coldBefore = async (): Promise<void> => {
         await adapter.clearCaches(ctx);
-        if (ctx.daemon && adapter.hasDaemon) {
-            await adapter.stopDaemon(ctx);
+        // Stop the daemon whenever the tool has one — even deprecated daemons
+        // (e.g. turbo's turbod) should be cleaned up before the cache is wiped.
+        if (ctx.daemon && adapter.daemon) {
+            await adapter.daemon.stopDaemon(ctx);
         }
     };
 
@@ -483,8 +496,8 @@ async function benchmarkTool(
 
     try {
         // In no-daemon mode make sure no stale daemon lingers first.
-        if (!ctx.daemon && adapter.hasDaemon) {
-            await adapter.stopDaemon(ctx);
+        if (!ctx.daemon && adapter.daemon) {
+            await adapter.daemon.stopDaemon(ctx);
         }
 
         // Cold: a fresh start each run — caches + outputs wiped, and (in daemon
@@ -497,7 +510,16 @@ async function benchmarkTool(
             coldBefore,
         );
 
-        // Warm: prime once (unmeasured, also warms the daemon), then measure
+        // Warm: for manual-start daemons explicitly start the daemon now so the
+        // priming run and subsequent warm runs can use it.
+        if (
+            ctx.daemon &&
+            adapter.daemon?.hasDaemon &&
+            adapter.daemon.startMode === "manual"
+        ) {
+            await adapter.daemon.startDaemon?.(ctx);
+        }
+        // Prime once (unmeasured, also warms auto-start daemons), then measure
         // while caches + daemon stay hot.
         await runOnce();
         const warmSamples = await runScenario(
@@ -555,7 +577,7 @@ async function benchmarkTool(
         };
     } finally {
         // Always clean up so nothing leaks between tools or outlives the run.
-        await adapter.stopDaemon(ctx);
+        await adapter.daemon?.stopDaemon(ctx);
         await adapter.clearCaches(ctx);
     }
 }

@@ -17,7 +17,6 @@ const ctx = (daemon: boolean): ToolContext => ({
 describe("tool adapters (runtime)", () => {
     it("omni has no daemon and pins concurrency", () => {
         const omni = getAdapter("omni");
-        expect(omni.hasDaemon).toBe(false);
         expect(omni.run("t2", ctx(true)).args).toEqual([
             "run",
             "t2",
@@ -29,17 +28,28 @@ describe("tool adapters (runtime)", () => {
         expect(omni.env(ctx(true))).toEqual({});
     });
 
-    it("turbo toggles the daemon via run flags", () => {
+    it("turbo has no daemon for turbo run (deprecated in 2.x)", () => {
         const turbo = getAdapter("turbo");
-        expect(turbo.hasDaemon).toBe(true);
-        expect(turbo.run("t2", ctx(true)).args).toContain("--daemon");
+        expect(turbo.daemon?.hasDaemon).toBe(false);
+        expect(turbo.daemon?.startMode).toBe("auto");
         expect(turbo.run("t2", ctx(true)).args).toContain("--concurrency=4");
-        expect(turbo.run("t2", ctx(false)).args).toContain("--no-daemon");
+        expect(turbo.run("t2", ctx(true)).args).not.toContain("--daemon");
+        expect(turbo.run("t2", ctx(false)).args).not.toContain("--no-daemon");
+    });
+
+    it("nx has an auto-start daemon", () => {
+        const nx = getAdapter("nx");
+        expect(nx.daemon?.hasDaemon).toBe(true);
+        expect(nx.daemon?.startMode).toBe("auto");
+    });
+
+    it("omni and moon have no daemon object", () => {
+        expect(getAdapter("omni").daemon).toBeUndefined();
+        expect(getAdapter("moon").daemon).toBeUndefined();
     });
 
     it("nx toggles the daemon via NX_DAEMON and pins parallelism", () => {
         const nx = getAdapter("nx");
-        expect(nx.hasDaemon).toBe(true);
         expect(nx.run("t2", ctx(true)).args).toContain("--parallel=4");
         expect(nx.env(ctx(true)).NX_DAEMON).toBe("true");
         expect(nx.env(ctx(false)).NX_DAEMON).toBe("false");
@@ -47,7 +57,6 @@ describe("tool adapters (runtime)", () => {
 
     it("moon has no daemon and runs the :task target", () => {
         const moon = getAdapter("moon");
-        expect(moon.hasDaemon).toBe(false);
         expect(moon.run("t2", ctx(true)).args).toEqual([
             "run",
             ":t2",
@@ -107,7 +116,8 @@ describe("describeTool", () => {
         expect(info).toMatchObject({
             tool: "turbo",
             version: "2.10.3",
-            daemon: true,
+            // turbod is deprecated for `turbo run` in 2.x
+            daemon: false,
             provisioning: "workspace-dependency",
             supportedVersions: ["^2.0.0"],
         });

@@ -47,8 +47,8 @@ describe("parseWindowsParents", () => {
 });
 
 describe("parseProcStat", () => {
-    it("extracts ppid/utime/stime/rss even when comm has spaces and parens", () => {
-        // Fields: pid (comm) state ppid pgrp ... utime(14) stime(15) ... rss(24)
+    it("extracts ppid/utime/stime/cutime/cstime/rss even when comm has spaces and parens", () => {
+        // Fields: pid (comm) state ppid pgrp ... utime(14) stime(15) cutime(16) cstime(17) ... rss(24)
         const fields = [
             "1000",
             "(weird )( name)",
@@ -65,8 +65,8 @@ describe("parseProcStat", () => {
             "0",
             "150", // utime (field 14)
             "50", // stime (field 15)
-            "0",
-            "0",
+            "30", // cutime (field 16) — reaped children's user time
+            "20", // cstime (field 17) — reaped children's kernel time
             "20",
             "0",
             "1",
@@ -76,8 +76,33 @@ describe("parseProcStat", () => {
             "512", // rss in pages (field 24)
         ];
         const info = parseProcStat(fields.join(" "));
-        // (150 + 50) ticks / 100 * 1000 = 2000ms; 512 pages * 4096 = 2_097_152.
-        expect(info).toEqual({ ppid: 42, rssBytes: 2_097_152, cpuMs: 2000 });
+        // (150 + 50 + 30 + 20) ticks / 100 * 1000 = 2500ms; 512 pages * 4096 = 2_097_152.
+        expect(info).toEqual({ ppid: 42, rssBytes: 2_097_152, cpuMs: 2500 });
+    });
+
+    it("treats missing cutime/cstime as zero", () => {
+        // Minimal stat with only fields up through stime present.
+        const fields = [
+            "1",
+            "(init)",
+            "S",
+            "0", // ppid
+            "1",
+            "1",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "100", // utime
+            "40", // stime
+            // cutime / cstime absent — rest[13] and rest[14] will be undefined
+        ];
+        const info = parseProcStat(fields.join(" "));
+        // (100 + 40 + 0 + 0) / 100 * 1000 = 1400ms
+        expect(info?.cpuMs).toBe(1400);
     });
 
     it("returns undefined when there is no closing paren", () => {

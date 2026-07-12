@@ -88,9 +88,9 @@ export const TaskConfigSchema = z
 
 export const VersionsConfigSchema = z
     .object({
-        turbo: z.string().default("2.10.3"),
-        nx: z.string().default("23.0.1"),
-        moon: z.string().default("2.3.5"),
+        turbo: z.string().default("2.10.4"),
+        nx: z.string().default("23.0.2"),
+        moon: z.string().default("2.4.2"),
         bun: z.string().default("1.3.14"),
     })
     .prefault({});

@@ -59,7 +59,6 @@ export function moonProjectConfig(project: ProjectModel): string {
 
 export const moonAdapter: ToolAdapter = {
     tool: "moon",
-    hasDaemon: false,
     supportedVersions: ["^2.0.0"],
     description:
         "moonrepo. No persistent daemon — every invocation is a fresh process; installed as a workspace devDependency (@moonrepo/cli) and requires a git repo to enable caching.",
@@ -88,8 +87,5 @@ export const moonAdapter: ToolAdapter = {
             recursive: true,
             force: true,
         });
-    },
-    stopDaemon: async () => {
-        // moon has no persistent daemon.
     },
 };

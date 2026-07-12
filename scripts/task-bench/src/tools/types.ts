@@ -64,6 +64,41 @@ export interface ToolInfo {
 }
 
 /**
+ * Describes the daemon behaviour for a tool adapter.
+ *
+ * Present on adapters that have (or historically had) a background helper
+ * process.  Absent on fully in-process tools (omni, moon).
+ */
+export interface DaemonSupport {
+    /**
+     * Whether the daemon is actively used for warm runs.
+     * May be false when the daemon is deprecated/optional (e.g. turbod in
+     * turbo 2.x, which is no longer used for `turbo run`).
+     */
+    hasDaemon: boolean;
+    /**
+     * 'auto'   — the daemon starts as a side-effect of the first run; the
+     *            bench runner does not need to start it explicitly.
+     * 'manual' — must be started via startDaemon() before warm runs.
+     *            startDaemon() is required in this case.
+     */
+    startMode: "auto" | "manual";
+    /** Stop the daemon. Called before cold runs and on final cleanup. */
+    stopDaemon(ctx: ToolContext): Promise<void>;
+    /**
+     * Explicitly start the daemon.  Required when startMode === 'manual';
+     * called once after cold runs, before the priming warm run.
+     */
+    startDaemon?(ctx: ToolContext): Promise<void>;
+    /**
+     * Best-effort PIDs of daemon processes to sample alongside the CLI.
+     * Only meaningful when hasDaemon is true.
+     * Must never throw; return [] when the daemon cannot be located.
+     */
+    daemonPids?(ctx: ToolContext): Promise<number[]>;
+}
+
+/**
  * A self-contained integration for one task runner. Each adapter owns:
  *   - which tool versions it supports (`supportedVersions`),
  *   - the npm dependencies it needs (`devDependencies`),
@@ -73,8 +108,6 @@ export interface ToolInfo {
  */
 export interface ToolAdapter {
     tool: Tool;
-    /** Whether this runner has a persistent daemon that can boost warm perf. */
-    hasDaemon: boolean;
     /** Semver ranges of the tool version this adapter supports. */
     supportedVersions: readonly string[];
     /**
@@ -83,6 +116,11 @@ export interface ToolAdapter {
      * model, how its daemon is controlled, etc.).
      */
     description: string;
+    /**
+     * Daemon configuration for tools that have (or historically had) a
+     * background helper process.  Absent for fully in-process tools.
+     */
+    daemon?: DaemonSupport;
 
     /** Version pinned via config for installable tools; null for external ones. */
     pinnedVersion(config: HarnessConfig): string | null;
@@ -99,24 +137,6 @@ export interface ToolAdapter {
     env(ctx: ToolContext): Record<string, string>;
     /** Remove caches and all task outputs. */
     clearCaches(ctx: ToolContext): Promise<void>;
-    /** Stop the persistent daemon, if any. Used for cold runs and cleanup. */
-    stopDaemon(ctx: ToolContext): Promise<void>;
-
-    /**
-     * Best-effort PIDs of long-lived helper processes (typically this tool's
-     * persistent daemon) that belong to "the tool" and should be measured
-     * together with the invoked CLI process. The daemon detaches from the CLI
-     * process, so it can't be reached by walking children — each adapter knows
-     * how to locate its own (e.g. `turbo daemon status`, `nx daemon`).
-     *
-     * Contract:
-     *   - Only meaningful when `hasDaemon` is true and `ctx.daemon` is set.
-     *   - Resolved before a measured run and, on cold runs, once shortly after
-     *     launch to catch a daemon the invocation starts itself — never on
-     *     every sampling tick, so it should stay cheap.
-     *   - Must never throw; return [] when nothing can be located.
-     */
-    daemonPids?(ctx: ToolContext): Promise<number[]>;
 }
 
 /** Resolve a locally-installed binary, falling back to the global name. */

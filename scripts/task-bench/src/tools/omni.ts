@@ -23,7 +23,6 @@ export const OMNI_RENDER_OPTIONS: OmniRenderOptions = {
 
 export const omniAdapter: ToolAdapter = {
     tool: "omni",
-    hasDaemon: false,
     // omni is a host-provided binary, not installed per-workspace.
     supportedVersions: [">=0.16.0"],
     description:
@@ -63,8 +62,5 @@ export const omniAdapter: ToolAdapter = {
             recursive: true,
             force: true,
         });
-    },
-    stopDaemon: async () => {
-        // omni has no persistent daemon.
     },
 };

@@ -1,4 +1,5 @@
-import { readFile, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execa } from "execa";
 import type { WorkspaceModel } from "../model";
@@ -9,6 +10,53 @@ import {
     type ToolAdapter,
     type ToolContext,
 } from "./types";
+
+/**
+ * Locate the actual platform-specific turbo native binary, bypassing the
+ * Node.js install shim at `node_modules/.bin/turbo`.
+ *
+ * The shim uses `child_process.spawn()` (not exec) so it stays alive as a
+ * wrapper around the real binary.  When the benchmark runner measures resource
+ * usage it only sees `subprocess.pid` — the shim — which does almost nothing.
+ * The native binary (a grandchild) is discovered lazily by `refreshTree()`,
+ * which takes ~20–50 ms on Linux; for a 50 ms warm run that window is too
+ * narrow and the process exits before it is ever sampled.
+ *
+ * By resolving the binary directly we become the direct parent of the Rust
+ * process, so its RSS and CPU are visible from the very first sample.
+ *
+ * The lookup mirrors the shim's own `getBinaryPath()` logic:
+ *   - scoped name first (`@turbo/<os>-<arch>`), then legacy (`turbo-<os>-<arch>`)
+ *   - on macOS/Windows ARM, also try the x64 emulation fallback
+ */
+function resolveTurboBin(rootDir: string): string {
+    const os = process.platform === "win32" ? "windows" : process.platform;
+    const arch = process.arch === "x64" ? "64" : process.arch;
+    const ext = process.platform === "win32" ? ".exe" : "";
+
+    // On macOS and Windows, ARM boxes can run x64 binaries under emulation.
+    const arches: string[] =
+        process.arch === "arm64" &&
+        (process.platform === "darwin" || process.platform === "win32")
+            ? [arch, "64"]
+            : [arch];
+
+    for (const a of arches) {
+        for (const prefix of [`@turbo/${os}-${a}`, `turbo-${os}-${a}`]) {
+            const candidate = join(
+                rootDir,
+                "node_modules",
+                prefix,
+                "bin",
+                `turbo${ext}`,
+            );
+            if (existsSync(candidate)) return candidate;
+        }
+    }
+
+    // Fall back to the shim if our path calculation missed something.
+    return resolveBin(rootDir, "turbo");
+}
 
 export function turboRootConfig(model: WorkspaceModel): string {
     const tasks: Record<string, unknown> = {};
@@ -35,10 +83,24 @@ export function turboRootConfig(model: WorkspaceModel): string {
 
 export const turboAdapter: ToolAdapter = {
     tool: "turbo",
-    hasDaemon: true,
     supportedVersions: ["^2.0.0"],
     description:
-        "Vercel Turborepo. Runs a persistent daemon (turbod) to speed up warm runs, toggled per invocation via --daemon/--no-daemon; installed as a workspace devDependency.",
+        "Vercel Turborepo. Warm runs are served from a local file-system cache with no persistent daemon (turbod is deprecated for `turbo run` in 2.x); installed as a workspace devDependency.",
+    // turbod is no longer used for `turbo run` as of Turborepo 2.x (deprecated,
+    // removed in 3.0). hasDaemon is false so the bench runner does not attempt
+    // daemon-PID tracking, but stopDaemon is still called before cache wipes to
+    // clean up any turbod that may be alive from `turbo watch` or the LSP.
+    daemon: {
+        hasDaemon: false,
+        startMode: "auto",
+        stopDaemon: async (ctx: ToolContext) => {
+            await execa(resolveBin(ctx.rootDir, "turbo"), ["daemon", "stop"], {
+                cwd: ctx.rootDir,
+                reject: false,
+                stdio: "ignore",
+            });
+        },
+    },
 
     pinnedVersion: (config) => config.versions.turbo,
     devDependencies: (config) => ({ turbo: config.versions.turbo }),
@@ -47,13 +109,15 @@ export const turboAdapter: ToolAdapter = {
     },
 
     run: (task, ctx) => ({
-        file: resolveBin(ctx.rootDir, "turbo"),
+        // Use the native binary directly, not the Node.js install shim.
+        // See resolveTurboBin() for the full rationale.
+        file: resolveTurboBin(ctx.rootDir),
         args: [
             "run",
             task,
             "--log-order=stream",
             `--concurrency=${ctx.concurrency}`,
-            ctx.daemon ? "--daemon" : "--no-daemon",
+            // --daemon / --no-daemon are deprecated in 2.x and removed in 3.0.
         ],
     }),
     env: () => ({}),
@@ -67,35 +131,5 @@ export const turboAdapter: ToolAdapter = {
             recursive: true,
             force: true,
         });
-    },
-    stopDaemon: async (ctx: ToolContext) => {
-        await execa(resolveBin(ctx.rootDir, "turbo"), ["daemon", "stop"], {
-            cwd: ctx.rootDir,
-            reject: false,
-            stdio: "ignore",
-        });
-    },
-    daemonPids: async (ctx: ToolContext) => {
-        if (!ctx.daemon) return [];
-        // `turbo daemon status` reports the running daemon, including its pid
-        // file. Prefer reading that file; fall back to an inline pid if present.
-        const result = await execa(
-            resolveBin(ctx.rootDir, "turbo"),
-            ["daemon", "status"],
-            { cwd: ctx.rootDir, reject: false },
-        ).catch(() => null);
-        if (!result) return [];
-        const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-
-        const pidFile = text.match(/([^\s"]+\.pid)/i)?.[1];
-        if (pidFile) {
-            const raw = await readFile(pidFile, "utf8").catch(() => "");
-            const filePid = Number.parseInt(raw.trim(), 10);
-            if (Number.isInteger(filePid) && filePid > 0) return [filePid];
-        }
-
-        const inline = text.match(/\bpid[^\d]*(\d+)/i);
-        const pid = inline ? Number(inline[1]) : Number.NaN;
-        return Number.isInteger(pid) && pid > 0 ? [pid] : [];
     },
 };

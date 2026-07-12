@@ -37,7 +37,7 @@ export function describeTool(
     return {
         tool,
         version,
-        daemon: adapter.hasDaemon,
+        daemon: adapter.daemon?.hasDaemon ?? false,
         provisioning: installsDeps ? "workspace-dependency" : "host-binary",
         supportedVersions: [...adapter.supportedVersions],
         description: adapter.description,

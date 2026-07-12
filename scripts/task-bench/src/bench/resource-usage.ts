@@ -21,6 +21,13 @@ export interface ResourceSample {
     ok: boolean;
     /** Number of tasks that actually executed (0 == a full cache hit). */
     executed: number;
+    /**
+     * PIDs of daemon processes measured alongside the CLI for this run:
+     *   - pre-existing daemons resolved before the run starts (warm runs),
+     *   - daemons discovered shortly after launch (cold runs).
+     * Empty when no daemon was found or this tool has no daemon.
+     */
+    daemonPids: number[];
 }
 
 /** Count newline-terminated lines in the execution-marker log (0 on any error). */
@@ -91,6 +98,8 @@ export async function measureRun(
     // Roots of the process tree (CLI + daemons); descendants grow from these.
     const roots = new Set(daemonPids);
     const tracked = new Set(daemonPids);
+    // All non-CLI daemon PIDs resolved for this run (persistent + discovered).
+    const daemonRoots = new Set<number>(daemonPids);
     const latestCtime = new Map<number, number>();
     let peakRssBytes = 0;
 
@@ -147,6 +156,7 @@ export async function measureRun(
         for (const pid of discovered) {
             roots.add(pid);
             tracked.add(pid);
+            daemonRoots.add(pid);
         }
     }
 
@@ -188,5 +198,6 @@ export async function measureRun(
         exitCode,
         ok: exitCode === 0,
         executed: countExecLogLines(execLog),
+        daemonPids: [...daemonRoots],
     };
 }

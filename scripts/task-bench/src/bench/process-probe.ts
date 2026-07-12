@@ -301,16 +301,27 @@ export function parseProcStat(content: string): ProcStatFull | undefined {
         .split(/\s+/);
     // rest[0] is field 3 (state). Field 4 (ppid) => rest[1],
     // field 14 (utime) => rest[11], field 15 (stime) => rest[12],
+    // field 16 (cutime) => rest[13], field 17 (cstime) => rest[14],
     // field 24 (rss, in pages) => rest[21].
+    //
+    // cutime/cstime are the kernel's running total of CPU consumed by all
+    // *waited-for* (reaped) children.  Including them captures short-lived task
+    // workers that start and exit entirely between two polling ticks: once the
+    // parent reaps the child, those ticks roll up here automatically.
     const ppid = Number(rest[1]);
     const utime = Number(rest[11]);
     const stime = Number(rest[12]);
+    const cutime = Number(rest[13]);
+    const cstime = Number(rest[14]);
     const rssPages = Number(rest[21]);
     if (!Number.isFinite(utime) || !Number.isFinite(stime)) return undefined;
+    const childCpu =
+        (Number.isFinite(cutime) ? cutime : 0) +
+        (Number.isFinite(cstime) ? cstime : 0);
     return {
         ppid: Number.isFinite(ppid) ? ppid : 0,
         rssBytes: (Number.isFinite(rssPages) ? rssPages : 0) * PAGE_SIZE,
-        cpuMs: ((utime + stime) / CLK_TCK) * 1000,
+        cpuMs: ((utime + stime + childCpu) / CLK_TCK) * 1000,
     };
 }
 
@@ -422,10 +433,16 @@ export function parsePosixParents(stdout: string): Map<number, number> {
 }
 
 class PosixProbe implements ProcessProbe {
+    // Last successfully observed stats per PID. Used as a fallback when `ps`
+    // exits non-zero (all requested PIDs have gone) so the peak seen before
+    // exit is not silently discarded.
+    private readonly lastSeen = new Map<number, ProcStat>();
+
     async warmup(): Promise<void> {}
 
     async sample(pids: number[]): Promise<Map<number, ProcStat>> {
         if (pids.length === 0) return new Map();
+        let result: Map<number, ProcStat>;
         try {
             const { stdout } = await execFileAsync("ps", [
                 "-o",
@@ -433,10 +450,23 @@ class PosixProbe implements ProcessProbe {
                 "-p",
                 pids.join(","),
             ]);
-            return parsePosixSample(stdout);
+            result = parsePosixSample(stdout);
         } catch {
-            return new Map();
+            // ps exits with a non-zero status when none of the requested PIDs
+            // are alive any more. Return the last observed stats so the peak
+            // recorded by the caller is not zeroed out on exit.
+            const out = new Map<number, ProcStat>();
+            for (const pid of pids) {
+                const s = this.lastSeen.get(pid);
+                if (s) out.set(pid, s);
+            }
+            return out;
         }
+        // Keep a rolling snapshot of the most recent valid reading per PID.
+        for (const [pid, stat] of result) {
+            this.lastSeen.set(pid, stat);
+        }
+        return result;
     }
 
     async parents(): Promise<Map<number, number>> {
@@ -452,5 +482,7 @@ class PosixProbe implements ProcessProbe {
         }
     }
 
-    async dispose(): Promise<void> {}
+    async dispose(): Promise<void> {
+        this.lastSeen.clear();
+    }
 }

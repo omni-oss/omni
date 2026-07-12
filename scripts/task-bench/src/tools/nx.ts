@@ -56,10 +56,40 @@ export function nxProjectConfig(project: ProjectModel): string {
 
 export const nxAdapter: ToolAdapter = {
     tool: "nx",
-    hasDaemon: true,
     supportedVersions: [">=21.0.0 <24.0.0"],
     description:
         "Nx. Uses the Nx Daemon (a background process plus a results database) to accelerate repeated runs, toggled via the NX_DAEMON env var; installed as a workspace devDependency.",
+    daemon: {
+        hasDaemon: true,
+        startMode: "auto",
+        stopDaemon: async (ctx: ToolContext) => {
+            await execa(resolveBin(ctx.rootDir, "nx"), ["reset"], {
+                cwd: ctx.rootDir,
+                reject: false,
+                stdio: "ignore",
+                env: { NX_DAEMON: "false" },
+            });
+        },
+        daemonPids: async (ctx: ToolContext) => {
+            if (!ctx.daemon) return [];
+            // `nx daemon` prints the running daemon's background process ID and
+            // log path (see https://nx.dev/concepts/nx-daemon#logs). Parse the PID.
+            const result = await execa(
+                resolveBin(ctx.rootDir, "nx"),
+                ["daemon"],
+                {
+                    cwd: ctx.rootDir,
+                    reject: false,
+                    env: { NX_DAEMON: "true", NX_TUI: "false" },
+                },
+            ).catch(() => null);
+            if (!result) return [];
+            const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+            const match = text.match(/process id[^\d]*(\d+)/i);
+            const pid = match ? Number(match[1]) : Number.NaN;
+            return Number.isInteger(pid) && pid > 0 ? [pid] : [];
+        },
+    },
 
     pinnedVersion: (config) => config.versions.nx,
     devDependencies: (config) => ({ nx: config.versions.nx }),
@@ -94,28 +124,5 @@ export const nxAdapter: ToolAdapter = {
             stdio: "ignore",
             env: { NX_DAEMON: ctx.daemon ? "true" : "false", NX_TUI: "false" },
         });
-    },
-    stopDaemon: async (ctx: ToolContext) => {
-        await execa(resolveBin(ctx.rootDir, "nx"), ["reset"], {
-            cwd: ctx.rootDir,
-            reject: false,
-            stdio: "ignore",
-            env: { NX_DAEMON: "false" },
-        });
-    },
-    daemonPids: async (ctx: ToolContext) => {
-        if (!ctx.daemon) return [];
-        // `nx daemon` prints the running daemon's background process ID and log
-        // path (see https://nx.dev/concepts/nx-daemon#logs). Parse the PID.
-        const result = await execa(resolveBin(ctx.rootDir, "nx"), ["daemon"], {
-            cwd: ctx.rootDir,
-            reject: false,
-            env: { NX_DAEMON: "true", NX_TUI: "false" },
-        }).catch(() => null);
-        if (!result) return [];
-        const text = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-        const match = text.match(/process id[^\d]*(\d+)/i);
-        const pid = match ? Number(match[1]) : Number.NaN;
-        return Number.isInteger(pid) && pid > 0 ? [pid] : [];
     },
 };
