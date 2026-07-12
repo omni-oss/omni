@@ -632,6 +632,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages."@omni-oss/workspace-gen"]
+path = "packages/workspace-gen"
+include = [
+    "packages/workspace-gen/**",
+]
+public_api = false
+
 [monorepo.packages."@omni-oss/gen-sdk-core"]
 path = "packages/gen-sdk-core"
 include = [
