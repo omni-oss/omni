@@ -120,9 +120,8 @@ pub async fn run(
     Ok(())
 }
 
-#[tokio::main(flavor = "multi_thread")]
 #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, err))]
-pub async fn main() -> eyre::Result<()> {
+async fn run_main() -> eyre::Result<()> {
     color_eyre::config::HookBuilder::default()
         .display_location_section(cfg!(debug_assertions))
         .install()?;
@@ -188,4 +187,15 @@ pub async fn main() -> eyre::Result<()> {
     .await?;
 
     Ok(())
+}
+
+pub fn main() -> eyre::Result<()> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = rt.block_on(run_main());
+    // micro-optimization to force blocking background tasks to be abondoned
+    // instead of waiting for them to finish
+    rt.shutdown_background();
+    result
 }
