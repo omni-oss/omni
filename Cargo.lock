@@ -6549,6 +6549,7 @@ version = "0.0.0"
 dependencies = [
  "criterion",
  "eyre",
+ "mimalloc",
  "num_cpus",
  "omni_context",
  "omni_messages",

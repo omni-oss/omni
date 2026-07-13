@@ -17,6 +17,9 @@ use omni_context::LoadedContext;
 use system_traits::impls::RealSys;
 use tokio::runtime::Runtime;
 
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// A prepared, primed workspace ready to be benchmarked. Holds the `TempDir`
 /// (via `ws`) so it lives for the whole run.
 struct Prepared {

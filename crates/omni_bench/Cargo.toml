@@ -36,3 +36,4 @@ system_traits = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 tokio = { workspace = true }
+mimalloc = { workspace = true }
