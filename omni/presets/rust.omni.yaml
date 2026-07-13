@@ -41,6 +41,15 @@ tasks:
 
   profile:
     enabled: false
+    cache:
+      enabled: true
+      output:
+        files:
+          append:
+            - perf.data
+            - perf.data.old
+            - flamegraph.svg
+
     exec: >
       cargo flamegraph
         --profile=${profile:-bench-with-debug}

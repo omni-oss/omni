@@ -13,6 +13,21 @@ tasks:
         bench: task_execution
     enabled: true
 
+  # Rank the samples in perf.data (produced by `profile`) into human-readable
+  # self/total/DSO reports. Uses `perf report` for aggregation and adds
+  # generic-collapsing / filtering / JSON on top. Never cached: it depends on
+  # perf.data, not on the crate sources.
+  profile:analyze:
+    dependencies:
+      - profile
+    enabled: true
+    exec: bun run scripts/analyze-perf.ts ${RUST_PROFILE_ANALYZE_ARGS:-}
+    cache:
+      key:
+        files:
+          append:
+            - scripts/analyze-perf.ts
+
 dependencies:
   - omni_task_executor
   - omni_context
