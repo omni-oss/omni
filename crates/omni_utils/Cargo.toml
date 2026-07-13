@@ -23,6 +23,7 @@ system_traits = { workspace = true, features = [
     "memory-async",
 ] }
 bs58 = { workspace = true }
+globset = { workspace = true }
 maps = { workspace = true }
 path-clean = { workspace = true }
 pathdiff = { workspace = true }

@@ -1,13 +1,14 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use dir_walker::{
     DirEntry as _, DirWalker as _, FileType, impls::RealGlobDirWalker,
 };
 use enum_map::enum_map;
-use globset::{Candidate, Glob, GlobSet, GlobSetBuilder};
+use globset::{Candidate, GlobSet};
 use maps::Map;
 use omni_command_config::CommandConfig;
 use omni_hasher::{
@@ -16,6 +17,7 @@ use omni_hasher::{
     project_dir_hasher::{ProjectDirHasher, impls::RealDirHasher},
 };
 use omni_types::{OmniPath, Root, RootMap};
+use omni_utils::glob::build_glob_set;
 use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, starts_with_path, topmost_dirs,
 };
@@ -79,10 +81,10 @@ struct HashInput<'a> {
 }
 
 struct Holder<'a> {
-    output_files_globset: Option<GlobSet>,
+    output_files_globset: Option<Arc<GlobSet>>,
     output_files_glob: Vec<OmniPath>,
     resolved_output_files: Option<Vec<OmniPath>>,
-    input_files_globset: Option<GlobSet>,
+    input_files_globset: Option<Arc<GlobSet>>,
     resolved_input_files: Option<Vec<OmniPath>>,
     /// Literal (glob-free) prefixes of this project's include paths. A walked
     /// file can only match one of the globsets if it lives under one of these
@@ -293,35 +295,35 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
             let mut output_files_globset = None;
             if should_collect_output_files {
-                let mut output_glob = GlobSetBuilder::new();
+                let mut output_patterns = Vec::new();
 
-                populate_includes_and_globset(
+                populate_includes_and_patterns(
                     project.output_files,
                     project.project_dir,
                     &mut includes,
                     &mut match_bases,
                     &roots,
-                    &mut output_glob,
+                    &mut output_patterns,
                 )?;
 
-                output_files_globset = Some(output_glob.build()?);
+                output_files_globset = Some(build_glob_set(&output_patterns)?);
             }
 
             let mut input_files_globset = None;
 
             // the output dirs are based on the hashes so need to be collected here
             if should_collect_input_files {
-                let mut input_glob = GlobSetBuilder::new();
-                populate_includes_and_globset(
+                let mut input_patterns = Vec::new();
+                populate_includes_and_patterns(
                     project.input_files,
                     project.project_dir,
                     &mut includes,
                     &mut match_bases,
                     &roots,
-                    &mut input_glob,
+                    &mut input_patterns,
                 )?;
 
-                input_files_globset = Some(input_glob.build()?);
+                input_files_globset = Some(build_glob_set(&input_patterns)?);
             }
 
             to_process.push(Holder {
@@ -553,19 +555,19 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
     }
 }
 
-fn populate_includes_and_globset(
+fn populate_includes_and_patterns(
     files: &[OmniPath],
     project_dir: &Path,
     includes: &mut Vec<PathBuf>,
     match_bases: &mut Vec<PathBuf>,
     roots: &RootMap,
-    output_globset: &mut GlobSetBuilder,
+    patterns: &mut Vec<String>,
 ) -> Result<(), Error> {
     trace::trace!(
         files = ?files,
         project_dir = ?project_dir,
         roots = ?roots,
-        "populate_includes_and_globset"
+        "populate_includes_and_patterns"
     );
     for p in files {
         let p = p.resolve(roots);
@@ -576,8 +578,7 @@ fn populate_includes_and_globset(
             p.to_path_buf()
         };
 
-        let glob = Glob::new(path.to_string_lossy().as_ref())?;
-        output_globset.add(glob);
+        patterns.push(path.to_string_lossy().into_owned());
         // The literal prefix bounds where this glob can match: any matching
         // path must live under it.
         match_bases.push(remove_globs(&path).to_path_buf());

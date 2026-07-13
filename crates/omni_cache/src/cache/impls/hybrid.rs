@@ -12,7 +12,6 @@ use std::{
 use bytes::Bytes;
 use bytesize::ByteSize;
 use derive_new::new;
-use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, unordered_map};
 use omni_collector::{CollectConfig, CollectResult, Collector};
 use omni_execution_plan::{
@@ -60,6 +59,8 @@ use crate::{
 pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
+
+use omni_utils::glob::build_glob_set;
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
@@ -890,28 +891,20 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
         let mut entries = tokio::fs::read_dir(&self.cache_dir).await?;
 
         let project_glob = {
-            let project_name_globs = if project_name_globs.is_empty() {
+            let project_name_globs: &[&str] = if project_name_globs.is_empty() {
                 &["*"]
             } else {
                 project_name_globs
             };
-            let mut glob_set = GlobSetBuilder::new();
-            for project_name_glob in project_name_globs {
-                glob_set.add(Glob::new(project_name_glob)?);
-            }
-            glob_set.build()?
+            build_glob_set(project_name_globs)?
         };
         let task_glob = {
-            let task_name_globs = if task_name_globs.is_empty() {
+            let task_name_globs: &[&str] = if task_name_globs.is_empty() {
                 &["*"]
             } else {
                 task_name_globs
             };
-            let mut glob_set = GlobSetBuilder::new();
-            for task_name_glob in task_name_globs {
-                glob_set.add(Glob::new(task_name_glob)?);
-            }
-            glob_set.build()?
+            build_glob_set(task_name_globs)?
         };
 
         let mut futs = JoinSet::new();

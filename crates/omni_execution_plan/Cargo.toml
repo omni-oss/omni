@@ -25,6 +25,7 @@ omni_configurations = { workspace = true }
 omni_core = { workspace = true }
 omni_command_config = { workspace = true }
 omni_expressions = { workspace = true }
+omni_utils = { workspace = true }
 config_utils = { workspace = true }
 maps = { workspace = true }
 ahash = { workspace = true }

@@ -1,11 +1,12 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
-use globset::{Glob, GlobSetBuilder};
+use globset::GlobSet;
+use omni_utils::glob::build_glob_set;
 
 #[derive(Debug, Clone)]
 pub struct GlobMatcher {
-    include_matcher: globset::GlobSet,
-    exclude_matcher: globset::GlobSet,
+    include_matcher: Arc<GlobSet>,
+    exclude_matcher: Arc<GlobSet>,
 }
 
 impl GlobMatcher {
@@ -13,7 +14,6 @@ impl GlobMatcher {
         root_dir: P,
         glob_patterns: &[S],
     ) -> Result<Self, globset::Error> {
-        let mut match_include = GlobSetBuilder::new();
         let root_dir = root_dir.as_ref().to_string_lossy();
         let root = if cfg!(windows) && root_dir.contains('\\') {
             root_dir.replace('\\', "/")
@@ -21,33 +21,21 @@ impl GlobMatcher {
             root_dir.to_string()
         };
 
-        for p in glob_patterns
+        let include_patterns = glob_patterns
             .iter()
             .filter(|p| count_starts_with(p.as_ref(), "!") % 2 == 0)
-        {
-            let pat = format!("{root}/{}", strip_starts_with(p.as_ref(), "!"));
+            .map(|p| format!("{root}/{}", strip_starts_with(p.as_ref(), "!")))
+            .collect::<Vec<_>>();
 
-            log::trace!("adding include pattern: {}", pat);
+        let include_matcher = build_glob_set(&include_patterns)?;
 
-            match_include.add(Glob::new(pat.as_str())?);
-        }
-
-        let include_matcher = match_include.build()?;
-
-        let mut match_exclude = GlobSetBuilder::new();
-
-        for p in glob_patterns
+        let exclude_patterns = glob_patterns
             .iter()
             .filter(|p| count_starts_with(p.as_ref(), "!") % 2 == 1)
-        {
-            let pat = format!("{root}/{}", strip_starts_with(p.as_ref(), "!"));
+            .map(|p| format!("{root}/{}", strip_starts_with(p.as_ref(), "!")))
+            .collect::<Vec<_>>();
 
-            log::trace!("adding exclude pattern: {}", pat);
-
-            match_exclude.add(Glob::new(pat.as_str())?);
-        }
-
-        let exclude_matcher = match_exclude.build()?;
+        let exclude_matcher = build_glob_set(&exclude_patterns)?;
 
         Ok(Self {
             include_matcher,
@@ -114,5 +102,41 @@ mod tests {
         assert_eq!(strip_starts_with("abc", "b"), "abc");
         assert_eq!(strip_starts_with("abc", "c"), "abc");
         assert_eq!(strip_starts_with("abc", ""), "abc");
+    }
+
+    #[test]
+    fn matches_included_paths_relative_to_root() {
+        let m = GlobMatcher::new("/ws", &["src/**/*.rs"]).unwrap();
+
+        assert!(m.is_match("/ws/src/a.rs"));
+        assert!(m.is_match("/ws/src/nested/b.rs"));
+        assert!(!m.is_match("/ws/src/a.txt"));
+        assert!(!m.is_match("/other/src/a.rs"));
+    }
+
+    #[test]
+    fn excludes_negated_patterns() {
+        let m =
+            GlobMatcher::new("/ws", &["src/**/*.rs", "!src/gen/**"]).unwrap();
+
+        assert!(m.is_match("/ws/src/a.rs"));
+        // Included by the first pattern but removed by the negated one.
+        assert!(!m.is_match("/ws/src/gen/x.rs"));
+    }
+
+    #[test]
+    fn double_negation_is_an_include() {
+        // An even number of leading `!` cancels out, so this is an include.
+        let m = GlobMatcher::new("/ws", &["!!keep.rs"]).unwrap();
+
+        assert!(m.is_match("/ws/keep.rs"));
+    }
+
+    #[test]
+    fn nothing_matches_without_include_patterns() {
+        let m = GlobMatcher::new("/ws", &["!src/**"]).unwrap();
+
+        assert!(!m.is_match("/ws/src/a.rs"));
+        assert!(!m.is_match("/ws/other.rs"));
     }
 }

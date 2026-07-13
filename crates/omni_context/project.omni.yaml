@@ -31,3 +31,4 @@ dependencies:
   - config_utils
   - omni_types
   - dir_walker
+  - omni_utils

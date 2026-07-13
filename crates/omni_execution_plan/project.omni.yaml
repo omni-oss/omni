@@ -13,3 +13,4 @@ dependencies:
   - config_utils
   - maps
   - omni_config_types
+  - omni_utils

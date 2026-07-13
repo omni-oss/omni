@@ -1,20 +1,22 @@
 use std::{
     borrow::Cow,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, TaskExecutionNode};
 use omni_expressions::Evaluator;
 use omni_scm::{Scm, get_scm_implementation};
 use omni_types::{OmniPath, Root, enum_map};
+use omni_utils::glob::build_glob_set;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{ProjectFilter, ScmAffectedFilter, TaskFilter};
 
 pub struct DefaultProjectFilter {
-    project_matcher: Option<GlobSet>,
+    project_matcher: Option<Arc<GlobSet>>,
     fast_path_include_all: bool,
 }
 
@@ -23,12 +25,10 @@ impl DefaultProjectFilter {
         let project_matcher = if project_filters.is_empty() {
             None
         } else {
-            let mut project_matcher = GlobSetBuilder::new();
-            for filter in project_filters {
-                project_matcher
-                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
-            }
-            Some(project_matcher.build().map_err(FilterErrorInner::Glob)?)
+            Some(
+                build_glob_set(project_filters)
+                    .map_err(FilterErrorInner::Glob)?,
+            )
         };
 
         Ok(Self {
@@ -66,10 +66,10 @@ where
     TGetTaskMetaFn:
         for<'a> Fn(&'a TaskExecutionNode) -> Option<&'b MetaConfiguration>,
 {
-    task_matcher: Option<GlobSet>,
+    task_matcher: Option<Arc<GlobSet>>,
     meta_filter: Option<Evaluator>,
-    dir_matcher: Option<GlobSet>,
-    project_matcher: Option<GlobSet>,
+    dir_matcher: Option<Arc<GlobSet>>,
+    project_matcher: Option<Arc<GlobSet>>,
     get_task_meta: TGetTaskMetaFn,
 }
 
@@ -89,12 +89,7 @@ where
         let task_matcher = if task_filters.is_empty() {
             None
         } else {
-            let mut task_matcher = GlobSetBuilder::new();
-            for filter in task_filters {
-                task_matcher
-                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
-            }
-            Some(task_matcher.build().map_err(FilterErrorInner::Glob)?)
+            Some(build_glob_set(task_filters).map_err(FilterErrorInner::Glob)?)
         };
 
         let meta_filter = meta_filter
@@ -107,12 +102,10 @@ where
         let project_matcher = if project_filters.is_empty() {
             None
         } else {
-            let mut project_matcher = GlobSetBuilder::new();
-            for filter in project_filters {
-                project_matcher
-                    .add(Glob::new(filter).map_err(FilterErrorInner::Glob)?);
-            }
-            Some(project_matcher.build().map_err(FilterErrorInner::Glob)?)
+            Some(
+                build_glob_set(project_filters)
+                    .map_err(FilterErrorInner::Glob)?,
+            )
         };
 
         let string = workspace_root_dir.to_string_lossy();
@@ -127,18 +120,21 @@ where
         let dir_matcher = if dir_filters.is_empty() {
             None
         } else {
-            let mut dir_matcher = GlobSetBuilder::new();
-            for filter in dir_filters {
-                let filter: Cow<str> = if filter.starts_with("/") {
-                    Cow::Borrowed(filter)
-                } else {
-                    Cow::Owned(format!("{}/{}", workspace_root_dir_str, filter))
-                };
+            let dir_patterns = dir_filters
+                .iter()
+                .map(|filter| {
+                    if filter.starts_with('/') {
+                        (*filter).to_string()
+                    } else {
+                        format!("{}/{}", workspace_root_dir_str, filter)
+                    }
+                })
+                .collect::<Vec<_>>();
 
-                dir_matcher
-                    .add(Glob::new(&filter).map_err(FilterErrorInner::Glob)?);
-            }
-            Some(dir_matcher.build().map_err(FilterErrorInner::Glob)?)
+            Some(
+                build_glob_set(&dir_patterns)
+                    .map_err(FilterErrorInner::Glob)?,
+            )
         };
 
         Ok(Self {
@@ -291,26 +287,25 @@ where
             Root::Project => node.project_dir(),
             Root::Workspace => self.workspace_root_dir.as_path(),
         };
-        let mut builder = GlobSetBuilder::new();
+        let patterns = cache_input_files
+            .iter()
+            .map(|file| {
+                let resolved = file.resolve(&root_map);
+                let resolved = if !resolved.is_absolute() {
+                    node.project_dir().join(path_clean::clean(resolved))
+                } else {
+                    resolved.to_path_buf()
+                };
+                let resolved = resolved.to_string_lossy();
+                if cfg!(windows) {
+                    resolved.replace("\\", "/")
+                } else {
+                    resolved.into_owned()
+                }
+            })
+            .collect::<Vec<String>>();
 
-        for file in cache_input_files {
-            let resolved = file.resolve(&root_map);
-            let resolved = if !resolved.is_absolute() {
-                node.project_dir().join(path_clean::clean(resolved))
-            } else {
-                resolved.to_path_buf()
-            };
-            let resolved = resolved.to_string_lossy();
-            let pattern: Cow<str> = if cfg!(windows) {
-                Cow::Owned(resolved.replace("\\", "/"))
-            } else {
-                Cow::Borrowed(&resolved)
-            };
-
-            builder.add(Glob::new(&pattern)?);
-        }
-
-        let globset = builder.build()?;
+        let globset = build_glob_set(&patterns)?;
 
         for file in &self.changed_files {
             if globset.is_match(file.to_string_lossy().as_ref()) {
@@ -477,12 +472,13 @@ mod tests {
     }
 
     #[test_log::test]
-    fn test_default_task_filter_not_matching_project_name() {
+    fn test_default_task_filter_matching_dir_filter() {
+        // Non-rooted dir filters are joined onto the workspace root.
         let filter = DefaultTaskFilter::new(
             &["test"],
-            &["project1"],
             &[],
-            Path::new(""),
+            &["packages/*"],
+            Path::new("/ws"),
             None,
             |_| None,
         )
@@ -492,8 +488,42 @@ mod tests {
             "test".to_string(),
             Some(CommandConfig::Shell("echo test".to_string())),
             None,
-            "project2".to_string(),
-            std::path::PathBuf::from(""),
+            "project1".to_string(),
+            std::path::PathBuf::from("/ws/packages/foo"),
+            vec![],
+            true.into(),
+            false,
+            false,
+            None,
+            None,
+        );
+
+        assert!(
+            filter
+                .should_include_task(&node)
+                .expect("should have value"),
+            "task whose project dir matches the dir filter should be included"
+        );
+    }
+
+    #[test_log::test]
+    fn test_default_task_filter_not_matching_dir_filter() {
+        let filter = DefaultTaskFilter::new(
+            &["test"],
+            &[],
+            &["packages/*"],
+            Path::new("/ws"),
+            None,
+            |_| None,
+        )
+        .unwrap();
+
+        let node = TaskExecutionNode::new(
+            "test".to_string(),
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
+            "project1".to_string(),
+            std::path::PathBuf::from("/ws/apps/bar"),
             vec![],
             true.into(),
             false,
@@ -505,7 +535,8 @@ mod tests {
         assert!(
             !filter
                 .should_include_task(&node)
-                .expect("should have value")
+                .expect("should have value"),
+            "task outside the dir filter should be excluded"
         );
     }
 }

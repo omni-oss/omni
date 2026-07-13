@@ -1,7 +1,6 @@
 use std::{collections::HashSet, path::Path, sync::Arc};
 
 use derive_new::new;
-use globset::{Glob, GlobSetBuilder};
 use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_command_config::CommandConfig;
@@ -12,6 +11,7 @@ use omni_hasher::{
     project_dir_hasher::Hash,
 };
 use omni_types::OmniPath;
+use omni_utils::glob::build_glob_set;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{ContextSys, LoadedContext, LoadedContextError};
@@ -193,15 +193,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
-        let task_matcher = {
-            let mut builder = GlobSetBuilder::new();
-
-            for task_name in task_names {
-                builder.add(Glob::new(task_name)?);
-            }
-
-            builder.build()?
-        };
+        let task_matcher = build_glob_set(task_names)?;
 
         let mut digests = task_result_digests
             .values()

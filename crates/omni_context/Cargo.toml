@@ -43,6 +43,7 @@ merge = { workspace = true }
 path-clean = { workspace = true }
 enum-map = { workspace = true }
 globset = { workspace = true }
+omni_utils = { workspace = true }
 bs58 = { workspace = true }
 derive-new = { workspace = true }
 async-trait = { workspace = true }
