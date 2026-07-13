@@ -3,7 +3,7 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
     time::{SystemTime, UNIX_EPOCH},
@@ -71,7 +71,11 @@ pub struct HybridTaskExecutionCacheStore {
     cache_dir: PathBuf,
     ws_root_dir: PathBuf,
     remote_config: RemoteConfig,
-    client: Arc<DefaultRemoteCacheClient>,
+    /// Lazily-built remote client. Constructing a `reqwest`/rustls client
+    /// eagerly loads the OS trust store (native certs), which is pure overhead
+    /// when remote caching is disabled or every entry is served locally. It is
+    /// only built on first actual remote access via [`Self::client`].
+    client: OnceLock<Arc<DefaultRemoteCacheClient>>,
 }
 
 #[derive(
@@ -117,8 +121,16 @@ impl HybridTaskExecutionCacheStore {
             cache_dir: dir,
             ws_root_dir,
             remote_config: remote_config.into(),
-            client: Arc::new(DefaultRemoteCacheClient::default()),
+            client: OnceLock::new(),
         }
+    }
+
+    /// Return the remote cache client, building it on first use. This defers the
+    /// (relatively expensive) TLS trust-store load until a remote request is
+    /// actually made.
+    fn client(&self) -> &Arc<DefaultRemoteCacheClient> {
+        self.client
+            .get_or_init(|| Arc::new(DefaultRemoteCacheClient::default()))
     }
 }
 
@@ -697,7 +709,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             log::debug!("Uploading remote cache artifacts...");
             let mut tasks = JoinSet::new();
             for (hash, output_dir, replacing) in cached_results {
-                let client = self.client.clone();
+                let client = self.client().clone();
                 let conf = conf.clone();
                 let digest = bs58::encode(hash.digest).into_string();
 
@@ -780,7 +792,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 let digest =
                     bs58::encode(project.digest.unwrap()).into_string();
 
-                let client = self.client.clone();
+                let client = self.client().clone();
                 let conf = conf.clone();
                 let output_dir = output_dir.to_path_buf();
 
