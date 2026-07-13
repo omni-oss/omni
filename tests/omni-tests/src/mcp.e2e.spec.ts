@@ -148,6 +148,31 @@ function failingTaskSpec(): WorkspaceSpec {
 }
 
 /**
+ * Single-project workspace whose task increments a nonce file and prints its
+ * value (`RUN-MARK-<n>`). The nonce lives in the workspace root (`../nonce.txt`
+ * relative to the task's project-dir cwd), so it is outside the project's
+ * hashed input tree and never invalidates the task's cache key.
+ *
+ * On a cache hit the command is not re-executed, so the replayed output pins
+ * the first run's value (`RUN-MARK-1`); a fresh re-execution would print
+ * `RUN-MARK-2`. This lets the cached-logs tests distinguish a genuine
+ * cache-hit replay from a fresh run purely from the surfaced logs.
+ */
+function cachedLoggingTaskSpec(): WorkspaceSpec {
+    return {
+        workspace: { projects: ["**"] },
+        projects: {
+            app: {
+                name: "app",
+                tasks: {
+                    build: `node -e "const fs=require('fs');const p='../nonce.txt';let n=0;try{n=Number(fs.readFileSync(p,'utf8'))||0}catch(e){}n++;fs.writeFileSync(p,String(n));console.log('RUN-MARK-'+n)"`,
+                },
+            },
+        },
+    };
+}
+
+/**
  * A workspace whose generator has a conditional input gated on the value of a
  * preceding input. `version` is a `string-array` (multi-select) defaulting to `["custom"]`, and
  * `crate_version` is only active when `version == 'custom'`.
@@ -1494,5 +1519,87 @@ describe("+mcp @mcp @cli (exec_command include_logs)", {
 
         expect(data.ok).toBe(true);
         expect(data.results.every((r) => (r.logs ?? null) === null)).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// task_run cached (replayed) logs
+// ---------------------------------------------------------------------------
+
+// `task_run` leaves `output_cached_logs` unset, so the replayed cache-hit
+// facet falls back to `include_logs` (see omni_mcp_core::tools::task). Reusing
+// the same workspace across calls persists the on-disk cache, so the second
+// `build` is served from the cache and its logs come from the replay path
+// (`is_replay: true`) rather than a fresh execution.
+describe("+mcp @mcp @cli (task_run cached logs)", {
+    tags: ["mcp", "caching", "output"],
+}, () => {
+    // Runs the `build` task and returns its per-task summary. Omitting
+    // `includeLogs` exercises the default (`failed`) policy.
+    async function runBuild(
+        client: Client,
+        includeLogs?: "all" | "failed" | "never",
+    ): Promise<{ task: string; logs?: string | null } | undefined> {
+        const args: Record<string, unknown> = { tasks: ["build"] };
+        if (includeLogs) {
+            args.include_logs = includeLogs;
+        }
+        const result = await client.callTool({
+            name: "task_run",
+            arguments: args,
+        });
+        const data = getContent<{
+            results: Array<{ task: string; logs?: string | null }>;
+        }>(result);
+        return data.results.find((r) => r.task === "build");
+    }
+
+    it("replays a cached task's output when include_logs is 'all'", async () => {
+        const ws = makeWorkspace(cachedLoggingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const first = await runBuild(client, "all");
+        expect(first?.logs).toContain("RUN-MARK-1");
+
+        // Served from the cache: the logs are the replayed first-run output.
+        // A fresh re-execution would increment the nonce and print RUN-MARK-2.
+        const cached = await runBuild(client, "all");
+        expect(cached?.logs).toContain("RUN-MARK-1");
+        expect(cached?.logs ?? "").not.toContain("RUN-MARK-2");
+    });
+
+    it("suppresses a cached task's output when include_logs is 'never'", async () => {
+        const ws = makeWorkspace(cachedLoggingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const first = await runBuild(client, "all");
+        expect(first?.logs).toContain("RUN-MARK-1");
+
+        const cached = await runBuild(client, "never");
+        expect(cached?.logs ?? null).toBeNull();
+
+        // The `never` run must not have re-executed the task: a later `all` run
+        // still replays RUN-MARK-1, proving the suppressed run was a genuine
+        // cache hit rather than a fresh (also-suppressed) execution.
+        const replay = await runBuild(client, "all");
+        expect(replay?.logs).toContain("RUN-MARK-1");
+        expect(replay?.logs ?? "").not.toContain("RUN-MARK-2");
+    });
+
+    it("omits a cached successful task's output under the default (failed) policy", async () => {
+        const ws = makeWorkspace(cachedLoggingTaskSpec());
+        const { client } = await connectMcp({ cwd: ws.cwd });
+
+        const first = await runBuild(client, "all");
+        expect(first?.logs).toContain("RUN-MARK-1");
+
+        // Cache hit + successful task under the default `failed` policy: the
+        // replayed output is not surfaced.
+        const cached = await runBuild(client);
+        expect(cached?.logs ?? null).toBeNull();
+
+        const replay = await runBuild(client, "all");
+        expect(replay?.logs).toContain("RUN-MARK-1");
+        expect(replay?.logs ?? "").not.toContain("RUN-MARK-2");
     });
 });
