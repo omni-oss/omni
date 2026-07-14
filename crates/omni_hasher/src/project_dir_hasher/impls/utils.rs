@@ -37,18 +37,33 @@ pub trait UtilSys:
 
 type Timestamp = [u8; 16];
 
-async fn mtime(
+/// A cheap change-detection stamp for a file. We deliberately combine the
+/// modification time with the file size: mtime alone is unreliable because its
+/// on-disk resolution is coarse (and captured here only to the millisecond), so
+/// two writes that land within the same tick are indistinguishable by mtime.
+/// Including the size catches any content change that also changes the length,
+/// which makes cache invalidation robust against that timestamp race.
+struct FileStamp {
+    mtime: Timestamp,
+    size: u64,
+}
+
+async fn file_stamp(
     path: &Path,
     sys: impl UtilSys,
-) -> Result<Timestamp, BuildMerkleTreeError> {
-    let mtime = sys.fs_metadata_async(path).await?.modified()?;
+) -> Result<FileStamp, BuildMerkleTreeError> {
+    let metadata = sys.fs_metadata_async(path).await?;
+
+    let mtime = metadata.modified()?;
     let mtime = mtime.duration_since(UNIX_EPOCH)?.as_millis();
 
     let mut timestamp = [0; 16];
-
     LittleEndian::write_u128(&mut timestamp, mtime);
 
-    Ok(timestamp)
+    Ok(FileStamp {
+        mtime: timestamp,
+        size: metadata.len(),
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Eq)]
@@ -56,6 +71,7 @@ struct FileEntry<THasher: Hasher> {
     path: OmniPath,
     hash: THasher::Hash,
     mtime: Timestamp,
+    size: u64,
 }
 
 impl<THasher: Hasher> PartialEq for FileEntry<THasher> {
@@ -63,6 +79,7 @@ impl<THasher: Hasher> PartialEq for FileEntry<THasher> {
         self.path == other.path
             && self.hash == other.hash
             && self.mtime == other.mtime
+            && self.size == other.size
     }
 }
 
@@ -133,11 +150,12 @@ pub async fn build_merkle_tree<THasher: Hasher>(
                 abs_path.to_path_buf()
             };
             let path = path.clone();
-            let mtime = mtime(&abs_path, sys.clone()).await?;
+            let FileStamp { mtime, size } =
+                file_stamp(&abs_path, sys.clone()).await?;
 
             let hash = if let Some(entry) = file_entries_by_path.get(&path)
                 && entry.mtime == mtime
-                && false
+                && entry.size == size
             {
                 entry.clone()
             } else {
@@ -151,6 +169,7 @@ pub async fn build_merkle_tree<THasher: Hasher>(
                 FileEntry {
                     hash: hash.to_inner(),
                     mtime,
+                    size,
                     path,
                 }
             };
