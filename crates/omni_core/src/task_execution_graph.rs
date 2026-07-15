@@ -9,9 +9,9 @@ use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
 use petgraph::{
     Direction,
-    algo::is_cyclic_directed,
+    algo::has_path_connecting,
     graph::{DiGraph, NodeIndex},
-    visit::{Dfs, IntoNeighborsDirected as _, Topo, Walker},
+    visit::{Dfs, IntoNeighborsDirected as _, Walker},
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -391,6 +391,22 @@ macro_rules! filtered_graph {
     };
 }
 
+/// Builds a [`TaskExecutionGraphError::sibling_dependency_cycle`] from the
+/// offending nodes, reporting their `full_task_name`s in a deterministic
+/// (sorted, de-duplicated) order.
+fn sibling_dependency_cycle_error(
+    graph: &TaskExecutionGraph,
+    members: &[NodeIndex],
+) -> TaskExecutionGraphError {
+    let mut tasks = members
+        .iter()
+        .map(|n| graph.di_graph[*n].full_task_name.clone())
+        .collect::<Vec<_>>();
+    tasks.sort();
+    tasks.dedup();
+    TaskExecutionGraphError::sibling_dependency_cycle(tasks)
+}
+
 impl TaskExecutionGraph {
     fn has_connected_node(
         &self,
@@ -468,14 +484,25 @@ impl TaskExecutionGraph {
         let from_idx =
             self.get_task_index_by_name(from_project_name, from_task_name)?;
 
-        let edge_idx = self.di_graph.add_edge(to_idx, from_idx, edge_type);
+        // The new edge runs `to_idx` (the dependee) before `from_idx` (the
+        // dependent). Because the graph is acyclic before this insertion, the
+        // edge can only close a cycle within its own edge type when the
+        // dependent can *already* reach the dependee along same-type edges --
+        // or when it is a self-loop (`to_idx == from_idx`).
+        //
+        // Probing that single reachability question from `from_idx` is far
+        // cheaper than the previous full-graph `is_cyclic_directed` scan
+        // (which rebuilt and walked the entire filtered graph on every edge):
+        // the DFS only explores `from_idx`'s reachable subgraph and
+        // short-circuits the moment it reaches `to_idx`.
+        let closes_cycle = to_idx == from_idx || {
+            let graph = filtered_graph!(&self.di_graph, edge_type);
+            has_path_connecting(&graph, from_idx, to_idx, None)
+        };
 
-        let graph = filtered_graph!(&self.di_graph, edge_type);
-
-        if is_cyclic_directed(&graph) {
-            self.di_graph.remove_edge(edge_idx);
-            let dependee = self.di_graph[from_idx].clone();
-            let dependent = self.di_graph[to_idx].clone();
+        if closes_cycle {
+            let dependee = &self.di_graph[from_idx];
+            let dependent = &self.di_graph[to_idx];
 
             return Err(TaskExecutionGraphError::cycle_detected(
                 dependent.project_name(),
@@ -485,9 +512,10 @@ impl TaskExecutionGraph {
             ));
         }
 
-        let to_full_name = self.di_graph[to_idx].full_task_name.clone();
+        self.di_graph.add_edge(to_idx, from_idx, edge_type);
 
         if edge_type == EdgeType::Dependency {
+            let to_full_name = self.di_graph[to_idx].full_task_name.clone();
             self.di_graph[from_idx].dependencies.push(to_full_name);
         }
 
@@ -738,68 +766,47 @@ impl TaskExecutionGraph {
             }
         }
 
-        // Use longest path to determine the level of each node
-        // Level = max(level of predecessors) + 1
-        let mut levels = HashMap::new();
-        let mut topo = Topo::new(&dep_graph);
-
-        while let Some(node) = topo.next(&dep_graph) {
-            if !reachable.contains(&node) {
-                continue;
-            }
-
-            let level = dep_graph
-                .neighbors_directed(node, Direction::Incoming)
-                .filter(|n| reachable.contains(n))
-                .map(|n| levels.get(&n).copied().unwrap_or(0))
-                .max()
-                .unwrap_or(0);
-
-            levels.insert(node, level + 1);
-        }
-
-        let max_level = *levels.values().max().unwrap_or(&0);
-        for (node, level) in levels.iter_mut() {
-            let node = &self.di_graph[*node];
-
-            // if the node is persistent, it should be sorted to the end of the last batch
-            if node.persistent {
-                *level = max_level;
-            }
-        }
-
-        // add sibling nodes
+        // Step 4: Determine sibling-connected components over the scheduled
+        // node set.
         //
-        // Every task in a sibling-connected component must be co-scheduled
-        // into the same batch. The shared level is the MAXIMUM dependency
-        // level among the component's already-placed members: using the max
-        // (rather than the min) guarantees no member is ever scheduled before
-        // its own dependencies, which always live in strictly lower levels.
+        // The scheduled set is `reachable` plus any task transitively
+        // co-scheduled (sibling-connected) with a reachable task: sibling
+        // ("with") tasks that are not themselves dependency-reachable are
+        // pulled in so they run alongside their peers.
+        //
+        // Because every task in a component MUST share a batch, levels are
+        // computed on the *condensation* of the dependency graph: each
+        // sibling component collapses into a single super-node, and levels
+        // are assigned by longest path over those super-nodes. This satisfies
+        // both invariants at once -- siblings co-scheduled AND every
+        // dependency strictly before its dependents -- and cascades a
+        // co-scheduling "lift" to a member's dependents for free.
         //
         // Components are discovered by an undirected traversal of the sibling
-        // graph seeded from every placed node, visited in sorted order, so
-        // the result is fully deterministic regardless of hash iteration
-        // order.
+        // graph seeded from the reachable nodes in sorted order, so the
+        // result is fully deterministic regardless of hash iteration order.
         let sibling_graph = filtered_graph!(&self.di_graph, EdgeType::Sibling);
 
-        let mut seeds = levels.keys().copied().collect::<Vec<_>>();
+        let mut component_of: HashMap<NodeIndex, usize> = HashMap::new();
+        let mut components: Vec<Vec<NodeIndex>> = Vec::new();
+
+        let mut seeds = reachable.iter().copied().collect::<Vec<_>>();
         seeds.sort();
 
-        let mut visited: HashSet<NodeIndex> = HashSet::new();
         for seed in seeds {
-            if visited.contains(&seed) {
+            if component_of.contains_key(&seed) {
                 continue;
             }
 
-            // Collect the full sibling-connected component containing `seed`,
-            // following sibling edges in both directions.
-            let mut component = Vec::new();
+            let cid = components.len();
+            let mut members = Vec::new();
             let mut stack = vec![seed];
             while let Some(node) = stack.pop() {
-                if !visited.insert(node) {
+                if component_of.contains_key(&node) {
                     continue;
                 }
-                component.push(node);
+                component_of.insert(node, cid);
+                members.push(node);
 
                 for neighbor in sibling_graph
                     .neighbors_directed(node, Direction::Outgoing)
@@ -808,25 +815,112 @@ impl TaskExecutionGraph {
                             .neighbors_directed(node, Direction::Incoming),
                     )
                 {
-                    if !visited.contains(&neighbor) {
+                    if !component_of.contains_key(&neighbor) {
                         stack.push(neighbor);
                     }
                 }
             }
 
-            // The target level for the whole component is the max level over
-            // its already-leveled members. Members pulled in purely through
-            // sibling edges (with no dependency level of their own) inherit
-            // that same level.
-            if let Some(target) = component
-                .iter()
-                .filter_map(|n| levels.get(n).copied())
-                .max()
-            {
-                for node in component {
-                    levels.insert(node, target);
+            components.push(members);
+        }
+
+        let n_comp = components.len();
+
+        // Build the condensed dependency graph: one node per component, with
+        // an edge `comp(dependency) -> comp(dependent)` for every dependency
+        // edge whose endpoints are both scheduled and live in *different*
+        // components. A dependency edge *within* a component is an immediate
+        // contradiction: a task co-scheduled with one it depends on.
+        let mut cond_adj: Vec<HashSet<usize>> = vec![HashSet::new(); n_comp];
+        let mut cond_indeg: Vec<usize> = vec![0; n_comp];
+
+        for (&node, &cid) in &component_of {
+            for dep in dep_graph.neighbors_directed(node, Direction::Incoming) {
+                let Some(&dep_cid) = component_of.get(&dep) else {
+                    continue;
+                };
+
+                if dep_cid == cid {
+                    return Err(sibling_dependency_cycle_error(
+                        self,
+                        &components[cid],
+                    ));
+                }
+
+                if cond_adj[dep_cid].insert(cid) {
+                    cond_indeg[cid] += 1;
                 }
             }
+        }
+
+        // Longest-path level per component via Kahn's algorithm. A component
+        // is finalized only once all of its predecessors are, so its level is
+        // the length of the longest dependency chain of components ending at
+        // it (roots = 1).
+        let mut comp_level = vec![1usize; n_comp];
+        let mut indeg = cond_indeg;
+        let mut queue = indeg
+            .iter()
+            .enumerate()
+            .filter(|&(_, &d)| d == 0)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        let mut processed = 0usize;
+
+        while let Some(c) = queue.pop() {
+            processed += 1;
+            for &succ in &cond_adj[c] {
+                if comp_level[c] + 1 > comp_level[succ] {
+                    comp_level[succ] = comp_level[c] + 1;
+                }
+                indeg[succ] -= 1;
+                if indeg[succ] == 0 {
+                    queue.push(succ);
+                }
+            }
+        }
+
+        if processed != n_comp {
+            // Some components never reached in-degree zero: a dependency cycle
+            // *through* sibling components (e.g. `a ~ c` with `a <- b <- c`).
+            let offenders = components
+                .iter()
+                .enumerate()
+                .filter(|(cid, _)| indeg[*cid] != 0)
+                .flat_map(|(_, members)| members.iter().copied())
+                .collect::<Vec<_>>();
+            return Err(sibling_dependency_cycle_error(self, &offenders));
+        }
+
+        // Persistent tasks run "forever", so they belong in the final batch --
+        // but only when doing so cannot strand a dependent. A persistent task
+        // can never itself be depended upon (enforced at construction), yet it
+        // may be co-scheduled with a non-persistent sibling that *does* have
+        // dependents; in that case dependency ordering wins and the component
+        // keeps its computed level.
+        let max_comp_level = comp_level.iter().copied().max().unwrap_or(0);
+        for (cid, members) in components.iter().enumerate() {
+            let is_persistent =
+                members.iter().any(|n| self.di_graph[*n].persistent);
+            if !is_persistent {
+                continue;
+            }
+
+            let has_dependent = members.iter().any(|n| {
+                dep_graph
+                    .neighbors_directed(*n, Direction::Outgoing)
+                    .any(|d| component_of.contains_key(&d))
+            });
+
+            if !has_dependent {
+                comp_level[cid] = max_comp_level;
+            }
+        }
+
+        // Assign every scheduled task its component's level.
+        let mut levels: HashMap<NodeIndex, usize> = HashMap::new();
+        for (&node, &cid) in &component_of {
+            levels.insert(node, comp_level[cid]);
         }
 
         // Step 5: Group nodes by level
@@ -938,6 +1032,11 @@ impl TaskExecutionGraphError {
             to_task: to_task.to_string(),
         })
     }
+
+    #[doc(hidden)]
+    pub fn sibling_dependency_cycle(tasks: Vec<String>) -> Self {
+        Self(TaskExecutionGraphErrorInner::SiblingDependencyCycle { tasks })
+    }
 }
 
 impl<T: Into<TaskExecutionGraphErrorInner>> From<T>
@@ -986,6 +1085,11 @@ pub(crate) enum TaskExecutionGraphErrorInner {
         to_project: String,
         to_task: String,
     },
+
+    #[error(
+        "co-scheduled sibling tasks cannot also form a dependency chain among themselves: {tasks:?}"
+    )]
+    SiblingDependencyCycle { tasks: Vec<String> },
 
     #[error(transparent)]
     Unknown(#[from] eyre::Report),
@@ -1627,24 +1731,6 @@ mod tests {
     }
 
     #[test]
-    fn filtered_plan_still_preserves_topological_order() {
-        // Uses the same non-trivial filter as `test_batched_execution_plan`
-        // to guard the ordering invariant on a partial (root-selected) plan.
-        let project_graph = create_project_graph();
-        let task_graph =
-            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
-
-        let plan = task_graph
-            .get_batched_execution_plan(|n| {
-                Ok(n.task_name == "p1t4" || n.task_name == "sibling-1")
-            })
-            .unwrap();
-
-        assert_topological_order(&task_graph, &plan);
-        assert_siblings_co_scheduled(&task_graph, &plan);
-    }
-
-    #[test]
     fn diamond_dependency_levels_are_asap() {
         // a <- {b, c} <- d  (classic split/join diamond)
         let project = Project {
@@ -1809,5 +1895,341 @@ mod tests {
                 );
             }
         }
+    }
+
+    // -- Graph construction / cycle detection ----------------------------
+    //
+    // These lock in the contract of `add_edge_by_names` (the per-edge cycle
+    // check and the persistent-dependency guard). They are the regression
+    // net for any optimization that replaces the full-graph
+    // `is_cyclic_directed` scan with a cheaper targeted reachability check.
+
+    /// Builds a single-project graph from `(task, exec, build_fn)` tuples,
+    /// returning the fallible result so cycle/validation errors can be
+    /// asserted directly.
+    fn try_build_single_project(
+        builder: TasksBuilder,
+    ) -> TaskExecutionGraphResult<TaskExecutionGraph> {
+        let project = Project {
+            tasks: builder.build(),
+            ..create_project("proj")
+        };
+        let project_graph = ProjectGraph::from_projects(vec![project])
+            .expect("Can't create project graph");
+        TaskExecutionGraph::from_project_graph(&project_graph)
+    }
+
+    #[test]
+    fn self_dependency_is_rejected_as_cycle() {
+        let result = try_build_single_project(TasksBuilder::new().task(
+            "a",
+            "echo a",
+            |b| b.own_dependency("a"),
+        ));
+
+        let err = result.expect_err("self-dependency must be a cycle");
+        assert_eq!(err.kind(), TaskExecutionGraphErrorKind::CycleDetected);
+    }
+
+    #[test]
+    fn two_node_dependency_cycle_is_rejected() {
+        let result = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_dependency("b"))
+                .task("b", "echo b", |b| b.own_dependency("a")),
+        );
+
+        let err = result.expect_err("a<->b must be a cycle");
+        assert_eq!(err.kind(), TaskExecutionGraphErrorKind::CycleDetected);
+    }
+
+    #[test]
+    fn three_node_dependency_cycle_is_rejected() {
+        let result = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_dependency("c"))
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b.own_dependency("b")),
+        );
+
+        let err = result.expect_err("a<-b<-c<-a must be a cycle");
+        assert_eq!(err.kind(), TaskExecutionGraphErrorKind::CycleDetected);
+    }
+
+    #[test]
+    fn dependency_cycle_detection_is_independent_of_sibling_edges() {
+        // A `Dependency` edge b->a plus a `Sibling` edge a->b would look like
+        // a 2-cycle if edge types were conflated, but they live in separate
+        // filtered subgraphs and must NOT be reported as a cycle.
+        try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_dependency("b"))
+                .task("b", "echo b", |b| b.own_sibling("a")),
+        )
+        .expect("a dependency edge and a reverse sibling edge are not a cycle");
+    }
+
+    #[test]
+    fn real_dependency_cycle_still_caught_despite_sibling_edges() {
+        // Presence of unrelated sibling edges must not mask a genuine
+        // same-type dependency cycle (a<-b<-a).
+        let result = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_dependency("b").own_sibling("c"))
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b),
+        );
+
+        let err =
+            result.expect_err("a real dependency cycle must still be detected");
+        assert_eq!(err.kind(), TaskExecutionGraphErrorKind::CycleDetected);
+    }
+
+    #[test]
+    fn depending_on_persistent_task_is_rejected() {
+        let result = try_build_single_project(
+            TasksBuilder::new()
+                .task("server", "echo server", |b| b.persistent(true))
+                .task("client", "echo client", |b| b.own_dependency("server")),
+        );
+
+        let err = result
+            .expect_err("depending on a persistent task must be rejected");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::CantDependOnPersistentTask
+        );
+    }
+
+    #[test]
+    fn sibling_of_persistent_task_is_allowed() {
+        // The persistent guard only applies to `Dependency` edges; siblings
+        // (co-scheduled "with" tasks) may freely reference persistent tasks.
+        try_build_single_project(
+            TasksBuilder::new()
+                .task("server", "echo server", |b| b.persistent(true))
+                .task("watcher", "echo watcher", |b| b.own_sibling("server")),
+        )
+        .expect("a sibling of a persistent task is allowed");
+    }
+
+    // -- Sibling / `with` leveling ---------------------------------------
+    //
+    // Siblings are co-scheduled: every task in a sibling-connected component
+    // (following sibling edges transitively, in both directions) must land
+    // in exactly the same batch, while never breaking dependency ordering.
+
+    #[test]
+    fn transitive_siblings_are_co_scheduled_at_max_level() {
+        // base <- x (x:2), base <- y (y:2), z:1 (no deps).
+        // Sibling chain x ~ y ~ z links all three transitively; none of them
+        // has dependents, so lifting z from level 1 to 2 cannot break any
+        // dependency. The whole component must share one batch.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("base", "echo base", |b| b)
+                .task("x", "echo x", |b| {
+                    b.own_dependency("base").own_sibling("y")
+                })
+                .task("y", "echo y", |b| {
+                    b.own_dependency("base").own_sibling("z")
+                })
+                .task("z", "echo z", |b| b),
+        )
+        .unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_topological_order(&task_graph, &plan);
+        assert_siblings_co_scheduled(&task_graph, &plan);
+
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#base".to_string()],
+                vec![
+                    "proj#x".to_string(),
+                    "proj#y".to_string(),
+                    "proj#z".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn sibling_pulls_in_non_dependency_reachable_task() {
+        // Only `main` is selected as a root, but it is a sibling of `helper`,
+        // which is not otherwise reachable. `helper` must be pulled into the
+        // plan and co-scheduled in the same batch as `main`.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("main", "echo main", |b| b.own_sibling("helper"))
+                .task("helper", "echo helper", |b| b)
+                .task("unrelated", "echo unrelated", |b| b),
+        )
+        .unwrap();
+
+        let plan = task_graph
+            .get_batched_execution_plan(|n| Ok(n.task_name == "main"))
+            .unwrap();
+
+        assert_siblings_co_scheduled(&task_graph, &plan);
+
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![vec!["proj#helper".to_string(), "proj#main".to_string()]],
+            "the sibling must be pulled in and co-scheduled, and the \
+             unrelated task must not appear"
+        );
+    }
+
+    #[test]
+    fn transitive_siblings_across_projects_share_one_batch() {
+        // Uses the cross-project sibling chain baked into the shared fixture:
+        //   project1#sibling-1 ~ project2#sibling-2 ~ project2#sibling-2.1
+        //     ~ project3#sibling-3 ~ project4#sibling-4
+        // Every member (following the transitive sibling edges) must be
+        // co-scheduled in the very same batch.
+        let project_graph = create_project_graph();
+        let task_graph =
+            TaskExecutionGraph::from_project_graph(&project_graph).unwrap();
+
+        let plan = task_graph
+            .get_batched_execution_plan(|n| Ok(n.task_name == "sibling-1"))
+            .unwrap();
+
+        assert_siblings_co_scheduled(&task_graph, &plan);
+
+        let batch_of = batch_index_by_task(&plan);
+        let members = [
+            "project1#sibling-1",
+            "project2#sibling-2",
+            "project2#sibling-2.1",
+            "project3#sibling-3",
+            "project4#sibling-4",
+        ];
+
+        let first = batch_of
+            .get(members[0])
+            .copied()
+            .expect("sibling-1 must be scheduled");
+        for member in members {
+            assert_eq!(
+                batch_of.get(member).copied(),
+                Some(first),
+                "transitive sibling `{member}` must be in the same batch as \
+                 the rest of its component"
+            );
+        }
+    }
+
+    #[test]
+    fn sibling_lift_cascades_to_its_dependents() {
+        // Two independent dependency chains:
+        //   chain 1:  a <- b           (a:1, b:2)   b depends on a
+        //   chain 2:  p <- q <- r      (p:1, q:2, r:3)
+        // Sibling link a ~ r forces `a` and `r` into the same batch, lifting
+        // `a` from its natural level 1 up to `r`'s level 3. Because `b`
+        // depends on `a`, the lift must cascade: `b` is pushed to a strictly
+        // later batch so dependency ordering still holds.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_sibling("r"))
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("p", "echo p", |b| b)
+                .task("q", "echo q", |b| b.own_dependency("p"))
+                .task("r", "echo r", |b| b.own_dependency("q")),
+        )
+        .unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        // Both invariants must hold simultaneously.
+        assert_siblings_co_scheduled(&task_graph, &plan);
+        assert_topological_order(&task_graph, &plan);
+
+        // Exact schedule: a and r co-scheduled at level 3; b cascaded to 4.
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#p".to_string()],
+                vec!["proj#q".to_string()],
+                vec!["proj#a".to_string(), "proj#r".to_string()],
+                vec!["proj#b".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn co_scheduled_sibling_may_be_depended_upon() {
+        // The capability Option B preserves: a co-scheduled task (`build`) can
+        // simultaneously be an upstream dependency of a downstream task
+        // (`test`). `build` and `lint` share a batch; `test` runs after.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("codegen", "echo codegen", |b| b)
+                .task("build", "echo build", |b| {
+                    b.own_dependency("codegen").own_sibling("lint")
+                })
+                .task("lint", "echo lint", |b| b.own_dependency("codegen"))
+                .task("test", "echo test", |b| b.own_dependency("build")),
+        )
+        .unwrap();
+
+        let plan = task_graph.get_batched_execution_plan(|_| Ok(true)).unwrap();
+
+        assert_siblings_co_scheduled(&task_graph, &plan);
+        assert_topological_order(&task_graph, &plan);
+
+        assert_eq!(
+            canonical_batches(&plan),
+            vec![
+                vec!["proj#codegen".to_string()],
+                vec!["proj#build".to_string(), "proj#lint".to_string()],
+                vec!["proj#test".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn direct_dependency_between_siblings_is_rejected() {
+        // `a ~ b` but `a` also depends on `b`: the pair must be co-scheduled
+        // AND strictly ordered -- an unsatisfiable contradiction.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_sibling("b").own_dependency("b"))
+                .task("b", "echo b", |b| b),
+        )
+        .unwrap();
+
+        let err = task_graph
+            .get_batched_execution_plan(|_| Ok(true))
+            .expect_err("a sibling depending on its own peer is unschedulable");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::SiblingDependencyCycle
+        );
+    }
+
+    #[test]
+    fn transitive_dependency_between_siblings_is_rejected() {
+        // `a ~ c` with a dependency path a <- b <- c routed through a
+        // non-sibling `b`: still a contradiction, detected via the condensed
+        // graph cycle rather than a direct intra-component edge.
+        let task_graph = try_build_single_project(
+            TasksBuilder::new()
+                .task("a", "echo a", |b| b.own_sibling("c"))
+                .task("b", "echo b", |b| b.own_dependency("a"))
+                .task("c", "echo c", |b| b.own_dependency("b")),
+        )
+        .unwrap();
+
+        let err = task_graph
+            .get_batched_execution_plan(|_| Ok(true))
+            .expect_err("a transitive dependency between siblings is a cycle");
+        assert_eq!(
+            err.kind(),
+            TaskExecutionGraphErrorKind::SiblingDependencyCycle
+        );
     }
 }
