@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_collector-v0.4.0 - 2026-07-13
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Performance Improvements
+- cache globset construction - (14bfff8) - Clarence Manuel
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+#### Refactoring
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+
+- - -
+
 ## omni_collector-v0.3.3 - 2026-05-24
 #### Bug Fixes
 - update trace and log handling - (7d46766) - Clarence Manuel

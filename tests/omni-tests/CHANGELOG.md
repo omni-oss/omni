@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/omni-tests-v0.3.0 - 2026-07-13
+#### Features
+- include logs in task_run mcp output - (d877087) - Clarence Manuel
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Bug Fixes
+- (**omni_mcp_core**) exec not outputting cached logs - (9c7eafa) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) add add-many operation tests for generator - (a47bc02) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/omni-tests-v0.2.0 - 2026-07-04
 #### Features
 - implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel

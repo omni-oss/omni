@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.10.0 - 2026-07-11
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.9.0 - 2026-07-04
 #### Features
 - implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel

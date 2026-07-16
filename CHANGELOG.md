@@ -2,6 +2,47 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.19.0 - 2026-07-13
+### Package updates
+- omni_command_config bumped to omni_command_config-v0.1.0
+- @omni-oss/workspace-gen bumped to @omni-oss/workspace-gen-v0.0.1
+- @omni-oss/perf-dashboard bumped to @omni-oss/perf-dashboard-v0.1.0
+- omni_collector bumped to omni_collector-v0.4.0
+- omni_mcp_core bumped to omni_mcp_core-v0.3.0
+- root bumped to root-v0.14.0
+- omni_process bumped to omni_process-v0.4.0
+- omni bumped to omni-v0.18.0
+- omni_core bumped to omni_core-v0.4.0
+- @omni-oss/task-bench bumped to @omni-oss/task-bench-v0.1.1
+- omni_context bumped to omni_context-v0.6.0
+- omni_generator bumped to omni_generator-v0.11.0
+- omni_configurations bumped to omni_configurations-v0.10.0
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.3.0
+- omni_task_executor bumped to omni_task_executor-v0.10.0
+- omni_cli_core bumped to omni_cli_core-v0.18.0
+- omni_execution_plan bumped to omni_execution_plan-v0.5.0
+- omni_cache bumped to omni_cache-v0.8.0
+### Global changes
+#### Features
+- (**@omni-oss/perf-dashboard**) implement perf-dashboard script - (b5a74d2) - Clarence Manuel
+- include logs in task_run mcp output - (d877087) - Clarence Manuel
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Performance Improvements
+- (**omni**) replace system alloc with mimalloc - (62dca4e) - Clarence Manuel
+- cache globset construction - (14bfff8) - Clarence Manuel
+#### Tests
+- (**omni_bench**) use mimalloc for benchmark - (6fb8641) - Clarence Manuel
+- (**omni_bench**) implement analyze-perf script - (123b598) - Clarence Manuel
+#### Continuous Integration
+- implement publish-perf-dashboard workflow - (fc1848c) - Clarence Manuel
+- update publish-perf-comparison workflow - (f46ed0e) - Clarence Manuel
+#### Miscellaneous Chores
+- update cog.toml - (dfc2ffc) - Clarence Manuel
+- upgrade to rust 1.97.0 - (78fe56a) - Clarence Manuel
+- upgrade noyalib to 0.0.15 - (e2fe248) - Clarence Manuel
+
+- - -
+
 ## v0.18.0 - 2026-07-09
 ### Package updates
 - omni_core bumped to omni_core-v0.3.3

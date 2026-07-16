@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/task-bench-v0.1.1 - 2026-07-12
+#### Bug Fixes
+- (**@omni-oss/task-bench**) resource usage measurement on posix - (5f14db6) - Clarence Manuel
+- (**@omni-oss/task-bench**) package including all source files - (c1b1884) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/task-bench-v0.1.0 - 2026-07-09
 #### Features
 - (**@omni-oss/task-bench**) implement task-bench script - (feb0abf) - Clarence Manuel

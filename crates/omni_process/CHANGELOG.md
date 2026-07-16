@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_process-v0.4.0 - 2026-07-11
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+
+- - -
+
 ## omni_process-v0.3.2 - 2026-07-04
 #### Bug Fixes
 - broken tui mode - (b055007) - Clarence Manuel

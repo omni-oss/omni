@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_core-v0.4.0 - 2026-07-15
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Bug Fixes
+- (**omni_core**) sibling dependency cycle resolution and detection - (4bbf027) - Clarence Manuel
+
+- - -
+
 ## omni_core-v0.3.3 - 2026-07-08
 #### Bug Fixes
 - bug in task_execution_graph for sibling tasks - (c658103) - Clarence Manuel

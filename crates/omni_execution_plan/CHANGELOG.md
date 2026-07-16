@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_execution_plan-v0.5.0 - 2026-07-13
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Performance Improvements
+- cache globset construction - (14bfff8) - Clarence Manuel
+
+- - -
+
 ## omni_execution_plan-v0.4.2 - 2026-06-13
 #### Bug Fixes
 - (**omni_execution_plan**) apply filters dir and meta filters on exec path - (8ef9924) - Clarence Manuel

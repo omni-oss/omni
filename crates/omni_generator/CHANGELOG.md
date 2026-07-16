@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.11.0 - 2026-07-11
+#### Features
+- support array style commands - (32c32aa) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.10.1 - 2026-07-09
 #### Bug Fixes
 - (**omni_generator**) add_many ignoring hidden files - (2f2cc69) - Clarence Manuel

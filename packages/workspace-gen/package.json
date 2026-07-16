@@ -1,6 +1,6 @@
 {
     "name": "@omni-oss/workspace-gen",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "publishConfig": {
         "access": "public"
     },

@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_cli_core-v0.18.0 - 2026-07-15
+#### Features
+- include logs in task_run mcp output - (d877087) - Clarence Manuel
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/workspace-gen**) published artifacts has no dist - (2ecbfa1) - Clarence Manuel
+- (**omni_command_config**) tera expansion missing comments - (ffb3e28) - Clarence Manuel
+- (**omni_core**) sibling dependency cycle resolution and detection - (4bbf027) - Clarence Manuel
+- (**omni_mcp_core**) exec not outputting cached logs - (9c7eafa) - Clarence Manuel
+#### Performance Improvements
+- (**omni**) prevent stalling on exit - (5a36249) - Clarence Manuel
+- (**omni**) replace system alloc with mimalloc - (62dca4e) - Clarence Manuel
+- (**omni_cache**) lazy init remote cache client - (1bdb8dc) - Clarence Manuel
+- (**omni_hasher**) enable partial hash retrieval - (82068f6) - Clarence Manuel
+- cache globset construction - (14bfff8) - Clarence Manuel
+#### Tests
+- (**omni_bench**) use mimalloc for benchmark - (6fb8641) - Clarence Manuel
+- (**omni_bench**) implement analyze-perf script - (123b598) - Clarence Manuel
+- (**omni_setup**) fix test getting flagged on windows - (0280bdb) - Clarence Manuel
+
+- - -
+
 ## omni_cli_core-v0.17.2 - 2026-07-09
 #### Bug Fixes
 - (**@omni-oss/workspace-gen**) copy dist from rust wasm package - (1bba298) - Clarence Manuel

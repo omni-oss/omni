@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.10.0 - 2026-07-12
+#### Features
+- include logs in task_run mcp output - (d877087) - Clarence Manuel
+- support array style commands - (32c32aa) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.9.1 - 2026-07-08
 #### Bug Fixes
 - bug in task_execution_graph for sibling tasks - (c658103) - Clarence Manuel

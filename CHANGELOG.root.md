@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.14.0 - 2026-07-13
+#### Features
+- (**@omni-oss/perf-dashboard**) implement perf-dashboard script - (b5a74d2) - Clarence Manuel
+- include logs in task_run mcp output - (d877087) - Clarence Manuel
+- support array style commands - (32c32aa) - Clarence Manuel
+#### Performance Improvements
+- (**omni**) replace system alloc with mimalloc - (62dca4e) - Clarence Manuel
+- cache globset construction - (14bfff8) - Clarence Manuel
+#### Tests
+- (**omni_bench**) use mimalloc for benchmark - (6fb8641) - Clarence Manuel
+#### Miscellaneous Chores
+- upgrade to rust 1.97.0 - (78fe56a) - Clarence Manuel
+- upgrade noyalib to 0.0.15 - (e2fe248) - Clarence Manuel
+
+- - -
+
 ## root-v0.13.0 - 2026-07-09
 #### Features
 - (**@omni-oss/task-bench**) implement task-bench script - (feb0abf) - Clarence Manuel
