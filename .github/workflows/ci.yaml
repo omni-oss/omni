@@ -327,5 +327,14 @@ jobs:
               inputs: {
                 version: process.env.OMNI_VERSION,
                 resource_runs: '3',
+                publish_to_external_repo: 'true',
+                publish_to_summary: 'true',
+                preset: 'full',
+                publish_branch: 'main',
+                run_for_linux: 'true',
+                run_for_windows: 'false',
+                run_for_macos: 'true',
+                total_max_retries: '5',
+                publish_repo: 'omni-oss/performance-comparison'
               },
             });
