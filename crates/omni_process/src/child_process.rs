@@ -143,7 +143,7 @@ impl ChildProcess {
 
         let start_time = std::time::Instant::now();
 
-        log::trace!("executing command: {:?}", args);
+        log::trace!("executing command: {} {:?}", program, args);
 
         let child = Child::spawn(
             program,
