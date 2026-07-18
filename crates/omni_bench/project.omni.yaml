@@ -6,11 +6,16 @@ extends:
 tasks:
   bench:
     enabled: true
+    env:
+      vars:
+        bench: task_execution
+        RUST_BENCH_ADDITIONAL_ARGS: --features=full-matrix
 
   profile:
     env:
       vars:
         bench: task_execution
+        RUST_PROFILE_ADDITIONAL_ARGS: --features=full-matrix
     enabled: true
 
   # Rank the samples in perf.data (produced by `profile`) into human-readable

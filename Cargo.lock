@@ -6477,7 +6477,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.17.2"
+version = "0.18.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6502,7 +6502,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "bytesize",
  "derive-new",
@@ -6597,7 +6597,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cache"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6641,7 +6641,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.17.2"
+version = "0.18.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6733,7 +6733,7 @@ dependencies = [
 
 [[package]]
 name = "omni_collector"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "bs58",
  "derive-new",
@@ -6759,7 +6759,7 @@ dependencies = [
 
 [[package]]
 name = "omni_command_config"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "derive-new",
  "env",
@@ -6819,7 +6819,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -6858,7 +6858,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -6909,7 +6909,7 @@ dependencies = [
 
 [[package]]
 name = "omni_core"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -6965,7 +6965,7 @@ dependencies = [
 
 [[package]]
 name = "omni_execution_plan"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "ahash 0.8.12",
  "bs58",
@@ -7031,7 +7031,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -7117,7 +7117,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7195,7 +7195,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "either",
  "enumset",
@@ -7244,7 +7244,7 @@ dependencies = [
 
 [[package]]
 name = "omni_mcp_core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bytesize",
@@ -7280,7 +7280,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7305,7 +7305,7 @@ dependencies = [
 
 [[package]]
 name = "omni_process"
-version = "0.3.2"
+version = "0.4.0"
 dependencies = [
  "atty",
  "bon",
@@ -7571,7 +7571,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "ahash 0.8.12",
  "base64",
@@ -7624,7 +7624,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "merge",
  "schemars",

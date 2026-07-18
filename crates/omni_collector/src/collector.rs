@@ -374,7 +374,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                 for parent in clean.ancestors() {
                     // if we are in the workspace root, stop here
-                    if self.ws_root_dir.starts_with(parent) {
+                    if starts_with_path(self.ws_root_dir, parent) {
                         break;
                     }
 

@@ -4,8 +4,7 @@ pub use pathdiff::diff_paths as diff;
 use system_traits::FsMetadata;
 
 pub fn relpath<'a>(path: &'a Path, base: &Path) -> &'a Path {
-    path.strip_prefix(base)
-        .expect("path is not a child of base")
+    strip_prefix_path(path, base).expect("path is not a child of base")
 }
 
 pub fn has_globs(path: &str) -> bool {
@@ -79,6 +78,77 @@ pub fn starts_with_path(path: &Path, base: &Path) -> bool {
     }
 }
 
+/// Fast equivalent of [`Path::strip_prefix`] for **absolute, normalized**
+/// paths, returning the portion of `path` that follows `base`.
+///
+/// This is the companion of [`starts_with_path`]: it reuses the same
+/// byte-level, component-boundary prefix check (see that function for the
+/// invariants and rationale) and, on a match, additionally skips the separator
+/// that follows `base` so the returned path is relative, exactly like
+/// [`Path::strip_prefix`]. It returns [`None`] when `base` is not a prefix of
+/// `path`, mirroring `Path::strip_prefix` returning `Err`.
+///
+/// `relpath` walks the `std::path::Components` state machine over both operands
+/// via `strip_prefix`, which shows up as a dominant cost when it runs for every
+/// walked file in `omni_collector`. A byte-level slice is semantically
+/// equivalent for the canonical absolute paths the collector produces and
+/// avoids the component iteration entirely.
+///
+/// On non-unix targets this falls back to [`Path::strip_prefix`] to sidestep
+/// separator/case-folding subtleties.
+pub fn strip_prefix_path<'a>(path: &'a Path, base: &Path) -> Option<&'a Path> {
+    #[cfg(unix)]
+    {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let path_bytes = path.as_os_str().as_bytes();
+        let mut base_bytes = base.as_os_str().as_bytes();
+
+        // Mirror `Path::strip_prefix`, which ignores a single trailing
+        // separator on the base (e.g. `/foo/` strips like `/foo`).
+        while base_bytes.len() > 1 && base_bytes[base_bytes.len() - 1] == b'/' {
+            base_bytes = &base_bytes[..base_bytes.len() - 1];
+        }
+
+        // An empty base is a prefix of everything; `Path::strip_prefix("")`
+        // returns the original path unchanged.
+        if base_bytes.is_empty() {
+            return Some(path);
+        }
+
+        if path_bytes.len() < base_bytes.len()
+            || path_bytes[..base_bytes.len()] != *base_bytes
+        {
+            return None;
+        }
+
+        // Exact match: the remainder is empty.
+        if path_bytes.len() == base_bytes.len() {
+            return Some(Path::new(""));
+        }
+
+        // The match must fall on a component boundary. When `base` is the root
+        // (`/`) it still ends in a separator, so the remainder starts right
+        // after it; otherwise the next byte of `path` must be a separator,
+        // which we skip so the returned path is relative (as `std` does).
+        let remainder = if base_bytes[base_bytes.len() - 1] == b'/' {
+            &path_bytes[base_bytes.len()..]
+        } else if path_bytes[base_bytes.len()] == b'/' {
+            &path_bytes[base_bytes.len() + 1..]
+        } else {
+            return None;
+        };
+
+        Some(Path::new(OsStr::from_bytes(remainder)))
+    }
+
+    #[cfg(not(unix))]
+    {
+        path.strip_prefix(base).ok()
+    }
+}
+
 pub fn remove_globs(path: &Path) -> &Path {
     if !has_globs(path.to_string_lossy().as_ref()) {
         return path;
@@ -117,7 +187,7 @@ pub fn topmost_dirs<'a>(
     }
 
     for path in paths {
-        if !path.starts_with(ws_root_dir) {
+        if !starts_with_path(path, ws_root_dir) {
             return vec![ws_root_dir];
         }
     }
@@ -132,12 +202,12 @@ pub fn topmost_dirs<'a>(
 
     'outer: for dir in dirs {
         // If dir is already contained in an existing topmost dir, skip it
-        if topmost_dirs.iter().any(|&t| dir.starts_with(t)) {
+        if topmost_dirs.iter().any(|&t| starts_with_path(dir, t)) {
             continue 'outer;
         }
 
         // Remove any existing topmost dir that is inside this dir
-        topmost_dirs.retain(|&t| !t.starts_with(dir));
+        topmost_dirs.retain(|&t| !starts_with_path(t, dir));
 
         topmost_dirs.push(dir);
     }
@@ -354,6 +424,34 @@ mod tests {
                 path.starts_with(base),
                 "std parity for ({path:?}, {base:?})"
             );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_strip_prefix_path_matches_std() {
+        let cases = [
+            "/foo/bar",
+            "/foo",
+            "/foo/",
+            "/foo/bar/baz",
+            "/foo/ba",
+            "/foobar",
+            "/",
+            "/other",
+            "",
+        ];
+
+        for path in cases {
+            for base in cases {
+                let path = Path::new(path);
+                let base = Path::new(base);
+                assert_eq!(
+                    strip_prefix_path(path, base),
+                    path.strip_prefix(base).ok(),
+                    "std parity for strip_prefix_path({path:?}, {base:?})"
+                );
+            }
         }
     }
 
