@@ -20,5 +20,5 @@ actions:
     base_path: templates
     target: root
     data:
-      rust_error_name: "{{ inputs.error_name | upper_camel_case }}"
+      rust_error_name: "{{ inputs.error_name | pascal_case }}"
     file: templates/{{ vars.rust_file_name }}.rs.tpl
