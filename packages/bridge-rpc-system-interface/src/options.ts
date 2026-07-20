@@ -7,6 +7,8 @@
  * fields are optional - any subset can be overridden via
  * {@link createRpcSystemOptions}.
  */
+import type { EnvRuleLayers } from "./env-capability";
+
 export type BridgeRpcSystemOptions = {
     /**
      * Path prefix prepended to every file-system route. Defaults to
@@ -24,6 +26,15 @@ export type BridgeRpcSystemOptions = {
      * Defaults to {@link DEFAULT_MAX_CHUNK_SIZE}.
      */
     maxChunkSize: number;
+    /**
+     * Layered `env` capability rules to enforce on `proc.env()` reads, the same
+     * rules handed to the runtime shim. When present (even an empty array,
+     * which denies everything), `proc.env()` returns a capability-filtered view
+     * so a script only observes the variables its generator is permitted to
+     * read. When omitted, the RPC snapshot is exposed verbatim (the Rust broker
+     * has already filtered it).
+     */
+    envRules?: EnvRuleLayers | undefined;
 };
 
 export type PartialBridgeRpcSystemOptions = Partial<BridgeRpcSystemOptions>;
@@ -86,6 +97,7 @@ export function createRpcSystemOptions(
         fsPrefix: overrides?.fsPrefix ?? DEFAULT_FS_PREFIX,
         procPrefix: overrides?.procPrefix ?? DEFAULT_PROC_PREFIX,
         maxChunkSize: overrides?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE,
+        envRules: overrides?.envRules,
     };
 }
 

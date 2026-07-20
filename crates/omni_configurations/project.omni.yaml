@@ -9,7 +9,6 @@ dependencies:
   - omni_core
   - maps
   - sets
-  - js_runtime
   - omni_expressions
   - system_traits
   - trace

@@ -11,15 +11,15 @@ pub macro error {
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct JsRuntimeError(pub(crate) JsRuntimeErrorRepr);
+pub struct BridgeRunnerError(pub(crate) BridgeRunnerErrorRepr);
 
-impl JsRuntimeError {
-    pub fn kind(&self) -> JsRuntimeErrorKind {
+impl BridgeRunnerError {
+    pub fn kind(&self) -> BridgeRunnerErrorKind {
         self.0.discriminant()
     }
 }
 
-impl<T: Into<JsRuntimeErrorRepr>> From<T> for JsRuntimeError {
+impl<T: Into<BridgeRunnerErrorRepr>> From<T> for BridgeRunnerError {
     fn from(value: T) -> Self {
         let repr = value.into();
         Self(repr)
@@ -27,8 +27,8 @@ impl<T: Into<JsRuntimeErrorRepr>> From<T> for JsRuntimeError {
 }
 
 #[derive(Debug, thiserror::Error, EnumDiscriminants)]
-#[strum_discriminants(name(JsRuntimeErrorKind), vis(pub))]
-pub(crate) enum JsRuntimeErrorRepr {
+#[strum_discriminants(name(BridgeRunnerErrorKind), vis(pub))]
+pub(crate) enum BridgeRunnerErrorRepr {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

@@ -1,11 +1,13 @@
-use js_runtime::impls::DelegatingJsRuntimeOption;
+use bridge_rpc_runner::DelegatingJsRuntimeOption;
+use omni_capabilities::{CapabilityRules, PathRoots, Root};
 use omni_generator_configurations::{
-    JsRuntimeOption, RunJavaScriptActionConfiguration,
+    Generator, GeneratorContext, JsRuntimeOption,
+    RunJavaScriptActionConfiguration,
 };
-use omni_messages::GeneratorEventSubscriber;
+use omni_messages::{GeneratorEventSubscriber, publish::diagnostic};
 
 use crate::{
-    GeneratorSys, ScriptInvocation, ScriptParams,
+    EffectivePolicy, GeneratorSys, ScriptInvocation, ScriptParams,
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
@@ -35,9 +37,53 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
         },
     };
 
-    ctx.js_script_runner
-        .run_scripts(map_runtime(config.runtime), &[invocation])
-        .await
+    // The effective policy for this script is a stack of **distinct** levels,
+    // ordered outermost → innermost:
+    //
+    //   inherited ceiling (workspace ⏺ ancestor generators)
+    //     ⏺ this generator's own policy
+    //     ⏺ this action's policy
+    //
+    // Authorization applies the shrink-only (attenuation) model over these
+    // levels: each level can only *narrow* the authority it inherited, so a
+    // deeper level can never grant itself access an ancestor did not, and a
+    // `deny` at any level wins. The levels are kept separate (not pre-merged) so
+    // the intersection is exact per operation.
+    let mut levels: Vec<CapabilityRules<Generator>> =
+        ctx.inherited_capabilities.to_vec();
+    levels.push(ctx.capabilities.clone());
+    levels.push(config.capabilities.rules.clone());
+
+    let policy = EffectivePolicy {
+        levels,
+        roots: PathRoots::new()
+            .with(Root::Workspace, ctx.workspace_dir)
+            .with(Root::Project, ctx.output_dir),
+        context: GeneratorContext {
+            action: Some(ctx.resolved_action_name.to_string()),
+            target: None,
+        },
+        // The effective stance is the most-severe of everything up to and
+        // including this generator (already accumulated in
+        // `ctx.capabilities_strictness`) and this action's own stance.
+        strictness: ctx
+            .capabilities_strictness
+            .max(config.capabilities.strictness),
+    };
+
+    let result = ctx
+        .js_script_runner
+        .run_scripts(map_runtime(config.runtime), &policy, &[invocation])
+        .await?;
+
+    // Surface each structured diagnostic (e.g. capability `on_unenforceable:
+    // warn` gaps) through the run's diagnostic subscriber, at its own level, so
+    // the choice is visible rather than silent.
+    for d in result.diagnostics {
+        diagnostic!(ctx.subscriber, d.level, "{}", d.message).await;
+    }
+
+    Ok(())
 }
 
 fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
@@ -53,7 +99,7 @@ fn map_runtime(runtime: JsRuntimeOption) -> DelegatingJsRuntimeOption {
 mod tests {
     use std::path::Path;
 
-    use js_runtime::impls::DelegatingJsRuntimeOption;
+    use bridge_rpc_runner::DelegatingJsRuntimeOption;
     use omni_generator_configurations::{
         BaseActionConfiguration, JsRuntimeOption,
         RunJavaScriptActionConfiguration,
@@ -78,6 +124,7 @@ mod tests {
             data: Default::default(),
             runtime,
             script: script.into(),
+            capabilities: Default::default(),
         }
     }
 

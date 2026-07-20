@@ -16,11 +16,14 @@ dependencies:
   - omni_types
   - omni_process
   - omni_utils
-  - js_runtime
   - dir_walker
   - system_traits
   - maps
   - sets
   - bridge_rpc_services
   - bridge_rpc_router
+  - bridge_rpc_runner
+  - omni_capabilities
+  - omni_capability_enforcement
+  - omni_capability_sys
   - omni_config_types

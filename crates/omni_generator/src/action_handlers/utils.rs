@@ -227,8 +227,12 @@ pub async fn resolve_target_dir<'a>(
         let path_str = result.by_ref().to_str().expect("should be string");
         let path = Path::new(&path_str as &str);
 
+        // Re-prompt on an invalid target rather than silently proceeding with
+        // it (mirrors `prompt_target_file`); the loop exists precisely so the
+        // user can correct the value.
         if let Err(err) = validate_target(output_dir, path) {
             log::error!("Invalid target dir: {}", err);
+            continue;
         }
 
         let path = OmniPath::new(path);

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, path::PathBuf};
 
-use js_runtime::impls::DelegatingJsRuntimeOption;
+use bridge_rpc_runner::DelegatingJsRuntimeOption;
 use maps::{Map, UnorderedMap};
 use omni_generator_configurations::{
     GeneratorConfiguration, OmniPath, OverwriteConfiguration, Root,
@@ -11,8 +11,8 @@ use tempfile::TempDir;
 use value_bag::{OwnedValueBag, ValueBag};
 
 use crate::{
-    GenSession, JsScriptRunner, LazyScriptRunner, ScriptInvocation,
-    TransactionSys, action_handlers::HandlerContext,
+    GenSession, JsScriptRunner, LazyScriptRunner, RunScriptResult,
+    ScriptInvocation, TransactionSys, action_handlers::HandlerContext,
 };
 
 /// Records every `run_scripts` call for test assertions.
@@ -24,6 +24,28 @@ pub struct MockJsScriptRunner {
             Vec<(DelegatingJsRuntimeOption, Vec<ScriptInvocation>)>,
         >,
     >,
+    /// The ordered, **distinct** policy levels each call was handed, recorded in
+    /// call order (parallel to `invocations`). Lets tests assert *which* policy a
+    /// given script actually ran under — e.g. that a nested generator inherits
+    /// the parent's ceiling as an outer level while still contributing its own.
+    pub levels: std::sync::Arc<
+        std::sync::Mutex<
+            Vec<
+                Vec<
+                    omni_capabilities::CapabilityRules<
+                        omni_generator_configurations::Generator,
+                    >,
+                >,
+            >,
+        >,
+    >,
+    /// The effective floor-gap strictness each call was handed, recorded in call
+    /// order (parallel to `invocations`). Lets tests assert the most-severe
+    /// combination of workspace/generator/action stances actually reached the
+    /// script.
+    pub strictness: std::sync::Arc<
+        std::sync::Mutex<Vec<omni_capabilities::CapabilitiesStrictness>>,
+    >,
 }
 
 #[async_trait::async_trait]
@@ -31,13 +53,16 @@ impl JsScriptRunner for MockJsScriptRunner {
     async fn run_scripts(
         &self,
         runtime: DelegatingJsRuntimeOption,
+        policy: &crate::EffectivePolicy,
         invocations: &[ScriptInvocation],
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<RunScriptResult, crate::error::Error> {
         self.invocations
             .lock()
             .unwrap()
             .push((runtime, invocations.to_vec()));
-        Ok(())
+        self.levels.lock().unwrap().push(policy.levels.clone());
+        self.strictness.lock().unwrap().push(policy.strictness);
+        Ok(RunScriptResult::default())
     }
 }
 
@@ -57,6 +82,17 @@ pub struct Fixture {
     pub env: Map<String, String>,
     pub overwrite: Option<OverwriteConfiguration>,
     generators: Vec<Cow<'static, GeneratorConfiguration>>,
+    capabilities: omni_capabilities::CapabilityRules<
+        omni_generator_configurations::Generator,
+    >,
+    workspace_capabilities: omni_capabilities::CapabilityRules<
+        omni_generator_configurations::Generator,
+    >,
+    inherited_capabilities: Vec<
+        omni_capabilities::CapabilityRules<
+            omni_generator_configurations::Generator,
+        >,
+    >,
 }
 
 impl Fixture {
@@ -87,6 +123,9 @@ impl Fixture {
             env: Map::default(),
             overwrite: None,
             generators: vec![],
+            capabilities: Default::default(),
+            workspace_capabilities: Default::default(),
+            inherited_capabilities: Vec::new(),
         }
     }
 
@@ -142,6 +181,10 @@ impl Fixture {
             available_generators: &self.generators,
             workspace_dir: &self.workspace,
             resolved_action_name: "test_action",
+            workspace_capabilities: &self.workspace_capabilities,
+            inherited_capabilities: &self.inherited_capabilities,
+            capabilities: &self.capabilities,
+            capabilities_strictness: Default::default(),
             env: &self.env,
             gen_session: &self.gen_session,
             js_script_runner: self.js_script_runner.as_ref(),

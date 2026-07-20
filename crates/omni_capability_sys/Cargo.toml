@@ -1,0 +1,27 @@
+[package]
+name = "omni_capability_sys"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_capability_sys"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait = { workspace = true }
+omni_capabilities = { workspace = true }
+system_traits = { workspace = true }
+
+[dev-dependencies]
+system_traits = { workspace = true, features = [
+    "memory-async",
+    "memory-sync",
+    "real-async-tokio",
+    "real-sync",
+] }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+serde_json = { workspace = true }

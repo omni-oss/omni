@@ -12,7 +12,6 @@ dependencies:
   - serde_validate
   - maps
   - sets
-  - js_runtime
   - omni_expressions
   - system_traits
   - trace

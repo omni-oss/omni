@@ -4,6 +4,15 @@ export {
     BridgeRpcSystem,
 } from "./bridge-rpc-system";
 export {
+    CapabilityFilteredEnv,
+    EnvAccessDeniedError,
+    type EnvDomainRules,
+    type EnvRuleLayers,
+    envLayersAllow,
+    matchEnvGlob,
+    type OnDeniedEnvAccess,
+} from "./env-capability";
+export {
     type BridgeRpcSystemOptions,
     createRpcSystemOptions,
     DEFAULT_FS_PREFIX,

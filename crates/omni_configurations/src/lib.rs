@@ -1,6 +1,7 @@
 #![feature(box_patterns)]
 
 mod cache_configuration;
+mod capabilities;
 mod constants;
 mod generator_source_configuration;
 mod meta_configuration;
@@ -15,6 +16,7 @@ mod validators;
 mod workspace_configuration;
 
 pub use cache_configuration::*;
+pub use capabilities::*;
 pub use generator_source_configuration::*;
 pub use meta_configuration::*;
 pub use omni_config_types as types;

@@ -162,4 +162,22 @@ pub(crate) enum ErrorInner {
         name: String,
         limit: usize,
     },
+
+    #[error(
+        "generator '{name}' has an invalid capability policy (config path: {config_path})"
+    )]
+    InvalidCapabilities {
+        #[new(into)]
+        name: String,
+        #[new(into)]
+        config_path: PathBuf,
+        #[source]
+        source: omni_capabilities::Error,
+    },
+
+    #[error("the workspace-level capability policy is invalid")]
+    InvalidWorkspaceCapabilities {
+        #[source]
+        source: omni_capabilities::Error,
+    },
 }

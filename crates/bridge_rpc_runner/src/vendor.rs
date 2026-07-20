@@ -27,11 +27,14 @@
 //! otherwise the destination is overwritten. This guarantees the binary always
 //! runs against the bundle it shipped with.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::LazyLock,
+};
 
 use rust_embed::RustEmbed;
 
-use crate::{JsRuntimeError, error};
+use crate::{BridgeRunnerError, error};
 
 /// The package name used for the restored bundle when written into a
 /// `node_modules` directory.
@@ -55,6 +58,30 @@ const ENTRYPOINT_DIST_NAME: &str = "bridge-service-cli.mjs";
 #[folder = "../../services/bridge-service/dist"]
 struct BridgeServiceDist;
 
+static DIST_FILES_HASH: LazyLock<String> = LazyLock::new(|| {
+    // Hash the embedded files with BLAKE3 rather than `DefaultHasher`. The
+    // standard-library hasher is not guaranteed to be stable across Rust
+    // versions (and hashes only the paths yielded by `iter()`), whereas this
+    // digest must be reproducible for the same bundle on every build.
+    //
+    // We sort the entries so the result is independent of iteration order, and
+    // fold in both the path and the file contents (with a length prefix on the
+    // path to avoid ambiguity between concatenated fields).
+    let mut paths: Vec<_> = BridgeServiceDist::iter().collect();
+    paths.sort_unstable();
+
+    let mut hasher = blake3::Hasher::new();
+    for path in paths {
+        hasher.update(&(path.len() as u64).to_le_bytes());
+        hasher.update(path.as_bytes());
+        if let Some(file) = BridgeServiceDist::get(&path) {
+            hasher.update(&(file.data.len() as u64).to_le_bytes());
+            hasher.update(&file.data);
+        }
+    }
+    hasher.finalize().to_hex().to_string()
+});
+
 /// The embedded `@omni-oss/bridge-service` `package.json`.
 const PACKAGE_JSON: &[u8] =
     include_bytes!("../../../services/bridge-service/package.json");
@@ -72,6 +99,8 @@ pub struct VendoredLocation {
 #[derive(Debug, Clone)]
 pub struct VendoredBridgeService {
     version: String,
+    hash: &'static str,
+    version_with_hash: String,
     version_file_name: String,
 }
 
@@ -87,8 +116,11 @@ impl VendoredBridgeService {
         version: impl Into<String>,
         version_file_name: Option<impl Into<String>>,
     ) -> Self {
+        let version = version.into();
         Self {
-            version: version.into(),
+            version_with_hash: format!("{}-{}", version, &*DIST_FILES_HASH),
+            hash: &DIST_FILES_HASH,
+            version,
             version_file_name: version_file_name
                 .map(Into::into)
                 .unwrap_or_else(|| DEFAULT_VERSION_MARKER.to_string()),
@@ -118,7 +150,7 @@ impl VendoredBridgeService {
     pub async fn ensure(
         &self,
         context_dir: &Path,
-    ) -> Result<VendoredLocation, JsRuntimeError> {
+    ) -> Result<VendoredLocation, BridgeRunnerError> {
         let root = self.resolve_target(context_dir);
         let entrypoint = root.join(ENTRYPOINT_REL);
 
@@ -135,7 +167,8 @@ impl VendoredBridgeService {
 
         trace::debug!(
             root = %root.display(),
-            version = %self.version,
+            version = %&self.version,
+            hash = %&self.hash,
             "materializing vendored bridge-service"
         );
 
@@ -196,7 +229,7 @@ impl VendoredBridgeService {
 
         tokio::fs::write(
             root.join(&self.version_file_name),
-            self.version.as_bytes(),
+            self.version_with_hash.as_bytes(),
         )
         .await
         .map_err(|e| error::error!("failed to write version marker: {e}"))?;
@@ -213,7 +246,7 @@ impl VendoredBridgeService {
         }
         match tokio::fs::read_to_string(root.join(DEFAULT_VERSION_MARKER)).await
         {
-            Ok(marker) => marker.trim() == self.version,
+            Ok(marker) => marker.trim() == self.version_with_hash,
             Err(_) => false,
         }
     }
@@ -221,7 +254,7 @@ impl VendoredBridgeService {
 
 /// Parses the embedded `package.json`, rewrites its `name` to
 /// [`VENDORED_PACKAGE_NAME`], and reserializes it.
-fn rewrite_package_name(raw: &[u8]) -> Result<Vec<u8>, JsRuntimeError> {
+fn rewrite_package_name(raw: &[u8]) -> Result<Vec<u8>, BridgeRunnerError> {
     let mut value: serde_json::Value = serde_json::from_slice(raw)
         .map_err(|e| error::error!("failed to parse package.json: {e}"))?;
 

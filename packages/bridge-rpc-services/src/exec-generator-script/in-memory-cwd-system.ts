@@ -1,10 +1,10 @@
 import nodePath from "node:path";
 import type {
     ArgsList,
+    Env,
     FileStat,
     FileSystem,
     Process,
-    ProcessEnv,
     System,
 } from "@omni-oss/system-interface";
 
@@ -213,7 +213,7 @@ export class InMemoryCwdProcess implements Process {
         return this.inner.args();
     }
 
-    env(): ProcessEnv {
+    env(): Env {
         return this.inner.env();
     }
 }

@@ -182,7 +182,11 @@ describe("+generator @e2e (run-javascript)", {
     }, async (ctx) => {
         // Each `run-javascript` action picks its own runtime; distinct runtimes
         // get distinct processes. Gated so it only runs where both exist.
-        if (!runtimeAvailable("node") || !runtimeAvailable("bun")) {
+        //
+        // Uses node + deno (not bun) purely to exercise two distinct runtimes;
+        // all three are confinable under mandatory enforcement (see the
+        // `runtime: bun` test below and `generator-capabilities.e2e.spec.ts`).
+        if (!runtimeAvailable("node") || !runtimeAvailable("deno")) {
             ctx.skip();
             return;
         }
@@ -205,9 +209,9 @@ describe("+generator @e2e (run-javascript)", {
                         },
                         {
                             type: "run-javascript",
-                            runtime: "bun",
+                            runtime: "deno",
                             script: "gen.mjs",
-                            data: { target: "on-bun.txt", message: "bun" },
+                            data: { target: "on-deno.txt", message: "deno" },
                         },
                     ],
                 },
@@ -234,7 +238,63 @@ describe("+generator @e2e (run-javascript)", {
 
         expect(result).toHaveSucceeded();
         expect(ws.read("out/on-node.txt")).toBe("node");
-        expect(ws.read("out/on-bun.txt")).toBe("bun");
+        expect(ws.read("out/on-deno.txt")).toBe("deno");
+    });
+
+    it("runs an explicit `runtime: bun` now that Bun is confinable", {
+        timeout: 90_000,
+    }, async (ctx) => {
+        // Bun has no pre-spawn permission model, but capability enforcement no
+        // longer depends on one: the OS sandbox confines the filesystem and the
+        // script-level shim narrows `net`/`process` at the runtime boundary. A
+        // capability-free generator therefore runs under the built-in workspace
+        // floor and commits its in-workspace writes, same as node/deno.
+        if (!runtimeAvailable("bun")) {
+            ctx.skip();
+            return;
+        }
+
+        const ws = makeWorkspace({
+            workspace: {
+                projects: ["**"],
+                generators: [{ source: "local", path: "generators/**" }],
+            },
+            projects: {
+                "generators/bunny/generator.omni.yaml": {
+                    name: "bunny",
+                    description: "runs a confined script under bun",
+                    actions: [
+                        {
+                            type: "run-javascript",
+                            runtime: "bun",
+                            script: "gen.mjs",
+                            data: { target: "from-bun.txt", message: "bun" },
+                        },
+                    ],
+                },
+            },
+            files: {
+                ".omni/sources/generator/.keep": "",
+                "generators/bunny/gen.mjs": WRITE_SCRIPT,
+            },
+        });
+
+        const result = await runOmni(
+            [
+                "generator",
+                "run",
+                "-n",
+                "bunny",
+                "-o",
+                "out",
+                "--use-defaults",
+                "--save-session=false",
+            ],
+            { cwd: ws.cwd },
+        );
+
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/from-bun.txt")).toBe("bun");
     });
 
     it("should propagate errors from omni to the js script", async () => {

@@ -1,0 +1,26 @@
+[package]
+name = "omni_capabilities"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_capabilities"
+path = "src/lib.rs"
+
+[dependencies]
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+derive-new = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+merge = { workspace = true }
+globset = { workspace = true }
+path-clean = { workspace = true }
+omni_types = { workspace = true }
+
+[dev-dependencies]
