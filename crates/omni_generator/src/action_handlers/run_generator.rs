@@ -120,10 +120,23 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         .args(&config.args)
         .use_input_defaults(ctx.use_input_defaults)
         .available_generators(&available_generators)
+        .workspace_capabilities(ctx.workspace_capabilities)
         .input_provider(ctx.input_provider)
         .subscriber(ctx.subscriber)
         .max_depth(ctx.max_depth)
         .build();
+
+    // Under the shrink-only model the calling generator's authority binds its
+    // children: the child inherits our ceiling (workspace ⏺ ancestors) extended
+    // with *our own* policy, and can only narrow it further. This is safe by
+    // construction — the intersection guarantees the child cannot widen past
+    // anything we could do.
+    let mut child_inherited: Vec<
+        omni_capabilities::CapabilityRules<
+            omni_generator_configurations::Generator,
+        >,
+    > = ctx.inherited_capabilities.to_vec();
+    child_inherited.push(ctx.capabilities.clone());
 
     let prompted_input_values = Box::pin(run_internal(
         generator,
@@ -131,6 +144,10 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         sys,
         ctx.js_script_runner,
         ctx.depth + 1,
+        &child_inherited,
+        // The child inherits our accumulated stance (workspace ⟺ ancestors ⟺
+        // this generator), already most-severe, and may only tighten it.
+        ctx.capabilities_strictness,
     ))
     .await?;
 

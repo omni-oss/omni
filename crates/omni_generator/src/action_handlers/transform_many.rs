@@ -1,5 +1,5 @@
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::TransformManyActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSysFull,

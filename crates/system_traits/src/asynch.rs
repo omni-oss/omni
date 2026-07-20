@@ -516,3 +516,42 @@ pub trait FsAppendAsync: BaseFsAppendAsync {
 }
 
 impl<T: BaseFsAppendAsync> FsAppendAsync for T {}
+
+// == FsGlob ==
+
+/// Matches glob patterns against a set of files the system knows about.
+///
+/// This is the "base" trait that implementors provide; prefer the ergonomic
+/// [`FsGlobAsync`] for calling it. Unlike the other filesystem traits here,
+/// globbing is only meaningful for systems that expose a discrete set of files
+/// (for example an overlay that tracks pending in-memory writes), so it is
+/// modelled as its own trait rather than folded into a broader bound.
+#[async_trait]
+pub trait BaseFsGlobAsync {
+    /// Returns every known file whose path matches one of `patterns`, with the
+    /// patterns anchored under `root_dir`.
+    ///
+    /// A pattern prefixed with `!` is treated as an exclusion.
+    #[doc(hidden)]
+    async fn base_fs_glob_async(
+        &self,
+        root_dir: &Path,
+        patterns: &[&str],
+    ) -> io::Result<Vec<PathBuf>>;
+}
+
+/// Ergonomic wrapper over [`BaseFsGlobAsync`] that accepts any path-like
+/// `root_dir` and any slice of string-like `patterns`.
+#[async_trait]
+pub trait FsGlobAsync: BaseFsGlobAsync {
+    async fn fs_glob_async<P: AsRef<str> + Sync>(
+        &self,
+        root_dir: impl AsRef<Path> + Send,
+        patterns: &[P],
+    ) -> io::Result<Vec<PathBuf>> {
+        let patterns: Vec<&str> = patterns.iter().map(|p| p.as_ref()).collect();
+        self.base_fs_glob_async(root_dir.as_ref(), &patterns).await
+    }
+}
+
+impl<T: BaseFsGlobAsync> FsGlobAsync for T {}

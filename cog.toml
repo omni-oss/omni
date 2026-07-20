@@ -134,13 +134,6 @@ include = [
 ]
 public_api = false
 
-[monorepo.packages.js_runtime]
-path = "crates/js_runtime"
-include = [
-    "crates/js_runtime/**",
-]
-public_api = false
-
 [monorepo.packages.maps]
 path = "crates/maps"
 include = [
@@ -495,6 +488,34 @@ public_api = false
 path = "crates/omni_command_config"
 include = [
     "crates/omni_command_config/**",
+]
+public_api = false
+
+[monorepo.packages.omni_capabilities]
+path = "crates/omni_capabilities"
+include = [
+    "crates/omni_capabilities/**",
+]
+public_api = false
+
+[monorepo.packages.omni_capability_enforcement]
+path = "crates/omni_capability_enforcement"
+include = [
+    "crates/omni_capability_enforcement/**",
+]
+public_api = false
+
+[monorepo.packages.omni_capability_sys]
+path = "crates/omni_capability_sys"
+include = [
+    "crates/omni_capability_sys/**",
+]
+public_api = false
+
+[monorepo.packages.bridge_rpc_runner]
+path = "crates/bridge_rpc_runner"
+include = [
+    "crates/bridge_rpc_runner/**",
 ]
 public_api = false
 

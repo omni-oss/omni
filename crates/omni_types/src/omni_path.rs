@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use enum_map::{Enum, EnumArray, EnumMap};
+use enum_map::{Enum, EnumMap};
 use strum::{Display, EnumDiscriminants, IntoDiscriminant as _};
 
 #[derive(
@@ -36,11 +36,10 @@ pub trait OmniPathRoot:
     Copy
     + Clone
     + Display
-    + Enum
     + PartialEq
     + FromStr
     + strum::VariantArray
-    + for<'a> EnumArray<&'a StdPath>
+    + for<'a> Enum
 {
 }
 
@@ -48,11 +47,10 @@ impl<
     T: Copy
         + Clone
         + Display
-        + Enum
         + PartialEq
         + FromStr
         + strum::VariantArray
-        + for<'a> EnumArray<&'a StdPath>,
+        + for<'a> Enum,
 > OmniPathRoot for T
 {
 }

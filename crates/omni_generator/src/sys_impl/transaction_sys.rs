@@ -45,17 +45,17 @@ use omni_discovery_utils::glob::GlobMatcher;
 use path_clean::PathClean;
 use system_traits::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCopyAsync,
-    BaseFsCreateDir, BaseFsCreateDirAsync, BaseFsMetadataAsync,
-    BaseFsReadAsync, BaseFsReadDirAsync, BaseFsRemoveDir, BaseFsRemoveDirAll,
-    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
-    BaseFsRenameAsync, BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync,
-    EnvVars, FileType, FsCreateDirAll, FsMetadata, FsMetadataValue, FsRead,
-    FsRemoveFile, FsWrite,
+    BaseFsCreateDir, BaseFsCreateDirAsync, BaseFsGlobAsync,
+    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync, BaseFsRemoveDir,
+    BaseFsRemoveDirAll, BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync,
+    BaseFsRemoveFileAsync, BaseFsRenameAsync, BaseFsWriteAsync,
+    CreateDirOptions, EnvCurrentDirAsync, EnvVars, FileType, FsCreateDirAll,
+    FsMetadata, FsMetadataValue, FsRead, FsRemoveFile, FsWrite,
     impls::{InMemorySys, RealSys},
 };
 use tokio::sync::Mutex;
 
-use crate::{BaseFsGlobAsync, GeneratorSys};
+use crate::GeneratorSys;
 
 /// Identifies a checkpoint created by [`TransactionSys::checkpoint`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1314,7 +1314,7 @@ mod tests {
     use tempfile::{TempDir, tempdir};
 
     use super::*;
-    use crate::FsGlobAsync;
+    use system_traits::FsGlobAsync;
 
     /// Creates a fresh temporary directory whose lifetime is tied to the
     /// returned [`TempDir`] handle (cleaned up automatically on drop).

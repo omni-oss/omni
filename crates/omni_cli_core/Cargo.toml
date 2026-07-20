@@ -51,7 +51,6 @@ config_utils = { workspace = true, features = [
 ] }
 merge = { workspace = true }
 toml = { workspace = true }
-js_runtime = { workspace = true }
 system_traits = { workspace = true, features = [
     "real-async-tokio",
     "real-sync",

@@ -37,11 +37,12 @@ describe("bridge_rpc_services – /proc/* (omni_bridge_test_service)", {
         });
 
         it("env values are all strings", () => {
-            for (const [key, value] of Object.entries(system.proc.env())) {
-                expect(typeof value, `env[${key}] should be a string`).toBe(
-                    "string",
-                );
-            }
+            const env = system.proc.env();
+            for (const key of env.keys())
+                expect(
+                    typeof env.get(key),
+                    `env.get("${key}") should be a string`,
+                ).toBe("string");
         });
 
         it("snapshot is consistent with a freshly created system", async () => {

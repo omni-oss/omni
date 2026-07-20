@@ -4,6 +4,7 @@ use std::{
 };
 
 use maps::{Map, UnorderedMap, unordered_map};
+use omni_capabilities::{CapabilityRules, CapabilitiesStrictness};
 use omni_generator_configurations::{
     Generator, GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
@@ -37,6 +38,12 @@ use crate::{
 /// [`RunConfig::max_depth`] when a config legitimately nests deeper.
 pub const DEFAULT_MAX_GENERATOR_DEPTH: usize = 64;
 
+/// The empty workspace-capability floor used when a caller does not supply one
+/// (preserving the opt-in-per-generator behaviour). A workspace that declares a
+/// floor passes it explicitly via [`RunConfig::workspace_capabilities`].
+static EMPTY_WORKSPACE_CAPABILITIES: CapabilityRules<Generator> =
+    CapabilityRules(Vec::new());
+
 #[derive(Debug, bon::Builder)]
 pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     #[builder(default)]
@@ -53,6 +60,18 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     #[builder(default)]
     pub use_input_defaults: bool,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
+    /// Workspace-level capability floor (already upcast to the generator
+    /// profile). Folded ahead of each generator's own policy and forwarded to
+    /// nested generators, so a workspace `deny` cannot be re-opened downstream.
+    /// Defaults to empty (opt-in per generator).
+    #[builder(default = &EMPTY_WORKSPACE_CAPABILITIES)]
+    pub workspace_capabilities: &'a CapabilityRules<Generator>,
+    /// Workspace-level floor-gap strictness stance. Seeds the accumulated
+    /// strictness for the top-level generator and every nested run, combined
+    /// most-severe with each generator's and action's own stance. Defaults to
+    /// [`CapabilitiesStrictness::Warn`].
+    #[builder(default)]
+    pub workspace_strictness: CapabilitiesStrictness,
     pub input_provider: &'a dyn InputProvider<Generator>,
     pub subscriber: &'a S,
     /// Maximum `run-generator` nesting depth before a run is aborted. Use
@@ -112,6 +131,12 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         .into());
     }
 
+    // The workspace floor must itself be enforceable (e.g. no `net` rule, which
+    // generators cannot express). Validate once here; nested generators reuse
+    // the same already-validated floor.
+    omni_capabilities::validate(config.workspace_capabilities)
+        .map_err(ErrorInner::new_invalid_workspace_capabilities)?;
+
     crate::detect_recursion(generator, config.available_generators)?;
 
     // Serialize all generator runs within the same workspace. Generators can
@@ -138,7 +163,16 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
         })
         .await;
 
-    let result = run_internal(generator, config, &tx, &runner, 0).await;
+    let result = run_internal(
+        generator,
+        config,
+        &tx,
+        &runner,
+        0,
+        std::slice::from_ref(config.workspace_capabilities),
+        config.workspace_strictness,
+    )
+    .await;
 
     // Tear down the JS process (if one was started) regardless of outcome.
     runner.shutdown().await;
@@ -191,6 +225,8 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     sys: &impl GeneratorSysFull,
     runner: &dyn JsScriptRunner,
     depth: usize,
+    inherited_capabilities: &[CapabilityRules<Generator>],
+    inherited_strictness: CapabilitiesStrictness,
 ) -> Result<GenSession, Error> {
     if depth > config.max_depth {
         return Err(ErrorInner::new_max_generator_depth_exceeded(
@@ -270,11 +306,20 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         scope_id: r#gen.scope_id.as_deref(),
         targets: &r#gen.targets,
         overwrite: config.overwrite,
-        workspace_dir: config.workspace_dir,
         available_generators: config.available_generators,
         target_overrides: config.target_overrides,
         current_dir: config.current_dir,
         env: config.env,
+        workspace_dir: config.workspace_dir,
+        workspace_capabilities: config.workspace_capabilities,
+        inherited_capabilities,
+        capabilities: &r#gen.capabilities.rules,
+        // Effective floor-gap stance for this generator: the most-severe of
+        // everything inherited (workspace ⟺ ancestor generators) and this
+        // generator's own declared stance. `run-javascript` combines the
+        // action's stance on top of this.
+        capabilities_strictness: inherited_strictness
+            .max(r#gen.capabilities.strictness),
         js_script_runner: runner,
         input_provider: config.input_provider,
         subscriber: config.subscriber,
@@ -401,5 +446,510 @@ impl Action {
             }),
             sys_impl::Action::SetCurrentDir { .. } => None,
         })
+    }
+}
+
+#[cfg(test)]
+mod nesting_tests {
+    use std::borrow::Cow;
+
+    use omni_generator_configurations::{
+        ActionConfiguration, BaseActionConfiguration, GeneratorConfiguration,
+        InputValuesConfiguration, JsRuntimeOption,
+        RunGeneratorActionConfiguration, RunJavaScriptActionConfiguration,
+    };
+    use omni_input_provider::scripted::ScriptedInputProvider;
+    use system_traits::impls::RealSys;
+
+    use super::*;
+    use crate::action_handlers::test_harness::MockJsScriptRunner;
+
+    fn base() -> BaseActionConfiguration {
+        BaseActionConfiguration {
+            r#if: None,
+            name: None,
+            in_progress_message: None,
+            success_message: None,
+            error_message: None,
+        }
+    }
+
+    fn run_js(script: &str) -> ActionConfiguration {
+        ActionConfiguration::RunJavaScript {
+            action: RunJavaScriptActionConfiguration {
+                base: base(),
+                data: Default::default(),
+                runtime: JsRuntimeOption::Auto,
+                script: script.into(),
+                capabilities: Default::default(),
+            },
+        }
+    }
+
+    fn run_gen(target: &str) -> ActionConfiguration {
+        ActionConfiguration::RunGenerator {
+            action: RunGeneratorActionConfiguration {
+                base: base(),
+                generator: target.to_string(),
+                input_values: InputValuesConfiguration::default(),
+                args: UnorderedMap::default(),
+                output_dir: None,
+                targets: UnorderedMap::default(),
+            },
+        }
+    }
+
+    fn caps(json: &str) -> CapabilityRules<Generator> {
+        serde_json::from_str(json).expect("valid capability chain")
+    }
+
+    fn generator(
+        name: &str,
+        capabilities: CapabilityRules<Generator>,
+        actions: Vec<ActionConfiguration>,
+    ) -> GeneratorConfiguration {
+        GeneratorConfiguration {
+            // The generator dir (config_path parent) is where its scripts
+            // resolve, so distinct dirs keep the two `.mjs` paths
+            // distinguishable in the recorded invocations.
+            config_path: PathBuf::from(format!(
+                "/fake/{name}/generator.omni.yaml"
+            )),
+            scope_id: None,
+            user_invocable: true,
+            name: name.to_string(),
+            display_name: None,
+            description: None,
+            inputs: vec![],
+            actions,
+            vars: UnorderedMap::default(),
+            targets: UnorderedMap::default(),
+            capabilities: omni_capabilities::CapabilityPolicyConfig::from_rules(
+                capabilities,
+            ),
+        }
+    }
+
+    /// Runs `entry` (with `generators` available and `workspace_caps` as the
+    /// floor) and returns, keyed by each executed script's file name, the
+    /// JSON-serialized policy level stack it ran under and the number of levels
+    /// in that stack. Centralizes the config/runner boilerplate shared by the
+    /// nesting tests.
+    async fn run_and_collect_stacks(
+        entry: &GeneratorConfiguration,
+        generators: &[Cow<'_, GeneratorConfiguration>],
+        workspace_caps: &CapabilityRules<Generator>,
+    ) -> std::collections::HashMap<String, (String, usize)> {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ws = tmp.path().to_path_buf();
+        let empty_targets = UnorderedMap::default();
+        let empty_values = UnorderedMap::default();
+        let empty_ctx = UnorderedMap::default();
+        let env = Map::default();
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+
+        let config = RunConfig::builder()
+            .output_dir(&ws)
+            .workspace_dir(&ws)
+            .current_dir(&ws)
+            .target_overrides(&empty_targets)
+            .input_values(&empty_values)
+            .context_values(&empty_ctx)
+            .env(&env)
+            .available_generators(generators)
+            .workspace_capabilities(workspace_caps)
+            .input_provider(&provider)
+            .subscriber(&NoopSubscriber)
+            .build();
+
+        let mock = MockJsScriptRunner::default();
+        let sys = TransactionSys::new(RealSys);
+        run_internal(
+            entry,
+            &config,
+            &sys,
+            &mock,
+            0,
+            std::slice::from_ref(workspace_caps),
+            CapabilitiesStrictness::default(),
+        )
+        .await
+        .expect("nested run should succeed");
+
+        // Each recorded level stack is parallel to its invocation; correlate
+        // them by the script's file name and serialize the stack so tests can
+        // assert which patterns (levels) it carried, and how many.
+        let invs = mock.invocations.lock().unwrap();
+        let level_stacks = mock.levels.lock().unwrap();
+        assert_eq!(level_stacks.len(), invs.len());
+        invs.iter()
+            .enumerate()
+            .map(|(idx, (_rt, scripts))| {
+                let name = std::path::Path::new(&scripts[0].path)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                let stack = &level_stacks[idx];
+                (name, (serde_json::to_string(stack).unwrap(), stack.len()))
+            })
+            .collect()
+    }
+
+    /// Under the shrink-only (attenuation) model a nested `run-generator`
+    /// **inherits the calling generator's ceiling** and can only narrow it. The
+    /// child's level stack must therefore be `workspace ⧺ parent-own ⧺
+    /// child-own` (outermost → innermost), proving both that the parent's policy
+    /// now binds the child and that the child still contributes its own level.
+    /// The parent, by contrast, runs under `workspace ⧺ parent-own` only.
+    #[tokio::test]
+    async fn nested_generator_inherits_the_parents_ceiling() {
+        // Three disjoint, easily-recognizable read patterns, one per level.
+        let workspace_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/shared/**"] }]"#,
+        );
+        let parent_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/parent-only/**"] }]"#,
+        );
+        let child_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/child-only/**"] }]"#,
+        );
+
+        let parent = generator(
+            "parent",
+            parent_caps,
+            vec![run_js("parent.mjs"), run_gen("child")],
+        );
+        let child = generator("child", child_caps, vec![run_js("child.mjs")]);
+
+        let generators = vec![Cow::Owned(parent.clone()), Cow::Owned(child)];
+        let stacks =
+            run_and_collect_stacks(&parent, &generators, &workspace_caps).await;
+
+        // Two `run-javascript` dispatches: parent.mjs then child.mjs.
+        assert_eq!(
+            stacks.len(),
+            2,
+            "expected the parent and the nested script"
+        );
+        let (parent_json, parent_len) =
+            stacks.get("parent.mjs").expect("parent.mjs must have run");
+        let (child_json, child_len) =
+            stacks.get("child.mjs").expect("child.mjs must have run");
+
+        // The parent's stack = workspace floor ⧺ its own policy ⧺ the action's
+        // (empty) policy. The child's rule must not leak up into the parent.
+        assert!(parent_json.contains("@workspace/shared/**"));
+        assert!(parent_json.contains("@workspace/parent-only/**"));
+        assert!(
+            !parent_json.contains("@workspace/child-only/**"),
+            "the child's policy must not leak up into the parent"
+        );
+
+        // The child inherits the parent's whole ceiling AND adds its own level:
+        // workspace ⧺ parent-only ⧺ child-only all appear. Crucially the
+        // parent-only rule IS now present (propagated as an inherited ceiling),
+        // which is the shrink-only behaviour.
+        assert!(
+            child_json.contains("@workspace/shared/**"),
+            "workspace floor must be forwarded to the nested generator"
+        );
+        assert!(
+            child_json.contains("@workspace/parent-only/**"),
+            "the calling generator's own policy must bind the nested child"
+        );
+        assert!(child_json.contains("@workspace/child-only/**"));
+
+        // The child carries strictly more levels than the parent (it inherits
+        // the parent's own policy as an extra ceiling level), so distinct
+        // policies still yield distinct pool fingerprints and no process reuse.
+        assert!(
+            child_len > parent_len,
+            "the child must inherit an extra ceiling level from the parent"
+        );
+        assert_ne!(parent_json, child_json);
+    }
+
+    /// Deep-nesting regression: with three generator levels
+    /// (grandparent → parent → child) the ceiling must **accumulate** at every
+    /// `run-generator` boundary, not collapse to the immediate parent. The
+    /// grandparent's own policy must still bind the leaf child even though an
+    /// intervening parent level sits between them — proving the chain is not
+    /// flattened to a single parent step.
+    #[tokio::test]
+    async fn deeply_nested_generator_inherits_the_whole_ancestor_chain() {
+        // One disjoint, easily-recognizable read pattern per level.
+        let workspace_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/shared/**"] }]"#,
+        );
+        let grandparent_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/grandparent-only/**"] }]"#,
+        );
+        let parent_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/parent-only/**"] }]"#,
+        );
+        let child_caps = caps(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/child-only/**"] }]"#,
+        );
+
+        let grandparent = generator(
+            "grandparent",
+            grandparent_caps,
+            vec![run_js("grandparent.mjs"), run_gen("parent")],
+        );
+        let parent = generator(
+            "parent",
+            parent_caps,
+            vec![run_js("parent.mjs"), run_gen("child")],
+        );
+        let child = generator("child", child_caps, vec![run_js("child.mjs")]);
+
+        let generators = vec![
+            Cow::Owned(grandparent.clone()),
+            Cow::Owned(parent),
+            Cow::Owned(child),
+        ];
+        let stacks =
+            run_and_collect_stacks(&grandparent, &generators, &workspace_caps)
+                .await;
+
+        // Three `run-javascript` dispatches: grandparent.mjs, parent.mjs,
+        // child.mjs.
+        assert_eq!(stacks.len(), 3, "expected all three nested scripts");
+        let (grandparent_json, _) = stacks
+            .get("grandparent.mjs")
+            .expect("grandparent.mjs must have run");
+        let (parent_json, _) =
+            stacks.get("parent.mjs").expect("parent.mjs must have run");
+        let (child_json, _) =
+            stacks.get("child.mjs").expect("child.mjs must have run");
+
+        // Grandparent runs under workspace ⧺ its own policy only; no descendant
+        // rule may leak upward.
+        assert!(grandparent_json.contains("@workspace/shared/**"));
+        assert!(grandparent_json.contains("@workspace/grandparent-only/**"));
+        assert!(
+            !grandparent_json.contains("@workspace/parent-only/**"),
+            "a descendant's policy must not leak up into the grandparent"
+        );
+        assert!(!grandparent_json.contains("@workspace/child-only/**"));
+
+        // Parent inherits workspace ⧺ grandparent, adds its own; the child's
+        // rule must still not leak up.
+        assert!(parent_json.contains("@workspace/shared/**"));
+        assert!(
+            parent_json.contains("@workspace/grandparent-only/**"),
+            "the grandparent's policy must bind the parent"
+        );
+        assert!(parent_json.contains("@workspace/parent-only/**"));
+        assert!(
+            !parent_json.contains("@workspace/child-only/**"),
+            "the child's policy must not leak up into the parent"
+        );
+
+        // The leaf child inherits the WHOLE ancestor chain: workspace ⧺
+        // grandparent ⧺ parent, plus its own level. The critical assertion is
+        // that the grandparent-only rule — two levels up, across an intervening
+        // parent — still appears, i.e. the ceiling accumulates rather than
+        // collapsing to the immediate parent.
+        assert!(
+            child_json.contains("@workspace/shared/**"),
+            "workspace floor must reach the leaf child"
+        );
+        assert!(
+            child_json.contains("@workspace/grandparent-only/**"),
+            "the grandparent's policy must bind the leaf child across the intervening parent level"
+        );
+        assert!(
+            child_json.contains("@workspace/parent-only/**"),
+            "the immediate parent's policy must bind the leaf child"
+        );
+        assert!(child_json.contains("@workspace/child-only/**"));
+    }
+
+    /// An action whose own policy declares a `require-floor` stance.
+    fn run_js_strict(script: &str) -> ActionConfiguration {
+        ActionConfiguration::RunJavaScript {
+            action: RunJavaScriptActionConfiguration {
+                base: base(),
+                data: Default::default(),
+                runtime: JsRuntimeOption::Auto,
+                script: script.into(),
+                capabilities: omni_capabilities::CapabilityPolicyConfig {
+                    rules: Default::default(),
+                    strictness: CapabilitiesStrictness::RequireFloor,
+                },
+            },
+        }
+    }
+
+    /// A generator whose own policy declares the given strictness stance.
+    fn generator_with_strictness(
+        name: &str,
+        strictness: CapabilitiesStrictness,
+        actions: Vec<ActionConfiguration>,
+    ) -> GeneratorConfiguration {
+        let mut g = generator(name, CapabilityRules::default(), actions);
+        g.capabilities.strictness = strictness;
+        g
+    }
+
+    /// Runs `entry` seeding the accumulated stance with `workspace_strictness`
+    /// and returns, keyed by each executed script's file name, the effective
+    /// [`CapabilitiesStrictness`] the script actually ran under.
+    async fn run_and_collect_strictness(
+        entry: &GeneratorConfiguration,
+        generators: &[Cow<'_, GeneratorConfiguration>],
+        workspace_strictness: CapabilitiesStrictness,
+    ) -> std::collections::HashMap<String, CapabilitiesStrictness> {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let ws = tmp.path().to_path_buf();
+        let empty_targets = UnorderedMap::default();
+        let empty_values = UnorderedMap::default();
+        let empty_ctx = UnorderedMap::default();
+        let env = Map::default();
+        let workspace_caps = CapabilityRules::<Generator>::default();
+        let provider =
+            ScriptedInputProvider::new(std::iter::empty::<(&str, &str)>());
+
+        let config = RunConfig::builder()
+            .output_dir(&ws)
+            .workspace_dir(&ws)
+            .current_dir(&ws)
+            .target_overrides(&empty_targets)
+            .input_values(&empty_values)
+            .context_values(&empty_ctx)
+            .env(&env)
+            .available_generators(generators)
+            .workspace_capabilities(&workspace_caps)
+            .workspace_strictness(workspace_strictness)
+            .input_provider(&provider)
+            .subscriber(&NoopSubscriber)
+            .build();
+
+        let mock = MockJsScriptRunner::default();
+        let sys = TransactionSys::new(RealSys);
+        run_internal(
+            entry,
+            &config,
+            &sys,
+            &mock,
+            0,
+            std::slice::from_ref(&workspace_caps),
+            workspace_strictness,
+        )
+        .await
+        .expect("run should succeed");
+
+        let invs = mock.invocations.lock().unwrap();
+        let strictness = mock.strictness.lock().unwrap();
+        assert_eq!(strictness.len(), invs.len());
+        invs.iter()
+            .enumerate()
+            .map(|(idx, (_rt, scripts))| {
+                let name = std::path::Path::new(&scripts[0].path)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                (name, strictness[idx])
+            })
+            .collect()
+    }
+
+    /// A `require-floor` workspace stance must reach a `warn` generator's script
+    /// (strictness combines most-severe, it does not attenuate like rules).
+    #[tokio::test]
+    async fn workspace_require_floor_binds_a_warn_generator() {
+        let g = generator_with_strictness(
+            "g",
+            CapabilitiesStrictness::Warn,
+            vec![run_js("g.mjs")],
+        );
+        let generators = vec![Cow::Owned(g.clone())];
+        let out = run_and_collect_strictness(
+            &g,
+            &generators,
+            CapabilitiesStrictness::RequireFloor,
+        )
+        .await;
+        assert_eq!(out["g.mjs"], CapabilitiesStrictness::RequireFloor);
+    }
+
+    /// A generator's own `require-floor` stance tightens a `warn` workspace.
+    #[tokio::test]
+    async fn generator_require_floor_tightens_a_warn_workspace() {
+        let g = generator_with_strictness(
+            "g",
+            CapabilitiesStrictness::RequireFloor,
+            vec![run_js("g.mjs")],
+        );
+        let generators = vec![Cow::Owned(g.clone())];
+        let out = run_and_collect_strictness(
+            &g,
+            &generators,
+            CapabilitiesStrictness::Warn,
+        )
+        .await;
+        assert_eq!(out["g.mjs"], CapabilitiesStrictness::RequireFloor);
+    }
+
+    /// An action's own `require-floor` stance tightens a `warn` generator.
+    #[tokio::test]
+    async fn action_require_floor_tightens_a_warn_generator() {
+        let g = generator_with_strictness(
+            "g",
+            CapabilitiesStrictness::Warn,
+            vec![run_js_strict("g.mjs")],
+        );
+        let generators = vec![Cow::Owned(g.clone())];
+        let out = run_and_collect_strictness(
+            &g,
+            &generators,
+            CapabilitiesStrictness::Warn,
+        )
+        .await;
+        assert_eq!(out["g.mjs"], CapabilitiesStrictness::RequireFloor);
+    }
+
+    /// Strictness accumulates most-severe across a deep chain: a `require-floor`
+    /// grandparent binds a leaf child two levels down, even though the
+    /// intervening parent and the child are both `warn`.
+    #[tokio::test]
+    async fn strictness_accumulates_across_the_ancestor_chain() {
+        let grandparent = generator_with_strictness(
+            "grandparent",
+            CapabilitiesStrictness::RequireFloor,
+            vec![run_js("grandparent.mjs"), run_gen("parent")],
+        );
+        let parent = generator_with_strictness(
+            "parent",
+            CapabilitiesStrictness::Warn,
+            vec![run_js("parent.mjs"), run_gen("child")],
+        );
+        let child = generator_with_strictness(
+            "child",
+            CapabilitiesStrictness::Warn,
+            vec![run_js("child.mjs")],
+        );
+        let generators = vec![
+            Cow::Owned(grandparent.clone()),
+            Cow::Owned(parent),
+            Cow::Owned(child),
+        ];
+        let out = run_and_collect_strictness(
+            &grandparent,
+            &generators,
+            CapabilitiesStrictness::Warn,
+        )
+        .await;
+        // Every script from the require-floor grandparent downward inherits it.
+        assert_eq!(
+            out["grandparent.mjs"],
+            CapabilitiesStrictness::RequireFloor
+        );
+        assert_eq!(out["parent.mjs"], CapabilitiesStrictness::RequireFloor);
+        assert_eq!(out["child.mjs"], CapabilitiesStrictness::RequireFloor);
     }
 }

@@ -19,13 +19,13 @@ readme = "README.md"
 documentation = "https://docs.rs/omni"
 description = "A build system for the modern age"
 categories = []
-rust-version = "1.97.0"
+rust-version = "1.97.1"
 edition = "2024"
 version = "0.19.0"
 authors = ["Clarence Manuel <rencedm112@gmail.com>"]
 
 [workspace.dependencies]
-serde = { version = "^1.0.228", features = ["derive", "rc", "alloc"] }
+serde = { version = "^1.0.229", features = ["derive", "rc", "alloc"] }
 serde-untagged = { version = "^0.1.9" }
 serde_path_to_error = { version = "^0.1.20" }
 sys_traits = { version = "^0.1.28", features = ["real"] }
@@ -97,7 +97,6 @@ env_loader = { path = "./crates/env_loader" }
 petgraph = { version = "^0.8.3", features = ["serde-1", "rayon"] }
 omni_core = { path = "./crates/omni_core" }
 config_utils = { path = "./crates/config_utils" }
-js_runtime = { path = "./crates/js_runtime" }
 toml = { version = "^1.1.2" }
 uuid = { version = "^1.23.1", features = ["v4", "v7", "serde"] }
 url = { version = "^2.5.8", features = ["serde"] }
@@ -136,7 +135,7 @@ maps = { path = "./crates/maps" }
 sets = { path = "./crates/sets" }
 criterion = { version = "^0.8.2", features = ["html_reports", "async_tokio"] }
 dhat = { version = "^0.3.3" }
-enum-map = { version = "^2.7.3" }
+enum-map = { version = "^3.1.0", features = ["serde", "bytemuck"] }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
 rmcp = { version = "^2.0.0", features = ["server", "macros", "transport-io"] }
@@ -187,6 +186,10 @@ serde-wasm-bindgen = { version = "^0.6.5" }
 console_error_panic_hook = { version = "^0.1.7" }
 wasm-bindgen-test = { version = "^0.3.50" }
 omni_command_config = { path = "crates/omni_command_config" }
+omni_capabilities = { path = "crates/omni_capabilities" }
+omni_capability_enforcement = { path = "crates/omni_capability_enforcement" }
+omni_capability_sys = { path = "crates/omni_capability_sys" }
+bridge_rpc_runner = { path = "crates/bridge_rpc_runner" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

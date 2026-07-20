@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::TransformActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,

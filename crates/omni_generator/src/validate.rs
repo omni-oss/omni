@@ -22,6 +22,36 @@ pub fn validate(
         }
 
         names.insert(generator.name.clone());
+
+        // Fail-closed authoring: reject any capability rule whose domain the
+        // generator subsystem does not support (e.g. `net`) before a run can
+        // begin.
+        omni_capabilities::validate(&generator.capabilities.rules).map_err(
+            |source| {
+                ErrorInner::new_invalid_capabilities(
+                    generator.name.clone(),
+                    generator.config_path.clone(),
+                    source,
+                )
+            },
+        )?;
+
+        // Action-level capabilities (on `run-javascript`) are the last cascade
+        // level; validate them here too so an unsupported domain fails at load
+        // rather than mid-run.
+        for action in &generator.actions {
+            if let ActionConfiguration::RunJavaScript { action: js } = action {
+                omni_capabilities::validate(&js.capabilities.rules).map_err(
+                    |source| {
+                        ErrorInner::new_invalid_capabilities(
+                            generator.name.clone(),
+                            generator.config_path.clone(),
+                            source,
+                        )
+                    },
+                )?;
+            }
+        }
     }
 
     Ok(())
@@ -129,6 +159,7 @@ mod tests {
                 .collect(),
             vars: UnorderedMap::default(),
             targets: UnorderedMap::default(),
+            capabilities: Default::default(),
         }
     }
 
@@ -151,6 +182,58 @@ mod tests {
         let b = make_gen("b", &[]);
         let c = make_gen("c", &[]);
         assert!(validate(&to_cows(&[a, b, c])).is_ok());
+    }
+
+    #[test]
+    fn accepts_generator_level_env_capability() {
+        // Generators now govern `env` (it is in `Generator::SUPPORTED`), so an
+        // `env` rule must load without error.
+        let mut cfg = make_gen("g", &[]);
+        cfg.capabilities.rules = serde_json::from_str(
+            r#"[{ "access": "allow", "domain": "env", "patterns": ["HOME"] }]"#,
+        )
+        .expect("parses as a raw capabilities array");
+        validate(&to_cows(std::slice::from_ref(&cfg)))
+            .expect("env is a supported generator domain");
+    }
+
+    #[test]
+    fn accepts_action_level_env_capability() {
+        use omni_generator_configurations::RunJavaScriptActionConfiguration;
+
+        // An action-level `env` rule must also load without error.
+        let mut cfg = make_gen("g", &[]);
+        let mut js = RunJavaScriptActionConfiguration {
+            base: BaseActionConfiguration {
+                r#if: None,
+                name: None,
+                in_progress_message: None,
+                success_message: None,
+                error_message: None,
+            },
+            data: Default::default(),
+            runtime: Default::default(),
+            script: PathBuf::from("gen.js"),
+            capabilities: Default::default(),
+        };
+        js.capabilities.rules = serde_json::from_str(
+            r#"[{ "access": "allow", "domain": "env", "patterns": ["HOME"] }]"#,
+        )
+        .expect("parses as a raw capabilities array");
+        cfg.actions = vec![ActionConfiguration::RunJavaScript { action: js }];
+
+        validate(&to_cows(std::slice::from_ref(&cfg)))
+            .expect("env is a supported generator-action domain");
+    }
+
+    #[test]
+    fn allows_capability_with_supported_domain() {
+        let mut cfg = make_gen("g", &[]);
+        cfg.capabilities.rules = serde_json::from_str(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
+        )
+        .expect("parses");
+        assert!(validate(&to_cows(std::slice::from_ref(&cfg))).is_ok());
     }
 
     #[test]
