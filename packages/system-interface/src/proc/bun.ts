@@ -1,5 +1,6 @@
 import { throwIfBunNotAvailable } from "@/platform-helpers";
-import type { ArgsList, Process, ProcessEnv } from ".";
+import type { ArgsList, Env, Process } from ".";
+import { ObjectEnv } from "./env";
 import { NodeProcess } from "./node";
 
 export class BunProcess implements Process {
@@ -19,9 +20,9 @@ export class BunProcess implements Process {
         return Bun.argv;
     }
 
-    env(): ProcessEnv {
+    env(): Env {
         throwIfBunNotAvailable();
 
-        return Bun.env;
+        return new ObjectEnv(Bun.env);
     }
 }

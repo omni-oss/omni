@@ -1,9 +1,10 @@
 use std::{borrow::Cow, path::Path};
 
 use maps::{Map, UnorderedMap};
+use omni_capabilities::CapabilityRules;
 use omni_generator_configurations::{
-    ActionConfiguration, GeneratorConfiguration, OmniPath,
-    OverwriteConfiguration,
+    ActionConfiguration, CapabilitiesStrictness, Generator,
+    GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
 use omni_messages::{
     GeneratorEventSubscriber, NoopSubscriber,
@@ -45,6 +46,17 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub overwrite: Option<OverwriteConfiguration>,
     pub available_generators: &'a [Cow<'a, GeneratorConfiguration>],
     pub env: &'a Map<String, String>,
+    /// The workspace-level capability floor, forwarded as the workspace floor to
+    /// nested generators and the outermost level of the inherited ceiling.
+    pub workspace_capabilities: &'a CapabilityRules<Generator>,
+    /// The inherited capability ceiling (ordered, outermost first) that this
+    /// generator may only narrow. See [`HandlerContext`].
+    pub inherited_capabilities: &'a [CapabilityRules<Generator>],
+    /// The current generator's capability policy, threaded to `run-javascript`.
+    pub capabilities: &'a CapabilityRules<Generator>,
+    /// Effective floor-gap strictness for this generator: the most-severe of the
+    /// workspace, all ancestor generators, and this generator's own stance.
+    pub capabilities_strictness: CapabilitiesStrictness,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
@@ -110,6 +122,10 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             resolved_action_name: action_name.as_str(),
             current_dir: args.current_dir,
             env: args.env,
+            workspace_capabilities: args.workspace_capabilities,
+            inherited_capabilities: args.inherited_capabilities,
+            capabilities: args.capabilities,
+            capabilities_strictness: args.capabilities_strictness,
             gen_session,
             js_script_runner: args.js_script_runner,
             input_provider: args.input_provider,

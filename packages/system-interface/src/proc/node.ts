@@ -1,5 +1,6 @@
 import process from "node:process";
-import type { ArgsList, Process, ProcessEnv } from ".";
+import type { ArgsList, Env, Process } from ".";
+import { ObjectEnv } from "./env";
 
 export class NodeProcess implements Process {
     currentDir(): string {
@@ -15,7 +16,7 @@ export class NodeProcess implements Process {
         return process.argv;
     }
 
-    env(): ProcessEnv {
-        return process.env;
+    env(): Env {
+        return new ObjectEnv(process.env);
     }
 }

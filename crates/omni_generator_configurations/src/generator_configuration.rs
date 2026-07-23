@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::{
-    ActionConfiguration, Generator, OmniPath,
+    ActionConfiguration, CapabilityPolicyConfig, Generator, OmniPath,
     validators::{validate_umap_serde_json, validate_umap_target_path},
 };
 use garde::Validate;
@@ -64,6 +64,27 @@ pub struct GeneratorConfiguration {
     #[serde(deserialize_with = "validate_umap_target_path")]
     #[serde(default)]
     pub targets: UnorderedMap<String, OmniPath>,
+
+    /// Capability policy governing what this generator's scripts may do
+    /// (filesystem / process / network access).
+    ///
+    /// An object of `{ rules, strictness }`:
+    ///
+    /// * `rules` cascade by concatenation over the surrounding levels
+    ///   (workspace ⟺ generator ⟺ action); a matching `deny` always wins, so a
+    ///   more specific level can only ever *narrow* authority. Only the domains
+    ///   the generator subsystem supports (`fs.read`, `fs.write`, `process`,
+    ///   `net`) are accepted — an unsupported domain is rejected when the config
+    ///   is loaded.
+    /// * `strictness` (`warn` default, or `require-floor`) controls how a
+    ///   *floor gap* is treated: a governed domain that, on the resolved
+    ///   runtime/platform, rests only on a bypassable in-process mechanism with
+    ///   no un-bypassable runtime-flag or OS-sandbox floor. `require-floor`
+    ///   refuses to run unless every governed domain has such a floor.
+    ///   Strictness combines most-severe across the workspace, generator, and
+    ///   action levels.
+    #[serde(default)]
+    pub capabilities: CapabilityPolicyConfig<Generator>,
 }
 
 fn default_true() -> bool {
@@ -76,6 +97,42 @@ mod tests {
     use serde_json::json;
 
     use super::GeneratorConfiguration;
+
+    #[test]
+    fn capabilities_strictness_defaults_to_warn_and_parses_require_floor() {
+        use crate::CapabilitiesStrictness;
+
+        // Absent → the default `Warn` stance.
+        let default_cfg: GeneratorConfiguration =
+            serde_json::from_value(json!({ "name": "g", "actions": [] }))
+                .expect("parses without the field");
+        assert_eq!(
+            default_cfg.capabilities.strictness,
+            CapabilitiesStrictness::Warn
+        );
+
+        // Present, in the kebab-case wire form, nested under `capabilities`.
+        let strict_cfg: GeneratorConfiguration =
+            serde_json::from_value(json!({
+                "name": "g",
+                "actions": [],
+                "capabilities": { "strictness": "require-floor" }
+            }))
+            .expect("parses require-floor");
+        assert_eq!(
+            strict_cfg.capabilities.strictness,
+            CapabilitiesStrictness::RequireFloor
+        );
+
+        // An unknown stance is rejected rather than silently ignored.
+        let bad: Result<GeneratorConfiguration, _> =
+            serde_json::from_value(json!({
+                "name": "g",
+                "actions": [],
+                "capabilities": { "strictness": "yolo" }
+            }));
+        assert!(bad.is_err(), "an unknown strictness value must be rejected");
+    }
 
     #[test]
     fn deserializes_data_typed_inputs_from_json() {

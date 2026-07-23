@@ -16,7 +16,6 @@ dependencies:
   - omni_types
   - omni_process
   - omni_utils
-  - js_runtime
   - dir_walker
   - system_traits
   - maps

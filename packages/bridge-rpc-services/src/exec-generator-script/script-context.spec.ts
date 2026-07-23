@@ -72,7 +72,12 @@ describe("DefaultScriptContext", () => {
         });
 
         expect(systemCreateMock).toHaveBeenCalledTimes(1);
-        expect(systemCreateMock).toHaveBeenCalledWith(ClientHandle.DUMMY);
+        // Called with the client handle plus the env-rule options derived from
+        // the active policy (no policy installed in this test → `undefined`,
+        // i.e. the snapshot passes through unfiltered).
+        expect(systemCreateMock).toHaveBeenCalledWith(ClientHandle.DUMMY, {
+            envRules: undefined,
+        });
         // The base system is wrapped to virtualise the current directory, so
         // `sys` is not the raw marker but its `proc.currentDir()` starts at the
         // provided `outputDir`.

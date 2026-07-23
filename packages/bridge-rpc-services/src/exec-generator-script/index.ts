@@ -1,4 +1,13 @@
 export {
+    activePolicy,
+    buildEnforcedSystem,
+    CapabilityPolicy,
+    installBuiltinModuleEnforcement,
+    installGlobalEnforcement,
+    NetworkPolicyError,
+    ProcessPolicyError,
+} from "./enforcement";
+export {
     InMemoryCwdFileSystem,
     InMemoryCwdProcess,
     InMemoryCwdSystem,

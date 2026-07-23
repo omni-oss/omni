@@ -1,4 +1,4 @@
-import type { ArgsList, Process, ProcessEnv } from "./interfaces";
+import type { ArgsList, Env, Process } from "./interfaces";
 
 async function getProc(): Promise<Process> {
     if (typeof Deno !== "undefined") {
@@ -31,7 +31,7 @@ export class OptimizedProcess implements Process {
         return this.proc.args();
     }
 
-    env(): ProcessEnv {
+    env(): Env {
         return this.proc.env();
     }
 }

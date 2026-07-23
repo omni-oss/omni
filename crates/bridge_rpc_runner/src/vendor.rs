@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 
 use rust_embed::RustEmbed;
 
-use crate::{JsRuntimeError, error};
+use crate::{BridgeRunnerError, error};
 
 /// The package name used for the restored bundle when written into a
 /// `node_modules` directory.
@@ -118,7 +118,7 @@ impl VendoredBridgeService {
     pub async fn ensure(
         &self,
         context_dir: &Path,
-    ) -> Result<VendoredLocation, JsRuntimeError> {
+    ) -> Result<VendoredLocation, BridgeRunnerError> {
         let root = self.resolve_target(context_dir);
         let entrypoint = root.join(ENTRYPOINT_REL);
 
@@ -221,7 +221,7 @@ impl VendoredBridgeService {
 
 /// Parses the embedded `package.json`, rewrites its `name` to
 /// [`VENDORED_PACKAGE_NAME`], and reserializes it.
-fn rewrite_package_name(raw: &[u8]) -> Result<Vec<u8>, JsRuntimeError> {
+fn rewrite_package_name(raw: &[u8]) -> Result<Vec<u8>, BridgeRunnerError> {
     let mut value: serde_json::Value = serde_json::from_slice(raw)
         .map_err(|e| error::error!("failed to parse package.json: {e}"))?;
 

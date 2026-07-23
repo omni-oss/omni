@@ -1,8 +1,8 @@
 import type { Logger } from "@omni-oss/log";
-import type { System } from "@omni-oss/system-interface";
+import type { EnforcedSystem } from "./enforced-system";
 
 export type GeneratorScriptContext = Readonly<{
-    sys: System;
+    sys: EnforcedSystem;
     log: Logger;
     isDryRun: boolean;
     outputDir: string;

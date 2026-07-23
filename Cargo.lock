@@ -1653,6 +1653,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "bridge_rpc_runner"
+version = "0.0.1"
+dependencies = [
+ "bridge_rpc_core",
+ "bridge_rpc_router",
+ "eyre",
+ "omni_capability_enforcement",
+ "omni_utils",
+ "rust-embed",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "which",
+]
+
+[[package]]
 name = "bridge_rpc_services"
 version = "0.0.1"
 dependencies = [
@@ -1778,9 +1799,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.25.0"
+version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
+checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 
 [[package]]
 name = "byteorder"
@@ -3146,22 +3167,24 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "enum-map"
-version = "2.7.3"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6866f3bfdf8207509a033af1a75a7b08abda06bbaaeae6669323fd5a097df2e9"
+checksum = "d4532960034c15ba2f55e9eee631040ecc473c32e6c4b200828c759840f13a06"
 dependencies = [
+ "bytemuck",
  "enum-map-derive",
+ "serde",
 ]
 
 [[package]]
 name = "enum-map-derive"
-version = "0.17.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f282cfdfe92516eb26c2af8589c274c7c17681f5ecc03c18255fe741c6aa64eb"
+checksum = "4bcb37146b17400613e7a7eb6a585f9319d3edaea6fc718e37a1ecf7f27c6373"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5569,33 +5592,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "js_runtime"
-version = "0.2.0"
-dependencies = [
- "async-trait",
- "bridge_rpc_core",
- "bridge_rpc_router",
- "bytes 1.11.1",
- "eyre",
- "futures 0.3.32",
- "log",
- "omni_utils",
- "rust-embed",
- "schemars",
- "serde",
- "serde_json",
- "strum 0.28.0",
- "system_traits",
- "tempfile",
- "thiserror 2.0.18",
- "tokio 1.52.3",
- "tokio-util",
- "trace",
- "url",
- "which",
-]
-
-[[package]]
 name = "kasuari"
 version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5645,6 +5641,17 @@ name = "lab"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf36173d4167ed999940f804952e6b08197cae5ad5d572eb4db150ce8ad5d58f"
+
+[[package]]
+name = "landlock"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "635839550ae8b90d9fd2571460a6645dc0aec070225956ca7a2831ed31d2795d"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "language-tags"
@@ -6640,6 +6647,50 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_capabilities"
+version = "0.0.0"
+dependencies = [
+ "derive-new",
+ "eyre",
+ "globset",
+ "merge",
+ "omni_types",
+ "path-clean",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "omni_capability_enforcement"
+version = "0.0.0"
+dependencies = [
+ "landlock",
+ "libc",
+ "omni_capabilities",
+ "omni_types",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "omni_capability_sys"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "omni_capabilities",
+ "serde_json",
+ "system_traits",
+ "tempfile",
+ "tokio 1.52.3",
+]
+
+[[package]]
 name = "omni_cli_core"
 version = "0.18.0"
 dependencies = [
@@ -6670,7 +6721,6 @@ dependencies = [
  "humantime",
  "indicatif",
  "itertools 0.15.0",
- "js_runtime",
  "lazy-regex",
  "log",
  "maps",
@@ -6828,10 +6878,10 @@ dependencies = [
  "garde 0.23.0",
  "humantime",
  "humantime-serde",
- "js_runtime",
  "lazy-regex",
  "maps",
  "merge",
+ "omni_capabilities",
  "omni_command_config",
  "omni_config_types",
  "omni_core",
@@ -7036,6 +7086,7 @@ dependencies = [
  "async-trait",
  "bon",
  "bridge_rpc_router",
+ "bridge_rpc_runner",
  "bridge_rpc_services",
  "derive-new",
  "dir_walker",
@@ -7043,9 +7094,12 @@ dependencies = [
  "enum-map",
  "env",
  "eyre",
- "js_runtime",
  "log",
  "maps",
+ "merge",
+ "omni_capabilities",
+ "omni_capability_enforcement",
+ "omni_capability_sys",
  "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
@@ -7094,6 +7148,7 @@ dependencies = [
  "lazy-regex",
  "maps",
  "merge",
+ "omni_capabilities",
  "omni_core",
  "omni_expressions",
  "omni_input_provider",
@@ -8395,9 +8450,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.106"
+version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
@@ -8560,9 +8615,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.45"
+version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
@@ -9638,9 +9693,9 @@ checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
 
 [[package]]
 name = "serde"
-version = "1.0.228"
+version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
+checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
@@ -9690,22 +9745,22 @@ dependencies = [
 
 [[package]]
 name = "serde_core"
-version = "1.0.228"
+version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad"
+checksum = "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.228"
+version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
+checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.117",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -10520,6 +10575,17 @@ name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
 dependencies = [
  "proc-macro2",
  "quote",

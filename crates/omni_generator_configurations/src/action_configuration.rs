@@ -1,23 +1,25 @@
 use std::path::PathBuf;
 
 use crate::{
-    OmniPath,
+    Generator, OmniPath,
     validators::{
         option_validate_target_path, validate_regex, validate_umap_serde_json,
         validate_umap_target_path,
     },
 };
+use derive_more::PartialEq;
 use derive_new::new;
 use garde::Validate;
 use maps::{Map, UnorderedMap};
+use omni_capabilities::CapabilityPolicyConfig;
 use omni_serde_validators::tera_expr::{
     option_validate_tera_expr, validate_tera_expr,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{
-    Display, EnumCount, EnumDiscriminants, EnumIs, EnumIter, EnumString,
-    VariantArray,
+    AsRefStr, Display, EnumCount, EnumDiscriminants, EnumIs, EnumIter,
+    EnumString, IntoStaticStr, VariantArray,
 };
 
 #[derive(
@@ -525,6 +527,14 @@ pub struct RunJavaScriptActionConfiguration {
 
     /// The path of the file to run.
     pub script: PathBuf,
+
+    /// Action-level capability policy for this script (`{ rules, strictness }`).
+    /// The `rules` are folded into the cascade *after* the workspace floor and
+    /// the generator's own rules, so they can only further narrow authority for
+    /// this one action (deny-dominant). The action's `strictness` combines
+    /// most-severe with the enclosing workspace/generator stances.
+    #[serde(default)]
+    pub capabilities: CapabilityPolicyConfig<Generator>,
 }
 
 #[derive(
@@ -631,7 +641,23 @@ pub enum ForAllInputValuesConfiguration {
 #[garde(allow_unvalidated)]
 #[serde(rename_all = "kebab-case")]
 #[serde(tag = "type")]
-#[strum_discriminants(vis(pub), name(ActionConfigurationType), derive(Display))]
+#[strum_discriminants(
+    vis(pub),
+    name(ActionConfigurationType),
+    derive(
+        Display,
+        Serialize,
+        Deserialize,
+        JsonSchema,
+        PartialOrd,
+        Hash,
+        Ord,
+        EnumString,
+        AsRefStr,
+        IntoStaticStr,
+    ),
+    serde(rename_all = "kebab-case")
+)]
 pub enum ActionConfiguration {
     /// Add a single file specified by a template file
     #[strum_discriminants(strum(serialize = "add"))]

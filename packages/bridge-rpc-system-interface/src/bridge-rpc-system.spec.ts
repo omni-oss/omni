@@ -10,6 +10,7 @@ import {
 import { readBody } from "@omni-oss/bridge-rpc-utils/body";
 import { describe, expect, test } from "vitest";
 import { BridgeRpcSystem } from "./bridge-rpc-system";
+import { EnvAccessDeniedError } from "./env-capability";
 import {
     DEFAULT_MAX_CHUNK_SIZE,
     FS_ROUTES,
@@ -151,7 +152,37 @@ describe("BridgeRpcSystem", () => {
             const sys = await BridgeRpcSystem.create(client);
             expect(sys.proc.currentDir()).toBe("/cwd");
             expect(sys.proc.args()).toEqual(["argv0"]);
-            expect(sys.proc.env()).toEqual({ FOO: "bar" });
+            expect(sys.proc.env().toObject()).toEqual({ FOO: "bar" });
+            expect(sys.proc.env().get("FOO")).toBe("bar");
+            expect(sys.proc.env().get("MISSING")).toBeNull();
+        }),
+    );
+
+    test(
+        "proc.env is capability-filtered when envRules are supplied",
+        harness(withSnapshot(), async (client) => {
+            // A whitelist that does not include FOO must hide it entirely. By
+            // default a denied read throws (the fail-loud default).
+            const denied = await BridgeRpcSystem.create(client, {
+                envRules: [{ allow: ["OTHER_*"], deny: [] }],
+            });
+            expect(() => denied.proc.env().get("FOO")).toThrow(
+                EnvAccessDeniedError,
+            );
+            expect(denied.proc.env().toObject()).toEqual({});
+
+            // A glob that matches FOO exposes it.
+            const allowed = await BridgeRpcSystem.create(client, {
+                envRules: [{ allow: ["F*"], deny: [] }],
+            });
+            expect(allowed.proc.env().get("FOO")).toBe("bar");
+            expect(allowed.proc.env().toObject()).toEqual({ FOO: "bar" });
+
+            // An explicit empty policy is fail-closed (denies everything).
+            const empty = await BridgeRpcSystem.create(client, {
+                envRules: [],
+            });
+            expect(empty.proc.env().toObject()).toEqual({});
         }),
     );
 

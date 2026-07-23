@@ -7,7 +7,7 @@ pub use tracing::instrument;
 
 #[cfg(feature = "enabled")]
 pub macro event($($tt:tt)+) {
-    $crate::_trace_impl::event!($($tt)+);
+    $crate::_trace_impl::event!($($tt)+)
 }
 
 #[cfg(not(feature = "enabled"))]
@@ -37,7 +37,7 @@ pub macro error($($tt:tt)+) {
 
 #[cfg(feature = "enabled")]
 pub macro span($($tt:tt)+) {
-    $crate::_trace_impl::span!($($tt)+);
+    $crate::_trace_impl::span!($($tt)+)
 }
 
 #[cfg(not(feature = "enabled"))]
