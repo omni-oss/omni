@@ -419,7 +419,7 @@
     },
     "scripts/task-bench": {
       "name": "@omni-oss/task-bench",
-      "version": "0.1.1-beta.6",
+      "version": "0.1.1",
       "bin": "./dist/task-bench-cli.mjs",
       "dependencies": {
         "@commander-js/extra-typings": "catalog:",
@@ -503,7 +503,7 @@
     },
     "tests/omni-tests": {
       "name": "@omni-oss/omni-tests",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@cfworker/json-schema": "^4.1.1",
         "@modelcontextprotocol/client": "catalog:",

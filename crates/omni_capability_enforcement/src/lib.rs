@@ -47,6 +47,11 @@
 //!    overridden per rule via
 //!    [`on_unenforceable`](omni_capabilities::CapabilityRule::on_unenforceable).
 
+#![cfg_attr(
+    target_os = "windows",
+    feature(windows_process_extensions_raw_attribute)
+)]
+
 #[cfg(target_os = "windows")]
 pub mod appcontainer_sandbox;
 pub mod backend;

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { CapabilityPolicy, globMatches, netMatches } from "./capability-policy";
+import {
+    CapabilityPolicy,
+    globMatches,
+    netMatches,
+    processMatches,
+} from "./capability-policy";
 
 type Rules = { allow?: string[]; deny?: string[] };
 type Layer = Record<string, Rules>;
@@ -246,5 +251,43 @@ describe("matchers", () => {
     test("netMatches treats a bare host as any-port", () => {
         expect(netMatches("example.com", "example.com", 12345)).toBe(true);
         expect(netMatches("example.com", "other.com", 12345)).toBe(false);
+    });
+
+    // `processMatches` takes an explicit `isWindows` so the platform-specific
+    // behaviour is deterministic regardless of the host running the tests.
+    test("processMatches is verbatim and case-sensitive on POSIX", () => {
+        expect(processMatches("/bin/sh", "/bin/sh", false)).toBe(true);
+        // A full-path grant is not loosened to the basename.
+        expect(processMatches("/bin/sh", "sh", false)).toBe(false);
+        expect(processMatches("/usr/bin/git", "/opt/evil/git", false)).toBe(
+            false,
+        );
+        expect(processMatches("git", "GIT", false)).toBe(false);
+    });
+
+    test("processMatches matches basenames across runtimes on Windows", () => {
+        // Node/Bun resolve the shell to a full `%ComSpec%` path; the bare
+        // `cmd.exe` grant must still authorize it, and vice versa for Deno's
+        // bare name.
+        expect(
+            processMatches("cmd.exe", "C:\\WINDOWS\\system32\\cmd.exe", true),
+        ).toBe(true);
+        expect(
+            processMatches("C:\\WINDOWS\\system32\\cmd.exe", "cmd.exe", true),
+        ).toBe(true);
+    });
+
+    test("processMatches is case-insensitive on Windows", () => {
+        expect(
+            processMatches("CMD.EXE", "c:\\windows\\system32\\cmd.exe", true),
+        ).toBe(true);
+    });
+
+    test("processMatches resolves a bare grant to a .exe on Windows", () => {
+        // Windows resolves a bare `git` to `git.exe` via PATHEXT.
+        expect(
+            processMatches("git", "C:\\Program Files\\Git\\GIT.EXE", true),
+        ).toBe(true);
+        expect(processMatches("git", "git.exe", true)).toBe(true);
     });
 });

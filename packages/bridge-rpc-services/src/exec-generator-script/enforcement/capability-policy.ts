@@ -123,7 +123,7 @@ export class CapabilityPolicy {
             return true;
         }
         return this.evaluate(PROCESS, (pattern) =>
-            globMatches(pattern, program),
+            processMatches(pattern, program),
         );
     }
 
@@ -241,6 +241,76 @@ function splitHostPort(pattern: string): {
  */
 export function globMatches(pattern: string, value: string): boolean {
     return globToRegExp(pattern).test(value);
+}
+
+/**
+ * Whether the shim is running on Windows. The shim executes on the same host as
+ * omni, so the local platform tells us how program paths are shaped (Windows
+ * paths are `\`-separated, drive-lettered, and case-insensitive). We read the
+ * runtime-appropriate signal because each runtime exposes it differently.
+ */
+const IS_WINDOWS: boolean = ((): boolean => {
+    const g = globalThis as {
+        Deno?: { build?: { os?: string } };
+        process?: { platform?: string };
+    };
+    if (typeof g.Deno?.build?.os === "string") {
+        return g.Deno.build.os === "windows";
+    }
+    return g.process?.platform === "win32";
+})();
+
+/**
+ * Match a spawn `program` against a `process` pattern.
+ *
+ * The wrinkle is Windows: the *same* program reaches the matcher in different
+ * shapes depending on which runtime resolved it — Deno hands over the bare name
+ * (`cmd.exe`) while Node/Bun expand it to a full path (`C:\WINDOWS\system32\
+ * cmd.exe` from `%ComSpec%`) — and Windows paths are case-insensitive. So one
+ * policy pattern can authorize a program regardless of the runtime, we match the
+ * full strings OR their basenames, case-folded. POSIX stays verbatim and
+ * case-sensitive so a `/bin/sh` grant is not silently loosened to any `sh`. This
+ * is the twin of the Rust `process_matches`. `isWindows` is injectable so the
+ * platform-specific behaviour is testable off Windows; it defaults to the host.
+ */
+export function processMatches(
+    pattern: string,
+    program: string,
+    isWindows: boolean = IS_WINDOWS,
+): boolean {
+    if (!isWindows) {
+        return globMatches(pattern, program);
+    }
+    const pat = pattern.toLowerCase();
+    const prog = program.toLowerCase();
+    // Three fallbacks, because runtimes disagree on every axis: full path, then
+    // basename (Deno passes bare `cmd.exe`, Node/Bun the full `…\cmd.exe`), then
+    // basename with the executable extension stripped (Windows resolves a bare
+    // `git` to `git.exe` via PATHEXT, so a `git` grant must reach `git.exe`).
+    return (
+        globMatches(pat, prog) ||
+        globMatches(basename(pat), basename(prog)) ||
+        globMatches(stripExeExt(basename(pat)), stripExeExt(basename(prog)))
+    );
+}
+
+/** Final `/`- or `\`-separated component (Windows accepts both separators). */
+function basename(s: string): string {
+    const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+    return i === -1 ? s : s.slice(i + 1);
+}
+
+/**
+ * Strip a trailing Windows executable extension (a subset of PATHEXT) so a bare
+ * `git` grant matches a resolved `git.exe`. Input is already lowercased.
+ */
+function stripExeExt(s: string): string {
+    for (const ext of [".exe", ".com", ".bat", ".cmd"]) {
+        if (s.endsWith(ext)) {
+            return s.slice(0, -ext.length);
+        }
+    }
+    return s;
 }
 
 function globToRegExp(glob: string): RegExp {

@@ -182,7 +182,7 @@ pub fn rule_matches<R: OmniPathRoot>(
             rule.patterns.iter().any(|p| glob_str_matches(p, name))
         }
         Request::Process { program } => {
-            rule.patterns.iter().any(|p| glob_str_matches(p, program))
+            rule.patterns.iter().any(|p| process_matches(p, program))
         }
     }
 }
@@ -190,7 +190,24 @@ pub fn rule_matches<R: OmniPathRoot>(
 // ── glob helpers ───────────────────────────────────────────────────────────
 
 fn to_forward(s: &str) -> String {
-    s.replace('\\', "/")
+    let forward = s.replace('\\', "/");
+    // Strip the Windows verbatim prefix (`\\?\`, which becomes `//?/` once
+    // slashes are normalized). `std::fs::canonicalize` emits verbatim paths on
+    // Windows, so a real (symlink-resolved) target arrives here as
+    // `//?/C:/…` while a root whose directory did not yet exist when it was
+    // canonicalized stays plain `C:/…`. Normalizing the prefix away on both the
+    // resolved pattern and the target keeps the two comparable regardless of
+    // whether either was canonicalized, and keeps the `?` (a glob metacharacter)
+    // out of patterns lowered to path-prefix backends (e.g. Deno `--allow-read`).
+    // No-op off Windows, where the prefix never appears.
+    match forward.strip_prefix("//?/") {
+        // `//?/UNC/server/share` → `//server/share`.
+        Some(rest) => match rest.strip_prefix("UNC/") {
+            Some(unc) => format!("//{unc}"),
+            None => rest.to_string(),
+        },
+        None => forward,
+    }
 }
 
 fn compile(
@@ -214,6 +231,60 @@ fn path_glob_matches(glob: &str, path: &Path) -> bool {
 /// Plain glob (no separator awareness), for hosts/env names/program names.
 fn glob_str_matches(pattern: &str, value: &str) -> bool {
     compile(pattern, false).is_some_and(|m| m.is_match(value))
+}
+
+/// Matches a spawn `program` against a `process` pattern.
+///
+/// The wrinkle is Windows: the *same* program reaches the matcher in different
+/// shapes depending on which runtime resolved it — Deno hands over the bare name
+/// (`cmd.exe`) while Node/Bun expand it to a full path (`C:\WINDOWS\system32\
+/// cmd.exe` from `%ComSpec%`) — and Windows paths are case-insensitive. So one
+/// policy pattern can authorize a program regardless of the runtime, we match
+/// the full strings OR their basenames, case-folded. POSIX stays verbatim and
+/// case-sensitive so a `/bin/sh` grant is not silently loosened to any `sh`.
+fn process_matches(pattern: &str, program: &str) -> bool {
+    #[cfg(windows)]
+    {
+        let pattern = pattern.to_lowercase();
+        let program = program.to_lowercase();
+        // Three fallbacks, because runtimes disagree on every axis: full path,
+        // then basename (Deno passes bare `cmd.exe`, Node/Bun the full
+        // `…\cmd.exe`), then basename with the executable extension stripped
+        // (Windows resolves a bare `git` to `git.exe` via PATHEXT, so a `git`
+        // grant must still reach the resolved `git.exe`).
+        glob_str_matches(&pattern, &program)
+            || glob_str_matches(basename(&pattern), basename(&program))
+            || glob_str_matches(
+                strip_exe_ext(basename(&pattern)),
+                strip_exe_ext(basename(&program)),
+            )
+    }
+    #[cfg(not(windows))]
+    {
+        glob_str_matches(pattern, program)
+    }
+}
+
+/// The final `/`- or `\`-separated component of `s` (Windows accepts both
+/// separators). Used only for Windows process-name matching.
+#[cfg(windows)]
+fn basename(s: &str) -> &str {
+    match s.rfind(['/', '\\']) {
+        Some(i) => &s[i + 1..],
+        None => s,
+    }
+}
+
+/// Strip a trailing Windows executable extension (a subset of PATHEXT) so a
+/// bare `git` grant matches a resolved `git.exe`. Input is already lowercased.
+#[cfg(windows)]
+fn strip_exe_ext(s: &str) -> &str {
+    for ext in [".exe", ".com", ".bat", ".cmd"] {
+        if let Some(stripped) = s.strip_suffix(ext) {
+            return stripped;
+        }
+    }
+    s
 }
 
 /// Matches a `host:port` request against a `host[:port]` pattern where the host
@@ -266,6 +337,53 @@ mod tests {
     fn plain_glob_passes_through() {
         let g = roots().resolve_pattern("**/.git/**").unwrap();
         assert_eq!(g, "**/.git/**");
+    }
+
+    #[test]
+    fn strips_windows_verbatim_prefix_from_resolved_root() {
+        // `std::fs::canonicalize` emits `\\?\C:\...` on Windows. Left intact the
+        // `?` reads as a glob metacharacter and the path-prefix backends drop the
+        // pattern; the normalized form must be plain so it lowers to a concrete
+        // prefix and compares equal to a non-verbatim target.
+        let verbatim = PathRoots::new().with(Root::Workspace, r"\\?\C:\repo");
+        assert_eq!(
+            verbatim.resolve_pattern("@workspace/**").unwrap(),
+            "C:/repo/**"
+        );
+    }
+
+    #[test]
+    fn verbatim_root_matches_non_verbatim_target_and_vice_versa() {
+        // A canonicalized (verbatim) root and a lexically-clean target — and the
+        // reverse — must authorize identically, so a write is not spuriously
+        // denied when only one side went through `canonicalize`.
+        let rule = CapabilityRule {
+            access: crate::Access::Allow,
+            domain: CapabilityDomain::FsWrite,
+            patterns: vec!["@project/**".into()],
+            on_unenforceable: None,
+        };
+
+        let verbatim_root =
+            PathRoots::new().with(Root::Project, r"\\?\C:\repo\out");
+        assert!(rule_matches(
+            &rule,
+            &Request::Fs {
+                write: true,
+                path: Path::new(r"C:\repo\out\allowed.txt")
+            },
+            &verbatim_root,
+        ));
+
+        let plain_root = PathRoots::new().with(Root::Project, r"C:\repo\out");
+        assert!(rule_matches(
+            &rule,
+            &Request::Fs {
+                write: true,
+                path: Path::new(r"\\?\C:\repo\out\allowed.txt")
+            },
+            &plain_root,
+        ));
     }
 
     #[test]
@@ -339,5 +457,75 @@ mod tests {
         assert!(host_port_matches("example.com:*", "example.com", 8080));
         assert!(host_port_matches("example.com", "example.com", 22));
         assert!(!host_port_matches("example.com:443", "example.com", 80));
+    }
+
+    fn process_rule(patterns: &[&str]) -> CapabilityRule {
+        CapabilityRule {
+            access: crate::Access::Allow,
+            domain: CapabilityDomain::Process,
+            patterns: patterns.iter().map(|p| (*p).to_string()).collect(),
+            on_unenforceable: None,
+        }
+    }
+
+    fn process_allowed(patterns: &[&str], program: &str) -> bool {
+        rule_matches(
+            &process_rule(patterns),
+            &Request::Process { program },
+            &PathRoots::<Root>::new(),
+        )
+    }
+
+    #[test]
+    fn process_matches_exact_and_glob() {
+        assert!(process_allowed(&["git"], "git"));
+        assert!(process_allowed(&["npm-*"], "npm-install"));
+        assert!(!process_allowed(&["git"], "rm"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn process_matches_basename_across_runtimes_on_windows() {
+        // Bun/Node resolve the shell to a full `%ComSpec%` path; the bare
+        // `cmd.exe` grant must still authorize it via basename match.
+        assert!(process_allowed(
+            &["cmd.exe"],
+            r"C:\WINDOWS\system32\cmd.exe"
+        ));
+        // And the reverse: a full-path grant authorizes the bare name Deno
+        // passes.
+        assert!(process_allowed(
+            &[r"C:\WINDOWS\system32\cmd.exe"],
+            "cmd.exe"
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn process_matches_case_insensitively_on_windows() {
+        assert!(process_allowed(
+            &["CMD.EXE"],
+            r"c:\windows\system32\cmd.exe"
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn process_matches_bare_grant_against_exe_extension_on_windows() {
+        // Windows resolves a bare `git` to `git.exe` via PATHEXT; the grant must
+        // still reach it, across case and full-path resolution.
+        assert!(process_allowed(&["git"], r"C:\Program Files\Git\GIT.EXE"));
+        assert!(process_allowed(&["git"], "git.exe"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn process_matches_are_verbatim_on_posix() {
+        // POSIX stays strict: a full-path grant is not loosened to the basename,
+        // and matching is case-sensitive.
+        assert!(process_allowed(&["/bin/sh"], "/bin/sh"));
+        assert!(!process_allowed(&["/bin/sh"], "sh"));
+        assert!(!process_allowed(&["/usr/bin/git"], "/opt/evil/git"));
+        assert!(!process_allowed(&["git"], "GIT"));
     }
 }

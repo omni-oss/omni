@@ -1,15 +1,17 @@
 //! Tier-3 platform seam: the **native OS access-control sandbox** for the
 //! current target, exposed as an [`EnforcementBackend`].
 //!
-//! On **Linux** this is now a real integration: [`NativeOsSandbox`] reports
+//! On **Linux** this is a real integration: [`NativeOsSandbox`] reports
 //! coverage for `fs.read` / `fs.write` when the running kernel provides
 //! [Landlock], lowers the policy's filesystem allow-subtrees into an
 //! [`OsSandboxSpec`], and the spawner installs the ruleset on the child via
-//! [`install_os_sandbox`]. On **macOS** (Seatbelt) and **Windows**
-//! (AppContainer) the integrations are still deferred: skeleton seams exist in
-//! [`seatbelt_sandbox`](crate::seatbelt_sandbox) and
-//! [`appcontainer_sandbox`](crate::appcontainer_sandbox) (documenting the
-//! required behaviour), but they are unimplemented, so the backend reports
+//! [`install_os_sandbox`]. On **Windows** this is also a real integration:
+//! [`NativeOsSandbox`] reports the same fs coverage when the OS provides
+//! [AppContainer], and the spawner launches the child *inside* the container
+//! (see [`appcontainer_sandbox`](crate::appcontainer_sandbox)). On **macOS**
+//! (Seatbelt) the integration is still deferred: a skeleton seam exists in
+//! [`seatbelt_sandbox`](crate::seatbelt_sandbox) (documenting the required
+//! behaviour), but it is unimplemented, so the backend reports
 //! [`Coverage::none`] there and any restricted domain falls to another backend
 //! or fails closed.
 //!
@@ -33,6 +35,7 @@
 //! backends.
 //!
 //! [Landlock]: https://docs.kernel.org/userspace-api/landlock.html
+//! [AppContainer]: https://learn.microsoft.com/en-us/windows/win32/secauthz/appcontainer-isolation
 
 use omni_capabilities::RequiredCapabilities;
 
@@ -76,15 +79,17 @@ impl NativeOsSandbox {
     }
 
     /// Whether omni has an OS-sandbox integration for the current target. `true`
-    /// on Linux (Landlock); still `false` on macOS / Windows (deferred).
+    /// on Linux (Landlock) and Windows (AppContainer); still `false` on macOS
+    /// (deferred).
     ///
     /// Note that even where an integration exists, [`coverage`] may still be
-    /// empty at runtime if the *running kernel* lacks the feature (see
-    /// [`landlock_sandbox::is_supported`](crate::landlock_sandbox::is_supported)).
+    /// empty at runtime if the *running OS* lacks the feature (see
+    /// [`landlock_sandbox::is_supported`](crate::landlock_sandbox::is_supported)
+    /// / [`appcontainer_sandbox::is_supported`](crate::appcontainer_sandbox::is_supported)).
     ///
     /// [`coverage`]: EnforcementBackend::coverage
     pub const fn is_implemented() -> bool {
-        cfg!(target_os = "linux")
+        cfg!(any(target_os = "linux", target_os = "windows"))
     }
 }
 
@@ -108,7 +113,17 @@ impl EnforcementBackend for NativeOsSandbox {
                 ]);
             }
         }
-        // No integration for this target, or the running kernel lacks it →
+        #[cfg(target_os = "windows")]
+        {
+            use omni_capabilities::CapabilityDomain;
+            if crate::appcontainer_sandbox::is_supported() {
+                return Coverage::of([
+                    CapabilityDomain::FsRead,
+                    CapabilityDomain::FsWrite,
+                ]);
+            }
+        }
+        // No integration for this target, or the running OS lacks it →
         // cover nothing → fail closed rather than pretend to confine.
         Coverage::none()
     }
@@ -120,9 +135,16 @@ impl EnforcementBackend for NativeOsSandbox {
     ) -> Result<BackendPlan, EnforcementError> {
         #[cfg(target_os = "linux")]
         {
-            Ok(linux::plan(Self::mechanism(), req, roots))
+            // Landlock (V4) can lower a port-only net connect floor.
+            Ok(lowering::plan(Self::mechanism(), req, roots, true))
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "windows")]
+        {
+            // AppContainer cannot express `host:port`, so net is not lowered
+            // here (see the `appcontainer_sandbox` module docs).
+            Ok(lowering::plan(Self::mechanism(), req, roots, false))
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
             // OS sandboxes not yet integrated here contribute nothing.
             let _ = (req, roots);
@@ -134,26 +156,36 @@ impl EnforcementBackend for NativeOsSandbox {
 /// Install the OS-sandbox confinement described by `spec` onto `command` so it
 /// takes effect for the spawned child (and everything it forks).
 ///
-/// On Linux this registers a `pre_exec` hook that applies a Landlock ruleset in
-/// the child before `execve`. On other targets it is a no-op today, so callers
-/// can invoke it unconditionally and stay cross-platform. Passing an empty spec
-/// installs nothing.
+/// On **Linux** this registers a `pre_exec` hook that applies a Landlock ruleset
+/// in the child before `execve`. On **Windows** confinement cannot be installed
+/// onto a `Command` for a later `spawn` (AppContainer is attached at process
+/// creation), so this only validates that confinement is establishable and the
+/// spawner launches the child through
+/// [`appcontainer_sandbox::spawn`](crate::appcontainer_sandbox::spawn) instead.
+/// On other targets it is a no-op today, so callers can invoke it
+/// unconditionally and stay cross-platform. Passing an empty spec installs
+/// nothing.
+///
+/// Returns an error when confinement was requested but cannot be established, so
+/// the caller can fail closed rather than launch an unconfined child. The Linux
+/// path never fails here — a Landlock failure surfaces later as a failed spawn,
+/// when the `pre_exec` hook runs.
 #[cfg(target_os = "linux")]
 pub fn install_os_sandbox(
     command: &mut std::process::Command,
     spec: &crate::OsSandboxSpec,
-) {
+) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt as _;
 
     if spec.is_empty() {
-        return;
+        return Ok(());
     }
     // Escape hatch: allow disabling the OS sandbox for debugging a confinement
     // regression, or on a host where the Landlock baseline is too tight for a
     // legitimate workload. The broker still enforces every mediated operation;
     // only the kernel backstop against *direct* syscalls is dropped.
     if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some() {
-        return;
+        return Ok(());
     }
     let spec = spec.clone();
     // SAFETY: the closure runs in the forked child before `execve`; it only
@@ -162,18 +194,49 @@ pub fn install_os_sandbox(
     unsafe {
         command.pre_exec(move || crate::landlock_sandbox::restrict(&spec));
     }
+    Ok(())
+}
+
+/// On **Windows** the OS sandbox cannot be installed onto a `Command` for a
+/// later `spawn`: AppContainer must be attached *at* process creation (see the
+/// [`appcontainer_sandbox`](crate::appcontainer_sandbox) module docs). The
+/// spawner therefore launches the child through
+/// [`appcontainer_sandbox::spawn`](crate::appcontainer_sandbox::spawn) instead,
+/// and this call is a validated no-op: it merely confirms confinement can be
+/// established, failing closed otherwise so a spawner that ignores the dedicated
+/// path cannot silently run unconfined.
+#[cfg(target_os = "windows")]
+pub fn install_os_sandbox(
+    _command: &mut std::process::Command,
+    spec: &crate::OsSandboxSpec,
+) -> std::io::Result<()> {
+    if spec.is_empty() {
+        return Ok(());
+    }
+    if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some() {
+        return Ok(());
+    }
+    if crate::appcontainer_sandbox::is_supported() {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "AppContainer is not available on this host",
+        ))
+    }
 }
 
 /// No-op OS-sandbox install for targets without an integration yet.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn install_os_sandbox(
     _command: &mut std::process::Command,
     _spec: &crate::OsSandboxSpec,
-) {
+) -> std::io::Result<()> {
+    Ok(())
 }
 
-#[cfg(target_os = "linux")]
-mod linux {
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod lowering {
     use std::path::PathBuf;
 
     use omni_capabilities::{CapabilityDomain, RequiredCapabilities};
@@ -182,12 +245,20 @@ mod linux {
     use crate::{BackendPlan, Gap, OsSandboxSpec, PatternResolver};
 
     /// Lower the policy's filesystem allow-subtrees into an [`OsSandboxSpec`],
-    /// reporting a [`Gap`] for every pattern Landlock's allow-list-of-hierarchies
-    /// model cannot express (mid-path globs, whole-fs patterns, and any `deny`).
+    /// reporting a [`Gap`] for every pattern a subtree/hierarchy grant model
+    /// (Landlock on Linux, AppContainer object ACLs on Windows) cannot express
+    /// (mid-path globs, whole-fs patterns, and any `deny`).
+    ///
+    /// `lower_net` controls whether the `net` policy contributes a port-only
+    /// *connect* floor: Linux (Landlock V4) can enforce one, but AppContainer
+    /// cannot express `host:port`, so Windows passes `false` and leaves net
+    /// entirely to the shim/broker (see the [`crate::appcontainer_sandbox`]
+    /// module docs).
     pub(super) fn plan(
         name: &'static str,
         req: &RequiredCapabilities,
         roots: &dyn PatternResolver,
+        lower_net: bool,
     ) -> BackendPlan {
         let mut plan = BackendPlan::new();
         let mut spec = OsSandboxSpec::new();
@@ -209,23 +280,26 @@ mod linux {
             &mut plan.gaps,
         );
 
-        // Lower the `net` policy to a port-only *connect* floor. Only concrete
-        // outbound ports can be a Landlock allow-list: a `host:port` rule
-        // contributes `port` (any host), while an all-ports (`host:*`), missing,
-        // or non-numeric port cannot be floored (it would be allow-all) and a
-        // `deny` is not expressible in an allow-list. None of these are reported
-        // as gaps — the OS sandbox never *claims* to cover `net` (host-level
-        // enforcement stays with the shim), so there is nothing to fail closed
-        // on here, exactly as with `process`.
-        collect_connect_ports(req, &mut spec.connect_ports);
+        // Lower the `net` policy to a port-only *connect* floor where the OS
+        // sandbox can enforce one. Only concrete outbound ports qualify: a
+        // `host:port` rule contributes `port` (any host), while an all-ports
+        // (`host:*`), missing, or non-numeric port cannot be floored (it would
+        // be allow-all) and a `deny` is not expressible in an allow-list. None
+        // of these are reported as gaps — the OS sandbox never *claims* to cover
+        // `net` (host-level enforcement stays with the shim), so there is
+        // nothing to fail closed on here, exactly as with `process`.
+        if lower_net {
+            collect_connect_ports(req, &mut spec.connect_ports);
+        }
 
-        // A confined child inherits the sandbox across `execve`, so any program
-        // the policy allows it to spawn must have its binary readable/executable
-        // under the ruleset. Record the literally-named allowed programs; the
-        // spawner resolves each against `PATH` and grants its directory. Globbed
-        // program patterns cannot be resolved to a path here and are left to the
-        // runtime flag / script shim to gate (this is not a coverage claim — the
-        // OS sandbox never covers `process`, so no gap is reported).
+        // A confined child inherits the sandbox across process creation, so any
+        // program the policy allows it to spawn must have its binary
+        // readable/executable under the sandbox. Record the literally-named
+        // allowed programs; the spawner resolves each against `PATH` and grants
+        // its directory. Globbed program patterns cannot be resolved to a path
+        // here and are left to the runtime flag / script shim to gate (this is
+        // not a coverage claim — the OS sandbox never covers `process`, so no
+        // gap is reported).
         if let Some(rules) = req.domains.get(&CapabilityDomain::Process) {
             for atom in &rules.allow {
                 if !crate::lower::has_glob(&atom.pattern) {
@@ -272,15 +346,15 @@ mod linux {
             }
         }
 
-        // Landlock grants whole hierarchies; it has no `deny` sub-path.
+        // A subtree grant model has no `deny` sub-path.
         for atom in &rules.deny {
             gaps.push(Gap {
                 backend: name.to_string(),
                 domain,
                 id: atom.id,
                 pattern: atom.pattern.clone(),
-                reason: "Landlock grants whole path hierarchies and cannot \
-                 express a `deny` sub-path; use the in-process broker"
+                reason: "the OS sandbox grants whole path hierarchies and \
+                 cannot express a `deny` sub-path; use the in-process broker"
                     .to_string(),
             });
         }
@@ -477,9 +551,9 @@ mod tests {
         );
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     #[test]
-    fn non_linux_covers_nothing_yet() {
+    fn non_integrated_target_covers_nothing_yet() {
         assert!(NativeOsSandbox.coverage().is_empty());
     }
 
@@ -494,6 +568,91 @@ mod tests {
     #[test]
     fn windows_uses_appcontainer() {
         assert_eq!(NativeOsSandbox::mechanism(), "appcontainer");
-        assert!(!NativeOsSandbox::is_implemented());
+        assert!(NativeOsSandbox::is_implemented());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_coverage_tracks_appcontainer_support() {
+        // On a host that provides AppContainer the backend covers the fs
+        // domains; otherwise it must cover nothing (fail closed). Either way it
+        // must never claim net/env/process.
+        use omni_capabilities::CapabilityDomain;
+        let cov = NativeOsSandbox.coverage();
+        assert!(!cov.covers(CapabilityDomain::Net));
+        assert!(!cov.covers(CapabilityDomain::Env));
+        assert!(!cov.covers(CapabilityDomain::Process));
+        assert_eq!(
+            cov.covers(CapabilityDomain::FsRead),
+            crate::appcontainer_sandbox::is_supported()
+        );
+        assert_eq!(
+            cov.covers(CapabilityDomain::FsWrite),
+            crate::appcontainer_sandbox::is_supported()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_lowers_allow_subtree_and_gaps_deny() {
+        use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
+
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[
+                { "access": "allow", "domain": "fs.read",  "patterns": ["@workspace/**"] },
+                { "access": "allow", "domain": "fs.write", "patterns": ["@workspace/out/**"] },
+                { "access": "deny",  "domain": "fs.write", "patterns": ["**/.git/**"] }
+            ]"#,
+        )
+        .unwrap();
+        let req = project(&cfg, &());
+        let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
+
+        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
+        assert!(
+            spec.read_paths
+                .contains(&std::path::PathBuf::from("C:/repo"))
+        );
+        assert!(
+            spec.write_paths
+                .contains(&std::path::PathBuf::from("C:/repo/out"))
+        );
+        // The `deny **/.git/**` cannot be a subtree grant → a gap the broker
+        // resolves.
+        assert!(
+            plan.gaps.iter().any(|g| g.pattern == "**/.git/**"),
+            "deny sub-path must be reported as a gap: {:?}",
+            plan.gaps
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_does_not_lower_a_net_floor() {
+        // AppContainer cannot express `host:port`, so — unlike Landlock V4 — the
+        // Windows plan lowers no connect-port floor and never claims net.
+        use omni_capabilities::{
+            CapabilityDomain, CapabilityRules, PathRoots, Root, project,
+        };
+
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] },
+                { "access": "allow", "domain": "net", "patterns": ["example.com:443"] }
+            ]"#,
+        )
+        .unwrap();
+        let req = project(&cfg, &());
+        let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
+
+        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let spec = plan.spawn.os_sandbox.expect("fs subtree lowered");
+        assert!(
+            spec.connect_ports.is_empty(),
+            "AppContainer must not lower a net port floor: {:?}",
+            spec.connect_ports
+        );
+        assert!(!NativeOsSandbox.coverage().covers(CapabilityDomain::Net));
     }
 }

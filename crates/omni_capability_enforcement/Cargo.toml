@@ -23,6 +23,19 @@ omni_types = { workspace = true }
 landlock = "0.4"
 libc = "0.2"
 
+# Tier-3 OS sandbox (AppContainer) on Windows: derive the container SID, widen
+# access via object ACLs, and build the process inside the container via
+# `STARTUPINFOEX` + `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES`.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Isolation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }

@@ -100,14 +100,17 @@ pub fn node_version() -> Option<(u32, u32, u32)> {
 
 /// Whether the resolved `node` can confine the `net` domain via `--allow-net`.
 ///
-/// Primary check is the version baseline ([`MIN_SUPPORTED_NODE_MAJOR`]); if the
-/// version cannot be parsed (unusual shim output), it falls back to directly
-/// feature-detecting the flag in `node --help`. Fail-open only when *both* are
-/// inconclusive, since the runner's fail-fast child-exit path is the backstop.
+/// The major-version baseline ([`MIN_SUPPORTED_NODE_MAJOR`]) is necessary but
+/// **not sufficient**: Node's network permission flag was not shipped uniformly
+/// across the v24.x line (some builds omit `--allow-net` entirely, rejecting it
+/// as an unknown option). So a supported version must be confirmed by directly
+/// feature-detecting the flag in `node --help`. Fail-open only when the version
+/// cannot be parsed *and* the probe is inconclusive, since the runner's
+/// fail-fast child-exit path is the backstop.
 pub fn node_supports_net() -> bool {
     if let Some((major, _, _)) = node_version() {
         return major >= MIN_SUPPORTED_NODE_MAJOR
-            || node_advertises_flag("--allow-net");
+            && node_advertises_flag("--allow-net");
     }
     node_advertises_flag("--allow-net")
 }
@@ -165,7 +168,9 @@ pub fn resolved_exec_path(
         DelegatingJsRuntimeOption::Deno => Command::new("deno")
             .args([
                 "eval",
-                "--allow-read",
+                // `deno eval` runs with all permissions and rejects an
+                // `--allow-read` flag on current Deno, so pass none: the eval
+                // context can call `Deno.execPath()` without it.
                 "await Deno.stdout.write(new TextEncoder().encode(Deno.execPath()))",
             ])
             .output(),

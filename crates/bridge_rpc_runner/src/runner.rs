@@ -50,6 +50,79 @@ use crate::{BridgeRunnerError, DelegatingJsRuntimeOption, error};
 
 type RunnerTransport = StreamTransport<ChildStdout, ChildStdin>;
 
+/// The spawned child process, however it was launched.
+///
+/// Most platforms use a normal async [`tokio::process::Child`]. On **Windows**,
+/// when the capability policy requires OS-level confinement, the child must be
+/// created *inside* an AppContainer via a synchronous
+/// [`std::process::Child`] (see
+/// [`omni_capability_enforcement::appcontainer_sandbox`]) whose piped stdio is
+/// adapted to async with [`ChildStdin::from_std`] / [`ChildStdout::from_std`].
+/// This enum lets the runner drive either uniformly.
+#[cfg_attr(target_os = "windows", allow(clippy::large_enum_variant))]
+enum ChildProcess {
+    /// The ordinary async child (all platforms; and Windows when unconfined).
+    Async(Child),
+    /// A Windows AppContainer-confined child. Launched synchronously; its stdio
+    /// is bridged to async before storage here. The [`SandboxAclGuard`] revokes
+    /// the filesystem grants made for this child and must outlive it, so it
+    /// rides along in the variant and drops (after the child is killed) with it.
+    #[cfg(target_os = "windows")]
+    Confined(
+        std::process::Child,
+        // Held only for its `Drop`, which revokes this child's filesystem grants
+        // once it has been killed/reaped — never read directly.
+        #[allow(dead_code)]
+        omni_capability_enforcement::appcontainer_sandbox::SandboxAclGuard,
+    ),
+}
+
+impl ChildProcess {
+    /// Non-blocking exit check, mirroring [`tokio::process::Child::try_wait`].
+    fn try_wait(
+        &mut self,
+    ) -> std::io::Result<Option<std::process::ExitStatus>> {
+        match self {
+            ChildProcess::Async(child) => child.try_wait(),
+            #[cfg(target_os = "windows")]
+            ChildProcess::Confined(child, _) => child.try_wait(),
+        }
+    }
+
+    /// Request termination without waiting, mirroring
+    /// [`tokio::process::Child::start_kill`].
+    fn start_kill(&mut self) -> std::io::Result<()> {
+        match self {
+            ChildProcess::Async(child) => child.start_kill(),
+            #[cfg(target_os = "windows")]
+            ChildProcess::Confined(child, _) => child.kill(),
+        }
+    }
+
+    /// Await the child's exit. For the confined (synchronous) child this waits
+    /// inline; it is only reached from [`BridgeServiceRunner::shutdown`], not the
+    /// hot path.
+    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        match self {
+            ChildProcess::Async(child) => child.wait().await,
+            #[cfg(target_os = "windows")]
+            ChildProcess::Confined(child, _) => child.wait(),
+        }
+    }
+}
+
+// The async child kills itself on drop (via `kill_on_drop`); the synchronous
+// confined child needs an explicit kill to match that behaviour. The ACL guard
+// then drops with the variant, revoking the child's grants once it is gone.
+#[cfg(target_os = "windows")]
+impl Drop for ChildProcess {
+    fn drop(&mut self) {
+        if let ChildProcess::Confined(child, _) = self {
+            let _ = child.kill();
+        }
+    }
+}
+
 /// How to launch a bridge service process.
 ///
 /// Everything that varies between call sites lives here so
@@ -107,7 +180,7 @@ impl<'a> BridgeRunnerOptions<'a> {
 /// direction of the RPC). It defaults to [`Router`].
 pub struct BridgeServiceRunner<TService: Service = Router> {
     rpc: BridgeRpc<RunnerTransport, TService>,
-    child: Arc<Mutex<Child>>,
+    child: Arc<Mutex<ChildProcess>>,
     run_task: JoinHandle<()>,
     /// Latest observed child exit code: `None` while the process is still
     /// running, `Some(code)` once it has exited (`code` is the process exit
@@ -117,6 +190,11 @@ pub struct BridgeServiceRunner<TService: Service = Router> {
     /// stdio pipe.
     exit_rx: watch::Receiver<Option<i32>>,
     exit_task: JoinHandle<()>,
+    /// The confined child's per-run temp directory, removed when the runner is
+    /// dropped. `None` when unconfined or off Windows. Declared last so it is
+    /// dropped after `child` (whose drop kills the process), so nothing is still
+    /// writing into the directory as it is removed.
+    _sandbox_temp: Option<SandboxTempDir>,
 }
 
 impl<TService: Service> BridgeServiceRunner<TService> {
@@ -126,15 +204,64 @@ impl<TService: Service> BridgeServiceRunner<TService> {
         service: TService,
         options: BridgeRunnerOptions<'_>,
     ) -> Result<Self, BridgeRunnerError> {
-        let std_command = build_command(
+        let (std_command, confinement, sandbox_temp) = build_command(
             options.runtime,
             options.entrypoint,
             options.spawn_policy,
             options.script_args,
         )?;
+        // `confinement` is only consumed on Windows (AppContainer is applied at
+        // spawn time there); elsewhere it is always `None`.
+        #[cfg(not(target_os = "windows"))]
+        let _ = &confinement;
+
+        // Windows OS-sandbox path: launch the child *inside* an AppContainer via
+        // the synchronous confined spawn, then bridge its piped stdio to async.
+        #[cfg(target_os = "windows")]
+        if let Some(spec) = confinement {
+            let mut std_command = std_command;
+            if let Some(cwd) = options.cwd {
+                std_command.current_dir(strip_verbatim_prefix(cwd));
+            }
+            std_command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit());
+            let (mut child, acl_guard) =
+                omni_capability_enforcement::appcontainer_sandbox::spawn(
+                    &mut std_command,
+                    &spec,
+                )
+                .map_err(|e| {
+                    error::error!(
+                        "failed to spawn confined bridge service ({}): {e}",
+                        options.entrypoint.display()
+                    )
+                })?;
+            let stdin = child.stdin.take().ok_or_else(|| {
+                error::error!("bridge service child has no stdin handle")
+            })?;
+            let stdout = child.stdout.take().ok_or_else(|| {
+                error::error!("bridge service child has no stdout handle")
+            })?;
+            let stdin = ChildStdin::from_std(stdin).map_err(|e| {
+                error::error!("failed to adopt child stdin: {e}")
+            })?;
+            let stdout = ChildStdout::from_std(stdout).map_err(|e| {
+                error::error!("failed to adopt child stdout: {e}")
+            })?;
+            return Ok(Self::assemble(
+                service,
+                stdin,
+                stdout,
+                ChildProcess::Confined(child, acl_guard),
+                sandbox_temp,
+            ));
+        }
+
         let mut command = Command::from(std_command);
         if let Some(cwd) = options.cwd {
-            command.current_dir(cwd);
+            command.current_dir(strip_verbatim_prefix(cwd));
         }
 
         command
@@ -158,6 +285,24 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             error::error!("bridge service child has no stdout handle")
         })?;
 
+        Ok(Self::assemble(
+            service,
+            stdin,
+            stdout,
+            ChildProcess::Async(child),
+            sandbox_temp,
+        ))
+    }
+
+    /// Wire an already-spawned child (its async stdio already extracted) into a
+    /// live [`BridgeRpc`] plus the RPC-loop and exit-watch tasks.
+    fn assemble(
+        service: TService,
+        stdin: ChildStdin,
+        stdout: ChildStdout,
+        child: ChildProcess,
+        sandbox_temp: Option<SandboxTempDir>,
+    ) -> Self {
         // We read frames from the child's stdout and write frames to its stdin.
         let transport = StreamTransport::new(stdout, stdin);
         let rpc = BridgeRpc::new(transport, service);
@@ -201,13 +346,14 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             })
         };
 
-        Ok(Self {
+        Self {
             rpc,
             child,
             run_task,
             exit_rx,
             exit_task,
-        })
+            _sandbox_temp: sandbox_temp,
+        }
     }
 
     /// Issues a request to `path` on the JS side, sending `data` (serialized as
@@ -331,6 +477,19 @@ async fn read_body_bytes(response: Response) -> Vec<u8> {
     buf
 }
 
+/// Strips the Windows verbatim `\\?\` prefix from a path, yielding a plain
+/// `C:\…` path. A verbatim current-directory confuses some child runtimes'
+/// relative-path resolution and stdio setup, so the child is launched with the
+/// simplified form. No-op on non-Windows and on paths without the prefix.
+fn strip_verbatim_prefix(path: &Path) -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    if let Some(stripped) = path.to_str().and_then(|s| s.strip_prefix(r"\\?\"))
+    {
+        return std::path::PathBuf::from(stripped);
+    }
+    path.to_path_buf()
+}
+
 /// Builds the spawn command for the configured runtime, resolving `Auto` and
 /// splicing the capability [`SpawnPolicy`] before the entrypoint.
 ///
@@ -339,15 +498,25 @@ async fn read_body_bytes(response: Response) -> Vec<u8> {
 /// `--allow-*` / `--deny-*`, Node's `--permission …`) apply to the executed
 /// module.
 ///
-/// Returns a [`std::process::Command`] (not a tokio one) so the caller can carry
-/// over any OS-sandbox `pre_exec` hook installed here into the async command it
-/// finally spawns.
+/// Returns a [`std::process::Command`] (not a tokio one), plus the OS-sandbox
+/// spec to confine the launch with **at spawn time on Windows** (AppContainer
+/// cannot be installed onto a `Command` for a later `spawn`). On non-Windows the
+/// second element is always `None`: confinement there is installed onto the
+/// command in place (Landlock's `pre_exec` hook) and carried over into the async
+/// command the caller finally spawns.
 fn build_command(
     runtime: DelegatingJsRuntimeOption,
     entrypoint: &Path,
     spawn_policy: &SpawnPolicy,
     script_args: &[&str],
-) -> Result<std::process::Command, BridgeRunnerError> {
+) -> Result<
+    (
+        std::process::Command,
+        Option<OsSandboxSpec>,
+        Option<SandboxTempDir>,
+    ),
+    BridgeRunnerError,
+> {
     let runtime = runtime.resolve().ok_or_else(|| {
         error::error!("no JS runtime (node/bun/deno) found on PATH")
     })?;
@@ -392,6 +561,56 @@ fn build_command(
 
     // Capability-derived launch restrictions (replaces the old `--allow-all`).
     command.args(&spawn_policy.args);
+
+    // When the policy permits spawning a child process, the shim resolves the
+    // runtime via `Deno.execPath()` to launch the confined child. On Deno that
+    // call requires `--allow-read` for the runtime binary, but the `process`
+    // domain only lowers to `--allow-run`, so the spawn otherwise dies with
+    // `Requires read access to <exec_path>`. Grant read of the resolved
+    // executable path (safe: it is the runtime reading its own binary, the same
+    // path `add_runtime_essentials` grants the OS sandbox).
+    if runtime == DelegatingJsRuntimeOption::Deno
+        && spawn_policy
+            .args
+            .iter()
+            .any(|a| a == "--allow-run" || a.starts_with("--allow-run="))
+        && let Some(exec) = crate::runtime::resolved_exec_path(runtime)
+    {
+        command.arg(format!(
+            "--allow-read={}",
+            exec.to_string_lossy().replace('\\', "/")
+        ));
+    }
+    // On Windows the OS sandbox confines the runtime inside an AppContainer,
+    // which runs at *Low* integrity and therefore cannot write the Medium
+    // integrity workspace. Deno would otherwise try to materialise a `deno.lock`
+    // / a local `node_modules` in the (workspace) context dir at startup and die
+    // with "Access is denied (os error 5)" before running anything. The bridge is
+    // a self-contained bundle and every script filesystem write is brokered over
+    // RPC (never issued directly by the runtime), so it needs neither: suppress
+    // both so the confined runtime never writes the workspace to boot.
+    #[cfg(target_os = "windows")]
+    if spawn_policy.os_sandbox.is_some() {
+        match runtime {
+            DelegatingJsRuntimeOption::Deno => {
+                command.arg("--no-lock");
+                command.arg("--node-modules-dir=none");
+            }
+            DelegatingJsRuntimeOption::Node => {
+                // Node's module resolver `realpath`s every module it loads
+                // (`resolveMainPath` -> `toRealPath` for the entry, and the
+                // loader for each dependency), which `lstat`s every ancestor up
+                // to the drive root `C:\`. A Low-integrity AppContainer cannot
+                // `lstat` `C:\` and the launch dies with `EPERM ... lstat 'C:\'`
+                // before any script runs. `--preserve-symlinks(-main)` skips the
+                // realpath walk entirely; the bundle is self-contained so its
+                // module identity does not depend on symlink resolution.
+                command.arg("--preserve-symlinks");
+                command.arg("--preserve-symlinks-main");
+            }
+            _ => {}
+        }
+    }
     command.arg(entrypoint);
     command.args(script_args);
 
@@ -405,22 +624,66 @@ fn build_command(
         apply_scrubbed_env(&mut command, policy_env);
     }
 
-    // Tier-3 OS sandbox (Landlock on Linux; a no-op on other targets). Applied
-    // to the child via a `pre_exec` hook so it is inherited across `execve`.
+    // Tier-3 OS sandbox. On Linux this installs a `pre_exec` Landlock hook onto
+    // the command (carried over into the async spawn). On Windows the sandbox
+    // cannot be attached to a `Command` for a later spawn, so the call only
+    // validates that confinement is establishable (failing closed otherwise) and
+    // the augmented spec is returned for the confined spawn to apply.
     //
     // The policy's spec confines the *script's* filesystem authority, but the
     // sandbox binds the whole child — including the runtime itself — so it must
     // also be granted the paths the runtime needs merely to start and run:
     // its own executable directory and its module/compile cache. Without these
-    // Landlock would deny the runtime reading its own binary or writing its
+    // the sandbox would deny the runtime reading its own binary or writing its
     // cache, and the spawn would fail before any script executed.
+    #[allow(unused_mut)]
+    let mut confinement: Option<OsSandboxSpec> = None;
+    let mut sandbox_temp_dir: Option<SandboxTempDir> = None;
     if let Some(spec) = &spawn_policy.os_sandbox {
         let mut spec = spec.clone();
-        add_runtime_essentials(runtime, &mut spec);
-        omni_capability_enforcement::install_os_sandbox(&mut command, &spec);
+        let sandbox_temp = add_runtime_essentials(runtime, &mut spec);
+        // Redirect the confined child's temp dir to the granted per-run
+        // directory (see `add_runtime_essentials`). Set after `apply_scrubbed_env`
+        // so it overrides any `TEMP`/`TMP` forwarded from the parent, keeping the
+        // runtime off the shared system temp the sandbox does not grant.
+        if let Some(dir) = &sandbox_temp {
+            command.env("TEMP", dir);
+            command.env("TMP", dir);
+            command.env("TMPDIR", dir);
+        }
+        // Own the per-run temp dir so it is removed when the runner is dropped
+        // rather than leaking one directory into `%TEMP%` per confined spawn.
+        sandbox_temp_dir = sandbox_temp.map(SandboxTempDir);
+        omni_capability_enforcement::install_os_sandbox(&mut command, &spec)
+            .map_err(|e| {
+                error::error!("failed to install the OS sandbox: {e}")
+            })?;
+        // On Windows the sandbox is applied at spawn time via AppContainer, so
+        // carry the spec forward for the confined spawn — but honour the same
+        // `OMNI_DISABLE_OS_SANDBOX` escape hatch `install_os_sandbox` respects on
+        // the other platforms, launching unconfined when it is set (the broker
+        // still mediates every operation).
+        //
+        // Bun is excluded: it reads and `realpath`s its current working
+        // directory during startup, which `stat`s every ancestor up to the drive
+        // root `C:\`. A Low-integrity AppContainer cannot stat `C:\` (nor the
+        // un-granted ancestors between it and the workspace) and bun aborts with
+        // `CouldntReadCurrentDirectory` before any script runs. Unlike Node
+        // (`--preserve-symlinks`) and Deno, bun exposes no flag to skip that
+        // walk, so it cannot boot inside the container. It therefore runs
+        // unconfined on Windows with the broker/shim still mediating every
+        // operation — the same enforcement bun receives on every platform, since
+        // it has no native permission flags anywhere (documented weaker
+        // AppContainer guarantee).
+        #[cfg(target_os = "windows")]
+        if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_none()
+            && runtime != DelegatingJsRuntimeOption::Bun
+        {
+            confinement = Some(spec);
+        }
     }
 
-    Ok(command)
+    Ok((command, confinement, sandbox_temp_dir))
 }
 
 /// Environment variables the JS runtime (and the common version-manager shims
@@ -576,13 +839,13 @@ fn apply_scrubbed_env(
 fn add_runtime_essentials(
     runtime: DelegatingJsRuntimeOption,
     spec: &mut OsSandboxSpec,
-) {
+) -> Option<PathBuf> {
     let bin = match runtime {
         DelegatingJsRuntimeOption::Node => "node",
         DelegatingJsRuntimeOption::Bun => "bun",
         DelegatingJsRuntimeOption::Deno => "deno",
         // `Auto` is resolved before this point; nothing to add otherwise.
-        DelegatingJsRuntimeOption::Auto => return,
+        DelegatingJsRuntimeOption::Auto => return None,
     };
 
     // The runtime binary's directory must be readable/executable. Follow a
@@ -604,6 +867,15 @@ fn add_runtime_essentials(
     // bundled data such as ICU alongside `bin/`), so the re-exec is permitted
     // under the sandbox.
     if let Some(real) = crate::runtime::resolved_exec_path(runtime) {
+        // `process.execPath`/`Deno.execPath()` can report a version-manager
+        // *junction* (e.g. fnm's per-shell `fnm_multishells\<id>\node.exe`)
+        // whose parent is a shared root holding every shell's dir. Granting that
+        // parent as the install root is both over-broad and — because the
+        // subtree-inheritable ACE re-propagates to all its children — as slow as
+        // granting the shared temp dir was (thousands of entries, seconds per
+        // spawn). Resolve the junction to the real binary first so the install
+        // root is the runtime's own (small) version tree.
+        let real = std::fs::canonicalize(&real).unwrap_or(real);
         push_parent(&mut spec.read_paths, &real);
         if let Some(bin_dir) = real.parent()
             && let Some(install_root) = bin_dir.parent()
@@ -612,17 +884,37 @@ fn add_runtime_essentials(
         }
     }
 
-    // Runtimes stage temporary files; grant a writable temp directory.
-    let tmp = std::env::var_os("TMPDIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/tmp"));
-    ensure_writable(&mut spec.write_paths, tmp);
+    // Runtimes stage temporary files; grant a writable temp directory. On
+    // Windows, granting the *shared* system temp dir is catastrophically slow:
+    // applying an inheritable ACE propagates it across every existing entry in
+    // `%TEMP%` (tens of thousands on a dev box), adding ~30s to every confined
+    // spawn. Use a fresh, empty per-run subdirectory instead (O(1) to grant) and
+    // point the child's temp env at it (see `build_command`). Other platforms
+    // add a single Landlock path rule with no tree walk, so the system temp dir
+    // is granted directly there.
+    let sandbox_temp = provision_sandbox_temp();
+    match &sandbox_temp {
+        Some(dir) => ensure_writable(&mut spec.write_paths, dir.clone()),
+        None => ensure_writable(&mut spec.write_paths, std::env::temp_dir()),
+    }
 
     // Grant read/execute for the directory of every program the policy allows
     // the script to spawn, so the confined child can `execve` it. Names in a
     // directory already covered by the sandbox baseline (e.g. `/usr/bin`) are
     // harmlessly re-added. Version-manager shims are common, so a resolved
     // symlink's real target directory is granted too.
+    //
+    // Windows is the exception: its sandbox is applied at *spawn* time
+    // (AppContainer), and program resolution there is materially harder — a bare
+    // name may resolve to a different `PATH` entry than `which` picks, package
+    // managers add non-symlink shim launchers (scoop) and junctioned install
+    // trees, so a single `which`+`canonicalize` under-grants and the confined
+    // child hits `os error 5` launching the real binary. So the exec programs
+    // are left on the spec for the AppContainer backend to resolve generously at
+    // spawn time (see `appcontainer_sandbox::program_dirs`); the pre-spawn
+    // backends (Landlock/Seatbelt) still need them lowered into `read_paths`
+    // here.
+    #[cfg(not(target_os = "windows"))]
     for program in std::mem::take(&mut spec.exec_programs) {
         if let Ok(path) = which::which(&program) {
             push_parent(&mut spec.read_paths, &path);
@@ -634,21 +926,24 @@ fn add_runtime_essentials(
 
     match runtime {
         DelegatingJsRuntimeOption::Deno => {
-            // `DENO_DIR` (module/compile cache) is written at runtime.
-            let cache = std::env::var_os("DENO_DIR")
-                .map(PathBuf::from)
-                .or_else(|| home_dir().map(|h| h.join(".cache/deno")));
-            if let Some(dir) = cache {
+            // `DENO_DIR` (module/compile cache) is written at runtime. Use the
+            // same per-platform default Deno itself picks when it is unset.
+            if let Some(dir) = deno_cache_dir() {
                 ensure_writable(&mut spec.write_paths, dir);
             }
-            // Global Deno config / install root (e.g. `DENO_INSTALL_ROOT`).
-            if let Some(home) = home_dir() {
-                spec.read_paths.push(home.join(".deno"));
+            // Global Deno config / install root (`DENO_INSTALL_ROOT`, else
+            // `<home>/.deno` on every platform Deno's installer targets).
+            let install_root = std::env::var_os("DENO_INSTALL_ROOT")
+                .map(PathBuf::from)
+                .or_else(|| home_dir().map(|h| h.join(".deno")));
+            if let Some(root) = install_root {
+                spec.read_paths.push(root);
             }
         }
         DelegatingJsRuntimeOption::Bun => {
             // Bun reads its runtime files and writes its module cache under its
-            // install root.
+            // install root (`%USERPROFILE%\.bun` on Windows, `~/.bun`
+            // elsewhere, or an explicit `BUN_INSTALL`).
             let install = std::env::var_os("BUN_INSTALL")
                 .map(PathBuf::from)
                 .or_else(|| home_dir().map(|h| h.join(".bun")));
@@ -659,6 +954,49 @@ fn add_runtime_essentials(
         // Node needs no writable cache to execute a prebuilt bundle; its
         // libraries live under system prefixes already in the baseline.
         DelegatingJsRuntimeOption::Node | DelegatingJsRuntimeOption::Auto => {}
+    }
+
+    sandbox_temp
+}
+
+/// A fresh, empty per-run temp directory to grant a confined child instead of
+/// the shared system temp dir. Returns `None` where the OS sandbox grants a path
+/// in O(1) (Landlock), so the system temp dir is used directly; `Some(dir)` on
+/// Windows, where granting the shared `%TEMP%` would force an inheritable-ACE
+/// walk across all of its existing entries on every spawn.
+#[cfg(windows)]
+fn provision_sandbox_temp() -> Option<PathBuf> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!(
+        "omni-sandbox-{}-{}",
+        std::process::id(),
+        seq
+    ));
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+#[cfg(not(windows))]
+fn provision_sandbox_temp() -> Option<PathBuf> {
+    None
+}
+
+/// Owns a per-run sandbox temp directory, removing it (recursively) on drop.
+///
+/// A confined child stages its temp files in a fresh per-run directory rather
+/// than the shared system temp (see [`provision_sandbox_temp`]). Tying that
+/// directory's lifetime to the runner keeps `%TEMP%` from accumulating one
+/// abandoned directory per confined spawn: when the runner is dropped, the
+/// directory (and anything the child left in it) is removed. Removal is
+/// best-effort — a lingering handle from a not-yet-reaped child only defers the
+/// cleanup to the OS, it never fails the run.
+struct SandboxTempDir(PathBuf);
+
+impl Drop for SandboxTempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -677,14 +1015,69 @@ fn ensure_writable(paths: &mut Vec<PathBuf>, dir: PathBuf) {
     paths.push(dir);
 }
 
+/// The current user's home directory. On Windows the runtime install roots and
+/// caches hang off `%USERPROFILE%` (Git-Bash-style `HOME` may be absent or hold
+/// a non-native `/c/...` path), so prefer it there and fall back to
+/// `HOMEDRIVE`+`HOMEPATH`; on other platforms use `HOME`.
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    #[cfg(windows)]
+    {
+        if let Some(profile) = std::env::var_os("USERPROFILE")
+            && !profile.is_empty()
+        {
+            return Some(PathBuf::from(profile));
+        }
+        let drive = std::env::var_os("HOMEDRIVE")?;
+        let path = std::env::var_os("HOMEPATH")?;
+        let mut home = PathBuf::from(drive);
+        home.push(path);
+        Some(home)
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
+
+/// The Deno module/compile cache directory (`DENO_DIR`): an explicit `DENO_DIR`
+/// when set, otherwise the per-platform default Deno itself chooses
+/// (`%LOCALAPPDATA%\deno` on Windows, `~/Library/Caches/deno` on macOS,
+/// `$XDG_CACHE_HOME/deno` or `~/.cache/deno` elsewhere). The confined runtime
+/// must be able to write here or it fails before running any script.
+fn deno_cache_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("DENO_DIR")
+        && !dir.is_empty()
+    {
+        return Some(PathBuf::from(dir));
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .filter(|p| !p.is_empty())
+            .map(|p| PathBuf::from(p).join("deno"))
+            .or_else(|| {
+                home_dir().map(|h| h.join("AppData").join("Local").join("deno"))
+            })
+    }
+    #[cfg(target_os = "macos")]
+    {
+        home_dir().map(|h| h.join("Library/Caches/deno"))
+    }
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        std::env::var_os("XDG_CACHE_HOME")
+            .filter(|p| !p.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| home_dir().map(|h| h.join(".cache")))
+            .map(|c| c.join("deno"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
+    use super::{PathBuf, SandboxTempDir};
     use super::{RUNTIME_BOOTSTRAP_ENV, scrubbed_child_env};
 
     #[test]
@@ -785,5 +1178,72 @@ mod tests {
                     && v == std::ffi::OsStr::new("1")),
             "an ordinary policy-allowed variable must still reach the child"
         );
+    }
+
+    /// A unique scratch directory under the system temp dir for a cleanup test.
+    fn scratch(tag: &str) -> PathBuf {
+        let unique = format!(
+            "omni-sandbox-test-{}-{}-{}",
+            tag,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        std::env::temp_dir().join(unique)
+    }
+
+    #[test]
+    fn sandbox_temp_dir_is_removed_with_its_contents_on_drop() {
+        // The per-run sandbox temp dir must not linger in `%TEMP%` after the
+        // runner that owns it goes away, even when the (confined) child left
+        // files behind in it.
+        let dir = scratch("drop");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("staged.tmp"), b"child temp data").unwrap();
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        std::fs::write(dir.join("nested/inner.tmp"), b"more").unwrap();
+        assert!(dir.exists(), "precondition: the scratch dir exists");
+
+        let guard = SandboxTempDir(dir.clone());
+        drop(guard);
+
+        assert!(
+            !dir.exists(),
+            "dropping the guard must remove the temp dir and its contents"
+        );
+    }
+
+    #[test]
+    fn sandbox_temp_dir_drop_tolerates_a_missing_directory() {
+        // Cleanup is best-effort: if the directory is already gone (e.g. the OS
+        // reaped it, or it was never created), dropping the guard must not
+        // panic.
+        let dir = scratch("missing");
+        assert!(!dir.exists(), "precondition: the dir does not exist");
+        let guard = SandboxTempDir(dir.clone());
+        drop(guard); // must not panic
+        assert!(!dir.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn provision_sandbox_temp_yields_distinct_existing_directories() {
+        use super::provision_sandbox_temp;
+        // On Windows a confined spawn provisions a fresh, empty temp dir each
+        // time; two provisions must not collide (so concurrent spawns cannot
+        // clobber or leak into each other's temp).
+        let a =
+            provision_sandbox_temp().expect("windows provisions a temp dir");
+        let b =
+            provision_sandbox_temp().expect("windows provisions a temp dir");
+        assert_ne!(a, b, "each provision must be a distinct directory");
+        assert!(a.is_dir() && b.is_dir(), "provisioned dirs must exist");
+        // Wrapping them in the guard both proves they clean up and avoids
+        // leaking the test's own scratch dirs.
+        drop(SandboxTempDir(a.clone()));
+        drop(SandboxTempDir(b.clone()));
+        assert!(!a.exists() && !b.exists(), "guards must remove both dirs");
     }
 }

@@ -244,6 +244,80 @@ async fn deno_broker_denies_a_write_escaping_via_a_symlinked_parent() {
     runner.shutdown().await;
 }
 
+/// Repro of the CLI generator scenario: the project (output) dir is a subdir
+/// of the workspace, and the policy only grants `@project` (not `@workspace`),
+/// mirroring `generator-capabilities.e2e.spec.ts`. The vendored bundle lives
+/// under `@workspace/.omni`, outside the granted `@project` subtree.
+#[tokio::test]
+async fn repro_narrow_project_policy_write() {
+    if !deno_available() {
+        eprintln!("skipping: `deno` not found on PATH");
+        return;
+    }
+
+    let ws = tempfile::tempdir().expect("tempdir");
+    let ws_dir: PathBuf = ws.path().to_path_buf();
+    let out_dir = ws_dir.join("out");
+    std::fs::create_dir_all(&out_dir).expect("mkdir out");
+    let script_path = ws_dir.join("write.mjs");
+    std::fs::write(&script_path, WRITE_SCRIPT).expect("write script");
+
+    let chain: CapabilityRules<Generator> = serde_json::from_str(
+        r#"[
+            { "access": "allow", "domain": "fs.read",  "patterns": ["@project/**"] },
+            { "access": "allow", "domain": "fs.write", "patterns": ["@project/**"] }
+        ]"#,
+    )
+    .expect("valid chain");
+
+    let policy = EffectivePolicy {
+        levels: vec![chain],
+        roots: PathRoots::new()
+            .with(Root::Workspace, &ws_dir)
+            .with(Root::Project, &out_dir),
+        context: GeneratorContext {
+            action: Some("run-javascript".to_string()),
+            target: None,
+        },
+        strictness: Default::default(),
+    };
+
+    let sys = TransactionSys::new(RealSys);
+    let observer = sys.clone();
+    let runner =
+        LazyScriptRunner::new(sys, ws_dir.clone(), "deno-e2e-test".to_string());
+
+    let allowed_target = out_dir.join("allowed.txt");
+    let inv = ScriptInvocation {
+        path: script_path.to_string_lossy().into_owned(),
+        params: ScriptParams {
+            dry_run: false,
+            data: serde_json::json!({
+                "target": allowed_target.to_string_lossy(),
+                "content": "ok",
+            }),
+            output_dir: out_dir.to_string_lossy().into_owned(),
+        },
+    };
+
+    runner
+        .run_scripts(
+            DelegatingJsRuntimeOption::Deno,
+            &policy,
+            std::slice::from_ref(&inv),
+        )
+        .await
+        .expect("an allowed write under @project must succeed");
+
+    let written = observer
+        .fs_read_async(&allowed_target)
+        .await
+        .expect("allowed file should be present in the transaction overlay");
+    assert_eq!(written.into_owned(), b"ok".to_vec());
+
+    runner.shutdown().await;
+}
+
 /// Proves the mandatory-floor guarantee end to end: a workspace-level `deny`,
 /// merged ahead of a generator-level `allow` that tries to re-open it, still
 /// wins through the real layered broker + Deno. A deeper `allow` can only

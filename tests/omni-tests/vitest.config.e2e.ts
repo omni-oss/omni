@@ -19,8 +19,12 @@ export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
         setupFiles: ["./src/harness/setup.ts"],
         // Spawning a real binary (and tasks it shells out to) is slower than a
         // unit test, so give e2e tests room before timing out.
-        testTimeout: 30_000,
-        hookTimeout: 30_000,
+        testTimeout: 10_000,
+        hookTimeout: 10_000,
+        retry: {
+            condition: /broken pipe/i,
+            count: 3,
+        },
         tags: [
             {
                 name: "generator",

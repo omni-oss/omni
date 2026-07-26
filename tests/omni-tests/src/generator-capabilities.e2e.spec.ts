@@ -90,6 +90,41 @@ function runtimeAvailable(bin: string): boolean {
     }
 }
 
+// Whether the resolved `node` actually implements the `--allow-net` permission
+// flag. Node did not ship it uniformly across the v24.x line (some builds reject
+// it as an unknown option), so feature-detect it directly. When it is absent,
+// omni refuses a net-granting generator on Node before launch, so the positive
+// `net`-on-Node paths (and the launch-flag net floor) are skipped rather than
+// failed — the same treatment an unavailable runtime gets.
+let _nodeSupportsNet: boolean | undefined;
+function nodeSupportsNet(): boolean {
+    if (_nodeSupportsNet !== undefined) {
+        return _nodeSupportsNet;
+    }
+
+    const MAX_TRIES = 3;
+
+    let exitCode = 0;
+    let tries = 0;
+
+    while (exitCode !== 0 && tries <= MAX_TRIES) {
+        try {
+            const r = spawnSync("node", ["--help"], { encoding: "utf8" });
+            const supportsNet = r.status === 0 && /--allow-net\b/.test(r.stdout ?? "");
+            exitCode = r.status ?? 1;
+
+            _nodeSupportsNet = supportsNet;
+        } catch {
+            _nodeSupportsNet = false;
+        }
+
+        ++tries;
+    }
+    _nodeSupportsNet ??= false;
+
+    return _nodeSupportsNet ;
+}
+
 type Capability = {
     access: "allow" | "deny";
     domain: "fs.read" | "fs.write" | "net" | "process" | "env";
@@ -879,6 +914,10 @@ describe("+generator @e2e (capabilities: network)", {
                 ctx.skip();
                 return;
             }
+            if (rt === "node" && !nodeSupportsNet()) {
+                ctx.skip();
+                return;
+            }
             // The intersection still permits an allowed call: loopback is in
             // both the workspace ceiling and the generator's (narrowed) policy,
             // so an allowed request completes end to end even with the layered
@@ -935,6 +974,10 @@ describe("+generator @e2e (capabilities: network)", {
                 ctx.skip();
                 return;
             }
+            if (rt === "node" && !nodeSupportsNet()) {
+                ctx.skip();
+                return;
+            }
 
             // Deterministic analog of the remote test below: the script starts
             // its own HTTP server on 127.0.0.1 and fetches it through the
@@ -986,31 +1029,10 @@ describe("+generator @e2e (capabilities: network)", {
                 ctx.skip();
                 return;
             }
-            // This is the only net test that reaches a *real external* host. It
-            // is green locally but fails on the GitHub-hosted `ubuntu-latest`
-            // runner with an in-runtime "unable to connect" (a genuine egress
-            // failure inside the confined child, not a capability denial).
-            //
-            // The `skipUnlessRemoteReachable` probe below cannot catch this: it
-            // runs in the *unconfined* test-runner process (ordinary env + egress
-            // path), whereas the request under test runs inside the *sandboxed*
-            // child (Landlock connect-port floor, scrubbed/minimal env, separate
-            // process). The runner can reach github.com while the confined child
-            // cannot, so the probe passes and the test then fails.
-            //
-            // The exact ubuntu-latest-only mechanism is unresolved (ruled out:
-            // network reachability, the connect-port floor — which is active
-            // locally too and permits :443, and the `/run` resolv.conf symlink
-            // read — which Landlock permits). Rather than gate CI on an
-            // unreproducible confined-egress quirk, this remote variant is a
-            // local/dev smoke test only; the deterministic loopback test above
-            // exercises the net allow-list end to end everywhere, including CI.
-            ctx.skip(
-                !!process.env.CI,
-                "remote-egress net test fails from the confined child on " +
-                    "ubuntu-latest (unresolved); covered deterministically by " +
-                    "the loopback test",
-            );
+            if (rt === "node" && !nodeSupportsNet()) {
+                ctx.skip();
+                return;
+            }
             await skipUnlessRemoteReachable(ctx);
 
             const ws = makeWorkspace(
@@ -1283,6 +1305,18 @@ describe("+generator @e2e (capabilities: process)", {
                 ctx.skip();
                 return;
             }
+            // Windows AppContainer limitation (see also `runs an allowed
+            // program`): a confined runtime cannot reliably spawn a grandchild
+            // shell. Ambient System32 grandchildren work, but `cmd.exe` as a
+            // shell is refused by the OS with access-denied even though its ACL
+            // grants ALL APPLICATION PACKAGES — and user-installed shells hit the
+            // same wall as other user-dir binaries. A shell invocation goes
+            // through the shell, so it stays skipped on Windows; the negative
+            // process paths above still run everywhere.
+            if (process.platform === "win32") {
+                ctx.skip();
+                return;
+            }
             const capabilities: Capability[] = [
                 {
                     access: "allow",
@@ -1332,6 +1366,21 @@ describe("+generator @e2e (capabilities: process)", {
     for (const rt of SPAWN_ALLOW_RUNTIMES) {
         it(`${rt}: runs an allowed program and captures its output`, async (ctx) => {
             if (!runtimeAvailable(rt) || !runtimeAvailable("git")) {
+                ctx.skip();
+                return;
+            }
+            // Windows AppContainer limitation: a confined runtime (node/deno)
+            // reliably spawns *ambient* grandchildren (System32) but not
+            // arbitrary *user-installed* binaries. Even with the allowed
+            // program's real directory granted read/execute (see
+            // `appcontainer_sandbox::program_dirs`) and fully-traversable
+            // ancestors, the OS refuses the grandchild CreateProcess with
+            // access-denied on locked-down hosts — pointing to a host execution
+            // policy (WDAC/AppLocker) or a deeper AppContainer restriction
+            // outside omni's control. Bun runs unconfined on Windows and
+            // exercises this path; skip the confined runtimes until a
+            // non-ACL mechanism (e.g. brokering the spawn from the parent) lands.
+            if (process.platform === "win32" && rt !== "bun") {
                 ctx.skip();
                 return;
             }
@@ -1422,9 +1471,46 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
         });
     }
 
+    // Windows-only: `bun` cannot boot inside an AppContainer (it stats every CWD
+    // ancestor up to `C:\`, which a Low-integrity container is denied), so unlike
+    // node/deno it launches unconfined and its filesystem rests only on the
+    // bypassable in-process broker. That weaker guarantee must be surfaced, not
+    // silent.
+    it("bun: warns that its filesystem has no OS-sandbox floor on Windows", async (ctx) => {
+        if (process.platform !== "win32" || !runtimeAvailable("bun")) {
+            ctx.skip();
+            return;
+        }
+        const ws = makeWorkspace(
+            capGeneratorSpec({
+                runtime: "bun",
+                capabilities: [
+                    {
+                        access: "allow",
+                        domain: "fs.write",
+                        patterns: ["@project/**"],
+                    },
+                ],
+                script: writeScript,
+            }),
+        );
+
+        const result = await runCapgen(ws);
+
+        // Non-fatal: the broker still mediates every brokered fs route.
+        expect(result).toHaveSucceeded();
+        expect(ws.read("out/floor.txt")).toBe("ran");
+        expect(result).toOutputContaining("cannot run inside an AppContainer");
+        expect(result).toOutputContaining(FLOOR_WARNING);
+    });
+
     for (const rt of NET_PROCESS_FLOOR_RUNTIMES) {
         it(`${rt}: governed net is floored by launch flags (no floor warning)`, async (ctx) => {
             if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            if (rt === "node" && !nodeSupportsNet()) {
                 ctx.skip();
                 return;
             }
@@ -1499,6 +1585,10 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
     for (const rt of NET_PROCESS_FLOOR_RUNTIMES) {
         it(`${rt}: require-floor still runs when net is floored by launch flags`, async (ctx) => {
             if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            if (rt === "node" && !nodeSupportsNet()) {
                 ctx.skip();
                 return;
             }

@@ -41,7 +41,7 @@ fn run(mut cmd: Command, spec: &OsSandboxSpec) -> std::process::Output {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    install_os_sandbox(&mut cmd, spec);
+    install_os_sandbox(&mut cmd, spec).expect("installing the sandbox");
     cmd.output().expect("spawning the confined child failed")
 }
 
@@ -66,7 +66,7 @@ fn ran_successfully(
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        install_os_sandbox(&mut cmd, spec);
+        install_os_sandbox(&mut cmd, spec).expect("installing the sandbox");
         if let Ok(out) = cmd.output()
             && out.status.success()
         {

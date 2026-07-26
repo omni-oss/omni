@@ -72,6 +72,22 @@ fn run_deno(
         .expect("failed to spawn deno")
 }
 
+/// On Windows, `fs::canonicalize` yields a verbatim (`\\?\`) path. Production
+/// strips that prefix centrally (see `omni_capabilities::matching::to_forward`),
+/// so the paths a caller actually hands to Deno are non-verbatim. Mirror that
+/// here so the accessed paths match the lowered `--allow-read` flag.
+#[cfg(target_os = "windows")]
+fn strip_verbatim(p: &Path) -> std::path::PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        std::path::PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        std::path::PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
+}
+
 #[test]
 fn deno_enforces_filesystem_read_confinement() {
     if !deno_available() {
@@ -84,6 +100,8 @@ fn deno_enforces_filesystem_read_confinement() {
     // Canonicalize so symlinked temp roots (e.g. macOS /var → /private/var)
     // match the paths Deno reports.
     let base = fs::canonicalize(tmp.path()).expect("canonicalize base");
+    #[cfg(target_os = "windows")]
+    let base = strip_verbatim(&base);
 
     let allowed_dir = base.join("allowed");
     fs::create_dir_all(&allowed_dir).unwrap();
@@ -110,10 +128,8 @@ fn deno_enforces_filesystem_read_confinement() {
 
     // Sanity: the generated flag confines reads to the allowed dir and never
     // opens the barn door.
-    let expected = format!(
-        "--allow-read={}",
-        allowed_dir.to_string_lossy().replace('\\', "/")
-    );
+    let allowed_forward = allowed_dir.to_string_lossy().replace('\\', "/");
+    let expected = format!("--allow-read={allowed_forward}");
     assert!(
         plan.spawn.args.contains(&expected),
         "expected {expected:?} in {:?}",
