@@ -15,16 +15,20 @@ tasks:
         - omni_workspace_gen_wasm#build
     exec: >
       bun -e '
-        import { $ } from "bun";
-        await $`cp -r ../../crates/omni_workspace_gen_wasm/dist ./dist`;
-        if (await Bun.file("./dist/package.json").exists()) {
-          await $`rm ./dist/package.json`;
+        import fs from "node:fs/promises";
+        import fsSync from "node:fs";
+        await fs.cp("../../crates/omni_workspace_gen_wasm/dist", "./dist", { recursive: true });
+        const packageJson = "./dist/package.json";
+        if (fsSync.existsSync(packageJson)) {
+          await fs.rm(packageJson);
         }
-        if (await Bun.file("./dist/.gitignore").exists()) {
-          await $`rm ./dist/.gitignore`;
+        const gitignore = "./dist/.gitignore";
+        if (fsSync.existsSync(gitignore)) {
+          await fs.rm(gitignore);
         }
-        if (await Bun.file("./dist/dist").exists()) {
-          await $`rm -r ./dist/dist`;
+        const distDist = "./dist/dist";
+        if (fsSync.existsSync(distDist)) {
+          await fs.rm(distDist, { recursive: true });
         }
       '
     cache:
