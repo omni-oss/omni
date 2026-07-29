@@ -13,8 +13,14 @@
 //! * **Filesystem** — `--allow-fs-read` / `--allow-fs-write` are **allow-list
 //!   only**: there is *no* `--deny-fs-*`, so every `deny` filesystem rule is a
 //!   gap. Grants are path/prefix based (a trailing `*` covers a subtree).
-//! * **Network** — `--allow-net` is **all-or-nothing**; only a policy that
-//!   grants *all* net is representable, anything host-specific is a gap.
+//! * **Network** — Node's permission model has **no network flag at all** (it
+//!   exposes `--allow-fs-*`, `--allow-child-process`, `--allow-worker`,
+//!   `--allow-wasi`, `--allow-addons` — but nothing for sockets). This backend
+//!   therefore does **not** cover [`net`](CapabilityDomain::Net): every net rule
+//!   is left to another backend (the in-process broker) and the script shim,
+//!   and [`require_full_coverage`](crate::require_full_coverage) fails closed if
+//!   nothing else covers it. Emitting a `--allow-net` here would be a lie — Node
+//!   rejects it as `bad option` — so we never do.
 //! * **Child processes** — `--allow-child-process` is likewise all-or-nothing.
 //! * **Environment** — Node's permission model does **not** gate environment
 //!   variable access at all, so this backend does **not** cover
@@ -25,7 +31,7 @@ use omni_capabilities::{
     CapabilityAtom, CapabilityDomain, RequiredCapabilities,
 };
 
-use crate::lower::{FsScope, classify_fs_glob, split_host_port};
+use crate::lower::{FsScope, classify_fs_glob, validate_flag_value};
 use crate::{
     BackendPlan, Coverage, EnforcementBackend, EnforcementError, Gap,
     PatternResolver, Tier,
@@ -47,11 +53,13 @@ impl EnforcementBackend for NodePermissions {
     }
 
     fn coverage(&self) -> Coverage {
-        // Everything except `env`, which Node's permission model does not gate.
+        // Node's permission model gates the filesystem and child processes, but
+        // has no flag for `net` (sockets) and does not gate `env` at all. Both
+        // uncovered domains fall to the broker/shim, and coverage analysis fails
+        // closed if a restricting policy has no other backend to enforce them.
         Coverage::of([
             CapabilityDomain::FsRead,
             CapabilityDomain::FsWrite,
-            CapabilityDomain::Net,
             CapabilityDomain::Process,
         ])
     }
@@ -91,15 +99,12 @@ impl EnforcementBackend for NodePermissions {
                     restricted,
                     &mut plan,
                 ),
-                CapabilityDomain::Net => plan_boolean(
-                    domain,
-                    "allow-net",
-                    "host",
-                    allow,
-                    deny,
-                    restricted,
-                    &mut plan,
-                ),
+                CapabilityDomain::Net => {
+                    // Not gated by Node's permission model (there is no
+                    // `--allow-net`). Coverage excludes it, so a restricting
+                    // net policy is enforced by the broker/shim or caught
+                    // upstream by coverage analysis — never by a bogus flag.
+                }
                 CapabilityDomain::Process => plan_boolean(
                     domain,
                     "allow-child-process",
@@ -164,12 +169,16 @@ fn plan_fs(
             // Node grants a subtree via a trailing `*` on the directory.
             Ok(FsScope::Subtree(prefix)) => {
                 let value = format!("{prefix}/*");
-                if !values.contains(&value) {
+                if let Err(reason) = validate_flag_value(&value) {
+                    plan.gaps.push(gap(domain, atom, reason));
+                } else if !values.contains(&value) {
                     values.push(value);
                 }
             }
             Ok(FsScope::Exact(path)) => {
-                if !values.contains(&path) {
+                if let Err(reason) = validate_flag_value(&path) {
+                    plan.gaps.push(gap(domain, atom, reason));
+                } else if !values.contains(&path) {
                     values.push(path);
                 }
             }
@@ -249,15 +258,10 @@ fn plan_boolean(
 }
 
 /// Whether an allow pattern means "grant this whole domain" for Node's boolean
-/// gates: a bare `*` program, or a `*`/`*:port` host (any host).
-fn grants_everything(domain: CapabilityDomain, pattern: &str) -> bool {
-    match domain {
-        CapabilityDomain::Net => {
-            let (host, _port) = split_host_port(pattern);
-            host == "*"
-        }
-        _ => pattern == "*",
-    }
+/// gates. Only `process` reaches this now (`net` is uncovered), so a bare `*`
+/// program is the only "grant everything" form.
+fn grants_everything(_domain: CapabilityDomain, pattern: &str) -> bool {
+    pattern == "*"
 }
 
 #[cfg(test)]
@@ -296,13 +300,45 @@ mod tests {
     }
 
     #[test]
-    fn coverage_excludes_env() {
+    fn coverage_excludes_env_and_net() {
         let c = NodePermissions.coverage();
         assert!(c.covers(CapabilityDomain::FsRead));
         assert!(c.covers(CapabilityDomain::FsWrite));
-        assert!(c.covers(CapabilityDomain::Net));
         assert!(c.covers(CapabilityDomain::Process));
         assert!(!c.covers(CapabilityDomain::Env), "Node cannot gate env");
+        assert!(
+            !c.covers(CapabilityDomain::Net),
+            "Node's permission model has no network flag"
+        );
+    }
+
+    #[test]
+    fn never_emits_an_allow_net_flag() {
+        // Node has no `--allow-net`; emitting one makes Node abort with
+        // `bad option: --allow-net`. Whatever the net policy, we must not.
+        for json in [
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["*:*"] }]"#,
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
+            r#"[{ "access": "deny",  "domain": "net", "patterns": ["evil.example"] }]"#,
+        ] {
+            let p = spawn(json);
+            assert!(
+                !p.args.iter().any(|a| a.contains("net")),
+                "Node must never emit a net flag: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn net_is_uncovered_so_it_produces_no_gap_here() {
+        // Net is not a Node gap (mirroring env): coverage excludes it, so the
+        // broker/shim owns it and coverage analysis fails closed elsewhere.
+        assert!(
+            gaps(
+                r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -348,20 +384,25 @@ mod tests {
     }
 
     #[test]
-    fn specific_host_is_a_gap() {
-        let gaps = gaps(
-            r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
+    fn fs_value_with_comma_is_a_gap_not_an_injection() {
+        // A resolved path containing a comma would inject an extra allow entry
+        // into the comma-joined flag list; it must become a gap instead.
+        let roots = PathRoots::new().with(Root::Workspace, "/repo,/etc");
+        let req = require(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
         );
-        assert_eq!(gaps.len(), 1);
-        assert_eq!(gaps[0].domain, CapabilityDomain::Net);
-    }
-
-    #[test]
-    fn allow_all_net_is_the_boolean_flag() {
-        let p = spawn(
-            r#"[{ "access": "allow", "domain": "net", "patterns": ["*:*"] }]"#,
+        let plan = NodePermissions.plan(&req, &roots).expect("plan");
+        assert!(
+            !plan
+                .spawn
+                .args
+                .iter()
+                .any(|a| a.starts_with("--allow-fs-read")),
+            "comma value must not be emitted: {:?}",
+            plan.spawn.args
         );
-        assert!(p.args.contains(&"--allow-net".to_string()), "{p:?}");
+        assert_eq!(plan.gaps.len(), 1, "{:?}", plan.gaps);
+        assert_eq!(plan.gaps[0].domain, CapabilityDomain::FsRead);
     }
 
     #[test]
@@ -385,16 +426,18 @@ mod tests {
     }
 
     #[test]
-    fn env_restriction_is_a_coverage_gap_for_node_alone() {
-        // The base `()` profile supports all five domains, so `env` is
-        // restricted; Node cannot cover it, so coverage must fail closed.
+    fn uncovered_domain_fails_closed_for_node_alone() {
+        // The base `()` profile governs every domain, so both `env` and `net`
+        // are restricted; Node covers neither, so coverage must fail closed.
         let req = require("[]");
         let backends: [&dyn EnforcementBackend; 1] = [&NodePermissions];
         let err = require_full_coverage(&req, &backends)
-            .expect_err("env is uncovered by Node");
+            .expect_err("env and net are uncovered by Node");
         assert_eq!(err.kind(), crate::EnforcementErrorKind::UncoveredDomain);
+        let msg = err.to_string();
         assert!(
-            err.to_string().contains(&CapabilityDomain::Env.to_string()),
+            msg.contains(&CapabilityDomain::Env.to_string())
+                || msg.contains(&CapabilityDomain::Net.to_string()),
             "{err}"
         );
     }

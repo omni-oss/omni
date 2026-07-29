@@ -22,7 +22,7 @@ use std::str::FromStr;
 use omni_types::{OmniPath, OmniPathRoot, Root};
 use path_clean::PathClean;
 
-use crate::{CapabilityDomain, CapabilityRule};
+use crate::{Access, CapabilityDomain, CapabilityRule};
 
 /// Resolves omni path roots (e.g. `@workspace`, `@project`) used in filesystem
 /// patterns. Keeping roots abstract is what makes the same config portable
@@ -168,23 +168,55 @@ pub fn rule_matches<R: OmniPathRoot>(
     if rule.domain != req.domain() {
         return false;
     }
+    // A malformed (uncompilable) glob must never silently vanish: in a `deny`
+    // rule that would be a fail-*open* bypass (`deny @ws/[bad` stops denying
+    // anything). So treat "uncompilable" as a match for a deny (fail closed)
+    // and as a non-match for an allow (an allow proves nothing it cannot
+    // compile). `validate` also rejects such patterns at load time; this is the
+    // defense-in-depth for any code path that skipped validation.
+    let on_uncompilable = matches!(rule.access, Access::Deny);
+    let resolve = |m: Option<bool>| m.unwrap_or(on_uncompilable);
     match req {
         Request::Fs { path, .. } => rule.patterns.iter().any(|p| {
-            roots
-                .resolve_pattern(p)
-                .is_some_and(|glob| path_glob_matches(&glob, path))
+            match roots.resolve_pattern(p) {
+                // An unregistered root cannot resolve to a path and matches
+                // nothing (not a malformed pattern) — faithful for allow *and*
+                // deny, so it is not forced closed.
+                Some(glob) => resolve(path_glob_matches(&glob, path)),
+                None => false,
+            }
         }),
         Request::Net { host, port } => rule
             .patterns
             .iter()
-            .any(|p| host_port_matches(p, host, *port)),
-        Request::Env { name } => {
-            rule.patterns.iter().any(|p| glob_str_matches(p, name))
-        }
-        Request::Process { program } => {
-            rule.patterns.iter().any(|p| process_matches(p, program))
-        }
+            .any(|p| resolve(host_port_matches(p, host, *port))),
+        Request::Env { name } => rule
+            .patterns
+            .iter()
+            .any(|p| resolve(glob_str_matches(p, name, ENV_CASE_INSENSITIVE))),
+        Request::Process { program } => rule
+            .patterns
+            .iter()
+            .any(|p| resolve(process_matches(p, program))),
     }
+}
+
+/// Whether a policy `pattern` is a well-formed glob for its `domain`. Used by
+/// [`crate::validate`] to reject an uncompilable pattern at *load* time, rather
+/// than let it silently fail-open inside a `deny` rule when matched.
+pub(crate) fn pattern_is_valid(
+    domain: CapabilityDomain,
+    pattern: &str,
+) -> Result<(), String> {
+    // For `net` only the host part is a glob; the `:port` suffix is structural.
+    let candidate = match domain {
+        CapabilityDomain::Net => split_host_port(pattern).0,
+        _ => pattern,
+    };
+    globset::GlobBuilder::new(candidate)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 // ── glob helpers ───────────────────────────────────────────────────────────
@@ -213,24 +245,48 @@ fn to_forward(s: &str) -> String {
 fn compile(
     pattern: &str,
     literal_separator: bool,
+    case_insensitive: bool,
 ) -> Option<globset::GlobMatcher> {
     globset::GlobBuilder::new(pattern)
         .literal_separator(literal_separator)
+        .case_insensitive(case_insensitive)
         .build()
         .ok()
         .map(|g| g.compile_matcher())
 }
 
+/// Whether filesystem matching is case-insensitive on this platform. Windows
+/// treats paths (and drive letters) case-insensitively, so a `deny` pattern
+/// must not be evadable by re-casing a component (`deny @ws/Secret/**` must
+/// still catch `@ws/SECRET/...`). POSIX filesystems are case-sensitive.
+#[cfg(windows)]
+const FS_CASE_INSENSITIVE: bool = true;
+#[cfg(not(windows))]
+const FS_CASE_INSENSITIVE: bool = false;
+
+/// Environment variable name lookup is case-insensitive on Windows
+/// (`PATH` == `Path`) but case-sensitive on POSIX.
+#[cfg(windows)]
+const ENV_CASE_INSENSITIVE: bool = true;
+#[cfg(not(windows))]
+const ENV_CASE_INSENSITIVE: bool = false;
+
 /// Path glob with `/`-aware semantics: `*` does not cross directory
-/// separators, `**` does.
-fn path_glob_matches(glob: &str, path: &Path) -> bool {
+/// separators, `**` does. `None` iff the glob is malformed (uncompilable) — the
+/// caller decides the fail-closed stance (see [`rule_matches`]).
+fn path_glob_matches(glob: &str, path: &Path) -> Option<bool> {
     let target = to_forward(&path.clean().to_string_lossy());
-    compile(glob, true).is_some_and(|m| m.is_match(&target))
+    Some(compile(glob, true, FS_CASE_INSENSITIVE)?.is_match(&target))
 }
 
 /// Plain glob (no separator awareness), for hosts/env names/program names.
-fn glob_str_matches(pattern: &str, value: &str) -> bool {
-    compile(pattern, false).is_some_and(|m| m.is_match(value))
+/// `None` iff the glob is malformed.
+fn glob_str_matches(
+    pattern: &str,
+    value: &str,
+    case_insensitive: bool,
+) -> Option<bool> {
+    Some(compile(pattern, false, case_insensitive)?.is_match(value))
 }
 
 /// Matches a spawn `program` against a `process` pattern.
@@ -242,7 +298,7 @@ fn glob_str_matches(pattern: &str, value: &str) -> bool {
 /// policy pattern can authorize a program regardless of the runtime, we match
 /// the full strings OR their basenames, case-folded. POSIX stays verbatim and
 /// case-sensitive so a `/bin/sh` grant is not silently loosened to any `sh`.
-fn process_matches(pattern: &str, program: &str) -> bool {
+fn process_matches(pattern: &str, program: &str) -> Option<bool> {
     #[cfg(windows)]
     {
         let pattern = pattern.to_lowercase();
@@ -251,17 +307,27 @@ fn process_matches(pattern: &str, program: &str) -> bool {
         // then basename (Deno passes bare `cmd.exe`, Node/Bun the full
         // `…\cmd.exe`), then basename with the executable extension stripped
         // (Windows resolves a bare `git` to `git.exe` via PATHEXT, so a `git`
-        // grant must still reach the resolved `git.exe`).
-        glob_str_matches(&pattern, &program)
-            || glob_str_matches(basename(&pattern), basename(&program))
-            || glob_str_matches(
-                strip_exe_ext(basename(&pattern)),
-                strip_exe_ext(basename(&program)),
-            )
+        // grant must still reach the resolved `git.exe`). Already case-folded
+        // above, so the glob compile is case-sensitive here.
+        let a = glob_str_matches(&pattern, &program, false);
+        let b = glob_str_matches(basename(&pattern), basename(&program), false);
+        let c = glob_str_matches(
+            strip_exe_ext(basename(&pattern)),
+            strip_exe_ext(basename(&program)),
+            false,
+        );
+        // Uncompilable only when *no* variant compiled; otherwise a match in
+        // any variant wins.
+        match (a, b, c) {
+            (None, None, None) => None,
+            _ => Some(
+                a.unwrap_or(false) || b.unwrap_or(false) || c.unwrap_or(false),
+            ),
+        }
     }
     #[cfg(not(windows))]
     {
-        glob_str_matches(pattern, program)
+        glob_str_matches(pattern, program, false)
     }
 }
 
@@ -288,16 +354,29 @@ fn strip_exe_ext(s: &str) -> &str {
 }
 
 /// Matches a `host:port` request against a `host[:port]` pattern where the host
-/// part is a glob and the port is exact, `*`, or omitted (any).
-fn host_port_matches(pattern: &str, host: &str, port: u16) -> bool {
+/// part is a glob and the port is exact, `*`, or omitted (any). `None` iff the
+/// host glob is malformed.
+///
+/// DNS host names are case-insensitive on every platform, so the host glob is
+/// always matched case-insensitively; a single trailing dot (the FQDN root
+/// label) is normalized away on both sides so `example.com.` and `example.com`
+/// are the same host and a `deny` cannot be dodged by appending it.
+fn host_port_matches(pattern: &str, host: &str, port: u16) -> Option<bool> {
     let (p_host, p_port) = split_host_port(pattern);
-    let host_ok = glob_str_matches(p_host, host);
+    let p_host = strip_trailing_dot(p_host);
+    let host = strip_trailing_dot(host);
+    let host_ok = glob_str_matches(p_host, host, true)?;
     let port_ok = match p_port {
         None => true,
         Some("*") => true,
         Some(p) => p.parse::<u16>().is_ok_and(|n| n == port),
     };
-    host_ok && port_ok
+    Some(host_ok && port_ok)
+}
+
+/// Strip a single trailing `.` (the DNS root label) from a host.
+fn strip_trailing_dot(s: &str) -> &str {
+    s.strip_suffix('.').unwrap_or(s)
 }
 
 fn split_host_port(pattern: &str) -> (&str, Option<&str>) {
@@ -449,14 +528,106 @@ mod tests {
 
     #[test]
     fn host_port_wildcards() {
-        assert!(host_port_matches(
-            "*.npmjs.org:443",
-            "registry.npmjs.org",
-            443
+        assert_eq!(
+            host_port_matches("*.npmjs.org:443", "registry.npmjs.org", 443),
+            Some(true)
+        );
+        assert_eq!(
+            host_port_matches("example.com:*", "example.com", 8080),
+            Some(true)
+        );
+        assert_eq!(
+            host_port_matches("example.com", "example.com", 22),
+            Some(true)
+        );
+        assert_eq!(
+            host_port_matches("example.com:443", "example.com", 80),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn host_matching_is_case_insensitive_and_dot_tolerant() {
+        // DNS is case-insensitive on every platform, and a trailing FQDN dot
+        // must not dodge a deny.
+        assert_eq!(
+            host_port_matches("example.com:443", "EXAMPLE.COM", 443),
+            Some(true)
+        );
+        assert_eq!(
+            host_port_matches("Example.Com:443", "example.com.", 443),
+            Some(true)
+        );
+    }
+
+    fn net_rule(access: Access, patterns: &[&str]) -> CapabilityRule {
+        CapabilityRule {
+            access,
+            domain: CapabilityDomain::Net,
+            patterns: patterns.iter().map(|p| (*p).to_string()).collect(),
+            on_unenforceable: None,
+        }
+    }
+
+    #[test]
+    fn malformed_deny_glob_fails_closed_but_allow_fails_open() {
+        // `[` is an unterminated character class — an uncompilable glob. A deny
+        // that cannot compile must not silently vanish (it would be a bypass):
+        // it matches everything (fail closed). An allow that cannot compile
+        // grants nothing (also fail closed).
+        let host = Request::Net {
+            host: "anything.example",
+            port: 443,
+        };
+        assert!(rule_matches(
+            &net_rule(Access::Deny, &["[bad"]),
+            &host,
+            &PathRoots::<Root>::new(),
         ));
-        assert!(host_port_matches("example.com:*", "example.com", 8080));
-        assert!(host_port_matches("example.com", "example.com", 22));
-        assert!(!host_port_matches("example.com:443", "example.com", 80));
+        assert!(!rule_matches(
+            &net_rule(Access::Allow, &["[bad"]),
+            &host,
+            &PathRoots::<Root>::new(),
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fs_deny_is_case_insensitive_on_windows() {
+        // `deny @project/Secret/**` must catch a re-cased `SECRET` request.
+        let win_roots = PathRoots::new().with(Root::Project, r"C:\repo\pkg");
+        let rule = CapabilityRule {
+            access: Access::Deny,
+            domain: CapabilityDomain::FsWrite,
+            patterns: vec![r"@project/Secret/**".into()],
+            on_unenforceable: None,
+        };
+        assert!(rule_matches(
+            &rule,
+            &Request::Fs {
+                write: true,
+                path: Path::new(r"C:\repo\pkg\SECRET\key.pem")
+            },
+            &win_roots,
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn env_deny_is_case_insensitive_on_windows() {
+        let rule = CapabilityRule {
+            access: Access::Deny,
+            domain: CapabilityDomain::Env,
+            patterns: vec!["SECRET_TOKEN".into()],
+            on_unenforceable: None,
+        };
+        assert!(rule_matches(
+            &rule,
+            &Request::Env {
+                name: "secret_token"
+            },
+            &PathRoots::<Root>::new(),
+        ));
     }
 
     fn process_rule(patterns: &[&str]) -> CapabilityRule {

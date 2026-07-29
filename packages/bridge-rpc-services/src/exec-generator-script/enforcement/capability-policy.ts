@@ -1,5 +1,11 @@
 import type { EnvRuleLayers } from "@omni-oss/bridge-rpc-system-interface";
+import { globMatches } from "@omni-oss/bridge-rpc-system-interface";
 import z from "zod";
+
+// Re-exported so callers (and the spec) have one glob entry point regardless of
+// which enforcement file they reach for; the implementation lives in the shared
+// `@omni-oss/bridge-rpc-system-interface` module so every layer matches alike.
+export { globMatches };
 
 /**
  * The residual capability policy the runtime shim must enforce, mirroring the
@@ -203,7 +209,11 @@ export function netMatches(
     port: number,
 ): boolean {
     const { host: pHost, port: pPort } = splitHostPort(pattern);
-    if (!globMatches(pHost, host)) {
+    // Reconcile the two shapes an IPv6 host reaches us in: a WHATWG `URL`
+    // hostname is bracketed (`[::1]`) while a raw `net.connect(port, "::1")`
+    // host is bare. Strip brackets on both the pattern host and the concrete
+    // host so a single `[::1]`/`::1` grant authorizes either source.
+    if (!globMatches(stripBrackets(pHost), stripBrackets(host))) {
         return false;
     }
     if (pPort === undefined || pPort === "*") {
@@ -213,34 +223,57 @@ export function netMatches(
     return Number.isInteger(parsed) && parsed === port;
 }
 
+/** Drop a single pair of surrounding `[` `]` from a (bracketed IPv6) host. */
+function stripBrackets(host: string): string {
+    return host.startsWith("[") && host.endsWith("]")
+        ? host.slice(1, -1)
+        : host;
+}
+
 /**
- * Split `host[:port]`, recognising the port only when it is `*` or all-digits,
- * so bare hosts (and IPv6-ish patterns) are not mis-split. Mirrors the Rust
- * `split_host_port`.
+ * Split `host[:port]`, handling IPv6 so a colon inside the address is never
+ * mistaken for the port delimiter (the twin of the Rust
+ * `omni_capability_enforcement::lower::split_host_port`):
+ *
+ * * **Bracketed** (`[::1]`, `[::1]:443`) — the host is everything up to and
+ *   including `]`; a port, if present, follows the closing bracket.
+ * * **Bare** (`example.com:443`, `::1`) — the tail after the final colon is a
+ *   port only when the host part has no further colon, so a bracket-less IPv6
+ *   literal (`fe80::1`) is left intact rather than split on its own colons.
  */
 function splitHostPort(pattern: string): {
     host: string;
     port: string | undefined;
 } {
+    if (pattern.startsWith("[")) {
+        const close = pattern.indexOf("]");
+        if (close === -1) {
+            return { host: pattern, port: undefined }; // malformed — opaque host
+        }
+        const host = pattern.slice(0, close + 1);
+        const after = pattern.slice(close + 1);
+        if (after.startsWith(":")) {
+            const p = after.slice(1);
+            if (looksLikePort(p)) {
+                return { host, port: p };
+            }
+        }
+        return { host, port: undefined };
+    }
     const idx = pattern.lastIndexOf(":");
     if (idx !== -1) {
         const p = pattern.slice(idx + 1);
-        const looksLikePort = p === "*" || (p.length > 0 && /^[0-9]+$/.test(p));
-        if (looksLikePort) {
-            return { host: pattern.slice(0, idx), port: p };
+        const head = pattern.slice(0, idx);
+        if (looksLikePort(p) && !head.includes(":")) {
+            return { host: head, port: p };
         }
     }
     return { host: pattern, port: undefined };
 }
 
-/**
- * Glob match with `*` (any run of characters, including separators) and `?`
- * (a single character). All other characters are matched literally. This mirrors
- * the non-separator-aware glob the Rust backend uses for hosts and program
- * names.
- */
-export function globMatches(pattern: string, value: string): boolean {
-    return globToRegExp(pattern).test(value);
+/** Whether `p` is a port selector: `*` (any) or all ASCII digits. */
+function looksLikePort(p: string): boolean {
+    return p === "*" || (p.length > 0 && /^[0-9]+$/.test(p));
 }
 
 /**
@@ -311,23 +344,4 @@ function stripExeExt(s: string): string {
         }
     }
     return s;
-}
-
-function globToRegExp(glob: string): RegExp {
-    let out = "^";
-    for (const ch of glob) {
-        if (ch === "*") {
-            out += ".*";
-        } else if (ch === "?") {
-            out += ".";
-        } else {
-            out += escapeRegExp(ch);
-        }
-    }
-    out += "$";
-    return new RegExp(out);
-}
-
-function escapeRegExp(ch: string): string {
-    return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

@@ -267,7 +267,7 @@ pub fn build_plan_layered(
         return Err(EnforcementError::unenforceable(render_gaps(&deny_gaps)));
     }
 
-    let floor_gaps = floor_gaps(req, backends);
+    let floor_gaps = floor_gaps(req, levels, backends, &domains_with_gaps);
     if strictness == FloorStrictness::RequireFloor && !floor_gaps.is_empty() {
         return Err(EnforcementError::no_floor(render_floor_gaps(&floor_gaps)));
     }
@@ -281,22 +281,37 @@ pub fn build_plan_layered(
 }
 
 /// Identify domains the policy **governs** (has an explicit allow/deny rule)
-/// that have **no un-bypassable floor**: no [`Tier::PreSpawnFlags`] or
-/// [`Tier::OsSandbox`] backend in the stack covers them, so the only thing
-/// enforcing the domain is a bypassable [`Tier::InProcessBroker`] (the RPC
-/// broker or the script shim).
+/// that lack a **precise un-bypassable floor** for the resolved runtime/platform.
 ///
-/// This is reported for diagnostics, not as a hard failure: the broker/shim are
-/// still active as defense in depth. It is deliberately domain-level and
-/// mechanism-derived, so it stays correct as backends are added — e.g. once a
-/// Seatbelt/AppContainer [`Tier::OsSandbox`] backend covers `fs` off-Linux, the
-/// corresponding floor gaps disappear on their own.
+/// A governed domain is *precisely floored* only when all three hold:
+/// 1. a [`Tier::PreSpawnFlags`] or [`Tier::OsSandbox`] backend covers it, **and**
+/// 2. no governing atom was punted to the broker as a representability
+///    [`Gap`] (`domains_with_gaps`) — a broad-superset flag or a
+///    broker-only fs `deny` sub-path leaves the kernel floor incomplete, **and**
+/// 3. at most one policy level constrains it — 2+ levels are lowered to the
+///    kernel as their *union*, a strict superset of the true (intersection)
+///    authority, so the extra reach is narrowed only by the bypassable shim.
+///
+/// Anything failing (1) rests on a bypassable in-process mechanism alone;
+/// anything failing (2)/(3) has a floor that is a *superset* of the effective
+/// authority. Both are reported as [`FloorGap`]s (diagnostics under
+/// [`FloorStrictness::Warn`], a hard refusal under `RequireFloor`) — so
+/// "deeper levels only narrow" is guaranteed at the kernel too: under
+/// `RequireFloor` no run proceeds unless the kernel floor equals the exact
+/// authority.
+///
+/// It stays correct as backends are added — e.g. once an OS-sandbox backend
+/// covers `fs` off-Linux and represents every atom, the corresponding gaps
+/// disappear on their own.
 ///
 /// Every governed domain is already known to be *covered* (coverage was checked
-/// first), so the covering mechanism is always some in-process backend.
+/// first), so the covering mechanism is always some in-process backend when a
+/// floor is absent.
 fn floor_gaps(
     req: &RequiredCapabilities,
+    levels: &[RequiredCapabilities],
     backends: &[&dyn EnforcementBackend],
+    domains_with_gaps: &BTreeSet<CapabilityDomain>,
 ) -> Vec<FloorGap> {
     let mut gaps = Vec::new();
     for &domain in &req.restricted {
@@ -315,25 +330,71 @@ fn floor_gaps(
         if !governed {
             continue;
         }
-        let floored = backends
+        let floor_covers = backends
             .iter()
             .any(|b| b.tier().provides_floor() && b.coverage().covers(domain));
-        if !floored {
+        // A punted atom (representability gap) or a multi-level union both leave
+        // the kernel floor broader than the effective authority.
+        let gapped = domains_with_gaps.contains(&domain);
+        let union_widened = levels
+            .iter()
+            .filter(|l| l.domains.contains_key(&domain))
+            .count()
+            > 1;
+        let precisely_floored = floor_covers && !gapped && !union_widened;
+        if !precisely_floored {
             gaps.push(FloorGap {
                 domain,
-                reason: floor_gap_reason(domain, backends),
+                reason: floor_gap_reason(
+                    domain,
+                    backends,
+                    floor_covers,
+                    gapped,
+                    union_widened,
+                ),
             });
         }
     }
     gaps
 }
 
-/// Explain a [`FloorGap`] by naming the bypassable in-process mechanism(s) that
-/// do cover the domain (via ordinary coverage or as a script shim).
+/// Explain a [`FloorGap`]: either no floor backend covers the domain (it rests
+/// on a bypassable in-process mechanism), or one does but the floor is a
+/// *superset* of the effective authority (a punted pattern and/or a union of
+/// multiple policy levels), so the shim still has to narrow it in-process.
 fn floor_gap_reason(
     domain: CapabilityDomain,
     backends: &[&dyn EnforcementBackend],
+    floor_covers: bool,
+    gapped: bool,
+    union_widened: bool,
 ) -> String {
+    if floor_covers {
+        let cause = match (gapped, union_widened) {
+            (true, true) => {
+                "one or more of its patterns could not be represented at launch \
+                 and it is constrained by multiple policy levels whose union \
+                 (a superset of the effective authority) is what the floor \
+                 enforces"
+            }
+            (true, false) => {
+                "one or more of its patterns could not be represented at launch \
+                 and fall to the bypassable in-process broker/shim"
+            }
+            (false, true) => {
+                "it is constrained by multiple policy levels whose union (a \
+                 superset of the true intersection authority) is what the floor \
+                 enforces; the intersection is narrowed only by the bypassable \
+                 in-process shim"
+            }
+            // Should not reach here: `precisely_floored` would be true.
+            (false, false) => "its floor is incomplete",
+        };
+        return format!(
+            "{domain} has a runtime-flag or OS-sandbox floor, but {cause}, so the \
+             kernel floor is a superset of what the policy actually permits"
+        );
+    }
     let mut mechanisms: Vec<&str> = backends
         .iter()
         .filter(|b| !b.tier().provides_floor())
@@ -913,16 +974,22 @@ mod tests {
     }
 
     #[test]
-    fn node_specific_host_uses_broad_floor_and_shim_narrows() {
-        // Node's --allow-net is all-or-nothing: broad floor + shim residual.
+    fn node_specific_host_is_owned_by_broker_and_shim_not_a_net_flag() {
+        // Node has no `--allow-net`, so it neither covers nor flags net: the
+        // broker enforces it exactly and the shim narrows it per host. Node
+        // must not emit any net flag (doing so aborts Node at launch).
         let req = require(
             r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
         );
         let backends: [&dyn EnforcementBackend; 3] =
             [&NodePermissions, &FullBroker, &ScriptShimBroker::new()];
         let plan = build_plan(&req, &roots(), &backends)
-            .expect("shim resolves node's coarse net");
-        assert!(plan.spawn.args.contains(&"--allow-net".to_string()));
+            .expect("broker + shim own node's net");
+        assert!(
+            !plan.spawn.args.iter().any(|a| a.contains("net")),
+            "node must emit no net flag: {:?}",
+            plan.spawn.args
+        );
         let net = shim_rules(&plan, CapabilityDomain::Net).unwrap();
         assert_eq!(net.allow, vec!["example.com:443".to_string()]);
     }
@@ -1372,5 +1439,100 @@ mod tests {
         )
         .expect_err("uncovered dominates");
         assert_eq!(err.kind(), crate::EnforcementErrorKind::UncoveredDomain);
+    }
+
+    #[test]
+    fn a_gapped_floor_is_not_a_precise_floor() {
+        // A floor-tier backend covers `net` but cannot represent the pattern, so
+        // it punts it to the (exact) broker. The domain is *covered by a floor*
+        // yet not *precisely floored*: the kernel floor is a superset and the
+        // real narrowing happens in the bypassable broker — so it is a FloorGap.
+        let req = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
+        );
+        let gappy = RewritingNetBackend {
+            label: "gappy-net-floor",
+            prefix: "lowered::",
+        };
+        let backends: [&dyn EnforcementBackend; 2] = [&gappy, &MockBroker];
+        // Warn: the broker resolves the representability gap, so the plan builds,
+        // but net is still surfaced as a floor gap.
+        let plan = build_plan(&req, &roots(), &backends)
+            .expect("the exact broker resolves the representability gap");
+        let gapped: Vec<_> = plan.floor_gaps.iter().map(|g| g.domain).collect();
+        assert_eq!(
+            gapped,
+            vec![CapabilityDomain::Net],
+            "{:?}",
+            plan.floor_gaps
+        );
+        assert!(
+            plan.floor_gaps[0].reason.contains("superset"),
+            "{:?}",
+            plan.floor_gaps
+        );
+        // RequireFloor turns the imprecise floor into a hard refusal.
+        let err = build_plan_strict(
+            &req,
+            &roots(),
+            &backends,
+            UnenforceablePolicy::Deny,
+            FloorStrictness::RequireFloor,
+        )
+        .expect_err("a gapped floor is not un-bypassable");
+        assert_eq!(err.kind(), crate::EnforcementErrorKind::NoFloor);
+    }
+
+    #[test]
+    fn a_union_widened_domain_is_not_a_precise_floor() {
+        // Both levels are individually representable by Deno's precise flags, but
+        // two levels constrain `net`, so the flags are lowered from their *union*
+        // — a superset of the true (intersection) authority. The kernel floor is
+        // therefore broader than the policy permits; the shim narrows it, so it
+        // is a FloorGap even though every pattern was representable.
+        let outer = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["a.example:443"] }]"#,
+        );
+        let inner = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["b.example:443"] }]"#,
+        );
+        let merged = require(
+            r#"[
+                { "access": "allow", "domain": "net", "patterns": ["a.example:443"] },
+                { "access": "allow", "domain": "net", "patterns": ["b.example:443"] }
+            ]"#,
+        );
+        let backends: [&dyn EnforcementBackend; 3] =
+            [&DenoFlags, &FullBroker, &ScriptShimBroker::new()];
+
+        // Warn: builds, but reports net as a floor gap.
+        let plan = build_plan_layered(
+            &merged,
+            &[outer.clone(), inner.clone()],
+            &roots(),
+            &backends,
+            UnenforceablePolicy::default(),
+            FloorStrictness::Warn,
+        )
+        .expect("warn never refuses");
+        assert_eq!(
+            plan.floor_gaps.iter().map(|g| g.domain).collect::<Vec<_>>(),
+            vec![CapabilityDomain::Net],
+            "{:?}",
+            plan.floor_gaps
+        );
+
+        // RequireFloor refuses: the kernel floor is a union superset, so the
+        // "deeper levels only narrow" guarantee does not hold at the kernel.
+        let err = build_plan_layered(
+            &merged,
+            &[outer, inner],
+            &roots(),
+            &backends,
+            UnenforceablePolicy::default(),
+            FloorStrictness::RequireFloor,
+        )
+        .expect_err("a union-widened floor is refused under require-floor");
+        assert_eq!(err.kind(), crate::EnforcementErrorKind::NoFloor);
     }
 }

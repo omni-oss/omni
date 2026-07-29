@@ -1,3 +1,4 @@
+import { envLayersAllow } from "@omni-oss/bridge-rpc-system-interface";
 import { describe, expect, test } from "vitest";
 import {
     CapabilityPolicy,
@@ -253,6 +254,18 @@ describe("matchers", () => {
         expect(netMatches("example.com", "other.com", 12345)).toBe(false);
     });
 
+    test("netMatches reconciles bracketed and bare IPv6 hosts", () => {
+        // A WHATWG URL hostname arrives bracketed (`[::1]`, from `fetch` /
+        // `WebSocket`) while a raw `net.connect(port, "::1")` host is bare; one
+        // grant must authorize either shape, with the port after the bracket.
+        expect(netMatches("[::1]:443", "[::1]", 443)).toBe(true);
+        expect(netMatches("[::1]:443", "::1", 443)).toBe(true);
+        expect(netMatches("::1", "[::1]", 8080)).toBe(true);
+        // The colons inside the address are not mistaken for a port delimiter.
+        expect(netMatches("[fe80::1]:80", "fe80::1", 80)).toBe(true);
+        expect(netMatches("[::1]:443", "::1", 444)).toBe(false);
+    });
+
     // `processMatches` takes an explicit `isWindows` so the platform-specific
     // behaviour is deterministic regardless of the host running the tests.
     test("processMatches is verbatim and case-sensitive on POSIX", () => {
@@ -290,4 +303,38 @@ describe("matchers", () => {
         ).toBe(true);
         expect(processMatches("git", "git.exe", true)).toBe(true);
     });
+});
+
+describe("layered-fold parity with the shared env twin", () => {
+    // Both the shim's `CapabilityPolicy.evaluate` and the shared
+    // `envLayersAllow` claim to be the TypeScript twin of the Rust
+    // `evaluate_layered`. Cross-check that they render the *same* verdict across
+    // an enumerated matrix of layer stacks and names, so the two folds cannot
+    // silently drift apart.
+    const layerStacks: Layer[][] = [
+        [{ env: { allow: ["A_*"] } }],
+        [{ env: { allow: ["A_*"], deny: ["A_SECRET"] } }],
+        [{ env: { allow: ["*"] } }, { env: { allow: ["A_*"] } }],
+        [{ env: { allow: ["A_*"] } }, { env: { deny: ["A_TOKEN"] } }],
+        // Inner tries to widen past the outer ceiling (must stay denied).
+        [{ env: { allow: ["A_*"] } }, { env: { allow: ["B_*"] } }],
+        [{ env: { deny: ["A_*"] } }],
+        [{}, { env: { allow: ["A_ONE"] } }],
+    ];
+    const names = ["A_ONE", "A_TOKEN", "A_SECRET", "B_TWO", "C_NOPE"];
+
+    for (const [i, stack] of layerStacks.entries()) {
+        test(`stack #${i} agrees for every name`, () => {
+            const policy = CapabilityPolicy.parse(policyJson(...stack));
+            const twinLayers = stack.map((layer) => ({
+                allow: layer.env?.allow ?? [],
+                deny: layer.env?.deny ?? [],
+            }));
+            for (const name of names) {
+                expect(policy.checkEnv(name)).toBe(
+                    envLayersAllow(twinLayers, name),
+                );
+            }
+        });
+    }
 });

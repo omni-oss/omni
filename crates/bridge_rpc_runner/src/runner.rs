@@ -26,6 +26,7 @@
 
 use std::{
     collections::BTreeMap,
+    future::Future,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -144,6 +145,11 @@ pub struct BridgeRunnerOptions<'a> {
     /// the CLI expects (`["run"]` for the bridge-service CLI). Empty for a bare
     /// module.
     pub script_args: &'a [&'a str],
+    /// Optional wall-clock cap on a single [`call`](BridgeServiceRunner::call).
+    /// `None` (the default) races only the child's *exit*, so a hung-but-alive
+    /// script would stall a call forever; set this to bound that. On expiry the
+    /// child is killed and the call fails.
+    pub call_timeout: Option<Duration>,
 }
 
 impl<'a> BridgeRunnerOptions<'a> {
@@ -160,6 +166,7 @@ impl<'a> BridgeRunnerOptions<'a> {
             cwd: None,
             spawn_policy,
             script_args: &[],
+            call_timeout: None,
         }
     }
 
@@ -170,6 +177,13 @@ impl<'a> BridgeRunnerOptions<'a> {
 
     pub fn with_script_args(mut self, script_args: &'a [&'a str]) -> Self {
         self.script_args = script_args;
+        self
+    }
+
+    /// Bound how long a single [`call`](BridgeServiceRunner::call) may run before
+    /// the child is killed and the call fails. See [`Self::call_timeout`].
+    pub fn with_call_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.call_timeout = timeout;
         self
     }
 }
@@ -190,6 +204,10 @@ pub struct BridgeServiceRunner<TService: Service = Router> {
     /// stdio pipe.
     exit_rx: watch::Receiver<Option<i32>>,
     exit_task: JoinHandle<()>,
+    /// Optional wall-clock cap applied to each [`call`](Self::call); `None`
+    /// leaves calls bounded only by the child's exit. See
+    /// [`BridgeRunnerOptions::call_timeout`].
+    call_timeout: Option<Duration>,
     /// The confined child's per-run temp directory, removed when the runner is
     /// dropped. `None` when unconfined or off Windows. Declared last so it is
     /// dropped after `child` (whose drop kills the process), so nothing is still
@@ -256,6 +274,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
                 stdout,
                 ChildProcess::Confined(child, acl_guard),
                 sandbox_temp,
+                options.call_timeout,
             ));
         }
 
@@ -291,6 +310,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             stdout,
             ChildProcess::Async(child),
             sandbox_temp,
+            options.call_timeout,
         ))
     }
 
@@ -302,6 +322,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
         stdout: ChildStdout,
         child: ChildProcess,
         sandbox_temp: Option<SandboxTempDir>,
+        call_timeout: Option<Duration>,
     ) -> Self {
         // We read frames from the child's stdout and write frames to its stdin.
         let transport = StreamTransport::new(stdout, stdin);
@@ -352,6 +373,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             run_task,
             exit_rx,
             exit_task,
+            call_timeout,
             _sandbox_temp: sandbox_temp,
         }
     }
@@ -377,15 +399,38 @@ impl<TService: Service> BridgeServiceRunner<TService> {
         })?;
 
         let mut exit_rx = self.exit_rx.clone();
-        tokio::select! {
-            result = self.call_inner(path, body) => result,
-            _ = async { let _ = exit_rx.wait_for(|v| v.is_some()).await; } => {
-                let code = (*exit_rx.borrow()).unwrap_or(-1);
+        match race_call(
+            self.call_inner(path, body),
+            &mut exit_rx,
+            self.call_timeout,
+        )
+        .await
+        {
+            CallRace::Completed(result) => result,
+            CallRace::ChildExited(code) => Err(error::error!(
+                "the JavaScript runtime exited (exit code {code}) before \
+                 `{path}` completed; check the runtime's output above (a \
+                 common cause is the runtime rejecting a launch flag it does \
+                 not support)"
+            )
+            .into()),
+            CallRace::TimedOut => {
+                // A hung-but-alive script would otherwise stall this call
+                // forever. Kill the child so its stdio closes and its resources
+                // (and, on Windows, its sandbox grants) are released, then fail
+                // with an actionable message instead of blocking the caller.
+                {
+                    let mut child = self.child.lock().await;
+                    let _ = child.start_kill();
+                }
+                let secs = self
+                    .call_timeout
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or_default();
                 Err(error::error!(
-                    "the JavaScript runtime exited (exit code {code}) before \
-                     `{path}` completed; check the runtime's output above (a \
-                     common cause is the runtime rejecting a launch flag it does \
-                     not support)"
+                    "`{path}` did not complete within {secs}s; the JavaScript \
+                     runtime was killed (a script hung or is doing more work \
+                     than the configured timeout allows)"
                 )
                 .into())
             }
@@ -460,6 +505,69 @@ impl<TService: Service> BridgeServiceRunner<TService> {
                 .unwrap_or_else(|| "unknown".to_string())
         )
         .into())
+    }
+}
+
+// A runner may be dropped without an explicit `shutdown()` (a panic, an early
+// `?`-return in the generator, or simply the pool being cleared). Do the same
+// teardown `shutdown` does, synchronously and best-effort: abort the background
+// tasks so they stop holding a clone of the child `Arc` (and can no longer keep
+// the RPC loop alive), then request the child's termination now. Relying only on
+// the child's kill-on-drop is not enough here, because the child lives behind an
+// `Arc` shared with `exit_task`; killing it explicitly also ensures the process
+// is signalled dead *before* `_sandbox_temp` (dropped after this) removes the
+// per-run temp dir the child may still be writing into.
+impl<TService: Service> Drop for BridgeServiceRunner<TService> {
+    fn drop(&mut self) {
+        self.run_task.abort();
+        self.exit_task.abort();
+        // `try_lock` (not blocking) because `drop` is sync and must not stall; if
+        // a task momentarily holds the lock the child's own kill-on-drop /
+        // confined-child `Drop` still terminates it once every `Arc` clone is
+        // released.
+        if let Ok(mut child) = self.child.try_lock() {
+            let _ = child.start_kill();
+        }
+    }
+}
+
+/// Which of the three racing conditions ended a [`BridgeServiceRunner::call`]:
+/// the request completed, the child process exited first, or the optional
+/// wall-clock timeout elapsed. Extracted from `call` so the race — the part with
+/// no I/O — is unit-testable without a live child.
+enum CallRace<T> {
+    Completed(T),
+    ChildExited(i32),
+    TimedOut,
+}
+
+/// Race a `call` future against the child's exit and an optional timeout.
+///
+/// A hung-but-alive script is the real "unusable in actual usage" risk: without
+/// the timeout arm a `call` only unblocks when the request finishes *or* the
+/// process dies, so a script stuck in an infinite loop stalls the caller
+/// forever. `None` disables the timeout (the future never fires).
+async fn race_call<F, T>(
+    call: F,
+    exit_rx: &mut watch::Receiver<Option<i32>>,
+    timeout: Option<Duration>,
+) -> CallRace<T>
+where
+    F: Future<Output = T>,
+{
+    let timeout_fut = async {
+        match timeout {
+            Some(d) => tokio::time::sleep(d).await,
+            // No cap: never resolve, leaving `call` bounded only by exit.
+            None => std::future::pending::<()>().await,
+        }
+    };
+    tokio::select! {
+        out = call => CallRace::Completed(out),
+        _ = async { let _ = exit_rx.wait_for(|v| v.is_some()).await; } => {
+            CallRace::ChildExited((*exit_rx.borrow()).unwrap_or(-1))
+        }
+        _ = timeout_fut => CallRace::TimedOut,
     }
 }
 
@@ -964,18 +1072,93 @@ fn add_runtime_essentials(
 /// in O(1) (Landlock), so the system temp dir is used directly; `Some(dir)` on
 /// Windows, where granting the shared `%TEMP%` would force an inheritable-ACE
 /// walk across all of its existing entries on every spawn.
+///
+/// The directory name uses an unpredictable suffix and is created **exclusively**
+/// (`create_dir`, which fails if the path already exists) rather than a
+/// predictable `omni-sandbox-<pid>-<seq>` via `create_dir_all`. A predictable
+/// name under the world-writable system temp is a local pre-creation vector: an
+/// attacker could pre-create it as a junction/symlink so the child's temp writes
+/// land somewhere they control. Exclusive create rejects a squatted name (we
+/// retry with a fresh suffix), and the entropy makes guessing the next name
+/// impractical.
 #[cfg(windows)]
 fn provision_sandbox_temp() -> Option<PathBuf> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "omni-sandbox-{}-{}",
-        std::process::id(),
-        seq
-    ));
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+
+    // Best-effort, once-per-process sweep of temp dirs leaked by earlier runs
+    // that crashed before their `SandboxTempDir` guard could remove them.
+    sweep_stale_sandbox_temps();
+
+    let base = std::env::temp_dir();
+    for _ in 0..16 {
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = base.join(format!(
+            "omni-sandbox-{}-{}",
+            std::process::id(),
+            random_temp_suffix(seq)
+        ));
+        match std::fs::create_dir(&dir) {
+            Ok(()) => return Some(dir),
+            // A collision (attacker squat or an astronomically-unlikely suffix
+            // clash) — try a fresh suffix rather than adopting the existing dir.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
+/// An unpredictable, filesystem-safe suffix for a per-run temp dir name. Derived
+/// by hashing the pid, a per-process sequence, and a high-resolution timestamp;
+/// the exclusive `create_dir` is the actual squat guard, so this only needs to
+/// be hard to *predict*, not cryptographically random.
+#[cfg(windows)]
+fn random_temp_suffix(seq: u64) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&std::process::id().to_le_bytes());
+    hasher.update(&seq.to_le_bytes());
+    hasher.update(&nanos.to_le_bytes());
+    hasher.finalize().to_hex()[..16].to_string()
+}
+
+/// Remove `omni-sandbox-*` temp dirs left behind by earlier runs. Runs once per
+/// process and is strictly best-effort: it only removes entries older than a
+/// conservative threshold so a directory in active use by a concurrently-running
+/// omni (or a legitimately long-running confined spawn) is never touched.
+#[cfg(windows)]
+fn sweep_stale_sandbox_temps() {
+    use std::sync::Once;
+    static SWEPT: Once = Once::new();
+    SWEPT.call_once(|| {
+        // Old enough that an in-flight run cannot plausibly own it, but short
+        // enough that leaked dirs do not accumulate across a work session.
+        const STALE_AGE: Duration = Duration::from_secs(6 * 60 * 60);
+        let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if !name.starts_with("omni-sandbox-") {
+                continue;
+            }
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .map(|age| age >= STALE_AGE)
+                .unwrap_or(false);
+            if stale {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    });
 }
 
 #[cfg(not(windows))]
@@ -1077,6 +1260,7 @@ fn deno_cache_dir() -> Option<PathBuf> {
 mod tests {
     use std::collections::BTreeMap;
 
+    use super::{CallRace, race_call};
     use super::{PathBuf, SandboxTempDir};
     use super::{RUNTIME_BOOTSTRAP_ENV, scrubbed_child_env};
 
@@ -1245,5 +1429,62 @@ mod tests {
         drop(SandboxTempDir(a.clone()));
         drop(SandboxTempDir(b.clone()));
         assert!(!a.exists() && !b.exists(), "guards must remove both dirs");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn provision_sandbox_temp_rejects_a_squatted_name() {
+        // The exclusive `create_dir` is the guard against a pre-created
+        // (potentially symlinked) name: provisioning must never adopt a
+        // directory that already exists. We cannot force the exact next suffix,
+        // so assert the invariant that every provisioned dir was freshly made by
+        // us — i.e. it is empty at hand-off (a squatter's dir would carry
+        // contents / not be ours).
+        let dir =
+            super::provision_sandbox_temp().expect("windows provisions a dir");
+        let empty = std::fs::read_dir(&dir)
+            .map(|mut e| e.next().is_none())
+            .unwrap_or(false);
+        assert!(
+            empty,
+            "a freshly provisioned sandbox temp dir must be empty"
+        );
+        drop(SandboxTempDir(dir));
+    }
+
+    #[tokio::test]
+    async fn race_call_returns_completed_when_the_call_finishes_first() {
+        // Keep `_tx` bound so the exit arm never fires; the ready call wins.
+        let (_tx, mut rx) = tokio::sync::watch::channel(None);
+        let out = race_call(
+            async { 7 },
+            &mut rx,
+            Some(super::Duration::from_secs(10)),
+        )
+        .await;
+        assert!(matches!(out, CallRace::Completed(7)));
+    }
+
+    #[tokio::test]
+    async fn race_call_reports_child_exit_when_the_process_dies_first() {
+        let (tx, mut rx) = tokio::sync::watch::channel(None);
+        tx.send(Some(42)).unwrap();
+        // The call never completes, so only the already-signalled exit can win.
+        let out = race_call(std::future::pending::<i32>(), &mut rx, None).await;
+        assert!(matches!(out, CallRace::ChildExited(42)));
+    }
+
+    #[tokio::test]
+    async fn race_call_times_out_a_hung_call() {
+        // The real "unusable in actual usage" case: neither the call nor the
+        // child ever resolves, so without the timeout arm this would hang.
+        let (_tx, mut rx) = tokio::sync::watch::channel(None);
+        let out = race_call(
+            std::future::pending::<i32>(),
+            &mut rx,
+            Some(super::Duration::from_millis(20)),
+        )
+        .await;
+        assert!(matches!(out, CallRace::TimedOut));
     }
 }

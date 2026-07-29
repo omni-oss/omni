@@ -22,11 +22,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, type TestContext } from "vitest";
 import {
     makeWorkspace,
     runOmni,
-    skipUnlessRemoteReachable,
     type Workspace,
     type WorkspaceSpec,
 } from "@/harness";
@@ -38,12 +37,12 @@ const RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 // `net` and complete an allowed request: Deno/Node lower it into `--allow-net`
 // (Node needs v24+ for network permissions; older Node is refused with a clear
 // message before launch) and Bun relies on the shim. The positive path is
-// asserted two ways: a deterministic loopback request (an in-script HTTP server
-// on 127.0.0.1, needs no external network) that runs everywhere, and a
-// network-gated remote request to a real external host (via
-// `skipUnlessRemoteReachable`) that is skipped in CI — the reachability probe
-// runs unconfined in the test runner and does not predict the sandboxed child's
-// egress, which is unreliable in CI (see the test for details).
+// asserted **hermetically** against an in-script HTTP server on loopback (no
+// external network / DNS), so it is deterministic in CI. The one wrinkle is the
+// Windows AppContainer floor, which blocks loopback for node/deno (see
+// `loopbackBlockedByFloor`); those cases skip with a named reason rather than
+// depending on a real remote host whose reachability the probe cannot predict
+// for the confined child.
 const NET_ALLOW_RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 
 // Runtimes whose positive `process`-spawn path is asserted end to end. Launching
@@ -110,7 +109,8 @@ function nodeSupportsNet(): boolean {
     while (exitCode !== 0 && tries <= MAX_TRIES) {
         try {
             const r = spawnSync("node", ["--help"], { encoding: "utf8" });
-            const supportsNet = r.status === 0 && /--allow-net\b/.test(r.stdout ?? "");
+            const supportsNet =
+                r.status === 0 && /--allow-net\b/.test(r.stdout ?? "");
             exitCode = r.status ?? 1;
 
             _nodeSupportsNet = supportsNet;
@@ -122,7 +122,71 @@ function nodeSupportsNet(): boolean {
     }
     _nodeSupportsNet ??= false;
 
-    return _nodeSupportsNet ;
+    return _nodeSupportsNet;
+}
+
+/** Whether the host running the tests is Windows. */
+const IS_WINDOWS = process.platform === "win32";
+
+/**
+ * Whether loopback (127.0.0.1 / localhost) is unreachable for `rt` because of
+ * its OS-sandbox floor. On Windows, `node`/`deno` run inside an AppContainer
+ * whose default-deny network is re-opened only for *internet* client
+ * capabilities (`internetClient`), never loopback — reaching the local machine
+ * needs a separate admin-only exemption the sandbox deliberately does not grant
+ * (see `crates/omni_capability_enforcement/src/appcontainer_sandbox.rs`). So a
+ * *positive* loopback assertion cannot pass there; it is skipped, not failed
+ * (the honest treatment of a floor that blocks the very thing the case needs).
+ * `bun` has no AppContainer on Windows, so its loopback still works.
+ */
+function loopbackBlockedByFloor(rt: Runtime): boolean {
+    return IS_WINDOWS && (rt === "node" || rt === "deno");
+}
+
+/**
+ * The reason `rt` cannot run a case with the given needs, or `null` to run it.
+ * Consolidates the three recurring per-runtime gates so a skip is decided in one
+ * place instead of being re-implemented as a silent early return per test.
+ */
+function perRuntimeSkipReason(
+    rt: Runtime,
+    opts: { needsNodeNet?: boolean; needsLoopback?: boolean },
+): string | null {
+    if (!runtimeAvailable(rt)) {
+        return `${rt} not on PATH`;
+    }
+    if (opts.needsNodeNet && rt === "node" && !nodeSupportsNet()) {
+        return "node lacks the --allow-net permission flag";
+    }
+    if (opts.needsLoopback && loopbackBlockedByFloor(rt)) {
+        return "AppContainer blocks loopback on Windows for node/deno";
+    }
+    return null;
+}
+
+/**
+ * Declare a per-runtime `it` whose skip conditions are **named and visible** in
+ * the report: a silent `ctx.skip()` early return hides *why* a case did not run,
+ * so a runtime/flag/floor gap looks the same as a pass. This bakes the reason
+ * into the (skipped) test title instead. `body` only runs when the case is
+ * eligible on `rt`.
+ */
+function itPerRuntime(
+    runtimes: readonly Runtime[],
+    opts: {
+        title: (rt: Runtime) => string;
+        needsNodeNet?: boolean;
+        needsLoopback?: boolean;
+    },
+    body: (rt: Runtime, ctx: TestContext) => Promise<void>,
+): void {
+    for (const rt of runtimes) {
+        const reason = perRuntimeSkipReason(rt, opts);
+        const title = reason
+            ? `${opts.title(rt)} (skipped: ${reason})`
+            : opts.title(rt);
+        it.skipIf(reason !== null)(title, (ctx) => body(rt, ctx));
+    }
 }
 
 type Capability = {
@@ -918,6 +982,12 @@ describe("+generator @e2e (capabilities: network)", {
                 ctx.skip();
                 return;
             }
+            if (loopbackBlockedByFloor(rt)) {
+                // AppContainer blocks loopback on Windows for node/deno, so the
+                // allowed loopback call cannot complete under the floor.
+                ctx.skip();
+                return;
+            }
             // The intersection still permits an allowed call: loopback is in
             // both the workspace ceiling and the generator's (narrowed) policy,
             // so an allowed request completes end to end even with the layered
@@ -969,37 +1039,37 @@ describe("+generator @e2e (capabilities: network)", {
     }
 
     for (const rt of NET_ALLOW_RUNTIMES) {
-        it(`${rt}: permits an allowed host over loopback (no external network)`, async (ctx) => {
-            if (!runtimeAvailable(rt)) {
-                ctx.skip();
-                return;
-            }
-            if (rt === "node" && !nodeSupportsNet()) {
-                ctx.skip();
-                return;
-            }
-
-            // Deterministic analog of the remote test below: the script starts
-            // its own HTTP server on 127.0.0.1 and fetches it through the
-            // enforced `ctx.sys.net.http.fetch`. The `net` policy allows
-            // `127.0.0.1:*`, so an allowed request is exercised end to end
-            // without depending on external reachability.
-            const ws = makeWorkspace(
-                capGeneratorSpec({
-                    runtime: rt,
-                    capabilities: [
-                        {
-                            access: "allow",
-                            domain: "net",
-                            patterns: ["127.0.0.1:*"],
-                        },
-                        {
-                            access: "allow",
-                            domain: "fs.write",
-                            patterns: ["@project/**"],
-                        },
-                    ],
-                    script: `import http from "node:http";
+        itPerRuntime(
+            [rt],
+            {
+                title: (r) =>
+                    `${r}: permits an allowed host over loopback (no external network)`,
+                needsNodeNet: true,
+                needsLoopback: true,
+            },
+            async (_rt, ctx) => {
+                void ctx;
+                // Deterministic: the script starts its own HTTP server on
+                // 127.0.0.1 and fetches it through the enforced
+                // `ctx.sys.net.http.fetch`. The `net` policy allows
+                // `127.0.0.1:*`, so an allowed request is exercised end to end
+                // without depending on external reachability.
+                const ws = makeWorkspace(
+                    capGeneratorSpec({
+                        runtime: rt,
+                        capabilities: [
+                            {
+                                access: "allow",
+                                domain: "net",
+                                patterns: ["127.0.0.1:*"],
+                            },
+                            {
+                                access: "allow",
+                                domain: "fs.write",
+                                patterns: ["@project/**"],
+                            },
+                        ],
+                        script: `import http from "node:http";
                     export default async function (ctx) {
                         const server = http.createServer((_q, r) => {
                             r.writeHead(200, { "content-type": "text/plain" });
@@ -1015,53 +1085,70 @@ describe("+generator @e2e (capabilities: network)", {
                             server.close();
                         }
                     }`,
-                }),
-            );
+                    }),
+                );
 
-            const result = await runCapgen(ws);
+                const result = await runCapgen(ws);
 
-            expect(result).toHaveSucceeded();
-            expect(ws.read("out/loopback.txt")).toBe("200 hello");
-        });
+                expect(result).toHaveSucceeded();
+                expect(ws.read("out/loopback.txt")).toBe("200 hello");
+            },
+        );
 
-        it(`${rt}: permits a host in the net allow-list`, async (ctx) => {
-            if (!runtimeAvailable(rt)) {
-                ctx.skip();
-                return;
-            }
-            if (rt === "node" && !nodeSupportsNet()) {
-                ctx.skip();
-                return;
-            }
-            await skipUnlessRemoteReachable(ctx);
-
-            const ws = makeWorkspace(
-                capGeneratorSpec({
-                    runtime: rt,
-                    capabilities: [
-                        {
-                            access: "allow",
-                            domain: "net",
-                            patterns: ["github.com:443"],
-                        },
-                        {
-                            access: "allow",
-                            domain: "fs.write",
-                            patterns: ["@project/**"],
-                        },
-                    ],
-                    script: `export default async function (ctx) {
-                        const res = await ctx.sys.net.http.fetch("https://github.com/");
-                        await ctx.sys.fs.writeStringToFile("net-status.txt", String(res.status));
+        itPerRuntime(
+            [rt],
+            {
+                title: (r) => `${r}: permits a host in the net allow-list`,
+                needsNodeNet: true,
+                needsLoopback: true,
+            },
+            async (_rt, ctx) => {
+                void ctx;
+                // The named-host analog of the IP-literal loopback test above:
+                // it allows `localhost:*` (a *name*, resolved locally with no
+                // external DNS) and fetches an in-script server, so the
+                // allow-list + name-resolution path is exercised hermetically
+                // — no dependency on a real remote host whose reachability the
+                // unconfined probe cannot predict for the sandboxed child.
+                const ws = makeWorkspace(
+                    capGeneratorSpec({
+                        runtime: rt,
+                        capabilities: [
+                            {
+                                access: "allow",
+                                domain: "net",
+                                patterns: ["localhost:*"],
+                            },
+                            {
+                                access: "allow",
+                                domain: "fs.write",
+                                patterns: ["@project/**"],
+                            },
+                        ],
+                        script: `import http from "node:http";
+                    export default async function (ctx) {
+                        const server = http.createServer((_q, r) => {
+                            r.writeHead(204);
+                            r.end();
+                        });
+                        await new Promise((res) => server.listen(0, "127.0.0.1", res));
+                        const { port } = server.address();
+                        try {
+                            const res = await ctx.sys.net.http.fetch(\`http://localhost:\${port}/\`);
+                            await ctx.sys.fs.writeStringToFile("net-status.txt", String(res.status));
+                        } finally {
+                            server.close();
+                        }
                     }`,
-                }),
-            );
+                    }),
+                );
 
-            const result = await runCapgen(ws);
+                const result = await runCapgen(ws);
 
-            expect(result).toHaveSucceeded();
-            expect(ws.read("out/net-status.txt")).toMatch(/^\d{3}$/);
-        });
+                expect(result).toHaveSucceeded();
+                expect(ws.read("out/net-status.txt")).toMatch(/^\d{3}$/);
+            },
+        );
     }
 });
 
@@ -1421,13 +1508,41 @@ describe("+generator @e2e (capabilities: process)", {
 // runtime, the planner surfaces a non-fatal warning so the operator knows
 // enforcement there is defense-in-depth only.
 //
-// `net`/`process` have a floor on Deno (`--allow-net`/`--allow-run`) and Node
-// (coarse but real `--allow-net`/`--allow-child-process`), but NONE on Bun
-// (no permission model), so only Bun warns. This is platform-independent (no OS
-// sandbox covers net/process anywhere). Pinned to omni_capability_enforcement
-// `FloorGap` / plan.rs and `crates/omni_generator/src/script_runner.rs`.
+// Floor matrix for the shim-narrowable domains (net/process): Deno floors both
+// *precisely* (`--allow-net=host` / `--allow-run=prog`); Node floors neither
+// precisely — it has NO network flag at all (so `net` rests only on the
+// bypassable broker/shim), and its `--allow-child-process` is all-or-nothing, so
+// a *specific* program grant is lowered to the coarse whole-gate floor and
+// narrowed to the program by the bypassable shim (a superset floor, see
+// COARSE_FLOORED); Bun has no permission model, so neither is floored.
+// Platform-independent (no OS sandbox covers net/process anywhere). Pinned to
+// omni_capability_enforcement `FloorGap` / plan.rs, the Node/Deno backends, and
+// `crates/omni_generator/src/script_runner.rs`.
 const FLOOR_WARNING = "un-bypassable floor";
-const NET_PROCESS_FLOOR_RUNTIMES: readonly Runtime[] = ["deno", "node"];
+type FloorDomain = "net" | "process";
+// Precisely floored (the launch flag equals the exact authority): no floor gap.
+const FLOORED: ReadonlyArray<readonly [Runtime, FloorDomain]> = [
+    ["deno", "net"],
+    ["deno", "process"],
+];
+// No floor at all for the domain — it rests only on the bypassable broker/shim,
+// so the diagnostic says the domain "is enforced only" by them.
+const UNFLOORED: ReadonlyArray<readonly [Runtime, FloorDomain]> = [
+    ["bun", "net"],
+    ["bun", "process"],
+    ["node", "net"],
+];
+// Covered by a floor tier, but only *coarsely*: the launch flag is a strict
+// superset of the requested pattern (Node's all-or-nothing
+// `--allow-child-process` for a specific program), narrowed to the pattern by
+// the bypassable shim. This is a floor gap too — the kernel floor permits more
+// than the policy — but its diagnostic explains the *superset* rather than a
+// total absence of a floor.
+const COARSE_FLOORED: ReadonlyArray<readonly [Runtime, FloorDomain]> = [
+    ["node", "process"],
+];
+const floorPattern = (d: FloorDomain): string =>
+    d === "net" ? "127.0.0.1:*" : "git";
 
 describe("+generator @e2e (capabilities: enforcement floor)", {
     tags: ["generator"],
@@ -1439,18 +1554,21 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
         await ctx.sys.fs.writeStringToFile("floor.txt", "ran");
     }`;
 
-    for (const domain of ["net", "process"] as const) {
-        const pattern = domain === "net" ? "127.0.0.1:*" : "git";
-        it(`bun: warns that governed ${domain} has no un-bypassable floor (still runs)`, async (ctx) => {
-            if (!runtimeAvailable("bun")) {
+    for (const [rt, domain] of UNFLOORED) {
+        it(`${rt}: warns that governed ${domain} has no un-bypassable floor (still runs)`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
                 ctx.skip();
                 return;
             }
             const ws = makeWorkspace(
                 capGeneratorSpec({
-                    runtime: "bun",
+                    runtime: rt,
                     capabilities: [
-                        { access: "allow", domain, patterns: [pattern] },
+                        {
+                            access: "allow",
+                            domain,
+                            patterns: [floorPattern(domain)],
+                        },
                         {
                             access: "allow",
                             domain: "fs.write",
@@ -1504,13 +1622,9 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
         expect(result).toOutputContaining(FLOOR_WARNING);
     });
 
-    for (const rt of NET_PROCESS_FLOOR_RUNTIMES) {
-        it(`${rt}: governed net is floored by launch flags (no floor warning)`, async (ctx) => {
+    for (const [rt, domain] of FLOORED) {
+        it(`${rt}: governed ${domain} is floored by launch flags (no floor warning)`, async (ctx) => {
             if (!runtimeAvailable(rt)) {
-                ctx.skip();
-                return;
-            }
-            if (rt === "node" && !nodeSupportsNet()) {
                 ctx.skip();
                 return;
             }
@@ -1520,8 +1634,8 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
                     capabilities: [
                         {
                             access: "allow",
-                            domain: "net",
-                            patterns: ["127.0.0.1:443"],
+                            domain,
+                            patterns: [floorPattern(domain)],
                         },
                         {
                             access: "allow",
@@ -1543,21 +1657,23 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
 
     // `capabilities: { strictness: require-floor }` promotes a floor gap from a
     // warning to a hard refusal: the run fails before the script executes and
-    // nothing is written. On Bun net/process have no un-bypassable floor on any
-    // platform, so the refusal is deterministic there.
-    for (const domain of ["net", "process"] as const) {
-        const pattern = domain === "net" ? "127.0.0.1:*" : "git";
-        it(`bun: require-floor refuses when governed ${domain} has no floor`, async (ctx) => {
-            if (!runtimeAvailable("bun")) {
+    // nothing is written. Deterministic for every unfloored (runtime, domain).
+    for (const [rt, domain] of UNFLOORED) {
+        it(`${rt}: require-floor refuses when governed ${domain} has no floor`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
                 ctx.skip();
                 return;
             }
             const ws = makeWorkspace(
                 capGeneratorSpec({
-                    runtime: "bun",
+                    runtime: rt,
                     strictness: "require-floor",
                     capabilities: [
-                        { access: "allow", domain, patterns: [pattern] },
+                        {
+                            access: "allow",
+                            domain,
+                            patterns: [floorPattern(domain)],
+                        },
                         {
                             access: "allow",
                             domain: "fs.write",
@@ -1579,16 +1695,12 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
         });
     }
 
-    // The stronger stance is a no-op when every governed domain is already
-    // floored: Deno/Node lower `net` into launch flags, so require-floor still
-    // proceeds and writes.
-    for (const rt of NET_PROCESS_FLOOR_RUNTIMES) {
-        it(`${rt}: require-floor still runs when net is floored by launch flags`, async (ctx) => {
+    // The stronger stance is a no-op when the governed domain is already
+    // floored: the launch flags cover it, so require-floor still proceeds and
+    // writes.
+    for (const [rt, domain] of FLOORED) {
+        it(`${rt}: require-floor still runs when ${domain} is floored by launch flags`, async (ctx) => {
             if (!runtimeAvailable(rt)) {
-                ctx.skip();
-                return;
-            }
-            if (rt === "node" && !nodeSupportsNet()) {
                 ctx.skip();
                 return;
             }
@@ -1599,8 +1711,8 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
                     capabilities: [
                         {
                             access: "allow",
-                            domain: "net",
-                            patterns: ["127.0.0.1:443"],
+                            domain,
+                            patterns: [floorPattern(domain)],
                         },
                         {
                             access: "allow",
@@ -1616,6 +1728,81 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
 
             expect(result).toHaveSucceeded();
             expect(ws.read("out/floor.txt")).toBe("ran");
+        });
+    }
+
+    // A *coarsely* floored domain (Node's all-or-nothing `--allow-child-process`
+    // for a specific program) still warns under the default stance: the kernel
+    // floor is a superset of the requested program, narrowed only by the
+    // bypassable shim. The diagnostic explains the superset rather than a total
+    // absence of a floor.
+    for (const [rt, domain] of COARSE_FLOORED) {
+        it(`${rt}: warns that governed ${domain} is only coarsely floored (still runs)`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    runtime: rt,
+                    capabilities: [
+                        {
+                            access: "allow",
+                            domain,
+                            patterns: [floorPattern(domain)],
+                        },
+                        {
+                            access: "allow",
+                            domain: "fs.write",
+                            patterns: ["@project/**"],
+                        },
+                    ],
+                    script: writeScript,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/floor.txt")).toBe("ran");
+            expect(result).toOutputContaining(FLOOR_WARNING);
+            // The coarse-floor diagnostic names the superset, not "enforced only".
+            expect(result).toOutputContaining("could not be represented");
+        });
+
+        it(`${rt}: require-floor refuses when governed ${domain} is only coarsely floored`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    runtime: rt,
+                    strictness: "require-floor",
+                    capabilities: [
+                        {
+                            access: "allow",
+                            domain,
+                            patterns: [floorPattern(domain)],
+                        },
+                        {
+                            access: "allow",
+                            domain: "fs.write",
+                            patterns: ["@project/**"],
+                        },
+                    ],
+                    script: writeScript,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveFailed();
+            expect(ws.exists("out/floor.txt")).toBe(false);
+            expect(result).toHaveStderrContaining(
+                "un-bypassable enforcement floor",
+            );
+            expect(result).toHaveStderrContaining(domain);
         });
     }
 });

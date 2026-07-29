@@ -29,7 +29,9 @@ use omni_capabilities::{
     Access, CapabilityRule, DomainRules, PathRoots, Request, Root, rule_matches,
 };
 
-use crate::lower::{FsScope, classify_fs_glob, has_glob, split_host_port};
+use crate::lower::{
+    FsScope, classify_fs_glob, has_glob, split_host_port, validate_flag_value,
+};
 use crate::{
     BackendPlan, Coverage, EnforcementBackend, EnforcementError, Gap,
     PatternResolver, Tier,
@@ -121,8 +123,11 @@ impl EnforcementBackend for DenoFlags {
             // For a shim-enforceable domain (`net`/`process`) that Deno cannot
             // express precisely, grant the least-privilege superset it can (the
             // bare allow flag) as a floor and let the script shim narrow it per
-            // call. Safe: an unresolved gap still fails `build_plan` closed, so
-            // the broad floor is only ever applied when a shim covers the rest.
+            // call. This is *not* "fail closed": under the default `Warn`
+            // strictness the run proceeds. It is safe because the shim covers
+            // this domain, so coverage analysis does not fail and the shim —
+            // not this broad flag — provides the precise per-call narrowing
+            // (`build_plan` still fails closed only if *nothing* covers it).
             if gained_gap && is_coarse_shim_domain(domain) {
                 if !allow.is_empty() {
                     plan.spawn.push_arg(format!("--{allow_flag}"));
@@ -240,8 +245,21 @@ fn translate_all(
     let mut out = Vec::new();
     for atom in atoms {
         match translate_pattern(domain, &atom.pattern, roots) {
-            Ok(Some(v)) if !out.contains(&v) => out.push(v),
-            Ok(_) => {} // duplicate value, or unregistered root → skip
+            // Guard against injecting extra list entries: a representable value
+            // that embeds a `,` / `=` / control char is not safely joinable
+            // into `--flag=a,b,c`, so treat it as a gap (broker enforces it).
+            Ok(Some(v)) => match validate_flag_value(&v) {
+                Ok(()) if !out.contains(&v) => out.push(v),
+                Ok(()) => {} // duplicate value → skip
+                Err(reason) => gaps.push(Gap {
+                    backend: NAME.to_string(),
+                    domain,
+                    id: atom.id,
+                    pattern: atom.pattern.clone(),
+                    reason,
+                }),
+            },
+            Ok(None) => {} // unregistered root → skip
             Err(reason) => gaps.push(Gap {
                 backend: NAME.to_string(),
                 domain,
@@ -706,6 +724,47 @@ mod tests {
             "{bp:?}"
         );
         assert!(bp.gaps.is_empty(), "unregistered root is not a gap: {bp:?}");
+    }
+
+    #[test]
+    fn net_host_with_comma_is_a_gap_not_an_injection() {
+        // A host embedding a comma would inject a second allow entry into the
+        // joined `--allow-net=a,b` list; it must become a gap instead.
+        let bp = DenoFlags
+            .plan(
+                &require(
+                    r#"[{ "access": "allow", "domain": "net", "patterns": ["good.example,evil.example"] }]"#,
+                ),
+                &roots(),
+            )
+            .expect("plan never errors");
+        assert!(
+            !bp.spawn.args.iter().any(|a| a.starts_with("--allow-net=")),
+            "comma host must not be emitted as a valued flag: {:?}",
+            bp.spawn.args
+        );
+        assert_eq!(bp.gaps.len(), 1, "{:?}", bp.gaps);
+        assert_eq!(bp.gaps[0].domain, CapabilityDomain::Net);
+    }
+
+    #[test]
+    fn fs_path_with_comma_is_a_gap_not_an_injection() {
+        // A resolved root containing a comma must not widen the allow list.
+        let roots = PathRoots::new().with(Root::Workspace, "/repo,/etc");
+        let bp = DenoFlags
+            .plan(
+                &require(
+                    r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
+                ),
+                &roots,
+            )
+            .expect("plan never errors");
+        assert!(
+            !bp.spawn.args.iter().any(|a| a.starts_with("--allow-read")),
+            "comma path must not be emitted: {:?}",
+            bp.spawn.args
+        );
+        assert_eq!(bp.gaps.len(), 1, "{:?}", bp.gaps);
     }
 
     #[test]

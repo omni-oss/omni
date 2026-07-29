@@ -228,8 +228,10 @@ pub fn evaluate_layered<P: CapabilityProfile, R: OmniPathRoot>(
     Decision::Allow
 }
 
-/// Validate that every rule uses a domain the profile supports. Returns the
-/// first offending entry as a hard error (fail-closed authoring).
+/// Validate that every rule uses a domain the profile supports **and** that
+/// every pattern is a well-formed glob. Returns the first offending entry as a
+/// hard error (fail-closed authoring) — rejecting a malformed pattern here
+/// prevents it from silently fail-opening inside a `deny` rule at match time.
 pub fn validate<P: CapabilityProfile>(
     chain: &CapabilityRules<P>,
 ) -> Result<(), Error> {
@@ -240,6 +242,13 @@ pub fn validate<P: CapabilityProfile>(
                 c.rule.domain,
                 index,
             ));
+        }
+        for pattern in &c.rule.patterns {
+            if let Err(reason) =
+                crate::matching::pattern_is_valid(c.rule.domain, pattern)
+            {
+                return Err(Error::invalid_pattern(pattern, reason));
+            }
         }
     }
     Ok(())
@@ -673,6 +682,18 @@ mod tests {
         .unwrap();
         let err = validate(&cfg).expect_err("net unsupported for `restricted`");
         assert_eq!(err.kind(), crate::ErrorKind::UnsupportedDomain);
+    }
+
+    #[test]
+    fn validate_rejects_a_malformed_glob() {
+        // An uncompilable pattern must be refused at load, not silently
+        // fail-open in a `deny` rule when matched later.
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[{ "access": "deny", "domain": "fs.write", "patterns": ["@workspace/[bad"] }]"#,
+        )
+        .unwrap();
+        let err = validate(&cfg).expect_err("malformed glob rejected");
+        assert_eq!(err.kind(), crate::ErrorKind::InvalidPattern);
     }
 
     #[test]

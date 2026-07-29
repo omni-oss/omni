@@ -103,29 +103,28 @@ impl EnforcementBackend for NativeOsSandbox {
     }
 
     fn coverage(&self) -> Coverage {
+        // The OS-sandbox escape hatch (`OMNI_DISABLE_OS_SANDBOX`) makes
+        // `install_os_sandbox` launch unconfined. Reflect that here so plan-time
+        // coverage/floor analysis matches the real runtime posture: with the
+        // sandbox disabled this tier confines nothing, so it must claim nothing
+        // (fs then falls to the broker and shows up honestly in floor analysis)
+        // rather than advertising an fs floor that will not actually be applied.
+        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
         #[cfg(target_os = "linux")]
-        {
-            use omni_capabilities::CapabilityDomain;
-            if crate::landlock_sandbox::is_supported() {
-                return Coverage::of([
-                    CapabilityDomain::FsRead,
-                    CapabilityDomain::FsWrite,
-                ]);
-            }
-        }
+        let supported = crate::landlock_sandbox::is_supported();
         #[cfg(target_os = "windows")]
+        let supported = crate::appcontainer_sandbox::is_supported();
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         {
-            use omni_capabilities::CapabilityDomain;
-            if crate::appcontainer_sandbox::is_supported() {
-                return Coverage::of([
-                    CapabilityDomain::FsRead,
-                    CapabilityDomain::FsWrite,
-                ]);
-            }
+            os_fs_coverage(supported, disabled)
         }
-        // No integration for this target, or the running OS lacks it →
-        // cover nothing → fail closed rather than pretend to confine.
-        Coverage::none()
+        // No integration for this target → cover nothing → fail closed rather
+        // than pretend to confine.
+        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        {
+            let _ = disabled;
+            Coverage::none()
+        }
     }
 
     fn plan(
@@ -150,6 +149,58 @@ impl EnforcementBackend for NativeOsSandbox {
             let _ = (req, roots);
             Ok(BackendPlan::new())
         }
+    }
+}
+
+/// Filesystem coverage this tier may claim, given whether the OS mechanism is
+/// available and whether the escape hatch disabled it. Factored out so the
+/// fail-closed / disable posture is unit-testable on any host (no real Landlock
+/// or AppContainer needed). A disabled or unavailable mechanism covers nothing.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn os_fs_coverage(supported: bool, disabled: bool) -> Coverage {
+    use omni_capabilities::CapabilityDomain;
+    if disabled || !supported {
+        return Coverage::none();
+    }
+    Coverage::of([CapabilityDomain::FsRead, CapabilityDomain::FsWrite])
+}
+
+/// What [`install_os_sandbox`] must do for a given launch. Factored out so the
+/// fail-closed policy — the single most critical property on a host where the OS
+/// sandbox is unavailable — is unit-testable without a real facility.
+///
+/// Windows-only: the Linux path installs a `pre_exec` Landlock hook that itself
+/// fails closed in the child if the ruleset cannot be applied, so it has no
+/// separate early fail-closed branch.
+#[cfg(target_os = "windows")]
+#[derive(Debug, PartialEq, Eq)]
+enum SandboxInstall {
+    /// Nothing to confine (empty spec) or confinement intentionally disabled:
+    /// launch as-is.
+    Skip,
+    /// Establish confinement for the launch.
+    Confine,
+    /// Confinement was requested but the OS cannot provide it: refuse, so the
+    /// caller never launches an unconfined child believing it is sandboxed.
+    FailClosed,
+}
+
+/// Decide the install action from the three inputs. Order matters: an empty spec
+/// and the explicit disable hatch both short-circuit *before* the availability
+/// check, so disabling the sandbox never turns into a fail-closed refusal.
+#[cfg(target_os = "windows")]
+fn sandbox_install_decision(
+    spec_empty: bool,
+    disabled: bool,
+    supported: bool,
+) -> SandboxInstall {
+    if spec_empty || disabled {
+        return SandboxInstall::Skip;
+    }
+    if supported {
+        SandboxInstall::Confine
+    } else {
+        SandboxInstall::FailClosed
     }
 }
 
@@ -210,19 +261,20 @@ pub fn install_os_sandbox(
     _command: &mut std::process::Command,
     spec: &crate::OsSandboxSpec,
 ) -> std::io::Result<()> {
-    if spec.is_empty() {
-        return Ok(());
-    }
-    if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some() {
-        return Ok(());
-    }
-    if crate::appcontainer_sandbox::is_supported() {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
+    let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+    match sandbox_install_decision(
+        spec.is_empty(),
+        disabled,
+        crate::appcontainer_sandbox::is_supported(),
+    ) {
+        // Empty/disabled: launch as-is. Confine: the confinement is actually
+        // attached at spawn time via `appcontainer_sandbox::spawn`, so this call
+        // has only confirmed it *can* be established.
+        SandboxInstall::Skip | SandboxInstall::Confine => Ok(()),
+        SandboxInstall::FailClosed => Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "AppContainer is not available on this host",
-        ))
+        )),
     }
 }
 
@@ -392,6 +444,51 @@ mod tests {
         assert_eq!(NativeOsSandbox.tier(), Tier::OsSandbox);
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn os_fs_coverage_is_empty_unless_supported_and_enabled() {
+        use omni_capabilities::CapabilityDomain;
+        // Only an available *and* enabled mechanism claims the fs domains; every
+        // other combination covers nothing so the run fails closed / routes fs
+        // to the broker honestly.
+        assert!(!os_fs_coverage(false, false).covers(CapabilityDomain::FsRead));
+        assert!(!os_fs_coverage(true, true).covers(CapabilityDomain::FsRead));
+        assert!(!os_fs_coverage(false, true).covers(CapabilityDomain::FsRead));
+        let on = os_fs_coverage(true, false);
+        assert!(on.covers(CapabilityDomain::FsRead));
+        assert!(on.covers(CapabilityDomain::FsWrite));
+        assert!(!on.covers(CapabilityDomain::Net));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn install_decision_fails_closed_only_when_unsupported_and_requested() {
+        // The critical fail-closed table: a non-empty spec on an unsupported
+        // host (sandbox not disabled) is the ONLY case that refuses. Empty specs
+        // and the explicit disable hatch always skip, even when unsupported, so
+        // the escape hatch never turns into a spurious refusal.
+        assert_eq!(
+            sandbox_install_decision(false, false, false),
+            SandboxInstall::FailClosed
+        );
+        assert_eq!(
+            sandbox_install_decision(false, false, true),
+            SandboxInstall::Confine
+        );
+        for supported in [true, false] {
+            assert_eq!(
+                sandbox_install_decision(true, false, supported),
+                SandboxInstall::Skip,
+                "an empty spec never confines or fails"
+            );
+            assert_eq!(
+                sandbox_install_decision(false, true, supported),
+                SandboxInstall::Skip,
+                "the disable hatch always skips, never fails closed"
+            );
+        }
+    }
+
     // Per-platform capability assertions, behind cfg flags. Exactly one of
     // these compiles on any given target.
 
@@ -413,14 +510,12 @@ mod tests {
         assert!(!cov.covers(CapabilityDomain::Net));
         assert!(!cov.covers(CapabilityDomain::Env));
         assert!(!cov.covers(CapabilityDomain::Process));
-        assert_eq!(
-            cov.covers(CapabilityDomain::FsRead),
-            crate::landlock_sandbox::is_supported()
-        );
-        assert_eq!(
-            cov.covers(CapabilityDomain::FsWrite),
-            crate::landlock_sandbox::is_supported()
-        );
+        // Coverage also collapses to none when the escape hatch disables the
+        // sandbox, so fold that into the expectation.
+        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+        let expected = crate::landlock_sandbox::is_supported() && !disabled;
+        assert_eq!(cov.covers(CapabilityDomain::FsRead), expected);
+        assert_eq!(cov.covers(CapabilityDomain::FsWrite), expected);
     }
 
     #[cfg(target_os = "linux")]
@@ -582,14 +677,12 @@ mod tests {
         assert!(!cov.covers(CapabilityDomain::Net));
         assert!(!cov.covers(CapabilityDomain::Env));
         assert!(!cov.covers(CapabilityDomain::Process));
-        assert_eq!(
-            cov.covers(CapabilityDomain::FsRead),
-            crate::appcontainer_sandbox::is_supported()
-        );
-        assert_eq!(
-            cov.covers(CapabilityDomain::FsWrite),
-            crate::appcontainer_sandbox::is_supported()
-        );
+        // Coverage also collapses to none when the escape hatch disables the
+        // sandbox, so fold that into the expectation.
+        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+        let expected = crate::appcontainer_sandbox::is_supported() && !disabled;
+        assert_eq!(cov.covers(CapabilityDomain::FsRead), expected);
+        assert_eq!(cov.covers(CapabilityDomain::FsWrite), expected);
     }
 
     #[cfg(target_os = "windows")]

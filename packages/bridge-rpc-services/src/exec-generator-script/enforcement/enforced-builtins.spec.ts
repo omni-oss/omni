@@ -3,18 +3,43 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CapabilityPolicy } from "./capability-policy";
 import {
     defaultShellProgram,
+    type EnforcementEnv,
     installBuiltinModuleEnforcement,
     netTargetFromConnectArgs,
+    netTargetFromDgramConnect,
+    netTargetFromDgramSend,
     programFromArg,
     programFromExecArgs,
     programFromSpawnFamilyArgs,
     programFromSpawnOptions,
+    RealmPolicyError,
     shellFromOptions,
 } from "./enforced-builtins";
 import { NetworkPolicyError } from "./enforced-net";
 import { ProcessPolicyError } from "./enforced-process";
 
 const nodeRequire = createRequire(import.meta.url);
+
+/**
+ * A real `require` that is deliberately *blind* to the realm/global builtins
+ * (`node:vm` / `node:worker_threads` / `node:dgram` / `node:http2`), paired with
+ * a throwaway `globalTarget`. This lets the `net`/`process` tests below install
+ * the real `node:net` / `node:child_process` patches they assert on without
+ * clobbering the shared test worker's real `node:vm` / global `WebSocket` /
+ * `Worker` (which would leak across test files). The realm/egress patches get
+ * their own dedicated coverage on explicit fakes further down.
+ */
+function scopedEnv(): EnforcementEnv {
+    const blind = new Set([
+        "node:vm",
+        "node:worker_threads",
+        "node:dgram",
+        "node:http2",
+    ]);
+    const scoped = ((id: string) =>
+        blind.has(id) ? {} : nodeRequire(id)) as unknown as NodeJS.Require;
+    return { nodeRequire: scoped, globalTarget: {} };
+}
 
 /**
  * Build the layered `--enforce` JSON the Rust `ShimPolicy` emits from a single
@@ -171,7 +196,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         expect(() => (cp.spawn as (...a: unknown[]) => unknown)("rm")).toThrow(
             ProcessPolicyError,
@@ -184,7 +209,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         expect(
             (cp.spawn as (...a: unknown[]) => unknown)("git", ["status"]),
@@ -200,7 +225,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
                 process: { allow: [defaultShellProgram()] },
             }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         // A benign-looking first token cannot smuggle an injected command past
         // the check: `exec` authorizes the shell, which the policy grants here.
@@ -215,7 +240,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         expect(() =>
             (cp.exec as (...a: unknown[]) => unknown)("git status"),
@@ -225,7 +250,7 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
 
     test("leaves child_process untouched when process is not enforced", () => {
         const spawn = stub("spawn");
-        installBuiltinModuleEnforcement(CapabilityPolicy.empty());
+        installBuiltinModuleEnforcement(CapabilityPolicy.empty(), scopedEnv());
         // Not wrapped → the raw stub is called with no policy check.
         (cp.spawn as (...a: unknown[]) => unknown)("anything");
         expect(spawn).toHaveBeenCalledOnce();
@@ -259,7 +284,7 @@ describe("installBuiltinModuleEnforcement — ChildProcess.prototype.spawn", () 
         const policy = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         const child = Object.create(cpProto.ChildProcess.prototype) as {
             spawn: (...a: unknown[]) => unknown;
@@ -280,7 +305,7 @@ describe("installBuiltinModuleEnforcement — ChildProcess.prototype.spawn", () 
         const gitOnly = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["git"] } }),
         );
-        installBuiltinModuleEnforcement(gitOnly);
+        installBuiltinModuleEnforcement(gitOnly, scopedEnv());
 
         const child = Object.create(cpProto.ChildProcess.prototype) as {
             spawn: (...a: unknown[]) => unknown;
@@ -300,7 +325,7 @@ describe("installBuiltinModuleEnforcement — ChildProcess.prototype.spawn", () 
         const shellAllowed = CapabilityPolicy.parse(
             enforceJson({ process: { allow: ["/bin/sh"] } }),
         );
-        installBuiltinModuleEnforcement(shellAllowed);
+        installBuiltinModuleEnforcement(shellAllowed, scopedEnv());
 
         const child = Object.create(cpProto.ChildProcess.prototype) as {
             spawn: (...a: unknown[]) => unknown;
@@ -343,7 +368,7 @@ describe("installBuiltinModuleEnforcement — node:net", () => {
         const policy = CapabilityPolicy.parse(
             enforceJson({ net: { allow: ["example.com:443"] } }),
         );
-        installBuiltinModuleEnforcement(policy);
+        installBuiltinModuleEnforcement(policy, scopedEnv());
 
         const socket = Object.create(net.Socket.prototype) as {
             connect: (...a: unknown[]) => unknown;
@@ -355,5 +380,235 @@ describe("installBuiltinModuleEnforcement — node:net", () => {
 
         socket.connect(443, "example.com");
         expect(connect).toHaveBeenCalledOnce();
+    });
+});
+
+describe("dgram target extraction", () => {
+    test("send(msg, port, address) resolves the datagram target", () => {
+        expect(netTargetFromDgramSend(["hi", 5000, "host.example"])).toEqual({
+            host: "host.example",
+            port: 5000,
+        });
+    });
+
+    test("send(msg, offset, length, port, address) skips offset/length", () => {
+        // The 6-arg form's leading numbers are offset+length, not the port.
+        expect(
+            netTargetFromDgramSend(["payload", 0, 7, 8125, "metrics.internal"]),
+        ).toEqual({ host: "metrics.internal", port: 8125 });
+    });
+
+    test("send with an omitted address defaults the host", () => {
+        expect(netTargetFromDgramSend(["hi", 5000])).toEqual({
+            host: "localhost",
+            port: 5000,
+        });
+    });
+
+    test("send on a connected socket (no target) yields null", () => {
+        // `send(msg, cb)` — the prior connect was already authorized.
+        expect(netTargetFromDgramSend(["hi", () => {}])).toBeNull();
+        expect(netTargetFromDgramSend(["hi"])).toBeNull();
+    });
+
+    test("connect(port, address) resolves the pinned target", () => {
+        expect(netTargetFromDgramConnect([9000, "udp.example"])).toEqual({
+            host: "udp.example",
+            port: 9000,
+        });
+        expect(netTargetFromDgramConnect([9000])).toEqual({
+            host: "localhost",
+            port: 9000,
+        });
+        expect(netTargetFromDgramConnect([])).toBeNull();
+    });
+});
+
+describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () => {
+    // A fake `require` that hands back patchable stubs for the *critical*
+    // chokepoints (so their loud "could not patch" warning stays quiet) and the
+    // caller's overrides for the module under test.
+    function egressRequire(mods: Record<string, unknown>): NodeJS.Require {
+        const base: Record<string, unknown> = {
+            "node:net": { Socket: { prototype: { connect() {} } } },
+            "node:child_process": {
+                spawn() {},
+                ChildProcess: { prototype: { spawn() {} } },
+            },
+            "node:tls": { connect() {} },
+            "node:module": {},
+        };
+        return ((id: string) =>
+            id in mods
+                ? mods[id]
+                : (base[id] ?? {})) as unknown as NodeJS.Require;
+    }
+
+    test("gates node:dgram UDP send against the net policy", () => {
+        const send = vi.fn(function (this: unknown) {
+            return this;
+        });
+        const proto: Record<string, unknown> = { send };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["metrics.internal:8125"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire({
+                "node:dgram": { Socket: { prototype: proto } },
+            }),
+            globalTarget: {},
+        });
+
+        const patched = proto.send as (...a: unknown[]) => unknown;
+        expect(() => patched.call(proto, "x", 8125, "evil.example")).toThrow(
+            NetworkPolicyError,
+        );
+        expect(send).not.toHaveBeenCalled();
+        patched.call(proto, "x", 8125, "metrics.internal");
+        expect(send).toHaveBeenCalledOnce();
+    });
+
+    test("gates node:http2 connect against the net policy", () => {
+        const connect = vi.fn(() => "session");
+        const http2: Record<string, unknown> = { connect };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["api.example:443"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire({ "node:http2": http2 }),
+            globalTarget: {},
+        });
+
+        const patched = http2.connect as (...a: unknown[]) => unknown;
+        expect(() => patched("https://evil.example")).toThrow(
+            NetworkPolicyError,
+        );
+        expect(connect).not.toHaveBeenCalled();
+        patched("https://api.example");
+        expect(connect).toHaveBeenCalledOnce();
+    });
+
+    test("gates the global WebSocket constructor against the net policy", () => {
+        const constructed: unknown[] = [];
+        class FakeWebSocket {
+            constructor(public url: string) {
+                constructed.push(url);
+            }
+            static readonly OPEN = 1;
+        }
+        const globalTarget: Record<string, unknown> = {
+            WebSocket: FakeWebSocket,
+        };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["realtime.example:443"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire({}),
+            globalTarget,
+        });
+
+        const Patched = globalTarget.WebSocket as new (u: string) => unknown;
+        // The Proxy preserves statics and the raw constructor is only reached
+        // once the target is authorized.
+        expect((Patched as unknown as { OPEN: number }).OPEN).toBe(1);
+        expect(() => new Patched("wss://evil.example")).toThrow(
+            NetworkPolicyError,
+        );
+        expect(constructed).toHaveLength(0);
+        const ok = new Patched("wss://realtime.example");
+        expect(ok).toBeInstanceOf(FakeWebSocket);
+        expect(constructed).toEqual(["wss://realtime.example"]);
+    });
+});
+
+describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {
+    function realmRequire(mods: Record<string, unknown>): NodeJS.Require {
+        const base: Record<string, unknown> = {
+            "node:net": { Socket: { prototype: { connect() {} } } },
+            "node:child_process": {
+                spawn() {},
+                ChildProcess: { prototype: { spawn() {} } },
+            },
+            "node:tls": { connect() {} },
+            "node:module": {},
+        };
+        return ((id: string) =>
+            id in mods
+                ? mods[id]
+                : (base[id] ?? {})) as unknown as NodeJS.Require;
+    }
+
+    test("blocks node:worker_threads Worker while net/process is enforced", () => {
+        class FakeWorker {}
+        const wt: Record<string, unknown> = { Worker: FakeWorker };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: realmRequire({ "node:worker_threads": wt }),
+            globalTarget: {},
+        });
+
+        expect(() => (wt.Worker as new () => unknown).call(undefined)).toThrow(
+            RealmPolicyError,
+        );
+    });
+
+    test("blocks the global Worker while net/process is enforced", () => {
+        const globalTarget: Record<string, unknown> = { Worker: class {} };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["h:1"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: realmRequire({}),
+            globalTarget,
+        });
+
+        expect(() => (globalTarget.Worker as () => unknown)()).toThrow(
+            RealmPolicyError,
+        );
+    });
+
+    test("blocks node:vm new-context execution but leaves runInThisContext", () => {
+        const runInThisContext = vi.fn(() => "ok");
+        const vm: Record<string, unknown> = {
+            runInNewContext: vi.fn(),
+            runInContext: vi.fn(),
+            createContext: vi.fn(),
+            compileFunction: vi.fn(),
+            SourceTextModule: class {},
+            runInThisContext,
+        };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: realmRequire({ "node:vm": vm }),
+            globalTarget: {},
+        });
+
+        for (const key of [
+            "runInNewContext",
+            "runInContext",
+            "createContext",
+            "compileFunction",
+            "SourceTextModule",
+        ]) {
+            expect(() => (vm[key] as () => unknown)()).toThrow(
+                RealmPolicyError,
+            );
+        }
+        // Same-realm execution stays intact (it grants no new authority).
+        expect((vm.runInThisContext as () => unknown)()).toBe("ok");
+    });
+
+    test("leaves realms alone when neither net nor process is enforced", () => {
+        const wt: Record<string, unknown> = { Worker: vi.fn(() => "worker") };
+        installBuiltinModuleEnforcement(CapabilityPolicy.empty(), {
+            nodeRequire: realmRequire({ "node:worker_threads": wt }),
+            globalTarget: {},
+        });
+        // Untouched: an env-only or empty policy does not gate fresh realms.
+        expect((wt.Worker as () => unknown)()).toBe("worker");
     });
 });

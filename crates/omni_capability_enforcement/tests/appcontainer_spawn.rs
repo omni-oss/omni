@@ -23,6 +23,26 @@ use omni_capability_enforcement::{OsSandboxSpec, appcontainer_sandbox};
 /// name, so serialize their confined spawns behind this guard.
 static SPAWN_GUARD: Mutex<()> = Mutex::new(());
 
+/// Whether the confined-spawn body should run. Returns `true` when AppContainer
+/// is available. When it is not, the default is to **skip** (return `false`) so
+/// the suite stays green on hosts/CI without the facility — *unless*
+/// `OMNI_REQUIRE_OS_SANDBOX` is set, in which case an unavailable facility is a
+/// hard failure. That makes the otherwise-silent soft-skip un-skippable in a CI
+/// that is *supposed* to exercise real confinement (a green run there then
+/// genuinely proves the sandbox worked, not merely that it was absent).
+fn should_run_confined() -> bool {
+    if appcontainer_sandbox::is_supported() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("OMNI_REQUIRE_OS_SANDBOX").is_none(),
+        "OMNI_REQUIRE_OS_SANDBOX is set but this host provides no usable \
+         AppContainer facility"
+    );
+    eprintln!("skipping: the host does not provide AppContainer");
+    false
+}
+
 /// First existing candidate path, or `None` (test then skips).
 fn first_existing(candidates: &[&str]) -> Option<PathBuf> {
     candidates.iter().map(PathBuf::from).find(|p| p.exists())
@@ -90,8 +110,7 @@ fn spec_with(read: Vec<PathBuf>, write: Vec<PathBuf>) -> OsSandboxSpec {
 
 #[test]
 fn appcontainer_confines_reads_to_the_granted_subtree() {
-    if !appcontainer_sandbox::is_supported() {
-        eprintln!("skipping: the host does not provide AppContainer");
+    if !should_run_confined() {
         return;
     }
     let Some(cmd) = cmd_exe() else {
@@ -146,8 +165,7 @@ fn appcontainer_confines_reads_to_the_granted_subtree() {
 
 #[test]
 fn appcontainer_confines_writes_to_the_granted_subtree() {
-    if !appcontainer_sandbox::is_supported() {
-        eprintln!("skipping: the host does not provide AppContainer");
+    if !should_run_confined() {
         return;
     }
     let Some(cmd) = cmd_exe() else {
@@ -221,8 +239,7 @@ fn appcontainer_child_can_launch_a_grandchild_and_capture_its_output() {
     // grants ALL APPLICATION PACKAGES — whereas ordinary programs like `whoami`
     // and `git` spawn fine. That `cmd`-as-shell limitation is why the e2e
     // `runs a shell invocation` stays skipped on Windows.)
-    if !appcontainer_sandbox::is_supported() {
-        eprintln!("skipping: the host does not provide AppContainer");
+    if !should_run_confined() {
         return;
     }
     let Some(cmd) = cmd_exe() else {

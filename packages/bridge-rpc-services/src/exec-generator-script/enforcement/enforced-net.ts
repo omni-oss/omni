@@ -60,6 +60,37 @@ function requestUrl(input: RequestInfo | URL): URL {
 }
 
 /**
+ * The `{ host, port }` a URL-shaped connect target names (`WebSocket`,
+ * `http2.connect`, …), or `null` when it cannot be parsed as an absolute URL —
+ * in which case the caller lets it proceed to the runtime/OS floor rather than
+ * guessing. The port defaults to the protocol's well-known port, matching
+ * {@link requestPort}, so a `wss://h/` grant of `h:443` authorizes it.
+ */
+export function netTargetFromUrl(
+    input: unknown,
+): { host: string; port: number } | null {
+    let url: URL;
+    try {
+        if (input instanceof URL) {
+            url = input;
+        } else if (typeof input === "string") {
+            url = new URL(input);
+        } else if (
+            input &&
+            typeof input === "object" &&
+            typeof (input as { url?: unknown }).url === "string"
+        ) {
+            url = new URL((input as { url: string }).url);
+        } else {
+            return null;
+        }
+    } catch {
+        return null;
+    }
+    return { host: url.hostname, port: requestPort(url) };
+}
+
+/**
  * The effective port of a request: the explicit port, else the protocol's
  * default. Falls back to `0` for unknown schemes (a numeric port pattern then
  * cannot match, which is the fail-closed choice).

@@ -12,6 +12,7 @@ export {
     matchEnvGlob,
     type OnDeniedEnvAccess,
 } from "./env-capability";
+export { escapeRegExp, globMatches, globToRegExp } from "./glob";
 export {
     type BridgeRpcSystemOptions,
     createRpcSystemOptions,

@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import type { CapabilityPolicy } from "./capability-policy";
-import { NetworkPolicyError } from "./enforced-net";
+import { NetworkPolicyError, netTargetFromUrl } from "./enforced-net";
 import { ProcessPolicyError } from "./enforced-process";
 
 /**
@@ -31,10 +31,15 @@ import { ProcessPolicyError } from "./enforced-process";
  * This is **defense-in-depth**, not an un-bypassable floor. It closes the
  * common, ergonomic bypasses (`import { connect } from "node:net"`,
  * `http.request(...)`, `child_process.spawn(...)`, `Deno.connect(...)`,
- * `new Deno.Command(...)`). It cannot stop a script that re-derives a binding
- * through FFI / N-API / `process.binding`, a fresh realm, or a raw syscall.
- * The un-bypassable confinement remains the runtime's own launch flags
- * (Deno `--allow-net` / `--allow-run`) and the OS sandbox (Landlock on Linux).
+ * `new Deno.Command(...)`), the non-TCP / non-`fetch` egress paths (`node:dgram`
+ * UDP, the global `WebSocket`, `node:http2`), and the **fresh-realm** escapes a
+ * script could otherwise use to run un-patched code (`worker_threads.Worker`,
+ * `node:vm` new-context execution) — which matter most on Node/Bun, where the
+ * shim is the *only* per-host/program narrowing (no `--allow-net`/`--allow-run`
+ * floor). It cannot stop a script that re-derives a binding through FFI /
+ * N-API / `process.binding`, or a raw syscall. The un-bypassable confinement
+ * remains the runtime's own launch flags (Deno `--allow-net` / `--allow-run`)
+ * and the OS sandbox (Landlock on Linux, AppContainer on Windows).
  *
  * Every patch is best-effort and guarded: a runtime that lacks a given builtin
  * (or forbids mutating it) simply keeps the un-patched binding rather than
@@ -45,6 +50,25 @@ import { ProcessPolicyError } from "./enforced-process";
 export interface NetTarget {
     host: string;
     port: number;
+}
+
+/**
+ * Thrown when a script tries to enter a **fresh realm** (`worker_threads.Worker`,
+ * `node:vm` new-context execution) while the shim is responsible for `net` or
+ * `process`. A fresh realm gets its own, un-patched module registry and globals,
+ * so the in-process interception here would not apply inside it — on Node/Bun,
+ * where the shim is the sole per-host/program narrowing, that is a complete
+ * escape. We therefore deny the realm outright rather than let it run unconfined.
+ */
+export class RealmPolicyError extends Error {
+    constructor(feature: string) {
+        super(
+            `capability policy denied \`${feature}\`: a fresh realm cannot be ` +
+                `confined by the in-process net/process enforcement, so it is ` +
+                `refused while this generator's \`net\`/\`process\` policy is active`,
+        );
+        this.name = "RealmPolicyError";
+    }
 }
 
 /** The default host Node assumes when a `connect` call omits one. */
@@ -105,6 +129,47 @@ export function netTargetFromConnectArgs(args: unknown[]): NetTarget | null {
     }
 
     return null;
+}
+
+/**
+ * Extract the `{ host, port }` a `dgram` (UDP) `socket.send(...)` targets. UDP is
+ * connectionless, so the destination rides on each `send`; the overloads are:
+ *
+ * * `send(msg, port, address?, cb?)`
+ * * `send(msg, offset, length, port, address?, cb?)`
+ * * `send(msg, cb?)` on a *connected* socket — no explicit target (the prior
+ *   `connect` was already authorized), so this yields `null`.
+ *
+ * `port` is a number and `address` the string immediately after it (defaulting
+ * to localhost when omitted). We locate the port as the last numeric argument
+ * that is followed by either a string address or the end/callback, which
+ * distinguishes it from the `offset`/`length` numbers that precede it.
+ */
+export function netTargetFromDgramSend(args: unknown[]): NetTarget | null {
+    // Scan from the right for a `number` that is plausibly the port: it is
+    // followed by nothing, a callback, or the string address. The 6-arg form's
+    // `offset`/`length` are always followed by more numbers, so they are skipped.
+    for (let i = args.length - 1; i >= 1; i--) {
+        if (typeof args[i] === "number") {
+            const next = args[i + 1];
+            const host = typeof next === "string" ? next : DEFAULT_CONNECT_HOST;
+            const port = args[i] as number;
+            return Number.isFinite(port) ? { host, port } : null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Extract the `{ host, port }` a `dgram` `socket.connect(port, address?, cb?)`
+ * pins the socket to. `address` defaults to localhost when omitted.
+ */
+export function netTargetFromDgramConnect(args: unknown[]): NetTarget | null {
+    if (typeof args[0] !== "number" || !Number.isFinite(args[0])) {
+        return null;
+    }
+    const host = typeof args[1] === "string" ? args[1] : DEFAULT_CONNECT_HOST;
+    return { host, port: args[0] };
 }
 
 /**
@@ -284,6 +349,37 @@ function tryPatch<T extends Record<string, unknown>>(
 }
 
 /**
+ * Emit a loud warning when a *critical* interception point could not be patched
+ * while the shim is responsible for its domain. Unlike an optional patch (a
+ * runtime simply lacking a given builtin, which is expected), a failed critical
+ * patch on a runtime that *has* the surface is a real enforcement gap, so it
+ * must not fail silently. We warn rather than throw because the un-bypassable
+ * floor (launch flags / OS sandbox) may still cover it, and aborting the whole
+ * run on a best-effort defense-in-depth layer would be worse than a visible
+ * warning that the operator (and tests) can see.
+ */
+function warnUnpatched(patched: boolean, chokepoint: string): void {
+    if (!patched) {
+        console.warn(
+            `[omni] capability enforcement could not patch ${chokepoint}; ` +
+                `direct use of it is NOT narrowed by this generator's policy ` +
+                `(the runtime launch flags / OS sandbox remain the only floor)`,
+        );
+    }
+}
+
+/**
+ * Injectable environment for {@link installBuiltinModuleEnforcement}. Defaults
+ * to the real process (a `createRequire` and `globalThis`); tests pass fakes so
+ * they can assert the realm/global gating without mutating the shared process
+ * (which would leak `node:vm`/`WebSocket` patches across test files).
+ */
+export interface EnforcementEnv {
+    nodeRequire?: NodeJS.Require;
+    globalTarget?: Record<string, unknown>;
+}
+
+/**
  * Install best-effort, in-process enforcement of the built-in `net`/`process`
  * bindings for the given `policy`. Only the domains the policy is responsible
  * for are patched; a domain absent from the residual is left untouched (the
@@ -292,21 +388,44 @@ function tryPatch<T extends Record<string, unknown>>(
  */
 export function installBuiltinModuleEnforcement(
     policy: CapabilityPolicy,
+    env: EnforcementEnv = {},
 ): void {
-    let nodeRequire: NodeJS.Require | undefined;
-    try {
-        nodeRequire = createRequire(import.meta.url);
-    } catch {
-        nodeRequire = undefined;
+    let nodeRequire = env.nodeRequire;
+    if (!nodeRequire) {
+        try {
+            nodeRequire = createRequire(import.meta.url);
+        } catch {
+            nodeRequire = undefined;
+        }
     }
+    const globalTarget =
+        env.globalTarget ?? (globalThis as unknown as Record<string, unknown>);
 
     if (policy.hasNet()) {
-        patchNet(policy, nodeRequire);
-        patchDenoNet(policy);
+        // The Socket.prototype.connect chokepoint is critical (it also backs
+        // `node:http(s)` / undici `fetch`); a silent miss would leave raw TCP
+        // un-narrowed, so surface it loudly.
+        warnUnpatched(patchNet(policy, nodeRequire), "node:net Socket.connect");
+        patchDenoNet(policy, globalTarget);
+        patchDgram(policy, nodeRequire);
+        patchHttp2(policy, nodeRequire);
+        warnUnpatched(
+            patchWebSocket(policy, globalTarget),
+            "the global WebSocket",
+        );
     }
     if (policy.hasProcess()) {
-        patchChildProcess(policy, nodeRequire);
-        patchDenoProcess(policy);
+        warnUnpatched(
+            patchChildProcess(policy, nodeRequire),
+            "node:child_process",
+        );
+        patchDenoProcess(policy, globalTarget);
+    }
+    // A fresh realm re-imports the builtins we patched here as un-patched
+    // copies, so it must be gated whenever the shim owns either domain.
+    if (policy.hasNet() || policy.hasProcess()) {
+        patchWorkerThreads(policy, nodeRequire, globalTarget);
+        patchVm(policy, nodeRequire);
     }
 
     // Propagate the mutated CJS export objects to ESM live bindings
@@ -331,15 +450,16 @@ export function installBuiltinModuleEnforcement(
 function patchNet(
     policy: CapabilityPolicy,
     nodeRequire: NodeJS.Require | undefined,
-): void {
+): boolean {
     if (!nodeRequire) {
-        return;
+        return false;
     }
+    let connectPatched = false;
     try {
         const net = nodeRequire("node:net") as {
             Socket?: { prototype?: Record<string, unknown> };
         };
-        tryPatch(
+        connectPatched = tryPatch(
             net.Socket?.prototype,
             "connect",
             (original) =>
@@ -366,6 +486,7 @@ function patchNet(
     } catch {
         // no node:tls on this runtime
     }
+    return connectPatched;
 }
 
 /**
@@ -394,17 +515,18 @@ function patchNet(
 function patchChildProcess(
     policy: CapabilityPolicy,
     nodeRequire: NodeJS.Require | undefined,
-): void {
+): boolean {
     if (!nodeRequire) {
-        return;
+        return false;
     }
     let cp: Record<string, unknown>;
     try {
         cp = nodeRequire("node:child_process") as Record<string, unknown>;
     } catch {
-        return;
+        return false;
     }
 
+    let anyExportPatched = false;
     for (const key of [
         "spawn",
         "spawnSync",
@@ -412,15 +534,19 @@ function patchChildProcess(
         "execFileSync",
         "fork",
     ]) {
-        tryPatch(
-            cp,
-            key,
-            (original) =>
-                function patchedSpawn(this: unknown, ...args: unknown[]) {
-                    enforceProgram(policy, programFromSpawnFamilyArgs(args));
-                    return original.apply(this, args);
-                },
-        );
+        anyExportPatched =
+            tryPatch(
+                cp,
+                key,
+                (original) =>
+                    function patchedSpawn(this: unknown, ...args: unknown[]) {
+                        enforceProgram(
+                            policy,
+                            programFromSpawnFamilyArgs(args),
+                        );
+                        return original.apply(this, args);
+                    },
+            ) || anyExportPatched;
     }
 
     for (const key of ["exec", "execSync"]) {
@@ -442,7 +568,7 @@ function patchChildProcess(
     const childProcess = cp.ChildProcess as
         | { prototype?: Record<string, unknown> }
         | undefined;
-    tryPatch(
+    const protoPatched = tryPatch(
         childProcess?.prototype,
         "spawn",
         (original) =>
@@ -451,6 +577,10 @@ function patchChildProcess(
                 return original.apply(this, args);
             },
     );
+    // Either interception point alone closes the common paths (exports reach the
+    // sync family everywhere; the prototype closes the async family on Bun); a
+    // gap only exists if *neither* took.
+    return anyExportPatched || protoPatched;
 }
 
 /**
@@ -458,8 +588,11 @@ function patchChildProcess(
  * Deno's own `fetch` is intercepted by the global-`fetch` patch; these cover raw
  * TCP/TLS sockets opened through the `Deno` namespace.
  */
-function patchDenoNet(policy: CapabilityPolicy): void {
-    const deno = (globalThis as { Deno?: Record<string, unknown> }).Deno;
+function patchDenoNet(
+    policy: CapabilityPolicy,
+    globalTarget: Record<string, unknown>,
+): void {
+    const deno = globalTarget.Deno as Record<string, unknown> | undefined;
     if (!deno) {
         return;
     }
@@ -495,8 +628,11 @@ function patchDenoNet(policy: CapabilityPolicy): void {
  * Patch Deno's child-process globals: the modern `Deno.Command` constructor and
  * the deprecated `Deno.run`.
  */
-function patchDenoProcess(policy: CapabilityPolicy): void {
-    const deno = (globalThis as { Deno?: Record<string, unknown> }).Deno;
+function patchDenoProcess(
+    policy: CapabilityPolicy,
+    globalTarget: Record<string, unknown>,
+): void {
+    const deno = globalTarget.Deno as Record<string, unknown> | undefined;
     if (!deno) {
         return;
     }
@@ -528,4 +664,215 @@ function patchDenoProcess(policy: CapabilityPolicy): void {
                 return original.apply(this, args);
             },
     );
+}
+
+/**
+ * Patch `node:dgram` so UDP egress is authorized against the `net` policy. UDP
+ * is connectionless, so both the per-datagram `send(...)` target and a
+ * `connect(...)` binding are checked at the shared `dgram.Socket.prototype`
+ * chokepoint (the twin of the `net.Socket.prototype.connect` approach). `fetch`
+ * and TCP never route here; this closes the raw-UDP path a script could
+ * otherwise use to exfiltrate to an un-permitted host.
+ */
+function patchDgram(
+    policy: CapabilityPolicy,
+    nodeRequire: NodeJS.Require | undefined,
+): void {
+    if (!nodeRequire) {
+        return;
+    }
+    let proto: Record<string, unknown> | undefined;
+    try {
+        const dgram = nodeRequire("node:dgram") as {
+            Socket?: { prototype?: Record<string, unknown> };
+        };
+        proto = dgram.Socket?.prototype;
+    } catch {
+        return; // no node:dgram on this runtime
+    }
+    tryPatch(
+        proto,
+        "send",
+        (original) =>
+            function patchedSend(this: unknown, ...args: unknown[]) {
+                enforceNet(policy, netTargetFromDgramSend(args));
+                return original.apply(this, args);
+            },
+    );
+    tryPatch(
+        proto,
+        "connect",
+        (original) =>
+            function patchedDgramConnect(this: unknown, ...args: unknown[]) {
+                enforceNet(policy, netTargetFromDgramConnect(args));
+                return original.apply(this, args);
+            },
+    );
+}
+
+/**
+ * Patch `node:http2` so `http2.connect(authority)` is authorized. HTTP/2 opens
+ * its own session socket that does not always route through the
+ * `net.Socket.prototype.connect` chokepoint, so the `authority` URL is checked
+ * here directly. Best-effort: absent on runtimes without `node:http2`.
+ */
+function patchHttp2(
+    policy: CapabilityPolicy,
+    nodeRequire: NodeJS.Require | undefined,
+): void {
+    if (!nodeRequire) {
+        return;
+    }
+    let http2: Record<string, unknown>;
+    try {
+        http2 = nodeRequire("node:http2") as Record<string, unknown>;
+    } catch {
+        return; // no node:http2 on this runtime
+    }
+    tryPatch(
+        http2,
+        "connect",
+        (original) =>
+            function patchedHttp2Connect(this: unknown, ...args: unknown[]) {
+                enforceNet(policy, netTargetFromUrl(args[0]));
+                return original.apply(this, args);
+            },
+    );
+}
+
+/**
+ * Patch the global `WebSocket` constructor so `new WebSocket(url)` is authorized
+ * against the `net` policy. `WebSocket` is native on Deno, Bun, and Node 22+ and
+ * opens its own connection *without* going through `fetch` or a `node:net`
+ * socket the shim can see, so it is a distinct egress path. A `Proxy` construct
+ * trap preserves the class's statics (`WebSocket.OPEN`, …), prototype, and
+ * `instanceof`, and the replacement is locked non-configurable so a script
+ * cannot delete it to recover the raw constructor. Returns whether a present
+ * global was patched (so a genuine miss can be surfaced loudly); a runtime that
+ * has no `WebSocket` at all returns `true` (nothing to narrow).
+ */
+function patchWebSocket(
+    policy: CapabilityPolicy,
+    globalTarget: Record<string, unknown>,
+): boolean {
+    const Original = globalTarget.WebSocket;
+    if (typeof Original !== "function") {
+        return true; // no global WebSocket → no egress path to narrow
+    }
+    try {
+        const patched = new Proxy(
+            Original as new (
+                ...a: unknown[]
+            ) => unknown,
+            {
+                construct(target, args, newTarget) {
+                    enforceNet(policy, netTargetFromUrl(args[0]));
+                    return Reflect.construct(target, args, newTarget);
+                },
+            },
+        );
+        // `writable: false` blocks a script reassigning the global back to a raw
+        // constructor; `configurable: true` keeps re-install idempotent. Full
+        // non-configurability buys little here because the only way to recover
+        // the raw constructor is a fresh realm, which is separately gated.
+        Object.defineProperty(globalTarget, "WebSocket", {
+            value: patched,
+            writable: false,
+            configurable: true,
+            enumerable: true,
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Gate the fresh-realm escape hatches (`worker_threads.Worker` and the global
+ * `Worker`) while the shim owns `net`/`process`. A `Worker` runs on its own
+ * thread with a *fresh* module registry and globals, so none of the in-process
+ * patches installed here apply inside it; on Node/Bun — which have no
+ * `--allow-net`/`--allow-run` floor — that is a complete bypass of the only
+ * per-host/program narrowing. We therefore refuse construction outright rather
+ * than let unconfined code run. (On Deno a worker cannot exceed the parent's
+ * launch-flag permissions, so this is redundant-but-harmless there.)
+ */
+function patchWorkerThreads(
+    policy: CapabilityPolicy,
+    nodeRequire: NodeJS.Require | undefined,
+    globalTarget: Record<string, unknown>,
+): void {
+    void policy;
+    const denyWorker = (original: (...args: unknown[]) => unknown) =>
+        function blockedWorker(this: unknown, ..._args: unknown[]): unknown {
+            void original;
+            throw new RealmPolicyError("worker_threads.Worker");
+        };
+    // The `node:worker_threads` export (Node/Bun).
+    if (nodeRequire) {
+        try {
+            const wt = nodeRequire("node:worker_threads") as Record<
+                string,
+                unknown
+            >;
+            tryPatch(wt, "Worker", denyWorker);
+        } catch {
+            // no node:worker_threads on this runtime
+        }
+    }
+    // The global `Worker` (Deno/Bun and browsers-style hosts). `configurable:
+    // true` keeps re-install idempotent; a script cannot recover the original
+    // constructor without a fresh realm, which is itself gated here.
+    if (typeof globalTarget.Worker === "function") {
+        try {
+            Object.defineProperty(globalTarget, "Worker", {
+                value: function blockedGlobalWorker(): unknown {
+                    throw new RealmPolicyError("Worker");
+                },
+                writable: false,
+                configurable: true,
+                enumerable: true,
+            });
+        } catch {
+            // best-effort
+        }
+    }
+}
+
+/**
+ * Gate `node:vm` new-context execution while the shim owns `net`/`process`.
+ * Code run in a *new* vm context can be handed a custom module loader and reach
+ * un-patched builtins, so the fresh-realm entry points
+ * (`runInNewContext`/`runInContext`/`createContext`/`compileFunction` and the
+ * `SourceTextModule` constructor) are refused. `runInThisContext` is
+ * deliberately left alone: it executes in the *current*, already-patched realm,
+ * so it grants no new authority. Best-effort and guarded like every other patch.
+ */
+function patchVm(
+    policy: CapabilityPolicy,
+    nodeRequire: NodeJS.Require | undefined,
+): void {
+    void policy;
+    if (!nodeRequire) {
+        return;
+    }
+    let vm: Record<string, unknown>;
+    try {
+        vm = nodeRequire("node:vm") as Record<string, unknown>;
+    } catch {
+        return; // no node:vm on this runtime
+    }
+    const deny = (feature: string) => () =>
+        function blockedVm(): unknown {
+            throw new RealmPolicyError(`node:vm ${feature}`);
+        };
+    for (const key of [
+        "runInNewContext",
+        "runInContext",
+        "createContext",
+        "compileFunction",
+        "SourceTextModule",
+    ]) {
+        tryPatch(vm, key, deny(key));
+    }
 }

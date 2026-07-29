@@ -219,10 +219,18 @@ fn permission_denied(
 /// component, so an operation can be authorized against the target it will
 /// actually reach rather than the lexical path requested.
 ///
-/// * A fully existing path is canonicalized directly.
+/// * A fully existing path is canonicalized directly (this follows a final
+///   symlink whose target exists).
 /// * A not-yet-existing target (e.g. a write that creates a new file) has its
-///   longest existing ancestor canonicalized, with the non-existent remainder
-///   re-appended — so a symlinked parent directory is still resolved.
+///   **deepest existing component** resolved and the absent remainder
+///   re-appended. Crucially the deepest existing component is found with
+///   [`std::fs::symlink_metadata`] (which does *not* traverse a final symlink),
+///   so a **dangling final symlink** — `@workspace/evil -> /outside` where
+///   `/outside` does not exist — is detected as the boundary and resolved via
+///   [`std::fs::read_link`] to `/outside`, instead of being re-appended
+///   verbatim as if it were an ordinary new file inside the allowed subtree.
+///   That lexical re-append was a write-escape: the check saw `@workspace/evil`
+///   (permitted) while the write followed the link to `/outside`.
 /// * If neither the path nor any resolvable ancestor can be resolved (a purely
 ///   synthetic path, or a platform without canonicalization) `None` is returned
 ///   and the caller falls back to the lexical path. On **Windows** resolution
@@ -233,11 +241,15 @@ fn permission_denied(
 ///   drive-qualified `\\?\D:\`, not the Unix identity `/`) and turn a lexical
 ///   allow into a false deny. On Unix the root canonicalizes to `/` (identity),
 ///   so it is left in the walk and a synthetic *absolute* path resolves back to
-///   itself; the net effect — synthetic paths keep their lexical decision — is
-///   the same on both platforms.
+///   itself.
 ///
-/// Uses a single blocking `canonicalize` syscall per unresolved ancestor; this
-/// is negligible relative to the mediated fs operation that follows.
+/// Relative symlink targets may still contain `..`; that is fine because the
+/// authorizer's matcher path-cleans the target before matching, so a
+/// `../../etc` link cannot lexically dodge a root.
+///
+/// Uses a small, bounded number of blocking `symlink_metadata`/`canonicalize`
+/// syscalls; this is negligible relative to the mediated fs operation that
+/// follows.
 fn resolve_real_path(path: &Path) -> Option<PathBuf> {
     // Invariant: the broker only ever authorizes root-anchored paths (the
     // bridge fs services pass fully-qualified paths, and the policy roots are
@@ -255,35 +267,53 @@ fn resolve_real_path(path: &Path) -> Option<PathBuf> {
         path.has_root(),
         "capability authorization expects a root-anchored path, got {path:?}"
     );
+    // Fast path: the whole path exists — canonicalize follows every symlink,
+    // including the final component, straight to its real target.
     if let Ok(real) = std::fs::canonicalize(path) {
         return Some(real);
     }
-    // Walk up to the longest existing ancestor, collecting the absent tail.
+
+    // The final portion does not exist yet. Walk up to the deepest component
+    // that *does* exist on disk (tested with `symlink_metadata`, so a symlink
+    // counts as existing even if its target does not), resolve that boundary,
+    // then re-append the absent tail.
     let mut tail: Vec<OsString> = Vec::new();
     let mut current = path;
-    while let Some(parent) = current.parent() {
-        // A path with no final component (e.g. `/`) cannot be split further.
-        let name = current.file_name()?;
-        tail.push(name.to_owned());
-        // On Windows, skip the bare filesystem root (`parent.parent()` is `None`
-        // for `C:\`, `\\?\D:\`, a bare prefix, …): the root canonicalizes to a
-        // drive-qualified prefix that would rewrite a synthetic path and flip a
-        // lexical allow into a false deny. A symlink can only live under a real,
-        // named component, so skipping the root never weakens the backstop. On
-        // Unix the root canonicalizes to `/` (identity), so it is left in the
-        // walk and the behaviour is unchanged.
-        if !skip_as_root(parent)
-            && let Ok(real_parent) = std::fs::canonicalize(parent)
-        {
-            let mut resolved = real_parent;
+    loop {
+        if std::fs::symlink_metadata(current).is_ok() {
+            // `current` exists. Prefer `canonicalize` (follows it fully); if it
+            // is a *dangling* symlink that still fails, fall back to its link
+            // target so the operation is judged against where the link points
+            // rather than the link's own (permitted) location.
+            let base = match std::fs::canonicalize(current) {
+                Ok(real) => real,
+                Err(_) => {
+                    let link_target = std::fs::read_link(current).ok()?;
+                    let parent = current.parent()?;
+                    let real_parent = std::fs::canonicalize(parent).ok()?;
+                    // `join` replaces the base for an absolute link target
+                    // (`/outside`), or appends a relative one (cleaned later).
+                    real_parent.join(link_target)
+                }
+            };
+            let mut resolved = base;
             for name in tail.iter().rev() {
                 resolved.push(name.as_os_str());
             }
             return Some(resolved);
         }
+        let parent = current.parent()?;
+        let name = current.file_name()?;
+        tail.push(name.to_owned());
+        // Never descend through the Windows bare root (`parent.parent()` is
+        // `None`): its canonical form rewrites a synthetic path and would flip
+        // a lexical allow into a false deny. A symlink can only live under a
+        // real, named component, so stopping here never weakens the backstop.
+        if skip_as_root(parent) {
+            return None;
+        }
         current = parent;
     }
-    None
 }
 
 /// Whether `path` is a bare filesystem root that resolution must not descend
@@ -598,5 +628,70 @@ where
             .env_vars()
             .filter(|(name, _)| self.env_allows(name))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    fn make_symlink(target: &Path, link: &Path) -> io::Result<()> {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+    #[cfg(not(windows))]
+    fn make_symlink(target: &Path, link: &Path) -> io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[test]
+    fn new_file_under_existing_dir_resolves_through_its_parent() {
+        // A not-yet-existing write target must resolve to <canonical parent> +
+        // filename, i.e. behave like the plain path (no escape, no false deny).
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("newfile.txt");
+        let resolved = resolve_real_path(&target).expect("resolves via parent");
+        let canon_parent = std::fs::canonicalize(dir.path()).unwrap();
+        assert_eq!(resolved, canon_parent.join("newfile.txt"));
+    }
+
+    #[test]
+    fn dangling_final_symlink_resolves_to_its_target_not_the_link() {
+        // The escape: a symlink INSIDE an allowed dir whose target does not yet
+        // exist OUTSIDE it. The old code re-appended the link's own name
+        // lexically (judging the write "inside" the allowed dir) while the
+        // write followed the link outside. Resolution must land on the target.
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("evil");
+        let outside =
+            dir.path().parent().unwrap().join("omni-escape-target-xyz");
+        if make_symlink(&outside, &link).is_err() {
+            // Windows without the symlink privilege / Developer Mode: skip
+            // rather than fail so CI stays green (mirrors the sandbox tests).
+            eprintln!("skipping: cannot create symlinks on this host");
+            return;
+        }
+        let resolved =
+            resolve_real_path(&link).expect("resolves the link target");
+        assert_ne!(resolved, link, "must not judge the write at the link path");
+        assert!(
+            resolved.ends_with("omni-escape-target-xyz"),
+            "resolved to {resolved:?}, expected the outside link target"
+        );
+    }
+
+    #[test]
+    fn existing_final_symlink_resolves_to_its_real_target() {
+        // A symlink whose target DOES exist is followed by the fast path.
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real.txt");
+        std::fs::write(&real, b"x").unwrap();
+        let link = dir.path().join("link.txt");
+        if make_symlink(&real, &link).is_err() {
+            eprintln!("skipping: cannot create symlinks on this host");
+            return;
+        }
+        let resolved = resolve_real_path(&link).expect("resolves");
+        assert_eq!(resolved, std::fs::canonicalize(&real).unwrap());
     }
 }

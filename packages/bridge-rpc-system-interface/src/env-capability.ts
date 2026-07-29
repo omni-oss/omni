@@ -1,4 +1,5 @@
 import type { Env, ProcessEnv } from "@omni-oss/system-interface";
+import { globMatches } from "./glob";
 
 /**
  * Allow / deny glob-pattern lists for the `env` domain at a single policy
@@ -26,30 +27,12 @@ export type EnvRuleLayers = readonly EnvDomainRules[];
  * one; every other character is literal. There is deliberately **no** path
  * separator awareness — environment names are opaque strings, not paths — so
  * this mirrors the Rust `glob_str_matches` (globset with
- * `literal_separator: false`) and the runtime shim's `globMatches`, keeping the
- * three enforcement points in lock-step.
+ * `literal_separator: false`) and the runtime shim's matchers, keeping the
+ * enforcement points in lock-step — they all delegate to the one
+ * {@link globMatches}.
  */
 export function matchEnvGlob(pattern: string, name: string): boolean {
-    return globToRegExp(pattern).test(name);
-}
-
-function globToRegExp(glob: string): RegExp {
-    let out = "^";
-    for (const ch of glob) {
-        if (ch === "*") {
-            out += ".*";
-        } else if (ch === "?") {
-            out += ".";
-        } else {
-            out += escapeRegExp(ch);
-        }
-    }
-    out += "$";
-    return new RegExp(out);
-}
-
-function escapeRegExp(ch: string): string {
-    return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return globMatches(pattern, name);
 }
 
 /**

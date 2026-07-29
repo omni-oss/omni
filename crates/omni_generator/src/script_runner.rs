@@ -29,7 +29,7 @@
 //! pre-spawn flags are planned fail-closed and every RPC-mediated fs access is
 //! brokered.
 
-use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
+use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc, time::Duration};
 
 use bridge_rpc_router::Router;
 use bridge_rpc_runner::{
@@ -394,6 +394,19 @@ pub trait JsScriptRunner: Send + Sync + std::fmt::Debug {
     ) -> Result<RunScriptResult, Error>;
 }
 
+/// Optional per-`call` execution timeout, read from `OMNI_JS_EXEC_TIMEOUT`
+/// (whole seconds). Unset (or unparseable / `0`) means no cap — a script is
+/// bounded only by the runtime exiting — preserving the historical behaviour for
+/// legitimately long-running generators. Operators who want to bound a hung
+/// script set the variable; the runner then kills the runtime on expiry.
+fn exec_timeout_from_env() -> Option<Duration> {
+    std::env::var("OMNI_JS_EXEC_TIMEOUT")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|secs| *secs > 0)
+        .map(Duration::from_secs)
+}
+
 /// A shared, lazily-spawned set of generator script runners keyed by
 /// `(runtime, effective-policy fingerprint)`.
 ///
@@ -488,7 +501,8 @@ impl LazyScriptRunner {
                             &spawn_policy,
                         )
                         .with_cwd(Some(&context_dir))
-                        .with_script_args(&script_args),
+                        .with_script_args(&script_args)
+                        .with_call_timeout(exec_timeout_from_env()),
                     )
                     .await
                     .map_err(|e| Error::custom(e.to_string()))

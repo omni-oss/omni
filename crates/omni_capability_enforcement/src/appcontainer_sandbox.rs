@@ -561,6 +561,13 @@ fn grant_path(path: &Path, sid: PSID, mask: u32) -> io::Result<bool> {
     // already done: skip the costly `SetNamedSecurityInfoW` re-write. This keeps
     // steady-state confined spawns close to unconfined cost. The grant is still
     // present, so report `true` — the caller stays responsible for revoking it.
+    //
+    // This short-circuit only helps *warm* spawns: the very first grant of a
+    // large tree in a fresh profile still pays the full propagation. That cold
+    // cost is bounded upstream by the runner resolving version-manager junctions
+    // to the runtime's own (small) versioned dir before handing paths here, so
+    // the granted install root is not an over-broad shared parent (see
+    // `add_runtime_essentials`).
     if dacl_grants(old_dacl, sid, mask, inheritance) {
         free_local(security_descriptor as HLOCAL);
         return Ok(true);
@@ -1080,6 +1087,75 @@ mod tests {
         assert!(
             !container_ace_present(&dir, sid, read),
             "grant outlived its last user"
+        );
+
+        // SAFETY: `sid` is a valid SID from `derive_container_sid`.
+        unsafe { FreeSid(sid) };
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_real_confined_spawn_revokes_its_grant_after_the_child_exits() {
+        // Ties the revocation machinery to an actual confined launch (not just a
+        // hand-rolled guard): grant a scratch dir, spawn a real child inside the
+        // container, and prove the omni ACE is present while the guard is held
+        // and stripped once it drops after the child exits — the property the
+        // runner relies on to keep from littering user dirs with the container
+        // SID.
+        if !is_supported() {
+            eprintln!("skipping: the host does not provide AppContainer");
+            return;
+        }
+        let system_root = std::env::var("SystemRoot")
+            .unwrap_or_else(|_| r"C:\Windows".to_string());
+        let cmd = PathBuf::from(format!(r"{system_root}\System32\cmd.exe"));
+        if !cmd.exists() {
+            eprintln!("skipping: no cmd.exe found");
+            return;
+        }
+
+        let dir = ungranted_scratch();
+        let write = GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE;
+        let Ok(sid) = derive_container_sid(CONTAINER_NAME) else {
+            eprintln!("skipping: the host does not provide AppContainer");
+            std::fs::remove_dir_all(&dir).ok();
+            return;
+        };
+        assert!(
+            !container_ace_present(&dir, sid, write),
+            "a fresh scratch dir must not already carry omni's grant"
+        );
+
+        let spec = OsSandboxSpec {
+            read_paths: vec![dir.clone()],
+            write_paths: vec![dir.clone()],
+            exec_programs: Vec::new(),
+            connect_ports: Vec::new(),
+        };
+        let mut command = Command::new(&cmd);
+        command
+            .current_dir(&dir)
+            .arg("/c")
+            .arg("exit")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let (mut child, guard) =
+            spawn(&mut command, &spec).expect("confined spawn failed");
+        child.wait().expect("waiting on the confined child failed");
+
+        // The grant must still be on disk while the guard lives (a running/
+        // just-exited child must never lose a grant early).
+        assert!(
+            container_ace_present(&dir, sid, write),
+            "the confined spawn did not grant the scratch dir"
+        );
+
+        // Dropping the guard after the child has exited strips the ACE back off.
+        drop(guard);
+        assert!(
+            !container_ace_present(&dir, sid, write),
+            "the grant outlived the confined child that needed it"
         );
 
         // SAFETY: `sid` is a valid SID from `derive_container_sid`.
