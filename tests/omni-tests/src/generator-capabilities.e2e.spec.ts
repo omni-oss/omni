@@ -1117,7 +1117,7 @@ describe("+generator @e2e (capabilities: network)", {
                             {
                                 access: "allow",
                                 domain: "net",
-                                patterns: ["localhost:*"],
+                                patterns: ["localhost:*", "127.0.0.1:*"],
                             },
                             {
                                 access: "allow",
