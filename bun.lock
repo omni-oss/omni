@@ -526,6 +526,9 @@
       },
     },
   },
+  "trustedDependencies": [
+    "@homebridge/node-pty-prebuilt-multiarch",
+  ],
   "catalog": {
     "@commander-js/extra-typings": "^14.0.0",
     "@homebridge/node-pty-prebuilt-multiarch": "^0.14.0",
