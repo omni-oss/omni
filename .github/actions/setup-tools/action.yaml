@@ -77,7 +77,7 @@ runs:
 
     - name: Install Node
       if: ${{ inputs.install-all == 'true' || inputs.install-node == 'true' }}
-      uses: actions/setup-nub@v0.4.0
+      uses: nubjs/setup-nub@v0.4.0
       with:
         check-latest: true
         node-version: ${{ inputs.node-version }}
