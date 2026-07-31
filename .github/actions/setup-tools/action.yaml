@@ -29,6 +29,10 @@ inputs:
     description: "Install Node.js modules"
     required: false
     default: "false"
+  install-deno:
+    description: "Install Deno runtime"
+    required: false
+    default: "false"
   node-version:
     description: "Node version to install"
     required: false
@@ -183,3 +187,8 @@ runs:
       if: ${{ inputs.install-all == 'true' ||  inputs.install-bun == 'true' && inputs.install-node-modules == 'true' }}
       run: bun install
       shell: ${{ inputs.shell }}
+
+    - uses: denoland/setup-deno@v2
+      if: ${{ inputs.install-all == 'true' || inputs.install-deno == 'true' }}
+      with:
+        deno-version: lts
