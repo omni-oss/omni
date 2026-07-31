@@ -76,6 +76,14 @@ export class RealmPolicyError extends Error {
 const DEFAULT_CONNECT_HOST = "localhost";
 
 /**
+ * The default host **Deno** assumes when `Deno.connect`/`connectTls` omits
+ * `hostname` — `127.0.0.1`, *not* Node's `localhost`. Using the wrong default
+ * would both miss an allow for `127.0.0.1` and let a `deny 127.0.0.1` be dodged
+ * by omitting the hostname on Deno.
+ */
+const DENO_DEFAULT_CONNECT_HOST = "127.0.0.1";
+
+/**
  * Extract the TCP `{ host, port }` a `net`/`tls` connect call targets, from the
  * several overloaded argument shapes:
  *
@@ -708,12 +716,18 @@ function patchDenoNet(
                         // Unix-domain transport has no host:port.
                         if (typeof options.path !== "string") {
                             const port = Number(options.port);
+                            const host =
+                                typeof options.hostname === "string"
+                                    ? options.hostname
+                                    : DENO_DEFAULT_CONNECT_HOST;
                             if (Number.isFinite(port)) {
-                                const host =
-                                    typeof options.hostname === "string"
-                                        ? options.hostname
-                                        : DEFAULT_CONNECT_HOST;
                                 enforceNet(policy, { host, port });
+                            } else {
+                                // A TCP connect is clearly happening (no `path`)
+                                // but its port cannot be determined: fail closed
+                                // rather than skip the check while `net` is
+                                // enforced.
+                                throw new NetworkPolicyError(host, 0);
                             }
                         }
                     }

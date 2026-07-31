@@ -588,6 +588,49 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
         ).not.toThrow();
         expect(globalTarget.WebSocket).toBe(Patched);
     });
+
+    test("gates Deno.connect and defaults an omitted host to 127.0.0.1", () => {
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = { Deno: { connect } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["127.0.0.1:5432"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire({}),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Deno as { connect: (o: unknown) => unknown }
+        ).connect;
+
+        // An omitted hostname defaults to Deno's 127.0.0.1 (not Node's
+        // localhost), so the `127.0.0.1:5432` grant authorizes it.
+        expect(patched({ port: 5432 })).toBe("conn");
+        // A different port to the (defaulted) host is denied.
+        expect(() => patched({ port: 9999 })).toThrow(NetworkPolicyError);
+    });
+
+    test("fails closed on a Deno.connect whose port cannot be determined", () => {
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = { Deno: { connect } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["127.0.0.1:5432"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire({}),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Deno as { connect: (o: unknown) => unknown }
+        ).connect;
+
+        // A clearly-TCP connect (no `path`) with an unparseable port must not
+        // slip through unchecked while `net` is enforced.
+        expect(() => patched({ port: "not-a-port" })).toThrow(
+            NetworkPolicyError,
+        );
+        expect(connect).not.toHaveBeenCalled();
+    });
 });
 
 describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {

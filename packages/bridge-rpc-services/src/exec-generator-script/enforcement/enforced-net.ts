@@ -25,6 +25,20 @@ export class NetworkPolicyError extends Error {
  * Wrap a `fetch` so every request is authorized against the `net` policy before
  * a connection is attempted. When the policy does not enforce `net` (the runtime
  * confines it precisely at launch), `base` is returned unwrapped — zero overhead.
+ *
+ * Two subtleties beyond the initial check:
+ *
+ * * **TOCTOU** — the request target is snapshotted into an immutable, canonical
+ *   {@link Request} *once* (via `new Request`, exactly how the runtime itself
+ *   normalizes it) and that frozen object is both authorized and sent, so a
+ *   caller cannot hand in a `URL`/`Request` whose target mutates between the
+ *   check and the send.
+ * * **Redirect SSRF** — on runtimes whose native `fetch` does not funnel through
+ *   the JS socket patch (Deno/Bun), an allowed origin that 3xx-redirects to a
+ *   denied host would connect there unseen. So redirects are followed *manually*
+ *   and every `Location` hop is re-authorized. A caller that opted out of
+ *   following (`redirect: "manual"`/`"error"`) keeps that behavior; the initial
+ *   target is still authorized.
  */
 export function createEnforcedFetch(
     base: FetchFn,
@@ -35,28 +49,93 @@ export function createEnforcedFetch(
     }
 
     const enforced: FetchFn = async (input, init) => {
-        const url = requestUrl(input);
-        const host = url.hostname;
-        const port = requestPort(url);
-        if (!policy.checkNet(host, port)) {
-            throw new NetworkPolicyError(host, port);
+        // Normalize to a canonical Request once (URL frozen to a stable string),
+        // closing the TOCTOU window for every input shape — string, URL, or a
+        // (possibly hostile) Request subclass with a mutating `url` getter.
+        const reqInput = input instanceof URL ? input.href : input;
+        const req = new Request(reqInput as RequestInfo, init);
+        authorizeUrl(policy, new URL(req.url));
+
+        if (req.redirect !== "follow") {
+            // Caller manages redirects themselves; a single up-front check of the
+            // frozen target is enough (a `manual` follow re-enters this wrapper).
+            return base(req);
         }
-        return base(input, init);
+        return followWithAuthorization(base, req, policy);
     };
 
     return enforced;
 }
 
-/** Extract the target URL from any `fetch` first-argument form. */
-function requestUrl(input: RequestInfo | URL): URL {
-    if (typeof input === "string") {
-        return new URL(input);
+/** Maximum redirect hops to follow before giving up (matches common runtimes). */
+const MAX_REDIRECTS = 20;
+
+/**
+ * Follow redirects manually, authorizing the destination of every 3xx hop, so a
+ * redirect to a policy-denied host is refused *before* the connection to it is
+ * opened — even on a runtime whose native `fetch` bypasses the JS socket patch.
+ */
+async function followWithAuthorization(
+    base: FetchFn,
+    initial: Request,
+    policy: CapabilityPolicy,
+): Promise<Response> {
+    let current = initial;
+    for (let hop = 0; ; hop++) {
+        if (hop > MAX_REDIRECTS) {
+            throw new Error(
+                "omni: exceeded the maximum redirect count while enforcing " +
+                    "the `net` policy",
+            );
+        }
+        // Clone for the send so `current` keeps an un-consumed body available to
+        // build the next hop (307/308 preserve the body).
+        const res = await base(current.clone(), { redirect: "manual" });
+        const location =
+            res.status >= 300 && res.status < 400
+                ? res.headers.get("location")
+                : null;
+        if (!location) {
+            return res;
+        }
+        const next = new URL(location, current.url);
+        authorizeUrl(policy, next);
+        current = redirectedRequest(current, res.status, next);
     }
-    if (input instanceof URL) {
-        return input;
+}
+
+/**
+ * Build the next request for a redirect hop following the Fetch spec's method
+ * rules: a `303`, or a `301`/`302` on a non-`GET`/`HEAD` request, switches to
+ * `GET` and drops the body; `307`/`308` (and same-method `301`/`302`) preserve
+ * the method and body.
+ */
+function redirectedRequest(prev: Request, status: number, next: URL): Request {
+    const dropBody =
+        status === 303 ||
+        ((status === 301 || status === 302) &&
+            prev.method !== "GET" &&
+            prev.method !== "HEAD");
+    if (dropBody) {
+        return new Request(next.href, {
+            method: "GET",
+            headers: prev.headers,
+            redirect: "manual",
+        });
     }
-    // `Request`-like: has a `url` string.
-    return new URL(input.url);
+    return new Request(next.href, prev);
+}
+
+/**
+ * Authorize a concrete request `url` against the `net` policy, throwing a
+ * {@link NetworkPolicyError} when it is denied.
+ */
+function authorizeUrl(policy: CapabilityPolicy, url: URL): void {
+    const host = url.hostname;
+    const port = requestPort(url);
+    if (!policy.checkNet(host, port)) {
+        throw new NetworkPolicyError(host, port);
+    }
 }
 
 /**

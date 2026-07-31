@@ -209,11 +209,13 @@ export function netMatches(
     port: number,
 ): boolean {
     const { host: pHost, port: pPort } = splitHostPort(pattern);
-    // Reconcile the two shapes an IPv6 host reaches us in: a WHATWG `URL`
-    // hostname is bracketed (`[::1]`) while a raw `net.connect(port, "::1")`
-    // host is bare. Strip brackets on both the pattern host and the concrete
-    // host so a single `[::1]`/`::1` grant authorizes either source.
-    if (!globMatches(stripBrackets(pHost), stripBrackets(host))) {
+    // Normalize both sides before matching so the same policy behaves
+    // identically no matter which entry path a request arrives on: a `fetch`
+    // host is already lowercased by the WHATWG URL parser, but a raw
+    // `net.connect(port, "EVIL.COM")` / `Deno.connect` host is verbatim. Without
+    // normalization a `deny evil.com` could be evaded with `EVIL.COM` or
+    // `evil.com.` (trailing FQDN root). See {@link normalizeHost}.
+    if (!globMatches(normalizeHost(pHost), normalizeHost(host))) {
         return false;
     }
     if (pPort === undefined || pPort === "*") {
@@ -228,6 +230,28 @@ function stripBrackets(host: string): string {
     return host.startsWith("[") && host.endsWith("]")
         ? host.slice(1, -1)
         : host;
+}
+
+/**
+ * Canonicalize a host for case- and form-insensitive matching, reconciling every
+ * shape a host reaches the matcher in:
+ *
+ * * **brackets** — a WHATWG `URL` hostname is bracketed (`[::1]`) while a raw
+ *   `net.connect(port, "::1")` host is bare; strip them so a single grant covers
+ *   both.
+ * * **case** — DNS is case-insensitive, and `fetch` already lowercases via the
+ *   URL parser; lowercasing here makes the raw-socket path agree so a `deny`
+ *   cannot be dodged with `EVIL.COM`.
+ * * **trailing dot** — `evil.com.` (the FQDN root) resolves the same as
+ *   `evil.com`; strip it so it cannot dodge a rule either (matching the Rust
+ *   `host_port_matches`, which strips the trailing dot).
+ */
+function normalizeHost(host: string): string {
+    let h = stripBrackets(host).toLowerCase();
+    if (h.length > 1 && h.endsWith(".")) {
+        h = h.slice(0, -1);
+    }
+    return h;
 }
 
 /**

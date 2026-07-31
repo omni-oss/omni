@@ -266,6 +266,22 @@ describe("matchers", () => {
         expect(netMatches("[::1]:443", "::1", 444)).toBe(false);
     });
 
+    test("netMatches normalizes host case so a rule cannot be case-dodged", () => {
+        // DNS is case-insensitive; a raw socket can pass a verbatim upper-case
+        // host that `fetch` (via the URL parser) would have lower-cased. Both
+        // sides are normalized so the same rule applies either way.
+        expect(netMatches("example.com:443", "EXAMPLE.COM", 443)).toBe(true);
+        expect(netMatches("EXAMPLE.COM:443", "example.com", 443)).toBe(true);
+        expect(netMatches("Example.Com", "eXaMpLe.cOm", 8080)).toBe(true);
+    });
+
+    test("netMatches strips a trailing FQDN dot on both sides", () => {
+        // `evil.com.` resolves the same as `evil.com`, so it must not dodge a
+        // rule (matching the Rust host matching).
+        expect(netMatches("evil.com:443", "evil.com.", 443)).toBe(true);
+        expect(netMatches("evil.com.:443", "evil.com", 443)).toBe(true);
+    });
+
     // `processMatches` takes an explicit `isWindows` so the platform-specific
     // behaviour is deterministic regardless of the host running the tests.
     test("processMatches is verbatim and case-sensitive on POSIX", () => {
