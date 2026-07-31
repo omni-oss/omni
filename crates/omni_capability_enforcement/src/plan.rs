@@ -91,8 +91,9 @@ pub enum FloorStrictness {
     /// Surface floor gaps as diagnostics and proceed (the shipped default).
     #[default]
     Warn,
-    /// Refuse to build a plan if any governed domain lacks an un-bypassable
-    /// floor for the resolved runtime/platform.
+    /// Refuse to build a plan if any restricted domain lacks an un-bypassable
+    /// floor for the resolved runtime/platform — including a whole-domain
+    /// default-deny, so a deny-all cannot rest solely on the bypassable shim.
     RequireFloor,
 }
 
@@ -267,7 +268,8 @@ pub fn build_plan_layered(
         return Err(EnforcementError::unenforceable(render_gaps(&deny_gaps)));
     }
 
-    let floor_gaps = floor_gaps(req, levels, backends, &domains_with_gaps);
+    let floor_gaps =
+        floor_gaps(req, levels, backends, &domains_with_gaps, strictness);
     if strictness == FloorStrictness::RequireFloor && !floor_gaps.is_empty() {
         return Err(EnforcementError::no_floor(render_floor_gaps(&floor_gaps)));
     }
@@ -312,22 +314,26 @@ fn floor_gaps(
     levels: &[RequiredCapabilities],
     backends: &[&dyn EnforcementBackend],
     domains_with_gaps: &BTreeSet<CapabilityDomain>,
+    strictness: FloorStrictness,
 ) -> Vec<FloorGap> {
     let mut gaps = Vec::new();
     for &domain in req.restricted() {
-        // Only domains the policy actively *governs* (an explicit allow/deny
-        // rule) are actionable here. Every domain is `restricted` under
-        // default-deny, but a domain the generator never references is denied
-        // wholesale and not something the author asked to have precisely
-        // enforced — warning about it on every run would be noise. (Making that
-        // whole-domain deny un-bypassable on a floor-less runtime is the
-        // separate "require an OS sandbox" gate, deferred to the OS-sandbox
-        // backends.)
         let governed = req
             .domains()
             .get(&domain)
             .is_some_and(|r| !r.allow.is_empty() || !r.deny.is_empty());
-        if !governed {
+        // Under `Warn`, report only domains the policy actively *governs* (an
+        // explicit allow/deny). Every domain is `restricted` under default-deny,
+        // but a domain the generator never references is denied wholesale and
+        // warning about the (expected) absence of an OS floor for it on every run
+        // would be pure noise.
+        //
+        // Under `RequireFloor` the operator demands an un-bypassable floor for
+        // **every** restricted domain — a whole-domain default-deny included.
+        // Otherwise that deny-all would rest solely on the bypassable shim while
+        // the strict stance silently "passed": a fail-open. So the governed
+        // shortcut is skipped here and every restricted domain is analyzed.
+        if !governed && strictness != FloorStrictness::RequireFloor {
             continue;
         }
         let floor_covers = backends
@@ -1398,37 +1404,42 @@ mod tests {
     }
 
     #[test]
-    fn require_floor_is_satisfied_per_domain_by_an_os_sandbox() {
-        // Bun-on-Linux-style: the OS sandbox floors fs, so an fs-only policy
-        // passes require-floor even without pre-spawn flags…
+    fn require_floor_refuses_an_ungoverned_whole_domain_deny_without_a_floor() {
+        // C1 regression. An fs-only policy still leaves net/process/env under a
+        // whole-domain *default-deny*. On this Bun-on-Linux-style stack the OS
+        // sandbox floors only fs, so those denies rest solely on the bypassable
+        // shim. Under RequireFloor the run must therefore fail closed — not
+        // silently "pass" because only *governed* domains were analyzed (the
+        // fail-open this fixes).
         let fs_only = require(
             r#"[{ "access": "allow", "domain": "fs.write", "patterns": ["@workspace/**"] }]"#,
         );
         let backends: [&dyn EnforcementBackend; 3] =
             [&MockOsFsFloor, &FullBroker, &ScriptShimBroker::new()];
-        assert!(
-            build_plan_strict(
-                &fs_only,
-                &roots(),
-                &backends,
-                UnenforceablePolicy::Deny,
-                FloorStrictness::RequireFloor,
-            )
-            .is_ok(),
-            "fs is floored by the OS sandbox"
-        );
-
-        // …but adding a `net` rule (which the OS sandbox does not floor) makes
-        // the same strict stance refuse, and only for `net`.
         let err = build_plan_strict(
-            &net_and_process(),
+            &fs_only,
             &roots(),
             &backends,
             UnenforceablePolicy::Deny,
             FloorStrictness::RequireFloor,
         )
-        .expect_err("net/process are not OS-sandbox floored");
+        .expect_err("an ungoverned deny-all domain has no un-bypassable floor");
         assert_eq!(err.kind(), crate::EnforcementErrorKind::NoFloor);
+        // The unfloored default-deny domains are named as the reason.
+        let msg = err.to_string();
+        assert!(msg.contains("net"), "{msg}");
+        assert!(msg.contains("process"), "{msg}");
+
+        // The default Warn stance is unchanged: it suppresses ungoverned-domain
+        // floor gaps as noise (fs, the only governed domain, IS floored), so the
+        // same stack still builds a plan with no floor gaps.
+        let plan = build_plan(&fs_only, &roots(), &backends)
+            .expect("warn never refuses");
+        assert!(
+            plan.floor_gaps.is_empty(),
+            "warn analyzes only governed domains: {:?}",
+            plan.floor_gaps
+        );
     }
 
     #[test]
