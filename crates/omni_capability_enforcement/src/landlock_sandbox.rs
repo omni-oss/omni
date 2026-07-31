@@ -86,7 +86,7 @@ use std::path::{Path, PathBuf};
 
 use landlock::{
     ABI, Access, AccessFs, AccessNet, NetPort, Ruleset, RulesetAttr,
-    RulesetCreatedAttr, path_beneath_rules,
+    RulesetCreatedAttr, RulesetStatus, path_beneath_rules,
 };
 
 use crate::OsSandboxSpec;
@@ -187,21 +187,108 @@ pub fn restrict(spec: &OsSandboxSpec) -> io::Result<()> {
         }
     }
 
-    created.restrict_self().map_err(to_io)?;
+    // Apply the ruleset to the calling thread. Best-effort compatibility means
+    // the kernel may legitimately enforce only a *subset* of the requested ABI
+    // (`PartiallyEnforced`): filesystem rights are the first thing any Landlock
+    // kernel supports (V1+), so a partial status here means only the higher-ABI
+    // net floor (V4) was dropped — which this tier never claims anyway. But
+    // `NotEnforced` means the kernel applied **nothing**: the fs floor the
+    // OS-sandbox tier advertises would be silently absent while the caller
+    // believes the child is confined. Discarding the status (as before) is a
+    // silent fail-open, so inspect it and fail **closed** — the `pre_exec` hook
+    // returning an error aborts the spawn, and the caller refuses to launch an
+    // unconfined child rather than one that only *looks* sandboxed.
+    let status = created.restrict_self().map_err(to_io)?;
+    if status.ruleset == RulesetStatus::NotEnforced {
+        return Err(io::Error::other(
+            "landlock: kernel did not enforce the ruleset (RulesetStatus::\
+             NotEnforced); refusing to launch an unconfined child while the \
+             OS-sandbox filesystem floor is claimed",
+        ));
+    }
 
     Ok(())
 }
 
-/// System directories a dynamically-linked runtime needs to *read/execute* to
-/// even start (loader, shared libraries, CA certs, `/proc`, …). Granting these
-/// keeps the sandbox usable; the policy's own paths add the workspace on top.
+/// System directories/files a dynamically-linked runtime needs to *read/execute*
+/// to even start (loader, shared libraries, CA certs, DNS resolution, `/proc`,
+/// …). Granting these keeps the sandbox usable; the policy's own paths add the
+/// workspace on top.
 ///
 /// Only paths that actually exist on the host are used (see [`existing`]), so
-/// this list can be generous without breaking `path_beneath_rules`.
+/// this list can name distro-specific locations without breaking
+/// `path_beneath_rules`.
+///
+/// The list is deliberately **narrowed** from whole top-level hierarchies to
+/// what startup genuinely needs, so a confined generator cannot read arbitrary
+/// files under, say, `/etc` or `/opt`:
+///
+/// * Whole `/opt` is **not** granted — nothing under it is needed to start a
+///   runtime (a runtime installed there is named explicitly in the policy's
+///   read paths).
+/// * `/usr` is granted as its executable/library/data subtrees rather than in
+///   full, dropping `/usr/src`, `/usr/include`, etc.
+/// * `/etc` is granted as a curated set of the specific files a
+///   dynamically-linked, networked runtime reads (loader config, CA bundle,
+///   resolver/hosts, user db, timezone, the Debian `alternatives` symlink farm)
+///   rather than the whole tree.
+///
+/// A few pseudo-filesystems are kept **coarse on purpose** (documented inline
+/// below): `/proc` and `/sys` because libc and the runtimes read many scattered
+/// entries there for cpu/memory/self introspection, and their sensitive entries
+/// (other processes) are already protected by ordinary DAC that Landlock only
+/// tightens; `/dev` because it holds device nodes (not file contents), the
+/// writable ones being granted separately in [`baseline_write_paths`].
 fn baseline_read_paths() -> Vec<PathBuf> {
     [
-        "/usr", "/bin", "/sbin", "/lib", "/lib64", "/lib32", "/etc", "/opt",
-        "/proc", "/sys", "/dev",
+        // Dynamic loader + shared libraries (usr-merge symlinks resolve into
+        // `/usr/lib*`, which is granted too).
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/lib32",
+        "/usr/bin",
+        "/usr/sbin",
+        "/usr/lib",
+        "/usr/lib64",
+        "/usr/lib32",
+        "/usr/libexec",
+        "/usr/local",
+        // Distro read-only data: CA bundles, ICU/timezone data, etc.
+        "/usr/share",
+        // Loader configuration and cache.
+        "/etc/ld.so.cache",
+        "/etc/ld.so.conf",
+        "/etc/ld.so.conf.d",
+        "/etc/ld.so.preload",
+        // TLS trust store (locations vary by distro; only existing ones apply).
+        "/etc/ssl",
+        "/etc/pki",
+        "/etc/ca-certificates",
+        "/etc/ca-certificates.conf",
+        "/etc/crypto-policies",
+        // Name resolution.
+        "/etc/resolv.conf",
+        "/etc/hosts",
+        "/etc/host.conf",
+        "/etc/hostname",
+        "/etc/gai.conf",
+        "/etc/nsswitch.conf",
+        "/etc/services",
+        "/etc/protocols",
+        // User/group database and local timezone (glibc reads these on start).
+        "/etc/passwd",
+        "/etc/group",
+        "/etc/localtime",
+        // Debian/Ubuntu symlink farm behind many `/usr/bin/*` entries.
+        "/etc/alternatives",
+        // Pseudo-filesystems kept coarse on purpose (see the doc comment): libc
+        // and the runtimes read many scattered entries here, and cross-process
+        // exposure is already gated by ordinary DAC.
+        "/proc",
+        "/sys",
+        "/dev",
     ]
     .into_iter()
     .map(PathBuf::from)
@@ -263,5 +350,31 @@ mod tests {
         let v = abi_version();
         assert!(v >= 0, "abi version must never be negative: {v}");
         assert_eq!(is_supported(), v > 0);
+    }
+
+    #[test]
+    fn baseline_read_floor_is_narrowed_not_whole_hierarchies() {
+        // Guard against regressing back to granting entire top-level trees. The
+        // baseline must not hand a confined child blanket read access to `/etc`,
+        // `/usr`, or `/opt`; it must still cover what a dynamically-linked
+        // runtime needs to start (a loader/library dir and the CA/loader config).
+        let baseline = baseline_read_paths();
+        for forbidden in ["/etc", "/usr", "/opt"] {
+            assert!(
+                !baseline.iter().any(|p| p == Path::new(forbidden)),
+                "baseline must not grant the whole {forbidden} hierarchy"
+            );
+        }
+        for required in ["/usr/lib64", "/lib64", "/etc/ld.so.cache"] {
+            assert!(
+                baseline.iter().any(|p| p == Path::new(required)),
+                "baseline is missing a startup essential: {required}"
+            );
+        }
+        // `/opt` must not be reachable even as an ancestor of a granted path.
+        assert!(
+            !baseline.iter().any(|p| p.starts_with("/opt")),
+            "nothing under /opt should be in the baseline"
+        );
     }
 }

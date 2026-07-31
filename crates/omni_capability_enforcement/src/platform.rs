@@ -238,6 +238,17 @@ pub fn install_os_sandbox(
     if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some() {
         return Ok(());
     }
+    // Install the Landlock hook only when the running kernel actually provides
+    // Landlock. `coverage()` claims the fs floor under the very same condition
+    // (`landlock_sandbox::is_supported()`), so gating here keeps the *applied*
+    // confinement in lock-step with the *claimed* floor: on a kernel without
+    // Landlock this tier advertises no fs coverage (the broker is the floor and
+    // the honest FloorGap stands), so we must not register a hook that — now
+    // that `restrict` fails closed — would abort the spawn for a floor we never
+    // promised.
+    if !crate::landlock_sandbox::is_supported() {
+        return Ok(());
+    }
     let spec = spec.clone();
     // SAFETY: the closure runs in the forked child before `execve`; it only
     // issues Landlock syscalls (plus small allocations) to irrevocably drop the
