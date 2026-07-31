@@ -6,7 +6,9 @@ extends:
 
 tasks:
   build:
-    exec: cargo build --release --package ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    exec: cargo build --profile {{ args.profile }} --package ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
+    args:
+      profile: release
     cache:
       key:
         env:
@@ -14,8 +16,8 @@ tasks:
       output:
         files:
           append:
-            - "@workspace/target/release/{{ env.PROJECT_NAME }}"
-            - "@workspace/target/release/{{ env.PROJECT_NAME }}.exe"
+            - "@workspace/target/{{ args.profile }}/{{ env.PROJECT_NAME }}"
+            - "@workspace/target/{{ args.profile }}/{{ env.PROJECT_NAME }}.exe"
     dependencies:
       - test
 
