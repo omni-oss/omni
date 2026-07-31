@@ -15,7 +15,7 @@ export function globMatches(pattern: string, value: string): boolean {
     return globToRegExp(pattern).test(value);
 }
 
-/** Compile a glob (`*` / `?`) to an anchored {@link RegExp}. */
+/** Compile a glob (`*` / `?`) to a fully-anchored, dotAll {@link RegExp}. */
 export function globToRegExp(glob: string): RegExp {
     let out = "^";
     for (const ch of glob) {
@@ -27,8 +27,14 @@ export function globToRegExp(glob: string): RegExp {
             out += escapeRegExp(ch);
         }
     }
-    out += "$";
-    return new RegExp(out);
+    // `(?![\s\S])` is a true end-of-string anchor: unlike `$`, it does not also
+    // match just *before* a trailing "\n", so `example.com` can never match
+    // `example.com\n`. The `s` (dotAll) flag lets `.` / `.*` span newlines, so a
+    // value containing "\n" is still caught by `*` (including a deny-all `*`).
+    // Together these mirror Rust `globset`, which is whole-string anchored and
+    // treats newlines as ordinary characters.
+    out += "(?![\\s\\S])";
+    return new RegExp(out, "s");
 }
 
 /** Escape a single character for literal use inside a {@link RegExp}. */
