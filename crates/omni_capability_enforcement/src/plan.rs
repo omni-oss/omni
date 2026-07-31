@@ -116,7 +116,7 @@ pub fn require_full_coverage(
     req: &RequiredCapabilities,
     backends: &[&dyn EnforcementBackend],
 ) -> Result<(), EnforcementError> {
-    for &domain in &req.restricted {
+    for &domain in req.restricted() {
         let covered = backends.iter().any(|b| b.coverage().covers(domain));
         if !covered {
             return Err(EnforcementError::uncovered_domain(
@@ -314,7 +314,7 @@ fn floor_gaps(
     domains_with_gaps: &BTreeSet<CapabilityDomain>,
 ) -> Vec<FloorGap> {
     let mut gaps = Vec::new();
-    for &domain in &req.restricted {
+    for &domain in req.restricted() {
         // Only domains the policy actively *governs* (an explicit allow/deny
         // rule) are actionable here. Every domain is `restricted` under
         // default-deny, but a domain the generator never references is denied
@@ -324,7 +324,7 @@ fn floor_gaps(
         // separate "require an OS sandbox" gate, deferred to the OS-sandbox
         // backends.)
         let governed = req
-            .domains
+            .domains()
             .get(&domain)
             .is_some_and(|r| !r.allow.is_empty() || !r.deny.is_empty());
         if !governed {
@@ -338,7 +338,7 @@ fn floor_gaps(
         let gapped = domains_with_gaps.contains(&domain);
         let union_widened = levels
             .iter()
-            .filter(|l| l.domains.contains_key(&domain))
+            .filter(|l| l.domains().contains_key(&domain))
             .count()
             > 1;
         let precisely_floored = floor_covers && !gapped && !union_widened;
@@ -459,7 +459,7 @@ fn compute_shim_policy(
     let mut enforced: BTreeSet<CapabilityDomain> = BTreeSet::new();
     for domain in shim_domains.domains() {
         // Not restricted → nothing to enforce anywhere.
-        if !req.restricted.contains(&domain) {
+        if !req.restricted().contains(&domain) {
             continue;
         }
         let precisely_flagged = backends.iter().any(|b| {
@@ -476,7 +476,7 @@ fn compute_shim_policy(
         // layers and narrow it, even where the flags are otherwise "precise".
         let constraining = levels
             .iter()
-            .filter(|l| l.domains.contains_key(&domain))
+            .filter(|l| l.domains().contains_key(&domain))
             .count();
         if precisely_flagged && constraining <= 1 {
             continue;
@@ -497,7 +497,7 @@ fn compute_shim_policy(
         .map(|level| {
             let mut layer = ShimLayer::default();
             for &domain in &enforced {
-                if let Some(rules) = level.domains.get(&domain) {
+                if let Some(rules) = level.domains().get(&domain) {
                     layer.domains.insert(domain, rules.clone().into());
                 }
             }
@@ -521,7 +521,7 @@ fn collect_unenforceable(
     req: &RequiredCapabilities,
 ) -> BTreeMap<CapabilityId, UnenforceablePolicy> {
     let mut map = BTreeMap::new();
-    for rules in req.domains.values() {
+    for rules in req.domains().values() {
         for atom in rules.allow.iter().chain(rules.deny.iter()) {
             if let Some(policy) = atom.on_unenforceable {
                 map.insert(atom.id, policy);
@@ -815,7 +815,7 @@ mod tests {
             _roots: &dyn PatternResolver,
         ) -> Result<BackendPlan, EnforcementError> {
             let mut plan = BackendPlan::new();
-            if let Some(rules) = req.domains.get(&CapabilityDomain::Net) {
+            if let Some(rules) = req.domains().get(&CapabilityDomain::Net) {
                 for atom in &rules.allow {
                     plan.gaps.push(Gap {
                         backend: self.name().to_string(),

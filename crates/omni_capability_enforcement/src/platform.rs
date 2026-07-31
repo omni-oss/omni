@@ -363,7 +363,7 @@ mod lowering {
         // here and are left to the runtime flag / script shim to gate (this is
         // not a coverage claim — the OS sandbox never covers `process`, so no
         // gap is reported).
-        if let Some(rules) = req.domains.get(&CapabilityDomain::Process) {
+        if let Some(rules) = req.domains().get(&CapabilityDomain::Process) {
             for atom in &rules.allow {
                 if !crate::lower::has_glob(&atom.pattern) {
                     spec.exec_programs.push(atom.pattern.clone());
@@ -385,7 +385,7 @@ mod lowering {
         out_paths: &mut Vec<PathBuf>,
         gaps: &mut Vec<Gap>,
     ) {
-        let Some(rules) = req.domains.get(&domain) else {
+        let Some(rules) = req.domains().get(&domain) else {
             return;
         };
 
@@ -430,7 +430,7 @@ mod lowering {
         req: &RequiredCapabilities,
         out_ports: &mut Vec<u16>,
     ) {
-        let Some(rules) = req.domains.get(&CapabilityDomain::Net) else {
+        let Some(rules) = req.domains().get(&CapabilityDomain::Net) else {
             return;
         };
         for atom in &rules.allow {

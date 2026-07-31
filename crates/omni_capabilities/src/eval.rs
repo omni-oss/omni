@@ -314,10 +314,31 @@ pub struct DomainRules {
 /// [`CapabilityAtom`] rather than kept in a separate side-map, so a backend that
 /// reports a [`Gap`] echoing the atom's [`CapabilityId`] gives the planner a
 /// single, cannot-miss lookup.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequiredCapabilities {
-    pub restricted: Vec<CapabilityDomain>,
-    pub domains: BTreeMap<CapabilityDomain, DomainRules>,
+    restricted: Vec<CapabilityDomain>,
+    domains: BTreeMap<CapabilityDomain, DomainRules>,
+}
+
+impl RequiredCapabilities {
+    /// The domains locked to their allow-list. Because evaluation is
+    /// fail-closed, [`project`] — the **sole** constructor — sets this to every
+    /// domain the profile supports; a domain is absent only when the profile
+    /// does not support it at all.
+    ///
+    /// Exposed read-only (the field is private) so downstream coverage/floor
+    /// analysis can never be handed a *trimmed* set that would make
+    /// `require_full_coverage` pass vacuously — a fail-**open**. The invariant is
+    /// therefore fixed at construction and cannot be weakened afterward.
+    pub fn restricted(&self) -> &[CapabilityDomain] {
+        &self.restricted
+    }
+
+    /// The per-domain allow/deny atoms. Read-only for the same reason as
+    /// [`restricted`](Self::restricted): the mint site is the single writer.
+    pub fn domains(&self) -> &BTreeMap<CapabilityDomain, DomainRules> {
+        &self.domains
+    }
 }
 
 /// Fold two `on_unenforceable` choices to the most severe (`Allow` < `Warn` <
@@ -569,7 +590,7 @@ mod tests {
             ]"#,
         );
         let req = project(&cfg, &());
-        let rules = &req.domains[&CapabilityDomain::FsRead];
+        let rules = &req.domains()[&CapabilityDomain::FsRead];
         let allow: Vec<&str> =
             rules.allow.iter().map(|a| a.pattern.as_str()).collect();
         let deny: Vec<&str> =
@@ -579,7 +600,21 @@ mod tests {
         // Every atom carries a distinct opaque id.
         assert_ne!(rules.allow[0].id, rules.deny[0].id);
         // Fail-closed: every supported domain is locked down.
-        assert_eq!(req.restricted.len(), CapabilityDomain::ALL.len());
+        assert_eq!(req.restricted().len(), CapabilityDomain::ALL.len());
+    }
+
+    #[test]
+    fn empty_chain_still_restricts_every_supported_domain() {
+        // The restricted-domain invariant does not depend on any rule being
+        // present: even an empty policy locks down every supported domain
+        // (default-deny). `restricted` is read-only, so downstream coverage
+        // analysis can never be handed a trimmed set that would pass vacuously.
+        let req = project(&parse("[]"), &());
+        let mut restricted = req.restricted().to_vec();
+        restricted.sort();
+        let mut all = CapabilityDomain::ALL.to_vec();
+        all.sort();
+        assert_eq!(restricted, all);
     }
 
     #[test]
@@ -594,7 +629,7 @@ mod tests {
             ]"#,
         );
         let req = project(&cfg, &());
-        let allow = &req.domains[&CapabilityDomain::Net].allow;
+        let allow = &req.domains()[&CapabilityDomain::Net].allow;
         let patterns: Vec<&str> =
             allow.iter().map(|a| a.pattern.as_str()).collect();
         // First-seen order preserved, `a:443` not duplicated.
@@ -614,7 +649,7 @@ mod tests {
             ]"#,
         );
         let req = project(&cfg, &());
-        let allow = &req.domains[&CapabilityDomain::Net].allow;
+        let allow = &req.domains()[&CapabilityDomain::Net].allow;
         let a = allow.iter().find(|x| x.pattern == "a:443").unwrap();
         let b = allow.iter().find(|x| x.pattern == "b:443").unwrap();
         assert_eq!(a.on_unenforceable, Some(UnenforceablePolicy::Deny));

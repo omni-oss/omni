@@ -75,10 +75,10 @@ impl EnforcementBackend for NodePermissions {
         plan.spawn.push_arg("--permission".to_string());
 
         for &domain in CapabilityDomain::ALL {
-            let rules = req.domains.get(&domain);
+            let rules = req.domains().get(&domain);
             let allow = rules.map(|r| r.allow.as_slice()).unwrap_or(&[]);
             let deny = rules.map(|r| r.deny.as_slice()).unwrap_or(&[]);
-            let restricted = req.restricted.contains(&domain);
+            let restricted = req.restricted().contains(&domain);
 
             match domain {
                 CapabilityDomain::FsRead => plan_fs(

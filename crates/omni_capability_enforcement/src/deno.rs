@@ -76,7 +76,7 @@ impl EnforcementBackend for DenoFlags {
         // Deterministic domain order.
         for &domain in CapabilityDomain::ALL {
             let (allow_flag, deny_flag) = deno_flags(domain);
-            let rules = req.domains.get(&domain);
+            let rules = req.domains().get(&domain);
             let allow = rules.map(|r| r.allow.as_slice()).unwrap_or(&[]);
             let deny = rules.map(|r| r.deny.as_slice()).unwrap_or(&[]);
 
@@ -143,7 +143,7 @@ impl EnforcementBackend for DenoFlags {
             }
 
             if allow_vals.is_empty() {
-                if req.restricted.contains(&domain) {
+                if req.restricted().contains(&domain) {
                     plan.spawn.push_note(format!(
                         "{domain}: no allowances granted; denied by default \
                          (no --{allow_flag} emitted)"
@@ -178,11 +178,11 @@ impl EnforcementBackend for DenoFlags {
         // subtracted from this grant, so `deny env HOME` is honoured even for a
         // generator that is also allowed to spawn.
         let spawns = req
-            .domains
+            .domains()
             .get(&CapabilityDomain::Process)
             .is_some_and(|r| !r.allow.is_empty());
         if spawns && !env_all_allowed {
-            let env_rules = req.domains.get(&CapabilityDomain::Env);
+            let env_rules = req.domains().get(&CapabilityDomain::Env);
             let granted: Vec<&str> = SPAWN_ENV_ALLOWLIST
                 .iter()
                 .copied()
