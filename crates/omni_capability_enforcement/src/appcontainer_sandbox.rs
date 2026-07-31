@@ -145,7 +145,9 @@ const SECURITY_APP_PACKAGE_AUTHORITY: SID_IDENTIFIER_AUTHORITY =
     };
 const SECURITY_CAPABILITY_BASE_RID: u32 = 0x0000_0003;
 const SECURITY_CAPABILITY_INTERNET_CLIENT: u32 = 0x0000_0001;
-const SECURITY_CAPABILITY_INTERNET_CLIENT_SERVER: u32 = 0x0000_0002;
+// `SECURITY_CAPABILITY_INTERNET_CLIENT_SERVER` (RID `0x2`, the inbound network
+// *server* capability) is intentionally not defined/used: confined generators
+// need outbound egress only. See `NetworkCapabilities::client`.
 
 // `SE_GROUP_ENABLED` (`winnt.h`): the capability SID is active in the token.
 // Not re-exported by `windows-sys`, so defined locally.
@@ -423,17 +425,26 @@ struct NetworkCapabilities {
 }
 
 impl NetworkCapabilities {
-    /// `internetClient` + `internetClientServer` — enough for a runtime to make
-    /// outbound requests to the internet and read the responses. Loopback to the
-    /// local machine is a *separate* AppContainer exemption (admin-only, via
-    /// `NetworkIsolationSetAppContainerConfig`) and is deliberately not granted
-    /// here, so localhost servers remain unreachable under confinement.
+    /// `internetClient` only — enough for a runtime to make *outbound* requests
+    /// to the internet and read the responses. The inbound
+    /// `internetClientServer` capability (which additionally lets the container
+    /// *accept* connections as a network server) is deliberately **not** granted:
+    /// a generator script needs outbound egress, not the ability to listen for
+    /// inbound peers, and dropping it removes an unnecessary attack surface.
+    ///
+    /// This does not narrow the `net` floor either way: AppContainer's network
+    /// control is a coarse on/off capability that cannot express host:port, so
+    /// this tier never *claims* `net` coverage — the switch is left on only so it
+    /// does not silently override the broker/shim, which remains the sole
+    /// authoritative `net` enforcer.
+    ///
+    /// Loopback to the local machine is a *separate* AppContainer exemption
+    /// (admin-only, via `NetworkIsolationSetAppContainerConfig`) and is
+    /// deliberately not granted here, so localhost servers remain unreachable
+    /// under confinement.
     fn client() -> io::Result<Self> {
-        let mut sids = Vec::with_capacity(2);
-        for rid in [
-            SECURITY_CAPABILITY_INTERNET_CLIENT,
-            SECURITY_CAPABILITY_INTERNET_CLIENT_SERVER,
-        ] {
+        let mut sids = Vec::with_capacity(1);
+        for rid in [SECURITY_CAPABILITY_INTERNET_CLIENT] {
             sids.push(capability_sid(rid)?);
         }
         let attrs = sids
@@ -1161,5 +1172,22 @@ mod tests {
         // SAFETY: `sid` is a valid SID from `derive_container_sid`.
         unsafe { FreeSid(sid) };
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn client_grants_only_the_outbound_internet_capability() {
+        // The AppContainer net capability set must carry exactly one SID: the
+        // outbound `internetClient`. The inbound `internetClientServer`
+        // capability (which would additionally let a confined generator *accept*
+        // network connections as a server) must not be granted — a generator
+        // needs egress, not the ability to listen for inbound peers.
+        let caps = NetworkCapabilities::client()
+            .expect("deriving the client network capability failed");
+        assert_eq!(
+            caps.len(),
+            1,
+            "expected only the outbound internetClient capability, got {}",
+            caps.len()
+        );
     }
 }
