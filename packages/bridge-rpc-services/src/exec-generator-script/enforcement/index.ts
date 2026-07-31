@@ -5,7 +5,10 @@ import type {
 } from "@omni-oss/gen-sdk-core";
 import type { System } from "@omni-oss/system-interface";
 import { CapabilityPolicy } from "./capability-policy";
-import { installBuiltinModuleEnforcement } from "./enforced-builtins";
+import {
+    defineEnforcedGlobal,
+    installBuiltinModuleEnforcement,
+} from "./enforced-builtins";
 import {
     createEnforcedFetch,
     NetworkPolicyError,
@@ -86,20 +89,16 @@ export function installGlobalEnforcement(policy: CapabilityPolicy): void {
                 policy,
             );
         }
-        // Lock the global against reassignment (`globalThis.fetch = raw`) so
-        // untrusted code cannot swap the wrapper out. `configurable: true` keeps
-        // re-install idempotent and is safe here because the only way to recover
-        // a raw, un-wrapped `fetch` is a fresh realm — itself gated by
-        // {@link installBuiltinModuleEnforcement}. Fall back to a plain
-        // assignment on runtimes that forbid redefining it.
-        try {
-            Object.defineProperty(globalThis, "fetch", {
-                value: patched,
-                writable: false,
-                configurable: true,
-                enumerable: true,
-            });
-        } catch {
+        // Lock the global against reassignment (`globalThis.fetch = raw`) and
+        // against `delete`/redefinition so untrusted code cannot swap the
+        // wrapper out; the only way to recover a raw `fetch` is a fresh realm,
+        // itself gated by {@link installBuiltinModuleEnforcement}. The lock is
+        // non-writable **and** non-configurable — a repeat install stays
+        // idempotent via the enforced-globals marker rather than by leaving the
+        // slot redefinable. Fall back to a plain assignment only on runtimes
+        // that forbid the redefinition outright.
+        const target = globalThis as unknown as Record<string, unknown>;
+        if (!defineEnforcedGlobal(target, "fetch", patched)) {
             globalThis.fetch = patched as unknown as typeof globalThis.fetch;
         }
     }

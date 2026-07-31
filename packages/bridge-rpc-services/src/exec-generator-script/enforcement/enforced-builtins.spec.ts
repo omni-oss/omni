@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { CapabilityPolicy } from "./capability-policy";
 import {
     defaultShellProgram,
+    defineEnforcedGlobal,
     type EnforcementEnv,
     installBuiltinModuleEnforcement,
     netTargetFromConnectArgs,
@@ -518,6 +519,24 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
         const ok = new Patched("wss://realtime.example");
         expect(ok).toBeInstanceOf(FakeWebSocket);
         expect(constructed).toEqual(["wss://realtime.example"]);
+
+        // The slot is locked non-writable and non-configurable so untrusted
+        // code cannot reassign or `delete`/redefine it back to the raw
+        // constructor, and a repeat install is an idempotent no-op (no throw,
+        // wrapper preserved) rather than relying on the slot staying redefinable.
+        const descriptor = Object.getOwnPropertyDescriptor(
+            globalTarget,
+            "WebSocket",
+        );
+        expect(descriptor?.writable).toBe(false);
+        expect(descriptor?.configurable).toBe(false);
+        expect(() =>
+            installBuiltinModuleEnforcement(policy, {
+                nodeRequire: egressRequire({}),
+                globalTarget,
+            }),
+        ).not.toThrow();
+        expect(globalTarget.WebSocket).toBe(Patched);
     });
 });
 
@@ -567,6 +586,23 @@ describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {
         expect(() => (globalTarget.Worker as () => unknown)()).toThrow(
             RealmPolicyError,
         );
+
+        // Locked non-writable/non-configurable, and a repeat install is an
+        // idempotent no-op rather than a throwing redefinition.
+        const blocked = globalTarget.Worker;
+        const descriptor = Object.getOwnPropertyDescriptor(
+            globalTarget,
+            "Worker",
+        );
+        expect(descriptor?.writable).toBe(false);
+        expect(descriptor?.configurable).toBe(false);
+        expect(() =>
+            installBuiltinModuleEnforcement(policy, {
+                nodeRequire: realmRequire({}),
+                globalTarget,
+            }),
+        ).not.toThrow();
+        expect(globalTarget.Worker).toBe(blocked);
     });
 
     test("blocks node:vm new-context execution but leaves runInThisContext", () => {
@@ -610,5 +646,34 @@ describe("installBuiltinModuleEnforcement — fresh-realm gating", () => {
         });
         // Untouched: an env-only or empty policy does not gate fresh realms.
         expect((wt.Worker as () => unknown)()).toBe("worker");
+    });
+});
+
+describe("defineEnforcedGlobal", () => {
+    test("locks the slot non-writable and non-configurable", () => {
+        const target: Record<string, unknown> = { g: () => "raw" };
+        const patched = () => "patched";
+        expect(defineEnforcedGlobal(target, "g", patched)).toBe(true);
+        expect(target.g).toBe(patched);
+
+        const descriptor = Object.getOwnPropertyDescriptor(target, "g");
+        expect(descriptor?.writable).toBe(false);
+        expect(descriptor?.configurable).toBe(false);
+        // Neither reassignment nor deletion can recover the raw value.
+        expect(() => {
+            (target as { g: unknown }).g = () => "evil";
+        }).toThrow();
+        expect(() => delete target.g).toThrow();
+        expect(target.g).toBe(patched);
+    });
+
+    test("a repeat install is an idempotent no-op, not a throwing redefine", () => {
+        const target: Record<string, unknown> = { g: () => "raw" };
+        const first = () => "first";
+        defineEnforcedGlobal(target, "g", first);
+        // A second call with a fresh value must not throw against the now
+        // non-configurable slot; the marker keeps the first lock in place.
+        expect(defineEnforcedGlobal(target, "g", () => "second")).toBe(true);
+        expect(target.g).toBe(first);
     });
 });

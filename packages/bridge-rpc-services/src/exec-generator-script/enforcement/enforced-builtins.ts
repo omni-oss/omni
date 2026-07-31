@@ -349,6 +349,57 @@ function tryPatch<T extends Record<string, unknown>>(
 }
 
 /**
+ * Values the shim has installed as locked globals. Lets a repeat install detect
+ * "already ours" and skip re-defining, rather than throwing against the now
+ * non-configurable slot — the marker, not the slot staying redefinable, is what
+ * keeps installation idempotent.
+ */
+const enforcedGlobals = new WeakSet<object>();
+
+/**
+ * Redefine `target[name]` with the enforced `value` as a non-writable,
+ * **non-configurable** own property, so untrusted code can neither reassign it
+ * (`writable: false`) nor `delete`/redefine it (`configurable: false`) to
+ * recover the raw global. A repeat install is a no-op: if the slot already holds
+ * a value this shim locked, it is left intact instead of triggering a throwing
+ * redefinition. Returns whether the enforced value is in place afterward (only
+ * `false` on a runtime that forbids the redefinition outright). Exported so the
+ * sibling `fetch` lock in `index.ts` shares the same policy.
+ */
+export function defineEnforcedGlobal(
+    target: Record<string, unknown>,
+    name: string,
+    value: unknown,
+): boolean {
+    const existing = Object.getOwnPropertyDescriptor(target, name);
+    const current = existing?.value;
+    if (
+        (typeof current === "object" || typeof current === "function") &&
+        current !== null &&
+        enforcedGlobals.has(current as object)
+    ) {
+        return true; // already locked by us — keep the sealed slot as-is
+    }
+    try {
+        if (
+            (typeof value === "object" || typeof value === "function") &&
+            value !== null
+        ) {
+            enforcedGlobals.add(value as object);
+        }
+        Object.defineProperty(target, name, {
+            value,
+            writable: false,
+            configurable: false,
+            enumerable: true,
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Emit a loud warning when a *critical* interception point could not be patched
  * while the shim is responsible for its domain. Unlike an optional patch (a
  * runtime simply lacking a given builtin, which is expected), a failed critical
@@ -771,17 +822,10 @@ function patchWebSocket(
                 },
             },
         );
-        // `writable: false` blocks a script reassigning the global back to a raw
-        // constructor; `configurable: true` keeps re-install idempotent. Full
-        // non-configurability buys little here because the only way to recover
-        // the raw constructor is a fresh realm, which is separately gated.
-        Object.defineProperty(globalTarget, "WebSocket", {
-            value: patched,
-            writable: false,
-            configurable: true,
-            enumerable: true,
-        });
-        return true;
+        // Lock the slot non-writable **and** non-configurable so a script can
+        // neither reassign nor `delete`/redefine it back to a raw constructor;
+        // a repeat install stays idempotent via the enforced-globals marker.
+        return defineEnforcedGlobal(globalTarget, "WebSocket", patched);
     } catch {
         return false;
     }
@@ -820,22 +864,18 @@ function patchWorkerThreads(
             // no node:worker_threads on this runtime
         }
     }
-    // The global `Worker` (Deno/Bun and browsers-style hosts). `configurable:
-    // true` keeps re-install idempotent; a script cannot recover the original
-    // constructor without a fresh realm, which is itself gated here.
+    // The global `Worker` (Deno/Bun and browsers-style hosts). Locked
+    // non-writable and non-configurable so a script can neither reassign nor
+    // `delete`/redefine it; the enforced-globals marker keeps re-install
+    // idempotent instead of relying on the slot staying redefinable.
     if (typeof globalTarget.Worker === "function") {
-        try {
-            Object.defineProperty(globalTarget, "Worker", {
-                value: function blockedGlobalWorker(): unknown {
-                    throw new RealmPolicyError("Worker");
-                },
-                writable: false,
-                configurable: true,
-                enumerable: true,
-            });
-        } catch {
-            // best-effort
-        }
+        defineEnforcedGlobal(
+            globalTarget,
+            "Worker",
+            function blockedGlobalWorker(): unknown {
+                throw new RealmPolicyError("Worker");
+            },
+        );
     }
 }
 
