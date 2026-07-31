@@ -12,6 +12,7 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    realpathSync,
     rmSync,
     writeFileSync,
 } from "node:fs";
@@ -114,7 +115,12 @@ function tryRegisterCleanup(cleanup: () => void): void {
  * const result = await runOmni(["run", "build"], { cwd: ws.cwd });
  */
 export function makeWorkspace(spec: WorkspaceSpec = {}): Workspace {
-    const root = mkdtempSync(join(tmpdir(), "omni-e2e-"));
+    // Canonicalize the temp root so it matches what omni reports. On macOS,
+    // `mkdtempSync` returns a `/var/folders/...` path that is actually a symlink
+    // to `/private/var/folders/...`; omni resolves symlinks on its workspace
+    // root, so without this its reported paths (cache dir, workspace_info
+    // root_dir, ...) would not match `ws.cwd`/`ws.path()`.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "omni-e2e-")));
 
     const ws: Workspace = {
         cwd: root,
