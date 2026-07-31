@@ -836,6 +836,7 @@ const RUNTIME_BOOTSTRAP_ENV: &[&str] = &[
     // Version managers that re-exec the real runtime binary from elsewhere.
     "NVM_DIR",
     "NVM_BIN",
+    "NUB_HOME",
     "FNM_DIR",
     "FNM_MULTISHELL_PATH",
     "VOLTA_HOME",
@@ -974,6 +975,9 @@ fn add_runtime_essentials(
     // grant that binary's directory *and its install root* (the runtime reads
     // bundled data such as ICU alongside `bin/`), so the re-exec is permitted
     // under the sandbox.
+    // The canonical path the runtime actually runs from, resolved below and
+    // reused by the per-runtime arm (e.g. to detect a nub-managed Node).
+    let mut real_exec_path: Option<PathBuf> = None;
     if let Some(real) = crate::runtime::resolved_exec_path(runtime) {
         // `process.execPath`/`Deno.execPath()` can report a version-manager
         // *junction* (e.g. fnm's per-shell `fnm_multishells\<id>\node.exe`)
@@ -990,6 +994,7 @@ fn add_runtime_essentials(
         {
             spec.read_paths.push(install_root.to_path_buf());
         }
+        real_exec_path = Some(real);
     }
 
     // Runtimes stage temporary files; grant a writable temp directory. On
@@ -1059,9 +1064,28 @@ fn add_runtime_essentials(
                 ensure_writable(&mut spec.write_paths, dir);
             }
         }
-        // Node needs no writable cache to execute a prebuilt bundle; its
-        // libraries live under system prefixes already in the baseline.
-        DelegatingJsRuntimeOption::Node | DelegatingJsRuntimeOption::Auto => {}
+        DelegatingJsRuntimeOption::Node => {
+            // Node executing a prebuilt bundle needs no writable cache, and its
+            // libraries live under system prefixes already in the baseline. But
+            // when Node is provisioned by `nub`, the `node` on PATH is a shim
+            // that re-resolves the version on *every* launch: it enumerates the
+            // installed versions under its cache and loads its own preload +
+            // native-addon files from `<cache>/runtime-*/` before re-`execve`ing
+            // the real binary. `process.execPath` only reveals that one version
+            // dir (granted above), so under the sandbox the shim cannot read the
+            // rest of its cache, concludes there is "no Node", and tries to
+            // provision the latest into the (unwritable) cache — failing the
+            // launch. Grant the nub cache root read/execute so an already
+            // installed runtime resolves. Read-only on purpose: a resolved
+            // launch performs no writes, and provisioning from inside the
+            // sandbox stays disabled.
+            if let Some(cache) =
+                real_exec_path.as_deref().and_then(nub_cache_root)
+            {
+                spec.read_paths.push(cache);
+            }
+        }
+        DelegatingJsRuntimeOption::Auto => {}
     }
 
     sandbox_temp
@@ -1256,13 +1280,70 @@ fn deno_cache_dir() -> Option<PathBuf> {
     }
 }
 
+/// nub's data/cache root derived from the *resolved* runtime binary, or `None`
+/// when the binary is not nub-managed. nub lays every Node version out as
+/// `<cache>/node/<ver>/bin/<exe>` and keeps its launch-time preload +
+/// native-addon shim under `<cache>/runtime-*/`; a confined child spawned
+/// through the nub shim must read this whole tree to resolve and re-exec an
+/// already-installed runtime (see `add_runtime_essentials` for why the single
+/// `process.execPath` version dir is not enough).
+///
+/// The root is taken from the binary's path rather than a guessed per-OS cache
+/// location, so it is correct on every platform (and for a custom
+/// `XDG_CACHE_HOME`) regardless of where nub places its cache. Detection is the
+/// exact `.../nub/node/<ver>/bin/<exe>` shape, so a system or other-version-
+/// manager Node (e.g. `/usr/bin/node`) never matches and is never granted.
+fn nub_cache_root(real_exec: &Path) -> Option<PathBuf> {
+    let bin_dir = real_exec.parent()?; // <ver>/bin
+    let version_dir = bin_dir.parent()?; // <ver>
+    let node_dir = version_dir.parent()?; // node
+    let cache = node_dir.parent()?; // <cache> (nub root)
+    (node_dir.file_name()? == "node" && cache.file_name()? == "nub")
+        .then(|| cache.to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use super::{CallRace, race_call};
     use super::{PathBuf, SandboxTempDir};
-    use super::{RUNTIME_BOOTSTRAP_ENV, scrubbed_child_env};
+    use super::{RUNTIME_BOOTSTRAP_ENV, nub_cache_root, scrubbed_child_env};
+
+    #[test]
+    fn nub_cache_root_is_derived_from_the_binary_layout_cross_platform() {
+        // The nub layout `<cache>/node/<ver>/bin/<exe>` resolves to `<cache>`
+        // regardless of where the OS puts the cache or what the exe is named.
+        for real in [
+            "/home/u/.cache/nub/node/26.5.0/bin/node",
+            "/Users/u/Library/Caches/nub/node/26.5.0/bin/node",
+            // Forward slashes are valid separators on Windows too, so this
+            // stays a single cross-platform assertion (a backslash literal
+            // would not decompose on a Unix `Path`).
+            "C:/Users/u/AppData/Local/nub/node/26.5.0/bin/node.exe",
+        ] {
+            let root = nub_cache_root(&PathBuf::from(real));
+            assert_eq!(
+                root.as_ref().and_then(|p| p.file_name()),
+                Some(std::ffi::OsStr::new("nub")),
+                "nub layout must resolve to its `nub` cache root: {real}"
+            );
+        }
+
+        // A system or other-VM Node must never match — granting its derived
+        // ancestor would over-expose (e.g. `/` for `/usr/bin/node`).
+        for non_nub in [
+            "/usr/bin/node",
+            "/home/u/.nvm/versions/node/v22.0.0/bin/node",
+            "/home/u/.cache/other/node/26.5.0/bin/node",
+        ] {
+            assert_eq!(
+                nub_cache_root(&PathBuf::from(non_nub)),
+                None,
+                "non-nub runtime must not be treated as nub-managed: {non_nub}"
+            );
+        }
+    }
 
     #[test]
     fn scrubbed_env_contains_only_bootstrap_and_policy_vars() {
