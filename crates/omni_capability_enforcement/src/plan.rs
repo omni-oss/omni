@@ -733,7 +733,13 @@ mod tests {
     }
 
     #[test]
-    fn per_rule_allow_overrides_the_deny_default() {
+    fn allow_on_a_deny_is_clamped_to_warn_not_silenced() {
+        // A `deny` that opts into `on_unenforceable: allow` must NOT be dropped
+        // silently when unenforceable — that would fail open on a security
+        // control. `project` clamps it up to `warn`, so the run still proceeds
+        // but the dropped deny is surfaced (never invisible). (`validate` rejects
+        // this config outright; this covers the `build_plan` backstop for a
+        // caller that skipped validation.)
         let req = require(
             r#"[
                 { "access": "allow", "domain": "fs.write", "patterns": ["@workspace/**"] },
@@ -742,8 +748,9 @@ mod tests {
         );
         let backends: [&dyn EnforcementBackend; 1] = [&DenoFlags];
         let plan = build_plan(&req, &roots(), &backends)
-            .expect("per-rule allow proceeds silently under the deny default");
-        assert!(plan.warnings.is_empty());
+            .expect("clamped-to-warn deny proceeds with a warning");
+        assert_eq!(plan.warnings.len(), 1);
+        assert!(plan.warnings[0].contains(".git"));
     }
 
     #[test]

@@ -243,6 +243,16 @@ pub fn validate<P: CapabilityProfile>(
                 index,
             ));
         }
+        // A `deny` may never opt into `on_unenforceable: allow`: that would
+        // silently drop the deny when a platform cannot represent it, turning a
+        // security control (e.g. `deny **/.git/**`) into a fail-open. `warn` and
+        // `deny` are still allowed; the fail-closed default (`None` → deny)
+        // stands. Mirrors the malformed-glob rejection below in spirit.
+        if c.rule.access == Access::Deny
+            && c.rule.on_unenforceable == Some(UnenforceablePolicy::Allow)
+        {
+            return Err(Error::deny_cannot_silence_unenforceable(index));
+        }
         for pattern in &c.rule.patterns {
             if let Err(reason) =
                 crate::matching::pattern_is_valid(c.rule.domain, pattern)
@@ -447,7 +457,16 @@ pub fn project<P: CapabilityProfile>(
     let mut domains: BTreeMap<CapabilityDomain, DomainRules> = BTreeMap::new();
     for (domain, builder) in builders {
         let allow = builder.allow.into_atoms(&mut next_id);
-        let deny = builder.deny.into_atoms(&mut next_id);
+        let mut deny = builder.deny.into_atoms(&mut next_id);
+        // Backstop for callers that reach `project` without `validate`: a deny
+        // atom must never carry `on_unenforceable: allow` (it would let a
+        // genuinely-unenforceable deny be dropped silently). Clamp it up to
+        // `warn` so such a deny is at worst surfaced, never invisible.
+        for atom in &mut deny {
+            if atom.on_unenforceable == Some(UnenforceablePolicy::Allow) {
+                atom.on_unenforceable = Some(UnenforceablePolicy::Warn);
+            }
+        }
         domains.insert(domain, DomainRules { allow, deny });
     }
 
@@ -657,6 +676,21 @@ mod tests {
     }
 
     #[test]
+    fn project_clamps_allow_on_deny_up_to_warn() {
+        // A `deny` that (bypassing `validate`) carried `on_unenforceable: allow`
+        // must never stay `allow` — that would let a genuinely-unenforceable deny
+        // be dropped silently. `project` clamps it up to `warn`.
+        let cfg = parse(
+            r#"[
+                { "access": "deny", "domain": "fs.write", "patterns": ["**/.git/**"], "on_unenforceable": "allow" }
+            ]"#,
+        );
+        let req = project(&cfg, &());
+        let deny = &req.domains()[&CapabilityDomain::FsWrite].deny;
+        assert_eq!(deny[0].on_unenforceable, Some(UnenforceablePolicy::Warn));
+    }
+
+    #[test]
     fn project_mints_a_unique_id_per_distinct_atom() {
         let cfg = parse(
             r#"[
@@ -729,6 +763,35 @@ mod tests {
         .unwrap();
         let err = validate(&cfg).expect_err("malformed glob rejected");
         assert_eq!(err.kind(), crate::ErrorKind::InvalidPattern);
+    }
+
+    #[test]
+    fn validate_rejects_allow_on_a_deny_rule() {
+        // Silencing an unenforceable `deny` is a fail-open and must be refused
+        // at load.
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[{ "access": "deny", "domain": "fs.write", "patterns": ["**/.git/**"], "on_unenforceable": "allow" }]"#,
+        )
+        .unwrap();
+        let err = validate(&cfg).expect_err("allow-on-deny rejected");
+        assert_eq!(
+            err.kind(),
+            crate::ErrorKind::DenyCannotSilenceUnenforceable
+        );
+    }
+
+    #[test]
+    fn validate_allows_warn_and_deny_on_a_deny_rule() {
+        // `warn` and `deny` (and the default `None`) are all fine on a deny.
+        for stance in ["warn", "deny"] {
+            let cfg: CapabilityRules = serde_json::from_str(&format!(
+                r#"[{{ "access": "deny", "domain": "fs.write", "patterns": ["**/.git/**"], "on_unenforceable": "{stance}" }}]"#,
+            ))
+            .unwrap();
+            validate(&cfg).unwrap_or_else(|e| {
+                panic!("`{stance}` on a deny must be valid: {e}")
+            });
+        }
     }
 
     #[test]

@@ -35,6 +35,12 @@ impl Error {
             reason: reason.into(),
         })
     }
+
+    /// A `deny` rule set `on_unenforceable: allow`, which would silently drop the
+    /// deny when it cannot be enforced — a fail-**open** on a security control.
+    pub fn deny_cannot_silence_unenforceable(index: usize) -> Self {
+        Self(ErrorInner::DenyCannotSilenceUnenforceable { index })
+    }
 }
 
 impl Error {
@@ -69,4 +75,11 @@ pub(crate) enum ErrorInner {
 
     #[error("invalid capability pattern `{pattern}`: {reason}")]
     InvalidPattern { pattern: String, reason: String },
+
+    #[error(
+        "capability #{index} is a `deny` rule with `on_unenforceable: allow`; a \
+         deny may not be silently dropped when it cannot be enforced (use \
+         `warn` or `deny`)"
+    )]
+    DenyCannotSilenceUnenforceable { index: usize },
 }
