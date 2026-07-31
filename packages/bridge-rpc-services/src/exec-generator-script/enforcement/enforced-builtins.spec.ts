@@ -218,6 +218,56 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
         expect(spawn).toHaveBeenCalledOnce();
     });
 
+    test("scrubs env injection vectors and a hijacked PATH from a direct spawn", () => {
+        const spawn = stub("spawn");
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, scopedEnv());
+
+        (cp.spawn as (...a: unknown[]) => unknown)("git", ["status"], {
+            env: {
+                LD_PRELOAD: "/tmp/evil.so",
+                NODE_OPTIONS: "--require=/tmp/x.js",
+                PATH: "/tmp/evil",
+                MY_TOKEN: "kept",
+            },
+        });
+        expect(spawn).toHaveBeenCalledOnce();
+        const passedEnv = (
+            (spawn.mock.calls[0] as unknown[])[2] as {
+                env: Record<string, string>;
+            }
+        ).env;
+        // The authorized program `git` cannot be turned into code execution via
+        // the environment: injection vectors are gone and PATH is no longer the
+        // attacker's value; a benign override survives.
+        expect(passedEnv.LD_PRELOAD).toBeUndefined();
+        expect(passedEnv.NODE_OPTIONS).toBeUndefined();
+        expect(passedEnv.PATH).not.toBe("/tmp/evil");
+        expect(passedEnv.MY_TOKEN).toBe("kept");
+    });
+
+    test("leaves a spawn without an explicit env untouched", () => {
+        const spawn = stub("spawn");
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, scopedEnv());
+
+        (cp.spawn as (...a: unknown[]) => unknown)("git", ["status"], {
+            cwd: "/tmp",
+        });
+        // No `env` option → the grandchild inherits the runtime's already
+        // scrubbed environment; we must not inject an empty one.
+        const opts = (spawn.mock.calls[0] as unknown[])[2] as Record<
+            string,
+            unknown
+        >;
+        expect("env" in opts).toBe(false);
+        expect(opts.cwd).toBe("/tmp");
+    });
+
     test("exec authorizes the shell (not the command line's first token)", () => {
         const exec = stub("exec");
         // The `process` policy grants only the shell binary, not `git`.

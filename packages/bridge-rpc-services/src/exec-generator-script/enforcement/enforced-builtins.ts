@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import type { CapabilityPolicy } from "./capability-policy";
+import { scrubChildEnv } from "./enforced-env";
 import { NetworkPolicyError, netTargetFromUrl } from "./enforced-net";
 import { ProcessPolicyError } from "./enforced-process";
 
@@ -540,6 +541,53 @@ function patchNet(
     return connectPatched;
 }
 
+/** The trusted `PATH` to pin into confined grandchildren (Deno-safe read). */
+function trustedPath(): string | undefined {
+    try {
+        return process.env.PATH;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Return `args` with every options object that carries an explicit `env` having
+ * that env scrubbed of code-injection vectors and its `PATH` pinned to the
+ * trusted value (see {@link scrubChildEnv}). This closes the environment-hijack
+ * path on the *direct* `node:child_process` surface (mirroring `confinedEnv` on
+ * the `ctx.sys.proc.spawn` path): a program the `process` policy authorized
+ * cannot be turned into arbitrary code execution via a caller-supplied
+ * `LD_PRELOAD` / `NODE_OPTIONS` / hijacked `PATH`. Args with no explicit `env`
+ * option are returned untouched — the grandchild then inherits the runtime's
+ * already-scrubbed environment.
+ */
+function withScrubbedSpawnEnv(args: unknown[]): unknown[] {
+    let changed = false;
+    const path = trustedPath();
+    const out = args.map((arg) => {
+        if (
+            arg &&
+            typeof arg === "object" &&
+            !Array.isArray(arg) &&
+            Object.hasOwn(arg, "env")
+        ) {
+            const env = (arg as { env?: unknown }).env;
+            if (env && typeof env === "object") {
+                changed = true;
+                return {
+                    ...(arg as Record<string, unknown>),
+                    env: scrubChildEnv(
+                        env as Record<string, string | undefined>,
+                        path,
+                    ),
+                };
+            }
+        }
+        return arg;
+    });
+    return changed ? out : args;
+}
+
 /**
  * Patch `node:child_process` so direct-import spawns are authorized.
  *
@@ -595,7 +643,7 @@ function patchChildProcess(
                             policy,
                             programFromSpawnFamilyArgs(args),
                         );
-                        return original.apply(this, args);
+                        return original.apply(this, withScrubbedSpawnEnv(args));
                     },
             ) || anyExportPatched;
     }
@@ -607,7 +655,7 @@ function patchChildProcess(
             (original) =>
                 function patchedExec(this: unknown, ...args: unknown[]) {
                     enforceProgram(policy, programFromExecArgs(args));
-                    return original.apply(this, args);
+                    return original.apply(this, withScrubbedSpawnEnv(args));
                 },
         );
     }

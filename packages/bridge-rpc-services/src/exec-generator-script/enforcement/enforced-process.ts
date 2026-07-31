@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { delimiter, join } from "node:path";
 import type { SpawnOptions, SpawnResult } from "@omni-oss/gen-sdk-core";
 import type { CapabilityPolicy } from "./capability-policy";
+import { isEnvInjectionVector, isPathKey } from "./enforced-env";
 
 /**
  * Lazily resolve `node:child_process`'s `spawn` at call time via `require`
@@ -94,8 +96,15 @@ const INHERITED_ENV_KEYS = [
  * vars ({@link INHERITED_ENV_KEYS}) that are set, plus any per-call `overrides`.
  * Only allow-listed keys are read from `process.env`, so on Deno no variable
  * outside the granted set is ever accessed.
+ *
+ * The `overrides` are attacker-influenced (a generator script controls them), so
+ * they are **not** merged verbatim: every code-injection vector (mirroring the
+ * Rust `ENV_INJECTION_DENYLIST`) and any attempt to override `PATH` are dropped.
+ * Dropping `PATH` keeps the trusted, inherited value in place so a policy that
+ * authorized a bare program name (`git`) cannot be redirected to an attacker
+ * binary via `PATH=/tmp/evil:...`. Exported for testing.
  */
-function confinedEnv(
+export function confinedEnv(
     overrides?: Record<string, string>,
 ): Record<string, string> {
     const env: Record<string, string> = {};
@@ -116,7 +125,51 @@ function confinedEnv(
             env[key] = value;
         }
     }
-    return { ...env, ...(overrides ?? {}) };
+    for (const [key, value] of Object.entries(overrides ?? {})) {
+        // A caller override can never re-introduce a linker/code-injection
+        // vector nor take over `PATH` (the trusted inherited value wins).
+        if (isEnvInjectionVector(key) || isPathKey(key)) {
+            continue;
+        }
+        env[key] = value;
+    }
+    return env;
+}
+
+/**
+ * Resolve a bare program name to an absolute path using the *trusted* `PATH`
+ * (never a caller override), so a confined spawn runs the binary the policy
+ * authorized rather than one an attacker planted earlier on a caller-controlled
+ * path. A name that already contains a path separator, or one not found on the
+ * trusted path, is returned unchanged — the child then resolves it against the
+ * same trusted `PATH` we pin into its environment, so it is never redirectable
+ * either way. Skipped on Windows, where `PATHEXT` resolution differs and `PATH`
+ * is pinned instead. Exported for testing.
+ */
+export function resolveProgramOnTrustedPath(
+    program: string,
+    trustedPath: string | undefined,
+): string {
+    if (process.platform === "win32") {
+        return program;
+    }
+    if (program.length === 0 || program.includes("/") || !trustedPath) {
+        return program;
+    }
+    for (const dir of trustedPath.split(delimiter)) {
+        if (!dir) {
+            continue;
+        }
+        const candidate = join(dir, program);
+        try {
+            if (existsSync(candidate)) {
+                return candidate;
+            }
+        } catch {
+            // Unreadable directory entry — keep scanning.
+        }
+    }
+    return program;
 }
 
 /**
@@ -139,11 +192,20 @@ export function createEnforcedSpawn(
                 return;
             }
 
-            const child = getNodeSpawn()(program, [...(options?.args ?? [])], {
+            // Build the confined environment first (its `PATH` is the trusted,
+            // inherited value — never a caller override), then resolve the
+            // program against that same trusted `PATH`. The policy check above
+            // ran on the program name the caller wrote, so authorization
+            // semantics are unchanged; only the *binary actually launched* is
+            // pinned, closing the `PATH`-hijack path.
+            const env = confinedEnv(options?.env);
+            const resolved = resolveProgramOnTrustedPath(program, env.PATH);
+
+            const child = getNodeSpawn()(resolved, [...(options?.args ?? [])], {
                 cwd: resolveCwd(options?.cwd, defaultCwd()),
                 // A confined child gets an explicit, minimal environment
                 // (see `confinedEnv`) rather than inheriting the host's.
-                env: confinedEnv(options?.env),
+                env,
                 // Capture output; never inherit a TTY into a confined
                 // script.
                 stdio: ["ignore", "pipe", "pipe"],
