@@ -10,6 +10,7 @@ import {
     netTargetFromDgramConnect,
     netTargetFromDgramSend,
     programFromArg,
+    programFromBunSpawnArgs,
     programFromExecArgs,
     programFromSpawnFamilyArgs,
     programFromSpawnOptions,
@@ -630,6 +631,200 @@ describe("installBuiltinModuleEnforcement — non-TCP / non-fetch egress", () =>
             NetworkPolicyError,
         );
         expect(connect).not.toHaveBeenCalled();
+    });
+});
+
+describe("programFromBunSpawnArgs", () => {
+    test("reads the program from the argv-array form", () => {
+        expect(programFromBunSpawnArgs([["git", "status"]])).toBe("git");
+        expect(
+            programFromBunSpawnArgs([["git", "status"], { cwd: "/x" }]),
+        ).toBe("git");
+    });
+
+    test("reads the program from the { cmd } options form", () => {
+        expect(programFromBunSpawnArgs([{ cmd: ["git", "status"] }])).toBe(
+            "git",
+        );
+    });
+
+    test("indeterminate payloads yield null", () => {
+        expect(programFromBunSpawnArgs([])).toBeNull();
+        expect(programFromBunSpawnArgs([{ notCmd: true }])).toBeNull();
+        expect(programFromBunSpawnArgs([[]])).toBeNull();
+    });
+});
+
+describe("installBuiltinModuleEnforcement — Bun native apis", () => {
+    function egressRequire(): NodeJS.Require {
+        // Critical Node chokepoints resolve to patchable stubs so their loud
+        // "could not patch" warnings stay quiet while we assert the Bun patches.
+        const base: Record<string, unknown> = {
+            "node:net": { Socket: { prototype: { connect() {} } } },
+            "node:child_process": {
+                spawn() {},
+                ChildProcess: { prototype: { spawn() {} } },
+            },
+            "node:tls": { connect() {} },
+            "node:module": {},
+        };
+        return ((id: string) => base[id] ?? {}) as unknown as NodeJS.Require;
+    }
+
+    test("gates Bun.spawn against the process policy and scrubs env", () => {
+        const spawn = vi.fn(() => "spawned");
+        const globalTarget: Record<string, unknown> = { Bun: { spawn } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { spawn: (...a: unknown[]) => unknown }
+        ).spawn;
+
+        // A program outside the allow-list is denied before the native call.
+        expect(() => patched(["rm", "-rf", "/"])).toThrow(ProcessPolicyError);
+        expect(spawn).not.toHaveBeenCalled();
+
+        // An allowed program is delegated with a scrubbed env (injection
+        // vectors and a hijacked PATH removed).
+        patched(["git", "status"], {
+            env: {
+                LD_PRELOAD: "/tmp/evil.so",
+                PATH: "/tmp/evil:/usr/bin",
+                MY_TOKEN: "keep",
+            },
+        });
+        expect(spawn).toHaveBeenCalledOnce();
+        const passedEnv = (spawn.mock.calls[0] as unknown[])[1] as {
+            env: Record<string, string>;
+        };
+        expect(passedEnv.env.LD_PRELOAD).toBeUndefined();
+        expect(passedEnv.env.PATH).not.toBe("/tmp/evil:/usr/bin");
+        expect(passedEnv.env.MY_TOKEN).toBe("keep");
+    });
+
+    test("gates the Bun.spawn { cmd } options form", () => {
+        const spawnSync = vi.fn(() => "ran");
+        const globalTarget: Record<string, unknown> = { Bun: { spawnSync } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { spawnSync: (...a: unknown[]) => unknown }
+        ).spawnSync;
+
+        expect(() => patched({ cmd: ["rm"] })).toThrow(ProcessPolicyError);
+        expect(spawnSync).not.toHaveBeenCalled();
+        patched({ cmd: ["git", "status"] });
+        expect(spawnSync).toHaveBeenCalledOnce();
+    });
+
+    test("gates Bun.connect against the net policy", () => {
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = { Bun: { connect } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["db.internal:5432"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { connect: (o: unknown) => unknown }
+        ).connect;
+
+        expect(() => patched({ hostname: "evil.example", port: 5432 })).toThrow(
+            NetworkPolicyError,
+        );
+        expect(connect).not.toHaveBeenCalled();
+        patched({ hostname: "db.internal", port: 5432 });
+        expect(connect).toHaveBeenCalledOnce();
+    });
+
+    test("a Unix-domain Bun.connect has no host:port to authorize", () => {
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = { Bun: { connect } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["db.internal:5432"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { connect: (o: unknown) => unknown }
+        ).connect;
+
+        expect(patched({ unix: "/tmp/app.sock" })).toBe("conn");
+        expect(connect).toHaveBeenCalledOnce();
+    });
+
+    test("fails closed on a Bun.connect whose port cannot be determined", () => {
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = { Bun: { connect } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["db.internal:5432"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { connect: (o: unknown) => unknown }
+        ).connect;
+
+        expect(() =>
+            patched({ hostname: "db.internal", port: "not-a-port" }),
+        ).toThrow(NetworkPolicyError);
+        expect(connect).not.toHaveBeenCalled();
+    });
+
+    test("gates the connected-peer of a Bun.udpSocket", () => {
+        const udpSocket = vi.fn(() => "sock");
+        const globalTarget: Record<string, unknown> = { Bun: { udpSocket } };
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["metrics.internal:8125"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        const patched = (
+            globalTarget.Bun as { udpSocket: (o: unknown) => unknown }
+        ).udpSocket;
+
+        expect(() =>
+            patched({ connect: { hostname: "evil.example", port: 8125 } }),
+        ).toThrow(NetworkPolicyError);
+        expect(udpSocket).not.toHaveBeenCalled();
+        // An unconnected socket has no egress peer at construction — allowed.
+        patched({ port: 0 });
+        patched({ connect: { hostname: "metrics.internal", port: 8125 } });
+        expect(udpSocket).toHaveBeenCalledTimes(2);
+    });
+
+    test("leaves Bun apis untouched when neither domain is enforced", () => {
+        const spawn = vi.fn(() => "spawned");
+        const connect = vi.fn(() => "conn");
+        const globalTarget: Record<string, unknown> = {
+            Bun: { spawn, connect },
+        };
+        installBuiltinModuleEnforcement(CapabilityPolicy.empty(), {
+            nodeRequire: egressRequire(),
+            globalTarget,
+        });
+        (globalTarget.Bun as { spawn: (...a: unknown[]) => unknown }).spawn([
+            "anything",
+        ]);
+        expect(spawn).toHaveBeenCalledOnce();
     });
 });
 

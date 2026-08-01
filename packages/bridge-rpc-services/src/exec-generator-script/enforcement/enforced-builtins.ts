@@ -197,6 +197,31 @@ export function programFromArg(arg: unknown): string | null {
 }
 
 /**
+ * Extract the program a `Bun.spawn` / `Bun.spawnSync` call executes. Bun accepts
+ * two shapes, both putting the program at the head of the command array:
+ *
+ * * `Bun.spawn(["git", "status"], options?)` — argv array first.
+ * * `Bun.spawn({ cmd: ["git", "status"], ... })` — an options object whose
+ *   `cmd` is the argv array.
+ *
+ * Returns `null` when no program can be determined; the caller then lets the
+ * spawn proceed (the runtime launch flags / OS sandbox is the floor).
+ */
+export function programFromBunSpawnArgs(args: unknown[]): string | null {
+    const first = args[0];
+    if (Array.isArray(first)) {
+        return programFromArg(first[0]);
+    }
+    if (first && typeof first === "object") {
+        const cmd = (first as { cmd?: unknown }).cmd;
+        if (Array.isArray(cmd)) {
+            return programFromArg(cmd[0]);
+        }
+    }
+    return null;
+}
+
+/**
  * The shell executable a runtime spawns for a *shell* invocation, mirroring the
  * Node/Bun defaults: `/bin/sh` on POSIX and `%ComSpec%` (or `cmd.exe`) on
  * Windows. This is the executable that actually becomes the child process for
@@ -467,6 +492,10 @@ export function installBuiltinModuleEnforcement(
         // un-narrowed, so surface it loudly.
         warnUnpatched(patchNet(policy, nodeRequire), "node:net Socket.connect");
         patchDenoNet(policy, globalTarget);
+        warnUnpatched(
+            patchBunNet(policy, globalTarget),
+            "Bun native networking (Bun.connect/listen/udpSocket)",
+        );
         patchDgram(policy, nodeRequire);
         patchHttp2(policy, nodeRequire);
         warnUnpatched(
@@ -480,6 +509,10 @@ export function installBuiltinModuleEnforcement(
             "node:child_process",
         );
         patchDenoProcess(policy, globalTarget);
+        warnUnpatched(
+            patchBunProcess(policy, globalTarget),
+            "Bun.spawn/spawnSync",
+        );
     }
     // A fresh realm re-imports the builtins we patched here as un-patched
     // copies, so it must be gated whenever the shim owns either domain.
@@ -777,6 +810,139 @@ function patchDenoProcess(
                 return original.apply(this, args);
             },
     );
+}
+
+/**
+ * Authorize a Bun native-networking options object against the `net` policy.
+ * Bun describes a TCP endpoint as `{ hostname, port }` and a Unix-domain one as
+ * `{ unix }` (which has no host:port). Mirrors {@link patchDenoNet}: when a TCP
+ * operation is clearly happening (no `unix` path) but its port cannot be
+ * determined, fail **closed** rather than skip the check while `net` is
+ * enforced.
+ */
+function enforceBunNetTarget(policy: CapabilityPolicy, options: unknown): void {
+    if (!options || typeof options !== "object") {
+        return;
+    }
+    const o = options as { hostname?: unknown; port?: unknown; unix?: unknown };
+    // Unix-domain transport — no host:port to authorize.
+    if (typeof o.unix === "string") {
+        return;
+    }
+    const port = Number(o.port);
+    const host =
+        typeof o.hostname === "string" ? o.hostname : DEFAULT_CONNECT_HOST;
+    if (Number.isFinite(port)) {
+        enforceNet(policy, { host, port });
+    } else {
+        throw new NetworkPolicyError(host, 0);
+    }
+}
+
+/**
+ * Patch Bun's native networking APIs (`Bun.connect`, `Bun.listen`,
+ * `Bun.udpSocket`). These open raw TCP/UDP sockets outside `node:net`, so the
+ * `net.Socket.prototype.connect` chokepoint does not cover them on Bun — they
+ * are the twin of the `Deno.connect` patch. `Bun.connect`/`listen` carry the
+ * target inline (`{ hostname, port }`); a *connected* `Bun.udpSocket` carries
+ * its egress peer under `connect`, which is the only egress determinable at
+ * construction (an unconnected socket names its target per-datagram at
+ * `.send(...)`, which is not interceptable here). Returns whether every
+ * exposed chokepoint was patched; a Bun build lacking these APIs (or a
+ * non-Bun runtime) is not an enforcement gap.
+ */
+function patchBunNet(
+    policy: CapabilityPolicy,
+    globalTarget: Record<string, unknown>,
+): boolean {
+    const bun = globalTarget.Bun as Record<string, unknown> | undefined;
+    if (!bun) {
+        return true; // not Bun — nothing to narrow here
+    }
+    let hasChokepoint = false;
+    let patched = false;
+    for (const key of ["connect", "listen"]) {
+        if (typeof bun[key] !== "function") {
+            continue;
+        }
+        hasChokepoint = true;
+        patched =
+            tryPatch(
+                bun,
+                key,
+                (original) =>
+                    function patchedBunConnect(
+                        this: unknown,
+                        ...args: unknown[]
+                    ) {
+                        enforceBunNetTarget(policy, args[0]);
+                        return original.apply(this, args);
+                    },
+            ) || patched;
+    }
+    if (typeof bun.udpSocket === "function") {
+        hasChokepoint = true;
+        patched =
+            tryPatch(
+                bun,
+                "udpSocket",
+                (original) =>
+                    function patchedBunUdpSocket(
+                        this: unknown,
+                        ...args: unknown[]
+                    ) {
+                        const options = args[0] as
+                            | { connect?: unknown }
+                            | undefined;
+                        enforceBunNetTarget(policy, options?.connect);
+                        return original.apply(this, args);
+                    },
+            ) || patched;
+    }
+    // Warn only when Bun exposes a net chokepoint we failed to patch.
+    return !hasChokepoint || patched;
+}
+
+/**
+ * Patch Bun's native process API (`Bun.spawn`, `Bun.spawnSync`). These launch
+ * children outside `node:child_process`, so the exports / prototype patches do
+ * not cover them on Bun — they are the twin of the `Deno.Command` patch. The
+ * program is the head of the argv array in either call shape (see
+ * {@link programFromBunSpawnArgs}); a caller-supplied `env` is scrubbed of
+ * code-injection vectors and a hijacked `PATH` (see {@link withScrubbedSpawnEnv})
+ * exactly as on the `node:child_process` path. Returns whether every exposed
+ * chokepoint was patched.
+ */
+function patchBunProcess(
+    policy: CapabilityPolicy,
+    globalTarget: Record<string, unknown>,
+): boolean {
+    const bun = globalTarget.Bun as Record<string, unknown> | undefined;
+    if (!bun) {
+        return true; // not Bun — nothing to narrow here
+    }
+    let hasChokepoint = false;
+    let patched = false;
+    for (const key of ["spawn", "spawnSync"]) {
+        if (typeof bun[key] !== "function") {
+            continue;
+        }
+        hasChokepoint = true;
+        patched =
+            tryPatch(
+                bun,
+                key,
+                (original) =>
+                    function patchedBunSpawn(
+                        this: unknown,
+                        ...args: unknown[]
+                    ) {
+                        enforceProgram(policy, programFromBunSpawnArgs(args));
+                        return original.apply(this, withScrubbedSpawnEnv(args));
+                    },
+            ) || patched;
+    }
+    return !hasChokepoint || patched;
 }
 
 /**
