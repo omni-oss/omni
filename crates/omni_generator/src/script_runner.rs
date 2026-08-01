@@ -225,7 +225,20 @@ fn build_spawn_plan(
 
     let deno = DenoFlags;
     let node = NodePermissions;
-    let os = NativeOsSandbox;
+    // Resolve the OS-sandbox posture ONCE so the floor the plan *claims* matches
+    // the confinement the spawner will actually *apply* (T17/T18): read the
+    // `OMNI_DISABLE_OS_SANDBOX` escape hatch a single time, and mark the runtime
+    // unconfined when it cannot be placed under the OS mechanism on this
+    // platform. Bun cannot boot inside a Windows AppContainer, so the runner
+    // launches it unconfined there (see `bridge_rpc_runner::build_command`); an
+    // unconfined runtime must not claim the OS-sandbox fs floor, so the plan
+    // surfaces an honest floor gap (a hard refusal under `require-floor`)
+    // instead of advertising a floor that is never installed.
+    let os_sandbox_disabled =
+        std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+    let runtime_confined = !(cfg!(target_os = "windows")
+        && runtime == DelegatingJsRuntimeOption::Bun);
+    let os = NativeOsSandbox::resolved(os_sandbox_disabled, runtime_confined);
     // The generator bridge mediates the filesystem routes and `env`. `env` is
     // a generator-governed domain (`Generator::SUPPORTED` includes it), and the
     // enforcing `sys` filters it by default (`EnvAccess::Filter`): only
@@ -287,26 +300,13 @@ fn build_spawn_plan(
         )));
     }
 
-    // Windows-only floor gap the layered plan cannot see: `bun` cannot boot
-    // inside an AppContainer (it `stat`s every CWD ancestor up to `C:\`, which a
-    // Low-integrity container is denied), so the runner launches it *unconfined*
-    // even though the plan selected the OS-sandbox backend for its filesystem.
-    // The broker still mediates every brokered fs route, but that floor is
-    // in-process and therefore bypassable by native code in the script — unlike
-    // the AppContainer floor Node/Deno get. Surface that explicitly so the weaker
-    // guarantee is not silent.
-    #[cfg(target_os = "windows")]
-    if runtime == DelegatingJsRuntimeOption::Bun
-        && plan.spawn.os_sandbox.is_some()
-    {
-        diagnostics.push(RunScriptDiagnostic::warn(
-            "on Windows the `bun` runtime cannot run inside an AppContainer, so \
-             its filesystem capability has no un-bypassable floor — it is \
-             enforced only by the in-process broker (which native code in the \
-             script could bypass). Use `runtime: node` or `runtime: deno` for an \
-             OS-sandbox filesystem floor on Windows.",
-        ));
-    }
+    // Windows note: `bun` cannot boot inside an AppContainer (it `stat`s every
+    // CWD ancestor up to `C:\`, which a Low-integrity container is denied), so
+    // the runner launches it *unconfined* there. That is already reflected in
+    // the plan: `NativeOsSandbox::resolved(.., runtime_confined = false)` above
+    // makes the OS tier claim no fs floor for Bun on Windows, so the missing
+    // floor is surfaced through the normal `floor_gaps` path (and refused under
+    // `require-floor`) rather than needing a bespoke diagnostic here.
 
     Ok((plan.spawn, plan.shim, diagnostics))
 }

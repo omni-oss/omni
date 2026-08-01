@@ -45,10 +45,87 @@ use crate::{
 };
 
 /// The platform's native access-control sandbox mechanism.
+///
+/// Carries an optional **resolved launch posture** so the floor it *claims*
+/// (via [`coverage`](EnforcementBackend::coverage)) and the spec it *lowers*
+/// (via [`plan`](EnforcementBackend::plan)) match the confinement that will
+/// actually be *applied*. The default ([`FromEnv`](LaunchPosture::FromEnv))
+/// reproduces the historical behavior — read `OMNI_DISABLE_OS_SANDBOX` at query
+/// time and assume the selected runtime is confined — which is fine for probes
+/// and tests. The spawner should instead construct one via
+/// [`resolved`](NativeOsSandbox::resolved), threading the single disable read
+/// and whether the selected runtime is actually confined on this platform (e.g.
+/// Bun runs **unconfined** on Windows — it cannot boot inside an AppContainer),
+/// so an unconfined runtime never claims an fs floor it will not get.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct NativeOsSandbox;
+pub struct NativeOsSandbox {
+    posture: LaunchPosture,
+}
+
+/// How a [`NativeOsSandbox`] resolves whether it actually confines the launch.
+#[derive(Debug, Clone, Copy, Default)]
+enum LaunchPosture {
+    /// Read `OMNI_DISABLE_OS_SANDBOX` from the environment at query time and
+    /// assume the selected runtime is confined by the mechanism. The historical,
+    /// back-compatible default used when the spawner has not threaded an explicit
+    /// posture (unit tests, coverage probes).
+    #[default]
+    FromEnv,
+    /// An explicit posture threaded from the spawner so the *claimed* floor
+    /// matches the *applied* confinement: `disabled` mirrors the single
+    /// `OMNI_DISABLE_OS_SANDBOX` read, and `runtime_confined` is `false` when the
+    /// selected runtime runs unconfined on this platform (e.g. Bun on Windows).
+    Resolved {
+        disabled: bool,
+        runtime_confined: bool,
+    },
+}
 
 impl NativeOsSandbox {
+    /// A sandbox that resolves its disable posture from the environment and
+    /// assumes the runtime is confined — the historical default. Prefer
+    /// [`resolved`](Self::resolved) from the spawner so claimed and applied
+    /// confinement cannot diverge.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A sandbox whose coverage/floor claims reflect the resolved launch posture:
+    /// `disabled` is the single `OMNI_DISABLE_OS_SANDBOX` read threaded from the
+    /// spawner, and `runtime_confined` is `false` when the selected runtime runs
+    /// unconfined on this platform (so this tier claims no fs floor and lowers no
+    /// spec — the plan then surfaces an honest floor gap / refuses under
+    /// [`RequireFloor`](crate::FloorStrictness::RequireFloor)).
+    pub fn resolved(disabled: bool, runtime_confined: bool) -> Self {
+        Self {
+            posture: LaunchPosture::Resolved {
+                disabled,
+                runtime_confined,
+            },
+        }
+    }
+
+    /// Whether the OS sandbox is disabled for this launch (escape hatch).
+    fn disabled(&self) -> bool {
+        match self.posture {
+            LaunchPosture::FromEnv => {
+                std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some()
+            }
+            LaunchPosture::Resolved { disabled, .. } => disabled,
+        }
+    }
+
+    /// Whether the selected runtime is actually confined by this mechanism on the
+    /// current platform. Only a [`Resolved`](LaunchPosture::Resolved) posture can
+    /// report `false`; the env-derived default optimistically assumes `true`.
+    fn runtime_confined(&self) -> bool {
+        match self.posture {
+            LaunchPosture::FromEnv => true,
+            LaunchPosture::Resolved {
+                runtime_confined, ..
+            } => runtime_confined,
+        }
+    }
     /// The name of the native access-control sandbox mechanism on the current
     /// target, resolved at compile time.
     ///
@@ -103,26 +180,30 @@ impl EnforcementBackend for NativeOsSandbox {
     }
 
     fn coverage(&self) -> Coverage {
-        // The OS-sandbox escape hatch (`OMNI_DISABLE_OS_SANDBOX`) makes
-        // `install_os_sandbox` launch unconfined. Reflect that here so plan-time
-        // coverage/floor analysis matches the real runtime posture: with the
-        // sandbox disabled this tier confines nothing, so it must claim nothing
-        // (fs then falls to the broker and shows up honestly in floor analysis)
-        // rather than advertising an fs floor that will not actually be applied.
-        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+        // Reflect the *resolved* posture so plan-time coverage/floor analysis
+        // matches the real runtime confinement (T17/T18): the escape hatch
+        // (`OMNI_DISABLE_OS_SANDBOX`) makes `install_os_sandbox` launch
+        // unconfined, and a runtime the spawner runs unconfined on this platform
+        // (Bun on Windows, which cannot boot inside an AppContainer) is not
+        // restricted by this tier at all. In either case this tier confines
+        // nothing, so it must claim nothing — fs then falls to the broker and
+        // shows up honestly in floor analysis rather than advertising an fs floor
+        // that will not actually be applied.
+        let disabled = self.disabled();
+        let runtime_confined = self.runtime_confined();
         #[cfg(target_os = "linux")]
         let supported = crate::landlock_sandbox::is_supported();
         #[cfg(target_os = "windows")]
         let supported = crate::appcontainer_sandbox::is_supported();
         #[cfg(any(target_os = "linux", target_os = "windows"))]
         {
-            os_fs_coverage(supported, disabled)
+            os_fs_coverage(supported, disabled, runtime_confined)
         }
         // No integration for this target → cover nothing → fail closed rather
         // than pretend to confine.
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
-            let _ = disabled;
+            let _ = (disabled, runtime_confined);
             Coverage::none()
         }
     }
@@ -132,6 +213,14 @@ impl EnforcementBackend for NativeOsSandbox {
         req: &RequiredCapabilities,
         roots: &dyn PatternResolver,
     ) -> Result<BackendPlan, EnforcementError> {
+        // Lower a spec only when this tier will actually confine the launch, so
+        // the lowered spec stays in lock-step with the claimed `coverage()`: a
+        // disabled sandbox or an unconfined runtime (Bun on Windows) contributes
+        // no spec, exactly as it claims no floor.
+        if self.disabled() || !self.runtime_confined() {
+            let _ = (req, roots);
+            return Ok(BackendPlan::new());
+        }
         #[cfg(target_os = "linux")]
         {
             // Landlock (V4) can lower a port-only net connect floor.
@@ -153,13 +242,19 @@ impl EnforcementBackend for NativeOsSandbox {
 }
 
 /// Filesystem coverage this tier may claim, given whether the OS mechanism is
-/// available and whether the escape hatch disabled it. Factored out so the
-/// fail-closed / disable posture is unit-testable on any host (no real Landlock
-/// or AppContainer needed). A disabled or unavailable mechanism covers nothing.
+/// available, whether the escape hatch disabled it, and whether the selected
+/// runtime is actually confined by it on this platform. Factored out so the
+/// fail-closed / disable / unconfined-runtime posture is unit-testable on any
+/// host (no real Landlock or AppContainer needed). A disabled, unavailable, or
+/// runtime-unconfined mechanism covers nothing.
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-fn os_fs_coverage(supported: bool, disabled: bool) -> Coverage {
+fn os_fs_coverage(
+    supported: bool,
+    disabled: bool,
+    runtime_confined: bool,
+) -> Coverage {
     use omni_capabilities::CapabilityDomain;
-    if disabled || !supported {
+    if disabled || !supported || !runtime_confined {
         return Coverage::none();
     }
     Coverage::of([CapabilityDomain::FsRead, CapabilityDomain::FsWrite])
@@ -452,23 +547,81 @@ mod tests {
 
     #[test]
     fn tier_is_os_sandbox() {
-        assert_eq!(NativeOsSandbox.tier(), Tier::OsSandbox);
+        assert_eq!(NativeOsSandbox::new().tier(), Tier::OsSandbox);
     }
 
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     #[test]
     fn os_fs_coverage_is_empty_unless_supported_and_enabled() {
         use omni_capabilities::CapabilityDomain;
-        // Only an available *and* enabled mechanism claims the fs domains; every
-        // other combination covers nothing so the run fails closed / routes fs
-        // to the broker honestly.
-        assert!(!os_fs_coverage(false, false).covers(CapabilityDomain::FsRead));
-        assert!(!os_fs_coverage(true, true).covers(CapabilityDomain::FsRead));
-        assert!(!os_fs_coverage(false, true).covers(CapabilityDomain::FsRead));
-        let on = os_fs_coverage(true, false);
+        // Only an available *and* enabled mechanism confining a runtime claims
+        // the fs domains; every other combination covers nothing so the run
+        // fails closed / routes fs to the broker honestly.
+        assert!(
+            !os_fs_coverage(false, false, true)
+                .covers(CapabilityDomain::FsRead)
+        );
+        assert!(
+            !os_fs_coverage(true, true, true).covers(CapabilityDomain::FsRead)
+        );
+        assert!(
+            !os_fs_coverage(false, true, true).covers(CapabilityDomain::FsRead)
+        );
+        // Supported and enabled, but the selected runtime runs unconfined (e.g.
+        // Bun on Windows): the tier confines nothing, so it must claim nothing.
+        assert!(
+            !os_fs_coverage(true, false, false)
+                .covers(CapabilityDomain::FsRead)
+        );
+        let on = os_fs_coverage(true, false, true);
         assert!(on.covers(CapabilityDomain::FsRead));
         assert!(on.covers(CapabilityDomain::FsWrite));
         assert!(!on.covers(CapabilityDomain::Net));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[test]
+    fn a_resolved_unconfined_or_disabled_posture_claims_no_floor_and_lowers_no_spec()
+     {
+        use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
+        )
+        .unwrap();
+        let req = project(&cfg, &());
+        let roots = PathRoots::new().with(Root::Workspace, "/repo");
+
+        // A runtime the spawner runs unconfined (e.g. Bun on Windows) claims no
+        // fs floor and lowers no spec, so the plan's floor analysis is honest
+        // rather than advertising a floor the spawner never installs.
+        let unconfined = NativeOsSandbox::resolved(false, false);
+        assert!(unconfined.coverage().is_empty());
+        assert!(
+            unconfined
+                .plan(&req, &roots)
+                .expect("infallible")
+                .spawn
+                .os_sandbox
+                .is_none()
+        );
+
+        // The explicit disable hatch likewise claims/lowers nothing, matching
+        // `install_os_sandbox` skipping confinement.
+        let disabled = NativeOsSandbox::resolved(true, true);
+        assert!(disabled.coverage().is_empty());
+        assert!(
+            disabled
+                .plan(&req, &roots)
+                .expect("infallible")
+                .spawn
+                .os_sandbox
+                .is_none()
+        );
+
+        // A confined, enabled runtime still lowers its spec (regression guard).
+        let confined = NativeOsSandbox::resolved(false, true);
+        // (Coverage still depends on the host actually providing the mechanism.)
+        let _ = confined.coverage();
     }
 
     #[cfg(target_os = "windows")]
@@ -517,7 +670,7 @@ mod tests {
         // without it, it must cover nothing (fail closed). Either way it must
         // never claim net/env/process.
         use omni_capabilities::CapabilityDomain;
-        let cov = NativeOsSandbox.coverage();
+        let cov = NativeOsSandbox::new().coverage();
         assert!(!cov.covers(CapabilityDomain::Net));
         assert!(!cov.covers(CapabilityDomain::Env));
         assert!(!cov.covers(CapabilityDomain::Process));
@@ -545,7 +698,7 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
         assert!(spec.read_paths.contains(&std::path::PathBuf::from("/repo")));
         assert!(
@@ -576,7 +729,7 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
         let spec = plan
             .spawn
             .os_sandbox
@@ -615,7 +768,7 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
         let spec = plan
             .spawn
             .os_sandbox
@@ -651,7 +804,7 @@ mod tests {
             plan.gaps
         );
         assert!(
-            !NativeOsSandbox
+            !NativeOsSandbox::new()
                 .coverage()
                 .covers(omni_capabilities::CapabilityDomain::Net)
         );
@@ -660,7 +813,7 @@ mod tests {
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     #[test]
     fn non_integrated_target_covers_nothing_yet() {
-        assert!(NativeOsSandbox.coverage().is_empty());
+        assert!(NativeOsSandbox::new().coverage().is_empty());
     }
 
     #[cfg(target_os = "macos")]
@@ -684,7 +837,7 @@ mod tests {
         // domains; otherwise it must cover nothing (fail closed). Either way it
         // must never claim net/env/process.
         use omni_capabilities::CapabilityDomain;
-        let cov = NativeOsSandbox.coverage();
+        let cov = NativeOsSandbox::new().coverage();
         assert!(!cov.covers(CapabilityDomain::Net));
         assert!(!cov.covers(CapabilityDomain::Env));
         assert!(!cov.covers(CapabilityDomain::Process));
@@ -712,7 +865,7 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
 
-        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
         assert!(
             spec.read_paths
@@ -750,13 +903,13 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
 
-        let plan = NativeOsSandbox.plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("fs subtree lowered");
         assert!(
             spec.connect_ports.is_empty(),
             "AppContainer must not lower a net port floor: {:?}",
             spec.connect_ports
         );
-        assert!(!NativeOsSandbox.coverage().covers(CapabilityDomain::Net));
+        assert!(!NativeOsSandbox::new().coverage().covers(CapabilityDomain::Net));
     }
 }

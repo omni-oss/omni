@@ -166,7 +166,7 @@ mod tests {
         // DenoFlags covers everything; NativeOsSandbox is along for the ride
         // (currently no coverage) — the stack is still fully covered.
         let backends: [&dyn EnforcementBackend; 2] =
-            [&DenoFlags, &NativeOsSandbox];
+            [&DenoFlags, &NativeOsSandbox::new()];
         let plan = build_plan(&req, &roots, &backends).expect("fully covered");
 
         assert!(plan.spawn.args.contains(&"--allow-read=/repo".to_string()));
@@ -186,7 +186,7 @@ mod tests {
         let req = project(&CapabilityRules::<()>::new(), &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
         let backends: [&dyn EnforcementBackend; 2] =
-            [&NoSandbox, &NativeOsSandbox];
+            [&NoSandbox, &NativeOsSandbox::new()];
         assert!(build_plan(&req, &roots, &backends).is_err());
     }
 }
