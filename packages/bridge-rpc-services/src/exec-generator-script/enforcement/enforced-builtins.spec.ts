@@ -307,6 +307,53 @@ describe("installBuiltinModuleEnforcement — node:child_process", () => {
         (cp.spawn as (...a: unknown[]) => unknown)("anything");
         expect(spawn).toHaveBeenCalledOnce();
     });
+
+    test("refuses child_process.fork as a fresh-realm escape", () => {
+        const fork = stub("fork");
+        // Even if the module path looked like an allowed program, `fork` spawns
+        // a fresh un-narrowed realm, so it is refused outright — never
+        // authorized against the `process` policy as if the module path were a
+        // program.
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ process: { allow: ["git", "./worker.js"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, scopedEnv());
+
+        expect(() =>
+            (cp.fork as (...a: unknown[]) => unknown)("./worker.js"),
+        ).toThrow(RealmPolicyError);
+        expect(fork).not.toHaveBeenCalled();
+    });
+
+    test("gates child_process under net-only enforcement (fork refused, env scrubbed)", () => {
+        const spawn = stub("spawn");
+        const fork = stub("fork");
+        // Only `net` is enforced — not `process`. The child_process patch is
+        // still installed: a spawn is not gated by program (process is
+        // unenforced) but its env is scrubbed, and `fork` is refused as a net
+        // escape (the forked realm makes un-narrowed network connections).
+        const policy = CapabilityPolicy.parse(
+            enforceJson({ net: { allow: ["example.com:443"] } }),
+        );
+        installBuiltinModuleEnforcement(policy, scopedEnv());
+
+        expect(() =>
+            (cp.fork as (...a: unknown[]) => unknown)("./worker.js"),
+        ).toThrow(RealmPolicyError);
+        expect(fork).not.toHaveBeenCalled();
+
+        (cp.spawn as (...a: unknown[]) => unknown)("anything", [], {
+            env: { LD_PRELOAD: "/tmp/evil.so", KEEP: "1" },
+        });
+        expect(spawn).toHaveBeenCalledOnce();
+        const passedEnv = (
+            (spawn.mock.calls[0] as unknown[])[2] as {
+                env: Record<string, string>;
+            }
+        ).env;
+        expect(passedEnv.LD_PRELOAD).toBeUndefined();
+        expect(passedEnv.KEEP).toBe("1");
+    });
 });
 
 describe("installBuiltinModuleEnforcement — ChildProcess.prototype.spawn", () => {

@@ -504,14 +504,21 @@ export function installBuiltinModuleEnforcement(
         );
     }
     if (policy.hasProcess()) {
-        warnUnpatched(
-            patchChildProcess(policy, nodeRequire),
-            "node:child_process",
-        );
         patchDenoProcess(policy, globalTarget);
         warnUnpatched(
             patchBunProcess(policy, globalTarget),
             "Bun.spawn/spawnSync",
+        );
+    }
+    // `node:child_process` is patched whenever the shim owns **either** domain:
+    // under `process` it authorizes which program runs, and under `net` it still
+    // scrubs the child's env and refuses the `fork` fresh-realm net escape (a
+    // forked child re-imports the builtins un-patched, so the in-process net
+    // narrowing would not apply inside it).
+    if (policy.hasNet() || policy.hasProcess()) {
+        warnUnpatched(
+            patchChildProcess(policy, nodeRequire),
+            "node:child_process",
         );
     }
     // A fresh realm re-imports the builtins we patched here as un-patched
@@ -651,6 +658,12 @@ function withScrubbedSpawnEnv(args: unknown[]): unknown[] {
  *    solely on the exports patch (1) — which reaches Bun too, because the bridge
  *    keeps its startup graph free of any eager `import` of the builtin (see the
  *    module doc and `enforced-process.ts`).
+ *
+ * Installed whenever the shim owns `net` **or** `process`: under `process` it
+ * authorizes which program runs; under `net` it still scrubs the child's env and
+ * refuses `fork` (a fork is a fresh-realm net escape). `fork` is refused rather
+ * than authorized because its argument is a module path, not a program, and the
+ * forked realm re-imports the builtins un-patched.
  */
 function patchChildProcess(
     policy: CapabilityPolicy,
@@ -667,13 +680,7 @@ function patchChildProcess(
     }
 
     let anyExportPatched = false;
-    for (const key of [
-        "spawn",
-        "spawnSync",
-        "execFile",
-        "execFileSync",
-        "fork",
-    ]) {
+    for (const key of ["spawn", "spawnSync", "execFile", "execFileSync"]) {
         anyExportPatched =
             tryPatch(
                 cp,
@@ -688,6 +695,25 @@ function patchChildProcess(
                     },
             ) || anyExportPatched;
     }
+
+    // `fork` spawns a fresh runtime process (a new Node/Bun realm) that
+    // re-imports the builtins this shim patched as un-patched copies, so the
+    // in-process net/process narrowing does not apply inside it — the same
+    // complete escape as a `worker_threads.Worker` (see `RealmPolicyError`).
+    // Its first argument is a *module path*, never a program, so authorizing
+    // that against the `process` policy was a category error; refuse it outright
+    // while the shim owns net or process. (The `ChildProcess.prototype.spawn`
+    // chokepoint below is the honest fallback for a fork the exports patch
+    // cannot reach — e.g. an ESM-imported `fork` on Bun — where it authorizes
+    // the real program `file`, i.e. `process.execPath`, not the module path.)
+    tryPatch(
+        cp,
+        "fork",
+        () =>
+            function refusedFork(this: unknown, ..._args: unknown[]): never {
+                throw new RealmPolicyError("child_process.fork");
+            },
+    );
 
     for (const key of ["exec", "execSync"]) {
         tryPatch(
@@ -704,7 +730,10 @@ function patchChildProcess(
     // The shared-prototype chokepoint: closes the async family on runtimes whose
     // ESM bindings the exports patch above cannot reach (Bun). Reads the program
     // from the normalized options the runtime hands `spawn`, matching the
-    // exports-level extraction so the two agree when both fire (Node/Deno).
+    // exports-level extraction so the two agree when both fire (Node/Deno). For
+    // a `fork` the exports refusal above could not reach, `file` is the resolved
+    // runtime binary (`process.execPath`), so this authorizes the *real* program
+    // rather than the fork's module-path argument.
     const childProcess = cp.ChildProcess as
         | { prototype?: Record<string, unknown> }
         | undefined;
