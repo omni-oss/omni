@@ -58,11 +58,20 @@
 //!    reported coverage to fs to match the cross-platform contract.
 //! 5. **Coarse, allow-list only.** Like Landlock, Seatbelt grants subtrees and
 //!    cannot express a precise `deny **/.git/**`; those remain [`Gap`]s resolved
-//!    by the broker (`platform::linux::plan` is the reference for lowering the
-//!    spec into subtrees and reporting deny/mid-path globs as gaps — a macOS
-//!    `plan` should share that logic).
-//! 6. **`exec_programs`** — grant read/execute on each allowed program's binary
-//!    directory so a confined child may `execve` it, mirroring the Linux path.
+//!    by the broker (the `platform` module's `lowering::plan` is the reference
+//!    for lowering the spec into subtrees and reporting deny/mid-path globs as
+//!    gaps — it is platform-neutral and already feeds every OS backend, so a
+//!    macOS impl needs no `plan` of its own).
+//! 6. **`exec_programs` — nothing to do here.** Unlike the Windows AppContainer
+//!    backend (which resolves `exec_programs` to binary directories at *spawn*
+//!    time), a Unix pre-spawn backend receives those directories already folded
+//!    into `read_paths`: the runner's `add_runtime_essentials` resolves each
+//!    allowed program on `PATH` and pushes its directory into the spec's
+//!    `read_paths`, then `std::mem::take`s `exec_programs` **before** the spec
+//!    reaches this hook. So `spec.exec_programs` is always empty in `restrict`;
+//!    confining `read_paths` (as in requirement 3) already grants the
+//!    program dirs, exactly as Landlock does. Do **not** add an `exec_programs`
+//!    loop here — it would be dead code.
 //! 7. **Tests** — add `#[cfg(target_os = "macos")]` live tests analogous to
 //!    `tests/landlock_spawn.rs`: an allowed read/write inside a granted subtree
 //!    succeeds, one outside is denied by the kernel; **skip** (do not fail) when
