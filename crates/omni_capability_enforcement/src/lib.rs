@@ -46,6 +46,52 @@
 //!    effective [`UnenforceablePolicy`], which **defaults to `deny`** and can be
 //!    overridden per rule via
 //!    [`on_unenforceable`](omni_capabilities::CapabilityRule::on_unenforceable).
+//!
+//! ## Residual escape surface (threat model)
+//!
+//! Enforcement is defense-in-depth, not a single boundary. The guards above
+//! keep a plan from *claiming* confinement it cannot deliver, but some residual
+//! surface remains until the deferred integrations land. These are the known
+//! gaps a hostile generator script could still reach; they are documented here
+//! (rather than papered over) so operators can reason about the real boundary
+//! and so future work has an explicit checklist.
+//!
+//! * **macOS has no OS floor yet.** The `seatbelt_sandbox` module (compiled only
+//!   on macOS) is a fail-closed skeleton (its `is_supported()` returns
+//!   `false`), so [`NativeOsSandbox`] reports [`Coverage::none`] on macOS and
+//!   every restricted `fs` domain rests on the **bypassable** in-process broker
+//!   ([`Tier::InProcessBroker`]) — there is no kernel floor. `fs` confinement on
+//!   macOS is therefore only as strong as the broker: I/O routed around omni's
+//!   boundary (direct syscalls, FFI) is not confined. This is surfaced as a
+//!   [`FloorGap`] and becomes a hard refusal under
+//!   [`FloorStrictness::RequireFloor`]. See the `seatbelt_sandbox` module docs
+//!   for what a real implementation must provide (including SBPL profile
+//!   escaping).
+//! * **Floorless Node/Bun leave native surfaces unpatched.** The script-level
+//!   shim ([`ScriptShimBroker`]) narrows `net`/`process` by patching the
+//!   JavaScript builtins (`fetch`, `node:net`, `child_process`, the `Deno`/`Bun`
+//!   globals, …). It cannot patch surfaces *below* the JS boundary:
+//!   `process.binding`, `dlopen`/native addons (N-API), FFI
+//!   (`Deno.dlopen`/`bun:ffi`), and WASM imports all reach the OS directly. On a
+//!   runtime with a [`Tier::PreSpawnFlags`] floor (Deno permissions, Node
+//!   `--permission`) or an OS sandbox, the kernel/runtime floor still confines
+//!   those; on a runtime with **no** floor for a domain (Bun `net`/`process`,
+//!   which has neither a permission model nor — off-Linux — an OS sandbox) the
+//!   shim is the *sole* mechanism, and these native surfaces bypass it. Such a
+//!   domain is reported as a [`FloorGap`]; treat the shim there as best-effort
+//!   only, and prefer a floored runtime for untrusted input.
+//! * **The runtime bootstrap env allow-list diverges from the brokered `env`
+//!   view.** To start a confined runtime, `bridge_rpc_runner`'s spawn path
+//!   exposes a fixed allow-list of ~40 non-sensitive bootstrap variables
+//!   (loader/locale/tooling vars) on the child's *real* `process.env`,
+//!   regardless of the policy's `env` rules. The `env` **policy** is enforced on
+//!   the *brokered* view (`proc.env()` and the shim's filtered snapshot), not on
+//!   the raw `process.env` the runtime itself reads. A script can therefore read
+//!   those bootstrap vars directly even if the `env` policy would deny them.
+//!   They are non-sensitive by construction (never secrets), but this is a
+//!   deliberate divergence between "what the runtime needs to boot" and "what
+//!   the `env` policy governs" — do not rely on `env` denies to hide a variable
+//!   on the bootstrap list.
 
 #![cfg_attr(
     target_os = "windows",

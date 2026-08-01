@@ -29,6 +29,19 @@
 //!      pseudo-devices so the runtime can start, analogous to
 //!      [`landlock_sandbox::baseline_read_paths`]) and hand it to
 //!      `sandbox_init`/`sandbox_compile` + `sandbox_apply`; or
+//!
+//!      **Escaping is security-critical here.** SBPL is a TinyScheme dialect, so
+//!      a path is a Scheme string literal: every path interpolated into a
+//!      `(subpath "…")` / `(literal "…")` filter must have `\` and `"` escaped
+//!      (`\\`, `\"`) and must reject (or escape) embedded newlines and the
+//!      list-structural characters `(` `)` — an unescaped `"` or `)` in a
+//!      grant path would let a crafted root name terminate the string/list early
+//!      and inject additional `(allow …)` clauses, widening the profile beyond
+//!      the policy (a profile-injection fail-open). Prefer `literal` for an
+//!      exact file and `subpath` for a subtree, and validate that a resolved
+//!      root contains none of `" ( ) \` or a newline before interpolating (treat
+//!      such a path as a [`Gap`] rather than emitting an unsafe clause), mirroring
+//!      how the Deno backend rejects flag values embedding `,`/`=`.
 //!    * re-exec via `/usr/bin/sandbox-exec -p <profile>` (simpler, avoids the
 //!      deprecated SPI, but adds a wrapper process).
 //! 4. **Coverage** — the backend should report `{FsRead, FsWrite}` on macOS once
