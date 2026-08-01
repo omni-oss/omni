@@ -56,17 +56,19 @@
 //! (rather than papered over) so operators can reason about the real boundary
 //! and so future work has an explicit checklist.
 //!
-//! * **macOS has no OS floor yet.** The `seatbelt_sandbox` module (compiled only
-//!   on macOS) is a fail-closed skeleton (its `is_supported()` returns
-//!   `false`), so [`NativeOsSandbox`] reports [`Coverage::none`] on macOS and
+//! * **macOS has no OS floor yet.** The `seatbelt_sandbox` module (built on
+//!   macOS, and under `cfg(test)` on every host so its pure SBPL profile builder
+//!   stays covered) has a working profile generator but its apply/FFI path is
+//!   deferred, so its `is_supported()` still returns `false`. Consequently
+//!   [`NativeOsSandbox`] reports [`Coverage::none`] on macOS and
 //!   every restricted `fs` domain rests on the **bypassable** in-process broker
 //!   ([`Tier::InProcessBroker`]) — there is no kernel floor. `fs` confinement on
 //!   macOS is therefore only as strong as the broker: I/O routed around omni's
 //!   boundary (direct syscalls, FFI) is not confined. This is surfaced as a
 //!   [`FloorGap`] and becomes a hard refusal under
 //!   [`FloorStrictness::RequireFloor`]. See the `seatbelt_sandbox` module docs
-//!   for what a real implementation must provide (including SBPL profile
-//!   escaping).
+//!   for what the remaining implementation must provide (the profile builder and
+//!   its SBPL escaping are done; the apply path is not).
 //! * **Floorless Node/Bun leave native surfaces unpatched.** The script-level
 //!   shim ([`ScriptShimBroker`]) narrows `net`/`process` by patching the
 //!   JavaScript builtins (`fetch`, `node:net`, `child_process`, the `Deno`/`Bun`
@@ -111,7 +113,7 @@ pub mod node;
 pub mod null;
 pub mod plan;
 pub mod platform;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 pub mod seatbelt_sandbox;
 pub mod shim;
 pub mod spawn;
