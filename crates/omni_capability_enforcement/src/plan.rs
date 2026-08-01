@@ -230,13 +230,16 @@ pub fn build_plan_layered(
 
     let mut spawn = SpawnPolicy::new();
     let mut all_gaps: Vec<Gap> = Vec::new();
+    let mut superset_domains: BTreeSet<CapabilityDomain> = BTreeSet::new();
     for backend in backends {
         let BackendPlan {
             spawn: contribution,
             gaps,
+            superset_domains: supersets,
         } = backend.plan(req, roots)?;
         spawn.extend(contribution);
         all_gaps.extend(gaps);
+        superset_domains.extend(supersets);
     }
 
     // Which domains had at least one pre-spawn representability gap, before any
@@ -266,6 +269,28 @@ pub fn build_plan_layered(
 
     if !deny_gaps.is_empty() {
         return Err(EnforcementError::unenforceable(render_gaps(&deny_gaps)));
+    }
+
+    // A coarse superset launch flag (e.g. a bare `--allow-net`) is a broad grant
+    // a pre-spawn backend fell back to when it could not express the policy
+    // precisely. It stays within policy *only* if a shim/broker narrows the
+    // domain per operation; with no such narrower the broad grant is the sole
+    // enforcement, a superset of what the policy permits — a fail-open. Refuse
+    // it here (independent of `FloorStrictness`, which concerns bypassability
+    // rather than breadth). The deny-gap check above runs first so a genuinely
+    // unenforceable pattern still reports as `Unenforceable`.
+    let unnarrowed: Vec<CapabilityDomain> = superset_domains
+        .iter()
+        .copied()
+        .filter(|&domain| {
+            !backends.iter().any(|b| narrows_precisely(*b, domain))
+        })
+        .collect();
+    if !unnarrowed.is_empty() {
+        return Err(EnforcementError::superset_unnarrowed(render_unnarrowed(
+            &unnarrowed,
+            backends,
+        )));
     }
 
     let floor_gaps =
@@ -591,6 +616,40 @@ fn genuine_gaps(
             genuine.then_some(gap)
         })
         .collect()
+}
+
+/// Whether `backend` narrows `domain` **precisely** per operation — i.e. it is a
+/// script shim responsible for the domain, or an exact-enforcing broker that
+/// covers it. Such a backend can safely narrow a coarse superset launch flag; a
+/// pre-spawn or OS backend (which only re-emits the same broad grant) cannot.
+fn narrows_precisely(
+    backend: &dyn EnforcementBackend,
+    domain: CapabilityDomain,
+) -> bool {
+    backend.shim_domains().covers(domain)
+        || (backend.enforces_exactly() && backend.coverage().covers(domain))
+}
+
+/// Render an [`EnforcementError::superset_unnarrowed`] refusal: name each domain
+/// whose coarse superset flag no shim/broker narrows.
+fn render_unnarrowed(
+    domains: &[CapabilityDomain],
+    backends: &[&dyn EnforcementBackend],
+) -> String {
+    domains
+        .iter()
+        .map(|domain| {
+            format!(
+                "  - {domain}: a pre-spawn backend emitted a coarse superset \
+                 launch flag (a broad grant, because it could not express the \
+                 policy precisely), but no in-process shim or broker in the \
+                 stack ({}) narrows {domain} per operation, so the broad grant \
+                 would be the sole enforcement",
+                backend_names(backends)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn gap_line(gap: &Gap) -> String {
@@ -938,6 +997,49 @@ mod tests {
         // Deno still contributes its coarse allow.
         assert!(plan.spawn.args.contains(&"--allow-write=/repo".to_string()));
         assert!(plan.warnings.is_empty());
+    }
+
+    #[test]
+    fn a_coarse_superset_flag_without_a_narrower_is_refused() {
+        // Deno cannot express a host wildcard at launch, so it falls back to the
+        // bare `--allow-net` superset (all hosts). With no shim/broker in the
+        // stack to narrow it per call, that broad grant would be the *sole*
+        // enforcement — a fail-open — even under the lenient `Warn` stance where
+        // the gap itself is only a warning. The plan must be refused.
+        let req = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["*.cdn.example:443"] }]"#,
+        );
+        let backends: [&dyn EnforcementBackend; 1] = [&DenoFlags];
+        let err = build_plan_with(
+            &req,
+            &roots(),
+            &backends,
+            UnenforceablePolicy::Warn,
+        )
+        .expect_err("a superset flag with no narrower must fail closed");
+        assert_eq!(err.kind(), crate::EnforcementErrorKind::SupersetUnnarrowed);
+        assert!(err.to_string().contains("net"), "{err}");
+    }
+
+    #[test]
+    fn a_coarse_superset_flag_is_allowed_when_a_shim_narrows_it() {
+        // The same wildcard-net policy, now with the script shim in the stack:
+        // the bare `--allow-net` superset is a floor the shim narrows per call,
+        // so the plan builds and net is handed to the shim as its residual.
+        let req = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["*.cdn.example:443"] }]"#,
+        );
+        let shim = ScriptShimBroker::new();
+        let backends: [&dyn EnforcementBackend; 2] = [&DenoFlags, &shim];
+        let plan = build_plan_with(
+            &req,
+            &roots(),
+            &backends,
+            UnenforceablePolicy::Warn,
+        )
+        .expect("the shim narrows the coarse superset");
+        assert!(plan.spawn.args.contains(&"--allow-net".to_string()));
+        assert!(shim_rules(&plan, CapabilityDomain::Net).is_some());
     }
 
     // ── script-shim residual (net/process) ───────────────────────────────────

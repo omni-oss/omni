@@ -47,6 +47,18 @@ impl EnforcementError {
         })
     }
 
+    /// A pre-spawn backend emitted a **coarse superset** launch flag (a broad
+    /// grant it fell back to because it could not express the policy precisely),
+    /// but no in-process shim or broker in the stack narrows that domain per
+    /// operation. The broad grant would therefore be the sole — and over-broad
+    /// — enforcement, so the plan is refused rather than silently widening
+    /// access. Carries a rendered list of the affected domains.
+    pub fn superset_unnarrowed(summary: impl Into<String>) -> Self {
+        Self(EnforcementErrorInner::SupersetUnnarrowed {
+            summary: summary.into(),
+        })
+    }
+
     pub fn kind(&self) -> EnforcementErrorKind {
         self.0.discriminant()
     }
@@ -81,4 +93,11 @@ pub(crate) enum EnforcementErrorInner {
          governed domains have none for this runtime/platform:\n{summary}"
     )]
     NoFloor { summary: String },
+
+    #[error(
+        "a coarse superset launch flag was emitted for one or more domains that \
+         no in-process shim or broker narrows, so the broad grant would be the \
+         sole enforcement:\n{summary}"
+    )]
+    SupersetUnnarrowed { summary: String },
 }

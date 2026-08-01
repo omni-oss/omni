@@ -243,6 +243,10 @@ fn plan_boolean(
         plan.spawn.push_arg(format!("--{flag}"));
     } else {
         plan.spawn.push_arg(format!("--{flag}"));
+        // The whole-gate flag is a broad superset of the specific selectors the
+        // policy asked for; record it so the planner refuses if no shim/broker
+        // narrows this domain per operation.
+        plan.superset_domains.insert(domain);
         for atom in allow {
             plan.gaps.push(gap(
                 domain,

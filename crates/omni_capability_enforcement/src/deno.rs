@@ -131,6 +131,10 @@ impl EnforcementBackend for DenoFlags {
             if gained_gap && is_coarse_shim_domain(domain) {
                 if !allow.is_empty() {
                     plan.spawn.push_arg(format!("--{allow_flag}"));
+                    // The bare flag is a broad superset of the precise allow
+                    // list; record it so the planner can refuse if no shim/
+                    // broker narrows this domain per call.
+                    plan.superset_domains.insert(domain);
                 }
                 // Representable denies only tighten, so keep them.
                 if !deny_vals.is_empty() {

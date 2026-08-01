@@ -153,6 +153,15 @@ pub struct Gap {
 pub struct BackendPlan {
     pub spawn: SpawnPolicy,
     pub gaps: Vec<Gap>,
+    /// Domains for which this backend emitted a **coarse superset** launch flag
+    /// — a broad grant (e.g. a bare `--allow-net` / `--allow-run`) it fell back
+    /// to because it could not express the precise policy at launch. Such a
+    /// floor is a strict superset of what the policy permits, so it is only safe
+    /// when a [`Tier::InProcessBroker`] shim/broker in the stack narrows the
+    /// domain per operation. The planner refuses the plan when a superset domain
+    /// has no such narrower (see [`crate::build_plan`]), rather than let the
+    /// broad grant become the sole — over-broad — enforcement.
+    pub superset_domains: BTreeSet<CapabilityDomain>,
 }
 
 impl BackendPlan {
