@@ -115,6 +115,8 @@ pub mod platform;
 pub mod seatbelt_sandbox;
 pub mod shim;
 pub mod spawn;
+#[cfg(unix)]
+mod unix_sandbox;
 
 // @anchor:mods
 

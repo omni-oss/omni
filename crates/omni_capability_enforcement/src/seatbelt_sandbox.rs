@@ -25,9 +25,11 @@
 //!    path. Two viable mechanisms:
 //!    * compile a **SBPL profile** string (deny default; `(allow file-read*
 //!      (subpath "…"))` per read root; `(allow file-write* (subpath "…"))` per
-//!      write root; a baseline granting the loader/`/usr`/`/System`/`/dev`
-//!      pseudo-devices so the runtime can start, analogous to
-//!      [`landlock_sandbox::baseline_read_paths`]) and hand it to
+//!      write root; a baseline granting the loader/`/usr`/`/System` plus the
+//!      universal `/dev` sink/source nodes from the shared
+//!      `unix_sandbox::writable_pseudo_devices` (filtered through
+//!      `unix_sandbox::existing`, exactly as the Linux `landlock_sandbox`
+//!      baseline does) so the runtime can start) and hand it to
 //!      `sandbox_init`/`sandbox_compile` + `sandbox_apply`; or
 //!
 //!      **Escaping is security-critical here.** SBPL is a TinyScheme dialect, so

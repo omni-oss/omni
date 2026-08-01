@@ -90,6 +90,7 @@ use landlock::{
 };
 
 use crate::OsSandboxSpec;
+use crate::unix_sandbox::{existing, writable_pseudo_devices};
 
 /// `flags` value asking `landlock_create_ruleset` to *report* the supported
 /// ABI version instead of creating a ruleset.
@@ -148,7 +149,7 @@ pub fn restrict(spec: &OsSandboxSpec) -> io::Result<()> {
     // (`/dev/null`, `/dev/zero`, …) are added so a confined child can use the
     // universal sink/source — `stdio: "ignore"` opens `/dev/null` read-write,
     // and many programs (e.g. `git`) open it O_RDWR unconditionally.
-    let mut write_paths = baseline_write_paths();
+    let mut write_paths = writable_pseudo_devices();
     write_paths.extend(spec.write_paths.iter().cloned());
 
     let read_only = AccessFs::from_read(abi);
@@ -215,9 +216,9 @@ pub fn restrict(spec: &OsSandboxSpec) -> io::Result<()> {
 /// …). Granting these keeps the sandbox usable; the policy's own paths add the
 /// workspace on top.
 ///
-/// Only paths that actually exist on the host are used (see [`existing`]), so
-/// this list can name distro-specific locations without breaking
-/// `path_beneath_rules`.
+/// Only paths that actually exist on the host are used (see
+/// [`existing`](crate::unix_sandbox::existing)), so this list can name
+/// distro-specific locations without breaking `path_beneath_rules`.
 ///
 /// The list is deliberately **narrowed** from whole top-level hierarchies to
 /// what startup genuinely needs, so a confined generator cannot read arbitrary
@@ -238,7 +239,8 @@ pub fn restrict(spec: &OsSandboxSpec) -> io::Result<()> {
 /// entries there for cpu/memory/self introspection, and their sensitive entries
 /// (other processes) are already protected by ordinary DAC that Landlock only
 /// tightens; `/dev` because it holds device nodes (not file contents), the
-/// writable ones being granted separately in [`baseline_write_paths`].
+/// writable ones being granted separately in
+/// [`writable_pseudo_devices`](crate::unix_sandbox::writable_pseudo_devices).
 fn baseline_read_paths() -> Vec<PathBuf> {
     [
         // Dynamic loader + shared libraries (usr-merge symlinks resolve into
@@ -293,31 +295,6 @@ fn baseline_read_paths() -> Vec<PathBuf> {
     .into_iter()
     .map(PathBuf::from)
     .collect()
-}
-
-/// Safe pseudo-devices a confined child may read *and* write. These are the
-/// universal sink/source device nodes with no persistence or side effects
-/// beyond the calling process; granting them keeps ordinary programs working
-/// (redirecting to `/dev/null`, reading randomness) without widening access to
-/// real files. Only paths that exist are used (see [`existing`]).
-fn baseline_write_paths() -> Vec<PathBuf> {
-    [
-        "/dev/null",
-        "/dev/zero",
-        "/dev/full",
-        "/dev/random",
-        "/dev/urandom",
-        "/dev/tty",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .collect()
-}
-
-/// Keep only paths that exist; `path_beneath_rules` opens each path (`O_PATH`)
-/// and a missing one would fail the whole ruleset.
-fn existing(paths: &[PathBuf]) -> Vec<PathBuf> {
-    paths.iter().filter(|p| p.exists()).cloned().collect()
 }
 
 fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
