@@ -21,6 +21,10 @@ inputs:
     description: "Install Node.js"
     required: false
     default: "false"
+  node-version:
+    description: "Node version to install"
+    required: false
+    default: "latest"
   bun-version:
     description: "Bun version to install"
     required: false
@@ -33,8 +37,8 @@ inputs:
     description: "Install Deno runtime"
     required: false
     default: "false"
-  node-version:
-    description: "Node version to install"
+  deno-version:
+    description: "Deno version to install"
     required: false
     default: "latest"
   cache-key-prefix:
@@ -191,4 +195,4 @@ runs:
     - uses: denoland/setup-deno@v2
       if: ${{ inputs.install-all == 'true' || inputs.install-deno == 'true' }}
       with:
-        deno-version: lts
+        deno-version: ${{ inputs.deno-version }}
