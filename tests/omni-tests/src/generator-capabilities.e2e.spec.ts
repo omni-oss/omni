@@ -53,6 +53,20 @@ const NET_ALLOW_RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 // non-existent virtual cwd, and a minimal env allow-list is passed.
 const SPAWN_ALLOW_RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 
+// Runtimes whose *raw* (broker-bypassing) filesystem access is confined by an
+// un-bypassable launch-flag floor. omni lowers `fs.write` into Deno's
+// `--allow-write=<@project>` and Node's `--allow-fs-write=<@project>` (see the
+// `deno`/`node` backends), so a direct `node:fs` write outside the allow-list is
+// refused by the runtime itself — independent of the in-process broker.
+//
+// Bun is deliberately excluded: it has no filesystem permission flag, so its raw
+// fs rests solely on the OS sandbox floor. That floor is real, but it grants the
+// whole system temp — which is where the e2e workspace lives (`mkdtempSync`) — so
+// an in-workspace raw write is not a valid probe for it here. The OS fs floor is
+// covered directly by the Rust `landlock_spawn` / `seatbelt_spawn` /
+// `appcontainer_spawn` integration tests, which grant a controlled tempdir.
+const FS_RAW_FLOOR_RUNTIMES: readonly Runtime[] = ["node", "deno"];
+
 // Runtimes where a *direct* `node:child_process` import (bypassing
 // `ctx.sys.proc.spawn`) is authorized for the ASYNC family
 // (`spawn`/`exec`/`execFile`/`fork`). These all funnel through the shared
@@ -437,6 +451,50 @@ describe("+generator @e2e (capabilities: filesystem)", {
         expect(result).toHaveFailed();
         expect(ws.exists("out/should-fail.txt")).toBe(false);
     });
+
+    // Raw filesystem access that bypasses the in-process broker. Every case above
+    // goes through `ctx.sys.fs`; a script can instead touch the filesystem
+    // directly via `node:fs` (which the shim does not patch, unlike `node:net` /
+    // `node:child_process`). For Node and Deno that raw path is still confined by
+    // an un-bypassable *launch-flag* floor: `fs.write` is lowered to
+    // `--allow-write` / `--allow-fs-write` scoped to `@project`, so a direct write
+    // outside the allow-list is refused by the runtime itself. This is the fs
+    // analog of the net "raw socket bypasses fetch" and process "direct
+    // child_process" cases. Bun is excluded (see `FS_RAW_FLOOR_RUNTIMES`): it has
+    // no fs permission flag, so its raw fs rests only on the OS sandbox floor,
+    // which the Rust `*_spawn` integration tests cover with controlled grants.
+    for (const rt of FS_RAW_FLOOR_RUNTIMES) {
+        it(`${rt}: confines a raw node:fs write that bypasses the broker`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            // The write targets `../escaped-raw.txt` — outside the `@project`
+            // allow-list the fs flag is scoped to — so the runtime's own fs
+            // permission denies it and the action fails before the write lands. A
+            // green run would mean the fs-flag lowering regressed and the raw
+            // write reached the filesystem: a real regression signal.
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    runtime: rt,
+                    capabilities: [
+                        {
+                            access: "allow",
+                            domain: "fs.write",
+                            patterns: ["@project/**"],
+                        },
+                    ],
+                    // Raw `node:fs`, bypassing `ctx.sys.fs`.
+                    script: `import { writeFileSync } from "node:fs";
+                    export default async function () {
+                        writeFileSync("../escaped-raw.txt", "leak");
+                    }`,
+                }),
+            );
+
+            expect(await runCapgen(ws)).toHaveFailed();
+        });
+    }
 });
 
 describe("+generator @e2e (capabilities: env)", {
@@ -1447,12 +1505,22 @@ describe("+generator @e2e (capabilities: process)", {
 
     // Positive `process` path: an *allowed* program actually runs under full
     // confinement, on every runtime. This exercises the OS-sandbox exec grant
-    // (the allowed program's binary directory is granted read/execute so
-    // Landlock permits the `execve`), the non-existent-cwd fallback, the minimal
+    // (the allowed program's binary directory is granted read/execute so the
+    // sandbox permits the `execve`), the non-existent-cwd fallback, the minimal
     // env allow-list handed to the child, and the shim capturing its stdout.
+    //
+    // The spawned program is the runtime's *own* binary (`node`/`deno`/`bun`
+    // `--version`), not a system tool like `git`: `add_runtime_essentials`
+    // already grants the current runtime's real binary and caches in full
+    // (execPath dir, module cache, and a version-manager re-exec cache such as
+    // nub's), so the grant is complete on every host. A system tool would drag
+    // in host-specific launch machinery instead — notably macOS `/usr/bin/git`
+    // is an Apple Command Line Tools *stub* that re-`execve`s the real git from
+    // the active Xcode/CLT developer dir, which the OS-sandbox floor does not
+    // grant, so it produces no output under confinement.
     for (const rt of SPAWN_ALLOW_RUNTIMES) {
         it(`${rt}: runs an allowed program and captures its output`, async (ctx) => {
-            if (!runtimeAvailable(rt) || !runtimeAvailable("git")) {
+            if (!runtimeAvailable(rt)) {
                 ctx.skip();
                 return;
             }
@@ -1478,7 +1546,7 @@ describe("+generator @e2e (capabilities: process)", {
                         {
                             access: "allow",
                             domain: "process",
-                            patterns: ["git"],
+                            patterns: [rt],
                         },
                         {
                             access: "allow",
@@ -1487,8 +1555,8 @@ describe("+generator @e2e (capabilities: process)", {
                         },
                     ],
                     script: `export default async function (ctx) {
-                        const r = await ctx.sys.proc.spawn("git", { args: ["--version"] });
-                        await ctx.sys.fs.writeStringToFile("git-version.txt", r.stdout ?? "");
+                        const r = await ctx.sys.proc.spawn("${rt}", { args: ["--version"] });
+                        await ctx.sys.fs.writeStringToFile("program-version.txt", r.stdout ?? "");
                     }`,
                 }),
             );
@@ -1496,7 +1564,10 @@ describe("+generator @e2e (capabilities: process)", {
             const result = await runCapgen(ws);
 
             expect(result).toHaveSucceeded();
-            expect(ws.read("out/git-version.txt")).toMatch(/git version/);
+            // Every runtime prints a semver-shaped version to stdout
+            // (`v24.18.0` / `deno 2.x.x (…)` / `1.x.x`); assert the shape
+            // rather than a runtime-specific banner.
+            expect(ws.read("out/program-version.txt")).toMatch(/\d+\.\d+\.\d+/);
         });
     }
 });

@@ -227,6 +227,7 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             options.entrypoint,
             options.spawn_policy,
             options.script_args,
+            options.cwd,
         )?;
         // `confinement` is only consumed on Windows (AppContainer is applied at
         // spawn time there); elsewhere it is always `None`.
@@ -617,6 +618,7 @@ fn build_command(
     entrypoint: &Path,
     spawn_policy: &SpawnPolicy,
     script_args: &[&str],
+    cwd: Option<&Path>,
 ) -> Result<
     (
         std::process::Command,
@@ -625,6 +627,12 @@ fn build_command(
     ),
     BridgeRunnerError,
 > {
+    // `cwd` only informs the macOS OS-sandbox `getcwd` grant below (Landlock and
+    // AppContainer do not gate `getcwd`, and the grant is skipped when no OS
+    // sandbox spec is present). Bind it so it is never flagged unused on the
+    // targets/paths that do not consult it; `Option<&Path>` is `Copy`, so the
+    // macOS grant can still read it afterward.
+    let _ = cwd;
     let runtime = runtime.resolve().ok_or_else(|| {
         error::error!("no JS runtime (node/bun/deno) found on PATH")
     })?;
@@ -750,6 +758,33 @@ fn build_command(
     if let Some(spec) = &spawn_policy.os_sandbox {
         let mut spec = spec.clone();
         let sandbox_temp = add_runtime_essentials(runtime, &mut spec);
+        // macOS Seatbelt gates `getcwd(2)`: the confined runtime reads its own
+        // working directory during startup (Deno/Node both call `getcwd`), so
+        // the cwd must be a readable root under the profile or the launch dies
+        // with "could not read current working directory (os error 1)" before
+        // any script runs. Landlock (Linux) and AppContainer (Windows) do not
+        // gate `getcwd`, so this grant is macOS-only — it does not widen the
+        // floor on the other platforms. The brokered `sys` reads stay enforced
+        // against the policy regardless; this only lets the runtime resolve the
+        // directory it is launched in. Falls back to the inherited cwd when the
+        // caller sets none.
+        //
+        // The path is **canonicalized** before granting: Seatbelt matches
+        // `(subpath …)` against the *resolved* path, and macOS temp dirs live
+        // under `/var/folders/…` where `/var` is a symlink to `/private/var`, so
+        // granting the raw path would never match the child's resolved cwd and
+        // `getcwd` would stay denied. Falls back to the raw path if the resolve
+        // fails.
+        #[cfg(target_os = "macos")]
+        if let Some(dir) = cwd
+            .map(std::path::Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok())
+        {
+            let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+            if !spec.read_paths.contains(&dir) {
+                spec.read_paths.push(dir);
+            }
+        }
         // Redirect the confined child's temp dir to the granted per-run
         // directory (see `add_runtime_essentials`). Set after `apply_scrubbed_env`
         // so it overrides any `TEMP`/`TMP` forwarded from the parent, keeping the

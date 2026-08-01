@@ -156,8 +156,7 @@ impl NativeOsSandbox {
     }
 
     /// Whether omni has an OS-sandbox integration for the current target. `true`
-    /// on Linux (Landlock) and Windows (AppContainer); still `false` on macOS
-    /// (deferred).
+    /// on Linux (Landlock), macOS (Seatbelt), and Windows (AppContainer).
     ///
     /// Note that even where an integration exists, [`coverage`] may still be
     /// empty at runtime if the *running OS* lacks the feature (see
@@ -166,7 +165,11 @@ impl NativeOsSandbox {
     ///
     /// [`coverage`]: EnforcementBackend::coverage
     pub const fn is_implemented() -> bool {
-        cfg!(any(target_os = "linux", target_os = "windows"))
+        cfg!(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        ))
     }
 }
 
@@ -193,15 +196,25 @@ impl EnforcementBackend for NativeOsSandbox {
         let runtime_confined = self.runtime_confined();
         #[cfg(target_os = "linux")]
         let supported = crate::landlock_sandbox::is_supported();
+        #[cfg(target_os = "macos")]
+        let supported = crate::seatbelt_sandbox::is_supported();
         #[cfg(target_os = "windows")]
         let supported = crate::appcontainer_sandbox::is_supported();
-        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        ))]
         {
             os_fs_coverage(supported, disabled, runtime_confined)
         }
         // No integration for this target → cover nothing → fail closed rather
         // than pretend to confine.
-        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )))]
         {
             let _ = (disabled, runtime_confined);
             Coverage::none()
@@ -226,13 +239,24 @@ impl EnforcementBackend for NativeOsSandbox {
             // Landlock (V4) can lower a port-only net connect floor.
             Ok(lowering::plan(Self::mechanism(), req, roots, true))
         }
+        #[cfg(target_os = "macos")]
+        {
+            // Seatbelt could express `network*`, but this backend's profile
+            // grants no net rules and claims fs-only coverage, so net is not
+            // lowered here (host-level net stays with the shim/broker).
+            Ok(lowering::plan(Self::mechanism(), req, roots, false))
+        }
         #[cfg(target_os = "windows")]
         {
             // AppContainer cannot express `host:port`, so net is not lowered
             // here (see the `appcontainer_sandbox` module docs).
             Ok(lowering::plan(Self::mechanism(), req, roots, false))
         }
-        #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows"
+        )))]
         {
             // OS sandboxes not yet integrated here contribute nothing.
             let _ = (req, roots);
@@ -247,7 +271,7 @@ impl EnforcementBackend for NativeOsSandbox {
 /// fail-closed / disable / unconfined-runtime posture is unit-testable on any
 /// host (no real Landlock or AppContainer needed). A disabled, unavailable, or
 /// runtime-unconfined mechanism covers nothing.
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 fn os_fs_coverage(
     supported: bool,
     disabled: bool,
@@ -303,53 +327,63 @@ fn sandbox_install_decision(
 /// takes effect for the spawned child (and everything it forks).
 ///
 /// On **Linux** this registers a `pre_exec` hook that applies a Landlock ruleset
-/// in the child before `execve`. On **Windows** confinement cannot be installed
-/// onto a `Command` for a later `spawn` (AppContainer is attached at process
-/// creation), so this only validates that confinement is establishable and the
-/// spawner launches the child through
+/// in the child before `execve`. On **macOS** it registers a `pre_exec` hook
+/// that compiles and applies a Seatbelt profile the same way (both confinements
+/// are inherited across `execve`). On **Windows** confinement cannot be
+/// installed onto a `Command` for a later `spawn` (AppContainer is attached at
+/// process creation), so this only validates that confinement is establishable
+/// and the spawner launches the child through
 /// [`appcontainer_sandbox::spawn`](crate::appcontainer_sandbox::spawn) instead.
-/// On other targets it is a no-op today, so callers can invoke it
-/// unconditionally and stay cross-platform. Passing an empty spec installs
-/// nothing.
+/// On any other target it is a no-op, so callers can invoke it unconditionally
+/// and stay cross-platform. Passing an empty spec installs nothing.
 ///
 /// Returns an error when confinement was requested but cannot be established, so
 /// the caller can fail closed rather than launch an unconfined child. The Linux
-/// path never fails here — a Landlock failure surfaces later as a failed spawn,
-/// when the `pre_exec` hook runs.
-#[cfg(target_os = "linux")]
+/// and macOS paths never fail here — a backend failure surfaces later as a
+/// failed spawn, when the `pre_exec` hook runs and `restrict` fails closed.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn install_os_sandbox(
     command: &mut std::process::Command,
     spec: &crate::OsSandboxSpec,
 ) -> std::io::Result<()> {
     use std::os::unix::process::CommandExt as _;
 
+    // The Unix `pre_exec` install policy is identical for both kernel backends;
+    // only the backend module differs (Landlock on Linux, Seatbelt on macOS),
+    // and both expose the same `is_supported()` / `restrict(&OsSandboxSpec)`
+    // shape, so alias whichever applies to this target and share the rest.
+    #[cfg(target_os = "linux")]
+    use crate::landlock_sandbox as backend;
+    #[cfg(target_os = "macos")]
+    use crate::seatbelt_sandbox as backend;
+
     if spec.is_empty() {
         return Ok(());
     }
     // Escape hatch: allow disabling the OS sandbox for debugging a confinement
-    // regression, or on a host where the Landlock baseline is too tight for a
+    // regression, or on a host where the kernel baseline is too tight for a
     // legitimate workload. The broker still enforces every mediated operation;
     // only the kernel backstop against *direct* syscalls is dropped.
     if std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some() {
         return Ok(());
     }
-    // Install the Landlock hook only when the running kernel actually provides
-    // Landlock. `coverage()` claims the fs floor under the very same condition
-    // (`landlock_sandbox::is_supported()`), so gating here keeps the *applied*
-    // confinement in lock-step with the *claimed* floor: on a kernel without
-    // Landlock this tier advertises no fs coverage (the broker is the floor and
-    // the honest FloorGap stands), so we must not register a hook that — now
-    // that `restrict` fails closed — would abort the spawn for a floor we never
-    // promised.
-    if !crate::landlock_sandbox::is_supported() {
+    // Install the hook only when the backend is actually available on this host.
+    // `coverage()` claims the fs floor under the very same `is_supported()`
+    // condition, so gating here keeps the *applied* confinement in lock-step
+    // with the *claimed* floor: where the backend is absent this tier advertises
+    // no fs coverage (the broker is the floor and the honest FloorGap stands),
+    // so we must not register a hook that — now that `restrict` fails closed —
+    // would abort the spawn for a floor we never promised.
+    if !backend::is_supported() {
         return Ok(());
     }
     let spec = spec.clone();
     // SAFETY: the closure runs in the forked child before `execve`; it only
-    // issues Landlock syscalls (plus small allocations) to irrevocably drop the
-    // child's ambient filesystem rights. It touches no shared parent state.
+    // issues the backend's confinement syscalls (Landlock rules on Linux /
+    // `sandbox_init` on macOS, plus small allocations) to irrevocably drop the
+    // child's ambient rights. It touches no shared parent state.
     unsafe {
-        command.pre_exec(move || crate::landlock_sandbox::restrict(&spec));
+        command.pre_exec(move || backend::restrict(&spec));
     }
     Ok(())
 }
@@ -385,7 +419,11 @@ pub fn install_os_sandbox(
 }
 
 /// No-op OS-sandbox install for targets without an integration yet.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "windows"
+)))]
 pub fn install_os_sandbox(
     _command: &mut std::process::Command,
     _spec: &crate::OsSandboxSpec,
@@ -393,7 +431,7 @@ pub fn install_os_sandbox(
     Ok(())
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod lowering {
     use std::path::PathBuf;
 
@@ -550,7 +588,11 @@ mod tests {
         assert_eq!(NativeOsSandbox::new().tier(), Tier::OsSandbox);
     }
 
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows"
+    ))]
     #[test]
     fn os_fs_coverage_is_empty_unless_supported_and_enabled() {
         use omni_capabilities::CapabilityDomain;
@@ -579,7 +621,11 @@ mod tests {
         assert!(!on.covers(CapabilityDomain::Net));
     }
 
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows"
+    ))]
     #[test]
     fn a_resolved_unconfined_or_disabled_posture_claims_no_floor_and_lowers_no_spec()
      {
@@ -698,7 +744,9 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new()
+            .plan(&req, &roots)
+            .expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
         assert!(spec.read_paths.contains(&std::path::PathBuf::from("/repo")));
         assert!(
@@ -729,7 +777,9 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new()
+            .plan(&req, &roots)
+            .expect("infallible");
         let spec = plan
             .spawn
             .os_sandbox
@@ -768,7 +818,9 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "/repo");
 
-        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new()
+            .plan(&req, &roots)
+            .expect("infallible");
         let spec = plan
             .spawn
             .os_sandbox
@@ -810,7 +862,11 @@ mod tests {
         );
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows"
+    )))]
     #[test]
     fn non_integrated_target_covers_nothing_yet() {
         assert!(NativeOsSandbox::new().coverage().is_empty());
@@ -820,7 +876,25 @@ mod tests {
     #[test]
     fn macos_uses_seatbelt() {
         assert_eq!(NativeOsSandbox::mechanism(), "seatbelt");
-        assert!(!NativeOsSandbox::is_implemented());
+        assert!(NativeOsSandbox::is_implemented());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_coverage_tracks_seatbelt_support() {
+        // Seatbelt confines the filesystem only; it must never claim
+        // net/env/process (those stay with the shim/broker).
+        use omni_capabilities::CapabilityDomain;
+        let cov = NativeOsSandbox::new().coverage();
+        assert!(!cov.covers(CapabilityDomain::Net));
+        assert!(!cov.covers(CapabilityDomain::Env));
+        assert!(!cov.covers(CapabilityDomain::Process));
+        // The `sandbox_*` facility ships on every supported macOS, so fs is
+        // covered unless the escape hatch disables the sandbox.
+        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+        let expected = crate::seatbelt_sandbox::is_supported() && !disabled;
+        assert_eq!(cov.covers(CapabilityDomain::FsRead), expected);
+        assert_eq!(cov.covers(CapabilityDomain::FsWrite), expected);
     }
 
     #[cfg(target_os = "windows")]
@@ -865,7 +939,9 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
 
-        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new()
+            .plan(&req, &roots)
+            .expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
         assert!(
             spec.read_paths
@@ -903,13 +979,19 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
 
-        let plan = NativeOsSandbox::new().plan(&req, &roots).expect("infallible");
+        let plan = NativeOsSandbox::new()
+            .plan(&req, &roots)
+            .expect("infallible");
         let spec = plan.spawn.os_sandbox.expect("fs subtree lowered");
         assert!(
             spec.connect_ports.is_empty(),
             "AppContainer must not lower a net port floor: {:?}",
             spec.connect_ports
         );
-        assert!(!NativeOsSandbox::new().coverage().covers(CapabilityDomain::Net));
+        assert!(
+            !NativeOsSandbox::new()
+                .coverage()
+                .covers(CapabilityDomain::Net)
+        );
     }
 }
