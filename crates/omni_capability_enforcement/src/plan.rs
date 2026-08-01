@@ -228,6 +228,26 @@ pub fn build_plan_layered(
 ) -> Result<EnforcementPlan, EnforcementError> {
     require_full_coverage(req, backends)?;
 
+    // Exactly one runtime is ever spawned, so at most one `PreSpawnFlags`
+    // backend (the resolved runtime's flag translator) can genuinely apply to
+    // the target. Two would make `genuine_gaps` over-count a domain's covering
+    // backends: a gap the *applying* runtime cannot enforce could be silently
+    // treated as resolved because a sibling runtime backend — one that never
+    // runs — also "covers" the domain, a fail-open. Refuse a mis-assembled stack
+    // up front (fail closed). Floor/exact backends of other tiers (OS sandbox,
+    // in-process broker) may still legitimately co-apply and resolve gaps, so
+    // only the mutually-exclusive `PreSpawnFlags` tier is capped.
+    let prespawn: Vec<&str> = backends
+        .iter()
+        .filter(|b| b.tier() == Tier::PreSpawnFlags)
+        .map(|b| b.name())
+        .collect();
+    if prespawn.len() > 1 {
+        return Err(EnforcementError::conflicting_runtimes(
+            prespawn.join(", "),
+        ));
+    }
+
     let mut spawn = SpawnPolicy::new();
     let mut all_gaps: Vec<Gap> = Vec::new();
     let mut superset_domains: BTreeSet<CapabilityDomain> = BTreeSet::new();
@@ -579,6 +599,14 @@ fn effective_policy(
 /// In other words, a gap is resolved if a broker enforces the domain exactly,
 /// or if some other covering backend managed to represent that same atom.
 ///
+/// This `count >= covering_count` reasoning is only sound when every covering
+/// backend *genuinely co-applies* to the target. That holds because
+/// [`build_plan_layered`] first rejects a stack with more than one
+/// [`Tier::PreSpawnFlags`] backend (only one runtime is ever spawned), so a gap
+/// the applying runtime cannot enforce is never masked by a sibling runtime
+/// backend that never runs; the remaining tiers (OS sandbox, in-process broker)
+/// all apply to the same process simultaneously.
+///
 /// Correlation is keyed on the atom's opaque [`CapabilityId`], which backends
 /// echo verbatim — so it stays correct even if a backend normalizes, resolves,
 /// or splits the pattern before reporting.
@@ -868,13 +896,14 @@ mod tests {
     struct RewritingNetBackend {
         label: &'static str,
         prefix: &'static str,
+        tier: Tier,
     }
     impl EnforcementBackend for RewritingNetBackend {
         fn name(&self) -> &'static str {
             self.label
         }
         fn tier(&self) -> Tier {
-            Tier::PreSpawnFlags
+            self.tier
         }
         fn coverage(&self) -> Coverage {
             // Covers everything so `require_full_coverage` passes; only `net`
@@ -920,6 +949,7 @@ mod tests {
         let backend = RewritingNetBackend {
             label: "rewriting-net",
             prefix: "lowered::",
+            tier: Tier::PreSpawnFlags,
         };
         let backends: [&dyn EnforcementBackend; 1] = [&backend];
         let plan = build_plan(&req, &roots(), &backends)
@@ -937,12 +967,13 @@ mod tests {
 
     #[test]
     fn a_gap_is_correlated_by_id_across_backends_that_rewrite_differently() {
-        // Two covering backends both gap the SAME atom, but each lowers the
-        // pattern into its OWN vocabulary (different strings). Correlation by id
-        // sees one atom gapped by every covering backend → genuine → the
-        // default `deny` refuses the run. Under (domain, pattern) keying the two
-        // differing strings would look like two separate half-covered gaps and
-        // neither would reach `count >= covering_count`, silently dropping the
+        // Two covering backends of *co-applying* tiers (a runtime-flag backend
+        // and an OS sandbox) both gap the SAME atom, each lowering the pattern
+        // into its OWN vocabulary (different strings). Correlation by id sees one
+        // atom gapped by every covering backend → genuine → the default `deny`
+        // refuses the run. Under (domain, pattern) keying the two differing
+        // strings would look like two separate half-covered gaps and neither
+        // would reach `count >= covering_count`, silently dropping the
         // confinement.
         let req = require(
             r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
@@ -950,15 +981,46 @@ mod tests {
         let a = RewritingNetBackend {
             label: "sandbox-a",
             prefix: "a::",
+            tier: Tier::PreSpawnFlags,
         };
         let b = RewritingNetBackend {
             label: "sandbox-b",
             prefix: "b::",
+            tier: Tier::OsSandbox,
         };
         let backends: [&dyn EnforcementBackend; 2] = [&a, &b];
         let err = build_plan(&req, &roots(), &backends)
             .expect_err("the id-correlated genuine gap must fail closed");
         assert_eq!(err.kind(), crate::EnforcementErrorKind::Unenforceable);
+    }
+
+    #[test]
+    fn two_prespawn_runtime_backends_are_refused() {
+        // Only one runtime is ever spawned, so a stack with two `PreSpawnFlags`
+        // backends is mis-assembled: a gap the applying runtime cannot enforce
+        // could be silently "resolved" against the other runtime (which never
+        // runs). The planner refuses such a stack up front rather than resolve
+        // gaps against a backend that does not apply to the target.
+        let req = require(
+            r#"[{ "access": "allow", "domain": "net", "patterns": ["example.com:443"] }]"#,
+        );
+        let a = RewritingNetBackend {
+            label: "runtime-a",
+            prefix: "a::",
+            tier: Tier::PreSpawnFlags,
+        };
+        let b = RewritingNetBackend {
+            label: "runtime-b",
+            prefix: "b::",
+            tier: Tier::PreSpawnFlags,
+        };
+        let backends: [&dyn EnforcementBackend; 2] = [&a, &b];
+        let err = build_plan(&req, &roots(), &backends)
+            .expect_err("two runtime-flag backends must fail closed");
+        assert_eq!(
+            err.kind(),
+            crate::EnforcementErrorKind::ConflictingRuntimes
+        );
     }
 
     /// A mock in-process broker that enforces every covered domain exactly.
@@ -1573,6 +1635,7 @@ mod tests {
         let gappy = RewritingNetBackend {
             label: "gappy-net-floor",
             prefix: "lowered::",
+            tier: Tier::PreSpawnFlags,
         };
         let backends: [&dyn EnforcementBackend; 2] = [&gappy, &MockBroker];
         // Warn: the broker resolves the representability gap, so the plan builds,

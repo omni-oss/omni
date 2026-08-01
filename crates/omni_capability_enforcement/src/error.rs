@@ -59,6 +59,18 @@ impl EnforcementError {
         })
     }
 
+    /// The backend stack contains more than one [`Tier::PreSpawnFlags`](crate::Tier)
+    /// runtime backend. Only one runtime is ever spawned, so at most one such
+    /// backend can genuinely apply to the target; more would let a capability
+    /// gap the applying runtime cannot enforce be silently "resolved" against a
+    /// sibling runtime backend that never runs. Carries the conflicting backend
+    /// names.
+    pub fn conflicting_runtimes(backends: impl Into<String>) -> Self {
+        Self(EnforcementErrorInner::ConflictingRuntimes {
+            backends: backends.into(),
+        })
+    }
+
     pub fn kind(&self) -> EnforcementErrorKind {
         self.0.discriminant()
     }
@@ -100,4 +112,12 @@ pub(crate) enum EnforcementErrorInner {
          sole enforcement:\n{summary}"
     )]
     SupersetUnnarrowed { summary: String },
+
+    #[error(
+        "the enforcement stack contains more than one pre-spawn runtime-flag \
+         backend ({backends}), but only one runtime is spawned; a capability \
+         gap could otherwise be resolved against a runtime that never applies \
+         to the target"
+    )]
+    ConflictingRuntimes { backends: String },
 }
