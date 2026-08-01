@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { delimiter, join } from "node:path";
 import type { SpawnOptions, SpawnResult } from "@omni-oss/gen-sdk-core";
 import type { CapabilityPolicy } from "./capability-policy";
 import { isEnvInjectionVector, isPathKey } from "./enforced-env";
@@ -137,42 +136,6 @@ export function confinedEnv(
 }
 
 /**
- * Resolve a bare program name to an absolute path using the *trusted* `PATH`
- * (never a caller override), so a confined spawn runs the binary the policy
- * authorized rather than one an attacker planted earlier on a caller-controlled
- * path. A name that already contains a path separator, or one not found on the
- * trusted path, is returned unchanged — the child then resolves it against the
- * same trusted `PATH` we pin into its environment, so it is never redirectable
- * either way. Skipped on Windows, where `PATHEXT` resolution differs and `PATH`
- * is pinned instead. Exported for testing.
- */
-export function resolveProgramOnTrustedPath(
-    program: string,
-    trustedPath: string | undefined,
-): string {
-    if (process.platform === "win32") {
-        return program;
-    }
-    if (program.length === 0 || program.includes("/") || !trustedPath) {
-        return program;
-    }
-    for (const dir of trustedPath.split(delimiter)) {
-        if (!dir) {
-            continue;
-        }
-        const candidate = join(dir, program);
-        try {
-            if (existsSync(candidate)) {
-                return candidate;
-            }
-        } catch {
-            // Unreadable directory entry — keep scanning.
-        }
-    }
-    return program;
-}
-
-/**
  * Build a capability-gated `spawn`. Every call is authorized against the
  * `process` policy before the child is launched; when the policy does not
  * enforce `process` (the runtime confines it at launch), the check is skipped
@@ -192,16 +155,18 @@ export function createEnforcedSpawn(
                 return;
             }
 
-            // Build the confined environment first (its `PATH` is the trusted,
-            // inherited value — never a caller override), then resolve the
-            // program against that same trusted `PATH`. The policy check above
-            // ran on the program name the caller wrote, so authorization
-            // semantics are unchanged; only the *binary actually launched* is
-            // pinned, closing the `PATH`-hijack path.
+            // The confined child gets an explicit, minimal environment whose
+            // `PATH` is the trusted, inherited value — never a caller override
+            // (see `confinedEnv`). The bare program name is launched as written:
+            // it is authorized above and resolved by the child against that
+            // pinned trusted `PATH`, so it cannot be redirected to an
+            // attacker-planted binary. Launching the name verbatim (rather than a
+            // JS-resolved absolute path) also keeps it identical to the string
+            // the direct-`node:child_process` patch authorizes, so the two
+            // enforcement points never disagree on a spawn this front door makes.
             const env = confinedEnv(options?.env);
-            const resolved = resolveProgramOnTrustedPath(program, env.PATH);
 
-            const child = getNodeSpawn()(resolved, [...(options?.args ?? [])], {
+            const child = getNodeSpawn()(program, [...(options?.args ?? [])], {
                 cwd: resolveCwd(options?.cwd, defaultCwd()),
                 // A confined child gets an explicit, minimal environment
                 // (see `confinedEnv`) rather than inheriting the host's.

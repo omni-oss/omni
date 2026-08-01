@@ -1,10 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { CapabilityPolicy } from "./capability-policy";
-import {
-    confinedEnv,
-    createEnforcedSpawn,
-    resolveProgramOnTrustedPath,
-} from "./enforced-process";
+import { confinedEnv, createEnforcedSpawn } from "./enforced-process";
 
 describe("confinedEnv", () => {
     test("drops code-injection vectors supplied as overrides", () => {
@@ -29,34 +25,6 @@ describe("confinedEnv", () => {
         expect(env.PATH).toBe(trusted);
         expect(env.PATH).not.toBe("/tmp/evil");
     });
-});
-
-describe("resolveProgramOnTrustedPath", () => {
-    test("returns a name containing a path separator unchanged", () => {
-        expect(resolveProgramOnTrustedPath("/usr/bin/git", "/usr/bin")).toBe(
-            "/usr/bin/git",
-        );
-        expect(resolveProgramOnTrustedPath("git", undefined)).toBe("git");
-    });
-
-    test("does not resolve against a bogus trusted path", () => {
-        // A name not found on the (trusted) path is returned unchanged; the
-        // child still resolves it against the pinned trusted PATH, never a
-        // caller-controlled one.
-        expect(
-            resolveProgramOnTrustedPath("definitely-not-a-real-binary", "/tmp"),
-        ).toBe("definitely-not-a-real-binary");
-    });
-
-    test.skipIf(process.platform === "win32")(
-        "resolves a bare name to an absolute path on the trusted PATH",
-        () => {
-            // `/bin/sh` (or `/usr/bin/sh`) exists on every POSIX CI host.
-            const resolved = resolveProgramOnTrustedPath("sh", "/usr/bin:/bin");
-            expect(resolved.endsWith("/sh")).toBe(true);
-            expect(resolved.startsWith("/")).toBe(true);
-        },
-    );
 });
 
 describe("createEnforcedSpawn (end-to-end env neutralization)", () => {
