@@ -1593,7 +1593,12 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
     // ancestor up to `C:\`, which a Low-integrity container is denied), so unlike
     // node/deno it launches unconfined and its filesystem rests only on the
     // bypassable in-process broker. That weaker guarantee must be surfaced, not
-    // silent.
+    // silent. It flows through the *normal* floor-gap path rather than a bespoke
+    // diagnostic: the plan marks Bun-on-Windows unconfined, so the OS tier claims
+    // no `fs` floor (see `NativeOsSandbox::resolved` and
+    // `crates/omni_generator/src/script_runner.rs`), and the fs domains surface
+    // the generic "enforced only" floor warning — the same one the UNFLOORED
+    // net/process cases above assert.
     it("bun: warns that its filesystem has no OS-sandbox floor on Windows", async (ctx) => {
         if (process.platform !== "win32" || !runtimeAvailable("bun")) {
             ctx.skip();
@@ -1618,8 +1623,8 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
         // Non-fatal: the broker still mediates every brokered fs route.
         expect(result).toHaveSucceeded();
         expect(ws.read("out/floor.txt")).toBe("ran");
-        expect(result).toOutputContaining("cannot run inside an AppContainer");
         expect(result).toOutputContaining(FLOOR_WARNING);
+        expect(result).toOutputContaining("fs.write is enforced only");
     });
 
     for (const [rt, domain] of FLOORED) {
