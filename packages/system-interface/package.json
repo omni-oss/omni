@@ -1,6 +1,7 @@
 {
     "name": "@omni-oss/system-interface",
     "version": "0.1.2",
+    "sideEffects": false,
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",

@@ -1,6 +1,6 @@
 use super::add_commons::add_one;
-use omni_messages::GeneratorEventSubscriber;
 use omni_generator_configurations::AddActionConfiguration;
+use omni_messages::GeneratorEventSubscriber;
 
 use crate::{
     GeneratorSys,

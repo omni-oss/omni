@@ -138,11 +138,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'js_runtime'",
+            "name": "Debug unit tests in library 'bridge_rpc_runner'",
             "cargo": {
-                "args": ["test", "--no-run", "--lib", "--package=js_runtime"],
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=bridge_rpc_runner"
+                ],
                 "filter": {
-                    "name": "js_runtime",
+                    "name": "bridge_rpc_runner",
                     "kind": "lib"
                 }
             },

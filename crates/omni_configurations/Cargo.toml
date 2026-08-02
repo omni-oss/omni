@@ -31,7 +31,6 @@ omni_command_config = { workspace = true }
 omni_expressions = { workspace = true }
 config_utils = { workspace = true }
 omni_types = { workspace = true }
-js_runtime = { workspace = true }
 garde = { workspace = true }
 system_traits = { workspace = true }
 lazy-regex = { workspace = true }
@@ -43,3 +42,4 @@ serde_validate = { workspace = true }
 omni_serde_validators = { workspace = true }
 omni_file_data_serde = { workspace = true }
 url = { workspace = true }
+omni_capabilities = { workspace = true }

@@ -27,7 +27,17 @@ export function declareProcTests(args: ProcessTestDeclarationsArgs): void {
         });
 
         it("env should match the provided env", () => {
-            expect(args.proc.env()).toEqual(args.env);
+            expect(args.proc.env().toObject()).toEqual(args.env);
+        });
+
+        it("env.get returns a present value and null for a missing one", () => {
+            const env = args.proc.env();
+            const [firstKey, firstValue] =
+                Object.entries(args.env).find(([, v]) => v !== undefined) ?? [];
+            if (firstKey !== undefined) {
+                expect(env.get(firstKey)).toBe(firstValue);
+            }
+            expect(env.get("__OMNI_DEFINITELY_MISSING_ENV__")).toBeNull();
         });
     });
 }

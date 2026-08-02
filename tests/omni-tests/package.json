@@ -8,7 +8,7 @@
         "@omni-oss/log": "workspace:^",
         "@xterm/headless": "catalog:",
         "execa": "catalog:",
-        "node-pty": "catalog:",
+        "@homebridge/node-pty-prebuilt-multiarch": "catalog:",
         "smol-toml": "catalog:",
         "yaml": "catalog:",
         "zod": "catalog:"

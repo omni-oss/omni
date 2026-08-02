@@ -28,7 +28,7 @@ pub fn get_serialization_format(
                 _ => {
                     eyre::bail!(
                         "results file has an unsupported extension '{ext:?}'"
-                    )
+                    );
                 }
             }
         }

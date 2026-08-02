@@ -201,6 +201,29 @@ where
 
     let generators = get_generators(ctx.as_context(), &sys).await?;
 
+    // Workspace-level capability floor for the generator subsystem. Filter the
+    // single subsystem-tagged workspace list down to the entries that govern
+    // generators (tag includes `generator`, or `all`), reinterpreting each into
+    // the generator profile with its default (unscoped) selector. Handed to the
+    // run so it is folded ahead of — and cannot be widened by — each
+    // generator's own policy.
+    let workspace_capabilities = ctx
+        .workspace_configuration()
+        .capabilities
+        .rules
+        .clone()
+        .reinterpret::<omni_generator_configurations::Generator, _>(|scope| {
+            scope
+                .subsystem
+                .includes(omni_configurations::Subsystem::Generator)
+                .then(omni_generator_configurations::GeneratorScope::default)
+        });
+
+    // Workspace-level floor-gap stance seeds the accumulated strictness for the
+    // run (combined most-severe with each generator's and action's own stance).
+    let workspace_strictness =
+        ctx.workspace_configuration().capabilities.strictness;
+
     let run_config = RunConfig::builder()
         .dry_run(req.dry_run)
         .output_dir(output_dir.as_path())
@@ -213,6 +236,8 @@ where
         .env(env.as_deref().unwrap_or(&default_map))
         .use_input_defaults(req.use_defaults)
         .available_generators(&generators)
+        .workspace_capabilities(&workspace_capabilities)
+        .workspace_strictness(workspace_strictness)
         .input_provider(req.input_provider.as_ref())
         .subscriber(subscriber)
         .maybe_max_depth(req.max_depth)

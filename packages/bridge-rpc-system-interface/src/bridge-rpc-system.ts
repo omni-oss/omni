@@ -1,12 +1,14 @@
 import type { ClientHandle } from "@omni-oss/bridge-rpc-core";
-import type {
-    ArgsList,
-    FileStat,
-    FileSystem,
-    Process,
-    ProcessEnv,
-    System,
+import {
+    type ArgsList,
+    type Env,
+    type FileStat,
+    type FileSystem,
+    ObjectEnv,
+    type Process,
+    type System,
 } from "@omni-oss/system-interface";
+import { CapabilityFilteredEnv } from "./env-capability";
 import {
     type BridgeRpcSystemOptions,
     createRpcSystemOptions,
@@ -334,8 +336,20 @@ export class BridgeRpcProcess implements Process {
         return this.argsList as readonly string[];
     }
 
-    env(): ProcessEnv {
-        return this.envVars;
+    /**
+     * Returns a snapshot view of the process environment.
+     *
+     * When {@link BridgeRpcSystemOptions.envRules} were supplied, the view is
+     * capability-filtered (via {@link CapabilityFilteredEnv}) with the same
+     * glob-matched rules the runtime shim enforces, so a script only ever
+     * observes the variables its generator is permitted to read. Otherwise the
+     * (already broker-filtered) snapshot is exposed verbatim.
+     */
+    env(): Env {
+        const rules = this.options.envRules;
+        return rules === undefined
+            ? new ObjectEnv(this.envVars)
+            : new CapabilityFilteredEnv(this.envVars, rules);
     }
 
     /**

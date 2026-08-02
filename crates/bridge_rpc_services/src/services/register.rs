@@ -33,7 +33,7 @@ use system_traits::{
     BaseFsCreateDirAsync, BaseFsMetadataAsync, BaseFsReadAsync,
     BaseFsReadDirAsync, BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync,
     BaseFsRemoveFileAsync, BaseFsRenameAsync, BaseFsWriteAsync,
-    EnvCurrentDirAsync, EnvVars,
+    EnvCurrentDirAsync, EnvSnapshot,
 };
 
 use super::{
@@ -104,14 +104,19 @@ where
 /// Aggregated bound that a system handle must satisfy in order to back the
 /// process services.
 pub trait ProcSys:
-    EnvCurrentDirAsync + BaseEnvSetCurrentDirAsync + EnvVars + Send + Sync + 'static
+    EnvCurrentDirAsync
+    + BaseEnvSetCurrentDirAsync
+    + EnvSnapshot
+    + Send
+    + Sync
+    + 'static
 {
 }
 
 impl<T> ProcSys for T where
     T: EnvCurrentDirAsync
         + BaseEnvSetCurrentDirAsync
-        + EnvVars
+        + EnvSnapshot
         + Send
         + Sync
         + 'static

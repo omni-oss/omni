@@ -90,6 +90,10 @@ where
         let mut output = self.output.lock().await;
         output.write_all(&frame.length).await?;
         output.write_all(&frame.data).await?;
+        // Flush so the framed bytes reach the peer's pipe promptly. On Windows
+        // in particular an unflushed child-stdin write can leave a request
+        // sitting in a buffer while both sides wait on each other.
+        output.flush().await?;
         trace::trace!(
             bytes_sent = frame.length.len() + frame.data.len(),
             "sent_frame"

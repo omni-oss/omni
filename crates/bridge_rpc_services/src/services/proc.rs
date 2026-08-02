@@ -23,7 +23,7 @@ use bridge_rpc_core::{
 use serde::{Deserialize, Serialize};
 use system_traits::{
     BaseEnvSetCurrentDirAsync, EnvCurrentDirAsync, EnvSetCurrentDirAsync as _,
-    EnvVars,
+    EnvSnapshot,
 };
 
 use super::common::{read_parameters, respond_empty, respond_with_returns};
@@ -93,8 +93,8 @@ where
     }
 }
 
-fn collect_env<S: EnvVars>(sys: &S) -> BTreeMap<String, String> {
-    sys.env_vars().collect()
+fn collect_env<S: EnvSnapshot>(sys: &S) -> BTreeMap<String, String> {
+    sys.env_snapshot()
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ where
 #[async_trait]
 impl<S> Service for EnvService<S>
 where
-    S: EnvVars + Send + Sync + 'static,
+    S: EnvSnapshot + Send + Sync + 'static,
 {
     async fn run(&self, context: ServiceContext) -> Result<(), ServiceError> {
         let response = context.response;
@@ -297,7 +297,7 @@ where
 #[async_trait]
 impl<S, P> Service for SnapshotService<S, P>
 where
-    S: EnvCurrentDirAsync + EnvVars + Send + Sync + 'static,
+    S: EnvCurrentDirAsync + EnvSnapshot + Send + Sync + 'static,
     P: ArgsProvider,
 {
     async fn run(&self, context: ServiceContext) -> Result<(), ServiceError> {

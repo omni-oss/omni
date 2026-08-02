@@ -63,7 +63,11 @@ serde = { workspace = true }
 schemars = { workspace = true }
 bon = { workspace = true }
 shlex = { workspace = true }
-js_runtime = { workspace = true }
+bridge_rpc_runner = { workspace = true }
+omni_capabilities = { workspace = true }
+omni_capability_enforcement = { workspace = true }
+omni_capability_sys = { workspace = true }
+merge = { workspace = true }
 bridge_rpc_services = { workspace = true }
 bridge_rpc_router = { workspace = true }
 omni_config_types = { workspace = true }

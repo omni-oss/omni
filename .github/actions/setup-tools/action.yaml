@@ -21,6 +21,10 @@ inputs:
     description: "Install Node.js"
     required: false
     default: "false"
+  node-version:
+    description: "Node version to install"
+    required: false
+    default: "latest"
   bun-version:
     description: "Bun version to install"
     required: false
@@ -29,8 +33,12 @@ inputs:
     description: "Install Node.js modules"
     required: false
     default: "false"
-  node-version:
-    description: "Node version to install"
+  install-deno:
+    description: "Install Deno runtime"
+    required: false
+    default: "false"
+  deno-version:
+    description: "Deno version to install"
     required: false
     default: "latest"
   cache-key-prefix:
@@ -73,7 +81,7 @@ runs:
 
     - name: Install Node
       if: ${{ inputs.install-all == 'true' || inputs.install-node == 'true' }}
-      uses: actions/setup-node@v6.4.0
+      uses: nubjs/setup-nub@v0.4.0
       with:
         check-latest: true
         node-version: ${{ inputs.node-version }}
@@ -183,3 +191,8 @@ runs:
       if: ${{ inputs.install-all == 'true' ||  inputs.install-bun == 'true' && inputs.install-node-modules == 'true' }}
       run: bun install
       shell: ${{ inputs.shell }}
+
+    - uses: denoland/setup-deno@v2
+      if: ${{ inputs.install-all == 'true' || inputs.install-deno == 'true' }}
+      with:
+        deno-version: ${{ inputs.deno-version }}

@@ -25,8 +25,8 @@
  * created inside one.
  */
 
+import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { Terminal } from "@xterm/headless";
-import * as pty from "node-pty";
 import { onTestFinished } from "vitest";
 import { resolveOmniBin } from "./binary";
 import { normalize } from "./normalize";

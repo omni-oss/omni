@@ -14,8 +14,17 @@ dependencies:
 
 tasks:
   test:e2e:
-    max_retries: 5
+    # max_retries: 5
     enabled: true
     dependencies:
       append:
         - omni#build
+
+meta:
+  targets:
+    x86_64-unknown-linux-gnu:
+      runner: ubuntu-latest
+    aarch64-apple-darwin:
+      runner: macos-latest
+    x86_64-pc-windows-msvc:
+      runner: windows-2022

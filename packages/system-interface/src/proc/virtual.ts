@@ -1,4 +1,5 @@
-import type { ArgsList, Process, ProcessEnv } from "./interfaces";
+import { ObjectEnv } from "./env";
+import type { ArgsList, Env, Process, ProcessEnv } from "./interfaces";
 
 export class VirtualProcess implements Process {
     constructor(
@@ -24,7 +25,7 @@ export class VirtualProcess implements Process {
         return this.argsValues;
     }
 
-    env(): ProcessEnv {
-        return this.envVars;
+    env(): Env {
+        return new ObjectEnv(this.envVars);
     }
 }

@@ -230,6 +230,7 @@ jobs:
           install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-deno: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           cache-key-prefix: ${{ inputs.cache-key-prefix }}
@@ -322,6 +323,7 @@ jobs:
           install-rust: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-rust-target: ${{ steps.determine.outputs.INSTALL_RUST_TOOLS }}
           install-bun: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
+          install-deno: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           install-node-modules: ${{ steps.determine.outputs.INSTALL_JS_TOOLS }}
           cache-key-prefix: ${{ matrix.target }}-${{ inputs.cache-key-prefix }}

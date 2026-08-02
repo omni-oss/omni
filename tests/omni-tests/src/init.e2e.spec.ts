@@ -325,28 +325,35 @@ describe("+init @e2e @exitcode (error paths)", { tags: ["generator"] }, () => {
         CLONE_TIMEOUT_MS,
     );
 
-    it("an invalid/unreachable git URL surfaces a clone error", async () => {
-        // `.invalid` is reserved (RFC 6761) and never resolves, so this fails
-        // fast at the transport layer with no credential prompt - no network
-        // gating needed and no risk of hanging on auth.
-        const ws = makeWorkspace();
+    it(
+        "an invalid/unreachable git URL surfaces a clone error",
+        async () => {
+            // `.invalid` is reserved (RFC 6761) and never resolves, so this
+            // fails at the transport layer with no credential prompt - no
+            // network gating needed and no risk of hanging on auth. Resolving a
+            // nonexistent host can take ~15s on Windows (multiple DNS
+            // mechanisms), so this needs the same clone-timeout headroom as its
+            // siblings rather than the 10s default.
+            const ws = makeWorkspace();
 
-        const result = await runOmni(
-            [
-                "init",
-                "--git",
-                "https://github.invalid/nope/nope.git",
-                "-o",
-                "broken",
-                "-v",
-                `${repo.promptName}=x`,
-                "--use-defaults",
-            ],
-            { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-        );
+            const result = await runOmni(
+                [
+                    "init",
+                    "--git",
+                    "https://github.invalid/nope/nope.git",
+                    "-o",
+                    "broken",
+                    "-v",
+                    `${repo.promptName}=x`,
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result.failed).toBe(true);
-        expect(ws.exists("broken/workspace.omni.yaml")).toBe(false);
-    });
+            expect(result).toHaveExitCode(1);
+            expect(result.failed).toBe(true);
+            expect(ws.exists("broken/workspace.omni.yaml")).toBe(false);
+        },
+        CLONE_TIMEOUT_MS,
+    );
 });
