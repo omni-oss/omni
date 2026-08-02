@@ -382,8 +382,34 @@ fn create_or_derive_container_sid(name: &str) -> io::Result<PSID> {
     // `HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)`: the profile is already
     // registered (e.g. from a previous run), so just derive its SID.
     const ALREADY_EXISTS: i32 = 0x8007_00B7u32 as i32;
+    // `HRESULT_FROM_WIN32(ERROR_BAD_ENVIRONMENT)`: a concurrent creator racing
+    // the same shared profile name can transiently surface this instead of
+    // `ERROR_ALREADY_EXISTS`. Both mean "someone else owns/creates this
+    // profile", so derive its SID rather than failing. Because the racing
+    // creator may still be mid-registration when we first try to derive, retry
+    // the derive a few times with a brief backoff before giving up.
+    const BAD_ENVIRONMENT: i32 = 0x8007_000Au32 as i32;
     if hr == ALREADY_EXISTS {
         return derive_container_sid(name);
+    }
+    if hr == BAD_ENVIRONMENT {
+        const MAX_TRIES: u32 = 5;
+        let mut last_err = None;
+        for attempt in 0..MAX_TRIES {
+            match derive_container_sid(name) {
+                Ok(sid) => return Ok(sid),
+                Err(err) => last_err = Some(err),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(
+                10 * u64::from(attempt + 1),
+            ));
+        }
+        return Err(last_err.unwrap_or_else(|| {
+            io::Error::other(format!(
+                "CreateAppContainerProfile({name}) raced (HRESULT \
+                 0x{BAD_ENVIRONMENT:08x}) and the SID could not be derived"
+            ))
+        }));
     }
     Err(io::Error::other(format!(
         "CreateAppContainerProfile({name}) failed: HRESULT 0x{:08x}",

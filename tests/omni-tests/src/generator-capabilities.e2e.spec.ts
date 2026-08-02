@@ -53,6 +53,16 @@ const NET_ALLOW_RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 // non-existent virtual cwd, and a minimal env allow-list is passed.
 const SPAWN_ALLOW_RUNTIMES: readonly Runtime[] = ["node", "bun", "deno"];
 
+// Runtimes for the positive "spawn an allowed *external, named* binary" case
+// (spawning the `echo` coreutil off `PATH`, distinct from the runtime's own
+// execPath). Node and Deno are covered; **Bun is excluded** because it exposes
+// no `--allow-run` floor, so its spawn path already rests only on the (weaker)
+// shim — this floored-runtime case does not apply. (This list once targeted
+// macOS Command Line Tools stubs like `git`; confining those under Seatbelt
+// proved intractable and stays deferred — see `.omni/scratch/residual-tasks.md`
+// R2.)
+const EXTERNAL_SPAWN_RUNTIMES: readonly Runtime[] = ["node", "deno"];
+
 // Runtimes whose *raw* (broker-bypassing) filesystem access is confined by an
 // un-bypassable launch-flag floor. omni lowers `fs.write` into Deno's
 // `--allow-write=<@project>` and Node's `--allow-fs-write=<@project>` (see the
@@ -1568,6 +1578,70 @@ describe("+generator @e2e (capabilities: process)", {
             // (`v24.18.0` / `deno 2.x.x (…)` / `1.x.x`); assert the shape
             // rather than a runtime-specific banner.
             expect(ws.read("out/program-version.txt")).toMatch(/\d+\.\d+\.\d+/);
+        });
+    }
+
+    // Positive `process` path for an allowed *external, named* binary resolved
+    // off `PATH` — distinct from the sibling "runs an allowed program" case,
+    // which spawns the runtime's *own* execPath. Here the program is a plain
+    // system coreutil (`echo`) authorized by bare name and launched directly
+    // (not through a shell), so it exercises the exec grant for an allowed
+    // program's own binary directory (`which echo` → its dir) end to end. A
+    // coreutil is used deliberately: unlike another JS runtime it drags in no
+    // version-manager re-exec cache or bundled data that the sandbox (set up for
+    // the *confining* runtime) would not have granted.
+    //
+    // (This case originally targeted a macOS Command Line Tools *stub* like
+    // `/usr/bin/git`, which re-`execve`s the real tool from the active developer
+    // dir. Making that work under Seatbelt proved intractable — granting the
+    // developer dir and forwarding `DEVELOPER_DIR` still leaves the stub
+    // producing no output on CI — so it stays deferred, see
+    // `.omni/scratch/residual-tasks.md` R2. A plain coreutil is the portable
+    // positive assertion.)
+    //
+    // Bun is excluded (see `EXTERNAL_SPAWN_RUNTIMES`): it has no `--allow-run`
+    // floor, so its spawn path rests only on the shim and this floored-runtime
+    // case does not apply.
+    for (const rt of EXTERNAL_SPAWN_RUNTIMES) {
+        it(`${rt}: runs an allowed external system binary and captures its output`, async (ctx) => {
+            if (!runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            // Windows: named-program resolution and confined grandchild spawns
+            // differ (see the sibling "runs an allowed program" case), and
+            // `echo` is a shell builtin rather than a binary there, so this case
+            // is POSIX-only.
+            if (process.platform === "win32") {
+                ctx.skip();
+                return;
+            }
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    runtime: rt,
+                    capabilities: [
+                        {
+                            access: "allow",
+                            domain: "process",
+                            patterns: ["echo"],
+                        },
+                        {
+                            access: "allow",
+                            domain: "fs.write",
+                            patterns: ["@project/**"],
+                        },
+                    ],
+                    script: `export default async function (ctx) {
+                        const r = await ctx.sys.proc.spawn("echo", { args: ["omni-spawn-ok"] });
+                        await ctx.sys.fs.writeStringToFile("echo.txt", r.stdout ?? "");
+                    }`,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/echo.txt").trim()).toBe("omni-spawn-ok");
         });
     }
 });
