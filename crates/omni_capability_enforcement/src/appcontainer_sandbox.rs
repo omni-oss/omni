@@ -112,9 +112,10 @@ use windows_sys::Win32::Security::Isolation::{
 };
 use windows_sys::Win32::Security::{
     ACCESS_ALLOWED_ACE, ACL, AllocateAndInitializeSid,
-    DACL_SECURITY_INFORMATION, EqualSid, FreeSid, GetAce, NO_INHERITANCE,
-    PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES, SID_AND_ATTRIBUTES,
-    SID_IDENTIFIER_AUTHORITY, SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+    DACL_SECURITY_INFORMATION, EqualSid, FreeSid, GetAce, INHERITED_ACE,
+    NO_INHERITANCE, PSECURITY_DESCRIPTOR, PSID, SECURITY_CAPABILITIES,
+    SID_AND_ATTRIBUTES, SID_IDENTIFIER_AUTHORITY,
+    SUB_CONTAINERS_AND_OBJECTS_INHERIT,
 };
 use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
 use windows_sys::Win32::System::Threading::PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES;
@@ -764,8 +765,7 @@ fn dacl_grants(
     if dacl.is_null() {
         return false;
     }
-    // Only the container/object-inherit bits are meaningful for the match; other
-    // flags (e.g. `INHERITED_ACE`) never appear on an ACE we set directly here.
+    // Only the container/object-inherit bits are meaningful for the match.
     let want_inherit = (inheritance & SUB_CONTAINERS_AND_OBJECTS_INHERIT) as u8;
     // SAFETY: `dacl` is a valid DACL pointer from `GetNamedSecurityInfoW`.
     let count = unsafe { (*dacl).AceCount };
@@ -780,6 +780,14 @@ fn dacl_grants(
         // SAFETY: `allowed` points at a valid ACE within the DACL.
         let header = unsafe { (*allowed).Header };
         if header.AceType != ACCESS_ALLOWED_ACE_TYPE as u8 {
+            continue;
+        }
+        // Only explicit ACEs count: grant/revoke add and strip an ACE *on this
+        // object*, never an inherited one. Counting an ACE inherited from a
+        // parent (e.g. an ambient omni grant on `%TEMP%`) would make the
+        // idempotency check skip adding our own revocable ACE, and would make
+        // the cleanup tests observe a phantom grant that revoke can never strip.
+        if header.AceFlags & (INHERITED_ACE as u8) != 0 {
             continue;
         }
         if header.AceFlags & (SUB_CONTAINERS_AND_OBJECTS_INHERIT as u8)
