@@ -63,6 +63,7 @@ fn enforced_policy(ws: &Path, output_dir: &Path) -> EffectivePolicy {
             target: None,
         },
         strictness: Default::default(),
+        enforce: true,
     }
 }
 
@@ -280,6 +281,7 @@ async fn repro_narrow_project_policy_write() {
             target: None,
         },
         strictness: Default::default(),
+        enforce: true,
     };
 
     let sys = TransactionSys::new(RealSys);
@@ -364,6 +366,7 @@ async fn deno_workspace_deny_overrides_generator_allow() {
             target: None,
         },
         strictness: Default::default(),
+        enforce: true,
     };
 
     let sys = TransactionSys::new(RealSys);

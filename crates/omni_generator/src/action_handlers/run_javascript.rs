@@ -69,6 +69,10 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
         strictness: ctx
             .capabilities_strictness
             .max(config.capabilities.strictness),
+        // Capability enforcement is an experimental feature: when the workspace
+        // has not opted in, the policy is carried for provenance but the script
+        // runs unconfined.
+        enforce: ctx.enable_experimental,
     };
 
     let result = ctx

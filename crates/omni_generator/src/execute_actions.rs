@@ -57,6 +57,9 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     /// Effective floor-gap strictness for this generator: the most-severe of the
     /// workspace, all ancestor generators, and this generator's own stance.
     pub capabilities_strictness: CapabilitiesStrictness,
+    /// Whether experimental features are enabled. Currently gates capability
+    /// enforcement for `run-javascript`: when `false`, scripts run unconfined.
+    pub enable_experimental: bool,
     pub use_input_defaults: bool,
     pub js_script_runner: &'a dyn JsScriptRunner,
     pub input_provider: &'a dyn omni_input_provider::InputProvider<
@@ -126,6 +129,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
             inherited_capabilities: args.inherited_capabilities,
             capabilities: args.capabilities,
             capabilities_strictness: args.capabilities_strictness,
+            enable_experimental: args.enable_experimental,
             gen_session,
             js_script_runner: args.js_script_runner,
             input_provider: args.input_provider,

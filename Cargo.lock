@@ -6837,6 +6837,7 @@ dependencies = [
  "derive_builder",
  "either",
  "eyre",
+ "maps",
  "merge",
  "omni_serde_validators",
  "schemars",
@@ -6887,6 +6888,7 @@ dependencies = [
  "omni_command_config",
  "omni_config_types",
  "omni_core",
+ "omni_experimental_features",
  "omni_expressions",
  "omni_file_data_serde",
  "omni_serde_validators",
@@ -7043,6 +7045,16 @@ dependencies = [
  "thiserror 2.0.18",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_experimental_features"
+version = "0.0.0"
+dependencies = [
+ "omni_config_types",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

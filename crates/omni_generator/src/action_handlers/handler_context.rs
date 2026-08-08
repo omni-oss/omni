@@ -48,6 +48,11 @@ pub struct HandlerContext<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// workspace, all ancestor generators, and this generator's own stance.
     /// `run-javascript` combines the action's own stance on top of it.
     pub capabilities_strictness: CapabilitiesStrictness,
+    /// Whether experimental features are enabled for this run. Currently gates
+    /// capability enforcement: when `false`, the `run-javascript` action runs
+    /// its scripts unconfined (declared capabilities are ignored at enforcement
+    /// time); when `true`, the effective policy is enforced.
+    pub enable_experimental: bool,
     pub env: &'a Map<String, String>,
     pub gen_session: &'a GenSession,
     pub use_input_defaults: bool,

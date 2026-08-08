@@ -304,6 +304,11 @@ pub struct CapabilityAtom {
     /// default (the fail-closed `deny`). Folded from every source rule that
     /// mentioned this pattern (`Allow` < `Warn` < `Deny`).
     pub on_unenforceable: Option<UnenforceablePolicy>,
+    /// Whether any source rule for this pattern asked for a direct scoped OS
+    /// grant (`direct: true`). OR-folded across duplicates: the atom is `direct`
+    /// if *any* rule that mentioned this pattern set it. Only meaningful on the
+    /// allow side of a filesystem-read domain.
+    pub direct: bool,
 }
 
 /// The allow/deny [`CapabilityAtom`]s collected for one domain.
@@ -376,19 +381,29 @@ fn merge_on_unenforceable(
 struct SideBuilder {
     order: Vec<String>,
     policy: HashMap<String, Option<UnenforceablePolicy>>,
+    direct: HashMap<String, bool>,
 }
 
 impl SideBuilder {
-    fn add(&mut self, pattern: &str, on_unenf: Option<UnenforceablePolicy>) {
+    fn add(
+        &mut self,
+        pattern: &str,
+        on_unenf: Option<UnenforceablePolicy>,
+        direct: bool,
+    ) {
         use std::collections::hash_map::Entry;
         match self.policy.entry(pattern.to_string()) {
             Entry::Vacant(e) => {
                 e.insert(on_unenf);
+                self.direct.insert(pattern.to_string(), direct);
                 self.order.push(pattern.to_string());
             }
             Entry::Occupied(mut e) => {
                 let merged = merge_on_unenforceable(*e.get(), on_unenf);
                 *e.get_mut() = merged;
+                let folded = self.direct.get(pattern).copied().unwrap_or(false)
+                    || direct;
+                self.direct.insert(pattern.to_string(), folded);
             }
         }
     }
@@ -397,17 +412,23 @@ impl SideBuilder {
     /// (so `id == mint-order index`, making collisions structurally
     /// impossible).
     fn into_atoms(self, next_id: &mut u32) -> Vec<CapabilityAtom> {
-        let SideBuilder { order, policy } = self;
+        let SideBuilder {
+            order,
+            policy,
+            direct,
+        } = self;
         order
             .into_iter()
             .map(|pattern| {
                 let on_unenforceable = policy.get(&pattern).copied().flatten();
+                let direct = direct.get(&pattern).copied().unwrap_or(false);
                 let id = CapabilityId(*next_id);
                 *next_id += 1;
                 CapabilityAtom {
                     id,
                     pattern,
                     on_unenforceable,
+                    direct,
                 }
             })
             .collect()
@@ -444,7 +465,7 @@ pub fn project<P: CapabilityProfile>(
             Access::Deny => &mut builder.deny,
         };
         for pattern in &c.rule.patterns {
-            side.add(pattern, c.rule.on_unenforceable);
+            side.add(pattern, c.rule.on_unenforceable, c.rule.direct);
         }
     }
 
@@ -673,6 +694,39 @@ mod tests {
         let b = allow.iter().find(|x| x.pattern == "b:443").unwrap();
         assert_eq!(a.on_unenforceable, Some(UnenforceablePolicy::Deny));
         assert_eq!(b.on_unenforceable, None);
+    }
+
+    #[test]
+    fn project_or_folds_direct_across_duplicate_patterns() {
+        // `direct` is OR-folded: a pattern is direct if any source rule set it,
+        // regardless of ordering. Patterns never marked direct stay false, and
+        // the deny side is unaffected (it is never a scoped grant).
+        let cfg = parse(
+            r#"[
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/pkg/**"] },
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/pkg/**"], "direct": true },
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/other/**"] },
+                { "access": "deny",  "domain": "fs.read", "patterns": ["**/.env"] }
+            ]"#,
+        );
+        let req = project(&cfg, &());
+        let rules = &req.domains()[&CapabilityDomain::FsRead];
+        let folded = rules
+            .allow
+            .iter()
+            .find(|x| x.pattern == "@workspace/pkg/**")
+            .unwrap();
+        let plain = rules
+            .allow
+            .iter()
+            .find(|x| x.pattern == "@workspace/other/**")
+            .unwrap();
+        assert!(folded.direct, "direct: true on any source rule wins");
+        assert!(!plain.direct, "a pattern never marked direct stays false");
+        assert!(
+            rules.deny.iter().all(|x| !x.direct),
+            "deny-side atoms carry no direct grant"
+        );
     }
 
     #[test]

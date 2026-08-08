@@ -80,7 +80,8 @@ impl<TRoot: OmniPathRoot> PathRoots<TRoot> {
         self
     }
 
-    fn base(&self, root: TRoot) -> Option<&Path> {
+    /// The base directory registered for `root`, if any.
+    pub fn base(&self, root: TRoot) -> Option<&Path> {
         self.bases
             .iter()
             .find(|(r, _)| *r == root)
@@ -441,6 +442,7 @@ mod tests {
             domain: CapabilityDomain::FsWrite,
             patterns: vec!["@project/**".into()],
             on_unenforceable: None,
+            direct: false,
         };
 
         let verbatim_root =
@@ -507,6 +509,7 @@ mod tests {
             domain: CapabilityDomain::FsRead,
             patterns: vec!["@workspace/**".into()],
             on_unenforceable: None,
+            direct: false,
         };
         assert!(rule_matches(
             &rule,
@@ -566,6 +569,7 @@ mod tests {
             domain: CapabilityDomain::Net,
             patterns: patterns.iter().map(|p| (*p).to_string()).collect(),
             on_unenforceable: None,
+            direct: false,
         }
     }
 
@@ -601,6 +605,7 @@ mod tests {
             domain: CapabilityDomain::FsWrite,
             patterns: vec![r"@project/Secret/**".into()],
             on_unenforceable: None,
+            direct: false,
         };
         assert!(rule_matches(
             &rule,
@@ -620,6 +625,7 @@ mod tests {
             domain: CapabilityDomain::Env,
             patterns: vec!["SECRET_TOKEN".into()],
             on_unenforceable: None,
+            direct: false,
         };
         assert!(rule_matches(
             &rule,
@@ -636,6 +642,7 @@ mod tests {
             domain: CapabilityDomain::Process,
             patterns: patterns.iter().map(|p| (*p).to_string()).collect(),
             on_unenforceable: None,
+            direct: false,
         }
     }
 

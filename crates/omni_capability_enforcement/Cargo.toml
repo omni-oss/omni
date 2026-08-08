@@ -39,3 +39,17 @@ windows-sys = { version = "0.61", features = [
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+
+# Extra Win32 surface the confined 2a transport spike test needs (named pipes,
+# file I/O on the pipe handle, and building a pipe security descriptor from an
+# SDDL string). Feature-unified with the target dependency above for the test
+# build only; the library itself does not use these.
+[target.'cfg(target_os = "windows")'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+] }

@@ -121,6 +121,7 @@
       "name": "@omni-oss/bridge-rpc-services",
       "version": "0.1.0",
       "dependencies": {
+        "es-module-lexer": "^2.3.1",
         "zod": "catalog:",
       },
       "devDependencies": {

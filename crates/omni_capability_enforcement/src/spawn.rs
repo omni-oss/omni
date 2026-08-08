@@ -47,6 +47,19 @@ pub struct OsSandboxSpec {
     /// partial). All-ports (`host:*`) and `deny` rules are not representable as a
     /// port allow-list and are never lowered here.
     pub connect_ports: Vec<u16>,
+
+    /// Whether the OS sandbox tier should still *establish* the container even
+    /// when it grants no policy paths of its own.
+    ///
+    /// On platforms where establishing the container is cheap and worthwhile on
+    /// its own (Windows: a default-deny AppContainer with the network
+    /// capability, granted only a small static boot set), the tier confines
+    /// without lowering any policy filesystem subtrees. Because such a spec can
+    /// be path-empty yet must not be treated as "no sandbox", this marker
+    /// decouples "confine" from "has policy paths": the plan emits a present
+    /// spec whenever the tier is confining, even if [`is_empty`](Self::is_empty)
+    /// is true.
+    pub confine: bool,
 }
 
 impl OsSandboxSpec {
@@ -54,6 +67,12 @@ impl OsSandboxSpec {
         Self::default()
     }
 
+    /// Whether the spec grants no policy paths, programs, or ports. This is
+    /// deliberately paths-only and ignores [`confine`](Self::confine): a spec
+    /// that only establishes the container (no lowered policy) is still
+    /// `is_empty`, so callers that ask "did any policy lower into an OS grant?"
+    /// get an honest answer. The plan uses `!is_empty() || confine` to decide
+    /// whether to emit a present spec.
     pub fn is_empty(&self) -> bool {
         self.read_paths.is_empty()
             && self.write_paths.is_empty()
@@ -61,12 +80,14 @@ impl OsSandboxSpec {
             && self.connect_ports.is_empty()
     }
 
-    /// Fold another spec's paths into this one (order preserved).
+    /// Fold another spec's paths into this one (order preserved). `confine` is
+    /// OR-folded: the merged spec confines if either side did.
     pub fn extend(&mut self, other: OsSandboxSpec) {
         self.read_paths.extend(other.read_paths);
         self.write_paths.extend(other.write_paths);
         self.exec_programs.extend(other.exec_programs);
         self.connect_ports.extend(other.connect_ports);
+        self.confine |= other.confine;
     }
 }
 
@@ -140,5 +161,41 @@ impl SpawnPolicy {
         if other.env.is_some() {
             self.env = other.env;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_spec_does_not_confine() {
+        assert!(!OsSandboxSpec::default().confine);
+        assert!(!OsSandboxSpec::new().confine);
+    }
+
+    #[test]
+    fn is_empty_ignores_confine() {
+        let spec = OsSandboxSpec {
+            confine: true,
+            ..Default::default()
+        };
+        assert!(
+            spec.is_empty(),
+            "a path-empty spec is still empty even when it confines"
+        );
+    }
+
+    #[test]
+    fn extend_or_folds_confine() {
+        let mut base = OsSandboxSpec::default();
+        base.extend(OsSandboxSpec {
+            confine: true,
+            ..Default::default()
+        });
+        assert!(base.confine, "confine ORs in from the incoming spec");
+
+        base.extend(OsSandboxSpec::default());
+        assert!(base.confine, "a non-confining fold cannot clear confine");
     }
 }

@@ -82,6 +82,7 @@ fn spec_with(read: Vec<PathBuf>, write: Vec<PathBuf>) -> OsSandboxSpec {
         write_paths: write,
         exec_programs: Vec::new(),
         connect_ports: Vec::new(),
+        confine: false,
     }
 }
 

@@ -108,6 +108,7 @@ fn landlock_confines_reads_to_the_granted_subtree() {
         write_paths: vec![],
         exec_programs: vec![],
         connect_ports: vec![],
+        confine: false,
     };
 
     // (1) A read inside the granted subtree succeeds.
@@ -155,6 +156,7 @@ fn landlock_confines_writes_to_the_granted_subtree() {
         write_paths: vec![allowed.clone()],
         exec_programs: vec![],
         connect_ports: vec![],
+        confine: false,
     };
 
     let write_cmd = |target: &Path| {
@@ -223,6 +225,7 @@ fn landlock_permits_cross_directory_rename_within_a_granted_writable_subtree() {
         write_paths: vec![allowed.clone()],
         exec_programs: vec![],
         connect_ports: vec![],
+        confine: false,
     };
 
     // (1) A cross-directory rename *within* the granted subtree (a `refer`
@@ -303,6 +306,7 @@ fn landlock_gates_execution_by_the_binary_directory_grant() {
         write_paths: vec![],
         exec_programs: vec![],
         connect_ports: vec![],
+        confine: false,
     };
 
     // (1) A program whose directory is granted can be executed. `cat /dev/null`
@@ -381,6 +385,7 @@ fn landlock_confines_tcp_connect_to_the_granted_port() {
         write_paths: vec![],
         exec_programs: vec![],
         connect_ports: vec![port],
+        confine: false,
     };
     let out = run(connect_cmd(&bash, port), &allow_spec);
     assert!(
@@ -397,6 +402,7 @@ fn landlock_confines_tcp_connect_to_the_granted_port() {
         write_paths: vec![],
         exec_programs: vec![],
         connect_ports: vec![other],
+        confine: false,
     };
     let out = run(connect_cmd(&bash, port), &deny_spec);
     assert!(

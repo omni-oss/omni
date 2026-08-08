@@ -312,6 +312,7 @@ pub(crate) fn restrict_paths(
         write_paths: write_paths.iter().map(PathBuf::from).collect(),
         exec_programs: Vec::new(),
         connect_ports: Vec::new(),
+        confine: false,
     })
 }
 

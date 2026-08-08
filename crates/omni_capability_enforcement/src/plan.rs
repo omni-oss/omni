@@ -1567,6 +1567,42 @@ mod tests {
         assert!(plan.floor_gaps.is_empty());
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_os_sandbox_claims_no_fs_floor_so_fs_is_a_gap_and_require_floor_refuses()
+     {
+        // End-to-end: the real Windows AppContainer tier claims no fs floor, so
+        // an fs.read policy covered only by the (bypassable) broker is a floor
+        // gap under `Warn` and a hard refusal under `RequireFloor`.
+        use crate::NativeOsSandbox;
+        let req = require(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
+        );
+        // Enabled + runtime-confined: even so, the tier claims no fs floor.
+        let os = NativeOsSandbox::resolved(false, true);
+        let backends: [&dyn EnforcementBackend; 3] =
+            [&os, &FullBroker, &ScriptShimBroker::new()];
+
+        let plan =
+            build_plan(&req, &roots(), &backends).expect("broker covers fs");
+        let gapped: Vec<_> = plan.floor_gaps.iter().map(|g| g.domain).collect();
+        assert!(
+            gapped.contains(&CapabilityDomain::FsRead),
+            "fs.read has no OS floor on Windows, so it must be a floor gap: {:?}",
+            plan.floor_gaps
+        );
+
+        let err = build_plan_strict(
+            &req,
+            &roots(),
+            &backends,
+            UnenforceablePolicy::Deny,
+            FloorStrictness::RequireFloor,
+        )
+        .expect_err("no fs floor on Windows must refuse under require-floor");
+        assert_eq!(err.kind(), crate::EnforcementErrorKind::NoFloor);
+    }
+
     #[test]
     fn require_floor_refuses_an_ungoverned_whole_domain_deny_without_a_floor() {
         // C1 regression. An fs-only policy still leaves net/process/env under a

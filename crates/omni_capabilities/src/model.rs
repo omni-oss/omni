@@ -136,6 +136,19 @@ pub struct CapabilityRule {
     /// platform. `None` inherits the caller's default (the fail-closed `deny`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_unenforceable: Option<UnenforceablePolicy>,
+    /// Lower this specific pattern to a scoped OS grant so the runtime can read
+    /// or `import()` it directly, without brokering every access. Defaults to
+    /// `false`, in which case the pattern stays broker-mediated (and, on
+    /// platforms without a kernel filesystem floor, is surfaced as a floor gap
+    /// rather than lowered). Only meaningful for filesystem-read rules.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub direct: bool,
+}
+
+/// `skip_serializing_if` predicate for a plain `bool` field that defaults to
+/// `false`: omit it from the wire form unless it was explicitly set.
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// A single capability entry: what it applies to + the rule it expresses.
@@ -314,6 +327,7 @@ mod tests {
                 domain,
                 patterns: vec![pattern.to_string()],
                 on_unenforceable: None,
+                direct: false,
             },
         }
     }
@@ -358,6 +372,7 @@ mod tests {
                     domain,
                     patterns: vec!["**".to_string()],
                     on_unenforceable: None,
+                    direct: false,
                 },
             }
         }
@@ -375,5 +390,42 @@ mod tests {
         assert_eq!(kept.len(), 2, "only the two `keep` entries survive");
         assert_eq!(kept.as_slice()[0].rule.domain, CapabilityDomain::FsRead);
         assert_eq!(kept.as_slice()[1].rule.domain, CapabilityDomain::Process);
+    }
+
+    #[test]
+    fn direct_defaults_to_false_when_absent() {
+        let rule: CapabilityRule = serde_json::from_value(serde_json::json!({
+            "access": "allow",
+            "domain": "fs.read",
+            "patterns": ["@workspace/**"],
+        }))
+        .expect("rule without `direct` deserializes");
+        assert!(!rule.direct, "an omitted `direct` defaults to false");
+    }
+
+    #[test]
+    fn direct_round_trips_and_is_omitted_when_false() {
+        let with_direct = CapabilityRule {
+            access: Access::Allow,
+            domain: CapabilityDomain::FsRead,
+            patterns: vec!["@workspace/pkg/**".into()],
+            on_unenforceable: None,
+            direct: true,
+        };
+        let value = serde_json::to_value(&with_direct).expect("serializes");
+        assert_eq!(value.get("direct"), Some(&serde_json::json!(true)));
+        let back: CapabilityRule =
+            serde_json::from_value(value).expect("round-trips");
+        assert_eq!(back, with_direct);
+
+        let without_direct = CapabilityRule {
+            direct: false,
+            ..with_direct.clone()
+        };
+        let value = serde_json::to_value(&without_direct).expect("serializes");
+        assert!(
+            value.get("direct").is_none(),
+            "a false `direct` must be omitted from the wire form, got: {value}"
+        );
     }
 }

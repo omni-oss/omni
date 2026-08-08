@@ -360,6 +360,7 @@ fn env_explicitly_denied(rules: &DomainRules, name: &str) -> bool {
         domain: CapabilityDomain::Env,
         patterns: rules.deny.iter().map(|a| a.pattern.clone()).collect(),
         on_unenforceable: None,
+        direct: false,
     };
     rule_matches(&rule, &Request::Env { name }, &PathRoots::<Root>::new())
 }

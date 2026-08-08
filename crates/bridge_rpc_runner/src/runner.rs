@@ -213,6 +213,29 @@ pub struct BridgeServiceRunner<TService: Service = Router> {
     /// dropped after `child` (whose drop kills the process), so nothing is still
     /// writing into the directory as it is removed.
     _sandbox_temp: Option<SandboxTempDir>,
+    /// Whether this runner's child was launched inside an AppContainer. Only
+    /// then does [`grant_read_scope`](Self::grant_read_scope) install real ACL
+    /// grants; an unconfined child (and every non-Windows child) needs none.
+    #[cfg(target_os = "windows")]
+    confined: bool,
+}
+
+/// Owns the per-call filesystem grants admitted to a confined child, revoking
+/// them when dropped. Off Windows — and on Windows when the child is unconfined
+/// or the scope is empty — it carries nothing and dropping it does nothing.
+#[derive(Default)]
+pub struct ReadScopeGuard {
+    #[cfg(target_os = "windows")]
+    _acl: Option<
+        omni_capability_enforcement::appcontainer_sandbox::SandboxAclGuard,
+    >,
+}
+
+impl ReadScopeGuard {
+    /// A guard owning no grants (unconfined, off Windows, or an empty scope).
+    fn none() -> Self {
+        Self::default()
+    }
 }
 
 impl<TService: Service> BridgeServiceRunner<TService> {
@@ -329,6 +352,9 @@ impl<TService: Service> BridgeServiceRunner<TService> {
         let transport = StreamTransport::new(stdout, stdin);
         let rpc = BridgeRpc::new(transport, service);
 
+        #[cfg(target_os = "windows")]
+        let confined = matches!(child, ChildProcess::Confined(..));
+
         let run_task = {
             let rpc = rpc.clone();
             tokio::spawn(async move {
@@ -376,6 +402,65 @@ impl<TService: Service> BridgeServiceRunner<TService> {
             exit_task,
             call_timeout,
             _sandbox_temp: sandbox_temp,
+            #[cfg(target_os = "windows")]
+            confined,
+        }
+    }
+
+    /// Grant `read_paths` to this runner's confined child for the lifetime of
+    /// the returned [`ReadScopeGuard`], then revoke them when it drops.
+    ///
+    /// A no-op off Windows and when the child runs unconfined (both return an
+    /// empty guard). On Windows the grants are reference-counted per path
+    /// through the shared AppContainer grant registry, so overlapping calls that
+    /// need the same path grant it once and revoke it only when the last scope
+    /// drops. The caller must hold the returned guard across the `call` that
+    /// makes the child read those paths and drop it afterwards.
+    pub fn grant_read_scope(&self, read_paths: &[PathBuf]) -> ReadScopeGuard {
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = read_paths;
+            ReadScopeGuard::none()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if !self.confined || read_paths.is_empty() {
+                return ReadScopeGuard::none();
+            }
+            match omni_capability_enforcement::appcontainer_sandbox::grant_read_scope(
+                read_paths,
+            ) {
+                Ok(acl) => ReadScopeGuard { _acl: Some(acl) },
+                Err(e) => {
+                    // The child will then fail to read the un-granted paths and
+                    // the `call` will surface that loudly; log so the cause is
+                    // findable.
+                    trace::warn!(
+                        error = %e,
+                        "failed to grant read scope to confined bridge child"
+                    );
+                    ReadScopeGuard::none()
+                }
+            }
+        }
+    }
+
+    /// Whether this runner's child was launched inside an OS sandbox that makes
+    /// [`grant_read_scope`](Self::grant_read_scope) install real ACL grants.
+    ///
+    /// Only a Windows AppContainer child is confined in that sense; every
+    /// non-Windows child, and an unconfined Windows child (e.g. Bun, which
+    /// cannot boot inside an AppContainer), reports `false`. Callers use this to
+    /// skip the (unconfined) import-closure scan when no read grant would be
+    /// installed anyway.
+    pub fn is_confined(&self) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            self.confined
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            false
         }
     }
 
@@ -658,15 +743,46 @@ fn build_command(
         .into());
     }
 
+    // The base program for each runtime is normally the bare name on PATH, but a
+    // confined Windows launch runs the *resolved* real binary directly. Any
+    // runtime may be provided by a version-manager shim (nub, nvm, fnm, volta,
+    // asdf, …), and such a shim resolves its version dynamically at startup.
+    // Inside the AppContainer that resolution fails and the shim can fall back to
+    // re-spawning the bare runtime name — which resolves back to the shim and
+    // fork-storms until the launch times out. Launching the resolved binary (the
+    // same path `add_runtime_essentials` grants) is deterministic and shim-free.
+    // Bun keeps the bare name: it runs unconfined on Windows (it cannot boot
+    // inside the container, see below), so the shim risk does not apply to it.
+    let program: std::ffi::OsString = match runtime {
+        DelegatingJsRuntimeOption::Node => "node".into(),
+        DelegatingJsRuntimeOption::Bun => "bun".into(),
+        DelegatingJsRuntimeOption::Deno => "deno".into(),
+        DelegatingJsRuntimeOption::Auto => {
+            unreachable!("Auto runtime resolved above")
+        }
+    };
+    #[cfg(target_os = "windows")]
+    let program = if spawn_policy.os_sandbox.is_some()
+        && std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_none()
+        && runtime != DelegatingJsRuntimeOption::Bun
+        && let Some(real) = crate::runtime::resolved_exec_path(runtime)
+    {
+        std::fs::canonicalize(&real)
+            .unwrap_or(real)
+            .into_os_string()
+    } else {
+        program
+    };
+
     let mut command = match runtime {
-        DelegatingJsRuntimeOption::Node => std::process::Command::new("node"),
+        DelegatingJsRuntimeOption::Node => std::process::Command::new(&program),
         DelegatingJsRuntimeOption::Bun => {
-            let mut c = std::process::Command::new("bun");
+            let mut c = std::process::Command::new(&program);
             c.arg("run");
             c
         }
         DelegatingJsRuntimeOption::Deno => {
-            let mut c = std::process::Command::new("deno");
+            let mut c = std::process::Command::new(&program);
             c.arg("run");
             c
         }
@@ -1315,26 +1431,33 @@ fn deno_cache_dir() -> Option<PathBuf> {
     }
 }
 
-/// nub's data/cache root derived from the *resolved* runtime binary, or `None`
-/// when the binary is not nub-managed. nub lays every Node version out as
-/// `<cache>/node/<ver>/bin/<exe>` and keeps its launch-time preload +
-/// native-addon shim under `<cache>/runtime-*/`; a confined child spawned
-/// through the nub shim must read this whole tree to resolve and re-exec an
-/// already-installed runtime (see `add_runtime_essentials` for why the single
-/// `process.execPath` version dir is not enough).
+/// nub's cache root derived from the *resolved* runtime binary, or `None` when
+/// the binary is not nub-managed. nub keeps every installed Node version under
+/// `<cache>/nub/node/<ver>/` and its launch-time preload + native-addon shim
+/// under `<cache>/nub/runtime-*/`; a confined child spawned through the nub shim
+/// must read both to resolve and re-exec an already-installed runtime (see
+/// `add_runtime_essentials` for why the single `process.execPath` version dir is
+/// not enough).
 ///
-/// The root is taken from the binary's path rather than a guessed per-OS cache
-/// location, so it is correct on every platform (and for a custom
-/// `XDG_CACHE_HOME`) regardless of where nub places its cache. Detection is the
-/// exact `.../nub/node/<ver>/bin/<exe>` shape, so a system or other-version-
-/// manager Node (e.g. `/usr/bin/node`) never matches and is never granted.
+/// The version binary sits at `<cache>/nub/node/<ver>/node.exe` on Windows but
+/// `<cache>/nub/node/<ver>/bin/node` on Unix, so the distance from the executable
+/// to the `node` version store differs by platform. Rather than assume a fixed
+/// depth, walk the ancestry for a `node` directory whose parent is the `nub`
+/// cache root and return that root. A system or other-version-manager Node
+/// (e.g. `/usr/bin/node`, `~/.nvm/versions/node/<ver>/bin/node`) has no such
+/// `nub/node` pair and is correctly left ungranted.
 fn nub_cache_root(real_exec: &Path) -> Option<PathBuf> {
-    let bin_dir = real_exec.parent()?; // <ver>/bin
-    let version_dir = bin_dir.parent()?; // <ver>
-    let node_dir = version_dir.parent()?; // node
-    let cache = node_dir.parent()?; // <cache> (nub root)
-    (node_dir.file_name()? == "node" && cache.file_name()? == "nub")
-        .then(|| cache.to_path_buf())
+    let mut dir = real_exec.parent();
+    while let Some(candidate) = dir {
+        if candidate.file_name().is_some_and(|n| n == "node")
+            && let Some(cache) = candidate.parent()
+            && cache.file_name().is_some_and(|n| n == "nub")
+        {
+            return Some(cache.to_path_buf());
+        }
+        dir = candidate.parent();
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1347,8 +1470,10 @@ mod tests {
 
     #[test]
     fn nub_cache_root_is_derived_from_the_binary_layout_cross_platform() {
-        // The nub layout `<cache>/node/<ver>/bin/<exe>` resolves to `<cache>`
-        // regardless of where the OS puts the cache or what the exe is named.
+        // The nub cache root is the `nub` dir whose child is the `node` version
+        // store, found regardless of where the OS puts the cache, what the exe
+        // is named, or whether the version tree has a `bin/` level. Unix keeps
+        // the binary under `<ver>/bin/`; Windows keeps it directly at `<ver>/`.
         for real in [
             "/home/u/.cache/nub/node/26.5.0/bin/node",
             "/Users/u/Library/Caches/nub/node/26.5.0/bin/node",
@@ -1356,6 +1481,9 @@ mod tests {
             // stays a single cross-platform assertion (a backslash literal
             // would not decompose on a Unix `Path`).
             "C:/Users/u/AppData/Local/nub/node/26.5.0/bin/node.exe",
+            // The real Windows layout: no `bin/` level — `node.exe` sits at the
+            // version root.
+            "C:/Users/u/.cache/nub/node/26.5.0/node.exe",
         ] {
             let root = nub_cache_root(&PathBuf::from(real));
             assert_eq!(

@@ -194,19 +194,25 @@ impl EnforcementBackend for NativeOsSandbox {
         // that will not actually be applied.
         let disabled = self.disabled();
         let runtime_confined = self.runtime_confined();
-        #[cfg(target_os = "linux")]
-        let supported = crate::landlock_sandbox::is_supported();
-        #[cfg(target_os = "macos")]
-        let supported = crate::seatbelt_sandbox::is_supported();
-        #[cfg(target_os = "windows")]
-        let supported = crate::appcontainer_sandbox::is_supported();
-        #[cfg(any(
-            target_os = "linux",
-            target_os = "macos",
-            target_os = "windows"
-        ))]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
+            #[cfg(target_os = "linux")]
+            let supported = crate::landlock_sandbox::is_supported();
+            #[cfg(target_os = "macos")]
+            let supported = crate::seatbelt_sandbox::is_supported();
             os_fs_coverage(supported, disabled, runtime_confined)
+        }
+        // Windows: the AppContainer tier is broker-authoritative for the
+        // filesystem. It still establishes the container (default-deny plus the
+        // net capability) and is granted a small static boot set, but it claims
+        // NO fs floor — all policy filesystem stays broker-mediated and is
+        // surfaced honestly as a floor gap, rather than advertising an fs floor
+        // that in practice never finished applying (it would have to stamp an
+        // ACE onto every allowed path).
+        #[cfg(target_os = "windows")]
+        {
+            let _ = (disabled, runtime_confined);
+            Coverage::none()
         }
         // No integration for this target → cover nothing → fail closed rather
         // than pretend to confine.
@@ -236,21 +242,47 @@ impl EnforcementBackend for NativeOsSandbox {
         }
         #[cfg(target_os = "linux")]
         {
-            // Landlock (V4) can lower a port-only net connect floor.
-            Ok(lowering::plan(Self::mechanism(), req, roots, true))
+            // Landlock (V4) can lower a port-only net connect floor and is the
+            // fs floor, so ordinary policy fs is lowered into the ruleset.
+            Ok(lowering::plan(
+                Self::mechanism(),
+                req,
+                roots,
+                true,
+                true,
+                false,
+            ))
         }
         #[cfg(target_os = "macos")]
         {
             // Seatbelt could express `network*`, but this backend's profile
             // grants no net rules and claims fs-only coverage, so net is not
-            // lowered here (host-level net stays with the shim/broker).
-            Ok(lowering::plan(Self::mechanism(), req, roots, false))
+            // lowered here (host-level net stays with the shim/broker). Seatbelt
+            // is the fs floor, so ordinary policy fs is lowered.
+            Ok(lowering::plan(
+                Self::mechanism(),
+                req,
+                roots,
+                false,
+                true,
+                false,
+            ))
         }
         #[cfg(target_os = "windows")]
         {
-            // AppContainer cannot express `host:port`, so net is not lowered
-            // here (see the `appcontainer_sandbox` module docs).
-            Ok(lowering::plan(Self::mechanism(), req, roots, false))
+            // AppContainer is broker-authoritative for the filesystem: it still
+            // establishes the container (so `confine = true`) but does NOT lower
+            // ordinary policy fs into ACEs (`lower_fs = false`) — only explicit
+            // `direct` reads are lowered. It also cannot express `host:port`, so
+            // net is not lowered (see the `appcontainer_sandbox` module docs).
+            Ok(lowering::plan(
+                Self::mechanism(),
+                req,
+                roots,
+                false,
+                false,
+                true,
+            ))
         }
         #[cfg(not(any(
             target_os = "linux",
@@ -271,7 +303,7 @@ impl EnforcementBackend for NativeOsSandbox {
 /// fail-closed / disable / unconfined-runtime posture is unit-testable on any
 /// host (no real Landlock or AppContainer needed). A disabled, unavailable, or
 /// runtime-unconfined mechanism covers nothing.
-#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn os_fs_coverage(
     supported: bool,
     disabled: bool,
@@ -455,26 +487,38 @@ mod lowering {
         req: &RequiredCapabilities,
         roots: &dyn PatternResolver,
         lower_net: bool,
+        lower_fs: bool,
+        confine: bool,
     ) -> BackendPlan {
         let mut plan = BackendPlan::new();
         let mut spec = OsSandboxSpec::new();
+        spec.confine = confine;
 
-        collect(
-            name,
-            req,
-            roots,
-            CapabilityDomain::FsRead,
-            &mut spec.read_paths,
-            &mut plan.gaps,
-        );
-        collect(
-            name,
-            req,
-            roots,
-            CapabilityDomain::FsWrite,
-            &mut spec.write_paths,
-            &mut plan.gaps,
-        );
+        if lower_fs {
+            collect(
+                name,
+                req,
+                roots,
+                CapabilityDomain::FsRead,
+                &mut spec.read_paths,
+                &mut plan.gaps,
+            );
+            collect(
+                name,
+                req,
+                roots,
+                CapabilityDomain::FsWrite,
+                &mut spec.write_paths,
+                &mut plan.gaps,
+            );
+        } else {
+            // Broker-authoritative filesystem (Windows): ordinary policy fs is
+            // not lowered to an OS grant — it stays broker-mediated and is
+            // surfaced as a floor gap via `coverage`. Only patterns explicitly
+            // marked `direct` are lowered to a scoped read grant so the runtime
+            // can `import()`/read them without the broker.
+            collect_direct_reads(req, roots, &mut spec.read_paths);
+        }
 
         // Lower the `net` policy to a port-only *connect* floor where the OS
         // sandbox can enforce one. Only concrete outbound ports qualify: a
@@ -504,10 +548,40 @@ mod lowering {
             }
         }
 
-        if !spec.is_empty() {
+        if !spec.is_empty() || spec.confine {
             plan.spawn.os_sandbox = Some(spec);
         }
         plan
+    }
+
+    /// Lower only the `direct`-marked filesystem-read allow patterns into scoped
+    /// read grants. Used where the OS tier is broker-authoritative for the
+    /// filesystem (Windows): ordinary policy fs is not lowered, but the explicit
+    /// `direct` escape valve still is, so the runtime can read/`import()` that
+    /// subtree without the broker. Unlike [`collect`] it reports no gaps — the
+    /// fs domain is a broker gap wholesale (see `coverage`), so per-pattern gaps
+    /// would double-count it.
+    fn collect_direct_reads(
+        req: &RequiredCapabilities,
+        roots: &dyn PatternResolver,
+        out_paths: &mut Vec<PathBuf>,
+    ) {
+        let Some(rules) = req.domains().get(&CapabilityDomain::FsRead) else {
+            return;
+        };
+        for atom in &rules.allow {
+            if !atom.direct {
+                continue;
+            }
+            let Some(resolved) = roots.resolve(&atom.pattern) else {
+                continue;
+            };
+            if let Ok(FsScope::Subtree(p)) | Ok(FsScope::Exact(p)) =
+                classify_fs_glob(&resolved)
+            {
+                out_paths.push(PathBuf::from(p));
+            }
+        }
     }
 
     fn collect(
@@ -588,11 +662,7 @@ mod tests {
         assert_eq!(NativeOsSandbox::new().tier(), Tier::OsSandbox);
     }
 
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "macos",
-        target_os = "windows"
-    ))]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn os_fs_coverage_is_empty_unless_supported_and_enabled() {
         use omni_capabilities::CapabilityDomain;
@@ -906,26 +976,29 @@ mod tests {
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_coverage_tracks_appcontainer_support() {
-        // On a host that provides AppContainer the backend covers the fs
-        // domains; otherwise it must cover nothing (fail closed). Either way it
-        // must never claim net/env/process.
+    fn windows_coverage_claims_no_fs_floor() {
+        // The AppContainer tier is broker-authoritative for the filesystem: it
+        // establishes the container but claims NO fs floor, regardless of host
+        // support or whether the runtime is confined. All policy fs is surfaced
+        // as a broker gap instead. It also never claims net/env/process.
         use omni_capabilities::CapabilityDomain;
-        let cov = NativeOsSandbox::new().coverage();
-        assert!(!cov.covers(CapabilityDomain::Net));
-        assert!(!cov.covers(CapabilityDomain::Env));
-        assert!(!cov.covers(CapabilityDomain::Process));
-        // Coverage also collapses to none when the escape hatch disables the
-        // sandbox, so fold that into the expectation.
-        let disabled = std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
-        let expected = crate::appcontainer_sandbox::is_supported() && !disabled;
-        assert_eq!(cov.covers(CapabilityDomain::FsRead), expected);
-        assert_eq!(cov.covers(CapabilityDomain::FsWrite), expected);
+        for confined in [true, false] {
+            let cov = NativeOsSandbox::resolved(false, confined).coverage();
+            assert!(!cov.covers(CapabilityDomain::FsRead));
+            assert!(!cov.covers(CapabilityDomain::FsWrite));
+            assert!(!cov.covers(CapabilityDomain::Net));
+            assert!(!cov.covers(CapabilityDomain::Env));
+            assert!(!cov.covers(CapabilityDomain::Process));
+        }
     }
 
     #[cfg(target_os = "windows")]
     #[test]
-    fn windows_lowers_allow_subtree_and_gaps_deny() {
+    fn windows_confines_without_lowering_policy_fs() {
+        // Ordinary policy fs is no longer lowered into ACEs on Windows: it stays
+        // broker-mediated (a floor gap). The tier still establishes the
+        // container, so the plan emits a present spec marked `confine = true`
+        // even though it grants no policy paths of its own.
         use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
 
         let cfg: CapabilityRules = serde_json::from_str(
@@ -939,24 +1012,67 @@ mod tests {
         let req = project(&cfg, &());
         let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
 
-        let plan = NativeOsSandbox::new()
+        let plan = NativeOsSandbox::resolved(false, true)
             .plan(&req, &roots)
             .expect("infallible");
-        let spec = plan.spawn.os_sandbox.expect("some fs subtrees lowered");
+        let spec = plan
+            .spawn
+            .os_sandbox
+            .expect("the container is still established (confine = true)");
+        assert!(spec.confine, "the tier still confines the launch");
+        assert!(
+            spec.read_paths.is_empty(),
+            "ordinary policy fs.read must not be lowered: {:?}",
+            spec.read_paths
+        );
+        assert!(
+            spec.write_paths.is_empty(),
+            "policy fs.write must never be lowered: {:?}",
+            spec.write_paths
+        );
+        // Ordinary fs is a broker gap wholesale (via `coverage`), so no
+        // per-pattern OS-sandbox gaps are emitted for it.
+        assert!(
+            plan.gaps.is_empty(),
+            "broker-authoritative fs emits no per-pattern OS gaps: {:?}",
+            plan.gaps
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_lowers_only_direct_fs_reads() {
+        // The `direct` escape valve lowers a specific fs.read subtree to a scoped
+        // OS read grant so the runtime can `import()`/read it without the
+        // broker; ordinary (non-direct) fs.read is still not lowered.
+        use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
+
+        let cfg: CapabilityRules = serde_json::from_str(
+            r#"[
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] },
+                { "access": "allow", "domain": "fs.read", "patterns": ["@workspace/vendor/**"], "direct": true }
+            ]"#,
+        )
+        .unwrap();
+        let req = project(&cfg, &());
+        let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
+
+        let plan = NativeOsSandbox::resolved(false, true)
+            .plan(&req, &roots)
+            .expect("infallible");
+        let spec = plan.spawn.os_sandbox.expect("confine emits a spec");
         assert!(
             spec.read_paths
-                .contains(&std::path::PathBuf::from("C:/repo"))
+                .contains(&std::path::PathBuf::from("C:/repo/vendor")),
+            "the `direct` subtree must be lowered: {:?}",
+            spec.read_paths
         );
         assert!(
-            spec.write_paths
-                .contains(&std::path::PathBuf::from("C:/repo/out"))
-        );
-        // The `deny **/.git/**` cannot be a subtree grant → a gap the broker
-        // resolves.
-        assert!(
-            plan.gaps.iter().any(|g| g.pattern == "**/.git/**"),
-            "deny sub-path must be reported as a gap: {:?}",
-            plan.gaps
+            !spec
+                .read_paths
+                .contains(&std::path::PathBuf::from("C:/repo")),
+            "the ordinary (non-direct) subtree must NOT be lowered: {:?}",
+            spec.read_paths
         );
     }
 
@@ -982,7 +1098,10 @@ mod tests {
         let plan = NativeOsSandbox::new()
             .plan(&req, &roots)
             .expect("infallible");
-        let spec = plan.spawn.os_sandbox.expect("fs subtree lowered");
+        let spec = plan
+            .spawn
+            .os_sandbox
+            .expect("the container is still established (confine = true)");
         assert!(
             spec.connect_ports.is_empty(),
             "AppContainer must not lower a net port floor: {:?}",
@@ -992,6 +1111,65 @@ mod tests {
             !NativeOsSandbox::new()
                 .coverage()
                 .covers(CapabilityDomain::Net)
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_grant_count_is_bounded_regardless_of_policy_fs_breadth() {
+        // Regression guard against reintroducing O(workspace-files) ACE
+        // propagation. Before this change the Windows plan lowered every
+        // allowed fs subtree into a read grant, so a broad policy stamped an
+        // inheritable ACE across the whole tree (hundreds of thousands of
+        // files) and the confined spawn hung. Now ordinary fs is broker-
+        // mediated and NOT lowered: the number of granted paths must be bounded
+        // by the count of explicit `direct` reads alone, independent of how
+        // many ordinary allow patterns the policy carries.
+        use omni_capabilities::{CapabilityRules, PathRoots, Root, project};
+
+        // A policy with many ordinary fs.read/fs.write allow patterns (standing
+        // in for a large tree expressed as many rules) plus exactly two
+        // `direct` reads.
+        let mut rules = Vec::new();
+        for i in 0..500 {
+            rules.push(format!(
+                r#"{{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/src{i}/**"] }}"#
+            ));
+            rules.push(format!(
+                r#"{{ "access": "allow", "domain": "fs.write", "patterns": ["@workspace/out{i}/**"] }}"#
+            ));
+        }
+        rules.push(
+            r#"{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/vendor/**"], "direct": true }"#
+                .to_string(),
+        );
+        rules.push(
+            r#"{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/runtime/**"], "direct": true }"#
+                .to_string(),
+        );
+        let cfg: CapabilityRules =
+            serde_json::from_str(&format!("[{}]", rules.join(","))).unwrap();
+        let req = project(&cfg, &());
+        let roots = PathRoots::new().with(Root::Workspace, "C:/repo");
+
+        let plan = NativeOsSandbox::resolved(false, true)
+            .plan(&req, &roots)
+            .expect("infallible");
+        let spec = plan.spawn.os_sandbox.expect("confine emits a spec");
+
+        // Only the two `direct` reads are lowered; the 1000 ordinary patterns
+        // contribute nothing to the OS grant.
+        assert_eq!(
+            spec.read_paths.len(),
+            2,
+            "grant count must be bounded by `direct` reads, not policy fs \
+             breadth: {:?}",
+            spec.read_paths
+        );
+        assert!(
+            spec.write_paths.is_empty(),
+            "policy fs.write must never be lowered: {:?}",
+            spec.write_paths
         );
     }
 }

@@ -5,6 +5,7 @@ use crate::validators::*;
 use garde::Validate;
 use maps::Map;
 use omni_capabilities::CapabilityPolicyConfig;
+pub use omni_experimental_features::ExperimentalFeatures;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
@@ -37,6 +38,26 @@ pub struct WorkspaceConfiguration {
 
     #[serde(default)]
     pub env: WorkspaceEnvConfiguration,
+
+    /// Opts this workspace into experimental / in-progress features.
+    ///
+    /// Accepts either a bare boolean (enable or disable *every* experimental
+    /// feature) or a per-feature map that toggles features by name:
+    ///
+    /// ```yaml
+    /// enable_experimental: true          # all experimental features
+    /// # or
+    /// enable_experimental:
+    ///   capabilities: true               # just the named feature(s)
+    /// ```
+    ///
+    /// Off by default. Currently the only feature is **capabilities**
+    /// (capability-based sandboxing and enforcement of generator scripts): when
+    /// disabled, declared capabilities are still parsed and validated but not
+    /// enforced, and generator scripts run unconfined; when enabled, the
+    /// declared capability policy is enforced.
+    #[serde(default)]
+    pub enable_experimental: ExperimentalFeatures,
 
     /// Workspace-level capability floor, applied to every run of each
     /// subsystem. `rules` is a single subsystem-tagged list: each rule's
@@ -150,6 +171,44 @@ mod tests {
             r#"{"projects": [], "capabilities": {"rules": [{"access": "allow", "domain": "fs.read", "patterns": ["**"], "applies_to": {"subsystem": ["nope"]}}]}}"#,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_enable_experimental_defaults_to_disabled() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": []}"#,
+        )
+        .expect("valid");
+        assert!(!cfg.enable_experimental.capabilities());
+    }
+
+    #[test]
+    fn test_enable_experimental_bool_form_toggles_every_feature() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "enable_experimental": true}"#,
+        )
+        .expect("valid");
+        assert!(cfg.enable_experimental.capabilities());
+        assert!(cfg.enable_experimental.is_enabled("anything-else"));
+    }
+
+    #[test]
+    fn test_enable_experimental_per_feature_form() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "enable_experimental": {"capabilities": true}}"#,
+        )
+        .expect("valid");
+        assert!(cfg.enable_experimental.capabilities());
+        assert!(!cfg.enable_experimental.is_enabled("other"));
+    }
+
+    #[test]
+    fn test_enable_experimental_per_feature_false_disables() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "enable_experimental": {"capabilities": false}}"#,
+        )
+        .expect("valid");
+        assert!(!cfg.enable_experimental.capabilities());
     }
 
     #[test]

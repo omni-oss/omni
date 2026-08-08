@@ -17,6 +17,7 @@ serde = ["dep:serde", "dep:omni_serde_validators", "dep:serde-untagged", "dep:se
 
 [dependencies]
 eyre = { workspace = true }
+maps = { workspace = true }
 thiserror = { workspace = true }
 strum = { workspace = true }
 trace = { workspace = true }

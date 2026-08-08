@@ -22,6 +22,9 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, type TestContext } from "vitest";
 import {
     makeWorkspace,
@@ -274,6 +277,9 @@ function capGeneratorSpec(opts: CapSpecOptions): WorkspaceSpec {
         workspace: {
             projects: ["**"],
             generators: [{ source: "local", path: "generators/**" }],
+            // Capability enforcement is gated behind the experimental switch;
+            // this suite exercises enforcement, so opt in.
+            enable_experimental: { capabilities: true },
             ...(opts.workspaceCapabilities
                 ? { capabilities: { rules: opts.workspaceCapabilities } }
                 : {}),
@@ -460,6 +466,90 @@ describe("+generator @e2e (capabilities: filesystem)", {
 
         expect(result).toHaveFailed();
         expect(ws.exists("out/should-fail.txt")).toBe(false);
+    });
+
+    // Bare (rootless) glob patterns are *not* anchored to `@workspace`/`@project`:
+    // they are matched verbatim against the operation's absolute path. `**`
+    // crosses `/`, so it matches any absolute path and grants filesystem-wide
+    // access — including outside the workspace. `*` does not cross `/`, so it
+    // matches no absolute path at all and grants nothing.
+    it("bare `**` grants filesystem-wide write, reaching outside the workspace", async () => {
+        const outsideDir = mkdtempSync(join(tmpdir(), "omni-cap-write-"));
+        const outside = join(outsideDir, "escaped.txt").replace(/\\/g, "/");
+        try {
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    capabilities: [
+                        { access: "allow", domain: "fs.write", patterns: ["**"] },
+                    ],
+                    data: { target: outside },
+                    script: `export default async function (ctx) {
+                        await ctx.sys.fs.writeStringToFile(ctx.data.target, "escaped");
+                    }`,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveSucceeded();
+            expect(readFileSync(outside, "utf8")).toBe("escaped");
+        } finally {
+            rmSync(outsideDir, { recursive: true, force: true });
+        }
+    });
+
+    it("bare `**` grants filesystem-wide read, reaching outside the workspace", async () => {
+        const outsideDir = mkdtempSync(join(tmpdir(), "omni-cap-read-"));
+        const outside = join(outsideDir, "secret.txt");
+        writeFileSync(outside, "topsecret");
+        try {
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    capabilities: [
+                        { access: "allow", domain: "fs.read", patterns: ["**"] },
+                        // Allow writing the read-back copy into the project so the
+                        // read result is observable from the host side.
+                        {
+                            access: "allow",
+                            domain: "fs.write",
+                            patterns: ["@project/**"],
+                        },
+                    ],
+                    data: { target: outside.replace(/\\/g, "/") },
+                    script: `export default async function (ctx) {
+                        const content = await ctx.sys.fs.readFileAsString(ctx.data.target);
+                        await ctx.sys.fs.writeStringToFile("readback.txt", content);
+                    }`,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/readback.txt")).toBe("topsecret");
+        } finally {
+            rmSync(outsideDir, { recursive: true, force: true });
+        }
+    });
+
+    it("bare `*` matches no absolute path, so even an in-project write is denied", async () => {
+        // `*` cannot cross `/`; an operation's real path is always absolute (has
+        // separators), so a lone `*` allow matches nothing and denies everything.
+        const ws = makeWorkspace(
+            capGeneratorSpec({
+                capabilities: [
+                    { access: "allow", domain: "fs.write", patterns: ["*"] },
+                ],
+                script: `export default async function (ctx) {
+                    await ctx.sys.fs.writeStringToFile("direct.txt", "ok");
+                }`,
+            }),
+        );
+
+        const result = await runCapgen(ws);
+
+        expect(result).toHaveFailed();
+        expect(ws.exists("out/direct.txt")).toBe(false);
     });
 
     // Raw filesystem access that bypasses the in-process broker. Every case above
@@ -1690,7 +1780,7 @@ const floorPattern = (d: FloorDomain): string =>
     d === "net" ? "127.0.0.1:*" : "git";
 
 describe("+generator @e2e (capabilities: enforcement floor)", {
-    tags: ["generator"],
+    tags: ["generator", "capability"],
     timeout: 60_000,
 }, () => {
     // A script that only writes a file; the floor warning is emitted at plan
@@ -1953,6 +2043,64 @@ describe("+generator @e2e (capabilities: enforcement floor)", {
                 "un-bypassable enforcement floor",
             );
             expect(result).toHaveStderrContaining(domain);
+        });
+    }
+});
+
+// On Windows, node/deno run confined inside an AppContainer that is granted
+// only a minimal boot set (runtime essentials + the vendored bundle). Policy
+// filesystem is NOT stamped into ACEs across the workspace anymore; it stays
+// broker-mediated. A generator's own scripts live in the workspace, outside the
+// boot set, so the confined child can only read them through the per-call
+// resolved import closure. This block proves that closure is computed and
+// granted live: a confined generator that imports a sibling helper module and
+// writes its output through the broker runs to completion. If the closure grant
+// (or the import scan that computes it) regressed, the confined child could not
+// read `gen.mjs`/`helper.mjs` and the run would fail. Pinned to
+// `crates/omni_generator/src/{import_scan.rs,script_runner.rs}` and
+// `crates/omni_capability_enforcement/src/appcontainer_sandbox.rs`.
+//
+// Pinned to Deno: it is a self-contained binary that boots inside the container
+// and reports its module graph via `deno info --json` (import-scan strategy B).
+// Node is deliberately not asserted here because a version-manager shim on PATH
+// (nub/fnm/nvm/volta) re-execs the real node and performs its own version
+// bootstrap by reading a per-user config dir that is outside the boot set, so
+// the shim cannot start inside a Low-integrity AppContainer — a host-specific
+// limitation independent of this change. Node's confined boot path is covered
+// by the Rust `appcontainer_spawn` integration tests with a direct binary.
+const WINDOWS_CONFINED_RUNTIMES: readonly Runtime[] = ["deno"];
+
+describe("+generator @e2e (capabilities: Windows broker-authoritative fs)", {
+    tags: ["generator", "capability"],
+    timeout: 90_000,
+}, () => {
+    for (const rt of WINDOWS_CONFINED_RUNTIMES) {
+        it(`${rt}: a confined generator reads its import closure and writes via the broker`, async (ctx) => {
+            if (process.platform !== "win32" || !runtimeAvailable(rt)) {
+                ctx.skip();
+                return;
+            }
+            const ws = makeWorkspace(
+                capGeneratorSpec({
+                    runtime: rt,
+                    capabilities: FS_SCOPED,
+                    // A sibling module the entry script imports: it is reachable
+                    // only if the resolved import closure grants it to the
+                    // confined child (it is not in the boot set).
+                    extraFiles: {
+                        "generators/capgen/helper.mjs": `export const marker = "closure-ok";`,
+                    },
+                    script: `import { marker } from "./helper.mjs";
+                    export default async function (ctx) {
+                        await ctx.sys.fs.writeStringToFile("closure.txt", marker);
+                    }`,
+                }),
+            );
+
+            const result = await runCapgen(ws);
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/closure.txt")).toBe("closure-ok");
         });
     }
 });

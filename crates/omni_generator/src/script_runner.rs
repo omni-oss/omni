@@ -29,7 +29,13 @@
 //! pre-spawn flags are planned fail-closed and every RPC-mediated fs access is
 //! brokered.
 
-use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
 use bridge_rpc_router::Router;
 use bridge_rpc_runner::{
@@ -59,7 +65,11 @@ use system_traits::EnvSnapshot;
 
 use async_trait::async_trait;
 
-use crate::{GeneratorSys, TransactionSys, error::Error};
+use crate::{
+    GeneratorSys, TransactionSys,
+    error::Error,
+    import_scan::{ClosureCache, governing_manifests, scan_closure},
+};
 
 /// Path of the `exec-generator-script` service exposed by the bridge service.
 const EXEC_GENERATOR_SCRIPT_PATH: &str = "/exec-generator-script";
@@ -84,6 +94,12 @@ pub struct EffectivePolicy {
     pub context: GeneratorContext,
     /// How to treat floor gaps for this generator (from its configuration).
     pub strictness: CapabilitiesStrictness,
+    /// Whether to actually enforce this policy. When `false` (the workspace has
+    /// not opted into the experimental capabilities feature) the script runs
+    /// unconfined: no OS sandbox, no restrictive launch flags, and a
+    /// pass-through broker. The levels/roots/context are still carried so the
+    /// policy retains its provenance and can be enforced simply by flipping this.
+    pub enforce: bool,
 }
 
 impl EffectivePolicy {
@@ -133,8 +149,8 @@ impl EffectivePolicy {
         let levels =
             serde_json::to_string(&self.effective_levels()).unwrap_or_default();
         format!(
-            "{levels}|{:?}|{:?}|{:?}",
-            self.roots, self.context, self.strictness
+            "{levels}|{:?}|{:?}|{:?}|{}",
+            self.roots, self.context, self.strictness, self.enforce
         )
     }
 }
@@ -311,6 +327,66 @@ fn build_spawn_plan(
     Ok((plan.spawn, plan.shim, diagnostics))
 }
 
+/// The permissive capability chain the **unconfined** import-scan runner is
+/// authorized under. Resolution is omni's own trusted tooling: it drives the
+/// runtime's resolver over the tree and reads the scanned files directly (never
+/// executing them), so it is granted every domain. In practice this only widens
+/// the env snapshot the scan runtime inherits (so `deno info` and the resolver
+/// see the ambient env); the scan performs its filesystem reads through the
+/// runtime's own APIs, not the brokered `sys`.
+fn scan_authorizer_chain() -> CapabilityRules<Generator> {
+    serde_json::from_str(
+        r#"[
+            { "access": "allow", "domain": "fs.read",  "patterns": ["**"] },
+            { "access": "allow", "domain": "fs.write", "patterns": ["**"] },
+            { "access": "allow", "domain": "process",  "patterns": ["*"] },
+            { "access": "allow", "domain": "env",      "patterns": ["*"] }
+        ]"#,
+    )
+    .expect("scan authorizer chain is valid")
+}
+
+/// The launch policy for the unconfined import-scan runner: **no** OS sandbox
+/// (`os_sandbox` stays `None`), so on Windows it is an ordinary child with full
+/// filesystem read. Deno additionally enforces its own permission model, so the
+/// scan process is granted read + subprocess + env + sys access to drive
+/// `deno info` and read the resolved graph; Node and Bun have no pre-spawn
+/// permission model and need no flags.
+fn build_scan_plan(runtime: DelegatingJsRuntimeOption) -> SpawnPolicy {
+    let mut spawn = SpawnPolicy::new();
+    if runtime == DelegatingJsRuntimeOption::Deno {
+        spawn.push_arg("--allow-read");
+        spawn.push_arg("--allow-run");
+        spawn.push_arg("--allow-env");
+        spawn.push_arg("--allow-sys");
+    }
+    spawn
+}
+
+/// The launch policy for an **unenforced** script run — used when the workspace
+/// has not opted into the experimental capabilities feature
+/// ([`EffectivePolicy::enforce`] is `false`). No OS sandbox (`os_sandbox` stays
+/// `None`) and no restrictive flags, restoring the historical unconfined
+/// passthrough. Deno defaults to fully locked-down, so it must be explicitly
+/// opened with `--allow-all`; Node and Bun impose no restrictive default and
+/// need no flags. Paired with [`unconfined_authorizer_chain`], every mediated
+/// `sys` operation is then allowed, so the broker is a pure pass-through.
+fn build_unconfined_plan(runtime: DelegatingJsRuntimeOption) -> SpawnPolicy {
+    let mut spawn = SpawnPolicy::new();
+    if runtime == DelegatingJsRuntimeOption::Deno {
+        spawn.push_arg("--allow-all");
+    }
+    spawn
+}
+
+/// The allow-everything capability chain used to authorize an **unenforced**
+/// script run. Every mediated domain (fs read/write, `env`) is granted, so the
+/// in-process broker never denies an operation and the child's `env` snapshot
+/// is the full ambient environment — matching an unconfined runtime.
+fn unconfined_authorizer_chain() -> CapabilityRules<Generator> {
+    scan_authorizer_chain()
+}
+
 type RunnerFuture =
     Pin<Box<dyn Future<Output = Result<BridgeServiceRunner, Error>> + Send>>;
 /// Spawns a runner for a concrete (already-resolved) runtime, wrapping the
@@ -416,6 +492,15 @@ fn exec_timeout_from_env() -> Option<Duration> {
 /// process).
 pub struct LazyScriptRunner {
     pool: RunnerPool<(DelegatingJsRuntimeOption, String)>,
+    /// An **unconfined** runner per runtime used only to compute the import
+    /// closure (§5.5). It runs omni's own trusted resolve tooling, so it must
+    /// reach `package.json`/`tsconfig`/`node_modules` across the tree — the very
+    /// reads that are expensive to grant under a confined child — and hand back
+    /// only a bounded path list. Reused across calls for the same runtime.
+    scan_pool: RunnerPool<DelegatingJsRuntimeOption>,
+    /// Caches the computed closure per script set + governing-manifest hash so a
+    /// generator's read set is not recomputed on every call.
+    closure_cache: ClosureCache,
     factory: RunnerFactory,
 }
 
@@ -455,6 +540,18 @@ impl LazyScriptRunner {
                             .ensure(&context_dir)
                             .await
                             .map_err(|e| Error::custom(e.to_string()))?;
+
+                    // On Windows the confined child is granted only a minimal
+                    // boot set — ordinary policy fs is broker-mediated, not
+                    // lowered into ACEs — so the vendored bundle root must be
+                    // granted explicitly or the runtime cannot read its own
+                    // entrypoint to start. On Linux/macOS the bundle already
+                    // sits under the granted workspace subtree, so no extra
+                    // grant is needed and their spec is left untouched.
+                    #[cfg(target_os = "windows")]
+                    if let Some(spec) = spawn_policy.os_sandbox.as_mut() {
+                        spec.read_paths.push(vendored.root.clone());
+                    }
 
                     let mut router = Router::new();
                     // Enforced: broker every mediated fs operation against the
@@ -512,6 +609,8 @@ impl LazyScriptRunner {
 
         Self {
             pool: RunnerPool::new(),
+            scan_pool: RunnerPool::new(),
+            closure_cache: ClosureCache::new(),
             factory,
         }
     }
@@ -519,6 +618,7 @@ impl LazyScriptRunner {
     /// Shuts down every runner that was started. Best-effort.
     pub async fn shutdown(&self) {
         self.pool.shutdown().await;
+        self.scan_pool.shutdown().await;
     }
 }
 
@@ -534,10 +634,28 @@ impl JsScriptRunner for LazyScriptRunner {
             Error::custom("no JS runtime (node/bun/deno) found on PATH")
         })?;
 
-        // Enforcement is always on: a declared policy is used as-is; a generator
-        // that declares none is confined to the built-in floor.
-        let (spawn_policy, shim_policy, diagnostics) =
-            build_spawn_plan(resolved, policy)?;
+        // Enforcement is gated on the experimental capabilities feature. When
+        // the workspace has opted in, the declared policy is planned and
+        // enforced (a generator that declares none is confined to the built-in
+        // floor). When it has not, the script runs unconfined: an
+        // allow-everything spawn plan and a pass-through broker.
+        let (spawn_policy, shim_policy, mut diagnostics) = if policy.enforce {
+            build_spawn_plan(resolved, policy)?
+        } else {
+            // The feature is off. If the run nonetheless declares a capability
+            // policy, surface a warning so it is not silently ignored.
+            let mut diagnostics = Vec::new();
+            if policy.levels.iter().any(|level| !level.is_empty()) {
+                diagnostics.push(RunScriptDiagnostic::warn(
+                    "a capability policy is declared but the capabilities \
+                     feature is experimental and disabled; it is ignored and \
+                     scripts run unconfined — enable it with \
+                     `enable_experimental: true` (or `enable_experimental: \
+                     { capabilities: true }`) in the workspace configuration",
+                ));
+            }
+            (build_unconfined_plan(resolved), ShimPolicy::new(), diagnostics)
+        };
         let shim_json = if shim_policy.is_empty() {
             String::new()
         } else {
@@ -553,11 +671,19 @@ impl JsScriptRunner for LazyScriptRunner {
             .roots
             .clone()
             .map_bases(|base| std::fs::canonicalize(&base).unwrap_or(base));
-        let authorizer = EvaluatingAuthorizer::layered(
-            policy.effective_levels(),
-            roots,
-            policy.context.clone(),
-        );
+        let authorizer = if policy.enforce {
+            EvaluatingAuthorizer::layered(
+                policy.effective_levels(),
+                roots,
+                policy.context.clone(),
+            )
+        } else {
+            EvaluatingAuthorizer::layered(
+                vec![unconfined_authorizer_chain()],
+                roots,
+                policy.context.clone(),
+            )
+        };
 
         let key = (resolved, policy.fingerprint());
         let factory = &self.factory;
@@ -568,10 +694,74 @@ impl JsScriptRunner for LazyScriptRunner {
             })
             .await?;
 
+        // Grant the confined child read access to exactly the files it will
+        // load (the resolved import closure), held only across the `call` that
+        // makes it read them and revoked immediately after. Only a real OS
+        // sandbox (a Windows AppContainer child) needs this; off Windows and
+        // for an unconfined child the grant is a no-op, so the (unconfined)
+        // closure scan is skipped entirely rather than paying to spawn a second
+        // runtime for nothing.
+        let read_scope = if runner.is_confined() {
+            let scan_factory = &self.factory;
+            let scan_context = policy.context.clone();
+            let scan_runner = self
+                .scan_pool
+                .get_or_try_init(resolved, move || {
+                    let scan_spawn = build_scan_plan(resolved);
+                    let scan_authorizer = EvaluatingAuthorizer::layered(
+                        vec![scan_authorizer_chain()],
+                        PathRoots::new(),
+                        scan_context,
+                    );
+                    scan_factory(
+                        resolved,
+                        scan_authorizer,
+                        scan_spawn,
+                        String::new(),
+                    )
+                })
+                .await?;
+
+            let entries: Vec<PathBuf> = invocations
+                .iter()
+                .map(|inv| PathBuf::from(&inv.path))
+                .collect();
+            let workspace_root =
+                policy.roots.base(Root::Workspace).map(Path::to_path_buf);
+            let manifests: Vec<PathBuf> = entries
+                .iter()
+                .flat_map(|entry| {
+                    let stop = workspace_root
+                        .as_deref()
+                        .or_else(|| entry.parent())
+                        .unwrap_or(entry.as_path());
+                    governing_manifests(entry, stop)
+                })
+                .collect();
+
+            let closure = self
+                .closure_cache
+                .get_or_compute(&entries, &manifests, || {
+                    scan_closure(&scan_runner, &entries)
+                })
+                .await?;
+
+            for note in &closure.diagnostics {
+                diagnostics.push(RunScriptDiagnostic::warn(format!(
+                    "import-scan: {note}"
+                )));
+            }
+
+            runner.grant_read_scope(&closure.paths)
+        } else {
+            runner.grant_read_scope(&[])
+        };
+
         runner
             .call(EXEC_GENERATOR_SCRIPT_PATH, invocations)
             .await
             .map_err(|e| Error::custom(e.to_string()))?;
+        drop(read_scope);
 
         Ok(RunScriptResult { diagnostics })
     }
@@ -596,6 +786,7 @@ mod tests {
             roots: PathRoots::new().with(Root::Workspace, "/repo"),
             context: GeneratorContext::default(),
             strictness,
+            enforce: true,
         }
     }
 
@@ -650,6 +841,7 @@ mod tests {
             roots: PathRoots::new().with(Root::Workspace, "/repo"),
             context: ctx,
             strictness: CapabilitiesStrictness::Warn,
+            enforce: true,
         }
     }
 
@@ -713,4 +905,66 @@ mod tests {
         strict.strictness = CapabilitiesStrictness::RequireFloor;
         assert_ne!(warn.fingerprint(), strict.fingerprint());
     }
+
+    #[test]
+    fn scan_plan_is_unconfined_and_grants_deno_what_deno_info_needs() {
+        // The import-scan runner must never install an OS sandbox: it is trusted
+        // tooling that reads across the tree to resolve imports.
+        for runtime in [
+            DelegatingJsRuntimeOption::Node,
+            DelegatingJsRuntimeOption::Bun,
+            DelegatingJsRuntimeOption::Deno,
+        ] {
+            let plan = build_scan_plan(runtime);
+            assert!(
+                plan.os_sandbox.is_none(),
+                "the scan runner is unconfined ({runtime:?})"
+            );
+        }
+
+        // Node/Bun have no pre-spawn permission model, so no flags are needed.
+        assert!(
+            build_scan_plan(DelegatingJsRuntimeOption::Node)
+                .args
+                .is_empty()
+        );
+        assert!(
+            build_scan_plan(DelegatingJsRuntimeOption::Bun)
+                .args
+                .is_empty()
+        );
+
+        // Deno enforces its own model, so the scan process needs read access
+        // and permission to spawn `deno info`.
+        let deno = build_scan_plan(DelegatingJsRuntimeOption::Deno);
+        assert!(deno.args.iter().any(|a| a == "--allow-read"), "{deno:?}");
+        assert!(deno.args.iter().any(|a| a == "--allow-run"), "{deno:?}");
+    }
+
+    #[test]
+    fn scan_authorizer_allows_every_env_name() {
+        // The scan runtime inherits the ambient env (so `deno info`/the resolver
+        // see PATH, HOME, DENO_DIR, …): every env name must authorize under the
+        // permissive scan chain, which is what makes `env_snapshot` pass the
+        // full environment through rather than filtering it.
+        use omni_capabilities::Access;
+        let chain = scan_authorizer_chain();
+        let env_allows_all = chain.iter().any(|cap| {
+            cap.rule.access == Access::Allow
+                && cap.rule.domain == CapabilityDomain::Env
+                && cap.rule.patterns.iter().any(|p| p == "*")
+        });
+        assert!(
+            env_allows_all,
+            "the scan chain must allow all env names: {chain:?}"
+        );
+    }
+
+    // NOTE: the live "closure granted before the call, revoked after" behaviour
+    // requires a real confined AppContainer child and is exercised by the
+    // Windows confined e2e in the `@omni-oss/omni-tests` package (this crate
+    // keeps no live-spawn unit tests, matching `bridge_rpc_runner`). The
+    // "Node grants an empty script closure" property only holds once broker-
+    // served module loading (strategy A) removes the per-generator disk reads;
+    // until then Node reads its scripts from disk and the closure is non-empty.
 }

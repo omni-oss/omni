@@ -4,7 +4,7 @@ use std::{
 };
 
 use maps::{Map, UnorderedMap, unordered_map};
-use omni_capabilities::{CapabilityRules, CapabilitiesStrictness};
+use omni_capabilities::{CapabilitiesStrictness, CapabilityRules};
 use omni_generator_configurations::{
     Generator, GeneratorConfiguration, OmniPath, OverwriteConfiguration,
 };
@@ -72,6 +72,13 @@ pub struct RunConfig<'a, S: GeneratorEventSubscriber = NoopSubscriber> {
     /// [`CapabilitiesStrictness::Warn`].
     #[builder(default)]
     pub workspace_strictness: CapabilitiesStrictness,
+    /// Whether experimental features are enabled for this run. Currently gates
+    /// the capability enforcement subsystem: when `false` (the default),
+    /// generator scripts run unconfined; when `true`, the declared capability
+    /// policy is enforced. Sourced from
+    /// [`WorkspaceConfiguration::enable_experimental`].
+    #[builder(default)]
+    pub enable_experimental: bool,
     pub input_provider: &'a dyn InputProvider<Generator>,
     pub subscriber: &'a S,
     /// Maximum `run-generator` nesting depth before a run is aborted. Use
@@ -320,6 +327,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         // action's stance on top of this.
         capabilities_strictness: inherited_strictness
             .max(r#gen.capabilities.strictness),
+        enable_experimental: config.enable_experimental,
         js_script_runner: runner,
         input_provider: config.input_provider,
         subscriber: config.subscriber,

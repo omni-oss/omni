@@ -1,0 +1,24 @@
+[package]
+name = "omni_experimental_features"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_experimental_features"
+path = "src/lib.rs"
+
+[features]
+default = ["serde", "schemars"]
+serde = ["dep:serde", "omni_config_types/serde"]
+schemars = ["dep:schemars", "omni_config_types/schemars"]
+
+[dependencies]
+omni_config_types = { workspace = true }
+serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

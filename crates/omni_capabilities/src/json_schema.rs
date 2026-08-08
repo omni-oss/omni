@@ -214,6 +214,20 @@ mod tests {
     }
 
     #[test]
+    fn rule_schema_exposes_direct() {
+        // `CapabilityRule::direct` is an optional boolean flag; the emitted
+        // schema must offer it so configs can set `direct: true`.
+        let generator = SchemaGenerator::default();
+        let root = generator.into_root_schema_for::<CapabilityRules<FsOnly>>();
+        let root = serde_json::to_value(&root).expect("valid json");
+
+        assert!(
+            find_property(&root, "direct").is_some(),
+            "the `direct` property must appear in the schema"
+        );
+    }
+
+    #[test]
     fn every_rule_field_is_projected() {
         // Drift guard: the profile-projected `Capability` schema must expose
         // every field of the derived `CapabilityRule` schema. If a field is

@@ -224,6 +224,13 @@ where
     let workspace_strictness =
         ctx.workspace_configuration().capabilities.strictness;
 
+    // Capability enforcement is an experimental feature; run scripts confined
+    // only when the workspace has opted in.
+    let enable_experimental = ctx
+        .workspace_configuration()
+        .enable_experimental
+        .capabilities();
+
     let run_config = RunConfig::builder()
         .dry_run(req.dry_run)
         .output_dir(output_dir.as_path())
@@ -238,6 +245,7 @@ where
         .available_generators(&generators)
         .workspace_capabilities(&workspace_capabilities)
         .workspace_strictness(workspace_strictness)
+        .enable_experimental(enable_experimental)
         .input_provider(req.input_provider.as_ref())
         .subscriber(subscriber)
         .maybe_max_depth(req.max_depth)

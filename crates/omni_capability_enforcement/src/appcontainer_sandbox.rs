@@ -103,9 +103,10 @@ use windows_sys::Win32::Foundation::{
     ERROR_ACCESS_DENIED, ERROR_SUCCESS, HLOCAL, LocalFree,
 };
 use windows_sys::Win32::Security::Authorization::{
-    EXPLICIT_ACCESS_W, GRANT_ACCESS, GetNamedSecurityInfoW,
-    NO_MULTIPLE_TRUSTEE, REVOKE_ACCESS, SE_FILE_OBJECT, SetEntriesInAclW,
-    SetNamedSecurityInfoW, TRUSTEE_IS_GROUP, TRUSTEE_IS_SID, TRUSTEE_W,
+    ConvertSidToStringSidW, EXPLICIT_ACCESS_W, GRANT_ACCESS,
+    GetNamedSecurityInfoW, NO_MULTIPLE_TRUSTEE, REVOKE_ACCESS, SE_FILE_OBJECT,
+    SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_GROUP, TRUSTEE_IS_SID,
+    TRUSTEE_W,
 };
 use windows_sys::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName,
@@ -272,6 +273,36 @@ fn spawn_with_sid(
     Ok((child, guard))
 }
 
+/// Grant read/execute access to `paths` for omni's AppContainer, returning a
+/// [`SandboxAclGuard`] whose drop revokes them.
+///
+/// This is the per-call scoped grant used to admit an *already-confined* child
+/// to a computed import closure after the container has been established (the
+/// boot set granted at [`spawn`] time is deliberately minimal). Each path is
+/// reference-counted through the same [`grant_registry`] as spawn-time grants,
+/// so overlapping calls that share a path grant it once and revoke it only when
+/// the last guard drops. Missing paths (and protected system dirs reachable
+/// only via ambient package rights) grant nothing and are not tracked.
+///
+/// Fails closed — granting nothing, having rolled back any partial grant — if
+/// the container SID cannot be derived or an ACE cannot be added.
+pub fn grant_read_scope(paths: &[PathBuf]) -> io::Result<SandboxAclGuard> {
+    let mut guard = SandboxAclGuard { paths: Vec::new() };
+    if paths.is_empty() {
+        return Ok(guard);
+    }
+    let read = GENERIC_READ | GENERIC_EXECUTE;
+    let sid = create_or_derive_container_sid(CONTAINER_NAME)?;
+    let result = paths
+        .iter()
+        .try_for_each(|path| register_grant(&mut guard, path, sid, read));
+    // SAFETY: `sid` from `create_or_derive_container_sid`, no longer referenced
+    // once the grants above have returned (the guard re-derives its own SID at
+    // cleanup time).
+    unsafe { FreeSid(sid) };
+    result.map(|()| guard)
+}
+
 /// Process-wide reference counts for the paths omni has granted to its container
 /// SID, keyed by the exact path passed to [`grant_path`]. A path's ACE is added
 /// on the first grant and revoked only when the last confined child needing it
@@ -390,10 +421,16 @@ fn create_or_derive_container_sid(name: &str) -> io::Result<PSID> {
     // creator may still be mid-registration when we first try to derive, retry
     // the derive a few times with a brief backoff before giving up.
     const BAD_ENVIRONMENT: i32 = 0x8007_000Au32 as i32;
+    // `E_UNEXPECTED`: observed transiently when a prior run crashed and left the
+    // profile half-registered. The profile is (or becomes) registered, so the
+    // same retry-and-derive recovery as `BAD_ENVIRONMENT` applies — if the
+    // profile truly does not exist, the derive below fails and that error
+    // propagates, so this cannot mask a genuine creation failure.
+    const UNEXPECTED: i32 = 0x8000_ffffu32 as i32;
     if hr == ALREADY_EXISTS {
         return derive_container_sid(name);
     }
-    if hr == BAD_ENVIRONMENT {
+    if hr == BAD_ENVIRONMENT || hr == UNEXPECTED {
         const MAX_TRIES: u32 = 5;
         let mut last_err = None;
         for attempt in 0..MAX_TRIES {
@@ -408,7 +445,8 @@ fn create_or_derive_container_sid(name: &str) -> io::Result<PSID> {
         return Err(last_err.unwrap_or_else(|| {
             io::Error::other(format!(
                 "CreateAppContainerProfile({name}) raced (HRESULT \
-                 0x{BAD_ENVIRONMENT:08x}) and the SID could not be derived"
+                 0x{:08x}) and the SID could not be derived",
+                hr as u32
             ))
         }));
     }
@@ -437,6 +475,40 @@ fn derive_container_sid(name: &str) -> io::Result<PSID> {
         )));
     }
     Ok(sid)
+}
+
+/// The string form (SDDL `S-1-15-…`) of omni's AppContainer profile SID.
+///
+/// Filesystem grants name the container SID through the ACL APIs directly, but a
+/// pipe/object security descriptor built from an SDDL string needs the SID as
+/// text. This exposes exactly that principal — the same SID `spawn` confines a
+/// child under — so a DACL ACE can grant precisely the confined child access to
+/// a broker channel, without duplicating the profile-name/derive logic.
+pub fn container_sid_string() -> io::Result<String> {
+    let sid = create_or_derive_container_sid(CONTAINER_NAME)?;
+    let result = sid_to_string(sid);
+    // SAFETY: `sid` from `create_or_derive_container_sid`, freed once here after
+    // the string form has been copied out.
+    unsafe { FreeSid(sid) };
+    result
+}
+
+/// Convert a `PSID` to its SDDL string form via `ConvertSidToStringSidW`.
+fn sid_to_string(sid: PSID) -> io::Result<String> {
+    let mut raw: *mut u16 = std::ptr::null_mut();
+    // SAFETY: FFI. `sid` is a valid SID; `raw` receives a `LocalAlloc`'d
+    // null-terminated wide string on success, freed below.
+    let ok = unsafe { ConvertSidToStringSidW(sid, &mut raw) };
+    if ok == 0 || raw.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `raw` is a valid null-terminated wide string from the call above.
+    let len = unsafe { (0..).take_while(|&i| *raw.add(i) != 0).count() };
+    // SAFETY: `raw` points at `len` valid `u16`s followed by the NUL.
+    let slice = unsafe { std::slice::from_raw_parts(raw, len) };
+    let s = String::from_utf16_lossy(slice);
+    free_local(raw as HLOCAL);
+    Ok(s)
 }
 
 /// Owns the client network capability SIDs attached to a confined child's
@@ -1140,6 +1212,62 @@ mod tests {
     }
 
     #[test]
+    fn grant_read_scope_refcounts_and_is_a_noop_for_empty_or_missing() {
+        // The per-call scoped grant shares the process-wide refcount with
+        // spawn-time grants, so two overlapping scopes on the same path grant
+        // its ACE once and revoke it only when the last scope drops. Empty and
+        // missing paths grant nothing and are not tracked.
+        let Ok(sid) = derive_container_sid(CONTAINER_NAME) else {
+            eprintln!("skipping: the host does not provide AppContainer");
+            return;
+        };
+        let read = GENERIC_READ | GENERIC_EXECUTE;
+
+        // An empty scope is a pure no-op.
+        let empty = grant_read_scope(&[]).unwrap();
+        assert!(empty.paths.is_empty(), "an empty scope tracks nothing");
+        drop(empty);
+
+        // A missing path grants nothing and is not tracked.
+        let missing =
+            std::env::temp_dir().join("omni-oss-nonexistent-read-scope-xyz");
+        std::fs::remove_dir_all(&missing).ok();
+        let g = grant_read_scope(std::slice::from_ref(&missing)).unwrap();
+        assert!(g.paths.is_empty(), "a missing path is not tracked");
+        drop(g);
+
+        // Overlapping scopes on the same real dir grant its ACE once.
+        let dir = ungranted_scratch();
+        assert!(
+            !container_ace_present(&dir, sid, read),
+            "a fresh scratch dir must not already carry omni's grant"
+        );
+
+        let first = grant_read_scope(std::slice::from_ref(&dir)).unwrap();
+        let second = grant_read_scope(std::slice::from_ref(&dir)).unwrap();
+        assert!(
+            container_ace_present(&dir, sid, read),
+            "the shared path must be granted while a scope holds it"
+        );
+
+        drop(first);
+        assert!(
+            container_ace_present(&dir, sid, read),
+            "a scope dropping must not strip a grant another still holds"
+        );
+
+        drop(second);
+        assert!(
+            !container_ace_present(&dir, sid, read),
+            "the grant must be revoked once the last scope drops"
+        );
+
+        // SAFETY: `sid` is a valid SID from `derive_container_sid`.
+        unsafe { FreeSid(sid) };
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn a_real_confined_spawn_revokes_its_grant_after_the_child_exits() {
         // Ties the revocation machinery to an actual confined launch (not just a
         // hand-rolled guard): grant a scratch dir, spawn a real child inside the
@@ -1176,6 +1304,7 @@ mod tests {
             write_paths: vec![dir.clone()],
             exec_programs: Vec::new(),
             connect_ports: Vec::new(),
+            confine: false,
         };
         let mut command = Command::new(&cmd);
         command

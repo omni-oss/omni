@@ -10,6 +10,7 @@ declare module "vitest" {
             | "hashing"
             | "caching"
             | "execution"
-            | "output";
+            | "output"
+            | "capability";
     }
 }

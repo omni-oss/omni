@@ -27,7 +27,8 @@
         }
     },
     "dependencies": {
-        "zod": "catalog:"
+        "zod": "catalog:",
+        "es-module-lexer": "^2.3.1"
     },
     "peerDependencies": {
         "@omni-oss/bridge-rpc-core": "workspace:^",

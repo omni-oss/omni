@@ -190,6 +190,7 @@ omni_capabilities = { path = "crates/omni_capabilities" }
 omni_capability_enforcement = { path = "crates/omni_capability_enforcement" }
 omni_capability_sys = { path = "crates/omni_capability_sys" }
 bridge_rpc_runner = { path = "crates/bridge_rpc_runner" }
+omni_experimental_features = { path = "crates/omni_experimental_features" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

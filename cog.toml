@@ -519,6 +519,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_experimental_features]
+path = "crates/omni_experimental_features"
+include = [
+    "crates/omni_experimental_features/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

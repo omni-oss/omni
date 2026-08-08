@@ -3,6 +3,7 @@ mod discover;
 pub mod error;
 mod execute_actions;
 mod gen_session;
+mod import_scan;
 mod run;
 mod scoping;
 mod script_runner;
@@ -14,6 +15,7 @@ mod validate;
 
 pub use discover::*;
 pub use gen_session::GenSession;
+pub use import_scan::*;
 pub use run::*;
 pub use scoping::*;
 pub use script_runner::*;

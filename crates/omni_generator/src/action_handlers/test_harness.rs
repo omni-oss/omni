@@ -185,6 +185,7 @@ impl Fixture {
             inherited_capabilities: &self.inherited_capabilities,
             capabilities: &self.capabilities,
             capabilities_strictness: Default::default(),
+            enable_experimental: true,
             env: &self.env,
             gen_session: &self.gen_session,
             js_script_runner: self.js_script_runner.as_ref(),
