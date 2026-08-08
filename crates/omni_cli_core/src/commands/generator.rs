@@ -337,7 +337,11 @@ fn report_generator_output(
         if !dirs_removed.is_empty() || !files_removed.is_empty() {
             table.add_row(vec![
                 "Removed".to_string(),
-                dirs_removed.iter().map(|path| path.display()).join("\n"),
+                dirs_removed
+                    .iter()
+                    .map(|p| p.display())
+                    .chain(files_removed.iter().map(|p| p.display()))
+                    .join("\n"),
                 format!("{}", dirs_removed.len() + files_removed.len()),
             ]);
         }
