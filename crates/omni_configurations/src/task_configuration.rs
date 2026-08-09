@@ -4,7 +4,7 @@ use config_utils::{DictConfig, DynValue, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
 use omni_command_config::CommandConfig;
-use omni_config_types::TeraExprBoolean;
+use omni_config_types::{SingleOrMany, TeraExprBoolean};
 use omni_core::Task;
 use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
@@ -20,6 +20,12 @@ use super::TaskDependencyConfiguration;
 #[serde(deny_unknown_fields)]
 #[garde(allow_unvalidated)]
 pub struct TaskConfigurationLongForm {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub base: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<SingleOrMany<String>>,
+
     #[serde(
         default,
         alias = "command",
@@ -147,6 +153,8 @@ fn default_interactive() -> Option<Replace<bool>> {
 impl Default for TaskConfigurationLongForm {
     fn default() -> Self {
         Self {
+            base: false,
+            extends: None,
             exec: None,
             retry_exec: None,
             dependencies: ListConfig::append(vec![]),
@@ -345,62 +353,53 @@ impl TaskConfiguration {
     }
 }
 
+impl Merge for TaskConfigurationLongForm {
+    fn merge(&mut self, other: Self) {
+        let TaskConfigurationLongForm {
+            base: b_base,
+            extends: b_extends,
+            dependencies: b_dep,
+            exec: b_cmd,
+            retry_exec: b_retry_cmd,
+            description: b_desc,
+            env: b_env,
+            cache: b_cache,
+            output_logs: b_output_logs,
+            meta: b_meta,
+            enabled: b_enabled,
+            interactive: b_interactive,
+            persistent: b_persistent,
+            with: b_with,
+            max_retries: b_retries,
+            retry_interval: b_retry_interval,
+            args: b_args,
+        } = other;
+
+        self.base = b_base;
+        self.extends = b_extends;
+        self.dependencies.merge(b_dep);
+        merge::option::recurse(&mut self.exec, b_cmd);
+        merge::option::recurse(&mut self.retry_exec, b_retry_cmd);
+        merge::option::recurse(&mut self.description, b_desc);
+        self.env.merge(b_env);
+        self.cache.merge(b_cache);
+        merge::option::recurse(&mut self.output_logs, b_output_logs);
+        self.meta.merge(b_meta);
+        self.args.merge(b_args);
+        merge::option::recurse(&mut self.enabled, b_enabled);
+        merge::option::recurse(&mut self.interactive, b_interactive);
+        merge::option::recurse(&mut self.persistent, b_persistent);
+        self.with.merge(b_with);
+        merge::option::recurse(&mut self.max_retries, b_retries);
+        merge::option::recurse(&mut self.retry_interval, b_retry_interval);
+    }
+}
+
 impl Merge for TaskConfiguration {
     fn merge(&mut self, other: Self) {
         use TaskConfiguration::{LongForm as Lf, ShortForm as Sf};
         match (self, other) {
-            (
-                Lf(box TaskConfigurationLongForm {
-                    dependencies: a_dep,
-                    exec: a_cmd,
-                    retry_exec: a_retry_cmd,
-                    description: a_desc,
-                    env: a_env,
-                    cache: a_cache,
-                    output_logs: a_output_logs,
-                    meta: a_meta,
-                    enabled: a_enabled,
-                    interactive: a_interactive,
-                    persistent: a_persistent,
-                    with: a_with,
-                    max_retries: a_retries,
-                    retry_interval: a_retry_interval,
-                    args: a_args,
-                }),
-                Lf(box TaskConfigurationLongForm {
-                    dependencies: b_dep,
-                    exec: b_cmd,
-                    retry_exec: b_retry_cmd,
-                    description: b_desc,
-                    env: b_env,
-                    cache: b_cache,
-                    output_logs: b_output_logs,
-                    meta: b_meta,
-                    enabled: b_enabled,
-                    interactive: b_interactive,
-                    persistent: b_persistent,
-                    with: b_with,
-                    max_retries: b_retries,
-                    retry_interval: b_retry_interval,
-                    args: b_args,
-                }),
-            ) => {
-                a_dep.merge(b_dep);
-                merge::option::recurse(a_cmd, b_cmd);
-                merge::option::recurse(a_retry_cmd, b_retry_cmd);
-                merge::option::recurse(a_desc, b_desc);
-                a_env.merge(b_env);
-                a_cache.merge(b_cache);
-                merge::option::recurse(a_output_logs, b_output_logs);
-                a_meta.merge(b_meta);
-                a_args.merge(b_args);
-                merge::option::recurse(a_enabled, b_enabled);
-                merge::option::recurse(a_interactive, b_interactive);
-                merge::option::recurse(a_persistent, b_persistent);
-                a_with.merge(b_with);
-                merge::option::recurse(a_retries, b_retries);
-                merge::option::recurse(a_retry_interval, b_retry_interval);
-            }
+            (Lf(a), Lf(b)) => a.merge(*b),
             (this @ Lf { .. }, other @ Sf(..))
             | (this @ Sf { .. }, other @ Lf { .. })
             | (this @ Sf { .. }, other @ Sf { .. }) => *this = other,
@@ -710,5 +709,105 @@ mod tests {
             r#"{"anything": 1, "custom_key": "value"}"#,
         );
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_long_form_deserializes_base_and_single_extends() {
+        let task: TaskConfiguration = serde_json::from_str(
+            r#"{"exec": "echo hi", "base": true, "extends": "other"}"#,
+        )
+        .unwrap();
+
+        let TaskConfiguration::LongForm(long) = task else {
+            panic!("should be long form");
+        };
+        assert!(long.base);
+        assert_eq!(
+            long.extends,
+            Some(SingleOrMany::Single("other".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_long_form_deserializes_extends_list() {
+        let task: TaskConfiguration = serde_json::from_str(
+            r#"{"exec": "echo hi", "extends": ["a", "b"]}"#,
+        )
+        .unwrap();
+
+        let TaskConfiguration::LongForm(long) = task else {
+            panic!("should be long form");
+        };
+        assert!(!long.base);
+        assert_eq!(
+            long.extends,
+            Some(SingleOrMany::Many(vec!["a".to_string(), "b".to_string()]))
+        );
+    }
+
+    #[test]
+    fn test_long_form_defaults_base_false_extends_none() {
+        let task: TaskConfiguration =
+            serde_json::from_str(r#"{"exec": "echo hi"}"#).unwrap();
+
+        let TaskConfiguration::LongForm(long) = task else {
+            panic!("should be long form");
+        };
+        assert!(!long.base);
+        assert_eq!(long.extends, None);
+    }
+
+    #[test]
+    fn test_short_form_string_has_no_base_or_extends() {
+        // A bare string stays short form and carries no base/extends: declaring
+        // either requires the map (long) form.
+        let task: TaskConfiguration =
+            serde_json::from_str(r#""echo hi""#).unwrap();
+        assert!(matches!(task, TaskConfiguration::ShortForm(_)));
+    }
+
+    #[test]
+    fn test_long_form_base_extends_round_trip() {
+        let original =
+            TaskConfiguration::long_form(TaskConfigurationLongForm {
+                base: true,
+                extends: Some(SingleOrMany::Many(vec![
+                    "a".to_string(),
+                    "b".to_string(),
+                ])),
+                exec: Some(Replace::new(CommandConfig::Shell(
+                    "echo hi".to_string(),
+                ))),
+                ..Default::default()
+            });
+
+        let json = serde_json::to_string(&original).unwrap();
+        let round_tripped: TaskConfiguration =
+            serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original, round_tripped);
+    }
+
+    #[test]
+    fn test_merge_base_and_extends_replace() {
+        let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            base: true,
+            extends: Some(SingleOrMany::Single("x".to_string())),
+            ..Default::default()
+        });
+
+        let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            base: false,
+            extends: None,
+            ..Default::default()
+        });
+
+        a.merge(b);
+
+        let TaskConfiguration::LongForm(long) = a else {
+            panic!("should be long form");
+        };
+        assert!(!long.base);
+        assert_eq!(long.extends, None);
     }
 }
