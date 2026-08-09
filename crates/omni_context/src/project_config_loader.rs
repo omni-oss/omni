@@ -7,7 +7,7 @@ use derive_new::new;
 use enum_map::enum_map;
 use omni_configurations::{
     LoadConfigError, LoadConfigErrorKind, ProjectConfiguration,
-    TaskConfiguration,
+    TaskConfiguration, types::SingleOrMany,
 };
 use omni_types::Root;
 use path_clean::clean;
@@ -129,7 +129,9 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
                 }
             });
 
-            for extended_parent in &mut project.extends {
+            for extended_parent in
+                project.extends.iter_mut().flat_map(SingleOrMany::iter_mut)
+            {
                 if extended_parent.is_any_rooted() {
                     extended_parent.resolve_in_place(&bases);
                 }
