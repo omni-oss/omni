@@ -662,4 +662,66 @@ mod tests {
 
         assert_eq!(env_project3dircanon, project3dircanon);
     }
+
+    /// Hard-requirement gate (RFC 0016 §5.0): a short-form task and its canonical
+    /// long-form expansion (`{ exec, dependencies: ["^<name>"] }`) must lower to
+    /// identical `Task`s through the full context-loading pipeline. This proves
+    /// short-form/long-form equivalence end-to-end, which the task-extension
+    /// auto-promotion relies on.
+    #[tokio::test]
+    async fn test_short_form_and_long_form_expansion_are_equivalent() {
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+
+        sys.fs_create_dir_all(root.join(cross_path("nested/short")))
+            .expect("can't create short project dir");
+        sys.fs_create_dir_all(root.join(cross_path("nested/long")))
+            .expect("can't create long project dir");
+
+        sys.fs_write(
+            root.join(cross_path("workspace.omni.yaml")),
+            "projects:\n  - nested/**\n",
+        )
+        .expect("can't write workspace config");
+
+        sys.fs_write(
+            root.join(cross_path("nested/short/project.omni.yaml")),
+            "name: short\ntasks:\n  build: cargo build\n",
+        )
+        .expect("can't write short project config");
+
+        // The canonical long-form expansion of `build: cargo build`.
+        sys.fs_write(
+            root.join(cross_path("nested/long/project.omni.yaml")),
+            "name: long\ntasks:\n  build:\n    exec: cargo build\n    dependencies:\n      - \"^build\"\n",
+        )
+        .expect("can't write long project config");
+
+        let loaded = ctx("testing", root, sys)
+            .into_loaded()
+            .await
+            .expect("can't load projects");
+
+        let graph = loaded.get_project_graph().expect("can't get graph");
+        let short = graph
+            .get_project_by_name("short")
+            .expect("can't get short project");
+        let long = graph
+            .get_project_by_name("long")
+            .expect("can't get long project");
+
+        assert_eq!(
+            short.tasks["build"], long.tasks["build"],
+            "short-form task must lower identically to its long-form expansion"
+        );
+
+        // The implicit upstream self-dependency must be present on both.
+        assert_eq!(
+            short.tasks["build"].dependencies,
+            vec![omni_core::TaskDependency::Upstream {
+                task: "build".to_string(),
+            }],
+        );
+    }
 }
