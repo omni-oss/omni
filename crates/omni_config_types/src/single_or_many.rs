@@ -27,6 +27,20 @@ impl<T> SingleOrMany<T> {
             SingleOrMany::Many(items) => Some(items.as_slice()),
         }
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        match self {
+            SingleOrMany::Single(item) => std::slice::from_ref(item).iter(),
+            SingleOrMany::Many(items) => items.iter(),
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        match self {
+            SingleOrMany::Single(item) => std::slice::from_mut(item).iter_mut(),
+            SingleOrMany::Many(items) => items.iter_mut(),
+        }
+    }
 }
 
 impl<T: Clone> SingleOrMany<T> {
