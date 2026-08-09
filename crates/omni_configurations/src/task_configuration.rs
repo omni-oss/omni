@@ -1,13 +1,11 @@
 use std::time::Duration;
 
-use config_utils::{
-    AsInner, DictConfig, DynValue, IntoInner, ListConfig, Replace,
-};
+use config_utils::{DictConfig, DynValue, IntoInner, ListConfig, Replace};
 use garde::Validate;
 use merge::Merge;
 use omni_command_config::CommandConfig;
 use omni_config_types::TeraExprBoolean;
-use omni_core::{Task, TaskDependency};
+use omni_core::Task;
 use omni_task_output_logs::OutputLogsConfiguration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -231,48 +229,69 @@ impl TaskConfiguration {
     }
 }
 
+impl TaskConfigurationLongForm {
+    /// Lower this long-form configuration into an executable [`Task`].
+    ///
+    /// This is the single lowering path; [`TaskConfiguration::get_task`] reaches
+    /// it via [`TaskConfiguration::into_long_form`].
+    pub fn into_task(self) -> Task {
+        let TaskConfigurationLongForm {
+            exec: command,
+            retry_exec: retry_command,
+            dependencies,
+            description,
+            enabled,
+            interactive,
+            persistent,
+            with,
+            max_retries: retries,
+            retry_interval,
+            ..
+        } = self;
+
+        Task::new(
+            command.map(|x| x.into_inner()),
+            retry_command.map(|x| x.into_inner()),
+            dependencies.iter().cloned().map(Into::into).collect(),
+            description.map(|e| e.into_inner()),
+            enabled.unwrap_or(true.into()),
+            interactive.map(|e| e.into_inner()).unwrap_or(false),
+            persistent.map(|e| e.into_inner()).unwrap_or(false),
+            with.iter().cloned().map(Into::into).collect(),
+            retries.map(|e| e.into_inner()),
+            retry_interval.map(|e| e.into_inner()),
+        )
+    }
+}
+
 impl TaskConfiguration {
-    pub fn get_task(&self, name: &str) -> Task {
+    /// Canonical long-form expansion of this task.
+    ///
+    /// A short-form task `X: cmd` expands to
+    /// `{ exec: cmd, dependencies: ["^X"] }` — preserving the implicit upstream
+    /// self-dependency that short-form tasks carry (see [`Self::get_task`]).
+    /// Long-form tasks are returned unchanged. This is the single source of
+    /// truth for short-form semantics: [`Self::get_task`] routes through it, so
+    /// a short-form task and its long-form expansion are equal by construction.
+    pub fn into_long_form(self, name: &str) -> TaskConfigurationLongForm {
         match self {
-            TaskConfiguration::ShortForm(command) => Task::new(
-                Some(command.clone()),
-                None,
-                vec![TaskDependency::Upstream {
-                    task: name.to_string(),
-                }],
-                None,
-                true.into(),
-                false,
-                false,
-                vec![],
-                None,
-                None,
-            ),
-            TaskConfiguration::LongForm(box TaskConfigurationLongForm {
-                exec: command,
-                retry_exec: retry_command,
-                dependencies,
-                description,
-                enabled,
-                interactive,
-                persistent,
-                with,
-                max_retries: retries,
-                retry_interval,
-                ..
-            }) => Task::new(
-                command.as_ref().map(|x| x.as_inner().clone()),
-                retry_command.as_ref().map(|x| x.as_inner().clone()),
-                dependencies.iter().cloned().map(Into::into).collect(),
-                description.clone().map(|e| e.into_inner()),
-                enabled.clone().unwrap_or(true.into()),
-                interactive.map(|e| e.into_inner()).unwrap_or(false),
-                persistent.map(|e| e.into_inner()).unwrap_or(false),
-                with.iter().cloned().map(Into::into).collect(),
-                retries.map(|e| e.into_inner()),
-                retry_interval.map(|e| e.into_inner()),
-            ),
+            TaskConfiguration::LongForm(long_form) => *long_form,
+            TaskConfiguration::ShortForm(command) => {
+                TaskConfigurationLongForm {
+                    exec: Some(Replace::new(command)),
+                    dependencies: ListConfig::append(vec![
+                        TaskDependencyConfiguration::Upstream {
+                            task: name.to_string(),
+                        },
+                    ]),
+                    ..Default::default()
+                }
+            }
         }
+    }
+
+    pub fn get_task(&self, name: &str) -> Task {
+        self.clone().into_long_form(name).into_task()
     }
 
     pub fn cache(&self) -> Option<&CacheConfiguration> {
@@ -428,6 +447,139 @@ mod tests {
                 "a b".to_string(),
             ]))
         );
+    }
+
+    /// The canonical long-form expansion of a short-form shell task must be
+    /// `{ exec: cmd, dependencies: ["^<name>"] }`, including the implicit
+    /// upstream self-dependency that short-form tasks carry.
+    #[test]
+    fn test_short_form_into_long_form_shell() {
+        let short = TaskConfiguration::ShortForm(CommandConfig::Shell(
+            "cargo build".to_string(),
+        ));
+
+        let expected = TaskConfigurationLongForm {
+            exec: Some(Replace::new(CommandConfig::Shell(
+                "cargo build".to_string(),
+            ))),
+            dependencies: ListConfig::append(vec![
+                TaskDependencyConfiguration::Upstream {
+                    task: "build".to_string(),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(short.into_long_form("build"), expected);
+    }
+
+    #[test]
+    fn test_short_form_into_long_form_argv() {
+        let short = TaskConfiguration::ShortForm(CommandConfig::Argv(vec![
+            "cargo".to_string(),
+            "build".to_string(),
+        ]));
+
+        let expected = TaskConfigurationLongForm {
+            exec: Some(Replace::new(CommandConfig::Argv(vec![
+                "cargo".to_string(),
+                "build".to_string(),
+            ]))),
+            dependencies: ListConfig::append(vec![
+                TaskDependencyConfiguration::Upstream {
+                    task: "build".to_string(),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(short.into_long_form("build"), expected);
+    }
+
+    /// `into_long_form` must be the identity on long-form tasks.
+    #[test]
+    fn test_long_form_into_long_form_is_identity() {
+        let long_form = TaskConfigurationLongForm {
+            exec: Some(Replace::new(CommandConfig::Shell(
+                "cargo test".to_string(),
+            ))),
+            dependencies: ListConfig::value(vec![
+                TaskDependencyConfiguration::Own {
+                    task: "build".to_string(),
+                },
+            ]),
+            ..Default::default()
+        };
+
+        let task = TaskConfiguration::long_form(long_form.clone());
+
+        assert_eq!(task.into_long_form("test"), long_form);
+    }
+
+    /// Hard-requirement gate: a short-form task and its long-form expansion must
+    /// lower to an identical `Task`. This proves auto-promotion (which reuses
+    /// `into_long_form`) is behavior-preserving.
+    #[test]
+    fn test_short_form_get_task_equals_long_form_expansion() {
+        for command in [
+            CommandConfig::Shell("cargo build".to_string()),
+            CommandConfig::Argv(vec!["cargo".to_string(), "build".to_string()]),
+        ] {
+            let short = TaskConfiguration::ShortForm(command.clone());
+
+            let expanded =
+                TaskConfiguration::long_form(TaskConfigurationLongForm {
+                    exec: Some(Replace::new(command)),
+                    dependencies: ListConfig::append(vec![
+                        TaskDependencyConfiguration::Upstream {
+                            task: "build".to_string(),
+                        },
+                    ]),
+                    ..Default::default()
+                });
+
+            assert_eq!(
+                short.get_task("build"),
+                expanded.get_task("build"),
+                "short-form and its long-form expansion must lower identically"
+            );
+        }
+    }
+
+    /// The implicit upstream self-dependency must survive lowering.
+    #[test]
+    fn test_short_form_get_task_has_implicit_upstream_dependency() {
+        let short = TaskConfiguration::ShortForm(CommandConfig::Shell(
+            "cargo build".to_string(),
+        ));
+
+        let task = short.get_task("build");
+
+        assert_eq!(
+            task.dependencies,
+            vec![omni_core::TaskDependency::Upstream {
+                task: "build".to_string(),
+            }],
+        );
+    }
+
+    /// A naive `{ exec: cmd }` long form (no dependencies) must NOT equal the
+    /// short-form lowering — guards against a regression that drops the implicit
+    /// upstream dependency.
+    #[test]
+    fn test_short_form_not_equal_to_bare_exec_long_form() {
+        let short = TaskConfiguration::ShortForm(CommandConfig::Shell(
+            "cargo build".to_string(),
+        ));
+
+        let bare = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            exec: Some(Replace::new(CommandConfig::Shell(
+                "cargo build".to_string(),
+            ))),
+            ..Default::default()
+        });
+
+        assert_ne!(short.get_task("build"), bare.get_task("build"));
     }
 
     #[test]
