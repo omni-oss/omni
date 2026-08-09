@@ -2,6 +2,7 @@ use std::path::Path;
 
 use config_utils::{DictConfig, ListConfig, Replace, merge::Merge};
 use garde::Validate;
+use omni_config_types::SingleOrMany;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,9 +31,9 @@ pub struct ProjectConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub base: bool,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[merge(strategy = config_utils::replace)]
-    pub extends: Vec<OmniPath>,
+    pub extends: Option<SingleOrMany<OmniPath>>,
 
     #[merge(strategy = config_utils::replace)]
     pub name: String,
@@ -69,7 +70,11 @@ impl omni_core::ExtensionGraphNode for ProjectConfiguration {
     }
 
     fn extendee_ids(&self) -> &[Self::Id] {
-        &self.extends
+        match &self.extends {
+            Some(SingleOrMany::Single(path)) => std::slice::from_ref(path),
+            Some(SingleOrMany::Many(paths)) => paths.as_slice(),
+            None => &[],
+        }
     }
 }
 
@@ -115,7 +120,7 @@ mod tests {
             file: OmniPath::default(),
             dir: OmniPath::default(),
             base: false,
-            extends: vec![],
+            extends: None,
             name: "base".to_string(),
             description: None,
             dependencies: list_config_default(),
@@ -132,7 +137,7 @@ mod tests {
             file: OmniPath::default(),
             dir: OmniPath::default(),
             base: false,
-            extends: vec![],
+            extends: None,
             name: "derived".to_string(),
             description: None,
             dependencies: list_config_default(),
@@ -162,7 +167,7 @@ mod tests {
             file: OmniPath::default(),
             dir: OmniPath::default(),
             base: false,
-            extends: vec![],
+            extends: None,
             name: "base".to_string(),
             description: None,
             dependencies: list_config_default(),
@@ -213,5 +218,63 @@ mod tests {
             split.output_logs.unwrap().normalized(),
             (Some(LogsDisplay::All), Some(LogsDisplay::Never))
         );
+    }
+
+    #[test]
+    fn test_deserialize_single_extends() {
+        let project: ProjectConfiguration = serde_json::from_str(
+            r#"{"name":"p","extends":"../base/project.omni.yaml"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            project.extends,
+            Some(SingleOrMany::Single(OmniPath::new(
+                "../base/project.omni.yaml"
+            )))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_list_extends() {
+        let project: ProjectConfiguration = serde_json::from_str(
+            r#"{"name":"p","extends":["../a.yaml","../b.yaml"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            project.extends,
+            Some(SingleOrMany::Many(vec![
+                OmniPath::new("../a.yaml"),
+                OmniPath::new("../b.yaml"),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_deserialize_defaults_extends_none() {
+        let project: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"p"}"#).unwrap();
+        assert_eq!(project.extends, None);
+    }
+
+    #[test]
+    fn test_extendee_ids_normalizes_forms() {
+        use omni_core::ExtensionGraphNode;
+
+        let single: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"p","extends":"a.yaml"}"#).unwrap();
+        assert_eq!(single.extendee_ids(), &[OmniPath::new("a.yaml")]);
+
+        let many: ProjectConfiguration = serde_json::from_str(
+            r#"{"name":"p","extends":["a.yaml","b.yaml"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            many.extendee_ids(),
+            &[OmniPath::new("a.yaml"), OmniPath::new("b.yaml")]
+        );
+
+        let none: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"p"}"#).unwrap();
+        assert!(none.extendee_ids().is_empty());
     }
 }
