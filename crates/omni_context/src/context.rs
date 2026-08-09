@@ -29,7 +29,7 @@ use system_traits::impls::RealSys as RealSysSync;
 
 use omni_configurations::{
     LoadConfigError, ProjectConfiguration, RemoteCacheConfiguration,
-    WorkspaceConfiguration,
+    TaskExtensionError, WorkspaceConfiguration,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -175,7 +175,9 @@ impl<TSys: ContextSys> Context<TSys> {
                 .await?;
 
         let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
-        let project_configs = xt_graph.get_or_process_all_nodes()?;
+        let mut project_configs = xt_graph.get_or_process_all_nodes()?;
+
+        resolve_task_extensions_for_projects(&mut project_configs)?;
 
         log::info!(
             "{}",
@@ -250,7 +252,9 @@ impl<TSys: ContextSys> Context<TSys> {
                 .await?;
 
         let mut xt_graph = ExtensionGraph::from_nodes(project_configs)?;
-        let project_configs = xt_graph.get_or_process_all_nodes()?;
+        let mut project_configs = xt_graph.get_or_process_all_nodes()?;
+
+        resolve_task_extensions_for_projects(&mut project_configs)?;
 
         let mut env_loader = self.create_env_loader();
 
@@ -427,6 +431,18 @@ fn get_remote_cache_configuration(
     Ok(Some(rc))
 }
 
+fn resolve_task_extensions_for_projects(
+    project_configs: &mut [ProjectConfiguration],
+) -> Result<(), ContextError> {
+    for project in project_configs.iter_mut() {
+        if !project.base {
+            project.resolve_task_extensions()?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct ContextError(pub(crate) ContextErrorInner);
@@ -477,6 +493,9 @@ pub(crate) enum ContextErrorInner {
 
     #[error(transparent)]
     ExtensionGraph(#[from] ExtensionGraphError),
+
+    #[error(transparent)]
+    TaskExtension(#[from] TaskExtensionError),
 
     #[error(transparent)]
     ValidationError(#[from] ExtractedDataValidationErrors),
@@ -722,6 +741,121 @@ mod tests {
             vec![omni_core::TaskDependency::Upstream {
                 task: "build".to_string(),
             }],
+        );
+    }
+
+    /// A task may extend a `base` task that the project inherited from a parent
+    /// project via project-level `extends`, because task extension is resolved
+    /// after the project extension graph is merged.
+    #[tokio::test]
+    async fn test_task_extends_parent_inherited_base_task() {
+        use omni_command_config::CommandConfig;
+
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+
+        sys.fs_create_dir_all(root.join(cross_path("base")))
+            .expect("can't create base dir");
+        sys.fs_create_dir_all(root.join(cross_path("nested/child")))
+            .expect("can't create child project dir");
+
+        sys.fs_write(
+            root.join(cross_path("workspace.omni.yaml")),
+            "projects:\n  - nested/**\n",
+        )
+        .expect("can't write workspace config");
+
+        sys.fs_write(
+            root.join(cross_path("base/parent.omni.yaml")),
+            "base: true\nname: parent\ntasks:\n  base_task:\n    base: true\n    exec: echo base\n",
+        )
+        .expect("can't write parent config");
+
+        sys.fs_write(
+            root.join(cross_path("nested/child/project.omni.yaml")),
+            "name: child\nextends:\n  - ../../base/parent.omni.yaml\ntasks:\n  derived:\n    extends: base_task\n",
+        )
+        .expect("can't write child config");
+
+        let loaded = ctx("testing", root, sys)
+            .into_loaded()
+            .await
+            .expect("can't load projects");
+
+        let graph = loaded.get_project_graph().expect("can't get graph");
+        let child = graph
+            .get_project_by_name("child")
+            .expect("can't get child project");
+
+        assert!(
+            child.tasks.contains_key("derived"),
+            "derived task must be emitted"
+        );
+        assert!(
+            !child.tasks.contains_key("base_task"),
+            "inherited base task must be dropped"
+        );
+        assert_eq!(
+            child.tasks["derived"].exec,
+            Some(CommandConfig::Shell("echo base".to_string())),
+            "derived must inherit the base task's command"
+        );
+    }
+
+    /// A task marked `base` is neither discoverable nor runnable: it is absent
+    /// from the emitted task set, while an unrelated sibling task is preserved.
+    #[tokio::test]
+    async fn test_base_task_is_not_emitted() {
+        use omni_command_config::CommandConfig;
+
+        let sys = real_sys();
+        let tmp = tmp();
+        let root = tmp.path();
+
+        sys.fs_create_dir_all(root.join(cross_path("nested/app")))
+            .expect("can't create app project dir");
+
+        sys.fs_write(
+            root.join(cross_path("workspace.omni.yaml")),
+            "projects:\n  - nested/**\n",
+        )
+        .expect("can't write workspace config");
+
+        sys.fs_write(
+            root.join(cross_path("nested/app/project.omni.yaml")),
+            "name: app\ntasks:\n  helper:\n    base: true\n    exec: echo helper\n  build: echo build\n",
+        )
+        .expect("can't write app config");
+
+        let loaded = ctx("testing", root, sys)
+            .into_loaded()
+            .await
+            .expect("can't load projects");
+
+        let graph = loaded.get_project_graph().expect("can't get graph");
+        let app = graph
+            .get_project_by_name("app")
+            .expect("can't get app project");
+
+        assert!(
+            !app.tasks.contains_key("helper"),
+            "base task must not be emitted"
+        );
+        assert!(
+            app.tasks.contains_key("build"),
+            "non-base task must be emitted"
+        );
+        assert_eq!(
+            app.tasks["build"].exec,
+            Some(CommandConfig::Shell("echo build".to_string())),
+        );
+        assert_eq!(
+            app.tasks["build"].dependencies,
+            vec![omni_core::TaskDependency::Upstream {
+                task: "build".to_string(),
+            }],
+            "short-form sibling keeps its implicit upstream self-dependency"
         );
     }
 }

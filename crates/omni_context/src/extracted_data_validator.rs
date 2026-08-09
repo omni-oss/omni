@@ -1,6 +1,7 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use derive_new::new;
+use omni_core::TaskDependency;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 use trace::Level;
 
@@ -50,6 +51,41 @@ impl ExtractedDataValidator {
         }
     }
 
+    fn validate_dangling_own_dependencies(
+        &self,
+        extractions: &ProjectDataExtractions,
+        errors: &mut Vec<ExtractedDataValidationError>,
+    ) {
+        for project in &extractions.projects {
+            for (task_name, task) in &project.tasks {
+                let references =
+                    task.dependencies.iter().chain(task.siblings.iter());
+
+                for reference in references {
+                    let TaskDependency::Own { task: dependency } = reference
+                    else {
+                        continue;
+                    };
+
+                    if !project.tasks.contains_key(dependency) {
+                        errors.push(
+                            ExtractedDataValidationErrorInner::DanglingTaskDependency {
+                                project_name: project.name.clone(),
+                                task_name: task_name.clone(),
+                                dependency: dependency.clone(),
+                            }
+                            .into(),
+                        );
+
+                        if self.fail_fast {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[cfg_attr(
         feature = "enable-tracing",
         tracing::instrument(
@@ -68,6 +104,12 @@ impl ExtractedDataValidator {
         let mut errors = vec![];
 
         self.validate_duplicate_project_names(extractions, &mut errors);
+
+        if self.fail_fast && !errors.is_empty() {
+            return Err(errors)?;
+        }
+
+        self.validate_dangling_own_dependencies(extractions, &mut errors);
 
         if self.fail_fast && !errors.is_empty() {
             return Err(errors)?;
@@ -161,4 +203,95 @@ pub(crate) enum ExtractedDataValidationErrorInner {
         project_name: String,
         project_paths: Vec<PathBuf>,
     },
+
+    #[error(
+        "task '{project_name}#{task_name}' depends on unknown task '{dependency}' in project '{project_name}'"
+    )]
+    DanglingTaskDependency {
+        project_name: String,
+        task_name: String,
+        dependency: String,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use omni_core::{Project, Task, TaskDependency};
+
+    use super::*;
+    use crate::project_data_extractor::ProjectDataExtractions;
+
+    fn task_with_own_deps(deps: &[&str]) -> Task {
+        Task::new(
+            None,
+            None,
+            deps.iter()
+                .map(|d| TaskDependency::Own {
+                    task: d.to_string(),
+                })
+                .collect(),
+            None,
+            true.into(),
+            false,
+            false,
+            vec![],
+            None,
+            None,
+        )
+    }
+
+    fn project(name: &str, tasks: Vec<(&str, Task)>) -> Project {
+        let mut task_map = maps::OrderedMap::new();
+        for (task_name, task) in tasks {
+            task_map.insert(task_name.to_string(), task);
+        }
+
+        Project::new(name, PathBuf::from("/tmp"), vec![], task_map)
+    }
+
+    fn extractions(projects: Vec<Project>) -> ProjectDataExtractions {
+        ProjectDataExtractions::new(
+            projects,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        )
+    }
+
+    #[test]
+    fn test_dangling_own_dependency_is_error() {
+        let ex = extractions(vec![project(
+            "app",
+            vec![("build", task_with_own_deps(&["helper"]))],
+        )]);
+
+        let err = ExtractedDataValidator::new(false)
+            .validate(&ex)
+            .expect_err("dangling own dependency must fail validation");
+
+        assert_eq!(err.errors.len(), 1);
+        assert_eq!(
+            err.errors[0].kind(),
+            ExtractedDataValidationErrorKind::DanglingTaskDependency
+        );
+    }
+
+    #[test]
+    fn test_valid_own_dependency_passes() {
+        let ex = extractions(vec![project(
+            "app",
+            vec![
+                ("build", task_with_own_deps(&["helper"])),
+                ("helper", task_with_own_deps(&[])),
+            ],
+        )]);
+
+        ExtractedDataValidator::new(false)
+            .validate(&ex)
+            .expect("valid own dependency must pass validation");
+    }
 }
