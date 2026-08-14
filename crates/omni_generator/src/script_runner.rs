@@ -216,9 +216,35 @@ fn floor_strictness(strictness: CapabilitiesStrictness) -> FloorStrictness {
 /// diagnostic. A generator that sets `capabilities: { strictness: require-floor }`
 /// promotes that stance to [`FloorStrictness::RequireFloor`], turning every such
 /// floor gap into a hard refusal.
+/// Externally-resolved launch posture threaded into [`build_spawn_plan`].
+///
+/// The escape-hatch read is done once at the call site
+/// ([`from_env`](Self::from_env)) rather than reading the process environment
+/// mid-plan, so the plan the runner applies and the posture it claims cannot
+/// diverge — and so the disabled posture is directly injectable in tests
+/// without mutating process-global state.
+#[derive(Debug, Clone, Copy, Default)]
+struct SpawnPosture {
+    /// Whether the `OMNI_DISABLE_OS_SANDBOX` escape hatch is active for this
+    /// run: the OS-sandbox floor is dropped and filesystem confinement falls
+    /// back to the bypassable in-process broker.
+    os_sandbox_disabled: bool,
+}
+
+impl SpawnPosture {
+    /// Resolve the posture from the process environment (the production path).
+    fn from_env() -> Self {
+        Self {
+            os_sandbox_disabled: std::env::var_os("OMNI_DISABLE_OS_SANDBOX")
+                .is_some(),
+        }
+    }
+}
+
 fn build_spawn_plan(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy,
+    posture: SpawnPosture,
 ) -> Result<(SpawnPolicy, ShimPolicy, Vec<RunScriptDiagnostic>), Error> {
     let mut chain: CapabilityRules<Generator> = serde_json::from_str(
         r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
@@ -241,17 +267,17 @@ fn build_spawn_plan(
 
     let deno = DenoFlags;
     let node = NodePermissions;
-    // Resolve the OS-sandbox posture ONCE so the floor the plan *claims* matches
-    // the confinement the spawner will actually *apply* (T17/T18): read the
-    // `OMNI_DISABLE_OS_SANDBOX` escape hatch a single time, and mark the runtime
-    // unconfined when it cannot be placed under the OS mechanism on this
-    // platform. Bun cannot boot inside a Windows AppContainer, so the runner
-    // launches it unconfined there (see `bridge_rpc_runner::build_command`); an
-    // unconfined runtime must not claim the OS-sandbox fs floor, so the plan
-    // surfaces an honest floor gap (a hard refusal under `require-floor`)
-    // instead of advertising a floor that is never installed.
-    let os_sandbox_disabled =
-        std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_some();
+    // Use the OS-sandbox posture resolved ONCE by the caller so the floor the
+    // plan *claims* matches the confinement the spawner will actually *apply*
+    // (T17/T18): the `OMNI_DISABLE_OS_SANDBOX` escape hatch is read a single
+    // time into `posture`, and the runtime is marked unconfined when it cannot
+    // be placed under the OS mechanism on this platform. Bun cannot boot inside
+    // a Windows AppContainer, so the runner launches it unconfined there (see
+    // `bridge_rpc_runner::build_command`); an unconfined runtime must not claim
+    // the OS-sandbox fs floor, so the plan surfaces an honest floor gap (a hard
+    // refusal under `require-floor`) instead of advertising a floor that is
+    // never installed.
+    let os_sandbox_disabled = posture.os_sandbox_disabled;
     let runtime_confined = !(cfg!(target_os = "windows")
         && runtime == DelegatingJsRuntimeOption::Bun);
     let os = NativeOsSandbox::resolved(os_sandbox_disabled, runtime_confined);
@@ -304,6 +330,24 @@ fn build_spawn_plan(
     //   is enforced only by the bypassable in-process broker/shim, with no
     //   un-bypassable runtime-flag or OS-sandbox floor for the resolved runtime.
     let mut diagnostics: Vec<RunScriptDiagnostic> = Vec::new();
+
+    // Loud, distinct signal for the escape hatch: when `OMNI_DISABLE_OS_SANDBOX`
+    // is set the OS-sandbox floor is dropped and filesystem confinement falls
+    // back to the bypassable in-process broker. This is a real security
+    // downgrade that is easy to enable unknowingly (inherited env in CI, a
+    // stale shell export), so surface it prominently and up front — ahead of
+    // the per-domain floor-gap warnings — rather than letting it hide among the
+    // ordinary gap diagnostics it induces.
+    if os_sandbox_disabled {
+        diagnostics.push(RunScriptDiagnostic::warn(
+            "OS-level sandbox is DISABLED for this run \
+             (OMNI_DISABLE_OS_SANDBOX is set): filesystem confinement falls \
+             back to the bypassable in-process broker and the kernel backstop \
+             against direct syscalls is dropped. This is a security downgrade — \
+             unset OMNI_DISABLE_OS_SANDBOX to restore OS-level confinement.",
+        ));
+    }
+
     for warning in plan.warnings {
         diagnostics.push(RunScriptDiagnostic::warn(format!(
             "capability policy not fully enforced: {warning}"
@@ -640,7 +684,7 @@ impl JsScriptRunner for LazyScriptRunner {
         // floor). When it has not, the script runs unconfined: an
         // allow-everything spawn plan and a pass-through broker.
         let (spawn_policy, shim_policy, mut diagnostics) = if policy.enforce {
-            build_spawn_plan(resolved, policy)?
+            build_spawn_plan(resolved, policy, SpawnPosture::from_env())?
         } else {
             // The feature is off. If the run nonetheless declares a capability
             // policy, surface a warning so it is not silently ignored.
@@ -654,7 +698,11 @@ impl JsScriptRunner for LazyScriptRunner {
                      { capabilities: true }`) in the workspace configuration",
                 ));
             }
-            (build_unconfined_plan(resolved), ShimPolicy::new(), diagnostics)
+            (
+                build_unconfined_plan(resolved),
+                ShimPolicy::new(),
+                diagnostics,
+            )
         };
         let shim_json = if shim_policy.is_empty() {
             String::new()
@@ -805,9 +853,12 @@ mod tests {
     #[test]
     fn warn_stance_plans_and_reports_a_net_floor_gap_on_bun() {
         let policy = net_policy(CapabilitiesStrictness::Warn);
-        let (_spawn, _shim, diagnostics) =
-            build_spawn_plan(DelegatingJsRuntimeOption::Bun, &policy)
-                .expect("warn never refuses on a floor gap");
+        let (_spawn, _shim, diagnostics) = build_spawn_plan(
+            DelegatingJsRuntimeOption::Bun,
+            &policy,
+            SpawnPosture::default(),
+        )
+        .expect("warn never refuses on a floor gap");
         assert!(
             diagnostics
                 .iter()
@@ -820,10 +871,12 @@ mod tests {
     #[test]
     fn require_floor_stance_refuses_when_net_has_no_floor_on_bun() {
         let policy = net_policy(CapabilitiesStrictness::RequireFloor);
-        let err = build_spawn_plan(DelegatingJsRuntimeOption::Bun, &policy)
-            .expect_err(
-                "require-floor must refuse an unfloored governed domain",
-            );
+        let err = build_spawn_plan(
+            DelegatingJsRuntimeOption::Bun,
+            &policy,
+            SpawnPosture::default(),
+        )
+        .expect_err("require-floor must refuse an unfloored governed domain");
         // Surfaced as the generator-level enforcement error.
         assert!(
             format!("{err}").contains("cannot enforce"),
@@ -843,6 +896,47 @@ mod tests {
             strictness: CapabilitiesStrictness::Warn,
             enforce: true,
         }
+    }
+
+    #[test]
+    fn os_sandbox_disabled_emits_a_loud_downgrade_warning() {
+        let policy = fs_policy(GeneratorContext::default());
+
+        // Hatch unset: the OS-sandbox floor is intact, so no downgrade warning.
+        let (_spawn, _shim, before) = build_spawn_plan(
+            DelegatingJsRuntimeOption::Node,
+            &policy,
+            SpawnPosture {
+                os_sandbox_disabled: false,
+            },
+        )
+        .expect("planning succeeds under the warn stance");
+        assert!(
+            !before
+                .iter()
+                .any(|d| d.message.contains("OS-level sandbox is DISABLED")),
+            "must not warn about a disabled sandbox when the hatch is \
+             unset, got: {before:?}"
+        );
+
+        // Escape hatch active: a distinct, prominent downgrade warning appears.
+        let (_spawn, _shim, after) = build_spawn_plan(
+            DelegatingJsRuntimeOption::Node,
+            &policy,
+            SpawnPosture {
+                os_sandbox_disabled: true,
+            },
+        )
+        .expect("the warn stance never refuses on a floor gap");
+        assert!(
+            after
+                .iter()
+                .any(|d| matches!(d.level, DiagnosticLevel::Warn)
+                    && d.message.contains("OS-level sandbox is DISABLED")
+                    && d.message.contains("OMNI_DISABLE_OS_SANDBOX")),
+            "expected a loud OS-sandbox-disabled warning when the hatch is \
+             set, got: {after:?}"
+        );
     }
 
     #[test]
