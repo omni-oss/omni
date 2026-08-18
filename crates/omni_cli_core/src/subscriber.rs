@@ -4,9 +4,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use comfy_table::{
-    Cell, Color, Table, modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL,
-};
+use comfy_table::TableStyle;
+use comfy_table::{Cell, Color, Table, presets::UTF8_FULL};
 use indicatif::{
     MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle,
 };
@@ -847,10 +846,8 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
         if e.total > 0 {
             let mut table = Table::new();
-            table
-                .load_preset(UTF8_FULL)
-                .apply_modifier(UTF8_ROUND_CORNERS)
-                .set_header(vec!["Result", "Count"]);
+            const STYLE: TableStyle = UTF8_FULL.with_rounded_corners();
+            table.load_style(STYLE).set_header(vec!["Result", "Count"]);
 
             table.add_row(vec![Cell::new("Total"), Cell::new(e.total)]);
             table.add_row(vec![

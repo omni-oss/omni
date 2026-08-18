@@ -88,7 +88,7 @@ embed-manifest = { version = "^1.3" }
 convert_case = { version = "^0.11.0" }
 schemars = { version = "^1.2.1", features = ["indexmap2", "either1", "url2"] }
 walkdir = { version = "^2.5.0" }
-noyalib = { version = "^0.0.15" }
+noyalib = { version = "^0.0.24" }
 ignore = { version = "^0.4.25" }
 regex = { version = "^1.12.3" }
 lazy-regex = { version = "^3.6.0" }
@@ -138,7 +138,7 @@ dhat = { version = "^0.3.3" }
 enum-map = { version = "^3.1.0", features = ["serde", "bytemuck"] }
 portable-pty = { version = "^0.9.0" }
 terminal_size = { version = "^0.4.4" }
-rmcp = { version = "^2.0.0", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "^3.1.3", features = ["server", "macros", "transport-io"] }
 rs_merkle = { version = "^1.5.0" }
 omni_cache = { path = "./crates/omni_cache" }
 omni_hasher = { path = "./crates/omni_hasher" }
@@ -198,7 +198,7 @@ path-slash = { version = "^0.2.1" }
 atty = { version = "^0.2.14" }
 omni_process = { path = "./crates/omni_process" }
 nix = { version = "^0.31.3" }
-base64 = { version = "^0.22.1" }
+base64 = { version = "^0.23.1" }
 clap_declspec = { path = "./crates/clap_declspec" }
 getset = { version = "^0.1.6" }
 either = { version = "^1.16.0", features = ["serde"] }
@@ -277,7 +277,7 @@ linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }
-gix = { version = "^0.85.0", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
+gix = { version = "^0.86.0", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
 requestty = { version = "^0.6.3", features = ["crossterm", "smallvec", "macros"] }
 value-bag = { version = "^1.12.0", features = ["serde", "error", "seq", "owned"] }
 serde_validate = { path = "./crates/serde_validate" }
@@ -310,7 +310,7 @@ interprocess = { version = "^2.4.2", features = ["tokio"] }
 macro_rules_attribute = { version = "^0.2.2" }
 enumset = { version = "^1.1.13", features = ["serde", "proc-macro-crate"] }
 indicatif = { version = "^0.18.4" }
-comfy-table = { version = "^7.2.2", features = ["custom_styling"] }
+comfy-table = { version = "^8.0.0", features = ["custom_styling"] }
 
 
 [patch.crates-io]

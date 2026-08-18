@@ -8,8 +8,8 @@ use omni_task_executor::TaskExecutorSys;
 use rmcp::{
     ServerHandler,
     model::{
-        CallToolRequestParams, CallToolResult, ListToolsResult,
-        PaginatedRequestParams, ServerInfo,
+        CallToolRequestParams, CallToolResponse, CallToolResult,
+        ListToolsResult, PaginatedRequestParams, ServerInfo,
     },
     service::{RequestContext, RoleServer},
 };
@@ -93,7 +93,7 @@ where
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<CallToolResult, rmcp::model::ErrorData>>
+    ) -> impl Future<Output = Result<CallToolResponse, rmcp::model::ErrorData>>
     + Send
     + '_ {
         async move {
@@ -120,7 +120,7 @@ where
         &self,
         name: &str,
         args: Option<Value>,
-    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+    ) -> Result<CallToolResponse, rmcp::model::ErrorData> {
         let args = args.unwrap_or(Value::Object(Default::default()));
         match name {
             "workspace_info" => call0(self.tool_workspace_info()).await,
@@ -155,7 +155,7 @@ where
 
 async fn call0<R: Serialize>(
     fut: impl Future<Output = eyre::Result<R>>,
-) -> Result<CallToolResult, rmcp::model::ErrorData> {
+) -> Result<CallToolResponse, rmcp::model::ErrorData> {
     match fut.await {
         Ok(result) => {
             let value = serde_json::to_value(result).map_err(|e| {
@@ -164,7 +164,9 @@ async fn call0<R: Serialize>(
                     None,
                 )
             })?;
-            Ok(CallToolResult::structured(value))
+            Ok(CallToolResponse::Complete(CallToolResult::structured(
+                value,
+            )))
         }
         Err(e) => {
             Err(rmcp::model::ErrorData::internal_error(e.to_string(), None))
@@ -175,7 +177,7 @@ async fn call0<R: Serialize>(
 async fn call1<P, R, F, Fut>(
     args: Value,
     f: F,
-) -> Result<CallToolResult, rmcp::model::ErrorData>
+) -> Result<CallToolResponse, rmcp::model::ErrorData>
 where
     P: serde::de::DeserializeOwned,
     R: Serialize,

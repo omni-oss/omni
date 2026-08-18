@@ -11,7 +11,7 @@ use crate::commands::{
 
 use super::parser::parse_key_value;
 use clap_utils::EnumValueAdapter;
-use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL};
+use comfy_table::{TableStyle, presets::UTF8_FULL};
 use itertools::Itertools;
 use maps::{UnorderedMap, unordered_map};
 use omni_api::{GeneratorRunRequest, OmniApi};
@@ -283,9 +283,9 @@ fn report_generator_output(
         || !copied.is_empty()
     {
         let mut table = comfy_table::Table::new();
+        const STYLE: TableStyle = UTF8_FULL.with_rounded_corners();
         table
-            .load_preset(UTF8_FULL)
-            .apply_modifier(UTF8_ROUND_CORNERS)
+            .load_style(STYLE)
             .set_header(vec!["Action", "Paths", "Count"]);
 
         if !dirs_created.is_empty() || !files_created.is_empty() {
