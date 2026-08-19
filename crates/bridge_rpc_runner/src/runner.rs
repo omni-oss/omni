@@ -684,6 +684,68 @@ fn strip_verbatim_prefix(path: &Path) -> std::path::PathBuf {
     path.to_path_buf()
 }
 
+/// The bare binary name for a concrete runtime, or `None` for `Auto` (always
+/// resolved to a concrete runtime before a launch program is chosen).
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn runtime_bin(runtime: DelegatingJsRuntimeOption) -> Option<&'static str> {
+    match runtime {
+        DelegatingJsRuntimeOption::Node => Some("node"),
+        DelegatingJsRuntimeOption::Bun => Some("bun"),
+        DelegatingJsRuntimeOption::Deno => Some("deno"),
+        DelegatingJsRuntimeOption::Auto => None,
+    }
+}
+
+/// Which program a (possibly confined) launch should exec.
+///
+/// A confined launch prefers the *resolved real* runtime binary over the bare
+/// `PATH` name only when the `PATH` entry is a version-manager shim, so the
+/// shim's per-launch bootstrap does not run (and fork-storm) inside the
+/// container. A direct binary keeps the bare name: the resolved path is the
+/// same file, and a bare name avoids handing the spawn an extended-length path.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[derive(Debug, PartialEq, Eq)]
+enum ConfinedLaunchProgram {
+    /// Launch the bare runtime name (unconfined, Bun, or a direct binary).
+    BareName,
+    /// Launch this absolute binary — a version-manager shim's real target.
+    RealBinary(PathBuf),
+    /// Confinement was requested but the real binary could not be resolved;
+    /// the caller warns and falls back to the bare name.
+    Degraded,
+}
+
+/// Decide the launch program for a spawn.
+///
+/// `path_entry` is the canonicalized `PATH` entry for the runtime (from
+/// `which`), `resolved` is the runtime's self-reported executable path (from
+/// `process.execPath` / `Deno.execPath()`), both already canonicalized. The
+/// real binary is launched only when it *differs* from the `PATH` entry (the
+/// `PATH` entry is a shim); an equal path is a direct binary that keeps the
+/// bare name. Any returned path has its `\\?\` verbatim prefix stripped, which
+/// the process-creation APIs do not accept as a program name.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn confined_launch_program(
+    confined: bool,
+    path_entry: Option<&Path>,
+    resolved: Option<&Path>,
+) -> ConfinedLaunchProgram {
+    if !confined {
+        return ConfinedLaunchProgram::BareName;
+    }
+    match (resolved, path_entry) {
+        (Some(real), Some(entry))
+            if strip_verbatim_prefix(real) == strip_verbatim_prefix(entry) =>
+        {
+            ConfinedLaunchProgram::BareName
+        }
+        (Some(real), _) => {
+            ConfinedLaunchProgram::RealBinary(strip_verbatim_prefix(real))
+        }
+        (None, _) => ConfinedLaunchProgram::Degraded,
+    }
+}
+
 /// Builds the spawn command for the configured runtime, resolving `Auto` and
 /// splicing the capability [`SpawnPolicy`] before the entrypoint.
 ///
@@ -762,16 +824,36 @@ fn build_command(
         }
     };
     #[cfg(target_os = "windows")]
-    let program = if spawn_policy.os_sandbox.is_some()
-        && std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_none()
-        && runtime != DelegatingJsRuntimeOption::Bun
-        && let Some(real) = crate::runtime::resolved_exec_path(runtime)
-    {
-        std::fs::canonicalize(&real)
-            .unwrap_or(real)
-            .into_os_string()
-    } else {
-        program
+    let program = {
+        fn canonicalized(p: PathBuf) -> PathBuf {
+            std::fs::canonicalize(&p).unwrap_or(p)
+        }
+        let confined = spawn_policy.os_sandbox.is_some()
+            && std::env::var_os("OMNI_DISABLE_OS_SANDBOX").is_none()
+            && runtime != DelegatingJsRuntimeOption::Bun;
+        let path_entry = runtime_bin(runtime)
+            .and_then(|bin| which::which(bin).ok())
+            .map(canonicalized);
+        let resolved =
+            crate::runtime::resolved_exec_path(runtime).map(canonicalized);
+        match confined_launch_program(
+            confined,
+            path_entry.as_deref(),
+            resolved.as_deref(),
+        ) {
+            ConfinedLaunchProgram::BareName => program,
+            ConfinedLaunchProgram::RealBinary(real) => real.into_os_string(),
+            ConfinedLaunchProgram::Degraded => {
+                trace::warn!(
+                    runtime = ?runtime,
+                    "confined launch could not resolve the real runtime \
+                     binary; falling back to the bare name, which may fail or \
+                     fork-storm inside the sandbox — confinement is degraded \
+                     on this host"
+                );
+                program
+            }
+        }
     };
 
     let mut command = match runtime {
@@ -1465,8 +1547,75 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{CallRace, race_call};
+    use super::{ConfinedLaunchProgram, Path, confined_launch_program};
     use super::{PathBuf, SandboxTempDir};
     use super::{RUNTIME_BOOTSTRAP_ENV, nub_cache_root, scrubbed_child_env};
+
+    #[test]
+    fn an_unconfined_launch_uses_the_bare_name() {
+        // With no confinement the resolved/shim distinction is irrelevant: the
+        // bare `PATH` name is launched exactly as before.
+        assert_eq!(
+            confined_launch_program(
+                false,
+                Some(Path::new("/usr/bin/deno")),
+                Some(Path::new("/opt/deno/bin/deno")),
+            ),
+            ConfinedLaunchProgram::BareName,
+        );
+    }
+
+    #[test]
+    fn a_direct_binary_uses_the_bare_name() {
+        // The runtime on `PATH` *is* the real binary (execPath == PATH entry),
+        // so there is no shim to bypass and no override is applied.
+        let p = Path::new("/usr/bin/deno");
+        assert_eq!(
+            confined_launch_program(true, Some(p), Some(p)),
+            ConfinedLaunchProgram::BareName,
+        );
+    }
+
+    #[test]
+    fn a_shim_launches_the_resolved_real_binary() {
+        // execPath differs from the `PATH` entry: the entry is a shim, so the
+        // resolved real binary is launched directly under confinement.
+        let entry = Path::new("/home/u/.nvm/shims/node");
+        let real = Path::new("/home/u/.nvm/versions/v20/bin/node");
+        assert_eq!(
+            confined_launch_program(true, Some(entry), Some(real)),
+            ConfinedLaunchProgram::RealBinary(real.to_path_buf()),
+        );
+    }
+
+    #[test]
+    fn a_resolved_binary_with_no_path_entry_is_launched_directly() {
+        // `which` found nothing but the runtime reported its own path: launch
+        // that absolute path rather than a bare name that cannot be resolved.
+        let real = Path::new("/opt/deno/bin/deno");
+        assert_eq!(
+            confined_launch_program(true, None, Some(real)),
+            ConfinedLaunchProgram::RealBinary(real.to_path_buf()),
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_real_binary_is_degraded() {
+        // No self-reported path: confinement is degraded and the caller warns,
+        // whether or not a `PATH` entry exists.
+        assert_eq!(
+            confined_launch_program(
+                true,
+                Some(Path::new("/usr/bin/deno")),
+                None,
+            ),
+            ConfinedLaunchProgram::Degraded,
+        );
+        assert_eq!(
+            confined_launch_program(true, None, None),
+            ConfinedLaunchProgram::Degraded,
+        );
+    }
 
     #[test]
     fn nub_cache_root_is_derived_from_the_binary_layout_cross_platform() {
