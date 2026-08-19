@@ -5,6 +5,16 @@
 //! This is the OS-sandbox analog of `deno_spawn.rs` (which proves the Deno
 //! pre-spawn flags). It is Linux-only and **skips** (does not fail) when the
 //! running kernel does not provide Landlock, so it is safe in any CI.
+//!
+//! ## Grandchild inheritance contract
+//!
+//! A confined generator may spawn a child, which may spawn further processes.
+//! The Landlock ruleset is inherited across `execve` and cannot be loosened, so
+//! a *grandchild* is bound by the same confinement as the runtime omni launched
+//! - a generator cannot escape the sandbox by shelling out to a helper. That
+//! contract, and the inherited, un-droppable `NO_NEW_PRIVS` that backstops it,
+//! are asserted directly by the grandchild tests below (the macOS and Windows
+//! analogs live in `seatbelt_spawn.rs` and `appcontainer_spawn.rs`).
 
 #![cfg(target_os = "linux")]
 
@@ -408,5 +418,141 @@ fn landlock_confines_tcp_connect_to_the_granted_port() {
     assert!(
         !out.status.success(),
         "a connect to a port outside the granted set must be denied by Landlock"
+    );
+}
+
+/// The value of the `NoNewPrivs:` field in a `/proc/<pid>/status` dump, if
+/// present. `1` means `PR_SET_NO_NEW_PRIVS` is set on that process.
+fn no_new_privs_value(status: &[u8]) -> Option<u32> {
+    String::from_utf8_lossy(status).lines().find_map(|line| {
+        line.strip_prefix("NoNewPrivs:")
+            .and_then(|rest| rest.trim().parse::<u32>().ok())
+    })
+}
+
+#[test]
+fn landlock_confinement_is_inherited_by_a_grandchild() {
+    // The `process` capability lets a confined generator spawn a child that may
+    // itself spawn more processes. The Landlock ruleset is inherited across
+    // `execve` and cannot be loosened, so the confinement must bind a
+    // *grandchild* too - otherwise a generator could escape the sandbox by
+    // shelling out to a helper. Here the confined `sh` is the child and the
+    // `cat` it execs is the grandchild.
+    if !landlock_sandbox::is_supported() {
+        eprintln!("skipping: the running kernel does not provide Landlock");
+        return;
+    }
+    let (Some(sh), Some(cat)) = (sh(), cat()) else {
+        eprintln!("skipping: no `sh`/`cat` binary found");
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let allowed = dir.path().join("allowed");
+    let secret = dir.path().join("secret");
+    fs::create_dir(&allowed).unwrap();
+    fs::create_dir(&secret).unwrap();
+    let ok = allowed.join("ok.txt");
+    let hidden = secret.join("hidden.txt");
+    fs::write(&ok, b"hello").unwrap();
+    fs::write(&hidden, b"top secret").unwrap();
+
+    // Grant read only to the `allowed` subtree; `secret` is not granted.
+    let spec = OsSandboxSpec {
+        read_paths: vec![allowed.clone()],
+        write_paths: vec![],
+        exec_programs: vec![],
+        connect_ports: vec![],
+        confine: false,
+    };
+
+    // `sh -c '<cat> <path>'`: `cat` is the grandchild. An absolute `cat` path
+    // avoids depending on the child's `PATH`.
+    let grandchild_reads = |target: &Path| {
+        let mut c = Command::new(&sh);
+        c.arg("-c")
+            .arg(format!("'{}' '{}'", cat.display(), target.display()));
+        c
+    };
+
+    // (1) The grandchild can read inside the granted subtree: inheritance does
+    // not over-restrict, and the grandchild genuinely runs.
+    let out = run(grandchild_reads(&ok), &spec);
+    assert!(
+        out.status.success(),
+        "a grandchild read inside the granted subtree must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, b"hello");
+
+    // (2) The grandchild is denied a read outside the grant, exactly as the
+    // confined runtime itself would be: the ruleset was inherited across both
+    // `execve`s.
+    let out = run(grandchild_reads(&hidden), &spec);
+    assert!(
+        !out.status.success(),
+        "a grandchild read outside the granted subtree must be denied by \
+         inherited Landlock confinement"
+    );
+}
+
+#[test]
+fn landlock_sets_no_new_privs_on_child_and_grandchild() {
+    // `restrict_self` sets `PR_SET_NO_NEW_PRIVS`, which is inherited and cannot
+    // be dropped, so a confined child can never gain privileges via a
+    // set-user-ID binary - and neither can anything it spawns. Assert the flag
+    // *directly* (via `/proc/<pid>/status`) rather than inferring it from a
+    // failed escalation, so a change that stops setting it fails loudly here
+    // instead of leaving a silent hole a DAC-passing behavioural test would miss.
+    if !landlock_sandbox::is_supported() {
+        eprintln!("skipping: the running kernel does not provide Landlock");
+        return;
+    }
+    let (Some(sh), Some(cat)) = (sh(), cat()) else {
+        eprintln!("skipping: no `sh`/`cat` binary found");
+        return;
+    };
+
+    // A non-empty spec so `install_os_sandbox` installs the confinement hook
+    // (which is what sets NO_NEW_PRIVS); `/proc` is granted by the baseline.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let spec = OsSandboxSpec {
+        read_paths: vec![dir.path().to_path_buf()],
+        write_paths: vec![],
+        exec_programs: vec![],
+        connect_ports: vec![],
+        confine: false,
+    };
+
+    // Child: the confined `cat` reads its own status.
+    let mut c = Command::new(&cat);
+    c.arg("/proc/self/status");
+    let out = run(c, &spec);
+    assert!(
+        out.status.success(),
+        "reading /proc/self/status must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        no_new_privs_value(&out.stdout),
+        Some(1),
+        "NO_NEW_PRIVS must be set on the confined child"
+    );
+
+    // Grandchild: `sh` execs `cat` (the grandchild), which reads *its* status;
+    // the flag must still be set because it is inherited across `execve`.
+    let mut c = Command::new(&sh);
+    c.arg("-c")
+        .arg(format!("'{}' /proc/self/status", cat.display()));
+    let out = run(c, &spec);
+    assert!(
+        out.status.success(),
+        "the grandchild reading /proc/self/status must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        no_new_privs_value(&out.stdout),
+        Some(1),
+        "NO_NEW_PRIVS must be inherited by the grandchild"
     );
 }

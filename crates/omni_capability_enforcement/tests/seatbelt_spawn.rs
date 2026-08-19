@@ -9,6 +9,16 @@
 //! safe in any CI. Setting `OMNI_REQUIRE_OS_SANDBOX` turns the skip into a hard
 //! failure, so a CI that is *supposed* to exercise the floor cannot silently
 //! pass by skipping.
+//!
+//! ## Grandchild inheritance contract
+//!
+//! A confined generator may spawn a child, which may spawn further processes.
+//! The Seatbelt profile is inherited across `execve` and a nested `sandbox_init`
+//! can only tighten, never loosen, so a *grandchild* is bound by the same
+//! confinement as the runtime omni launched - a generator cannot escape the
+//! sandbox by shelling out to a helper. That contract is asserted directly by
+//! the grandchild test below (the Linux and Windows analogs live in
+//! `landlock_spawn.rs` and `appcontainer_spawn.rs`).
 
 #![cfg(target_os = "macos")]
 
@@ -178,6 +188,64 @@ fn seatbelt_confines_writes_to_the_granted_subtree() {
     assert!(
         !bad_target.exists(),
         "the denied write must not have created a file"
+    );
+}
+
+#[test]
+fn seatbelt_confinement_is_inherited_by_a_grandchild() {
+    // The `process` capability lets a confined generator spawn a child that may
+    // itself spawn more processes. The Seatbelt profile is inherited across
+    // `execve` and a nested `sandbox_init` can only tighten, so a *grandchild*
+    // stays confined - a generator cannot escape by shelling out. Here the
+    // confined `sh` is the child and the `cat` it execs is the grandchild.
+    if !should_run_confined() {
+        return;
+    }
+    let (Some(sh), Some(cat)) = (sh(), cat()) else {
+        eprintln!("skipping: no `sh`/`cat` binary found");
+        return;
+    };
+
+    let (_tmp, base) = scratch_dir();
+    let allowed = base.join("allowed");
+    let secret = base.join("secret");
+    fs::create_dir(&allowed).unwrap();
+    fs::create_dir(&secret).unwrap();
+    let ok = allowed.join("ok.txt");
+    let hidden = secret.join("hidden.txt");
+    fs::write(&ok, b"hello").unwrap();
+    fs::write(&hidden, b"top secret").unwrap();
+
+    // Grant read only to the `allowed` subtree; `secret` is not granted.
+    let spec = spec_with(vec![allowed.clone()], vec![]);
+
+    // `sh -c '<cat> <path>'`: `cat` is the grandchild. An absolute `cat` path
+    // avoids depending on the child's `PATH`.
+    let grandchild_reads = |target: &Path| {
+        let mut c = Command::new(&sh);
+        c.arg("-c")
+            .arg(format!("'{}' '{}'", cat.display(), target.display()));
+        c
+    };
+
+    // (1) The grandchild can read inside the granted subtree: inheritance does
+    // not over-restrict, and the grandchild genuinely runs.
+    let out = run(grandchild_reads(&ok), &spec);
+    assert!(
+        out.status.success(),
+        "a grandchild read inside the granted subtree must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, b"hello");
+
+    // (2) The grandchild is denied a read outside the grant, exactly as the
+    // confined runtime itself would be: the profile was inherited across both
+    // `execve`s.
+    let out = run(grandchild_reads(&hidden), &spec);
+    assert!(
+        !out.status.success(),
+        "a grandchild read outside the granted subtree must be denied by \
+         inherited Seatbelt confinement"
     );
 }
 

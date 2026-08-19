@@ -6,6 +6,17 @@
 //! This is the OS-sandbox analog of `landlock_spawn.rs` (Linux). It is
 //! Windows-only and **skips** (does not fail) when the host does not provide a
 //! usable AppContainer facility, so it is safe in any CI.
+//!
+//! ## Grandchild inheritance contract
+//!
+//! A confined generator may spawn a child, which may spawn further processes.
+//! A child created by a container process inherits the container's low-privilege
+//! token/SID, so a *grandchild* is bound by the same confinement as the runtime
+//! omni launched - a generator cannot escape the sandbox by shelling out to a
+//! helper. That contract is exercised by
+//! `appcontainer_child_can_launch_a_grandchild_and_capture_its_output` below
+//! (the Linux and macOS analogs live in `landlock_spawn.rs` and
+//! `seatbelt_spawn.rs`).
 
 #![cfg(target_os = "windows")]
 
