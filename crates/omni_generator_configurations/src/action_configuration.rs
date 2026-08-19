@@ -537,6 +537,22 @@ pub struct RunJavaScriptActionConfiguration {
     pub capabilities: CapabilityPolicyConfig<Generator>,
 }
 
+/// Which JavaScript runtime to launch a generator's script with.
+///
+/// **Only [`Deno`](Self::Deno) is currently fully supported, and it is the
+/// recommended choice on every platform.** Deno is the sole runtime whose
+/// sandboxing — filesystem, network, environment, and child-process
+/// confinement — omni can enforce safely and consistently across Linux, macOS,
+/// and Windows today. [`Auto`](Self::Auto) (the default) probes `PATH` and
+/// prefers Deno.
+///
+/// `node` and `bun` are still accepted for compatibility, but they are
+/// **experimental and discouraged**: their confinement is incomplete or
+/// platform-dependent (native permission flags are missing or partial, and
+/// several OS-level floors are not yet available for them). Forcing either
+/// runtime emits a warning at run time. They are deliberately omitted from the
+/// JSON schema so editors do not suggest them, but the values remain valid if
+/// you explicitly opt in.
 #[derive(
     Debug,
     Clone,
@@ -550,9 +566,20 @@ pub struct RunJavaScriptActionConfiguration {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum JsRuntimeOption {
+    /// The Deno runtime — the recommended, fully-confined runtime on all
+    /// platforms.
     Deno,
+    /// The Node.js runtime. **Experimental and discouraged:** confinement is
+    /// incomplete on some platforms, so forcing it emits a warning. Hidden
+    /// from the JSON schema; still accepted if set explicitly.
+    #[schemars(skip)]
     Node,
+    /// The Bun runtime. **Experimental and discouraged:** it has no native
+    /// permission model and runs largely unconfined, so forcing it emits a
+    /// warning. Hidden from the JSON schema; still accepted if set explicitly.
+    #[schemars(skip)]
     Bun,
+    /// Auto-detect a supported runtime on `PATH`, preferring Deno.
     #[default]
     Auto,
 }
@@ -1017,5 +1044,47 @@ mod tests {
                 "unknown field should be rejected for {json}"
             );
         }
+    }
+
+    /// Only `deno` and `auto` are advertised in the JSON schema; the
+    /// experimental `node`/`bun` variants are `#[schemars(skip)]` so editors
+    /// do not suggest them, even though they remain valid serde values.
+    #[test]
+    fn js_runtime_schema_hides_node_and_bun() {
+        let schema = schemars::schema_for!(JsRuntimeOption);
+        let value = serde_json::to_value(&schema).unwrap();
+        // Collect the `const` value advertised by each `oneOf` subschema.
+        let consts: Vec<String> = value["oneOf"]
+            .as_array()
+            .expect("schema should be a `oneOf` of string consts")
+            .iter()
+            .filter_map(|s| s["const"].as_str().map(str::to_owned))
+            .collect();
+        assert_eq!(
+            consts,
+            vec!["deno".to_string(), "auto".to_string()],
+            "schema must advertise only `deno` and `auto`"
+        );
+    }
+
+    /// The hidden variants stay deserializable so users can still force them.
+    #[test]
+    fn js_runtime_still_deserializes_hidden_variants() {
+        assert_eq!(
+            serde_json::from_str::<JsRuntimeOption>("\"deno\"").unwrap(),
+            JsRuntimeOption::Deno
+        );
+        assert_eq!(
+            serde_json::from_str::<JsRuntimeOption>("\"node\"").unwrap(),
+            JsRuntimeOption::Node
+        );
+        assert_eq!(
+            serde_json::from_str::<JsRuntimeOption>("\"bun\"").unwrap(),
+            JsRuntimeOption::Bun
+        );
+        assert_eq!(
+            serde_json::from_str::<JsRuntimeOption>("\"auto\"").unwrap(),
+            JsRuntimeOption::Auto
+        );
     }
 }

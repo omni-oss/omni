@@ -4,7 +4,9 @@ use omni_generator_configurations::{
     Generator, GeneratorContext, JsRuntimeOption,
     RunJavaScriptActionConfiguration,
 };
-use omni_messages::{GeneratorEventSubscriber, publish::diagnostic};
+use omni_messages::{
+    DiagnosticLevel, GeneratorEventSubscriber, publish::diagnostic,
+};
 
 use crate::{
     EffectivePolicy, GeneratorSys, ScriptInvocation, ScriptParams,
@@ -74,6 +76,39 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
         // runs unconfined.
         enforce: ctx.enable_experimental,
     };
+
+    // Only Deno is fully confined on every platform; `node` and `bun` are
+    // experimental (missing or partial permission flags, and several OS-level
+    // floors are unavailable for them — see the capability-floor RFCs). Warn
+    // whenever the launch would actually use one — either because it was
+    // explicitly forced, or because `auto` resolved to it (no Deno on `PATH`)
+    // — so the weaker sandboxing is visible. `resolve()` probes `PATH` exactly
+    // as the runner will; `None` (auto found nothing) is left to fail loudly
+    // in the runner.
+    if let Some(resolved) = map_runtime(config.runtime).resolve() {
+        let name = match resolved {
+            DelegatingJsRuntimeOption::Node => Some("node"),
+            DelegatingJsRuntimeOption::Bun => Some("bun"),
+            DelegatingJsRuntimeOption::Deno
+            | DelegatingJsRuntimeOption::Auto => None,
+        };
+        if let Some(name) = name {
+            let how = if config.runtime == JsRuntimeOption::Auto {
+                "auto-detection resolved to"
+            } else {
+                "you selected"
+            };
+            diagnostic!(
+                ctx.subscriber,
+                DiagnosticLevel::Warn,
+                "{how} the `{name}` runtime, which is experimental and not \
+                 fully sandboxed on every platform; only `deno` is fully \
+                 supported. Install/select `deno` for enforced capability \
+                 confinement.",
+            )
+            .await;
+        }
+    }
 
     let result = ctx
         .js_script_runner
