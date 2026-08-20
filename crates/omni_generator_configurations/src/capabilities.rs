@@ -16,7 +16,9 @@
 //! * `Context` = [`GeneratorContext`] carries the action/target currently
 //!   executing.
 
-use omni_capabilities::{CapabilityDomain, CapabilityProfile, NoExtra};
+use omni_capabilities::{
+    CapabilityDomain, CapabilityFloors, CapabilityProfile, NoExtra,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +80,11 @@ impl CapabilityProfile for Generator {
     }
     // Uses the default fail-closed, deny-dominant `decide`.
 }
+
+// The generator floor/baseline/scan chains are exactly the shared defaults:
+// confined to `@workspace/**` for reads and writes, with the trusted import
+// scan granted every domain.
+impl CapabilityFloors for Generator {}
 
 #[cfg(test)]
 mod tests {

@@ -69,6 +69,6 @@ pub use model::{
 };
 pub use omni_types::{OmniPathRoot, Root};
 pub use policy_config::{CapabilitiesStrictness, CapabilityPolicyConfig};
-pub use profile::{CapabilityProfile, NoExtra};
+pub use profile::{CapabilityFloors, CapabilityProfile, NoExtra};
 
 // @anchor:uses

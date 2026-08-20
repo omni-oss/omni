@@ -1,5 +1,6 @@
 use std::future::Future;
 
+use bridge_rpc_services::{FsSys, ProcSys};
 use omni_api::OmniApi;
 use omni_context::{Context, ContextSys};
 use omni_generator::GeneratorSys;
@@ -15,6 +16,7 @@ use rmcp::{
 };
 use serde::Serialize;
 use serde_json::Value;
+use system_traits::BaseFsMetadataAsync;
 
 /// MCP server backed by an omni workspace.
 ///
@@ -59,10 +61,13 @@ where
     TSys: ContextSys
         + GeneratorSys
         + TaskExecutorSys
+        + FsSys
+        + ProcSys
         + Clone
         + Send
         + Sync
         + 'static,
+    <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::default();
@@ -111,10 +116,13 @@ where
     TSys: ContextSys
         + GeneratorSys
         + TaskExecutorSys
+        + FsSys
+        + ProcSys
         + Clone
         + Send
         + Sync
         + 'static,
+    <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     async fn dispatch(
         &self,
@@ -144,6 +152,9 @@ where
             "cache_prune" => call1(args, |p| self.tool_cache_prune(p)).await,
             "task_run" => call1(args, |p| self.tool_task_run(p)).await,
             "exec_command" => call1(args, |p| self.tool_exec_command(p)).await,
+            "tool_list" => call0(self.tool_tool_list()).await,
+            "tool_inspect" => call1(args, |p| self.tool_tool_inspect(p)).await,
+            "tool_run" => call1(args, |p| self.tool_tool_run(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool: {unknown}"),

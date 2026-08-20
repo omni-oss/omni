@@ -12,10 +12,13 @@ where
     TSys: omni_context::ContextSys
         + omni_generator::GeneratorSys
         + omni_task_executor::TaskExecutorSys
+        + bridge_rpc_services::FsSys
+        + bridge_rpc_services::ProcSys
         + Clone
         + Send
         + Sync
         + 'static,
+    <TSys as system_traits::BaseFsMetadataAsync>::Metadata: Send,
 {
     let transport = rmcp::transport::stdio();
     let running = rmcp::serve_server(server, transport).await?;

@@ -40,25 +40,17 @@ use std::{
 use bridge_rpc_router::Router;
 use bridge_rpc_runner::{
     BridgeRunnerOptions, BridgeServiceRunner, DelegatingJsRuntimeOption,
-    RunnerPool, VendoredBridgeService,
+    EffectivePolicy as BaseEffectivePolicy, RunnerPool, SpawnPosture,
+    VendoredBridgeService, build_scan_plan,
+    build_spawn_plan as build_spawn_plan_generic, build_unconfined_plan,
 };
 use bridge_rpc_services::{
     RegisterServicesOptions, register_services_with_defaults,
 };
-use merge::Merge as _;
-use omni_capabilities::{
-    CapabilityDomain, CapabilityRules, PathRoots, RequiredCapabilities, Root,
-    project,
-};
-use omni_capability_enforcement::{
-    BridgeBroker, DenoFlags, EnforcementBackend, FloorStrictness,
-    NativeOsSandbox, NodePermissions, ScriptShimBroker, ShimPolicy,
-    SpawnPolicy, UnenforceablePolicy, build_plan_layered,
-};
+use omni_capabilities::{CapabilityFloors, CapabilityRules, PathRoots, Root};
+use omni_capability_enforcement::{ShimPolicy, SpawnPolicy};
 use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
-use omni_generator_configurations::{
-    CapabilitiesStrictness, Generator, GeneratorContext,
-};
+use omni_generator_configurations::Generator;
 use omni_messages::{
     DiagnosticEvent, diagnostic_event, publish::DiagnosticLevel,
 };
@@ -79,361 +71,35 @@ const EXEC_GENERATOR_SCRIPT_PATH: &str = "/exec-generator-script";
 /// The standard authorizer used to broker a generator's fs operations.
 type GeneratorAuthorizer = EvaluatingAuthorizer<Generator, Root>;
 
-/// The capability inputs that determine how a `run-javascript` process is
-/// launched and confined: the ordered policy `levels` (outermost → innermost:
-/// workspace floor, any ancestor generators, this generator, this action), the
-/// `roots` used to resolve `@workspace/…`-style patterns, and the evaluation
-/// `context` (the current action / target).
-///
-/// Levels are kept **distinct** rather than pre-merged so authorization can
-/// apply the shrink-only (attenuation) model: each level may only narrow the
-/// authority it inherited, so a deeper generator can never grant itself access
-/// an ancestor did not (see [`EvaluatingAuthorizer::layered`]).
-#[derive(Debug, Clone)]
-pub struct EffectivePolicy {
-    pub levels: Vec<CapabilityRules<Generator>>,
-    pub roots: PathRoots<Root>,
-    pub context: GeneratorContext,
-    /// How to treat floor gaps for this generator (from its configuration).
-    pub strictness: CapabilitiesStrictness,
-    /// Whether to actually enforce this policy. When `false` (the workspace has
-    /// not opted into the experimental capabilities feature) the script runs
-    /// unconfined: no OS sandbox, no restrictive launch flags, and a
-    /// pass-through broker. The levels/roots/context are still carried so the
-    /// policy retains its provenance and can be enforced simply by flipping this.
-    pub enforce: bool,
+/// The capability inputs that determine how a generator `run-javascript`
+/// process is launched and confined, specialized to the [`Generator`] profile.
+/// See [`bridge_rpc_runner::EffectivePolicy`] for the shared model.
+pub type EffectivePolicy = BaseEffectivePolicy<Generator>;
+
+/// The permissive capability chain the **unconfined** import-scan runner is
+/// authorized under (the generator profile's shared default).
+fn scan_authorizer_chain() -> CapabilityRules<Generator> {
+    Generator::scan_authorizer_chain()
 }
 
-impl EffectivePolicy {
-    /// The policy levels actually enforced, outermost → innermost. Empty levels
-    /// (a level that declares nothing) are pure pass-through and dropped. When
-    /// *nothing* is declared anywhere, the built-in [`default_floor`] stands in
-    /// as the sole level, so enforcement is always on: an empty declaration
-    /// means "confined to the workspace", never "unconfined".
-    fn effective_levels(&self) -> Vec<CapabilityRules<Generator>> {
-        let levels: Vec<CapabilityRules<Generator>> = self
-            .levels
-            .iter()
-            .filter(|l| !l.is_empty())
-            .cloned()
-            .collect();
-        if levels.is_empty() {
-            vec![default_floor()]
-        } else {
-            levels
-        }
-    }
-
-    /// The effective levels concatenated into a single flat chain. This is the
-    /// conservative **superset** the coarse pre-spawn / OS-sandbox backends
-    /// consume via [`project`]: a union of every level's rules can only be wider
-    /// than the true per-level intersection, so a launch flag never blocks an
-    /// operation the intersection allows. The exact per-operation floor is the
-    /// layered broker ([`EvaluatingAuthorizer::layered`]).
-    fn flat_effective_chain(&self) -> CapabilityRules<Generator> {
-        let mut chain = CapabilityRules::default();
-        for level in self.effective_levels() {
-            chain.merge(level);
-        }
-        chain
-    }
-
-    /// A stable identity for process caching: processes are shared only among
-    /// `run-javascript` actions whose effective policy is identical. The
-    /// evaluation `context` and floor `strictness` are part of that identity,
-    /// **not** just the levels and roots. `context` selects which
-    /// `applies_to`-scoped rules are in force, so two actions with identical
-    /// levels but different action/target contexts must not share a confined
-    /// process — doing so would let one action run under the other's
-    /// context-scoped authority (and under the flags/shim planned for it).
-    /// `strictness` selects the floor stance the process was planned under.
-    fn fingerprint(&self) -> String {
-        let levels =
-            serde_json::to_string(&self.effective_levels()).unwrap_or_default();
-        format!(
-            "{levels}|{:?}|{:?}|{:?}|{}",
-            self.roots, self.context, self.strictness, self.enforce
-        )
-    }
+/// The allow-everything capability chain used to authorize an **unenforced**
+/// generator script run (the generator profile's shared default).
+fn unconfined_authorizer_chain() -> CapabilityRules<Generator> {
+    Generator::unconfined_authorizer_chain()
 }
 
-/// The built-in **confined floor** applied to a generator that declares no
-/// capabilities of its own: it may read and write anywhere within its
-/// workspace, but everything not granted here — network access, spawning child
-/// processes, and filesystem access outside the workspace — is denied
-/// (fail-closed). This keeps capability-free generators working (they scaffold
-/// files within the workspace) while removing the old unconfined `--allow-all`
-/// passthrough.
-fn default_floor() -> CapabilityRules<Generator> {
-    serde_json::from_str(
-        r#"[
-            { "access": "allow", "domain": "fs.read",  "patterns": ["@workspace/**"] },
-            { "access": "allow", "domain": "fs.write", "patterns": ["@workspace/**"] }
-        ]"#,
-    )
-    .expect("built-in floor chain is valid")
-}
-
-/// Map the generator's configured [`CapabilitiesStrictness`] onto the
-/// enforcement layer's [`FloorStrictness`]. `require-floor` promotes every
-/// floor gap (a governed domain resting only on a bypassable in-process
-/// mechanism) into a hard refusal; `warn` keeps the shipped diagnostic-only
-/// behaviour.
-fn floor_strictness(strictness: CapabilitiesStrictness) -> FloorStrictness {
-    match strictness {
-        CapabilitiesStrictness::Warn => FloorStrictness::Warn,
-        CapabilitiesStrictness::RequireFloor => FloorStrictness::RequireFloor,
-    }
-}
-
-/// Plans the fail-closed pre-spawn [`SpawnPolicy`] for an enforced generator,
-/// together with the [`ShimPolicy`] residual and any **diagnostics** to surface.
-///
-/// Two kinds of diagnostic are produced: rules that opted into
-/// `on_unenforceable: warn` (which proceed with strictly less confinement than
-/// requested — a `deny`-level gap errors instead; an `allow`-level gap is
-/// silent), and **floor gaps** — governed domains that on the resolved runtime
-/// have no un-bypassable runtime-flag or OS-sandbox floor and so rest on the
-/// bypassable in-process broker/shim alone. Diagnostics are returned rather
-/// than logged here so the caller can route them through the run's diagnostic
-/// subscriber.
-///
-/// The runtime backend (`deno`/`node`) is composed with the [`NativeOsSandbox`]
-/// (Landlock on Linux) and the [`BridgeBroker`] descriptor so that patterns a
-/// coarse pre-spawn flag cannot express (e.g. `deny **/.git/**`) are resolved by
-/// the in-process broker rather than widening access, while the OS sandbox
-/// additionally confines the child's *direct* filesystem access at the kernel —
-/// closing the hole where a script bypasses the bridge to touch the disk itself.
-/// A baseline `fs.read @workspace/**` is prepended so the runtime can load the
-/// vendored bundle and the generator's own scripts; precise reads are still
-/// brokered per operation. Bun has no pre-spawn permission model, so a restricted
-/// domain neither the OS sandbox nor the broker can confine (e.g. `process`)
-/// makes [`build_plan_strict`] fail closed — the intended outcome.
-///
-/// ## Require-floor opt-in
-///
-/// By default, a governed domain that ends up resting only on the bypassable
-/// in-process broker/shim (no un-bypassable runtime-flag or OS-sandbox floor —
-/// e.g. `net`/`process` on Bun, or `fs` off-Linux) is surfaced as a non-fatal
-/// diagnostic. A generator that sets `capabilities: { strictness: require-floor }`
-/// promotes that stance to [`FloorStrictness::RequireFloor`], turning every such
-/// floor gap into a hard refusal.
-/// Externally-resolved launch posture threaded into [`build_spawn_plan`].
-///
-/// The escape-hatch read is done once at the call site
-/// ([`from_env`](Self::from_env)) rather than reading the process environment
-/// mid-plan, so the plan the runner applies and the posture it claims cannot
-/// diverge — and so the disabled posture is directly injectable in tests
-/// without mutating process-global state.
-#[derive(Debug, Clone, Copy, Default)]
-struct SpawnPosture {
-    /// Whether the `OMNI_DISABLE_OS_SANDBOX` escape hatch is active for this
-    /// run: the OS-sandbox floor is dropped and filesystem confinement falls
-    /// back to the bypassable in-process broker.
-    os_sandbox_disabled: bool,
-}
-
-impl SpawnPosture {
-    /// Resolve the posture from the process environment (the production path).
-    fn from_env() -> Self {
-        Self {
-            os_sandbox_disabled: std::env::var_os("OMNI_DISABLE_OS_SANDBOX")
-                .is_some(),
-        }
-    }
-}
-
+/// Plans the fail-closed pre-spawn policy for an enforced generator, wrapping
+/// the shared planner's failure in a generator-specific message.
 fn build_spawn_plan(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy,
     posture: SpawnPosture,
 ) -> Result<(SpawnPolicy, ShimPolicy, Vec<DiagnosticEvent>), Error> {
-    let mut chain: CapabilityRules<Generator> = serde_json::from_str(
-        r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
-    )
-    .expect("baseline read chain is valid");
-    chain.merge(policy.flat_effective_chain());
-
-    let required = project(&chain, &policy.context);
-
-    // The per-level projections drive the *layered* shim residual so `net`/
-    // `process` are attenuated across levels exactly like the broker's `fs`: a
-    // deeper level can only narrow an ancestor's allow-list, never widen it. The
-    // merged `required` above stays the conservative superset the coarse
-    // pre-spawn flags / OS sandbox consume.
-    let level_reqs: Vec<RequiredCapabilities> = policy
-        .effective_levels()
-        .iter()
-        .map(|level| project(level, &policy.context))
-        .collect();
-
-    let deno = DenoFlags;
-    let node = NodePermissions;
-    // Use the OS-sandbox posture resolved ONCE by the caller so the floor the
-    // plan *claims* matches the confinement the spawner will actually *apply*
-    // (T17/T18): the `OMNI_DISABLE_OS_SANDBOX` escape hatch is read a single
-    // time into `posture`, and the runtime is marked unconfined when it cannot
-    // be placed under the OS mechanism on this platform. Bun cannot boot inside
-    // a Windows AppContainer, so the runner launches it unconfined there (see
-    // `bridge_rpc_runner::build_command`); an unconfined runtime must not claim
-    // the OS-sandbox fs floor, so the plan surfaces an honest floor gap (a hard
-    // refusal under `require-floor`) instead of advertising a floor that is
-    // never installed.
-    let os_sandbox_disabled = posture.os_sandbox_disabled;
-    let runtime_confined = !(cfg!(target_os = "windows")
-        && runtime == DelegatingJsRuntimeOption::Bun);
-    let os = NativeOsSandbox::resolved(os_sandbox_disabled, runtime_confined);
-    // The generator bridge mediates the filesystem routes and `env`. `env` is
-    // a generator-governed domain (`Generator::SUPPORTED` includes it), and the
-    // enforcing `sys` filters it by default (`EnvAccess::Filter`): only
-    // policy-allowed variable names reach the script's `proc.env()` snapshot. So
-    // claiming the broker's `env` coverage here is honest — the RPC env service
-    // only ever exposes the policy-filtered view.
-    let broker = BridgeBroker::mediating([
-        CapabilityDomain::FsRead,
-        CapabilityDomain::FsWrite,
-        CapabilityDomain::Env,
-    ]);
-    // The script-level shim enforces `net`/`process` precisely in-runtime for
-    // whatever the launch flags could not confine on their own (Node's coarse
-    // gates, Bun's absent permission model), so those domains no longer fail
-    // closed. The residual it must enforce comes back on `plan.shim`.
-    let shim = ScriptShimBroker::new();
-    let backends: Vec<&dyn EnforcementBackend> = match runtime {
-        DelegatingJsRuntimeOption::Deno => vec![&deno, &os, &broker, &shim],
-        DelegatingJsRuntimeOption::Node => vec![&node, &os, &broker, &shim],
-        // Bun has no pre-spawn flags; the OS sandbox confines fs and the shim
-        // confines net/process at the script boundary.
-        DelegatingJsRuntimeOption::Bun => vec![&os, &broker, &shim],
-        DelegatingJsRuntimeOption::Auto => {
-            unreachable!("runtime is resolved before planning")
-        }
-    };
-
-    let plan = build_plan_layered(
-        &required,
-        &level_reqs,
-        &policy.roots,
-        &backends,
-        UnenforceablePolicy::default(),
-        floor_strictness(policy.strictness),
-    )
-    .map_err(|e| {
+    build_spawn_plan_generic(runtime, policy, posture).map_err(|e| {
         Error::custom(format!(
             "cannot enforce the capability policy for this generator: {e}"
         ))
-    })?;
-
-    // Two kinds of diagnostic, both routed through the run's subscriber:
-    //
-    // * `warnings` — a rule that opted into `on_unenforceable: warn` ran with
-    //   strictly less confinement than requested.
-    // * `floor_gaps` — a governed domain (net/process on Bun, fs off-Linux, …)
-    //   is enforced only by the bypassable in-process broker/shim, with no
-    //   un-bypassable runtime-flag or OS-sandbox floor for the resolved runtime.
-    let mut diagnostics: Vec<DiagnosticEvent> = Vec::new();
-
-    // Loud, distinct signal for the escape hatch: when `OMNI_DISABLE_OS_SANDBOX`
-    // is set the OS-sandbox floor is dropped and filesystem confinement falls
-    // back to the bypassable in-process broker. This is a real security
-    // downgrade that is easy to enable unknowingly (inherited env in CI, a
-    // stale shell export), so surface it prominently and up front — ahead of
-    // the per-domain floor-gap warnings — rather than letting it hide among the
-    // ordinary gap diagnostics it induces.
-    if os_sandbox_disabled {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
-            "OS-level sandbox is DISABLED for this run \
-             (OMNI_DISABLE_OS_SANDBOX is set): filesystem confinement falls \
-             back to the bypassable in-process broker and the kernel backstop \
-             against direct syscalls is dropped. This is a security downgrade — \
-             unset OMNI_DISABLE_OS_SANDBOX to restore OS-level confinement.",
-        ));
-    }
-
-    for warning in plan.warnings {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
-            "capability policy not fully enforced: {warning}",
-        ));
-    }
-    for gap in plan.floor_gaps {
-        diagnostics.push(diagnostic_event!(
-            DiagnosticLevel::Warn,
-            "capability enforced without an un-bypassable floor: {}",
-            gap.reason
-        ));
-    }
-
-    // Windows note: `bun` cannot boot inside an AppContainer (it `stat`s every
-    // CWD ancestor up to `C:\`, which a Low-integrity container is denied), so
-    // the runner launches it *unconfined* there. That is already reflected in
-    // the plan: `NativeOsSandbox::resolved(.., runtime_confined = false)` above
-    // makes the OS tier claim no fs floor for Bun on Windows, so the missing
-    // floor is surfaced through the normal `floor_gaps` path (and refused under
-    // `require-floor`) rather than needing a bespoke diagnostic here.
-
-    Ok((plan.spawn, plan.shim, diagnostics))
-}
-
-/// The permissive capability chain the **unconfined** import-scan runner is
-/// authorized under. Resolution is omni's own trusted tooling: it drives the
-/// runtime's resolver over the tree and reads the scanned files directly (never
-/// executing them), so it is granted every domain. In practice this only widens
-/// the env snapshot the scan runtime inherits (so `deno info` and the resolver
-/// see the ambient env); the scan performs its filesystem reads through the
-/// runtime's own APIs, not the brokered `sys`.
-fn scan_authorizer_chain() -> CapabilityRules<Generator> {
-    serde_json::from_str(
-        r#"[
-            { "access": "allow", "domain": "fs.read",  "patterns": ["**"] },
-            { "access": "allow", "domain": "fs.write", "patterns": ["**"] },
-            { "access": "allow", "domain": "process",  "patterns": ["*"] },
-            { "access": "allow", "domain": "env",      "patterns": ["*"] }
-        ]"#,
-    )
-    .expect("scan authorizer chain is valid")
-}
-
-/// The launch policy for the unconfined import-scan runner: **no** OS sandbox
-/// (`os_sandbox` stays `None`), so on Windows it is an ordinary child with full
-/// filesystem read. Deno additionally enforces its own permission model, so the
-/// scan process is granted read + subprocess + env + sys access to drive
-/// `deno info` and read the resolved graph; Node and Bun have no pre-spawn
-/// permission model and need no flags.
-fn build_scan_plan(runtime: DelegatingJsRuntimeOption) -> SpawnPolicy {
-    let mut spawn = SpawnPolicy::new();
-    if runtime == DelegatingJsRuntimeOption::Deno {
-        spawn.push_arg("--allow-read");
-        spawn.push_arg("--allow-run");
-        spawn.push_arg("--allow-env");
-        spawn.push_arg("--allow-sys");
-    }
-    spawn
-}
-
-/// The launch policy for an **unenforced** script run — used when the workspace
-/// has not opted into the experimental capabilities feature
-/// ([`EffectivePolicy::enforce`] is `false`). No OS sandbox (`os_sandbox` stays
-/// `None`) and no restrictive flags, restoring the historical unconfined
-/// passthrough. Deno defaults to fully locked-down, so it must be explicitly
-/// opened with `--allow-all`; Node and Bun impose no restrictive default and
-/// need no flags. Paired with [`unconfined_authorizer_chain`], every mediated
-/// `sys` operation is then allowed, so the broker is a pure pass-through.
-fn build_unconfined_plan(runtime: DelegatingJsRuntimeOption) -> SpawnPolicy {
-    let mut spawn = SpawnPolicy::new();
-    if runtime == DelegatingJsRuntimeOption::Deno {
-        spawn.push_arg("--allow-all");
-    }
-    spawn
-}
-
-/// The allow-everything capability chain used to authorize an **unenforced**
-/// script run. Every mediated domain (fs read/write, `env`) is granted, so the
-/// in-process broker never denies an operation and the child's `env` snapshot
-/// is the full ambient environment — matching an unconfined runtime.
-fn unconfined_authorizer_chain() -> CapabilityRules<Generator> {
-    scan_authorizer_chain()
+    })
 }
 
 type RunnerFuture =
@@ -807,7 +473,12 @@ impl JsScriptRunner for LazyScriptRunner {
 
 #[cfg(test)]
 mod tests {
-    use omni_generator_configurations::CapabilitiesStrictness;
+    use bridge_rpc_runner::floor_strictness;
+    use omni_capabilities::CapabilityDomain;
+    use omni_capability_enforcement::FloorStrictness;
+    use omni_generator_configurations::{
+        CapabilitiesStrictness, GeneratorContext,
+    };
 
     use super::*;
 

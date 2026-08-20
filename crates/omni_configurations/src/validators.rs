@@ -4,7 +4,7 @@ use lazy_regex::{Lazy, Regex, regex};
 use serde_validate::{StaticValidator, declare_static_validator};
 use sets::unordered_set;
 
-use crate::GeneratorSourceConfiguration;
+use crate::{GeneratorSourceConfiguration, ToolSourceConfiguration};
 
 #[derive(Debug, Clone, Copy, Default)]
 struct GeneratorSourcesValidator;
@@ -41,6 +41,43 @@ declare_static_validator!(
     Vec<GeneratorSourceConfiguration>,
     validate_generator_sources,
     option_validate_generator_sources,
+);
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ToolSourcesValidator;
+
+impl<T: Borrow<Vec<ToolSourceConfiguration>>> StaticValidator<T>
+    for ToolSourcesValidator
+{
+    fn validate_static(value: &T) -> Result<(), String> {
+        let value = value.borrow();
+        let mut encountered_uri = unordered_set!();
+
+        for item in value {
+            match item {
+                ToolSourceConfiguration::Local(_) => {
+                    // do nothing with local sources
+                }
+                ToolSourceConfiguration::Git(git) => {
+                    if !encountered_uri.insert(git.uri.as_str()) {
+                        return Err(format!(
+                            "Duplicate tool source git uri found: {}\nTool source git uri should be unique",
+                            git.uri
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+declare_static_validator!(
+    ToolSourcesValidator,
+    Vec<ToolSourceConfiguration>,
+    validate_tool_sources,
+    option_validate_tool_sources,
 );
 
 #[derive(Debug, Clone, Copy, Default)]

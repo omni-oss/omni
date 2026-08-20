@@ -43,6 +43,11 @@ omni_task_executor = { workspace = true }
 omni_configurations = { workspace = true }
 omni_generator = { workspace = true }
 omni_generator_configurations = { workspace = true }
+omni_tool = { workspace = true }
+omni_tool_configurations = { workspace = true }
+omni_capabilities = { workspace = true }
+omni_input_schema = { workspace = true }
+bridge_rpc_services = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_cache = { workspace = true }
 omni_execution_plan = { workspace = true }

@@ -26,3 +26,8 @@ dependencies:
   - system_traits
   - maps
   - sets
+  - omni_tool
+  - omni_tool_configurations
+  - omni_capabilities
+  - omni_input_schema
+  - bridge_rpc_services

@@ -6,3 +6,4 @@ pub mod generator;
 pub mod hash;
 pub mod project;
 pub mod task;
+pub mod tool;

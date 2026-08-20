@@ -32,7 +32,10 @@ rust-embed = { workspace = true, features = [
 ] }
 bridge_rpc_core = { workspace = true }
 bridge_rpc_router = { workspace = true }
+merge = { workspace = true }
+omni_capabilities = { workspace = true }
 omni_capability_enforcement = { workspace = true }
+omni_messages = { workspace = true }
 omni_utils = { workspace = true }
 
 [dev-dependencies]

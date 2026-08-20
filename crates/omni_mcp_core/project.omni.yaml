@@ -13,3 +13,5 @@ dependencies:
   - omni_tera
   - maps
   - omni_config_types
+  - bridge_rpc_services
+  - system_traits

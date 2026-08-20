@@ -105,6 +105,10 @@ pub async fn run(
             let context = create_ctx()?;
             commands::project::run(cmd, &context).await?;
         }
+        CliSubcommands::Tool(cmd) => {
+            let context = create_ctx()?;
+            commands::tool::run(cmd, &context).await?;
+        }
         CliSubcommands::Mcp(mcp) => {
             let context = if let Some(root) = &mcp.root_dir {
                 context::from_args_root_dir_and_sys(

@@ -21,7 +21,7 @@ use crate::{
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
         generator::GeneratorCommand, hash::HashCommand, init::InitCommand,
-        project::ProjectCommand,
+        project::ProjectCommand, tool::ToolCommand,
     },
 };
 
@@ -38,6 +38,7 @@ pub mod init;
 pub mod mcp;
 pub mod project;
 pub mod run;
+pub mod tool;
 
 const ABOUT: &str = "omni is development workflow orchestration tool";
 const LONG_ABOUT: &str = r#"
@@ -199,6 +200,9 @@ pub enum CliSubcommands {
 
     #[command(about = "Project related commands")]
     Project(ProjectCommand),
+
+    #[command(about = "Tool related subcommands")]
+    Tool(ToolCommand),
 
     #[command(about = "Start an MCP server for AI agent integration")]
     Mcp(McpCommand),

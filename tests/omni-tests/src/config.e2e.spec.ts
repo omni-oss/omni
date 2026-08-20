@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { runOmni } from "@/harness";
 
-const SCHEMAS = ["workspace", "project", "generator"] as const;
+const SCHEMAS = ["workspace", "project", "generator", "tool"] as const;
 
 /** Parse a command's stdout as JSON, failing the test with context on error. */
 function parseSchema(stdout: string): Record<string, unknown> {
@@ -60,7 +60,7 @@ describe("+config @output (schema emission)", () => {
         expect(result).toHaveExitCode(2);
         expect(result).toHaveStderrContaining("invalid value 'bogus'");
         expect(result).toHaveStderrContaining(
-            "[possible values: workspace, project, generator]",
+            "[possible values: workspace, project, generator, tool]",
         );
     });
 

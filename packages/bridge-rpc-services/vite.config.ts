@@ -13,6 +13,7 @@ export default createConfig({
                     "exec-script": "./src/exec-script/index.ts",
                     "exec-generator-script":
                         "./src/exec-generator-script/index.ts",
+                    "exec-tool": "./src/exec-tool/index.ts",
                     "import-scan": "./src/import-scan/index.ts",
                 },
 

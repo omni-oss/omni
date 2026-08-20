@@ -11,6 +11,7 @@ declare module "vitest" {
             | "caching"
             | "execution"
             | "output"
-            | "capability";
+            | "capability"
+            | "tool";
     }
 }

@@ -51,8 +51,11 @@ export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
                 name: "output",
             },
             {
-                name: "capability"
-            }
+                name: "capability",
+            },
+            {
+                name: "tool",
+            },
         ],
         strictTags: true,
     },

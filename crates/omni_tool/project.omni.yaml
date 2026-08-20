@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
+name: omni_tool
+extends:
+  - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_tool_configurations
+  - omni_configuration_discovery
+  - omni_file_data_serde
+  - omni_discovery
+  - omni_tera
+  - omni_messages
+  - system_traits
+  - bridge_rpc_runner
+  - bridge_rpc_router
+  - bridge_rpc_services
+  - omni_capabilities
+  - omni_capability_enforcement
+  - omni_capability_sys
+  - trace

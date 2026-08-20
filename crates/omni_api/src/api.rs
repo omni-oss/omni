@@ -511,3 +511,52 @@ where
         .await
     }
 }
+
+// ── Tool operations ───────────────────────────────────────────────────────────
+
+impl<TSys, S> OmniApi<TSys, S>
+where
+    TSys: ContextSys + GeneratorSys + Clone,
+    S: OmniEventSubscriber,
+{
+    /// List all discovered tools in the workspace.
+    pub async fn tool_list(
+        &self,
+    ) -> eyre::Result<crate::operations::tool::ToolListResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::tool::handle_tool_list(ctx.as_context()).await
+    }
+
+    /// Inspect a single tool, returning the JSON Schema of its own inputs.
+    pub async fn tool_inspect(
+        &self,
+        name: &str,
+    ) -> eyre::Result<crate::operations::tool::ToolInspectResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::tool::handle_tool_inspect(ctx.as_context(), name)
+            .await
+    }
+
+    /// Run a tool by name with the given JSON arguments, returning its captured
+    /// JSON value. `working_dir` selects the directory the tool operates in.
+    pub async fn tool_run(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+        working_dir: Option<crate::operations::tool::ToolWorkingDir>,
+    ) -> eyre::Result<serde_json::Value>
+    where
+        TSys: bridge_rpc_services::FsSys + bridge_rpc_services::ProcSys,
+        <TSys as system_traits::BaseFsMetadataAsync>::Metadata: Send,
+    {
+        let mut ctx = self.ctx.lock().await;
+        ctx.load().await?;
+        crate::operations::tool::handle_tool_run(
+            ctx.as_loaded_context(),
+            name,
+            args,
+            working_dir,
+        )
+        .await
+    }
+}

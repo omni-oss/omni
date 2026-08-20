@@ -36,7 +36,8 @@ use crate::{
 /// for runtime edges the static graph cannot model. Real nesting is only a few
 /// levels deep, so the default is generous. Callers can override it via
 /// [`RunConfig::max_depth`] when a config legitimately nests deeper.
-pub const DEFAULT_MAX_GENERATOR_DEPTH: usize = 64;
+pub const DEFAULT_MAX_GENERATOR_DEPTH: usize =
+    bridge_rpc_runner::DEFAULT_MAX_DEPTH;
 
 /// The empty workspace-capability floor used when a caller does not supply one
 /// (preserving the opt-in-per-generator behaviour). A workspace that declares a

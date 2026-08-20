@@ -393,3 +393,87 @@ async fn inspect_missing_generator_returns_err() {
         .await;
     assert!(result.is_err(), "should error for unknown generator");
 }
+
+// ── tool list / inspect ────────────────────────────────────────────────
+
+fn make_api_with_tool(
+    workspace_dir: &Path,
+) -> OmniApi<RealSys, NoopSubscriber> {
+    std::fs::write(
+        workspace_dir.join("workspace.omni.yaml"),
+        "projects:\n  - \"projects/**\"\ntools:\n  - source: local\n    path: \"tools/**\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(workspace_dir.join("projects/alpha")).unwrap();
+    std::fs::write(
+        workspace_dir.join("projects/alpha/project.omni.yaml"),
+        "name: alpha\ntasks:\n  build:\n    exec: echo \"alpha\"\n",
+    )
+    .unwrap();
+
+    let tool_dir = workspace_dir.join("tools/summarize");
+    std::fs::create_dir_all(&tool_dir).unwrap();
+    std::fs::write(
+        tool_dir.join("tool.omni.yaml"),
+        r#"
+type: js
+name: summarize
+description: Summarize a directory
+entrypoint: ./index.mjs
+inputs:
+  - type: string
+    name: dir
+  - type: string
+    name: format
+    default: md
+    allowed: [md, json]
+"#,
+    )
+    .unwrap();
+
+    make_api(workspace_dir)
+}
+
+#[tokio::test]
+async fn tool_list_returns_discovered_tools() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let api = make_api_with_tool(tmp.path());
+
+    let resp = api.tool_list().await.expect("tool_list should succeed");
+    let names: Vec<String> =
+        resp.tools.iter().map(|t| t.name.clone()).collect();
+    assert_eq!(names, vec!["summarize".to_string()]);
+}
+
+#[tokio::test]
+async fn tool_inspect_returns_input_schema() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let api = make_api_with_tool(tmp.path());
+
+    let resp = api
+        .tool_inspect("summarize")
+        .await
+        .expect("tool_inspect should succeed");
+    assert_eq!(resp.name, "summarize");
+
+    let schema = &resp.input_schema;
+    assert!(schema.is_object(), "schema should be an object: {schema}");
+    let props = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .expect("schema has properties");
+    assert!(props.contains_key("dir"), "schema has `dir`: {schema}");
+    assert!(
+        props.contains_key("format"),
+        "schema has `format`: {schema}"
+    );
+}
+
+#[tokio::test]
+async fn tool_inspect_missing_tool_returns_err() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let api = make_api_with_tool(tmp.path());
+
+    let result = api.tool_inspect("nonexistent").await;
+    assert!(result.is_err(), "should error for unknown tool");
+}

@@ -526,6 +526,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_tool]
+path = "crates/omni_tool"
+include = [
+    "crates/omni_tool/**",
+]
+public_api = false
+
+[monorepo.packages.omni_tool_configurations]
+path = "crates/omni_tool_configurations"
+include = [
+    "crates/omni_tool_configurations/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

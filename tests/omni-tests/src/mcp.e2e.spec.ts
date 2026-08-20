@@ -8,6 +8,7 @@
  * state leaks between them via the process or workspace.
  */
 
+import { spawnSync } from "node:child_process";
 import { normalize } from "node:path";
 import type { Client } from "@modelcontextprotocol/client";
 import { describe, expect, it } from "vitest";
@@ -287,7 +288,7 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
 describe("+mcp @mcp @cli (protocol)", {
     tags: ["mcp"],
 }, () => {
-    it("tools/list returns all 13 expected tools", async () => {
+    it("tools/list returns all 16 expected tools", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
 
@@ -308,6 +309,9 @@ describe("+mcp @mcp @cli (protocol)", {
                 "project_config",
                 "project_list",
                 "task_run",
+                "tool_inspect",
+                "tool_list",
+                "tool_run",
                 "workspace_info",
             ].sort(),
         );
@@ -330,6 +334,8 @@ describe("+mcp @mcp @cli (protocol)", {
             "hash_workspace",
             "hash_project",
             "cache_stats",
+            "tool_list",
+            "tool_inspect",
         ];
         for (const name of readOnlyTools) {
             expect(
@@ -351,6 +357,7 @@ describe("+mcp @mcp @cli (protocol)", {
             "cache_prune",
             "task_run",
             "exec_command",
+            "tool_run",
         ];
         for (const name of writeTools) {
             expect(
@@ -1603,3 +1610,119 @@ describe("+mcp @mcp @cli (task_run cached logs)", {
         expect(replay?.logs ?? "").not.toContain("RUN-MARK-2");
     });
 });
+
+function denoAvailable(): boolean {
+    try {
+        return (
+            spawnSync("deno", ["--version"], { stdio: "ignore" }).status === 0
+        );
+    } catch {
+        return false;
+    }
+}
+
+// The three fixed tool-subsystem entries (`tool_list` / `tool_inspect` /
+// `tool_run`) exposed regardless of how many workspace tools exist. Exercises
+// the full MCP round trip: list a discovered tool, inspect its own input schema,
+// then run it and read back the captured JSON return value.
+function mcpToolWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            tools: [{ source: "local", path: "tools/**" }],
+        },
+        files: {
+            "tools/greet/tool.omni.yaml": `type: js
+name: greet
+description: Greet a user
+entrypoint: ./index.mjs
+inputs:
+  - type: string
+    name: who
+`,
+            "tools/greet/index.mjs": `export default function (ctx) {
+    return { greeting: \`hello \${ctx.inputs.who}\` };
+}
+`,
+            "tools/writer/tool.omni.yaml": `type: js
+name: writer
+description: Write a string to a path via the enforced sys
+entrypoint: ./index.mjs
+inputs:
+  - type: string
+    name: path
+`,
+            "tools/writer/index.mjs": `export default async function (ctx) {
+    await ctx.sys.fs.writeStringToFile(ctx.inputs.path, "ok");
+    return { wrote: ctx.inputs.path };
+}
+`,
+            "sub/.keep": "",
+        },
+    };
+}
+
+describe.runIf(denoAvailable())(
+    "+mcp @mcp @cli (tools)",
+    {
+        tags: ["mcp", "tool"],
+        timeout: 60_000,
+    },
+    () => {
+        it("lists, inspects, and runs a workspace tool over MCP", async () => {
+            const ws = makeWorkspace(mcpToolWorkspace());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            // The fixed tool entries are advertised regardless of workspace tools.
+            const listed = await client.listTools();
+            const names = listed.tools.map((t) => t.name);
+            expect(names).toContain("tool_list");
+            expect(names).toContain("tool_inspect");
+            expect(names).toContain("tool_run");
+            // Individual workspace tools are never injected as MCP tools.
+            expect(names).not.toContain("greet");
+
+            const list = getContent<{
+                tools: Array<{ name: string; description?: string | null }>;
+            }>(await client.callTool({ name: "tool_list", arguments: {} }));
+            expect(list.tools.map((t) => t.name)).toContain("greet");
+
+            const inspect = getContent<{
+                name: string;
+                input_schema: { properties?: Record<string, unknown> };
+            }>(
+                await client.callTool({
+                    name: "tool_inspect",
+                    arguments: { name: "greet" },
+                }),
+            );
+            expect(inspect.name).toBe("greet");
+            expect(inspect.input_schema.properties).toHaveProperty("who");
+
+            const run = getContent<{ result: { greeting: string } }>(
+                await client.callTool({
+                    name: "tool_run",
+                    arguments: { name: "greet", args: { who: "world" } },
+                }),
+            );
+            expect(run.result).toEqual({ greeting: "hello world" });
+        });
+
+        it("resolves a tool's relative writes against working_dir", async () => {
+            const ws = makeWorkspace(mcpToolWorkspace());
+            const { client } = await connectMcp({ cwd: ws.cwd });
+
+            getContent<{ result: unknown }>(
+                await client.callTool({
+                    name: "tool_run",
+                    arguments: {
+                        name: "writer",
+                        args: { path: "out.txt" },
+                        working_dir: "sub",
+                    },
+                }),
+            );
+            expect(ws.read("sub/out.txt")).toBe("ok");
+        });
+    },
+);

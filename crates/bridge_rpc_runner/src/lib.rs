@@ -18,12 +18,14 @@
 //!   mechanism that leaves all policy/enforcement decisions to a caller-
 //!   supplied factory closure.
 
+mod capability_plan;
 mod error;
 mod pool;
 mod runner;
 mod runtime;
 mod vendor;
 
+pub use capability_plan::*;
 pub use error::*;
 pub use pool::*;
 pub use runner::*;

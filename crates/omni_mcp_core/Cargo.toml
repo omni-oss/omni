@@ -32,6 +32,8 @@ omni_messages = { workspace = true }
 omni_task_executor = { workspace = true }
 omni_generator = { workspace = true }
 omni_generator_configurations = { workspace = true }
+bridge_rpc_services = { workspace = true }
+system_traits = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_tera = { workspace = true }
 async-trait = { workspace = true }

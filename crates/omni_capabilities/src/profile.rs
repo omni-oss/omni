@@ -20,8 +20,8 @@ use schemars::JsonSchema;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
-    Capability, CapabilityDomain, Decision, PathRoots, Request,
-    eval::deny_dominates,
+    Capability, CapabilityDomain, CapabilityRules, Decision, PathRoots,
+    Request, eval::deny_dominates,
 };
 
 /// Marker + behavior selector for a subsystem's capability model.
@@ -119,3 +119,74 @@ pub trait CapabilityProfile:
     JsonSchema,
 )]
 pub struct NoExtra {}
+
+/// The baseline capability *chains* a subsystem contributes to the shared JS
+/// capability planner.
+///
+/// [`CapabilityProfile`] describes *what* a subsystem may express; this
+/// extension supplies the fixed chains the planner needs but that are not part
+/// of a run's *declared* policy:
+///
+/// * [`default_floor`](Self::default_floor) — the confined floor applied to a
+///   run that declares no capabilities of its own (enforcement is never off
+///   just because nothing was declared).
+/// * [`baseline_read_chain`](Self::baseline_read_chain) — reads the runtime
+///   always needs to boot (its own entrypoint / the vendored bundle), prepended
+///   to every enforced spawn plan; precise reads are still brokered per
+///   operation.
+/// * [`scan_authorizer_chain`](Self::scan_authorizer_chain) — the permissive
+///   chain the trusted, unconfined import-scan runner is authorized under.
+/// * [`unconfined_authorizer_chain`](Self::unconfined_authorizer_chain) — the
+///   allow-everything chain authorizing an *unenforced* run (the capabilities
+///   feature is off), so the in-process broker is a pure pass-through.
+///
+/// The default implementations confine to `@workspace/**` and are shared by
+/// every JS subsystem today (generators, tools). A subsystem overrides a method
+/// only when its floor genuinely differs (e.g. a stricter read-only floor for a
+/// remotely-sourced unit).
+pub trait CapabilityFloors: CapabilityProfile {
+    /// The built-in confined floor for a run that declares no capabilities: it
+    /// may read and write within its workspace, but everything not granted here
+    /// (network, process spawning, filesystem outside the workspace) is denied.
+    fn default_floor() -> CapabilityRules<Self> {
+        serde_json::from_str(
+            r#"[
+                { "access": "allow", "domain": "fs.read",  "patterns": ["@workspace/**"] },
+                { "access": "allow", "domain": "fs.write", "patterns": ["@workspace/**"] }
+            ]"#,
+        )
+        .expect("built-in floor chain is valid")
+    }
+
+    /// Reads the runtime always needs to boot, prepended to every enforced spawn
+    /// plan so it can load its own entrypoint and the vendored bundle.
+    fn baseline_read_chain() -> CapabilityRules<Self> {
+        serde_json::from_str(
+            r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
+        )
+        .expect("baseline read chain is valid")
+    }
+
+    /// The permissive chain the unconfined import-scan runner runs under. The
+    /// scan is omni's own trusted tooling (it resolves and reads files, never
+    /// executes them), so it is granted every domain; in practice this only
+    /// widens the env snapshot the scan runtime inherits.
+    fn scan_authorizer_chain() -> CapabilityRules<Self> {
+        serde_json::from_str(
+            r#"[
+                { "access": "allow", "domain": "fs.read",  "patterns": ["**"] },
+                { "access": "allow", "domain": "fs.write", "patterns": ["**"] },
+                { "access": "allow", "domain": "process",  "patterns": ["*"] },
+                { "access": "allow", "domain": "env",      "patterns": ["*"] }
+            ]"#,
+        )
+        .expect("scan authorizer chain is valid")
+    }
+
+    /// The allow-everything chain authorizing an unenforced run. Defaults to the
+    /// same permissive chain as the scan runner, so every mediated domain is
+    /// granted and the broker never denies an operation.
+    fn unconfined_authorizer_chain() -> CapabilityRules<Self> {
+        Self::scan_authorizer_chain()
+    }
+}

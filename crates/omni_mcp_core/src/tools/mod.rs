@@ -3,6 +3,7 @@ pub mod generator;
 pub mod hash;
 pub mod project;
 pub mod task;
+pub mod tool;
 pub mod workspace;
 
 use crate::model::*;
@@ -74,6 +75,21 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
             "Run an arbitrary command across projects",
             false,
         ),
+        tool_noargs(
+            "tool_list",
+            "List all available tools in the workspace",
+            true,
+        ),
+        tool_typed::<ToolInspectParams>(
+            "tool_inspect",
+            "Inspect a tool's input schema derived from its own inputs",
+            true,
+        ),
+        tool_typed::<ToolRunParams>(
+            "tool_run",
+            "Run a workspace tool by name with JSON arguments and return its captured value",
+            false,
+        ),
     ]
 }
 
@@ -106,4 +122,41 @@ fn tool_typed<P: schemars::JsonSchema>(
     let schema = std::sync::Arc::new(schema_obj);
     let tool = Tool::new_with_raw(name, Some(description.into()), schema);
     tool.with_annotations(ToolAnnotations::new().read_only(read_only))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exposes_exactly_three_fixed_tool_entries() {
+        let names: Vec<String> =
+            tool_list().iter().map(|t| t.name.to_string()).collect();
+        for expected in ["tool_list", "tool_inspect", "tool_run"] {
+            assert!(
+                names.iter().any(|n| n == expected),
+                "missing MCP tool entry `{expected}`; got {names:?}"
+            );
+        }
+        // Exactly three tool-subsystem entries, never one per workspace tool.
+        let tool_entries =
+            names.iter().filter(|n| n.starts_with("tool_")).count();
+        assert_eq!(tool_entries, 3, "got {names:?}");
+    }
+
+    #[test]
+    fn tool_run_is_not_read_only_but_list_and_inspect_are() {
+        let by_name = |name: &str| {
+            tool_list()
+                .into_iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing {name}"))
+        };
+        let read_only = |t: &rmcp::model::Tool| {
+            t.annotations.as_ref().and_then(|a| a.read_only_hint)
+        };
+        assert_eq!(read_only(&by_name("tool_list")), Some(true));
+        assert_eq!(read_only(&by_name("tool_inspect")), Some(true));
+        assert_eq!(read_only(&by_name("tool_run")), Some(false));
+    }
 }

@@ -29,6 +29,7 @@ pub use operations::{
     },
     hash::HashResponse,
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
+    tool::{ToolInfo, ToolInspectResponse, ToolListResponse, ToolWorkingDir},
 };
 
 pub use operations::config_schema::handle_config_schema;

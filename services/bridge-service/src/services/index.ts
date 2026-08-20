@@ -1,5 +1,6 @@
 import type { Handler, Service } from "@omni-oss/bridge-rpc-bootstrap";
 import { ExecGeneratorScript } from "@omni-oss/bridge-rpc-services/exec-generator-script";
+import { ExecTool } from "@omni-oss/bridge-rpc-services/exec-tool";
 import { ImportScan } from "@omni-oss/bridge-rpc-services/import-scan";
 
 export function createServices(): (Handler | Service)[] {
@@ -7,6 +8,10 @@ export function createServices(): (Handler | Service)[] {
         {
             path: "/exec-generator-script",
             service: new ExecGeneratorScript(),
+        },
+        {
+            path: "/exec-tool",
+            service: new ExecTool(),
         },
         {
             path: "/import-scan",

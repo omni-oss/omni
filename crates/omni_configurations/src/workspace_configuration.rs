@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    GeneratorSourceConfiguration, Ui,
+    GeneratorSourceConfiguration, ToolSourceConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
@@ -35,6 +35,12 @@ pub struct WorkspaceConfiguration {
 
     #[serde(default, deserialize_with = "validate_generator_sources")]
     pub generators: Vec<GeneratorSourceConfiguration>,
+
+    /// Registered sources of tool manifests, mirroring `generators`. Supports
+    /// `local` and `git` sources; discovery globs each source for
+    /// `tool.omni.{yaml,yml,json,toml}` manifests.
+    #[serde(default, deserialize_with = "validate_tool_sources")]
+    pub tools: Vec<ToolSourceConfiguration>,
 
     #[serde(default)]
     pub env: WorkspaceEnvConfiguration,
@@ -232,5 +238,31 @@ mod tests {
             strict.capabilities.strictness,
             CapabilitiesStrictness::RequireFloor
         );
+    }
+
+    #[test]
+    fn test_tools_sources_parse_local_and_git() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "tools": [{"source": "local", "path": "./tools"}, {"source": "git", "uri": "https://example.com/a.git", "rev": "main"}]}"#,
+        )
+        .expect("valid tools sources");
+        assert_eq!(cfg.tools.len(), 2);
+    }
+
+    #[test]
+    fn test_tools_defaults_to_empty() {
+        let cfg = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": []}"#,
+        )
+        .expect("valid");
+        assert!(cfg.tools.is_empty());
+    }
+
+    #[test]
+    fn test_tools_rejects_duplicate_git_uri() {
+        let result = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "tools": [{"source": "git", "uri": "https://example.com/a.git", "rev": "main"}, {"source": "git", "uri": "https://example.com/a.git", "rev": "dev"}]}"#,
+        );
+        assert!(result.is_err(), "duplicate git uri must be rejected");
     }
 }

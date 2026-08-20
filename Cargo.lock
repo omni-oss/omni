@@ -1681,7 +1681,10 @@ dependencies = [
  "bridge_rpc_core",
  "bridge_rpc_router",
  "eyre",
+ "merge",
+ "omni_capabilities",
  "omni_capability_enforcement",
+ "omni_messages",
  "omni_utils",
  "rust-embed",
  "schemars",
@@ -6568,6 +6571,7 @@ dependencies = [
 name = "omni_api"
 version = "0.19.0"
 dependencies = [
+ "bridge_rpc_services",
  "bytesize",
  "derive-new",
  "either",
@@ -6575,6 +6579,7 @@ dependencies = [
  "log",
  "maps",
  "omni_cache",
+ "omni_capabilities",
  "omni_config_types",
  "omni_configurations",
  "omni_context",
@@ -6583,6 +6588,7 @@ dependencies = [
  "omni_generator",
  "omni_generator_configurations",
  "omni_input_provider",
+ "omni_input_schema",
  "omni_messages",
  "omni_remote_cache_client",
  "omni_remote_source",
@@ -6592,6 +6598,8 @@ dependencies = [
  "omni_task_executor",
  "omni_task_output_logs",
  "omni_tera",
+ "omni_tool",
+ "omni_tool_configurations",
  "omni_tracing_subscriber",
  "path-clean",
  "schemars",
@@ -7372,6 +7380,7 @@ name = "omni_mcp_core"
 version = "0.3.0"
 dependencies = [
  "async-trait",
+ "bridge_rpc_services",
  "bytesize",
  "either",
  "eyre",
@@ -7395,6 +7404,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum 0.28.0",
+ "system_traits",
  "test-log",
  "thiserror 2.0.18",
  "tokio 1.52.3",
@@ -7819,6 +7829,65 @@ dependencies = [
  "eyre",
  "omni_workspace_gen",
  "tempfile",
+]
+
+[[package]]
+name = "omni_tool"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "bon",
+ "bridge_rpc_router",
+ "bridge_rpc_runner",
+ "bridge_rpc_services",
+ "derive-new",
+ "eyre",
+ "log",
+ "omni_capabilities",
+ "omni_capability_enforcement",
+ "omni_capability_sys",
+ "omni_configuration_discovery",
+ "omni_discovery",
+ "omni_file_data_serde",
+ "omni_messages",
+ "omni_tera",
+ "omni_tool_configurations",
+ "rstest",
+ "rstest_reuse",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "system_traits",
+ "tempfile",
+ "test-log",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "trace",
+ "tracing",
+]
+
+[[package]]
+name = "omni_tool_configurations"
+version = "0.0.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "garde 0.23.0",
+ "log",
+ "maps",
+ "omni_capabilities",
+ "omni_input_schema",
+ "rstest",
+ "rstest_reuse",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "test-log",
+ "thiserror 2.0.18",
+ "trace",
+ "tracing",
 ]
 
 [[package]]

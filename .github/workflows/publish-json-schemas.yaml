@@ -36,7 +36,7 @@ jobs:
           INSTALLED_VERSION=$(omni --version | cut -d' ' -f2)
 
           # loop through all the json schemas and publish them
-          schemas=("project" "workspace" "generator")
+          schemas=("project" "workspace" "generator" "tool")
           for schema in "${schemas[@]}"; do
             echo "Publishing $schema schema..."
 
