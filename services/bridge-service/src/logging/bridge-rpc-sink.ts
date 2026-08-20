@@ -30,10 +30,14 @@ export class BridgeRpcSink {
                 timestamp: entry.timestamp,
             };
 
+            // The host `/log` service acknowledges every record with an empty
+            // success response, so we await it: that confirms delivery (and
+            // gives natural backpressure) and consumes the response frame so
+            // its session is released rather than lingering.
             await using response = await this.client
                 .request("/log")
                 .then((res) => res.start())
-                .then(async (res) =>
+                .then((res) =>
                     res.writeBodyChunk(
                         textEncoder.encode(JSON.stringify(payload)),
                     ),
@@ -45,7 +49,6 @@ export class BridgeRpcSink {
                 stderr.write(
                     `Failed to send log entry via Bridge RPC: Non-success status code ${response.status}\n`,
                 );
-                return;
             }
         } catch (error) {
             stderr.write(`Failed to send log entry via Bridge RPC: ${error}\n`);

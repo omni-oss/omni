@@ -506,15 +506,17 @@ mod tests {
             "message": "m",
             "timestamp": 1u64,
         });
-        let (ctx, mut awaiter) = ServiceContextBuilder::new("/log")
+        let (ctx, awaiter) = ServiceContextBuilder::new("/log")
             .with_body_json(&body)
             .build()
             .await;
         router.run(ctx).await.expect("router run should succeed");
 
-        // The log service does not produce any frames; it just consumes
-        // the request and returns. Verify the channel is drained.
-        assert!(awaiter.is_drained());
+        // The log service acknowledges the record with an empty success
+        // response.
+        let response = awaiter.wait().await;
+        assert_eq!(response.status, ResponseStatusCode::SUCCESS);
+        assert!(response.body.is_empty());
     }
 
     #[tokio::test]

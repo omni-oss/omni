@@ -6,8 +6,12 @@ import {
     installGlobalEnforcement,
 } from "@omni-oss/bridge-rpc-services/exec-generator-script";
 import { interceptLogs } from "@omni-oss/console-log-interceptor";
-import { Log } from "@omni-oss/log";
-import { getStreamSink, withLogTapeRoot } from "@omni-oss/log/logtape";
+import { Log, registerLogDrain } from "@omni-oss/log";
+import {
+    fromAsyncSink,
+    getStreamSink,
+    withLogTapeRoot,
+} from "@omni-oss/log/logtape";
 import { createStudioRpcInstance } from "@/index";
 import { getBridgeRpcSink } from "@/logging";
 import { description, name, version } from "../../package.json";
@@ -30,15 +34,28 @@ program
     .action(async (options) => {
         installGlobalEnforcement(CapabilityPolicy.parse(options.enforce));
         const rpc = createStudioRpcInstance();
+        // LogTape never awaits an async sink, so wrap the `/log` RPC sink with
+        // `fromAsyncSink`: records are serialised onto a single tail promise
+        // and the sink exposes `Symbol.asyncDispose`, which awaits that tail.
+        // Registering it as a drain lets services flush pending `/log`
+        // deliveries (via `flushLogs`) while the transport is still alive —
+        // otherwise in-flight log requests are dropped when the host tears the
+        // connection down after a script finishes.
+        const bridgeRpcSink = fromAsyncSink(
+            getBridgeRpcSink({
+                get client() {
+                    return rpc.clientHandle;
+                },
+            }),
+        );
+        registerLogDrain(async () => {
+            await bridgeRpcSink[Symbol.asyncDispose]();
+        });
         await withLogTapeRoot(
             ["bridge-service"],
             {
                 sinks: {
-                    "bridge-rpc": getBridgeRpcSink({
-                        get client() {
-                            return rpc.clientHandle;
-                        },
-                    }),
+                    "bridge-rpc": bridgeRpcSink,
                     stderr: getStreamSink(Writable.toWeb(process.stderr)),
                 },
                 loggers: [

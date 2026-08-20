@@ -6,6 +6,7 @@ import {
 } from "@omni-oss/bridge-rpc-core";
 import { readBodyAsJson } from "@omni-oss/bridge-rpc-utils/body";
 import { fail } from "@omni-oss/bridge-rpc-utils/server";
+import { flushLogs } from "@omni-oss/log";
 import z from "zod";
 import { importScript, type ScriptModule } from "./import";
 
@@ -94,6 +95,7 @@ export class ExecScript<TExtraParams = unknown> implements Service {
                 }),
             );
         } catch (err) {
+            await flushLogs();
             await fail(context.response, STATUS_INTERNAL_ERROR, err);
             return;
         }
@@ -105,10 +107,18 @@ export class ExecScript<TExtraParams = unknown> implements Service {
                 extraParams,
             );
         } catch (err) {
+            // Deliver any records the just-run scripts emitted before the host
+            // learns the request is done and tears the connection down.
+            await flushLogs();
             await fail(context.response, STATUS_INTERNAL_ERROR, err);
             return;
         }
 
+        // Flush pending async log deliveries (e.g. the bridge `/log` RPC sink)
+        // while the transport is still alive: LogTape dispatches to async sinks
+        // fire-and-forget, so without this the tail of a script's log output
+        // races the connection teardown that follows the response below.
+        await flushLogs();
         const response = await context.response.start(
             ResponseStatusCode.SUCCESS,
         );

@@ -9,6 +9,8 @@ use bridge_rpc_utils::server::read_request_as_json;
 use log::Log;
 use serde::Deserialize;
 
+use super::common::respond_empty;
+
 #[derive(Clone, Debug)]
 pub struct LogService<L> {
     logger: L,
@@ -29,7 +31,10 @@ impl<L: Log + 'static> LogService<L> {
 #[async_trait]
 impl<L: Log + 'static> Service for LogService<L> {
     async fn run(&self, context: ServiceContext) -> Result<(), ServiceError> {
-        let reader = context.request.into_reader();
+        let ServiceContext {
+            request, response, ..
+        } = context;
+        let reader = request.into_reader();
 
         let (json, _trailers) = read_request_as_json::<LogRecord>(reader)
             .await
@@ -56,7 +61,12 @@ impl<L: Log + 'static> Service for LogService<L> {
             );
         }
 
-        Ok(())
+        // Acknowledge delivery with an empty success response. Logging carries
+        // no return payload, but replying keeps `/log` a symmetric
+        // request/response call: the client can await confirmation (and get
+        // backpressure) instead of fire-and-forgetting, and awaiting the
+        // response can never hang waiting for a reply that isn't coming.
+        respond_empty(response).await
     }
 }
 
@@ -95,6 +105,7 @@ impl LogLevel {
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use bridge_rpc_core::ResponseStatusCode;
     use bridge_rpc_core::service::Service;
     use log::{Level, Log, Metadata, Record};
     use serde_json::json;
@@ -395,7 +406,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn does_not_emit_response_frames() {
+    async fn emits_an_empty_success_response() {
         let body = json!({
             "level": "info",
             "target": ["t"],
@@ -406,19 +417,21 @@ mod tests {
         let logger = CapturingLogger::default();
         let service = LogService::new(logger.clone());
 
-        let (ctx, mut awaiter) = ServiceContextBuilder::new("/log")
+        let (ctx, awaiter) = ServiceContextBuilder::new("/log")
             .with_body_json(&body)
             .build()
             .await;
 
         service.run(ctx).await.expect("service should succeed");
 
-        // The log service consumes the request and returns without ever
-        // starting a response, so the response channel should be drained
-        // and closed.
+        // The log service acknowledges delivery with an empty success
+        // response so that `/log` is a symmetric request/response call the
+        // client can await.
+        let response = awaiter.wait().await;
+        assert_eq!(response.status, ResponseStatusCode::SUCCESS);
         assert!(
-            awaiter.is_drained(),
-            "log service should not produce any response frames"
+            response.body.is_empty(),
+            "log acknowledgement should carry no body"
         );
     }
 }
