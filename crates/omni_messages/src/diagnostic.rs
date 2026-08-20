@@ -47,7 +47,7 @@ pub trait DiagnosticSubscriber: Send + Sync {
         true
     }
 
-    async fn on_diagnostic(&self, _event: DiagnosticEvent) {}
+    fn on_diagnostic(&self, _event: DiagnosticEvent) {}
 }
 
 /// Forward all diagnostic calls through a shared reference.
@@ -55,7 +55,7 @@ impl<S: DiagnosticSubscriber> DiagnosticSubscriber for &S {
     fn wants_diagnostics(&self) -> bool {
         S::wants_diagnostics(*self)
     }
-    async fn on_diagnostic(&self, event: DiagnosticEvent) {
-        S::on_diagnostic(*self, event).await
+    fn on_diagnostic(&self, event: DiagnosticEvent) {
+        S::on_diagnostic(*self, event)
     }
 }

@@ -210,7 +210,7 @@ where
                         self.subscriber,
                         DiagnosticLevel::Debug,
                         "file already exists {original_path:?}, skipping cache restore",
-                    ).await;
+                    );
                     continue;
                 }
 
@@ -232,8 +232,7 @@ where
                     "restored cached file {:?} to {:?}",
                     file.cached_path,
                     original_path,
-                )
-                .await;
+                );
             }
         }
 
@@ -505,8 +504,7 @@ where
                     DiagnosticLevel::Info,
                     "Executing task '{}'",
                     task_ctx.node.full_task_name(),
-                )
-                .await;
+                );
 
                 let node = task_ctx.node.clone();
                 fut_results.push(TaskResultContext::new_completed(
@@ -913,8 +911,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
                     "Waiting for '{:?}' before retrying task '{}'",
                     duration,
                     task_ctx.node.full_task_name(),
-                )
-                .await;
+                );
                 tokio::time::sleep(duration).await;
             }
 

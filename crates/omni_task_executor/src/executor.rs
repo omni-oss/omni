@@ -55,7 +55,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
                 self.subscriber,
                 DiagnosticLevel::Info,
                 "Dry run mode enabled, no command execution, cache recording, and cache replay will be performed",
-            ).await;
+            );
         }
 
         let plan = ContextExecutionPlanProvider::new(self.context)

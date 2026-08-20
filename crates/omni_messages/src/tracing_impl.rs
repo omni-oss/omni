@@ -35,7 +35,7 @@ mod tracing_impl {
     pub struct TracingSubscriber;
 
     impl DiagnosticSubscriber for TracingSubscriber {
-        async fn on_diagnostic(&self, e: DiagnosticEvent) {
+        fn on_diagnostic(&self, e: DiagnosticEvent) {
             let msg = e.message.as_str();
             let target = e.target.as_str();
             match e.level {
@@ -190,7 +190,6 @@ mod tests {
                 fields: Default::default(),
                 target: "omni::test".into(),
             })
-            .await;
         }
     }
 

@@ -26,17 +26,14 @@
 #[macro_export]
 macro_rules! diagnostic {
     ($subscriber:expr, $level:expr, $($fmt_args:tt)+) => {
-        async {
-            if $subscriber.wants_diagnostics() {
-                $subscriber
-                    .on_diagnostic($crate::DiagnosticEvent {
-                        level: $level,
-                        message: ::std::format!($($fmt_args)+),
-                        fields: ::std::collections::BTreeMap::new(),
-                        target: ::std::module_path!().to_string(),
-                    })
-                    .await
-            }
+        if $subscriber.wants_diagnostics() {
+            $subscriber
+                .on_diagnostic($crate::DiagnosticEvent {
+                    level: $level,
+                    message: ::std::format!($($fmt_args)+),
+                    fields: ::std::collections::BTreeMap::new(),
+                    target: ::std::module_path!().to_string(),
+                })
         }
     };
 }
@@ -61,7 +58,7 @@ mod tests {
     struct CountingSubscriber(Arc<AtomicU32>);
 
     impl DiagnosticSubscriber for CountingSubscriber {
-        async fn on_diagnostic(&self, _event: DiagnosticEvent) {
+        fn on_diagnostic(&self, _event: DiagnosticEvent) {
             self.0.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -78,7 +75,7 @@ mod tests {
             "should want diagnostics by default"
         );
 
-        diagnostic!(sub, DiagnosticLevel::Info, "hello {}", 42).await;
+        diagnostic!(sub, DiagnosticLevel::Info, "hello {}", 42);
         assert_eq!(count.load(Ordering::Relaxed), 1);
     }
 
@@ -91,7 +88,6 @@ mod tests {
         );
 
         // on_diagnostic is never called; no panic expected
-        diagnostic!(sub, DiagnosticLevel::Error, "should not reach subscriber")
-            .await;
+        diagnostic!(sub, DiagnosticLevel::Error, "should not reach subscriber");
     }
 }

@@ -558,14 +558,14 @@ impl CliSubscriber {
 }
 
 impl DiagnosticSubscriber for CliSubscriber {
-    async fn on_diagnostic(&self, e: DiagnosticEvent) {
+    fn on_diagnostic(&self, e: DiagnosticEvent) {
         match e.level {
             DiagnosticLevel::Trace => log::trace!("{}", e.message),
             DiagnosticLevel::Debug => log::debug!("{}", e.message),
             DiagnosticLevel::Info => log::info!("{}", e.message),
             DiagnosticLevel::Warn => log::warn!("{}", e.message),
             DiagnosticLevel::Error => log::error!("{}", e.message),
-        }
+        };
     }
 }
 

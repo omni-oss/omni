@@ -67,7 +67,7 @@ impl ChannelSubscriber {
 }
 
 impl DiagnosticSubscriber for ChannelSubscriber {
-    async fn on_diagnostic(&self, e: DiagnosticEvent) {
+    fn on_diagnostic(&self, e: DiagnosticEvent) {
         self.send(OmniEventKind::Diagnostic(e));
     }
 }

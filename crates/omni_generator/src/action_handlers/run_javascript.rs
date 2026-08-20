@@ -105,8 +105,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
                  fully sandboxed on every platform; only `deno` is fully \
                  supported. Install/select `deno` for enforced capability \
                  confinement.",
-            )
-            .await;
+            );
         }
     }
 
@@ -119,7 +118,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // warn` gaps) through the run's diagnostic subscriber, at its own level, so
     // the choice is visible rather than silent.
     for d in result.diagnostics {
-        diagnostic!(ctx.subscriber, d.level, "{}", d.message).await;
+        diagnostic!(ctx.subscriber, d.level, "{}", d.message);
     }
 
     Ok(())
