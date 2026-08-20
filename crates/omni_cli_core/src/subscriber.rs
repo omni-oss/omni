@@ -313,6 +313,18 @@ fn write_stdout(bytes: &[u8]) {
     let _ = out.flush();
 }
 
+/// Emit a single diagnostic through `log` so level filtering and formatting
+/// still apply.
+fn log_diagnostic(e: &DiagnosticEvent) {
+    match e.level {
+        DiagnosticLevel::Trace => log::trace!("{}", e.message),
+        DiagnosticLevel::Debug => log::debug!("{}", e.message),
+        DiagnosticLevel::Info => log::info!("{}", e.message),
+        DiagnosticLevel::Warn => log::warn!("{}", e.message),
+        DiagnosticLevel::Error => log::error!("{}", e.message),
+    }
+}
+
 /// A task's in-flight output capture: the drain task writing the reader to a
 /// file (or sink) and the resolved display facet to apply once the task's
 /// terminal event arrives.
@@ -465,6 +477,18 @@ impl CliSubscriber {
         }
     }
 
+    /// Run `f` (which writes to the terminal) coordinated with any live
+    /// progress rendering (generator *or* task). Both renderers share the one
+    /// `MultiProgress`, so suspending it clears whatever bars are currently
+    /// drawn while `f` writes, then redraws them afterwards. When `indicatif`
+    /// cannot render there is nothing to protect and `f` runs directly.
+    fn suspend_for_output(&self, f: impl FnOnce()) {
+        match self.shared_multi() {
+            Some(multi) => multi.suspend(f),
+            None => f(),
+        }
+    }
+
     /// Emit a lifecycle line, routing through the progress bar in `progress`
     /// mode so the bar is not corrupted, and through `log` otherwise.
     fn emit(&self, msg: String, level: EmitLevel) {
@@ -559,13 +583,18 @@ impl CliSubscriber {
 
 impl DiagnosticSubscriber for CliSubscriber {
     fn on_diagnostic(&self, e: DiagnosticEvent) {
-        match e.level {
-            DiagnosticLevel::Trace => log::trace!("{}", e.message),
-            DiagnosticLevel::Debug => log::debug!("{}", e.message),
-            DiagnosticLevel::Info => log::info!("{}", e.message),
-            DiagnosticLevel::Warn => log::warn!("{}", e.message),
-            DiagnosticLevel::Error => log::error!("{}", e.message),
-        };
+        self.suspend_for_output(|| log_diagnostic(&e));
+    }
+
+    fn on_diagnostics_batched(
+        &self,
+        events: impl IntoIterator<Item = DiagnosticEvent>,
+    ) {
+        self.suspend_for_output(|| {
+            for e in events {
+                log_diagnostic(&e);
+            }
+        });
     }
 }
 

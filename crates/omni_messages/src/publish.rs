@@ -28,12 +28,21 @@ macro_rules! diagnostic {
     ($subscriber:expr, $level:expr, $($fmt_args:tt)+) => {
         if $subscriber.wants_diagnostics() {
             $subscriber
-                .on_diagnostic($crate::DiagnosticEvent {
-                    level: $level,
-                    message: ::std::format!($($fmt_args)+),
-                    fields: ::std::collections::BTreeMap::new(),
-                    target: ::std::module_path!().to_string(),
-                })
+                .on_diagnostic(
+                    $crate::diagnostic_event!($level, $($fmt_args)+)
+                )
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! diagnostic_event {
+    ($level:expr, $($fmt_args:tt)+) => {
+        $crate::DiagnosticEvent {
+            level: $level,
+            message: ::std::format!($($fmt_args)+),
+            fields: ::std::collections::BTreeMap::new(),
+            target: ::std::module_path!().to_string(),
         }
     };
 }

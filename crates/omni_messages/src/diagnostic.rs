@@ -48,6 +48,18 @@ pub trait DiagnosticSubscriber: Send + Sync {
     }
 
     fn on_diagnostic(&self, _event: DiagnosticEvent) {}
+
+    /// Specialized version of [`on_diagnostic`] for batched diagnostic events.
+    /// Override to provide a more efficient implementation. By default,
+    /// this method simply calls [`on_diagnostic`] for each event.
+    fn on_diagnostics_batched(
+        &self,
+        _events: impl IntoIterator<Item = DiagnosticEvent>,
+    ) {
+        for event in _events {
+            self.on_diagnostic(event);
+        }
+    }
 }
 
 /// Forward all diagnostic calls through a shared reference.
@@ -57,5 +69,11 @@ impl<S: DiagnosticSubscriber> DiagnosticSubscriber for &S {
     }
     fn on_diagnostic(&self, event: DiagnosticEvent) {
         S::on_diagnostic(*self, event)
+    }
+    fn on_diagnostics_batched(
+        &self,
+        events: impl IntoIterator<Item = DiagnosticEvent>,
+    ) {
+        S::on_diagnostics_batched(*self, events)
     }
 }

@@ -5,7 +5,7 @@ use omni_generator_configurations::{
     RunJavaScriptActionConfiguration,
 };
 use omni_messages::{
-    DiagnosticLevel, GeneratorEventSubscriber, publish::diagnostic,
+    DiagnosticLevel, GeneratorEventSubscriber, diagnostic_event,
 };
 
 use crate::{
@@ -85,6 +85,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // — so the weaker sandboxing is visible. `resolve()` probes `PATH` exactly
     // as the runner will; `None` (auto found nothing) is left to fail loudly
     // in the runner.
+    let mut diagnostics = vec![];
     if let Some(resolved) = map_runtime(config.runtime).resolve() {
         let name = match resolved {
             DelegatingJsRuntimeOption::Node => Some("node"),
@@ -98,18 +99,17 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
             } else {
                 "you selected"
             };
-            diagnostic!(
-                ctx.subscriber,
+            diagnostics.push(diagnostic_event!(
                 DiagnosticLevel::Warn,
                 "{how} the `{name}` runtime, which is experimental and not \
                  fully sandboxed on every platform; only `deno` is fully \
                  supported. Install/select `deno` for enforced capability \
                  confinement.",
-            );
+            ));
         }
     }
 
-    let result = ctx
+    let mut result = ctx
         .js_script_runner
         .run_scripts(map_runtime(config.runtime), &policy, &[invocation])
         .await?;
@@ -117,9 +117,9 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // Surface each structured diagnostic (e.g. capability `on_unenforceable:
     // warn` gaps) through the run's diagnostic subscriber, at its own level, so
     // the choice is visible rather than silent.
-    for d in result.diagnostics {
-        diagnostic!(ctx.subscriber, d.level, "{}", d.message);
-    }
+    diagnostics.append(&mut result.diagnostics);
+
+    ctx.subscriber.on_diagnostics_batched(diagnostics);
 
     Ok(())
 }

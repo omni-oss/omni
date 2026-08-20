@@ -59,7 +59,9 @@ use omni_capability_sys::{EvaluatingAuthorizer, PolicyEnforcingSys};
 use omni_generator_configurations::{
     CapabilitiesStrictness, Generator, GeneratorContext,
 };
-use omni_messages::publish::DiagnosticLevel;
+use omni_messages::{
+    DiagnosticEvent, diagnostic_event, publish::DiagnosticLevel,
+};
 use serde::Serialize;
 use system_traits::EnvSnapshot;
 
@@ -245,7 +247,7 @@ fn build_spawn_plan(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy,
     posture: SpawnPosture,
-) -> Result<(SpawnPolicy, ShimPolicy, Vec<RunScriptDiagnostic>), Error> {
+) -> Result<(SpawnPolicy, ShimPolicy, Vec<DiagnosticEvent>), Error> {
     let mut chain: CapabilityRules<Generator> = serde_json::from_str(
         r#"[{ "access": "allow", "domain": "fs.read", "patterns": ["@workspace/**"] }]"#,
     )
@@ -329,7 +331,7 @@ fn build_spawn_plan(
     // * `floor_gaps` — a governed domain (net/process on Bun, fs off-Linux, …)
     //   is enforced only by the bypassable in-process broker/shim, with no
     //   un-bypassable runtime-flag or OS-sandbox floor for the resolved runtime.
-    let mut diagnostics: Vec<RunScriptDiagnostic> = Vec::new();
+    let mut diagnostics: Vec<DiagnosticEvent> = Vec::new();
 
     // Loud, distinct signal for the escape hatch: when `OMNI_DISABLE_OS_SANDBOX`
     // is set the OS-sandbox floor is dropped and filesystem confinement falls
@@ -339,7 +341,8 @@ fn build_spawn_plan(
     // the per-domain floor-gap warnings — rather than letting it hide among the
     // ordinary gap diagnostics it induces.
     if os_sandbox_disabled {
-        diagnostics.push(RunScriptDiagnostic::warn(
+        diagnostics.push(diagnostic_event!(
+            DiagnosticLevel::Warn,
             "OS-level sandbox is DISABLED for this run \
              (OMNI_DISABLE_OS_SANDBOX is set): filesystem confinement falls \
              back to the bypassable in-process broker and the kernel backstop \
@@ -349,15 +352,17 @@ fn build_spawn_plan(
     }
 
     for warning in plan.warnings {
-        diagnostics.push(RunScriptDiagnostic::warn(format!(
-            "capability policy not fully enforced: {warning}"
-        )));
+        diagnostics.push(diagnostic_event!(
+            DiagnosticLevel::Warn,
+            "capability policy not fully enforced: {warning}",
+        ));
     }
     for gap in plan.floor_gaps {
-        diagnostics.push(RunScriptDiagnostic::warn(format!(
+        diagnostics.push(diagnostic_event!(
+            DiagnosticLevel::Warn,
             "capability enforced without an un-bypassable floor: {}",
             gap.reason
-        )));
+        ));
     }
 
     // Windows note: `bun` cannot boot inside an AppContainer (it `stat`s every
@@ -467,23 +472,6 @@ pub struct ScriptInvocation {
     pub params: ScriptParams,
 }
 
-/// A single structured diagnostic produced while running scripts, ready to be
-/// forwarded to the run's diagnostic subscriber at its own [`DiagnosticLevel`].
-#[derive(Debug, Clone)]
-pub struct RunScriptDiagnostic {
-    pub level: DiagnosticLevel,
-    pub message: String,
-}
-
-impl RunScriptDiagnostic {
-    pub fn warn(message: impl Into<String>) -> Self {
-        Self {
-            level: DiagnosticLevel::Warn,
-            message: message.into(),
-        }
-    }
-}
-
 /// The outcome of a [`JsScriptRunner::run_scripts`] dispatch, beyond plain
 /// success/failure.
 ///
@@ -495,7 +483,7 @@ impl RunScriptDiagnostic {
 /// trait signature.
 #[derive(Debug, Clone, Default)]
 pub struct RunScriptResult {
-    pub diagnostics: Vec<RunScriptDiagnostic>,
+    pub diagnostics: Vec<DiagnosticEvent>,
 }
 
 /// Abstraction over the JavaScript script execution backend.
@@ -690,12 +678,13 @@ impl JsScriptRunner for LazyScriptRunner {
             // policy, surface a warning so it is not silently ignored.
             let mut diagnostics = Vec::new();
             if policy.levels.iter().any(|level| !level.is_empty()) {
-                diagnostics.push(RunScriptDiagnostic::warn(
+                diagnostics.push(diagnostic_event!(
+                    DiagnosticLevel::Warn,
                     "a capability policy is declared but the capabilities \
                      feature is experimental and disabled; it is ignored and \
                      scripts run unconfined — enable it with \
                      `enable_experimental: true` (or `enable_experimental: \
-                     { capabilities: true }`) in the workspace configuration",
+                     {{ capabilities: true }}`) in the workspace configuration",
                 ));
             }
             (
@@ -795,9 +784,10 @@ impl JsScriptRunner for LazyScriptRunner {
                 .await?;
 
             for note in &closure.diagnostics {
-                diagnostics.push(RunScriptDiagnostic::warn(format!(
-                    "import-scan: {note}"
-                )));
+                diagnostics.push(diagnostic_event!(
+                    DiagnosticLevel::Warn,
+                    "import-scan: {note}",
+                ));
             }
 
             runner.grant_read_scope(&closure.paths)
