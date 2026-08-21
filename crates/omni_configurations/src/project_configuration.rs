@@ -31,8 +31,13 @@ pub struct ProjectConfiguration {
     #[merge(strategy = config_utils::replace)]
     pub base: bool,
 
+    // `extends` is inheritable: an overriding layer that omits it (or sets it to
+    // null) inherits the base value rather than clearing it. Clearing is done
+    // explicitly with `extends: []`. This mirrors task-level `extends` and keeps
+    // the whole config language on one deletion rule. `base`, by contrast, is a
+    // non-inheritable structural marker and stays a plain replace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[merge(strategy = config_utils::replace)]
+    #[merge(strategy = config_utils::replace_if_some)]
     pub extends: Option<SingleOrMany<OmniPath>>,
 
     #[merge(strategy = config_utils::replace)]
@@ -277,5 +282,54 @@ mod tests {
         let none: ProjectConfiguration =
             serde_json::from_str(r#"{"name":"p"}"#).unwrap();
         assert!(none.extendee_ids().is_empty());
+    }
+
+    #[test]
+    fn test_merge_extends_kept_when_override_omits() {
+        // Omitting `extends` in the overriding layer inherits the base's value
+        // instead of clearing it (matches task-level `extends`).
+        let mut base: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"base","extends":"a.yaml"}"#)
+                .unwrap();
+        let derived: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"derived"}"#).unwrap();
+
+        base.merge(derived);
+
+        assert_eq!(
+            base.extends,
+            Some(SingleOrMany::Single(OmniPath::new("a.yaml")))
+        );
+    }
+
+    #[test]
+    fn test_merge_extends_replaced_when_override_present() {
+        let mut base: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"base","extends":"a.yaml"}"#)
+                .unwrap();
+        let derived: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"derived","extends":"b.yaml"}"#)
+                .unwrap();
+
+        base.merge(derived);
+
+        assert_eq!(
+            base.extends,
+            Some(SingleOrMany::Single(OmniPath::new("b.yaml")))
+        );
+    }
+
+    #[test]
+    fn test_merge_extends_cleared_with_empty_list() {
+        // An explicit empty list clears an inherited `extends`.
+        let mut base: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"base","extends":"a.yaml"}"#)
+                .unwrap();
+        let derived: ProjectConfiguration =
+            serde_json::from_str(r#"{"name":"derived","extends":[]}"#).unwrap();
+
+        base.merge(derived);
+
+        assert_eq!(base.extends, Some(SingleOrMany::Many(vec![])));
     }
 }

@@ -324,6 +324,52 @@ mod tests {
     }
 
     #[test]
+    fn test_base_marker_does_not_propagate_through_extends() {
+        // `base` is a per-declaration template marker, never inherited: a
+        // concrete task that extends a `base: true` template must itself be
+        // emitted, not dropped. (Guards against `base` ever adopting the
+        // inherit-on-omit rule used for `extends`.)
+        let mut t = tasks(vec![
+            ("tmpl", long(true, None, Some("tmpl"))),
+            ("concrete", long(false, Some(vec!["tmpl"]), None)),
+        ]);
+
+        resolve_task_extensions(&mut t).unwrap();
+
+        assert!(
+            t.as_map().get("tmpl").is_none(),
+            "the base template must be dropped"
+        );
+        let concrete = get_long(&t, "concrete");
+        assert!(!concrete.base, "the extender must not inherit `base`");
+        assert_eq!(
+            concrete.exec,
+            Some(Replace::new(CommandConfig::Shell("tmpl".to_string())))
+        );
+    }
+
+    #[test]
+    fn test_empty_extends_applies_no_extension() {
+        // `extends: []` is a real (Some) value that resolves to no extendees,
+        // so the task keeps its own definition and is emitted standalone.
+        let mut t = tasks(vec![
+            ("a", long(true, None, Some("a"))),
+            ("b", long(false, Some(vec![]), Some("b"))),
+        ]);
+
+        resolve_task_extensions(&mut t).unwrap();
+
+        assert!(t.as_map().get("a").is_none());
+        let b = get_long(&t, "b");
+        assert_eq!(
+            b.exec,
+            Some(Replace::new(CommandConfig::Shell("b".to_string()))),
+            "empty extends must not pull in any other task"
+        );
+        assert_eq!(b.extends, None);
+    }
+
+    #[test]
     fn test_cycle_is_rejected() {
         let mut t = tasks(vec![
             ("a", long(false, Some(vec!["b"]), None)),

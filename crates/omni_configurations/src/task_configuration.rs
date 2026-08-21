@@ -375,8 +375,18 @@ impl Merge for TaskConfigurationLongForm {
             args: b_args,
         } = other;
 
+        // `base` is a per-declaration structural marker ("is this block a
+        // template?"), not inheritable data, so it is always replaced and never
+        // inherited through `extends`. Inheriting it would make a concrete task
+        // that extends a `base: true` template itself become a dropped template.
         self.base = b_base;
-        self.extends = b_extends;
+        // Unlike `base`, `extends` is inheritable: an overriding layer that omits
+        // it (or sets it to null) must NOT clear the base's `extends`, otherwise
+        // partially overriding a task (e.g. only to tweak an env var) silently
+        // drops its inherited task extension. Only replace when the override
+        // actually provides one, matching how `exec`/`enabled`/`description`/etc.
+        // behave via `option::recurse`.
+        config_utils::replace_if_some(&mut self.extends, b_extends);
         self.dependencies.merge(b_dep);
         merge::option::recurse(&mut self.exec, b_cmd);
         merge::option::recurse(&mut self.retry_exec, b_retry_cmd);
@@ -729,6 +739,28 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_extends_cleared_with_empty_list() {
+        // An explicit empty list is the escape hatch to clear an inherited
+        // `extends` (omission/null inherits instead).
+        let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            extends: Some(SingleOrMany::Single("x".to_string())),
+            ..Default::default()
+        });
+
+        let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            extends: Some(SingleOrMany::Many(vec![])),
+            ..Default::default()
+        });
+
+        a.merge(b);
+
+        let TaskConfiguration::LongForm(long) = a else {
+            panic!("should be long form");
+        };
+        assert_eq!(long.extends, Some(SingleOrMany::Many(vec![])));
+    }
+
+    #[test]
     fn test_long_form_deserializes_extends_list() {
         let task: TaskConfiguration = serde_json::from_str(
             r#"{"exec": "echo hi", "extends": ["a", "b"]}"#,
@@ -789,7 +821,10 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_base_and_extends_replace() {
+    fn test_merge_extends_kept_when_override_omits() {
+        // `extends` must survive when the overriding layer does not specify it,
+        // so partially overriding a task never silently drops its inherited
+        // task extension.
         let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
             base: true,
             extends: Some(SingleOrMany::Single("x".to_string())),
@@ -807,7 +842,30 @@ mod tests {
         let TaskConfiguration::LongForm(long) = a else {
             panic!("should be long form");
         };
+        // `base` is still replaced wholesale by the overriding layer.
         assert!(!long.base);
-        assert_eq!(long.extends, None);
+        // `extends` is retained because the override omitted it.
+        assert_eq!(long.extends, Some(SingleOrMany::Single("x".to_string())));
+    }
+
+    #[test]
+    fn test_merge_extends_replaced_when_override_present() {
+        // When the override provides its own `extends`, it replaces the base's.
+        let mut a = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            extends: Some(SingleOrMany::Single("x".to_string())),
+            ..Default::default()
+        });
+
+        let b = TaskConfiguration::long_form(TaskConfigurationLongForm {
+            extends: Some(SingleOrMany::Single("y".to_string())),
+            ..Default::default()
+        });
+
+        a.merge(b);
+
+        let TaskConfiguration::LongForm(long) = a else {
+            panic!("should be long form");
+        };
+        assert_eq!(long.extends, Some(SingleOrMany::Single("y".to_string())));
     }
 }
