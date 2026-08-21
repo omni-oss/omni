@@ -1621,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "bridge_rpc_core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1675,7 +1675,7 @@ dependencies = [
 
 [[package]]
 name = "bridge_rpc_runner"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "bridge_rpc_core",
@@ -1700,7 +1700,7 @@ dependencies = [
 
 [[package]]
 name = "bridge_rpc_services"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -6364,9 +6364,9 @@ checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
 name = "noyalib"
-version = "0.0.25"
+version = "0.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39e4b278236e6bc151420f042b7ec16f3902a8b534f8a605a6277d85c1430e51"
+checksum = "eaf7471054ff3fcc857fe8c5c674df7d107d2cb3072ac664a244f20b6d8dae01"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -6544,7 +6544,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6569,7 +6569,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "bridge_rpc_services",
  "bytesize",
@@ -6713,7 +6713,7 @@ dependencies = [
 
 [[package]]
 name = "omni_capabilities"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "derive-new",
  "eyre",
@@ -6730,7 +6730,7 @@ dependencies = [
 
 [[package]]
 name = "omni_capability_enforcement"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "landlock",
  "libc",
@@ -6746,7 +6746,7 @@ dependencies = [
 
 [[package]]
 name = "omni_capability_sys"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "omni_capabilities",
@@ -6758,7 +6758,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -6895,7 +6895,7 @@ dependencies = [
 
 [[package]]
 name = "omni_config_types"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -6936,7 +6936,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -6976,7 +6976,7 @@ dependencies = [
 
 [[package]]
 name = "omni_context"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -7113,7 +7113,7 @@ dependencies = [
 
 [[package]]
 name = "omni_experimental_features"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "omni_config_types",
  "schemars",
@@ -7159,7 +7159,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -7213,7 +7213,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator_configurations"
-version = "0.9.1"
+version = "0.10.0"
 dependencies = [
  "bon",
  "config_utils",
@@ -7250,7 +7250,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7328,7 +7328,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "either",
  "enumset",
@@ -7377,7 +7377,7 @@ dependencies = [
 
 [[package]]
 name = "omni_mcp_core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bridge_rpc_services",
@@ -7415,7 +7415,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7515,7 +7515,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_cache_service"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -7759,7 +7759,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "merge",
  "schemars",
@@ -7833,7 +7833,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tool"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -7868,7 +7868,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tool_configurations"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "bon",
  "derive-new",
@@ -7908,7 +7908,7 @@ dependencies = [
 
 [[package]]
 name = "omni_types"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "enum-map",
  "merge",
@@ -10796,7 +10796,7 @@ dependencies = [
 
 [[package]]
 name = "system_traits"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "sys_traits",
@@ -11529,7 +11529,7 @@ checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
 
 [[package]]
 name = "trace"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tracing",
 ]
