@@ -1,8 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import fsSync from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test as baseTest } from "vitest";
+import { resolveServiceBinOrThrow } from "./binary";
 import { getHost, sleep, withTimeout } from "./utils";
 
 const ports = new Set<number>();
@@ -49,56 +47,11 @@ export const test = baseTest.extend<{
     ],
     childProcess: [
         async ({ apiBaseUrl, port }, use) => {
-            const wsDir = process.env.WORKSPACE_DIR ?? "";
-            if (!wsDir) {
-                throw new Error("WORKSPACE_DIR is not set");
-            }
-
-            const target = process.env.RUST_TARGET ?? "";
-
-            const ext = os.platform() === "win32" ? ".exe" : "";
-
-            let omniPath = "";
-
             const host = await getHost().catch(() => "");
-            let compileInfo = `Host: ${host}\nTarget: ${target}`;
-
-            const defaultPath = path.join(
-                wsDir,
-                `target/release/omni_remote_cache_service${ext}`,
-            );
-            const lookupPaths =
-                target !== ""
-                    ? [
-                          ...(host !== "" && target.includes(host)
-                              ? [defaultPath]
-                              : []),
-                          ...target
-                              .split(";")
-                              .map((target) =>
-                                  path.join(
-                                      wsDir,
-                                      `target/${target}/release/omni_remote_cache_service${ext}`,
-                                  ),
-                              ),
-                      ]
-                    : [defaultPath];
-
-            for (const lookupPath of lookupPaths) {
-                if (fsSync.existsSync(lookupPath)) {
-                    omniPath = lookupPath;
-                    break;
-                }
-            }
-
-            if (omniPath.trim() === "") {
-                throw new Error(
-                    `Could not find omni_remote_cache_service${ext} in: \n${lookupPaths.join(
-                        "\n",
-                    )}\n${compileInfo}`,
-                );
-            }
-            compileInfo = `${compileInfo}\nPath: ${omniPath}`;
+            const { path: omniPath, compileInfo } = resolveServiceBinOrThrow({
+                binName: "omni_remote_cache_service",
+                host,
+            });
 
             const childProcess = spawn(
                 omniPath,
