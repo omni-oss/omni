@@ -24,6 +24,7 @@ static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
 /// Discover every `tool.omni.*` manifest under `root_dir` matching any of
 /// `glob_patterns`, deserializing each into a [`ToolConfiguration`] with its
 /// `config_path` set to the manifest's location.
+#[allow(clippy::result_large_err)]
 pub async fn discover<G: AsRef<str>>(
     root_dir: &Path,
     glob_patterns: &[G],
@@ -99,7 +100,7 @@ mod tests {
         // A non-manifest file must be ignored.
         fs::write(tool_a.join("index.mjs"), "export default () => {}").unwrap();
 
-        let sys = RealSys::default();
+        let sys = RealSys;
         let mut names = discover(root, &["tools/**"], &sys)
             .await
             .expect("discovery succeeds")
@@ -121,7 +122,7 @@ mod tests {
         fs::write(&manifest, "type: js\nname: only\nentrypoint: ./index.mjs\n")
             .unwrap();
 
-        let sys = RealSys::default();
+        let sys = RealSys;
         let configs = discover(root, &["tools/**"], &sys).await.unwrap();
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].config_path, manifest);

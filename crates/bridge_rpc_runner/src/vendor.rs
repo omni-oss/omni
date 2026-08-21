@@ -118,7 +118,7 @@ impl VendoredBridgeService {
     ) -> Self {
         let version = version.into();
         Self {
-            version_with_hash: format!("{}-{}", version, &*DIST_FILES_HASH),
+            version_with_hash: format!("{}-{}", version, *DIST_FILES_HASH),
             hash: &DIST_FILES_HASH,
             version,
             version_file_name: version_file_name

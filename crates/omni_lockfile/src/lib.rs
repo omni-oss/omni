@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 pub mod error;
 mod lockfile;
 pub mod lockfile_data;

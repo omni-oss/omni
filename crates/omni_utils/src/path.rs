@@ -23,7 +23,7 @@ pub fn has_globs(path: &str) -> bool {
         return true;
     }
 
-    return false;
+    false
 }
 
 /// Fast equivalent of [`Path::starts_with`] for **absolute, normalized**
@@ -278,15 +278,13 @@ mod tests {
         sys.fs_create_dir_all("/root/nested/project-2")
             .expect("Can't create project-2 dir");
 
-        let paths = vec![
-            PathBuf::from("/root/nested/project-1/project.omni.yaml"),
+        let paths = [PathBuf::from("/root/nested/project-1/project.omni.yaml"),
             PathBuf::from("/root/nested/project-2/project.omni.yaml"),
-            PathBuf::from("/root/nested/**.*"),
-        ];
+            PathBuf::from("/root/nested/**.*")];
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], ws_root_dir);
 
         assert_eq!(result, &[Path::new("/root/nested")]);
     }
@@ -300,15 +298,13 @@ mod tests {
         sys.fs_create_dir_all("/root/nested/project-2")
             .expect("Can't create project-2 dir");
 
-        let paths = vec![
-            PathBuf::from("/root/nested/project-1/project.omni.yaml"),
+        let paths = [PathBuf::from("/root/nested/project-1/project.omni.yaml"),
             PathBuf::from("/root/nested/project-2/project.omni.yaml"),
-            PathBuf::from("/root/nested/project-3/project.omni.yaml"),
-        ];
+            PathBuf::from("/root/nested/project-3/project.omni.yaml")];
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], ws_root_dir);
 
         assert_eq!(
             result,
@@ -329,15 +325,13 @@ mod tests {
         sys.fs_create_dir_all("/root/nested/nested2/project-2")
             .expect("Can't create project-2 dir");
 
-        let paths = vec![
-            PathBuf::from("/root/nested/project-1/src/a.txt"),
+        let paths = [PathBuf::from("/root/nested/project-1/src/a.txt"),
             PathBuf::from("/root/nested/project-1/project.omni.yaml"),
-            PathBuf::from("/root/nested/nested2/project-2/test.txt"),
-        ];
+            PathBuf::from("/root/nested/nested2/project-2/test.txt")];
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], ws_root_dir);
 
         assert_eq!(
             result,
@@ -357,15 +351,13 @@ mod tests {
         sys.fs_create_dir_all("/root/nested/project-2")
             .expect("Can't create project-2 dir");
 
-        let paths = vec![
-            PathBuf::from("/root/nested/project-1/src/a.txt"),
+        let paths = [PathBuf::from("/root/nested/project-1/src/a.txt"),
             PathBuf::from("/root/nested/project-1/project.omni.yaml"),
-            PathBuf::from("/root/nested/project-1/src/nested/a.txt"),
-        ];
+            PathBuf::from("/root/nested/project-1/src/nested/a.txt")];
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], ws_root_dir);
 
         assert_eq!(result, &[Path::new("/root/nested/project-1")]);
     }
@@ -379,17 +371,15 @@ mod tests {
         sys.fs_create_dir_all("/root/nested/project-2")
             .expect("Can't create project-2 dir");
 
-        let paths = vec![
-            PathBuf::from("/root/nested/project-1/src/a.txt"),
+        let paths = [PathBuf::from("/root/nested/project-1/src/a.txt"),
             PathBuf::from("/root/nested/project-1/project.omni.yaml"),
             PathBuf::from("/root/nested/project-1/src/nested/a.txt"),
             PathBuf::from("/root/nested/project-1/src/**/*.txt"),
-            PathBuf::from("/root/**.*.txt"),
-        ];
+            PathBuf::from("/root/**.*.txt")];
 
         let ws_root_dir = Path::new("/root");
 
-        let result = topmost_dirs(sys, &paths[..], &ws_root_dir);
+        let result = topmost_dirs(sys, &paths[..], ws_root_dir);
 
         assert_eq!(result, &[Path::new("/root")]);
     }

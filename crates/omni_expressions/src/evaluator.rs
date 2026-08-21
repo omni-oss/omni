@@ -121,7 +121,7 @@ mod tests {
             .expect("Failed to add variable");
 
         context
-            .add_variable("c", &[1, 2, 3])
+            .add_variable("c", [1, 2, 3])
             .expect("Failed to add variable");
 
         let m = map! {

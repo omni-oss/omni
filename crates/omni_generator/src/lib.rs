@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod action_handlers;
 mod discover;
 pub mod error;

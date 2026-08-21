@@ -35,24 +35,24 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                 let value: serde_json::Value = m.deserialize()?;
 
                 if value["merge"].is_object() {
-                    return Ok(DictConfig::merge(
+                    Ok(DictConfig::merge(
                         serde_path_to_error::deserialize(
                             value["merge"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else if value["replace"].is_object() {
-                    return Ok(DictConfig::replace(
+                    Ok(DictConfig::replace(
                         serde_path_to_error::deserialize(
                             value["replace"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else {
-                    return Ok(DictConfig::value(
+                    Ok(DictConfig::value(
                         serde_path_to_error::deserialize(value)
                             .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 }
             })
             .deserialize(deserializer)

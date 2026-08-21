@@ -79,35 +79,27 @@ where
         info
     }
 
-    fn list_tools(
+    async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListToolsResult, rmcp::model::ErrorData>>
-    + Send
-    + '_ {
-        async move {
-            Ok(ListToolsResult {
-                tools: crate::tools::tool_list(),
-                ..Default::default()
-            })
-        }
+    ) -> Result<ListToolsResult, rmcp::model::ErrorData> {
+        Ok(ListToolsResult {
+            tools: crate::tools::tool_list(),
+            ..Default::default()
+        })
     }
 
-    fn call_tool(
+    async fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<CallToolResponse, rmcp::model::ErrorData>>
-    + Send
-    + '_ {
-        async move {
-            self.dispatch(
-                &request.name,
-                request.arguments.map(serde_json::Value::Object),
-            )
-            .await
-        }
+    ) -> Result<CallToolResponse, rmcp::model::ErrorData> {
+        self.dispatch(
+            &request.name,
+            request.arguments.map(serde_json::Value::Object),
+        )
+        .await
     }
 }
 

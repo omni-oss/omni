@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod batch_executor;
 mod cache_manager;
 mod cache_store_provider;

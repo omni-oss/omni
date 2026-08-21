@@ -92,7 +92,7 @@ impl<'a, TSys: TaskExecutorSys, S: ExecutionEventSubscriber>
             self.subscriber.on_batch_start(BatchStartEvent {}).await;
 
             let results = batch_exec
-                .execute_batch(&batch, &results_accumulator)
+                .execute_batch(batch, &results_accumulator)
                 .await?;
 
             self.subscriber

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 // Hidden re-export so `bon_builder_mixin!` can reference `$crate::paste`
 // without requiring callers to add `paste` to their own dependencies.
 #[doc(hidden)]

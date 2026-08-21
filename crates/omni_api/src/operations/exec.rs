@@ -16,6 +16,7 @@ use super::task::TaskRunFilters;
 
 /// Request to run an arbitrary command in the workspace environment.
 #[derive(Debug, Clone, JsonSchema)]
+#[derive(Default)]
 pub struct ExecRequest {
     /// The command and its arguments (e.g. `["echo", "hello"]`).
     pub cmd: Vec<String>,
@@ -26,16 +27,6 @@ pub struct ExecRequest {
     pub output_cached_logs: Option<LogsDisplay>,
 }
 
-impl Default for ExecRequest {
-    fn default() -> Self {
-        Self {
-            cmd: vec![],
-            filters: TaskRunFilters::default(),
-            output_logs: None,
-            output_cached_logs: None,
-        }
-    }
-}
 
 // ── Response ──────────────────────────────────────────────────────────────────
 

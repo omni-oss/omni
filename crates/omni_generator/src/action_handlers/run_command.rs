@@ -7,6 +7,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn run_command<'a, S: GeneratorEventSubscriber>(
     config: &RunCommandActionConfiguration,
     ctx: &HandlerContext<'a, S>,

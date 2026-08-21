@@ -85,7 +85,7 @@ pub async fn get_artifact(
         Ok(o) => match o {
             Some(stream) => {
                 let body =
-                    Body::from_stream(stream.map(|e| Ok::<_, Infallible>(e)));
+                    Body::from_stream(stream.map(Ok::<_, Infallible>));
 
                 Response::builder()
                     .status(StatusCode::OK)

@@ -340,10 +340,7 @@ impl AnsiToGrid {
         if target < self.completed_lines.len() {
             // We need the raw cells – but we only have the baked Line.
             // Reconstruct a best-effort Vec<Cell> from the Line's spans.
-            let line = std::mem::replace(
-                &mut self.completed_lines[target],
-                Line::default(),
-            );
+            let line = std::mem::take(&mut self.completed_lines[target]);
             self.active_row = line_to_cells(line);
         } else {
             self.active_row = Vec::new();

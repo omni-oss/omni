@@ -9,6 +9,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn transform<'a, S: GeneratorEventSubscriber>(
     config: &TransformActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -21,12 +22,13 @@ pub async fn transform<'a, S: GeneratorEventSubscriber>(
 
 /// Resolves the (tera-expanded) `file` to an absolute path, anchoring relative
 /// paths to the output directory.
+#[allow(clippy::result_large_err)]
 fn resolve_file<S: GeneratorEventSubscriber>(
     file: &Path,
     ctx: &HandlerContext<'_, S>,
 ) -> Result<PathBuf, Error> {
     let expanded = omni_tera::one_off(
-        &file.to_string_lossy(),
+        file.to_string_lossy(),
         "transform file path",
         ctx.tera_context_values,
     )?;

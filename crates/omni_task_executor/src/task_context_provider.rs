@@ -114,10 +114,8 @@ struct OverallResultsTashHashProvider<'a> {
 
 impl<'a> TaskHashProvider for OverallResultsTashHashProvider<'a> {
     fn get_task_hash(&self, task_full_name: &str) -> Option<DefaultHash> {
-        Some(
-            self.overall_results
+        self.overall_results
                 .get(task_full_name)
-                .map(|r| r.hash())??,
-        )
+                .map(|r| r.hash())?
     }
 }

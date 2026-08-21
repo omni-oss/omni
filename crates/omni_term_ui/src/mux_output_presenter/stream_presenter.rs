@@ -23,6 +23,12 @@ impl StreamPresenter {
     }
 }
 
+impl Default for StreamPresenter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamPresenter {
     async fn clear_closed_tasks(&self) {
         self.tasks.lock().await.retain(|_, j| j.is_finished());

@@ -26,6 +26,7 @@ pub mod fs {
     use system_traits::{FsRead, FsReadAsync};
     use thiserror::Error;
 
+    #[allow(clippy::result_large_err)]
     pub async fn load_config_async<
         'a,
         'b,
@@ -58,6 +59,7 @@ pub mod fs {
             .map_err(|e| (path.to_path_buf(), e))?)
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn load_config<'a, 'b, TConfig, TPath, TSys: FsRead + Send + Sync>(
         path: TPath,
         sys: &TSys,

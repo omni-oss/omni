@@ -63,7 +63,7 @@ pub async fn run(command: &InitCommand) -> eyre::Result<()> {
         log::info!("Cloning repository from {}...", url);
         omni_git_utils::clone_repo(
             &sys,
-            &url,
+            url,
             command.args.git_rev.as_deref(),
             dir.path(),
         )

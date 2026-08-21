@@ -143,7 +143,7 @@ impl Child {
             // and stop forwarding.
             let mut consumer_gone = false;
             while let Some(buff) = out_rx.recv().await
-                && buff.len() > 0
+                && !buff.is_empty()
             {
                 if consumer_gone {
                     continue;

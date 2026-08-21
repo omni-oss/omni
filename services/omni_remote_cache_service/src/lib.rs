@@ -1,4 +1,5 @@
 #![feature(decl_macro)]
+#![allow(clippy::redundant_field_names)]
 
 pub mod args;
 mod build;

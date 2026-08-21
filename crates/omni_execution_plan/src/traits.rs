@@ -9,6 +9,7 @@ use crate::{Call, ScmAffectedFilter};
 pub trait ExecutionPlanProvider {
     type Error: Error + Send + Sync + 'static;
 
+    #[allow(clippy::result_large_err)]
     fn get_execution_plan(
         &self,
         call: &Call,

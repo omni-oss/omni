@@ -203,7 +203,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(skip_all, fields(rpc_id = ?self.id)))]
     pub async fn run(&self) -> BridgeRpcResult<()> {
         if self.stop_signal_sender.lock().await.is_some() {
-            return Err(BridgeRpcErrorInner::AlreadyRunning)?;
+            Err(BridgeRpcErrorInner::AlreadyRunning)?;
         }
 
         let (stop_signal_sender, mut stop_signal_receiver) =
@@ -640,11 +640,9 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     async fn handle_close(&self) {
         trace::trace!("received_close_frame");
         if let Some(stop_signal_) = self.stop_signal_sender.lock().await.take()
-        {
-            if let Err(e) = stop_signal_.send(true) {
+            && let Err(e) = stop_signal_.send(true) {
                 trace::warn!(error = ?e, "failed_to_send_stop_signal");
             }
-        }
     }
 
     async fn handle_ping(&self, frame_sender: &mpsc::Sender<Frame>) {
@@ -659,7 +657,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
     async fn handle_pong(&self) {
         trace::debug!("received_pong");
         if let Some(rx) = self.pending_ping.lock().await.take() {
-            if let Err(_) = rx.send(()) {
+            if rx.send(()).is_err() {
                 trace::warn!("failed_to_send_probe_ack");
             } else {
                 trace::trace!("removed_pending_ping_receiver");
@@ -789,7 +787,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .take();
         if let Some(sender) = sender {
-            if let Err(_) = sender.send(error) {
+            if sender.send(error).is_err() {
                 trace::warn!(id = ?id, "failed_to_forward_request_error");
             } else {
                 trace::trace!(id = ?id, "forwarded_request_error");
@@ -880,7 +878,7 @@ impl<TTransport: Transport, TService: Service> BridgeRpc<TTransport, TService> {
             .await
             .take();
         if let Some(error) = error {
-            if let Err(_) = error.send(response_error) {
+            if error.send(response_error).is_err() {
                 trace::warn!(id = ?id, "failed_to_forward_response_error");
             } else {
                 trace::trace!(id = ?id, "forwarded_response_error");

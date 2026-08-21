@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod error;
 mod sys;
 use std::{collections::HashSet, path::Path, sync::LazyLock};

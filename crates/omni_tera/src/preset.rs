@@ -14,7 +14,7 @@ use tera_contrib::{
     urlencode::{urlencode, urlencode_strict},
 };
 
-pub static FULL: LazyLock<Tera> = LazyLock::new(|| create_full_preset());
+pub static FULL: LazyLock<Tera> = LazyLock::new(create_full_preset);
 
 fn create_full_preset() -> tera::Tera {
     let mut tera = tera::Tera::default();

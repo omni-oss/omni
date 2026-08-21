@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod config;
 pub mod custom_output;
 mod level;

@@ -94,7 +94,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     call.is_command(),
                     &command_task_names,
                     project_filters,
-                    &dir_filters,
+                    dir_filters,
                     meta_filter,
                 )?;
 
@@ -130,7 +130,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                     call.is_command(),
                     &task_names_str,
                     project_filters,
-                    &dir_filters,
+                    dir_filters,
                     meta_filter,
                 )?;
 
@@ -231,7 +231,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
         let root_dir = self.context.root_dir();
 
         Ok(DefaultTaskScmAffectedFilter::new(
-            &root_dir,
+            root_dir,
             affected_scm_filter,
             |n| {
                 self.context
@@ -258,7 +258,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 .iter()
                 .any(|p| pf.should_include_project(p).unwrap_or(false))
         {
-            return Err(
+            Err(
                 ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
                     filter: project_filters.join(", "),
                 },

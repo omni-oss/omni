@@ -93,6 +93,7 @@ pub struct GeneratorRunResult {
     pub actions: Vec<Action>,
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn run_named<'a, S: GeneratorEventSubscriber>(
     generator_name: &'a str,
     config: &RunConfig<'a, S>,
@@ -108,9 +109,10 @@ pub async fn run_named<'a, S: GeneratorEventSubscriber>(
             ErrorInner::new_generator_not_found(generator_name.to_string())
         })?;
 
-    run_in_transaction(&generator, config, sys).await
+    run_in_transaction(generator, config, sys).await
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn run<'a, S: GeneratorEventSubscriber>(
     generator: &'a GeneratorConfiguration,
     config: &RunConfig<'a, S>,
@@ -127,6 +129,7 @@ pub async fn run<'a, S: GeneratorEventSubscriber>(
 /// transaction is committed. A normal run commits the transaction once all
 /// actions have succeeded (making generation atomic), while a dry run simply
 /// drops the buffered actions without committing.
+#[allow(clippy::result_large_err)]
 async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     generator: &GeneratorConfiguration,
     config: &RunConfig<'a, S>,
@@ -227,6 +230,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     Ok(GeneratorRunResult { session, actions })
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     r#gen: &GeneratorConfiguration,
     config: &RunConfig<'a, S>,
@@ -257,8 +261,8 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
 
     let mut values = collect(
         &r#gen.inputs,
-        &config.input_values,
-        &config.context_values,
+        config.input_values,
+        config.context_values,
         &collection_config,
         config.input_provider,
     )
@@ -306,7 +310,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
         context_values: &context_values,
         dry_run: config.dry_run,
         output_dir: config.output_dir,
-        generator_dir: &r#gen
+        generator_dir: r#gen
             .config_path
             .parent()
             .expect("generator should have a directory"),
@@ -370,6 +374,7 @@ pub(crate) async fn run_internal<'a, S: GeneratorEventSubscriber>(
     Ok(session)
 }
 
+#[allow(clippy::result_large_err)]
 fn expand_vars(
     key: &str,
     values: &UnorderedMap<String, serde_json::Value>,

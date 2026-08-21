@@ -106,13 +106,13 @@ impl ExtractedDataValidator {
         self.validate_duplicate_project_names(extractions, &mut errors);
 
         if self.fail_fast && !errors.is_empty() {
-            return Err(errors)?;
+            return Err(errors.into());
         }
 
         self.validate_dangling_own_dependencies(extractions, &mut errors);
 
         if self.fail_fast && !errors.is_empty() {
-            return Err(errors)?;
+            return Err(errors.into());
         }
 
         if errors.is_empty() {

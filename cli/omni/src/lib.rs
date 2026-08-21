@@ -39,6 +39,7 @@ fn exit(code: ExitCode) -> ! {
 }
 
 #[inline(always)]
+#[allow(clippy::result_large_err)]
 fn ctx(
     args: &CliArgs,
     tracing: &TracingConfig,
@@ -60,6 +61,7 @@ pub async fn run(
     tracing: &TracingConfig,
     ws_root_dir: Option<&Path>,
 ) -> eyre::Result<()> {
+    #[allow(clippy::result_large_err)]
     let create_ctx = || ctx(args, tracing, ws_root_dir);
 
     match sc {
@@ -144,19 +146,15 @@ async fn run_main() -> eyre::Result<()> {
         .clone()
         .or_else(|| Some(PathBuf::from("./.omni/trace/omni.log")));
 
-    let trace_file_path = if let Some(path) = trace_file_path {
-        Some(
-            if !path.has_root()
-                && let Some(ref root) = ws_root_dir
-            {
-                root.join(path)
-            } else {
-                path
-            },
-        )
-    } else {
-        None
-    };
+    let trace_file_path = trace_file_path.map(|path| {
+        if !path.has_root()
+            && let Some(ref root) = ws_root_dir
+        {
+            root.join(path)
+        } else {
+            path
+        }
+    });
 
     let tracing_config = TracingConfig {
         file_path: trace_file_path,

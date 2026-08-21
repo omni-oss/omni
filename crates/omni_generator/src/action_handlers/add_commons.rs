@@ -15,6 +15,8 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::result_large_err)]
 pub async fn add_one<'a, TRender, TSys, S: GeneratorEventSubscriber>(
     file: &'a Path,
     content: &'a str,
@@ -34,7 +36,7 @@ where
 {
     let output_path = resolve_output_path(
         common.target.as_deref(),
-        &file,
+        file,
         base_path,
         ctx,
         ctx.input_provider,
@@ -46,14 +48,14 @@ where
     .await?;
 
     let expanded_output = omni_tera::one_off(
-        &output_path.to_string_lossy(),
+        output_path.to_string_lossy(),
         "output_path",
         ctx.tera_context_values,
     )?;
 
     let output_path = Path::new(&expanded_output);
     if let Some(did_overwrite) = overwrite(
-        &output_path,
+        output_path,
         ctx.overwrite.or(common.overwrite),
         ctx.input_provider,
         sys,
@@ -65,7 +67,7 @@ where
         return Ok(());
     }
 
-    ensure_dir_exists(&output_path.parent().expect("should have parent"), sys)
+    ensure_dir_exists(output_path.parent().expect("should have parent"), sys)
         .await?;
 
     let tera_ctx_with_data =
@@ -77,9 +79,9 @@ where
         Cow::Borrowed(content)
     };
 
-    sys.fs_write_async(&output_path, result.as_bytes())
+    sys.fs_write_async(output_path, result.as_bytes())
         .await
-        .map_err(|e| ErrorInner::new_failed_to_write_file(&output_path, e))?;
+        .map_err(|e| ErrorInner::new_failed_to_write_file(output_path, e))?;
 
     log::debug!("Wrote to path {}", output_path.display());
 

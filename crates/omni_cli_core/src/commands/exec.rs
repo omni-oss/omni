@@ -44,7 +44,7 @@ pub async fn run(
     builder.call(Call::new_command(
         command.cmd[0].clone(),
         if command.cmd.len() > 1 {
-            command.cmd[1..].iter().cloned().collect::<Vec<_>>()
+            command.cmd[1..].to_vec()
         } else {
             vec![]
         },

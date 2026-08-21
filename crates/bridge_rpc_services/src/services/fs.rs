@@ -679,7 +679,7 @@ mod tests {
     };
 
     fn real_sys() -> Arc<RealSys> {
-        Arc::new(RealSys::default())
+        Arc::new(RealSys)
     }
 
     /// Reads the `returns` header from a response into the requested type.

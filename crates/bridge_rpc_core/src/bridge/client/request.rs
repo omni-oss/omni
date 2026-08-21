@@ -111,7 +111,7 @@ impl ActiveRequest {
     ) -> Self {
         Self {
             data: RequestDataImpl {
-                id: id,
+                id,
                 is_ended: false,
                 frame_sender,
             },
@@ -214,13 +214,13 @@ async fn return_if_error(
 ) -> RequestResult<()> {
     match error_rx.try_recv() {
         Ok(error) => {
-            return Err(
+            Err(
                 RequestErrorInner::ReceivedResponseErrorFrame(error).into()
-            );
+            )
         }
         Err(e) => match e {
             oneshot::error::TryRecvError::Empty
-            | oneshot::error::TryRecvError::Closed => return Ok(()),
+            | oneshot::error::TryRecvError::Closed => Ok(()),
         },
     }
 }

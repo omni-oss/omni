@@ -393,7 +393,7 @@ mod tests {
         }
 
         fn set_id(&mut self, id: &Self::Id) {
-            self.id = id.clone();
+            self.id = *id;
         }
 
         fn extendee_ids(&self) -> &[Self::Id] {

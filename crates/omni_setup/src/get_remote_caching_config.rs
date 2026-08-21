@@ -83,7 +83,7 @@ impl<T: Into<GetRemoteCachingConfigErrorInner>> From<T>
 {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self(inner.into())
+        Self(inner)
     }
 }
 

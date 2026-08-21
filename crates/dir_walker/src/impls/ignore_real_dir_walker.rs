@@ -157,7 +157,7 @@ impl DirWalkerBase for IgnoreRealDirWalker {
         paths: &[&std::path::Path],
     ) -> Result<IgnoreRealWalkDir, Self::Error> {
         if paths.is_empty() {
-            return Err(IgnoreRealDirWalkerErrorInner::PathCantBeEmpty)?;
+            Err(IgnoreRealDirWalkerErrorInner::PathCantBeEmpty)?;
         }
 
         let mut builder = ignore::WalkBuilder::new(paths[0]);

@@ -34,6 +34,7 @@ pub struct RemoteCacheConfiguration {
 }
 
 impl RemoteCacheConfiguration {
+    #[allow(clippy::result_large_err)]
     pub async fn load_async<'a>(
         path: impl Into<&'a Path>,
         sys: &(impl FsReadAsync + Send + Sync),
@@ -41,6 +42,7 @@ impl RemoteCacheConfiguration {
         utils::fs::load_config_async(path, sys).await
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn load<'a>(
         path: impl Into<&'a Path>,
         sys: &(impl FsRead + Send + Sync),

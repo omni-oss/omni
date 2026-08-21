@@ -72,6 +72,7 @@ pub struct ExecuteActionsArgs<'a, S: GeneratorEventSubscriber = NoopSubscriber>
     pub max_depth: usize,
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
     args: &ExecuteActionsArgs<'a, S>,
     gen_session: &GenSession,
@@ -81,14 +82,14 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
 
     let output_dir = args.current_dir.join(args.output_dir);
     let expanded_output = omni_tera::one_off(
-        &output_dir.to_string_lossy(),
+        output_dir.to_string_lossy(),
         "output_dir",
         &tera_context,
     )?;
     let output_path = Path::new(&expanded_output);
 
     if let Some(diff) =
-        pathdiff::diff_paths(&output_path, clean(&args.workspace_dir))
+        pathdiff::diff_paths(output_path, clean(args.workspace_dir))
     {
         tera_context.insert("output_dir", &diff);
     } else {
@@ -225,6 +226,7 @@ pub async fn execute_actions<'a, S: GeneratorEventSubscriber>(
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn skip(
     name: &str,
     action: &ActionConfiguration,
@@ -235,7 +237,7 @@ fn skip(
     if let Some(if_expr) = if_expr {
         let result = omni_tera::one_off(
             if_expr,
-            &format!("if condition for action {}: {}", name, if_expr),
+            format!("if condition for action {}: {}", name, if_expr),
             tera_context,
         )?;
         let result = result.trim();
@@ -247,6 +249,7 @@ fn skip(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_bool_result(
     result: &str,
     expr: &str,
@@ -263,6 +266,7 @@ fn validate_bool_result(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn render_text(
     message: &str,
     name: &str,
@@ -273,6 +277,7 @@ fn render_text(
     Ok(result)
 }
 
+#[allow(clippy::result_large_err)]
 fn get_error_message(
     action_name: &str,
     error: &Error,
@@ -293,11 +298,12 @@ fn get_error_message(
     } else {
         Ok(format!(
             "Encountered an error while executing action: {}",
-            error.to_string()
+            error
         ))
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn get_in_progress_message(
     action_name: &str,
     action: &ActionConfiguration,
@@ -316,6 +322,7 @@ fn get_in_progress_message(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn get_success_message(
     action_name: &str,
     action: &ActionConfiguration,
@@ -334,6 +341,7 @@ fn get_success_message(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn get_action_name(
     index: usize,
     action: &ActionConfiguration,

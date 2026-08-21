@@ -10,6 +10,7 @@ use thiserror::Error;
 type EnvVars = maps::Map<String, String>;
 
 #[derive(new, Default)]
+#[allow(clippy::too_many_arguments)]
 pub struct PruneCacheArgs<'a, TContext: Context = ()> {
     pub dry_run: bool,
     /// Only prune entries whose cached digest no longer matches the freshly

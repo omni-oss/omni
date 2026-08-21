@@ -344,7 +344,7 @@ mod tests {
     };
 
     fn real_sys() -> Arc<RealSys> {
-        Arc::new(RealSys::default())
+        Arc::new(RealSys)
     }
 
     fn read_response_returns<T>(headers: &Option<bridge_rpc_core::DynMap>) -> T

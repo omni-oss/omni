@@ -80,11 +80,10 @@ async fn collect_internal<
     for input in inputs {
         let base = input.borrow().base();
 
-        if let Some(if_expr) = &base.r#if {
-            if skip(if_expr, &values, ctx, config.if_expressions_root_property)?
-            {
-                continue;
-            }
+        if let Some(if_expr) = &base.r#if
+            && skip(if_expr, &values, ctx, config.if_expressions_root_property)?
+        {
+            continue;
         }
 
         let key = base.name.clone();
@@ -345,7 +344,7 @@ fn check_no_duplicate_names<E: InputProfile, I: Borrow<Input<E>>>(
     for input in inputs {
         let name = input.borrow().base().name.as_str();
         if seen.contains(name) {
-            return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
+            Err(ErrorInner::DuplicateInputName(name.to_string()))?;
         }
         seen.insert(name);
     }
@@ -551,8 +550,8 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result.get("visible").is_some());
-        assert!(result.get("hidden").is_none());
+        assert!(result.contains_key("visible"));
+        assert!(!result.contains_key("hidden"));
     }
 
     #[tokio::test]
@@ -573,7 +572,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result.get("extra").is_none());
+        assert!(!result.contains_key("extra"));
     }
 
     #[tokio::test]
@@ -736,11 +735,11 @@ mod tests {
             &empty(),
             &empty(),
             &cfg(false),
-            &scripted(&[("rate", "3.14")]),
+            &scripted(&[("rate", "2.5")]),
         )
         .await
         .unwrap();
-        assert_eq!(jv(result.get("rate").unwrap()), json!(3.14));
+        assert_eq!(jv(result.get("rate").unwrap()), json!(2.5));
     }
 
     #[tokio::test]

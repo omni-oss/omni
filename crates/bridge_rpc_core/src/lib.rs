@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 pub mod bridge;
 pub mod id;
 mod transport;

@@ -71,7 +71,7 @@ impl SecretKeyError {
 impl<T: Into<SecretKeyErrorInner>> From<T> for SecretKeyError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self(inner.into())
+        Self(inner)
     }
 }
 

@@ -79,6 +79,7 @@ impl omni_core::ExtensionGraphNode for ProjectConfiguration {
 }
 
 impl ProjectConfiguration {
+    #[allow(clippy::result_large_err)]
     pub async fn load<'a>(
         path: impl Into<&'a Path>,
         sys: &(impl FsReadAsync + Send + Sync),

@@ -35,9 +35,6 @@ use omni_input_schema::{
 /// Used for the `condition` (`if`) builder field: accepts both literal booleans
 /// and expression strings, converting to the `Either<L, String>` stored in
 /// [`BaseInput::r#if`].
-
-// ── build_base ────────────────────────────────────────────────────────────────
-
 fn build_base(
     name: String,
     condition: Option<MaybeExpr<bool>>,

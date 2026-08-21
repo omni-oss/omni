@@ -70,7 +70,7 @@ impl ChildProcessGuard {
                 ))
             });
 
-            let mut paths = if target.contains(&host) {
+            let mut paths = if target.contains(host) {
                 vec![default_path]
             } else {
                 vec![]
@@ -92,7 +92,7 @@ impl ChildProcessGuard {
         if path.is_none() {
             panic!(
                 "Could not find omni_remote_cache_service binary. Lookup paths: \n{:#?}",
-                &lookup_paths
+                lookup_paths
             );
         }
 

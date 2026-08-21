@@ -64,7 +64,7 @@ impl TaskExecutionNode {
         let project_name = project_name.into();
         let task_name = task_name.into();
         Self {
-            full_task_name: format!("{}#{}", &project_name, &task_name),
+            full_task_name: format!("{}#{}", project_name, task_name),
             task_name,
             task_exec,
             task_retry_exec,
@@ -130,6 +130,7 @@ impl TaskExecutionNode {
     }
 
     /// (task_name, task_command, project_name, project_dir, full_task_name, dependencies, enabled, interactive, persistent, max_retries, retry_interval)
+    #[allow(clippy::type_complexity)]
     pub fn deconstruct(
         self,
     ) -> (
@@ -1354,7 +1355,7 @@ mod tests {
         task_exec: &str,
         project_name: &str,
     ) -> TaskExecutionNode {
-        return TaskExecutionNode::new(
+        TaskExecutionNode::new(
             task_name.to_string(),
             Some(CommandConfig::Shell(task_exec.to_string())),
             None,
@@ -1366,7 +1367,7 @@ mod tests {
             false,
             None,
             None,
-        );
+        )
     }
 
     fn node_with_deps(
@@ -1397,7 +1398,7 @@ mod tests {
             batch.sort();
         });
 
-        let mut expected_plan = vec![
+        let mut expected_plan = [
             vec![
                 node("p3t1", "echo p3t1", "project3"),
                 node("p2t1", "echo p2t1", "project2"),

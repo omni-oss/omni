@@ -5,6 +5,7 @@ use omni_tracing_subscriber::TracingConfig;
 
 use crate::commands::CliArgs;
 
+#[allow(clippy::result_large_err)]
 pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     root_dir: impl AsRef<Path>,
@@ -41,6 +42,7 @@ pub fn from_args_root_dir_and_sys<TSys: ContextSys>(
     Ok(ctx)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn from_args_and_sys<TSys: ContextSys>(
     cli: &CliArgs,
     sys: TSys,
@@ -54,6 +56,7 @@ pub fn from_args_and_sys<TSys: ContextSys>(
 }
 
 /// Context creation from WorkspaceInitConfig — use this in non-CLI entrypoints.
+#[allow(clippy::result_large_err)]
 pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
     cfg: &WorkspaceInitConfig,
     root_dir: impl AsRef<Path>,
@@ -72,6 +75,7 @@ pub fn from_config_root_dir_and_sys<TSys: ContextSys>(
     Ok(ctx)
 }
 
+#[allow(clippy::result_large_err)]
 pub fn from_config_and_sys<TSys: ContextSys>(
     cfg: &WorkspaceInitConfig,
     sys: TSys,

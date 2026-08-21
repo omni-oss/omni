@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod child;
 mod child_process;
 mod task_child_process;

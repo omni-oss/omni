@@ -152,11 +152,11 @@ async fn return_if_error(
 ) -> ResponseResult<()> {
     match error_rx.try_recv() {
         Ok(error) => {
-            return Err(ResponseErrorInner::Response(error).into());
+            Err(ResponseErrorInner::Response(error).into())
         }
         Err(e) => match e {
             oneshot::error::TryRecvError::Empty
-            | oneshot::error::TryRecvError::Closed => return Ok(()),
+            | oneshot::error::TryRecvError::Closed => Ok(()),
         },
     }
 }

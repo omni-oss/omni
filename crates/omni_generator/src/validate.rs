@@ -8,6 +8,7 @@ use sets::unordered_set;
 
 use crate::error::{Error, ErrorInner};
 
+#[allow(clippy::result_large_err)]
 pub fn validate(
     generators: &[Cow<GeneratorConfiguration>],
 ) -> Result<(), Error> {
@@ -15,7 +16,7 @@ pub fn validate(
 
     for generator in generators {
         if names.contains(&generator.name) {
-            return Err(ErrorInner::new_duplicate_generator_name(
+            Err(ErrorInner::new_duplicate_generator_name(
                 generator.name.clone(),
                 generator.config_path.clone(),
             ))?;
@@ -60,6 +61,7 @@ pub fn validate(
 /// Detects if running `entry_generator` would result in a recursive call
 /// cycle — i.e., if the generator can reach itself (directly or indirectly)
 /// through `RunGenerator` actions.
+#[allow(clippy::result_large_err)]
 pub fn detect_recursion(
     entry_generator: &GeneratorConfiguration,
     generators: &[Cow<GeneratorConfiguration>],
@@ -81,6 +83,7 @@ pub fn detect_recursion(
 /// `path` tracks the nodes on the current DFS stack to detect back-edges
 /// (cycles). When a node is encountered that is already in `path`, a cycle
 /// is present.
+#[allow(clippy::result_large_err)]
 fn dfs<'a>(
     generator: &'a GeneratorConfiguration,
     generator_map: &HashMap<&str, &'a GeneratorConfiguration>,
@@ -103,11 +106,10 @@ fn dfs<'a>(
     path.insert(generator.name.as_str());
 
     for action in &generator.actions {
-        if let ActionConfiguration::RunGenerator { action: run } = action {
-            if let Some(called) = generator_map.get(run.generator.as_str()) {
-                dfs(*called, generator_map, visited, path)?;
+        if let ActionConfiguration::RunGenerator { action: run } = action
+            && let Some(called) = generator_map.get(run.generator.as_str()) {
+                dfs(called, generator_map, visited, path)?;
             }
-        }
     }
 
     path.remove(generator.name.as_str());

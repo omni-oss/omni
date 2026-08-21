@@ -147,7 +147,9 @@ impl Expansion {
 }
 
 #[derive(Debug, Clone, Copy, new, PartialEq, Eq)]
+#[derive(Default)]
 pub enum CommandExpansionConfig<'a> {
+    #[default]
     Disabled,
     Enabled {
         #[new(into)]
@@ -157,11 +159,6 @@ pub enum CommandExpansionConfig<'a> {
     },
 }
 
-impl Default for CommandExpansionConfig<'_> {
-    fn default() -> Self {
-        Self::Disabled
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, new)]
 pub struct Expansions<'a> {

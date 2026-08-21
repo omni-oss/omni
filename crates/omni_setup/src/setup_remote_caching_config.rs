@@ -15,6 +15,7 @@ use crate::{
     crypto, derive_key::derive_key_from_seed, secret_key::get_secret_key,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
     user: &str,
     client: &TClient,
@@ -82,7 +83,7 @@ pub async fn setup_remote_caching_config_async<TClient: RemoteCacheClient>(
             rmp_serde::to_vec(&remote_config)?.as_slice(),
             &derived_key[..],
         )?;
-        sys.fs_write_async(&remote_config_path, &encrypted).await?;
+        sys.fs_write_async(remote_config_path, &encrypted).await?;
     } else {
         omni_file_data_serde::write_async(
             remote_config_path,

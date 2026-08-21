@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! decl_remote_cache_storage_backend_tests {
     ($default:expr) => {
-        use crate::RemoteCacheStorageBackend;
+        use $crate::RemoteCacheStorageBackend;
         use bytes::{Bytes, BytesMut};
         use bytesize::ByteSize;
         use tokio_stream::StreamExt;

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod call;
 mod execution_plan_provider;
 mod filter;

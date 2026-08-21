@@ -7,6 +7,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn prepend_content<'a, S: GeneratorEventSubscriber>(
     config: &PrependContentActionConfiguration,
     ctx: &HandlerContext<'a, S>,

@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(value.get("a"), Some(&true));
         assert_eq!(value.get("b"), Some(&false));
         assert_eq!(value.get("c"), None);
-        assert_eq!(value.get_or("c", false), false);
+        assert!(!value.get_or("c", false));
     }
 
     #[test]

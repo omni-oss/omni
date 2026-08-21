@@ -219,6 +219,7 @@ pub struct SecurityConfiguration {
     JsonSchema,
     new,
 )]
+#[allow(clippy::too_many_arguments)]
 pub struct ApiKeyConfiguration {
     #[serde(default)]
     pub description: Option<String>,

@@ -17,6 +17,7 @@ pub fn get_tera_context(
     context
 }
 
+#[allow(clippy::result_large_err)]
 pub fn expand_json_value<'v>(
     tera_ctx: &omni_tera::Context,
     parent_key: Option<&str>,
@@ -26,7 +27,7 @@ pub fn expand_json_value<'v>(
     Ok(match value {
         serde_json::Value::String(s) => {
             let expanded = omni_tera::one_off(
-                &s,
+                s,
                 &(if let Some(parent_key) = parent_key {
                     format!("value for {}.{}", parent_key, key)
                 } else {
@@ -65,11 +66,11 @@ pub fn expand_json_value<'v>(
                     expand_json_value(
                         tera_ctx,
                         Some(&format!("{}.{}", parent, key)),
-                        &map_key,
+                        map_key,
                         value,
                     )?
                 } else {
-                    expand_json_value(tera_ctx, Some(key), &map_key, value)?
+                    expand_json_value(tera_ctx, Some(key), map_key, value)?
                 })
                 .to_owned();
                 result.insert(map_key.to_string(), value);
@@ -77,6 +78,6 @@ pub fn expand_json_value<'v>(
 
             Cow::Owned(serde_json::Value::Object(result))
         }
-        value @ _ => Cow::Borrowed(value),
+        value => Cow::Borrowed(value),
     })
 }

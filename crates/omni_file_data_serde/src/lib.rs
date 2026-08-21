@@ -54,7 +54,7 @@ where
     from_slice(&content, format)
 }
 
-pub fn read<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
+pub fn read<TData, TPath, TSys: FsRead + Send + Sync>(
     path: TPath,
     sys: &TSys,
 ) -> Result<TData, Error>
@@ -69,7 +69,7 @@ where
     )
 }
 
-pub fn read_with_format<'a, 'b, TData, TPath, TSys: FsRead + Send + Sync>(
+pub fn read_with_format<TData, TPath, TSys: FsRead + Send + Sync>(
     format: Format,
     path: TPath,
     sys: &TSys,
@@ -131,7 +131,7 @@ fn read_toml_from_bytes<TData>(data: &[u8]) -> Result<TData, Error>
 where
     TData: for<'de> Deserialize<'de>,
 {
-    let utf8_str = std::str::from_utf8(&data)?;
+    let utf8_str = std::str::from_utf8(data)?;
     let deserializer =
         toml::Deserializer::parse(utf8_str).wrap_err("failed to parse TOML")?;
 
@@ -139,7 +139,7 @@ where
 }
 
 #[inline(always)]
-pub fn write<'a, TData, TPath, TSys: FsWrite + Send + Sync>(
+pub fn write<TData, TPath, TSys: FsWrite + Send + Sync>(
     path: TPath,
     data: &TData,
     sys: &TSys,
@@ -156,7 +156,7 @@ where
     )
 }
 
-pub fn write_with_format<'a, TData, TPath, TSys: FsWrite + Send + Sync>(
+pub fn write_with_format<TData, TPath, TSys: FsWrite + Send + Sync>(
     format: Format,
     path: TPath,
     data: &TData,
@@ -174,7 +174,7 @@ where
 }
 
 #[inline(always)]
-pub async fn write_async<'a, TData, TPath, TSys: FsWriteAsync + Send + Sync>(
+pub async fn write_async<TData, TPath, TSys: FsWriteAsync + Send + Sync>(
     path: TPath,
     data: &TData,
     sys: &TSys,
@@ -193,7 +193,6 @@ where
 }
 
 pub async fn write_with_format_async<
-    'a,
     TData,
     TPath,
     TSys: FsWriteAsync + Send + Sync,

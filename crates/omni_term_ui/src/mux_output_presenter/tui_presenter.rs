@@ -148,6 +148,12 @@ impl TuiPresenter {
     }
 }
 
+impl Default for TuiPresenter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait::async_trait]
 impl MuxOutputPresenter for TuiPresenter {
     type Error = TuiPresenterError;
@@ -326,7 +332,7 @@ fn run_tui(
     terminal.clear()?;
 
     loop {
-        if let Ok(_) = shutdown_rx.try_recv() {
+        if shutdown_rx.try_recv().is_ok() {
             trace::trace!("shutdown_requested");
             shutdown_rx.close();
             break;
@@ -504,7 +510,7 @@ fn update_or_insert_scroll_state(
             "Updated scroll state for {active_id:?}, new value: {scroll_state:?}"
         );
         return Some(*scroll_state);
-    } else if let Some(active_id) = active_id.as_deref() {
+    } else if let Some(active_id) = active_id {
         let scroll_state = insert_fn();
 
         scroll_states.insert(active_id.to_string(), scroll_state);
@@ -534,11 +540,11 @@ enum Compute {
     Prev,
 }
 
-fn compute_active<'a>(
+fn compute_active(
     current_index: usize,
-    order: &'a [String],
+    order: &[String],
     compute: Compute,
-) -> (Option<&'a String>, usize) {
+) -> (Option<&String>, usize) {
     let order_len = order.len();
     if order_len == 0 {
         return (None, 0);
@@ -571,16 +577,14 @@ struct FrameData {
 fn get_active_index(order: &[String], active_id: Option<&str>) -> usize {
     let f_active_id = active_id;
 
-    let active_index = if let Some(id) = f_active_id {
-        order.iter().position(|s| s == &id).unwrap_or(0)
+    if let Some(id) = f_active_id {
+        order.iter().position(|s| s == id).unwrap_or(0)
     } else {
         0
-    };
-
-    active_index
+    }
 }
 
-fn get_frame_data<'a>(
+fn get_frame_data(
     buffers: &Screens,
     active_id: &ActiveId,
     input_enabled: bool,
@@ -596,7 +600,7 @@ fn get_frame_data<'a>(
     let active_id = order.get(active_index);
 
     // Resolve scroll offset so we can pass it to paragraph().
-    let scroll_offset = if let Some(id) = active_id.as_deref() {
+    let scroll_offset = if let Some(id) = active_id {
         let ss = scroll_states.get(id).copied().unwrap_or_default();
         if ss.follow {
             usize::MAX // resolved inside paragraph() after line_count is known
@@ -646,7 +650,7 @@ fn get_frame_data<'a>(
         (Paragraph::new("<no data>").block(block(" Output ")), 1)
     };
 
-    let scroll_state = if let Some(id) = active_id.as_deref() {
+    let scroll_state = if let Some(id) = active_id {
         log::trace!("scroll state for {id}: {:?}", scroll_states.get(id));
         scroll_states.get(id).copied().unwrap_or_default()
     } else {
@@ -692,7 +696,7 @@ fn draw_ui<'a>(
         .constraints([Constraint::Length(1), Constraint::Min(10)].as_ref())
         .split(area);
 
-    let items: Vec<Line> = order.iter().map(|s| Line::raw(s)).collect();
+    let items: Vec<Line> = order.iter().map(Line::raw).collect();
 
     let tabs = ScrollableTabs::new(items)
         .highlight_style(
@@ -758,25 +762,22 @@ fn draw_ui<'a>(
         .add_modifier(Modifier::BOLD);
 
     let controls = if input_enabled {
-        vec![Span::styled(
-            " ctrl+z = Disable Input ",
-            CONTROL_STYLE.clone(),
-        )]
+        vec![Span::styled(" ctrl+z = Disable Input ", CONTROL_STYLE)]
     } else {
         vec![
-            Span::styled(" ESC / q = Quit ", CONTROL_STYLE.clone()),
+            Span::styled(" ESC / q = Quit ", CONTROL_STYLE),
             Span::raw(" • "),
             if scroll_state.follow {
-                Span::styled(" f = Unfollow Scroll ", CONTROL_STYLE.clone())
+                Span::styled(" f = Unfollow Scroll ", CONTROL_STYLE)
             } else {
-                Span::styled(" f = Follow Scroll ", CONTROL_STYLE.clone())
+                Span::styled(" f = Follow Scroll ", CONTROL_STYLE)
             },
             Span::raw(" • "),
-            Span::styled(" ⟵ ⟶ / h-l = Select Task ", CONTROL_STYLE.clone()),
+            Span::styled(" ⟵ ⟶ / h-l = Select Task ", CONTROL_STYLE),
             Span::raw(" • "),
-            Span::styled(" ↑ ↓ / j-k = Scroll Up/Down ", CONTROL_STYLE.clone()),
+            Span::styled(" ↑ ↓ / j-k = Scroll Up/Down ", CONTROL_STYLE),
             Span::raw(" • "),
-            Span::styled(" ctrl+z = Enable Input ", CONTROL_STYLE.clone()),
+            Span::styled(" ctrl+z = Enable Input ", CONTROL_STYLE),
         ]
     };
 

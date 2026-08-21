@@ -172,12 +172,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                 let output_logs = match (project_output_logs, task_output_logs)
                 {
                     (Some(project), Some(task)) => {
-                        let mut resolved = project.clone();
-                        resolved.merge(task.clone());
+                        let mut resolved = *project;
+                        resolved.merge(*task);
                         Some(resolved)
                     }
-                    (Some(project), None) => Some(project.clone()),
-                    (None, Some(task)) => Some(task.clone()),
+                    (Some(project), None) => Some(*project),
+                    (None, Some(task)) => Some(*task),
                     (None, None) => None,
                 };
 

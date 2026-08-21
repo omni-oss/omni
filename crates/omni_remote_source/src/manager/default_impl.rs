@@ -121,7 +121,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
                                 return false;
                             }
 
-                            return true;
+                            true
                         });
                     }
                 }
@@ -166,7 +166,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         let clone = omni_git_utils::clone_repo(
             &self.sys,
             uri.as_str(),
-            Some(&commit),
+            Some(commit),
             dest,
         )
         .await?;

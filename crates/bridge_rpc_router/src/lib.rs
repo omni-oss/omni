@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod handler;
 mod handler_error;
 mod router;

@@ -14,6 +14,7 @@ use crate::{
     error::{Error, ErrorInner},
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn insert_one<'a, S: GeneratorEventSubscriber>(
     entries: &[InsertInlineContentEntry],
     prepend: bool,
@@ -29,7 +30,7 @@ pub async fn insert_one<'a, S: GeneratorEventSubscriber>(
         augment_tera_context(ctx.tera_context_values, Some(&common.data))?;
 
     let target = omni_tera::one_off(
-        &target.to_string_lossy(),
+        target.to_string_lossy(),
         "output_path",
         &tera_ctx_with_data,
     )?;
@@ -45,7 +46,7 @@ pub async fn insert_one<'a, S: GeneratorEventSubscriber>(
         if !rg.is_match(&content) {
             return Err(Error::custom(format!(
                 "pattern '{}' not found in template for action {}",
-                &entry.pattern, ctx.resolved_action_name
+                entry.pattern, ctx.resolved_action_name
             )));
         }
 
@@ -70,7 +71,7 @@ pub async fn insert_one<'a, S: GeneratorEventSubscriber>(
                 }
             }
 
-            file.push(&line);
+            file.push(line);
 
             if !stop_inserting && !prepend && matching {
                 file.push(&rendered);

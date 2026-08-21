@@ -446,7 +446,7 @@ fn expand_default_value(
 ) -> Result<String, Error> {
     omni_tera::one_off(
         template,
-        &format!("default value for input {}", name),
+        format!("default value for input {}", name),
         context_values,
     )
     .map_err(Error::from)
@@ -487,9 +487,9 @@ fn validate_for_requestty<T: std::fmt::Debug + Serialize + 'static>(
     }
 }
 
-fn get_default_index<'a, T: FromStr + Clone + PartialEq>(
+fn get_default_index<T: FromStr + Clone + PartialEq>(
     default: &Option<MaybeExpr<T>>,
-    context_values: &'a omni_tera::Context,
+    context_values: &omni_tera::Context,
     name: &str,
     allowed: &[AllowedValue<T, Generator>],
     eq: impl Fn(&T, &T) -> bool,

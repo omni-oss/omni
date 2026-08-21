@@ -48,7 +48,7 @@ impl<'a, THashProvider: TaskHashProvider, TContext: Context>
         let cache_info = self
             .context
             .get_cache_info(node.project_name(), node.task_name())
-            .map(|ci| Cow::Borrowed(ci));
+            .map(Cow::Borrowed);
 
         let output_logs = self
             .context

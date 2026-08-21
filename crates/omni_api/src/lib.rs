@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 #![allow(async_fn_in_trait)]
 
 mod api;

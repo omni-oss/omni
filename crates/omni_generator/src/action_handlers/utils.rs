@@ -99,6 +99,7 @@ pub(crate) enum ResolveOutputPathErrorInner {
     GenericIo(#[from] std::io::Error),
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn ensure_dir_exists(
     dir: &Path,
     sys: &impl GeneratorSys,
@@ -108,12 +109,13 @@ pub async fn ensure_dir_exists(
     }
 
     if !sys.fs_is_dir_async(dir).await? {
-        return Err(ErrorInner::new_path_exists_but_not_dir(dir))?;
+        Err(ErrorInner::new_path_exists_but_not_dir(dir))?;
     }
 
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn should_overwrite(
     path: &Path,
     overwrite: Option<OverwriteConfiguration>,
@@ -160,23 +162,24 @@ pub async fn should_overwrite(
     Ok(bool_result)
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn overwrite(
     output_path: &Path,
     overwrite: Option<OverwriteConfiguration>,
     provider: &dyn InputProvider<Generator>,
     sys: &impl GeneratorSys,
 ) -> Result<Option<bool>, Error> {
-    if sys.fs_exists_async(&output_path).await? {
+    if sys.fs_exists_async(output_path).await? {
         let overwrite =
-            should_overwrite(&output_path, overwrite, provider, sys).await?;
+            should_overwrite(output_path, overwrite, provider, sys).await?;
         let output_path_d = output_path.display();
         if overwrite {
-            if sys.fs_is_dir_async(&output_path).await? {
+            if sys.fs_is_dir_async(output_path).await? {
                 log::debug!(
                     "Removing directory and it's contents at path {}",
                     output_path_d
                 );
-                sys.fs_remove_dir_all_async(&output_path).await?;
+                sys.fs_remove_dir_all_async(output_path).await?;
             } else {
                 log::debug!("Overwriting path at {}", output_path_d);
             }
@@ -187,9 +190,10 @@ pub async fn overwrite(
         }
     }
 
-    return Ok(None);
+    Ok(None)
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn resolve_target_dir<'a>(
     target_name: &str,
     target_overrides: &'a UnorderedMap<String, OmniPath>,
@@ -245,6 +249,7 @@ pub async fn resolve_target_dir<'a>(
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn resolve_target_file<'a, S: GeneratorEventSubscriber>(
     target_name: &str,
     ctx: &HandlerContext<'a, S>,
@@ -269,6 +274,7 @@ pub async fn resolve_target_file<'a, S: GeneratorEventSubscriber>(
     Ok(target)
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn prompt_target_file<S: GeneratorEventSubscriber>(
     target_name: &str,
     ctx: &HandlerContext<'_, S>,
@@ -318,23 +324,22 @@ pub fn validate_target(
     output_dir: &Path,
     target: &Path,
 ) -> Result<(), ResolveOutputPathError> {
-    Ok({
+    let _: () = {
         if target.is_absolute() {
-            return Err(ResolveOutputPathErrorInner::TargetIsAbsolute {
+            Err(ResolveOutputPathErrorInner::TargetIsAbsolute {
                 target: target.to_path_buf(),
             })?;
         }
 
         let target_absolute = path::absolute(output_dir.join(target))?;
         if !target_absolute.starts_with(output_dir) {
-            return Err(
-                ResolveOutputPathErrorInner::TargetIsOutsideOutputDir {
-                    target: target_absolute,
-                    output_dir: output_dir.to_path_buf(),
-                },
-            )?;
+            Err(ResolveOutputPathErrorInner::TargetIsOutsideOutputDir {
+                target: target_absolute,
+                output_dir: output_dir.to_path_buf(),
+            })?;
         }
-    })
+    };
+    Ok(())
 }
 
 pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
@@ -354,6 +359,7 @@ pub fn strip_extensions<'a, TStr: AsRef<str> + 'a>(
     Cow::Borrowed(path)
 }
 
+#[allow(clippy::result_large_err, clippy::too_many_arguments)]
 pub async fn resolve_output_path<
     'a,
     TExt: AsRef<str>,
@@ -373,8 +379,8 @@ pub async fn resolve_output_path<
         Some(
             resolve_target_dir(
                 target_name,
-                &ctx.target_overrides,
-                &ctx.generator_targets,
+                ctx.target_overrides,
+                ctx.generator_targets,
                 ctx.output_dir,
                 ctx.generator_name,
                 session,
@@ -408,7 +414,7 @@ pub async fn resolve_output_path<
         ctx.output_dir,
         target.as_deref(),
         base_path.unwrap_or(ctx.generator_dir),
-        &expected_output_path,
+        expected_output_path,
         flatten,
     )?;
 
@@ -419,6 +425,7 @@ pub async fn resolve_output_path<
     })
 }
 
+#[allow(clippy::result_large_err)]
 pub fn augment_tera_context<'a>(
     tera_ctx: &'a omni_tera::Context,
     data: Option<&UnorderedMap<String, serde_json::Value>>,
@@ -448,6 +455,7 @@ pub fn get_bases<'a, S: GeneratorEventSubscriber>(
 }
 
 #[allow(unused)]
+#[allow(clippy::result_large_err)]
 pub fn add_data(
     tera_ctx: &omni_tera::Context,
     data: &UnorderedMap<String, serde_json::Value>,
@@ -459,6 +467,7 @@ pub fn add_data(
     Ok(tera_ctx_with_data)
 }
 
+#[allow(clippy::result_large_err)]
 fn add_data_internal(
     tera_ctx: &mut omni_tera::Context,
     data: &UnorderedMap<String, serde_json::Value>,
@@ -468,7 +477,7 @@ fn add_data_internal(
     for (key, value) in data {
         expanded_data.insert(
             key.clone(),
-            expand_json_value(tera_ctx, None, &key, value)?,
+            expand_json_value(tera_ctx, None, key, value)?,
         );
     }
 

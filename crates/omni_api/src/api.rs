@@ -122,8 +122,9 @@ impl<S: OmniEventSubscriber> OmniApiBuilder<S> {
     }
 
     /// Consumes the builder and constructs an `OmniApi<RealSysSync, S>`.
+    #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<OmniApi<RealSysSync, S>, OmniApiError> {
-        let sys = RealSysSync::default();
+        let sys = RealSysSync;
 
         let root_dir = match self.root_dir {
             Some(r) => r,

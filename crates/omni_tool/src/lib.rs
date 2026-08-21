@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 //! The tool subsystem: discovery and execution of `tool.omni.*` manifests.
 
 pub mod error;

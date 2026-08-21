@@ -20,6 +20,7 @@ use crate::{
     gen_session::GenSession,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn target_path<S: GeneratorEventSubscriber>(
     common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'_, S>,
@@ -53,6 +54,7 @@ pub async fn target_path<S: GeneratorEventSubscriber>(
 /// When the action declares no extra environment variables the caller's
 /// environment is returned untouched (borrowed); otherwise the declared values
 /// are tera-rendered and command-expanded on top of it.
+#[allow(clippy::result_large_err)]
 pub(crate) fn build_command_env<'a, S: GeneratorEventSubscriber>(
     common: &CommonRunCustomActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -85,6 +87,7 @@ pub(crate) fn build_command_env<'a, S: GeneratorEventSubscriber>(
     Ok(Cow::Owned(expanded_env))
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
     command: &str,
     target_path: Option<&Path>,
@@ -103,9 +106,9 @@ pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
     };
 
     let command = omni_tera::one_off(
-        &command,
+        command,
         format!("command for {}", ctx.resolved_action_name),
-        &ctx.tera_context_values,
+        ctx.tera_context_values,
     )?;
 
     log::debug!("Running command: {}", command);
@@ -137,7 +140,7 @@ pub async fn run_custom_commons<'a, S: GeneratorEventSubscriber>(
         let result = cp.exec().await?;
 
         if result.exit_code() != 0 {
-            return Err(ErrorInner::CommandFailed {
+            Err(ErrorInner::CommandFailed {
                 command,
                 exit_code: result.exit_code(),
             })?;

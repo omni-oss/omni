@@ -31,7 +31,7 @@ fn write_workspace(dir: &Path) {
 /// Build an `OmniApi` from the given workspace directory (no setup / keyring).
 fn make_api(dir: &Path) -> OmniApi<RealSys, NoopSubscriber> {
     let ctx = omni_context::Context::new(
-        RealSys::default(),
+        RealSys,
         "development",
         dir,
         false,

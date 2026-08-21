@@ -33,7 +33,7 @@ impl GenSession {
         }
     }
 
-    pub async fn from_disk<'a, TPath, TSys>(
+    pub async fn from_disk<TPath, TSys>(
         path: TPath,
         sys: &TSys,
     ) -> Result<Self, omni_file_data_serde::Error>
@@ -76,7 +76,7 @@ impl GenSession {
             .await
             .get(generator.as_ref())
             .and_then(|d| d.targets.get(key.as_ref()))
-            .map(|p| p.clone())
+            .cloned()
     }
 
     pub async fn set_input_raw(
@@ -120,7 +120,7 @@ impl GenSession {
             .await
             .get(generator.as_ref())
             .and_then(|d| d.inputs.get(key.as_ref()))
-            .map(|p| p.clone())
+            .cloned()
     }
 
     pub async fn get_input<T: serde::de::DeserializeOwned>(
@@ -247,7 +247,7 @@ impl GenSession {
         }
     }
 
-    pub async fn write_to_disk<'a, TPath, TSys>(
+    pub async fn write_to_disk<TPath, TSys>(
         &self,
         path: TPath,
         sys: &TSys,
@@ -294,16 +294,16 @@ impl GenSession {
             return true;
         }
 
-        for (_, data) in data.iter() {
+        for data in data.values() {
             if !data.targets.is_empty() || !data.inputs.is_empty() {
                 return false;
             }
         }
 
-        return true;
+        true
     }
 
-    pub async fn has_changes<'a, TPath, TSys>(
+    pub async fn has_changes<TPath, TSys>(
         &self,
         serialized_file_path: TPath,
         sys: &TSys,

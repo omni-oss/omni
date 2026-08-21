@@ -90,6 +90,7 @@ fn unconfined_authorizer_chain() -> CapabilityRules<Generator> {
 
 /// Plans the fail-closed pre-spawn policy for an enforced generator, wrapping
 /// the shared planner's failure in a generator-specific message.
+#[allow(clippy::result_large_err)]
 fn build_spawn_plan(
     runtime: DelegatingJsRuntimeOption,
     policy: &EffectivePolicy,

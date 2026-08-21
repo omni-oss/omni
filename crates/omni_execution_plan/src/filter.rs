@@ -33,11 +33,7 @@ impl DefaultProjectFilter {
 
         Ok(Self {
             project_matcher,
-            fast_path_include_all: if project_filters.is_empty() {
-                true
-            } else {
-                false
-            },
+            fast_path_include_all: project_filters.is_empty(),
         })
     }
 }
@@ -242,11 +238,11 @@ where
         })?;
 
         let changed = scm.changed_files(
-            &scm_affected_filter
+            scm_affected_filter
                 .base
                 .as_deref()
                 .unwrap_or(scm.default_base()),
-            &scm_affected_filter
+            scm_affected_filter
                 .target
                 .as_deref()
                 .unwrap_or(scm.default_target()),
@@ -313,7 +309,7 @@ where
             }
         }
 
-        return Ok(false);
+        Ok(false)
     }
 }
 

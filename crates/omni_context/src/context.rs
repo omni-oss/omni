@@ -49,6 +49,7 @@ pub struct Context<TSys: ContextSys = RealSysSync> {
 pub type UnloadedContext<TSys = RealSysSync> = Context<TSys>;
 
 impl<TSys: ContextSys> Context<TSys> {
+    #[allow(clippy::result_large_err)]
     pub fn new(
         sys: TSys,
         env: impl Into<String>,
@@ -122,7 +123,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     pub fn remote_cache_configuration_paths(&self) -> Vec<PathBuf> {
-        get_remote_cache_configuration_paths(&self.omni_dir())
+        get_remote_cache_configuration_paths(self.omni_dir())
     }
 
     pub fn remote_cache_configuration_path(&self, ext: &str) -> PathBuf {
@@ -150,6 +151,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[allow(clippy::result_large_err)]
     pub async fn load_project_configurations(
         &self,
     ) -> Result<Vec<ProjectConfiguration>, ContextError> {
@@ -189,6 +191,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[allow(clippy::result_large_err)]
     pub async fn into_loaded(
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
@@ -211,6 +214,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip_all))]
+    #[allow(clippy::result_large_err)]
     pub async fn into_loaded_with_walker<TDirWalker: DirWalker>(
         self,
         walker: &TDirWalker,
@@ -234,6 +238,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 
     #[cfg_attr(feature = "enable-tracing", tracing::instrument(level = Level::DEBUG, skip(self)))]
+    #[allow(clippy::result_large_err)]
     async fn into_loaded_impl(
         self,
         project_paths: Vec<DiscoveredPath>,
@@ -285,7 +290,7 @@ impl<TSys: ContextSys> Context<TSys> {
         let env_loader = EnvLoader::new(
             self.sys.clone(),
             PathBuf::from(&self.env_root_dir_marker),
-            self.env_files().iter().cloned().collect(),
+            self.env_files().to_vec(),
         );
         env_loader
     }
@@ -328,6 +333,7 @@ impl<TSys: ContextSys> Context<TSys> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn get_root_dir(sys: &impl ContextSys) -> Result<PathBuf, ContextError> {
     let current_dir = sys.env_current_dir()?;
 
@@ -347,6 +353,7 @@ pub fn get_root_dir(sys: &impl ContextSys) -> Result<PathBuf, ContextError> {
     Err(ContextErrorInner::FailedToFindWorkspaceConfiguration.into())
 }
 
+#[allow(clippy::result_large_err)]
 fn get_workspace_configuration(
     env: &str,
     root_dir: &Path,
@@ -380,7 +387,7 @@ fn get_workspace_configuration(
     w.env.files.iter_mut().for_each(|x| {
         let string = x.to_string_lossy();
         if string.contains("{ENV}") {
-            *x = string.replace("{ENV}", &env).into();
+            *x = string.replace("{ENV}", env).into();
         }
     });
 
@@ -394,6 +401,7 @@ fn get_remote_cache_configuration_paths(omni_dir: &Path) -> Vec<PathBuf> {
     ]
 }
 
+#[allow(clippy::result_large_err)]
 fn get_remote_cache_configuration(
     abs_root_dir: &Path,
     omni_dir: &Path,
@@ -404,7 +412,7 @@ fn get_remote_cache_configuration(
     let files = get_remote_cache_configuration_paths(omni_dir);
 
     for f in &files {
-        if sys.fs_exists(&f)? && sys.fs_is_file(&f)? {
+        if sys.fs_exists(f)? && sys.fs_is_file(f)? {
             rc_path = Some(f);
             break;
         }
@@ -431,6 +439,7 @@ fn get_remote_cache_configuration(
     Ok(Some(rc))
 }
 
+#[allow(clippy::result_large_err)]
 fn resolve_task_extensions_for_projects(
     project_configs: &mut [ProjectConfiguration],
 ) -> Result<(), ContextError> {

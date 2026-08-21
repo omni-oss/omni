@@ -25,16 +25,10 @@ pub struct ProjectConfigLoader<'a, TSys: ContextSys> {
     root_dir: &'a Path,
 }
 
-#[derive(new, PartialEq, Eq, Ord, Hash, Debug, Clone)]
+#[derive(new, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone)]
 struct RelatedPath {
     path: PathBuf,
     extender: Option<PathBuf>,
-}
-
-impl PartialOrd for RelatedPath {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.path.partial_cmp(&other.path)
-    }
 }
 
 impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
@@ -42,6 +36,7 @@ impl<'a, TSys: ContextSys> ProjectConfigLoader<'a, TSys> {
         feature = "enable-tracing",
         tracing::instrument(level = Level::DEBUG, skip(self))
     )]
+    #[allow(clippy::result_large_err)]
     pub async fn load_project_configs(
         &self,
         project_paths: &[PathBuf],

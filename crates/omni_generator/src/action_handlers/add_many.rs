@@ -7,6 +7,7 @@ use omni_messages::GeneratorEventSubscriber;
 
 use crate::{GeneratorSys, action_handlers::HandlerContext, error::Error};
 
+#[allow(clippy::result_large_err)]
 pub async fn add_many<'a, S: GeneratorEventSubscriber>(
     config: &AddManyActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -37,7 +38,7 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
         .into_iter()
         .map(|p| {
             let name = p
-                .strip_prefix(&ctx.generator_dir)
+                .strip_prefix(ctx.generator_dir)
                 .expect("should have value")
                 .to_string_lossy()
                 .to_string();
@@ -52,9 +53,9 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
 
         add_one(
             Path::new(template_file),
-            &template_file,
+            template_file,
             config.base_path.as_deref(),
-            |template_name, ctx| tera.render(&template_name, ctx),
+            |template_name, ctx| tera.render(template_name, ctx),
             &config.base.common,
             config.flatten,
             ctx,

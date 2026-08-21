@@ -9,6 +9,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn modify<'a, S: GeneratorEventSubscriber>(
     config: &ModifyActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -18,7 +19,7 @@ pub async fn modify<'a, S: GeneratorEventSubscriber>(
 
     for entry in &config.entries {
         let content = sys
-            .fs_read_to_string_async(&ctx.generator_dir.join(&entry.file))
+            .fs_read_to_string_async(ctx.generator_dir.join(&entry.file))
             .await?
             .to_string();
         entries.push(ModifyInlineContentEntry {

@@ -84,7 +84,7 @@ impl ActiveResponse {
     pub(self) fn new(id: Id, tx: mpsc::Sender<Frame>) -> Self {
         Self {
             data: ResponseDataImpl {
-                id: id,
+                id,
                 is_ended: false,
                 frame_sender: tx,
             },

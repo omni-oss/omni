@@ -236,7 +236,7 @@ fn report_generator_output(
     let mut copied = OrderedSet::new();
 
     fn clean_diff_path(path: PathBuf, root_dir: &Path) -> PathBuf {
-        path::diff(&path::clean(&path), root_dir).unwrap_or(path)
+        path::diff(path::clean(&path), root_dir).unwrap_or(path)
     }
 
     for action in response.actions {
@@ -410,21 +410,19 @@ async fn prompt_output_dir(
             .base_extra(gen_base().message("Output directory path").build())
             .build();
 
-        loop {
-            let output_dir = collect_one(
-                &prompt,
-                None,
-                &context_values,
-                &prompting_config,
-                &CliInputProvider::default(),
-            )
-            .await?
-            .expect("should have value at this point");
-            let output_dir =
-                output_dir.by_ref().to_str().expect("value is not a string");
+        let output_dir = collect_one(
+            &prompt,
+            None,
+            &context_values,
+            &prompting_config,
+            &CliInputProvider::default(),
+        )
+        .await?
+        .expect("should have value at this point");
+        let output_dir =
+            output_dir.by_ref().to_str().expect("value is not a string");
 
-            break Ok(path_clean::clean(current_dir.join(output_dir.as_ref())));
-        }
+        Ok(path_clean::clean(current_dir.join(output_dir.as_ref())))
     } else if value == "project" {
         let options = projects
             .iter()

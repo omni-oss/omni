@@ -93,6 +93,12 @@ impl DynMap {
     }
 }
 
+impl Default for DynMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub type Headers = DynMap;
 pub type Trailers = DynMap;
 

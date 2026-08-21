@@ -28,6 +28,7 @@ pub struct S3CacheBackend {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, new, Default)]
+#[allow(clippy::too_many_arguments)]
 pub struct BasicS3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
@@ -138,6 +139,7 @@ impl S3CacheBackend {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     async fn head(
         &self,
         container: Option<&str>,

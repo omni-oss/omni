@@ -10,7 +10,7 @@ pub enum SerializationFormat {
 }
 
 impl SerializationFormat {
-    pub fn to_serde_format(&self) -> omni_file_data_serde::Format {
+    pub fn to_serde_format(self) -> omni_file_data_serde::Format {
         match self {
             SerializationFormat::Yaml => omni_file_data_serde::Format::Yaml,
             SerializationFormat::Json => omni_file_data_serde::Format::Json,

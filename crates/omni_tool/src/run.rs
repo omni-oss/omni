@@ -69,6 +69,7 @@ pub trait ToolRunner: Send + Sync {
 /// manifest. Its effective policy is the workspace floor folded ahead of the
 /// tool's own declared capabilities. A `type: pipeline` tool chains other tools
 /// (including other pipelines), bounded by [`DEFAULT_MAX_DEPTH`].
+#[allow(clippy::result_large_err)]
 pub async fn run_named<R: ToolRunner>(
     tools: &[Cow<'_, ToolConfiguration>],
     name: &str,

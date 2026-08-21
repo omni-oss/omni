@@ -304,7 +304,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_put_artifact() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -319,7 +319,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_get_artifact() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -339,7 +339,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_get_artifact_not_found() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -353,7 +353,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_artifact_exists() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -372,7 +372,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_artifact_exists_not_found() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -386,7 +386,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_validate_access() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
         let remote = def_remote_access_args(&guard.api_base_url);
 
@@ -400,7 +400,7 @@ mod tests {
     #[test_log::test]
     #[timeout(5000)]
     async fn test_validate_access_invalid_api_key() {
-        let guard = ChildProcessGuard::new(&*HOST).await;
+        let guard = ChildProcessGuard::new(&HOST).await;
         let client = DefaultRemoteCacheClient::default();
 
         let mut remote = def_remote_access_args(&guard.api_base_url);

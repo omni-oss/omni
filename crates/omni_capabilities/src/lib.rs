@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 //! # `omni_capabilities`
 //!
 //! The **core, platform-neutral capability policy engine** for omni.

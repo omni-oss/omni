@@ -43,8 +43,8 @@ impl<T: EnumValueAdapterContract> ValueEnum for EnumValueAdapter<T> {
     }
 }
 
-impl<T: EnumValueAdapterContract> ToString for EnumValueAdapter<T> {
-    fn to_string(&self) -> String {
-        self.0.to_string()
+impl<T: EnumValueAdapterContract> std::fmt::Display for EnumValueAdapter<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0.to_string())
     }
 }

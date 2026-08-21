@@ -62,6 +62,7 @@ impl<TSys: ContextSys> MaybeLoaded<TSys> {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub async fn ensure_loaded(
         &mut self,
     ) -> Result<&LoadedContext<TSys>, ContextError> {
@@ -73,6 +74,7 @@ impl<TSys: ContextSys> MaybeLoaded<TSys> {
     ///
     /// If this value is `Loaded`, returns it directly (no I/O). Otherwise the
     /// context is loaded now via [`Context::into_loaded`].
+    #[allow(clippy::result_large_err)]
     pub async fn into_loaded(
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
@@ -90,6 +92,7 @@ impl<TSys: ContextSys> MaybeLoaded<TSys> {
     ///
     /// [`as_loaded_context`]: MaybeLoaded::as_loaded_context
     /// [`try_as_loaded_context`]: MaybeLoaded::try_as_loaded_context
+    #[allow(clippy::result_large_err)]
     pub async fn load(&mut self) -> Result<(), ContextError> {
         if let Self::Unloaded(ctx) = self {
             let loaded = ctx.clone().into_loaded().await?;

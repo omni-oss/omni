@@ -44,11 +44,11 @@ pub fn initialize(config: InitConfig) -> eyre::Result<()> {
                                 let store = linux_keyutils_keyring_store::Store::new()?;
                                 keyring_core::set_default_store(store);
                             } else {
-                                Err(keyring_core::Error::PlatformFailure(error).into())?;
+                                Err(keyring_core::Error::PlatformFailure(error))?;
                             }
                         }
                         error => {
-                            Err(error.into())?;
+                            Err(error)?;
                         }
                     },
                 }

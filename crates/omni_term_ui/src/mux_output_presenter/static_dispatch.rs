@@ -71,17 +71,19 @@ impl MuxOutputPresenter for MuxOutputPresenterStatic {
     }
 
     async fn wait(&self) -> Result<(), Self::Error> {
-        Ok(match self {
+        let _: () = match self {
             MuxOutputPresenterStatic::Stream(s) => s.wait().await?,
             MuxOutputPresenterStatic::Tui(t) => t.wait().await?,
-        })
+        };
+        Ok(())
     }
 
     async fn close(self) -> Result<(), Self::Error> {
-        Ok(match self {
+        let _: () = match self {
             MuxOutputPresenterStatic::Stream(s) => s.close().await?,
             MuxOutputPresenterStatic::Tui(t) => t.close().await?,
-        })
+        };
+        Ok(())
     }
 }
 

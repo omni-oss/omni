@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod dir_entry;
 mod dir_walker;
 pub mod impls;

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod default_impl;
 #[cfg(test)]
 mod test_utils;

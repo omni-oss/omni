@@ -704,10 +704,10 @@ impl<S: GeneratorSys> BaseFsReadDirAsync for TransactionSys<S> {
 
         let mut entries: BTreeSet<PathBuf> = BTreeSet::new();
 
-        if overlay_exists {
-            if let Ok(es) = st.overlay.base_fs_read_dir_async(&cp).await {
-                entries.extend(es);
-            }
+        if overlay_exists
+            && let Ok(es) = st.overlay.base_fs_read_dir_async(&cp).await
+        {
+            entries.extend(es);
         }
 
         match self.wrapped_sys.base_fs_read_dir_async(&cp).await {
@@ -1296,13 +1296,13 @@ fn not_found(path: &Path) -> io::Error {
 }
 
 fn invalid(msg: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, msg.to_string())
+    io::Error::other(msg.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::ffi::OsString;
+
     use std::sync::OnceLock;
 
     use system_traits::{
@@ -1375,7 +1375,7 @@ mod tests {
     async fn write_is_buffered_until_commit() {
         let dir = temp();
         let path = dir.path().join("file.txt");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_write_async(&path, b"hello").await.unwrap();
 
@@ -1401,7 +1401,7 @@ mod tests {
         let existing = dir.path().join("existing.txt");
         let fresh = dir.path().join("fresh.txt");
         std::fs::write(&existing, b"base").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // Append to a file that only exists on the real fs.
         sys.fs_append_async(&existing, b"-more").await.unwrap();
@@ -1430,7 +1430,7 @@ mod tests {
         let dir = temp();
         let nested = dir.path().join("a/b/c");
         let single = dir.path().join("single");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_create_dir_all_async(&nested).await.unwrap();
         assert!(sys.fs_is_dir_async(&nested).await.unwrap());
@@ -1452,7 +1452,7 @@ mod tests {
         let dir = temp();
         let path = dir.path().join("file.txt");
         std::fs::write(&path, b"data").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_remove_file_async(&path).await.unwrap();
 
@@ -1469,7 +1469,7 @@ mod tests {
         let dir = temp();
         let target = dir.path().join("empty");
         std::fs::create_dir(&target).unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_remove_dir_async(&target).await.unwrap();
         assert!(!sys.fs_exists_async(&target).await.unwrap());
@@ -1485,14 +1485,14 @@ mod tests {
         let tree = dir.path().join("tree");
         std::fs::create_dir_all(tree.join("sub")).unwrap();
         std::fs::write(tree.join("sub/file.txt"), b"x").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_remove_dir_all_async(&tree).await.unwrap();
 
         // The whole subtree is shadowed.
         assert!(!sys.fs_exists_async(&tree).await.unwrap());
         assert!(
-            !sys.fs_exists_async(&tree.join("sub/file.txt"))
+            !sys.fs_exists_async(tree.join("sub/file.txt"))
                 .await
                 .unwrap()
         );
@@ -1508,7 +1508,7 @@ mod tests {
         let from = dir.path().join("from.txt");
         let to = dir.path().join("nested/to.txt");
         std::fs::write(&from, b"payload").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         let copied = sys.fs_copy_async(&from, &to).await.unwrap();
         assert_eq!(copied, b"payload".len() as u64);
@@ -1531,7 +1531,7 @@ mod tests {
         let from = dir.path().join("from.txt");
         let to = dir.path().join("to.txt");
         std::fs::write(&from, b"content").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_rename_async(&from, &to).await.unwrap();
         assert_eq!(
@@ -1550,13 +1550,13 @@ mod tests {
         let dir = temp();
         let src = dir.path().join("src");
         let dst = dir.path().join("dst");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_create_dir_all_async(&src.join("sub")).await.unwrap();
-        sys.fs_write_async(&src.join("top.txt"), b"top")
+        sys.fs_create_dir_all_async(src.join("sub")).await.unwrap();
+        sys.fs_write_async(src.join("top.txt"), b"top")
             .await
             .unwrap();
-        sys.fs_write_async(&src.join("sub/inner.txt"), b"inner")
+        sys.fs_write_async(src.join("sub/inner.txt"), b"inner")
             .await
             .unwrap();
 
@@ -1564,14 +1564,14 @@ mod tests {
 
         assert!(!sys.fs_exists_async(&src).await.unwrap());
         assert_eq!(
-            sys.fs_read_async(&dst.join("top.txt"))
+            sys.fs_read_async(dst.join("top.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
             b"top"
         );
         assert_eq!(
-            sys.fs_read_async(&dst.join("sub/inner.txt"))
+            sys.fs_read_async(dst.join("sub/inner.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
@@ -1589,13 +1589,13 @@ mod tests {
         let dir = temp();
         std::fs::write(dir.path().join("keep.txt"), b"k").unwrap();
         std::fs::write(dir.path().join("drop.txt"), b"d").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // Add a buffered file and remove a real one.
-        sys.fs_write_async(&dir.path().join("added.txt"), b"a")
+        sys.fs_write_async(dir.path().join("added.txt"), b"a")
             .await
             .unwrap();
-        sys.fs_remove_file_async(&dir.path().join("drop.txt"))
+        sys.fs_remove_file_async(dir.path().join("drop.txt"))
             .await
             .unwrap();
 
@@ -1613,13 +1613,13 @@ mod tests {
         let real_dir = dir.path().join("real_dir");
         std::fs::write(&real_file, b"x").unwrap();
         std::fs::create_dir(&real_dir).unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // Real entries are observable through metadata.
         assert!(sys.fs_is_file_async(&real_file).await.unwrap());
         assert!(sys.fs_is_dir_async(&real_dir).await.unwrap());
         assert!(
-            !sys.fs_exists_async(&dir.path().join("missing"))
+            !sys.fs_exists_async(dir.path().join("missing"))
                 .await
                 .unwrap()
         );
@@ -1637,7 +1637,7 @@ mod tests {
         // This test observes the real cwd, so serialize it against the tests
         // that mutate the process-global cwd.
         let _cwd_lock = cwd_lock().lock().await;
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         let real_cwd = sys.env_current_dir_async().await.unwrap();
 
         sys.begin_transaction().await;
@@ -1654,12 +1654,12 @@ mod tests {
         // SAFETY: single-threaded test setup of a unique key.
         let key = "OMNI_TX_TEST_ENV_VAR";
         unsafe { std::env::set_var(key, "value") };
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         let found = sys.env_vars().any(|(k, v)| k == key && v == "value");
         assert!(found);
 
-        let found_os = sys.env_vars_os().any(|(k, _)| k == OsString::from(key));
+        let found_os = sys.env_vars_os().any(|(k, _)| k == key);
         assert!(found_os);
 
         unsafe { std::env::remove_var(key) };
@@ -1678,7 +1678,7 @@ mod tests {
         let dir = temp();
         // Isolate the process-global cwd to a temp directory for this test.
         let (_cwd, real_cwd) = enter_cwd(dir.path()).await;
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // With no `set_current_dir` override, a relative path must resolve
         // against the real working directory, exactly as the underlying system
@@ -1707,7 +1707,7 @@ mod tests {
     #[tokio::test]
     async fn relative_paths_resolve_against_set_current_dir() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
         // A relative write lands under the (buffered) logical cwd.
@@ -1725,7 +1725,7 @@ mod tests {
         );
         // ...and through the equivalent absolute path.
         assert_eq!(
-            sys.fs_read_async(&dir.path().join("rel.txt"))
+            sys.fs_read_async(dir.path().join("rel.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
@@ -1737,7 +1737,7 @@ mod tests {
     async fn relative_read_falls_through_to_real_under_set_current_dir() {
         let dir = temp();
         std::fs::write(dir.path().join("on_disk.txt"), b"disk").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
@@ -1761,7 +1761,7 @@ mod tests {
     #[tokio::test]
     async fn relative_and_absolute_address_same_overlay_entry() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
         sys.fs_write_async(Path::new("shared.txt"), b"v")
@@ -1770,12 +1770,12 @@ mod tests {
 
         // Removing via the absolute equivalent removes the same entry the
         // relative write created.
-        sys.fs_remove_file_async(&dir.path().join("shared.txt"))
+        sys.fs_remove_file_async(dir.path().join("shared.txt"))
             .await
             .unwrap();
         assert!(!sys.fs_exists_async(Path::new("shared.txt")).await.unwrap());
         assert!(
-            !sys.fs_exists_async(&dir.path().join("shared.txt"))
+            !sys.fs_exists_async(dir.path().join("shared.txt"))
                 .await
                 .unwrap()
         );
@@ -1784,7 +1784,7 @@ mod tests {
     #[tokio::test]
     async fn dotted_relative_components_are_normalized() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
         // `./a/../b.txt` must normalize to `b.txt` under the logical cwd.
@@ -1799,7 +1799,7 @@ mod tests {
             b"norm"
         );
         assert_eq!(
-            sys.fs_read_async(&dir.path().join("b.txt"))
+            sys.fs_read_async(dir.path().join("b.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
@@ -1811,7 +1811,7 @@ mod tests {
     async fn changing_set_current_dir_redirects_relative_paths() {
         let a = temp();
         let b = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.env_set_current_dir_async(a.path()).await.unwrap();
         sys.fs_write_async(Path::new("note.txt"), b"in-a")
@@ -1825,14 +1825,14 @@ mod tests {
 
         // Each relative write landed under the cwd in effect at the time.
         assert_eq!(
-            sys.fs_read_async(&a.path().join("note.txt"))
+            sys.fs_read_async(a.path().join("note.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
             b"in-a"
         );
         assert_eq!(
-            sys.fs_read_async(&b.path().join("note.txt"))
+            sys.fs_read_async(b.path().join("note.txt"))
                 .await
                 .unwrap()
                 .into_owned(),
@@ -1851,7 +1851,7 @@ mod tests {
     #[tokio::test]
     async fn relative_dir_operations_match_absolute() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
         sys.fs_create_dir_all_async(Path::new("nested/inner"))
@@ -1867,7 +1867,7 @@ mod tests {
             .await
             .unwrap();
         let abs = sys
-            .fs_read_dir_async(&dir.path().join("nested/inner"))
+            .fs_read_dir_async(dir.path().join("nested/inner"))
             .await
             .unwrap();
         assert_eq!(names(&rel), names(&abs));
@@ -1877,7 +1877,7 @@ mod tests {
     #[tokio::test]
     async fn rollback_discards_relative_writes() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.env_set_current_dir_async(dir.path()).await.unwrap();
 
         sys.begin_transaction().await;
@@ -1900,7 +1900,7 @@ mod tests {
     async fn rollback_discards_writes() {
         let dir = temp();
         let path = dir.path().join("file.txt");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.begin_transaction().await;
         sys.fs_write_async(&path, b"data").await.unwrap();
@@ -1918,7 +1918,7 @@ mod tests {
         let dir = temp();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.begin_transaction().await;
         sys.fs_write_async(&a, b"a").await.unwrap();
@@ -1944,7 +1944,7 @@ mod tests {
         let dir = temp();
         let outer = dir.path().join("outer.txt");
         let inner = dir.path().join("inner.txt");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.begin_transaction().await;
         sys.fs_write_async(&outer, b"o").await.unwrap();
@@ -1964,7 +1964,7 @@ mod tests {
 
     #[tokio::test]
     async fn commit_transaction_without_active_transaction_errors() {
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         assert!(sys.commit_transaction().await.is_err());
         assert!(sys.rollback_transaction().await.is_err());
     }
@@ -1974,7 +1974,7 @@ mod tests {
         let dir = temp();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.fs_write_async(&a, b"a").await.unwrap();
         let cp = sys.checkpoint().await;
@@ -2000,7 +2000,7 @@ mod tests {
         let dir = temp();
         let path = dir.path().join("file.txt");
         std::fs::write(&path, b"original").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // First read mirrors the real content.
         assert_eq!(
@@ -2029,24 +2029,24 @@ mod tests {
         let root = dir.path();
         let old = root.join("old.txt");
         std::fs::write(&old, b"old").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.begin_transaction().await;
-        sys.fs_create_dir_all_async(&root.join("nested"))
+        sys.fs_create_dir_all_async(root.join("nested"))
             .await
             .unwrap();
-        sys.fs_write_async(&root.join("nested/a.txt"), b"A")
+        sys.fs_write_async(root.join("nested/a.txt"), b"A")
             .await
             .unwrap();
-        sys.fs_write_async(&root.join("b.txt"), b"B").await.unwrap();
-        sys.fs_append_async(&root.join("b.txt"), b"B2")
+        sys.fs_write_async(root.join("b.txt"), b"B").await.unwrap();
+        sys.fs_append_async(root.join("b.txt"), b"B2")
             .await
             .unwrap();
-        sys.fs_copy_async(&root.join("nested/a.txt"), &root.join("c.txt"))
+        sys.fs_copy_async(root.join("nested/a.txt"), root.join("c.txt"))
             .await
             .unwrap();
         sys.fs_remove_file_async(&old).await.unwrap();
-        sys.fs_rename_async(&root.join("b.txt"), &root.join("b2.txt"))
+        sys.fs_rename_async(root.join("b.txt"), root.join("b2.txt"))
             .await
             .unwrap();
 
@@ -2076,7 +2076,7 @@ mod tests {
         let work = root.join("work");
         std::fs::create_dir(&work).unwrap();
 
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         sys.begin_transaction().await;
         // Buffer a cwd change followed by a relative write.
         sys.env_set_current_dir_async(&work).await.unwrap();
@@ -2107,13 +2107,13 @@ mod tests {
         let root = dir.path();
         // A pre-existing real file that is never written through the overlay.
         std::fs::write(root.join("real.ts"), b"real").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&root.join("a.ts"), b"a").await.unwrap();
-        sys.fs_write_async(&root.join("nested/b.ts"), b"b")
+        sys.fs_write_async(root.join("a.ts"), b"a").await.unwrap();
+        sys.fs_write_async(root.join("nested/b.ts"), b"b")
             .await
             .unwrap();
-        sys.fs_write_async(&root.join("c.txt"), b"c").await.unwrap();
+        sys.fs_write_async(root.join("c.txt"), b"c").await.unwrap();
 
         let matches = sys
             .fs_glob_async(root, &["**/*.ts".to_string()])
@@ -2135,11 +2135,11 @@ mod tests {
         let dir = temp();
         let root = dir.path();
         std::fs::write(root.join("mirrored.ts"), b"x").unwrap();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         // Reading mirrors the file into the overlay, but it has no pending
         // write, so it must not be globbed.
-        let _ = sys.fs_read_async(&root.join("mirrored.ts")).await.unwrap();
+        let _ = sys.fs_read_async(root.join("mirrored.ts")).await.unwrap();
 
         let matches = sys
             .fs_glob_async(root, &["*.ts".to_string()])
@@ -2152,12 +2152,12 @@ mod tests {
     async fn glob_supports_exclusions() {
         let dir = temp();
         let root = dir.path();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&root.join("keep.ts"), b"k")
+        sys.fs_write_async(root.join("keep.ts"), b"k")
             .await
             .unwrap();
-        sys.fs_write_async(&root.join("skip.test.ts"), b"s")
+        sys.fs_write_async(root.join("skip.test.ts"), b"s")
             .await
             .unwrap();
 
@@ -2179,14 +2179,14 @@ mod tests {
     async fn glob_reflects_removed_and_renamed_writes() {
         let dir = temp();
         let root = dir.path();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&root.join("a.ts"), b"a").await.unwrap();
-        sys.fs_write_async(&root.join("b.ts"), b"b").await.unwrap();
+        sys.fs_write_async(root.join("a.ts"), b"a").await.unwrap();
+        sys.fs_write_async(root.join("b.ts"), b"b").await.unwrap();
 
         // Remove one and rename the other.
-        sys.fs_remove_file_async(&root.join("a.ts")).await.unwrap();
-        sys.fs_rename_async(&root.join("b.ts"), &root.join("renamed.ts"))
+        sys.fs_remove_file_async(root.join("a.ts")).await.unwrap();
+        sys.fs_rename_async(root.join("b.ts"), root.join("renamed.ts"))
             .await
             .unwrap();
 
@@ -2204,14 +2204,14 @@ mod tests {
     async fn glob_set_is_rebuilt_on_rollback() {
         let dir = temp();
         let root = dir.path();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&root.join("kept.ts"), b"k")
+        sys.fs_write_async(root.join("kept.ts"), b"k")
             .await
             .unwrap();
 
         sys.begin_transaction().await;
-        sys.fs_write_async(&root.join("discarded.ts"), b"d")
+        sys.fs_write_async(root.join("discarded.ts"), b"d")
             .await
             .unwrap();
         sys.rollback_transaction().await.unwrap();
@@ -2230,16 +2230,16 @@ mod tests {
 
     #[tokio::test]
     async fn has_pending_actions_false_when_empty() {
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
         assert!(!sys.has_pending_actions().await);
     }
 
     #[tokio::test]
     async fn has_pending_actions_true_after_write() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&dir.path().join("a.txt"), b"hi")
+        sys.fs_write_async(dir.path().join("a.txt"), b"hi")
             .await
             .unwrap();
 
@@ -2249,9 +2249,9 @@ mod tests {
     #[tokio::test]
     async fn has_pending_actions_false_after_commit() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&dir.path().join("a.txt"), b"hi")
+        sys.fs_write_async(dir.path().join("a.txt"), b"hi")
             .await
             .unwrap();
         sys.commit().await.unwrap();
@@ -2262,10 +2262,10 @@ mod tests {
     #[tokio::test]
     async fn has_pending_actions_false_after_rollback() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         sys.begin_transaction().await;
-        sys.fs_write_async(&dir.path().join("b.txt"), b"hi")
+        sys.fs_write_async(dir.path().join("b.txt"), b"hi")
             .await
             .unwrap();
         sys.rollback_transaction().await.unwrap();
@@ -2277,7 +2277,7 @@ mod tests {
 
     #[tokio::test]
     async fn visit_pending_actions_does_not_call_visitor_when_empty() {
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         struct PanicVisitor;
         impl PendingActionsVisitor<RealSys> for PanicVisitor {
@@ -2299,7 +2299,7 @@ mod tests {
     async fn visit_pending_actions_visits_every_action_in_order() {
         let dir = temp();
         let root = dir.path();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
         let paths = [
             root.join("first.txt"),
@@ -2335,9 +2335,9 @@ mod tests {
     #[tokio::test]
     async fn visit_pending_actions_propagates_error() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&dir.path().join("x.txt"), b"x")
+        sys.fs_write_async(dir.path().join("x.txt"), b"x")
             .await
             .unwrap();
 
@@ -2361,9 +2361,9 @@ mod tests {
     #[tokio::test]
     async fn visit_pending_actions_does_not_mutate_action_log() {
         let dir = temp();
-        let sys = TransactionSys::new(RealSys::default());
+        let sys = TransactionSys::new(RealSys);
 
-        sys.fs_write_async(&dir.path().join("y.txt"), b"y")
+        sys.fs_write_async(dir.path().join("y.txt"), b"y")
             .await
             .unwrap();
 

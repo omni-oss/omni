@@ -44,6 +44,6 @@ impl<T: Handler> Service for HandlerService<T> {
         self.handler
             .run(HandlerContext::new(context.request, context.response))
             .await
-            .map_err(|e| ServiceError::custom_error(e))
+            .map_err(ServiceError::custom_error)
     }
 }

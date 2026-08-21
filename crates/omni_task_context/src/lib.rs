@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod aliases;
 mod cache_info;
 mod default_provider;

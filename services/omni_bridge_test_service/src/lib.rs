@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 //! Test-only support crate that bridges to itself over stdio.
 //!
 //! This crate is intentionally light on functionality – it exists to:

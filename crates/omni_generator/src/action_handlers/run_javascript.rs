@@ -13,6 +13,7 @@ use crate::{
     action_handlers::HandlerContext, error::Error, utils::expand_json_value,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     config: &RunJavaScriptActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -24,7 +25,7 @@ pub async fn run_javascript<'a, S: GeneratorEventSubscriber>(
     // to a valid `file://` URL.
     let script_path =
         omni_utils::path::clean(ctx.generator_dir.join(&config.script));
-    let output_dir = omni_utils::path::clean(&ctx.output_dir);
+    let output_dir = omni_utils::path::clean(ctx.output_dir);
 
     let data =
         expand_json_value(ctx.tera_context_values, None, "data", &config.data)?

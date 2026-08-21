@@ -56,6 +56,7 @@ pub struct ImportClosure {
 /// runtime the generator will run on: the harness drives that runtime's own
 /// resolver (or `deno info`) and reads the scanned files directly, executing
 /// none of them.
+#[allow(clippy::result_large_err)]
 pub async fn scan_closure(
     runner: &BridgeServiceRunner,
     entries: &[PathBuf],
@@ -182,6 +183,7 @@ impl ClosureCache {
 
     /// Return the cached closure for `entries`, or compute it with `f`, store it,
     /// and return it. `f` is only invoked on a miss.
+    #[allow(clippy::result_large_err)]
     pub async fn get_or_compute<F, Fut>(
         &self,
         entries: &[PathBuf],

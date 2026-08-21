@@ -77,7 +77,7 @@ pub fn validate<E: InputProfile>(
     for input in inputs {
         let kind = input.kind();
         if !E::SUPPORTED.contains(kind) {
-            return Err(ErrorInner::UnsupportedInputKind {
+            Err(ErrorInner::UnsupportedInputKind {
                 input_name: input.base().name.clone(),
                 kind,
             })?;
@@ -95,14 +95,14 @@ pub fn validate<E: InputProfile>(
 
         // secret + remember is always a hard error.
         if base.secret && E::is_remember(input) {
-            return Err(ErrorInner::SecretRememberConflict {
+            Err(ErrorInner::SecretRememberConflict {
                 input_name: name.clone(),
             })?;
         }
 
         // Evaluate the `if` condition.
-        if let Some(if_expr) = &base.r#if {
-            if should_skip(
+        if let Some(if_expr) = &base.r#if
+            && should_skip(
                 if_expr,
                 &effective,
                 ctx,
@@ -110,7 +110,6 @@ pub fn validate<E: InputProfile>(
             )? {
                 continue;
             }
-        }
 
         let value = values.get(name.as_str());
         let has_default =
@@ -125,11 +124,10 @@ pub fn validate<E: InputProfile>(
         }
 
         // Populate effective with the default so subsequent if-expressions see it.
-        if value.is_none() {
-            if let Some(default) = input.static_default_value_bag() {
+        if value.is_none()
+            && let Some(default) = input.static_default_value_bag() {
                 effective.insert(name.clone(), default);
             }
-        }
 
         if let Some(raw) = value {
             match validate_single(input, name, raw, ctx, &effective, config) {
@@ -233,36 +231,31 @@ fn check_allowed<E: InputProfile>(
                     .or_else(|| {
                         typed.by_ref().to_borrowed_str().map(|s| s.to_string())
                     });
-                if let Some(sv) = sv {
-                    if !list.iter().any(|a| a.value == sv) {
+                if let Some(sv) = sv
+                    && !list.iter().any(|a| a.value == sv) {
                         return Err(format!(
                             "'{sv}' is not an allowed value for input '{name}'"
                         ));
                     }
-                }
             }
         }
         Input::Integer(i) => {
-            if let Some(list) = &i.allowed {
-                if let Some(iv) = try_parse_int(typed.by_ref()) {
-                    if !list.iter().any(|a| a.value == iv) {
+            if let Some(list) = &i.allowed
+                && let Some(iv) = try_parse_int(typed.by_ref())
+                    && !list.iter().any(|a| a.value == iv) {
                         return Err(format!(
                             "'{iv}' is not an allowed value for input '{name}'"
                         ));
                     }
-                }
-            }
         }
         Input::Float(f) => {
-            if let Some(list) = &f.allowed {
-                if let Some(fv) = try_parse_float(typed.by_ref()) {
-                    if !list.iter().any(|a| a.value == fv) {
+            if let Some(list) = &f.allowed
+                && let Some(fv) = try_parse_float(typed.by_ref())
+                    && !list.iter().any(|a| a.value == fv) {
                         return Err(format!(
                             "'{fv}' is not an allowed value for input '{name}'"
                         ));
                     }
-                }
-            }
         }
         Input::StringArray(sa) => {
             // For arrays, check each element when the array is passed as a JSON array.
@@ -291,7 +284,7 @@ pub fn validate_value(
             MaybeExpr::Expr(r) => {
                 let result = omni_tera::one_off(
                     r.as_str(),
-                    &format!(
+                    format!(
                         "condition for input {} at index {}",
                         input_name, index
                     ),
@@ -316,7 +309,7 @@ pub fn validate_value(
                         validator.condition
                     ))
                 })?;
-            return Err(ErrorInner::InvalidValue {
+            Err(ErrorInner::InvalidValue {
                 input_name: input_name.to_string(),
                 value: value.clone(),
                 error_message,
@@ -331,7 +324,7 @@ pub fn validate_boolean_expression_result(
     expression: &str,
 ) -> Result<(), Error> {
     if result != "true" && result != "false" {
-        return Err(ErrorInner::InvalidBooleanExpressionResult {
+        Err(ErrorInner::InvalidBooleanExpressionResult {
             result: result.to_string(),
             expression: expression.to_string(),
         })?;
@@ -369,7 +362,7 @@ fn check_no_duplicate_names<E: InputProfile>(
     for input in inputs {
         let name = input.base().name.as_str();
         if seen.contains(name) {
-            return Err(ErrorInner::DuplicateInputName(name.to_string()))?;
+            Err(ErrorInner::DuplicateInputName(name.to_string()))?;
         }
         seen.insert(name);
     }

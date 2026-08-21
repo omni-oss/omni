@@ -20,6 +20,12 @@ impl Router {
     }
 }
 
+impl Default for Router {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Router {
     pub fn add_handler<T: Handler>(
         &mut self,
@@ -53,10 +59,10 @@ impl Service for Router {
                 .response
                 .start(ResponseStatusCode::NO_HANDLER_FOR_PATH)
                 .await
-                .map_err(|e| ServiceError::custom_error(e))?
+                .map_err(ServiceError::custom_error)?
                 .end()
                 .await
-                .map_err(|e| ServiceError::custom_error(e))?;
+                .map_err(ServiceError::custom_error)?;
 
             Ok(())
         }

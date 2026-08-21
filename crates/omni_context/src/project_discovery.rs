@@ -47,7 +47,7 @@ impl<'a> ProjectDiscovery<'a> {
 
         Ok(discovered
             .into_iter()
-            .map(|p| DiscoveredPath::new_real(p))
+            .map(DiscoveredPath::new_real)
             .collect())
     }
 
@@ -59,7 +59,7 @@ impl<'a> ProjectDiscovery<'a> {
 
         Ok(discovered
             .into_iter()
-            .map(|p| DiscoveredPath::new_real(p))
+            .map(DiscoveredPath::new_real)
             .collect())
     }
 }

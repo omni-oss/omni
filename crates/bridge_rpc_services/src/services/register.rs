@@ -434,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn register_services_wires_fs_routes() {
         let mut router = Router::new();
-        let sys = Arc::new(RealSys::default());
+        let sys = Arc::new(RealSys);
 
         register_services(
             &mut router,
@@ -464,7 +464,7 @@ mod tests {
     #[tokio::test]
     async fn register_services_wires_proc_routes() {
         let mut router = Router::new();
-        let sys = Arc::new(RealSys::default());
+        let sys = Arc::new(RealSys);
 
         register_services(
             &mut router,
@@ -489,7 +489,7 @@ mod tests {
     #[tokio::test]
     async fn register_services_wires_log_route() {
         let mut router = Router::new();
-        let sys = Arc::new(RealSys::default());
+        let sys = Arc::new(RealSys);
 
         register_services(
             &mut router,
@@ -522,7 +522,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_path_returns_no_handler() {
         let mut router = Router::new();
-        let sys = Arc::new(RealSys::default());
+        let sys = Arc::new(RealSys);
 
         register_services(
             &mut router,
@@ -543,7 +543,7 @@ mod tests {
     #[tokio::test]
     async fn custom_prefixes_are_honoured() {
         let mut router = Router::new();
-        let sys = Arc::new(RealSys::default());
+        let sys = Arc::new(RealSys);
 
         register_services(
             &mut router,

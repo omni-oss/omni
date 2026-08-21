@@ -7,6 +7,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn append_content<'a, S: GeneratorEventSubscriber>(
     config: &AppendContentActionConfiguration,
     ctx: &HandlerContext<'a, S>,

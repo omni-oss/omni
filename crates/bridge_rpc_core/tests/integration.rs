@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -169,10 +171,8 @@ async fn test_request() {
         rmp_serde::from_slice(&response_data_serialized)
             .expect("Failed to deserialize data");
 
-    let response_trailers = reader
-        .trailers()
-        .expect("Failed to get trailers")
-        .map(|t| t.clone());
+    let response_trailers =
+        reader.trailers().expect("Failed to get trailers").cloned();
 
     assert_eq!(status, ResponseStatusCode::SUCCESS);
     assert_eq!(Some(headers), response_headers);
@@ -1099,10 +1099,8 @@ impl Service for MirrorTestService {
             chunks.push(chunk);
         }
 
-        let trailers = reader
-            .trailers()
-            .expect("Failed to get trailers")
-            .map(|t| t.clone());
+        let trailers =
+            reader.trailers().expect("Failed to get trailers").cloned();
         let mut response = if let Some(headers) = headers {
             context
                 .response

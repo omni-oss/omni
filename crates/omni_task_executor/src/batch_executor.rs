@@ -398,7 +398,7 @@ where
 
         let cached_results = self
             .cache_manager
-            .get_cached_results(&task_contexts)
+            .get_cached_results(task_contexts)
             .await
             .map_err(BatchExecutorErrorInner::new_cant_get_cached_results)?;
 
@@ -490,7 +490,7 @@ where
                     ),
                 );
 
-                self.replay_cached_results(task_ctx, &cached_result).await?;
+                self.replay_cached_results(task_ctx, cached_result).await?;
 
                 continue;
             }
@@ -660,7 +660,7 @@ where
 
                 let root_map = enum_map! {
                     Root::Project => project_dir,
-                    Root::Workspace => ws_dir.into(),
+                    Root::Workspace => ws_dir,
                 };
                 self.assign_task_details(
                     result,
@@ -705,7 +705,7 @@ fn evaluate_bool_expr(
                 _ => {}
             }
 
-            let result = omni_tera::one_off(expr.as_str(), "expr", &context)?;
+            let result = omni_tera::one_off(expr.as_str(), "expr", context)?;
 
             result.trim().to_lowercase() == "true"
         }
@@ -716,8 +716,7 @@ fn omni_path_contains_byte(path: &OmniPath, byte: u8) -> bool {
     path.unresolved_path()
         .as_os_str()
         .as_encoded_bytes()
-        .iter()
-        .any(|b| *b == byte)
+        .contains(&byte)
 }
 
 fn expand_omni_path(
@@ -727,7 +726,7 @@ fn expand_omni_path(
     let text = path.unresolved_path().to_str().unwrap_or("");
     let root = path.root();
 
-    let expanded = omni_tera::one_off(&text, "path", context)?;
+    let expanded = omni_tera::one_off(text, "path", context)?;
 
     Ok(if let Some(root) = root {
         OmniPath::new_rooted(expanded, root)
@@ -786,6 +785,7 @@ where
     results
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_process<'a, S: ExecutionEventSubscriber>(
     subscriber: &'a S,
     wants_task_output_stream: bool,
@@ -836,11 +836,7 @@ async fn run_process<'a, S: ExecutionEventSubscriber>(
             match TaskChildProcess::new(task_ctx.node.clone(), prog, args) {
                 Ok(o) => o,
                 Err(e) => {
-                    return TaskResultContext::new_error(
-                        task_ctx,
-                        e.into(),
-                        tries,
-                    );
+                    return TaskResultContext::new_error(task_ctx, e, tries);
                 }
             };
 

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod core_types;
 mod extension_graph;
 mod project_graph;

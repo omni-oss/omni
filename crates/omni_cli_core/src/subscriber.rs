@@ -262,13 +262,13 @@ impl TaskProgress {
     }
 
     fn task_retrying(&self, id: &str, attempt: usize, max_retries: usize) {
-        if let TaskProgress::Indicatif { running, .. } = self {
-            if let Some(pb) = running.get(id) {
-                pb.set_message(format!(
-                    "{} (retrying: attempt {}/{})",
-                    id, attempt, max_retries
-                ));
-            }
+        if let TaskProgress::Indicatif { running, .. } = self
+            && let Some(pb) = running.get(id)
+        {
+            pb.set_message(format!(
+                "{} (retrying: attempt {}/{})",
+                id, attempt, max_retries
+            ));
         }
     }
 
@@ -437,8 +437,7 @@ impl CliSubscriber {
     /// `on_execution_plan_ready` has not yet fired (should not happen in
     /// normal use, but guards against edge cases).
     fn get_mux(&self) -> &MuxOutputPresenterStatic {
-        self.mux
-            .get_or_init(|| MuxOutputPresenterStatic::new_stream())
+        self.mux.get_or_init(MuxOutputPresenterStatic::new_stream)
     }
 
     /// The concrete mode chosen at plan-ready, falling back to the requested
@@ -559,6 +558,7 @@ impl CliSubscriber {
     }
 
     /// Wait for all task output streams to finish draining.
+    #[allow(clippy::await_holding_lock)]
     pub async fn wait(&self) {
         let _ = self.get_mux().wait().await;
 
@@ -685,7 +685,7 @@ impl ExecutionEventSubscriber for CliSubscriber {
 
             self.tasks.lock().spawn(async move {
                 let presenter =
-                    mux.get_or_init(|| MuxOutputPresenterStatic::new_stream());
+                    mux.get_or_init(MuxOutputPresenterStatic::new_stream);
                 let handle_result = if let Some(w) = writer {
                     presenter.add_stream_full(id, reader, w).await
                 } else {

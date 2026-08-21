@@ -115,7 +115,7 @@ impl CryptoError {
 impl<T: Into<CryptoErrorInner>> From<T> for CryptoError {
     fn from(inner: T) -> Self {
         let inner = inner.into();
-        Self(inner.into())
+        Self(inner)
     }
 }
 

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod error;
 mod hasher;
 pub mod project_dir_hasher;

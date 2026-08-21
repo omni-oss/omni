@@ -21,6 +21,7 @@ static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
 static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
     LazyLock::new(|| vec![".omniignore".to_string()]);
 
+#[allow(clippy::result_large_err)]
 pub async fn discover<G: AsRef<str>>(
     root_dir: &Path,
     glob_patterns: &[G],
@@ -64,6 +65,7 @@ pub async fn discover<G: AsRef<str>>(
     Ok(configs)
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn discover_one_in_dir<D: AsRef<Path>>(
     dir: D,
     sys: &impl GeneratorSys,

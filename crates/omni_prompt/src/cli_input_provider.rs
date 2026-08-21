@@ -86,7 +86,7 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &IntegerInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<i64, Error> {
-        if input.allowed.is_some() {
+        if let Some(allowed) = &input.allowed {
             let question = make::select_integer(input, ctx)?;
             let answer =
                 tokio::task::block_in_place(|| requestty::prompt_one(question))
@@ -95,7 +95,6 @@ impl InputProvider<Generator> for CliInputProvider {
                 .as_list_item()
                 .ok_or_else(|| eyre::eyre!("expected list item answer"))?
                 .index;
-            let allowed = input.allowed.as_ref().unwrap();
             Ok(allowed[idx].value)
         } else {
             let question =
@@ -116,7 +115,7 @@ impl InputProvider<Generator> for CliInputProvider {
         input: &FloatInput<Generator>,
         ctx: &omni_tera::Context,
     ) -> Result<f64, Error> {
-        if input.allowed.is_some() {
+        if let Some(allowed) = &input.allowed {
             let question = make::select_float(input, ctx)?;
             let answer =
                 tokio::task::block_in_place(|| requestty::prompt_one(question))
@@ -125,7 +124,6 @@ impl InputProvider<Generator> for CliInputProvider {
                 .as_list_item()
                 .ok_or_else(|| eyre::eyre!("expected list item answer"))?
                 .index;
-            let allowed = input.allowed.as_ref().unwrap();
             Ok(allowed[idx].value)
         } else {
             let question =

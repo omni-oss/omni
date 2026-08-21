@@ -47,4 +47,4 @@ pub async fn get_scalar_ui(
     Ok(Html(rendered))
 }
 
-const HTML_DOC: &'static str = include_str!("./scalar.html");
+const HTML_DOC: &str = include_str!("./scalar.html");

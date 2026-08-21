@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn bare_float_shorthand_deserializes() {
-        let v: AllowedValue<f64> = serde_json::from_str("3.14").unwrap();
-        assert!((v.value - 3.14).abs() < 1e-10);
+        let v: AllowedValue<f64> = serde_json::from_str("2.5").unwrap();
+        assert!((v.value - 2.5).abs() < 1e-10);
         assert_eq!(v.description, None);
         assert_eq!(v.base_extra, ());
     }

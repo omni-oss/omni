@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 #![feature(box_patterns)]
 
 mod cache_configuration;

@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 pub mod build;
 mod config;
 pub mod constants;

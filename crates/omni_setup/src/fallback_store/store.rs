@@ -119,7 +119,7 @@ impl Store {
         let mods =
             parse_attributes(&["backing-file", "*persist"], Some(config))?;
         if let Some(path) = mods.get("backing-file") {
-            Self::new_with_backing(&Path::new(path))
+            Self::new_with_backing(Path::new(path))
         } else if let Some(persist) = mods.get("persist") {
             if persist == "true" {
                 let dir = std::env::temp_dir();

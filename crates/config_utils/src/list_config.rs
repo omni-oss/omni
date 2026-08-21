@@ -37,38 +37,38 @@ impl<'a, T: for<'de> serde::Deserialize<'de> + Merge> serde::Deserialize<'a>
                 let value: serde_json::Value = m.deserialize()?;
 
                 if value.is_object() && value["merge"].is_array() {
-                    return Ok(ListConfig::merge(
+                    Ok(ListConfig::merge(
                         serde_path_to_error::deserialize(
                             value["merge"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else if value.is_object() && value["replace"].is_array() {
-                    return Ok(ListConfig::replace(
+                    Ok(ListConfig::replace(
                         serde_path_to_error::deserialize(
                             value["replace"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else if value.is_object() && value["append"].is_array() {
-                    return Ok(ListConfig::append(
+                    Ok(ListConfig::append(
                         serde_path_to_error::deserialize(
                             value["append"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else if value.is_object() && value["prepend"].is_array() {
-                    return Ok(ListConfig::prepend(
+                    Ok(ListConfig::prepend(
                         serde_path_to_error::deserialize(
                             value["prepend"].clone(),
                         )
                         .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 } else {
-                    return Ok(ListConfig::value(
+                    Ok(ListConfig::value(
                         serde_path_to_error::deserialize(value)
                             .map_err(serde::de::Error::custom)?,
-                    ));
+                    ))
                 }
             })
             .deserialize(deserializer)

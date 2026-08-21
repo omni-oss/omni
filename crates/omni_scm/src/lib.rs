@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_field_names)]
+
 mod enums;
 pub mod error;
 pub mod git;

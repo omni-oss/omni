@@ -24,6 +24,7 @@ pub struct ServeCommand {
 }
 
 #[derive(clap::Args, Clone, Debug, new)]
+#[allow(clippy::too_many_arguments)]
 pub struct ServeArgs {
     #[clap(
         long,

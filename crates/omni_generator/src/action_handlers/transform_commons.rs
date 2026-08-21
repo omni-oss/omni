@@ -25,6 +25,7 @@ use crate::{
 ///
 /// This is the shared implementation behind both the `transform` and
 /// `transform-many` actions.
+#[allow(clippy::result_large_err)]
 pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     file: &Path,
     command: &str,
@@ -68,7 +69,7 @@ pub(crate) async fn transform_one<S: GeneratorEventSubscriber>(
     let output = run_transform_command(&command, &cwd, &env, &content).await?;
 
     if output.exit_code != 0 {
-        return Err(ErrorInner::CommandFailed {
+        Err(ErrorInner::CommandFailed {
             command,
             exit_code: output.exit_code,
         })?;
@@ -95,6 +96,7 @@ struct TransformOutput {
 ///
 /// A plain piped process (never a PTY) is used so that standard output is
 /// captured verbatim and never interleaved with standard error.
+#[allow(clippy::result_large_err)]
 async fn run_transform_command(
     command: &str,
     cwd: &Path,

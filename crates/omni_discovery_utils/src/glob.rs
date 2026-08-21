@@ -23,7 +23,7 @@ impl GlobMatcher {
 
         let include_patterns = glob_patterns
             .iter()
-            .filter(|p| count_starts_with(p.as_ref(), "!") % 2 == 0)
+            .filter(|p| count_starts_with(p.as_ref(), "!").is_multiple_of(2))
             .map(|p| format!("{root}/{}", strip_starts_with(p.as_ref(), "!")))
             .collect::<Vec<_>>();
 

@@ -160,7 +160,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     dependency_digests: &p.dependency_digests,
                     env_vars: &p.env_vars,
                     input_env_keys: p.input_env_keys,
-                    args: &p.args,
+                    args: p.args,
                 })
                 .collect::<Vec<_>>();
 

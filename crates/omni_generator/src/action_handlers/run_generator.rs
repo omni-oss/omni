@@ -15,6 +15,7 @@ use crate::{
     run_internal,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     config: &RunGeneratorActionConfiguration,
     ctx: &HandlerContext<'a, S>,
@@ -32,7 +33,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
         .get("inputs")
         .expect("should have prompt vaues, if you encountered this error, please report it to the maintainers");
 
-    let input_values = resolve_input_values(parent_inputs, config, &ctx)?;
+    let input_values = resolve_input_values(parent_inputs, config, ctx)?;
 
     diagnostic!(
         ctx.subscriber,
@@ -147,6 +148,7 @@ pub async fn run_generator<'a, S: GeneratorEventSubscriber>(
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn resolve_input_values<'a, S: GeneratorEventSubscriber>(
     parent_inputs: &'a OwnedValueBag,
     config: &RunGeneratorActionConfiguration,
@@ -203,6 +205,7 @@ fn resolve_input_values<'a, S: GeneratorEventSubscriber>(
     Ok(Cow::Owned(all_values))
 }
 
+#[allow(clippy::result_large_err)]
 fn to_owned_value_bag(
     key: &str,
     input_value: &InputValue,
@@ -213,8 +216,8 @@ fn to_owned_value_bag(
         InputValue::Float(f) => ValueBag::capture_serde1(f).to_owned(),
         InputValue::Boolean(b) => ValueBag::capture_serde1(b).to_owned(),
         InputValue::String(s) => ValueBag::capture_serde1(&omni_tera::one_off(
-            &s,
-            &format!("inputs.{key}"),
+            s,
+            format!("inputs.{key}"),
             tera_ctx,
         )?)
         .to_owned(),

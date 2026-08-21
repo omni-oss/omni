@@ -28,6 +28,7 @@ use crate::{
 /// silent `null`; and when a skipped step feeds a required downstream input,
 /// validation should fail naming both the skipped step and the consuming
 /// step/input. Today both resolve to `null` at run time.
+#[allow(clippy::result_large_err)]
 pub(crate) async fn run_pipeline<'a, R: ToolRunner>(
     tools: &'a [Cow<'a, ToolConfiguration>],
     steps: &'a [PipelineStep],
@@ -44,12 +45,12 @@ pub(crate) async fn run_pipeline<'a, R: ToolRunner>(
         let root = build_root(&inputs, &step_outputs);
         let tera_ctx = TeraContext::from_serialize(&root)?;
 
-        if let Some(expr) = step.r#if.as_deref() {
-            if !eval_if(&step.name, expr, &tera_ctx)? {
-                // A skipped step's output resolves to `null` for later refs.
-                step_outputs.insert(step.name.clone(), Value::Null);
-                continue;
-            }
+        if let Some(expr) = step.r#if.as_deref()
+            && !eval_if(&step.name, expr, &tera_ctx)?
+        {
+            // A skipped step's output resolves to `null` for later refs.
+            step_outputs.insert(step.name.clone(), Value::Null);
+            continue;
         }
 
         let step_inputs = resolve_step_inputs(step, &root, &tera_ctx)?;
@@ -113,6 +114,7 @@ fn resolve_from(root: &Value, path: &str) -> Value {
 /// Resolve a step's declared inputs into a concrete JSON object handed to the
 /// invoked tool. Structural references preserve JSON types; literal scalars pass
 /// through; string values are Tera-rendered against the reference context.
+#[allow(clippy::result_large_err)]
 fn resolve_step_inputs(
     step: &PipelineStep,
     root: &Value,
@@ -128,7 +130,7 @@ fn resolve_step_inputs(
             PipelineInputValue::String(template) => {
                 Value::String(omni_tera::one_off(
                     template,
-                    &format!("pipeline step '{}' input '{name}'", step.name),
+                    format!("pipeline step '{}' input '{name}'", step.name),
                     tera_ctx,
                 )?)
             }
@@ -140,6 +142,7 @@ fn resolve_step_inputs(
 
 /// Evaluate a step's `if` condition (a Tera expression that must render to
 /// exactly `true` or `false`).
+#[allow(clippy::result_large_err)]
 fn eval_if(
     step_name: &str,
     expr: &str,
@@ -147,7 +150,7 @@ fn eval_if(
 ) -> Result<bool, Error> {
     let rendered = omni_tera::one_off(
         expr,
-        &format!("if condition for pipeline step '{step_name}'"),
+        format!("if condition for pipeline step '{step_name}'"),
         tera_ctx,
     )?;
     match rendered.trim() {

@@ -63,7 +63,7 @@ mod tests {
         let path = dir.path();
 
         let mut buff = Cursor::new(Vec::new());
-        archive(&path, &mut buff).expect("failed to archive");
+        archive(path, &mut buff).expect("failed to archive");
 
         let buff = buff.into_inner();
         assert!(!buff.is_empty(), "should have data");
@@ -76,10 +76,10 @@ mod tests {
         let path = dir.path();
 
         let mut buff = Cursor::new(Vec::new());
-        archive(&path, &mut buff).expect("failed to archive");
+        archive(path, &mut buff).expect("failed to archive");
 
         let mut buff2 = Cursor::new(buff.into_inner());
-        unarchive(&path, &mut buff2).expect("failed to unarchive");
+        unarchive(path, &mut buff2).expect("failed to unarchive");
 
         assert!(
             std::fs::read_to_string(path.join("a/a.txt"))

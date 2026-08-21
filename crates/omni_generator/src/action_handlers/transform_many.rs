@@ -7,6 +7,7 @@ use crate::{
     error::Error,
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn transform_many<'a, S: GeneratorEventSubscriber>(
     config: &TransformManyActionConfiguration,
     ctx: &HandlerContext<'a, S>,

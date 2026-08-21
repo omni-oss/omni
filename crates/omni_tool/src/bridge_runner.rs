@@ -183,16 +183,12 @@ where
             .clone()
             .map_bases(|base| std::fs::canonicalize(&base).unwrap_or(base));
         let authorizer = if policy.enforce {
-            EvaluatingAuthorizer::layered(
-                policy.effective_levels(),
-                roots,
-                policy.context.clone(),
-            )
+            EvaluatingAuthorizer::layered(policy.effective_levels(), roots, ())
         } else {
             EvaluatingAuthorizer::layered(
                 vec![Tool::unconfined_authorizer_chain()],
                 roots,
-                policy.context.clone(),
+                (),
             )
         };
 
@@ -358,7 +354,7 @@ mod tests {
             SpawnPosture::default(),
         )
         .expect_err("require-floor refuses an unfloored governed domain");
-        assert!(format!("{err}").len() > 0);
+        assert!(!format!("{err}").is_empty());
     }
 
     #[test]

@@ -325,13 +325,11 @@ where
 
     let generators = generators
         .iter()
-        .filter_map(|g| {
-            g.user_invocable.then(|| GeneratorInfo {
+        .filter(|&g| g.user_invocable).map(|g| GeneratorInfo {
                 name: g.name.clone(),
                 display_name: g.display_name.clone(),
                 description: g.description.clone(),
             })
-        })
         .collect();
 
     Ok(GeneratorListResponse { generators })
