@@ -44,10 +44,10 @@ on:
         type: number
         description: "Number of runs for resource usage measurement"
         default: 3
-      task_max_retries:
+      total_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks"
+        description: "Maximum number of retries for failures"
         default: 5
       run_for_linux:
         required: false
@@ -102,10 +102,10 @@ on:
         type: number
         description: "Number of runs for resource usage measurement"
         default: 3
-      task_max_retries:
+      total_max_retries:
         required: false
         type: number
-        description: "Maximum number of retries for failed tasks"
+        description: "Maximum number of retries for failures"
         default: 5
       run_for_linux:
         required: false
@@ -216,7 +216,7 @@ jobs:
           --json "$PERF_OUTPUT_DIR/$DATA_FILE"
           --md "$PERF_OUTPUT_DIR/$SUMMARY_FILE"
           --resource-runs ${{ inputs.resource_runs || inputs.resources_runs || '0' }}
-          --max-retries ${{ inputs.task_max_retries || '5' }}
+          --max-retries ${{ inputs.total_max_retries || '5' }}
 
       - name: Upload Performance Comparison Artifact
         uses: actions/upload-artifact@v4
