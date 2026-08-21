@@ -13,7 +13,7 @@ tasks:
     max_retries: 5
     retry_interval: 2s
     dependencies:
-      - omni_remote_cache_service#build
+      - omni_remote_cache_service#build:debug
 
   test:
     dependencies:

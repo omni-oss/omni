@@ -5,7 +5,8 @@ extends:
   - ./rust.omni.yaml
 
 tasks:
-  build:
+  build-base:
+    base: true
     exec: cargo build --profile {{ args.profile }} --package ${PROJECT_NAME} ${RUST_BUILD_ADDITIONAL_ARGS:-}
     args:
       profile: release
@@ -20,6 +21,16 @@ tasks:
             - "@workspace/target/{{ args.profile }}/{{ env.PROJECT_NAME }}.exe"
     dependencies:
       - test
+
+  build:
+    extends: [build-base]
+    args:
+      profile: release
+
+  build:debug:
+    extends: [build-base]
+    args:
+      profile: debug
 
   install:
     cache:
