@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.7.0 - 2026-08-09
+#### Features
+- (**omni_context**) resolve task extensions and reject dangling task deps - (6a73976) - Clarence Manuel
+#### Tests
+- (**omni_context**) assert short-form/long-form task equivalence end-to-end - (c6517e1) - Clarence Manuel
+#### Refactoring
+- (**omni_context**) resolve extends paths over SingleOrMany - (5650e2f) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.6.0 - 2026-07-13
 #### Features
 - support array style commands - (32c32aa) - Clarence Manuel

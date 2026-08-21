@@ -2,6 +2,64 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.19.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- (**generator**) warn loudly when the OS sandbox is disabled - (5108864) - Clarence Manuel
+- (**omni_capability_enforcement**) apply the macOS Seatbelt filesystem floor - (52460ce) - Clarence Manuel
+- (**omni_capability_enforcement**) implement Seatbelt SBPL profile builder core - (af6dc0b) - Clarence Manuel
+- (**omni_config_types**) add iter and iter_mut to SingleOrMany - (1573d04) - Clarence Manuel
+- (**omni_configurations**) accept single-or-list project extends - (6585d64) - Clarence Manuel
+- (**omni_configurations**) add task-level extension (base / extends) - (61bf142) - Clarence Manuel
+- (**omni_context**) resolve task extensions and reject dangling task deps - (6a73976) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- batch diagnostic events and coordinate with progress bars - (c94cb16) - Clarence Manuel
+- harden shim and floor gaps - (1a4b4ea) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-rpc-services**) launch confined spawns by the authorized name - (db5c832) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) gate child-process and fork on net enforcement and fix the fork target - (2b8ade0) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) enforce capability policy on native Bun apis - (951d9aa) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) close in-process net enforcement bypasses - (723f51a) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) prevent env injection in confined child spawns - (efa1435) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) make enforced globals non-configurable - (b1698fe) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-system-interface**) make glob matching dotall and fully anchored - (cee7148) - Clarence Manuel
+- (**bridge_rpc_runner**) select confined launch program by shim-vs-direct comparison - (d416526) - Clarence Manuel
+- (**bridge_rpc_runner**) add nub-managed node bin resolution support - (d38940f) - Clarence Manuel
+- (**omni_capabilities**) forbid on-unenforceable=allow on deny rules - (0ff28e6) - Clarence Manuel
+- (**omni_capability_enforcement**) ignore inherited ACEs in grant idempotency check - (2618632) - Clarence Manuel
+- (**omni_capability_enforcement**) harden the Windows AppContainer profile race - (1139672) - Clarence Manuel
+- (**omni_capability_enforcement**) make os-sandbox coverage runtime- and env-consistent - (352de1b) - Clarence Manuel
+- (**omni_capability_enforcement**) resolve capability gaps only against co-applying backends - (d8b371c) - Clarence Manuel
+- (**omni_capability_enforcement**) require a floor backend when coarse flags emit a superset - (63dbd6e) - Clarence Manuel
+- (**omni_capability_enforcement**) require an unbypassable floor for every restricted domain - (faab887) - Clarence Manuel
+- (**omni_capability_enforcement**) fail closed on partial landlock enforcement and narrow the read floor - (3001229) - Clarence Manuel
+- (**omni_capability_enforcement**) restrict windows appcontainer to internetClient - (a04c748) - Clarence Manuel
+- stop dropping tail log output from generator scripts - (0ace69f) - Clarence Manuel
+- add warning for using not recommend js runtimes - (8dfca7d) - Clarence Manuel
+- include removed files in the generator summary Paths column - (e0acf3b) - Clarence Manuel
+#### Performance Improvements
+- improve performance in path utils - (5f68dbb) - Clarence Manuel
+#### Documentation
+- (**capability-sandboxing**) document residual escape surface and threat model - (f7764b2) - Clarence Manuel
+- (**omni_capability_enforcement**) correct Seatbelt skeleton requirements - (b02044b) - Clarence Manuel
+#### Tests
+- (**omni_capability_enforcement**) assert child-process confinement inheritance - (722c937) - Clarence Manuel
+- (**omni_context**) assert short-form/long-form task equivalence end-to-end - (c6517e1) - Clarence Manuel
+#### Refactoring
+- (**omni_capabilities**) enforce the restricted-domain invariant via a constructor - (daa2bdb) - Clarence Manuel
+- (**omni_capability_enforcement**) share Unix sandbox baseline helpers - (f35e674) - Clarence Manuel
+- (**omni_configurations**) lower tasks via a canonical long-form expansion - (f0119a7) - Clarence Manuel
+- (**omni_context**) resolve extends paths over SingleOrMany - (5650e2f) - Clarence Manuel
+- make DiagnosticSubscriber::on_diagnostic synchronous - (9dcd4bd) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/workspace-gen**) fix build script - (4040e0a) - Clarence Manuel
+- (**omni_process**) update command logging - (cab588f) - Clarence Manuel
+- update rust dependencies - (4ce6707) - Clarence Manuel
+
+- - -
+
 ## omni-v0.18.0 - 2026-07-15
 #### Features
 - include logs in task_run mcp output - (d877087) - Clarence Manuel

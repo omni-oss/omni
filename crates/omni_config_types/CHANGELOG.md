@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_config_types-v0.3.0 - 2026-08-09
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- (**omni_config_types**) add iter and iter_mut to SingleOrMany - (1573d04) - Clarence Manuel
+
+- - -
+
 ## omni_config_types-v0.2.0 - 2026-07-02
 #### Features
 - remove default_expr and support Object input - (8f7e84a) - Clarence Manuel

@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## system_traits-v0.2.0 - 2026-08-02
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+
+- - -
+
 ## system_traits-v0.1.2 - 2026-06-10
 #### Bug Fixes
 - (**system_traits**) implement more traits for InMemorySys - (c7faa16) - Clarence Manuel

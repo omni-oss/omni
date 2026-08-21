@@ -2,6 +2,67 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.20.0 - 2026-08-21
+### Package updates
+- @omni-oss/bridge-rpc-services bumped to @omni-oss/bridge-rpc-services-v0.2.0
+- omni_generator bumped to omni_generator-v0.12.0
+- bridge_rpc_services bumped to bridge_rpc_services-v0.1.0
+- omni bumped to omni-v0.19.0
+- @omni-oss/system-interface bumped to @omni-oss/system-interface-v0.2.0
+- omni_tool_configurations bumped to omni_tool_configurations-v0.1.0
+- @omni-oss/bridge-rpc-system-interface bumped to @omni-oss/bridge-rpc-system-interface-v0.2.0
+- omni_capability_sys bumped to omni_capability_sys-v0.1.0
+- omni_capability_enforcement bumped to omni_capability_enforcement-v0.1.0
+- omni_mcp_core bumped to omni_mcp_core-v0.4.0
+- omni_context bumped to omni_context-v0.7.0
+- bridge_rpc_core bumped to bridge_rpc_core-v0.1.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.10.0
+- bridge_rpc_runner bumped to bridge_rpc_runner-v0.1.0
+- omni_experimental_features bumped to omni_experimental_features-v0.1.0
+- omni_cli_core bumped to omni_cli_core-v0.19.0
+- omni_remote_cache_service bumped to omni_remote_cache_service-v0.3.0
+- @omni-oss/bridge-service bumped to @omni-oss/bridge-service-v0.2.0
+- omni_messages bumped to omni_messages-v0.2.0
+- system_traits bumped to system_traits-v0.2.0
+- omni_tool bumped to omni_tool-v0.1.0
+- omni_configurations bumped to omni_configurations-v0.11.0
+- trace bumped to trace-v0.2.0
+- omni_config_types bumped to omni_config_types-v0.3.0
+- omni_capabilities bumped to omni_capabilities-v0.1.0
+- @omni-oss/bridge-service-tests bumped to @omni-oss/bridge-service-tests-v0.2.0
+- @omni-oss/gen-sdk-core bumped to @omni-oss/gen-sdk-core-v0.2.0
+- omni_types bumped to omni_types-v0.3.0
+- @omni-oss/log bumped to @omni-oss/log-v0.1.1
+- root bumped to root-v0.15.0
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.4.0
+### Global changes
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Performance Improvements
+- improve performance in path utils - (5f68dbb) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) swap node-pty with @homebridge/node-pty-prebuilt-multiarch - (cb45cfa) - Clarence Manuel
+#### Continuous Integration
+- add setup-deno in multiplatform-jobs - (fdae9aa) - Clarence Manuel
+- add test-typescript dependency to build-rust - (a032367) - Clarence Manuel
+- fix setup-nub org - (eced3b9) - Clarence Manuel
+- swap setup-node with setup-nub - (d586308) - Clarence Manuel
+- add deno support - (0f77f9d) - Clarence Manuel
+- update publish-perf-comparison workflow - (0dcdae0) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust toolchain - (521ba94) - Clarence Manuel
+- update noyalib version - (a4c4991) - Clarence Manuel
+- update rust dependencies - (4ce6707) - Clarence Manuel
+- add @homebridge/node-pty-prebuilt-multiarch to trustedDependencies - (ddc81fc) - Clarence Manuel
+- update rust presets - (282c6bf) - Clarence Manuel
+- update node-version - (b2e9fca) - Clarence Manuel
+- update rust error type generator - (1774deb) - Clarence Manuel
+
+- - -
+
 ## v0.19.0 - 2026-07-13
 ### Package updates
 - omni_command_config bumped to omni_command_config-v0.1.0

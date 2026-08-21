@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-rpc-system-interface-v0.2.0 - 2026-08-02
+#### Features
+- harden shim and floor gaps - (1a4b4ea) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-rpc-system-interface**) make glob matching dotall and fully anchored - (cee7148) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+- update configuration to publish js packages - (f46a1de) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-rpc-system-interface-v0.1.0 - 2026-06-11
 #### Features
 - (**@omni-oss/bridge-rpc-system-interface**) refactor system interface implementation into it's own package - (43044bd) - Clarence Manuel

@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## bridge_rpc_services-v0.1.0 - 2026-08-20
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- stop dropping tail log output from generator scripts - (0ace69f) - Clarence Manuel
+
+- - -
+
 ## bridge_rpc_services-v0.0.1 - 2026-06-10
 #### Bug Fixes
 - (**bridge_rpc_services**) fix incorrect serialization of headers due to rmpv::ext::to_value handling - (5659d19) - Clarence Manuel

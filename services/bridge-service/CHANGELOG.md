@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-service-v0.2.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- stop dropping tail log output from generator scripts - (0ace69f) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-service-v0.1.0 - 2026-06-15
 #### Features
 - (**@omni-oss/bridge-service**) initial bridge service implementation - (a68f36c) - Clarence Manuel

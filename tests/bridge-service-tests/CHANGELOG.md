@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-service-tests-v0.2.0 - 2026-08-02
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-service-tests-v0.1.0 - 2026-06-15
 #### Features
 - implement run-javascript action - (7800281) - Clarence Manuel

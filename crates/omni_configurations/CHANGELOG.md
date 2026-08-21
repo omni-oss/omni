@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.11.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- (**omni_configurations**) accept single-or-list project extends - (6585d64) - Clarence Manuel
+- (**omni_configurations**) add task-level extension (base / extends) - (61bf142) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Refactoring
+- (**omni_configurations**) lower tasks via a canonical long-form expansion - (f0119a7) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.10.0 - 2026-07-11
 #### Features
 - support array style commands - (32c32aa) - Clarence Manuel

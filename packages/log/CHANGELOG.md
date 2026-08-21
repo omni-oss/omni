@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/log-v0.1.1 - 2026-08-20
+#### Bug Fixes
+- stop dropping tail log output from generator scripts - (0ace69f) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/log-v0.1.0 - 2026-06-14
 #### Features
 - (**@omni-oss/log**) implement centralized logging facade library - (d618a12) - Clarence Manuel

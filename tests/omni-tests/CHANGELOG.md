@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/omni-tests-v0.4.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- (**omni_capability_enforcement**) apply the macOS Seatbelt filesystem floor - (52460ce) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- harden shim and floor gaps - (1a4b4ea) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- (**omni_capability_enforcement**) harden the Windows AppContainer profile race - (1139672) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) cover task-level extension end to end - (d71c842) - Clarence Manuel
+- (**@omni-oss/omni-tests**) assert the Bun/Windows fs floor gap via the generic warning - (af735a6) - Clarence Manuel
+- (**@omni-oss/omni-tests**) fix path assert failures on windows - (9448176) - Clarence Manuel
+- (**@omni-oss/omni-tests**) swap node-pty with @homebridge/node-pty-prebuilt-multiarch - (cb45cfa) - Clarence Manuel
+- (**@omni-oss/omni-tests**) fix macOS path assert failures - (5bc3078) - Clarence Manuel
+- add e2e coverage for generator script logging - (3cf29a6) - Clarence Manuel
+#### Miscellaneous Chores
+- (**@omni-oss/omni-tests**) add multiple targets - (4372890) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/omni-tests-v0.3.0 - 2026-07-13
 #### Features
 - include logs in task_run mcp output - (d877087) - Clarence Manuel

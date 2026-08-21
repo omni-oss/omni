@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_types-v0.3.0 - 2026-08-02
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+
+- - -
+
 ## omni_types-v0.2.1 - 2026-06-23
 #### Bug Fixes
 - rename and refactoring of input mechanism for generator - (cb8fa22) - Clarence Manuel

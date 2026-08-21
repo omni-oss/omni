@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_messages-v0.2.0 - 2026-08-20
+#### Features
+- batch diagnostic events and coordinate with progress bars - (c94cb16) - Clarence Manuel
+#### Refactoring
+- make DiagnosticSubscriber::on_diagnostic synchronous - (9dcd4bd) - Clarence Manuel
+
+- - -
+
 ## omni_messages-v0.1.0 - 2026-07-03
 #### Features
 - implement progress ui for task execution and add  --output-logs, --output-cached-logs flags - (9e7e679) - Clarence Manuel

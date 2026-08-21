@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/system-interface-v0.2.0 - 2026-08-02
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/system-interface-v0.1.2 - 2026-06-15
 #### Bug Fixes
 - (**@omni-oss/system-interface**) make ProcessEnv and ArgsList readonly - (14c46a0) - Clarence Manuel

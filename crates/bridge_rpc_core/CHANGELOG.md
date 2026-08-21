@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## bridge_rpc_core-v0.1.0 - 2026-08-02
+#### Features
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+
+- - -
+
 ## bridge_rpc_core-v0.0.1 - 2026-06-14
 #### Bug Fixes
 - (**bridge_rpc_core**) improve error handling - (5600ed3) - Clarence Manuel

@@ -2,6 +2,27 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/bridge-rpc-services-v0.2.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- harden shim and floor gaps - (1a4b4ea) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- (**@omni-oss/bridge-rpc-services**) launch confined spawns by the authorized name - (db5c832) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) gate child-process and fork on net enforcement and fix the fork target - (2b8ade0) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) enforce capability policy on native Bun apis - (951d9aa) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) close in-process net enforcement bypasses - (723f51a) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) prevent env injection in confined child spawns - (efa1435) - Clarence Manuel
+- (**@omni-oss/bridge-rpc-services**) make enforced globals non-configurable - (b1698fe) - Clarence Manuel
+- stop dropping tail log output from generator scripts - (0ace69f) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+- format vitest config files - (019f6bd) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/bridge-rpc-services-v0.1.0 - 2026-06-20
 #### Features
 - (**@omni-oss/bridge-rpc-services**) implement BridgeRpcSystem - (74a4e07) - Clarence Manuel

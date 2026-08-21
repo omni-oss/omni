@@ -2,6 +2,24 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.15.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Performance Improvements
+- improve performance in path utils - (5f68dbb) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) swap node-pty with @homebridge/node-pty-prebuilt-multiarch - (cb45cfa) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust toolchain - (521ba94) - Clarence Manuel
+- update noyalib version - (a4c4991) - Clarence Manuel
+- update rust dependencies - (4ce6707) - Clarence Manuel
+- add @homebridge/node-pty-prebuilt-multiarch to trustedDependencies - (ddc81fc) - Clarence Manuel
+
+- - -
+
 ## root-v0.14.0 - 2026-07-13
 #### Features
 - (**@omni-oss/perf-dashboard**) implement perf-dashboard script - (b5a74d2) - Clarence Manuel

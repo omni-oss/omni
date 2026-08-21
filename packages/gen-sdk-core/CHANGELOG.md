@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/gen-sdk-core-v0.2.0 - 2026-08-02
+#### Features
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Miscellaneous Chores
+- add .npmignore to ts packages [skip ci] - (38a0498) - Clarence Manuel
+- update configuration to publish js packages - (f46a1de) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/gen-sdk-core-v0.1.0 - 2026-06-20
 #### Features
 - (**@omni-oss/gen-sdk-core**) add gen-sdk-core package - (0560c6c) - Clarence Manuel

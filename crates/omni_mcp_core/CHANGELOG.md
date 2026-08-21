@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_mcp_core-v0.4.0 - 2026-08-21
+#### Features
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust dependencies - (4ce6707) - Clarence Manuel
+
+- - -
+
 ## omni_mcp_core-v0.3.0 - 2026-07-13
 #### Features
 - include logs in task_run mcp output - (d877087) - Clarence Manuel

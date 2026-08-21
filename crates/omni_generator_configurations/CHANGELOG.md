@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.10.0 - 2026-08-21
+#### Features
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- add warning for using not recommend js runtimes - (8dfca7d) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.9.1 - 2026-07-05
 #### Bug Fixes
 - incorrect generator schema - (16ee36e) - Clarence Manuel

@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.12.0 - 2026-08-21
+#### Features
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel
+- (**generator**) warn loudly when the OS sandbox is disabled - (5108864) - Clarence Manuel
+- add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel
+- batch diagnostic events and coordinate with progress bars - (c94cb16) - Clarence Manuel
+- harden shim and floor gaps - (1a4b4ea) - Clarence Manuel
+- implement windows appcontainer backend - (d254481) - Clarence Manuel
+- implement capability sandboxing - (eb3e5f9) - Clarence Manuel
+#### Bug Fixes
+- (**omni_capability_enforcement**) make os-sandbox coverage runtime- and env-consistent - (352de1b) - Clarence Manuel
+- add warning for using not recommend js runtimes - (8dfca7d) - Clarence Manuel
+#### Refactoring
+- make DiagnosticSubscriber::on_diagnostic synchronous - (9dcd4bd) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.11.0 - 2026-07-11
 #### Features
 - support array style commands - (32c32aa) - Clarence Manuel
