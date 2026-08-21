@@ -7,21 +7,25 @@ extends:
 
 tasks:
   build:aarch64-unknown-linux-gnu:
+    extends: [build:aarch64-unknown-linux-gnu-base]
     env:
       vars:
         RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
 
   build:x86_64-apple-darwin:
+    extends: [build:x86_64-apple-darwin-base]
     env:
       vars:
         RUST_BUILD_ADDITIONAL_ARGS: --features vendored-openssl
 
   test:aarch64-unknown-linux-gnu:
+    extends: [test-base]
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
 
   test:x86_64-apple-darwin:
+    extends: [test-base]
     env:
       vars:
         RUST_TEST_ADDITIONAL_ARGS: --features vendored-openssl
