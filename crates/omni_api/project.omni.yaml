@@ -10,6 +10,8 @@ dependencies:
   - omni_core
   - omni_task_executor
   - omni_configurations
+  - omni_projections
+  - omni_projection_configurations
   - omni_generator
   - omni_generator_configurations
   - omni_input_provider

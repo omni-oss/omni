@@ -477,3 +477,116 @@ async fn tool_inspect_missing_tool_returns_err() {
     let result = api.tool_inspect("nonexistent").await;
     assert!(result.is_err(), "should error for unknown tool");
 }
+
+// ── projection ──────────────────────────────────────────────────────────
+
+/// Write a workspace with a single local projection source that mirrors
+/// `vendor/skills` into `.agents/skills`.
+fn write_projection_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+            "    projections:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("vendor/skills")).unwrap();
+    std::fs::write(dir.join("vendor/skills/rust.md"), b"# rust\n").unwrap();
+}
+
+#[tokio::test]
+async fn projection_sync_dry_run_plans_without_writing() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_projection_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let resp = api
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            dry_run: true,
+            ..Default::default()
+        })
+        .await
+        .expect("dry-run sync");
+
+    assert!(resp.dry_run);
+    assert_eq!(resp.planned.len(), 1);
+    assert_eq!(resp.planned[0].dest, ".agents/skills/rust.md");
+    assert!(resp.applied.is_empty(), "dry-run applies nothing");
+    assert!(
+        !tmp.path().join(".agents/skills/rust.md").exists(),
+        "dry-run must not touch the filesystem"
+    );
+}
+
+#[tokio::test]
+async fn projection_sync_is_idempotent() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_projection_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let first = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("first sync");
+    assert_eq!(first.applied.len(), 1);
+    assert!(!first.applied[0].skipped, "first sync creates the link");
+    assert!(tmp.path().join(".agents/skills/rust.md").exists());
+
+    let second = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("second sync");
+    assert_eq!(second.applied.len(), 1);
+    assert!(
+        second.applied[0].skipped,
+        "an unchanged re-sync must be a no-op"
+    );
+}
+
+#[tokio::test]
+async fn projection_status_reports_ok_after_sync() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_projection_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    api.projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync");
+
+    let status = api
+        .projection_status(omni_api::ProjectionStatusRequest { verbose: true })
+        .await
+        .expect("status");
+    assert!(!status.has_problems, "a fresh sync should be all-ok");
+    assert_eq!(status.ok, 1);
+}
+
+#[tokio::test]
+async fn projection_unlink_removes_recorded_links() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_projection_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    api.projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync");
+    assert!(tmp.path().join(".agents/skills/rust.md").exists());
+
+    let resp = api
+        .projection_unlink(omni_api::ProjectionUnlinkRequest {
+            id: "local-skills".to_string(),
+            clean_backups: false,
+        })
+        .await
+        .expect("unlink");
+    assert_eq!(resp.removed.len(), 1);
+    assert!(!tmp.path().join(".agents/skills/rust.md").exists());
+}

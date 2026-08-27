@@ -1,0 +1,28 @@
+[package]
+name = "omni_projections"
+rust-version.workspace = true
+edition.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]
+omni_configurations = { workspace = true }
+omni_projection_configurations = { workspace = true }
+system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
+dir_walker = { workspace = true }
+omni_hasher = { workspace = true }
+omni_types = { workspace = true }
+globset = { workspace = true }
+path-clean = { workspace = true }
+pathdiff = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+eyre = { workspace = true }
+strum = { workspace = true }
+derive-new = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "fs"] }

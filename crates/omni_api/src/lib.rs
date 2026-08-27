@@ -1,5 +1,4 @@
 #![allow(clippy::redundant_field_names)]
-
 #![allow(async_fn_in_trait)]
 
 mod api;
@@ -30,6 +29,13 @@ pub use operations::{
         WidgetView,
     },
     hash::HashResponse,
+    projection::{
+        AppliedLinkInfo, PlannedLinkInfo, ProjectionPruneRequest,
+        ProjectionPruneResponse, ProjectionStatusRequest,
+        ProjectionStatusResponse, ProjectionSyncRequest,
+        ProjectionSyncResponse, ProjectionSys, ProjectionUnlinkRequest,
+        ProjectionUnlinkResponse, StatusEntryInfo,
+    },
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
     tool::{ToolInfo, ToolInspectResponse, ToolListResponse, ToolWorkingDir},
 };

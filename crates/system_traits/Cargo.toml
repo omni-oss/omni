@@ -19,3 +19,7 @@ memory-sync = ["dep:sys_traits", "sys_traits/memory", "sync"]
 tokio = { workspace = true, optional = true }
 sys_traits = { workspace = true, optional = true, features = [] }
 async-trait = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "fs"] }

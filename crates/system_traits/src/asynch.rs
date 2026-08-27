@@ -433,6 +433,106 @@ pub trait FsHardLinkAsync: BaseFsHardLinkAsync {
 
 impl<T: BaseFsHardLinkAsync> FsHardLinkAsync for T {}
 
+// == FsSymlinkFile ==
+
+#[async_trait]
+pub trait BaseFsSymlinkFileAsync {
+    #[doc(hidden)]
+    async fn base_fs_symlink_file_async(
+        &self,
+        original: &Path,
+        link: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsSymlinkFileAsync: BaseFsSymlinkFileAsync {
+    async fn fs_symlink_file_async(
+        &self,
+        original: impl AsRef<Path> + Send,
+        link: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_symlink_file_async(original.as_ref(), link.as_ref())
+            .await
+    }
+}
+
+impl<T: BaseFsSymlinkFileAsync> FsSymlinkFileAsync for T {}
+
+// == FsSymlinkDir ==
+
+#[async_trait]
+pub trait BaseFsSymlinkDirAsync {
+    #[doc(hidden)]
+    async fn base_fs_symlink_dir_async(
+        &self,
+        original: &Path,
+        link: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsSymlinkDirAsync: BaseFsSymlinkDirAsync {
+    async fn fs_symlink_dir_async(
+        &self,
+        original: impl AsRef<Path> + Send,
+        link: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_symlink_dir_async(original.as_ref(), link.as_ref())
+            .await
+    }
+}
+
+impl<T: BaseFsSymlinkDirAsync> FsSymlinkDirAsync for T {}
+
+// == FsCreateJunction ==
+
+#[async_trait]
+pub trait BaseFsCreateJunctionAsync {
+    #[doc(hidden)]
+    async fn base_fs_create_junction_async(
+        &self,
+        original: &Path,
+        junction: &Path,
+    ) -> io::Result<()>;
+}
+
+#[async_trait]
+pub trait FsCreateJunctionAsync: BaseFsCreateJunctionAsync {
+    /// Creates an NTFS junction.
+    async fn fs_create_junction_async(
+        &self,
+        original: impl AsRef<Path> + Send,
+        junction: impl AsRef<Path> + Send,
+    ) -> io::Result<()> {
+        self.base_fs_create_junction_async(original.as_ref(), junction.as_ref())
+            .await
+    }
+}
+
+impl<T: BaseFsCreateJunctionAsync> FsCreateJunctionAsync for T {}
+
+// == FsReadLink ==
+
+#[async_trait]
+pub trait BaseFsReadLinkAsync {
+    #[doc(hidden)]
+    async fn base_fs_read_link_async(&self, path: &Path)
+    -> io::Result<PathBuf>;
+}
+
+#[async_trait]
+pub trait FsReadLinkAsync: BaseFsReadLinkAsync {
+    async fn fs_read_link_async(
+        &self,
+        path: impl AsRef<Path> + Send,
+    ) -> io::Result<PathBuf> {
+        self.base_fs_read_link_async(path.as_ref()).await
+    }
+}
+
+impl<T: BaseFsReadLinkAsync> FsReadLinkAsync for T {}
+
 // == FsCopy ==
 
 #[async_trait]

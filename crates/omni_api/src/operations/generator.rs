@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use maps::UnorderedMap;
-use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
+use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
@@ -325,11 +325,12 @@ where
 
     let generators = generators
         .iter()
-        .filter(|&g| g.user_invocable).map(|g| GeneratorInfo {
-                name: g.name.clone(),
-                display_name: g.display_name.clone(),
-                description: g.description.clone(),
-            })
+        .filter(|&g| g.user_invocable)
+        .map(|g| GeneratorInfo {
+            name: g.name.clone(),
+            display_name: g.display_name.clone(),
+            description: g.description.clone(),
+        })
         .collect();
 
     Ok(GeneratorListResponse { generators })
@@ -375,7 +376,7 @@ where
         let scope_id = idx + 100;
 
         match config {
-            GeneratorSourceConfiguration::Local(local) => {
+            SourceConfig::Local(local) => {
                 let local = local.clone();
                 let root_dir = ctx.root_dir().to_path_buf();
                 let sys = sys.clone();
@@ -396,7 +397,7 @@ where
                     ))
                 });
             }
-            GeneratorSourceConfiguration::Git(git) => {
+            SourceConfig::Git(git) => {
                 let remote_sources = remote_sources.clone();
                 git_sources.push((&git.uri, git.rev.as_str()));
                 let sys = sys.clone();

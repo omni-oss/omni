@@ -288,7 +288,7 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
 describe("+mcp @mcp @cli (protocol)", {
     tags: ["mcp"],
 }, () => {
-    it("tools/list returns all 16 expected tools", async () => {
+    it("tools/list returns all 20 expected tools", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
 
@@ -308,6 +308,10 @@ describe("+mcp @mcp @cli (protocol)", {
                 "hash_workspace",
                 "project_config",
                 "project_list",
+                "projection_prune",
+                "projection_status",
+                "projection_sync",
+                "projection_unlink",
                 "task_run",
                 "tool_inspect",
                 "tool_list",
@@ -336,6 +340,7 @@ describe("+mcp @mcp @cli (protocol)", {
             "cache_stats",
             "tool_list",
             "tool_inspect",
+            "projection_status",
         ];
         for (const name of readOnlyTools) {
             expect(
@@ -358,6 +363,9 @@ describe("+mcp @mcp @cli (protocol)", {
             "task_run",
             "exec_command",
             "tool_run",
+            "projection_sync",
+            "projection_unlink",
+            "projection_prune",
         ];
         for (const name of writeTools) {
             expect(
