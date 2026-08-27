@@ -5,6 +5,7 @@ extends:
 dependencies:
   - omni_configurations
   - omni_projection_configurations
+  - omni_constants
   - omni_types
   - omni_hasher
   - dir_walker

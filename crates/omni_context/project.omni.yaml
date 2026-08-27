@@ -12,6 +12,7 @@ tasks:
 
 dependencies:
   - omni_configurations
+  - omni_constants
   - omni_core
   - omni_collector
   - omni_hasher

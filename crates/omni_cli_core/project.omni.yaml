@@ -11,6 +11,7 @@ dependencies:
   - omni_task_context
   - omni_setup
   - omni_configurations
+  - omni_constants
   - omni_generator_configurations
   - omni_generator
   - omni_input_provider

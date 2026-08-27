@@ -6,6 +6,7 @@ dependencies:
   - omni_tool_configurations
   - omni_configuration_discovery
   - omni_file_data_serde
+  - omni_constants
   - omni_discovery
   - omni_tera
   - omni_messages
