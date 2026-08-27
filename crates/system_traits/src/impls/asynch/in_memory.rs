@@ -1,17 +1,20 @@
 use sys_traits::{
     BaseFsCreateDir as _, BaseFsRemoveDir as _, BaseFsRemoveDirAll as _,
-    EnvCurrentDir as _, EnvSetCurrentDir as _, FsCopy as _, FsDirEntry as _,
-    FsHardLink as _, FsMetadata as _, FsRead as _, FsReadDir as _,
-    FsRemoveFile as _, FsRename as _, FsWrite as _,
+    EnvCurrentDir as _, EnvSetCurrentDir as _, FsCopy as _,
+    FsCreateJunction as _, FsDirEntry as _, FsHardLink as _, FsMetadata as _,
+    FsRead as _, FsReadDir as _, FsReadLink as _, FsRemoveFile as _,
+    FsRename as _, FsSymlinkDir as _, FsSymlinkFile as _, FsWrite as _,
     impls::{InMemoryMetadata, InMemorySys},
 };
 
 use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
-    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsHardLinkAsync,
-    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync,
-    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
-    BaseFsRenameAsync, BaseFsWriteAsync, CreateDirOptions, EnvCurrentDirAsync,
+    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsCreateJunctionAsync,
+    BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
+    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsRemoveDirAllAsync,
+    BaseFsRemoveDirAsync, BaseFsRemoveFileAsync, BaseFsRenameAsync,
+    BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync, BaseFsWriteAsync,
+    CreateDirOptions, EnvCurrentDirAsync,
 };
 
 // ---------------------------------------------------------------------------
@@ -203,5 +206,81 @@ impl BaseEnvSetCurrentDirAsync for InMemorySys {
         path: &std::path::Path,
     ) -> std::io::Result<()> {
         Ok(self.env_set_current_dir(path)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsSymlinkFileAsync for InMemorySys {
+    async fn base_fs_symlink_file_async(
+        &self,
+        original: &std::path::Path,
+        link: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.fs_symlink_file(original, link)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsSymlinkDirAsync for InMemorySys {
+    async fn base_fs_symlink_dir_async(
+        &self,
+        original: &std::path::Path,
+        link: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.fs_symlink_dir(original, link)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsCreateJunctionAsync for InMemorySys {
+    async fn base_fs_create_junction_async(
+        &self,
+        original: &std::path::Path,
+        junction: &std::path::Path,
+    ) -> std::io::Result<()> {
+        Ok(self.fs_create_junction(original, junction)?)
+    }
+}
+
+#[async_trait::async_trait]
+impl BaseFsReadLinkAsync for InMemorySys {
+    async fn base_fs_read_link_async(
+        &self,
+        path: &std::path::Path,
+    ) -> std::io::Result<std::path::PathBuf> {
+        Ok(self.fs_read_link(path)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FsMetadataAsync, FsReadLinkAsync, FsSymlinkFileAsync};
+    use sys_traits::FsCreateDirAll as _;
+
+    #[tokio::test]
+    async fn symlink_then_read_link_round_trips() {
+        let sys = InMemorySys::default();
+        sys.fs_create_dir_all(std::path::Path::new("/work"))
+            .unwrap();
+        sys.fs_write(std::path::Path::new("/work/target.txt"), b"hello")
+            .unwrap();
+
+        sys.fs_symlink_file_async("/work/target.txt", "/work/link.txt")
+            .await
+            .unwrap();
+
+        assert!(
+            sys.fs_is_symlink_no_err_async(std::path::Path::new(
+                "/work/link.txt"
+            ))
+            .await
+        );
+        assert_eq!(
+            sys.fs_read_link_async(std::path::Path::new("/work/link.txt"))
+                .await
+                .unwrap(),
+            std::path::PathBuf::from("/work/target.txt")
+        );
     }
 }
