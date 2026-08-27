@@ -70,7 +70,15 @@ impl<T: OmniPathRoot> schemars::JsonSchema for OmniPath<T> {
     fn json_schema(
         generator: &mut schemars::SchemaGenerator,
     ) -> schemars::Schema {
-        String::json_schema(generator)
+        let mut schema = String::json_schema(generator);
+        schema.insert(
+            "description".to_string(),
+            "A path optionally anchored to a named root with `@root/...`. To use \
+             a literal leading `@` (e.g. an npm scope like `@myorg/pkg`), escape \
+             it as `\\@myorg/pkg`."
+                .into(),
+        );
+        schema
     }
 }
 
@@ -187,15 +195,23 @@ impl<TRoot: OmniPathRoot> FromStr for OmniPath<TRoot> {
     type Err = <TRoot as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with("@") {
-            let mut parts = s.splitn(2, '/');
-            let root = parts.next().unwrap().strip_prefix('@').unwrap();
-            let path = parts.next().unwrap();
-
-            Ok(Self::new_rooted(path, TRoot::from_str(root)?))
-        } else {
-            Ok(Self::new(s))
+        // A leading `\@` escapes to a literal leading `@`; a leading `\` not
+        // followed by `@` is an ordinary literal backslash. Nothing else is
+        // special.
+        if let Some(rest) = s.strip_prefix("\\@") {
+            return Ok(Self::new(format!("@{rest}")));
         }
+
+        if let Some(after_at) = s.strip_prefix('@') {
+            let (root, path) = match after_at.split_once('/') {
+                Some((root, path)) => (root, path),
+                None => (after_at, ""),
+            };
+
+            return Ok(Self::new_rooted(path, TRoot::from_str(root)?));
+        }
+
+        Ok(Self::new(s))
     }
 }
 
@@ -204,7 +220,15 @@ impl<TRoot: OmniPathRoot> Display for OmniPath<TRoot> {
         if let Some(root) = self.root {
             write!(f, "@{}/{}", root, self.path.display())
         } else {
-            write!(f, "{}", self.path.display())
+            let rendered = self.path.display().to_string();
+            // Symmetric with `from_str`: an unrooted path whose first segment
+            // begins with `@` is emitted as `\@...` so it round-trips instead
+            // of being re-parsed as a root token.
+            if rendered.starts_with('@') {
+                write!(f, "\\{rendered}")
+            } else {
+                write!(f, "{rendered}")
+            }
         }
     }
 }
@@ -215,16 +239,7 @@ impl<TRoot: OmniPathRoot> serde::Serialize for OmniPath<TRoot> {
     where
         S: serde::Serializer,
     {
-        if self.is_any_rooted() {
-            format!(
-                "@{}/{}",
-                self.root().expect("root should be set"),
-                self.path.to_string_lossy()
-            )
-            .serialize(serializer)
-        } else {
-            self.path.serialize(serializer)
-        }
+        self.to_string().serialize(serializer)
     }
 }
 
@@ -235,26 +250,9 @@ impl<'de, TRoot: OmniPathRoot> serde::Deserialize<'de> for OmniPath<TRoot> {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-
-        for root in TRoot::VARIANTS.iter().copied() {
-            if s.starts_with(&format!("@{}/", root)) {
-                return Ok(Self::new_rooted(
-                    PathBuf::from(
-                        s.strip_prefix(&format!("@{}/", root)).unwrap(),
-                    ),
-                    root,
-                ));
-            }
-        }
-
-        if s.starts_with("@") {
-            return Err(serde::de::Error::custom(format!(
-                "invalid root: {}",
-                s
-            )));
-        }
-
-        Ok(Self::new(s))
+        Self::from_str(&s).map_err(|_| {
+            serde::de::Error::custom(format!("invalid root in path: {s}"))
+        })
     }
 }
 
@@ -361,5 +359,57 @@ mod tests {
 
         let path = OmniPath::<Root>::new("foo");
         assert_eq!(path.to_string(), "foo");
+    }
+
+    #[test]
+    fn test_from_str_escapes_literal_at() {
+        let path = OmniPath::<Root>::from_str("\\@myorg/pkg").unwrap();
+        assert!(!path.is_any_rooted());
+        assert_eq!(path.unresolved_path(), Path::new("@myorg/pkg"));
+        assert_eq!(path.to_string(), "\\@myorg/pkg");
+        assert_eq!(
+            OmniPath::<Root>::from_str(&path.to_string()).unwrap(),
+            path
+        );
+    }
+
+    #[test]
+    fn test_from_str_bare_root_without_slash() {
+        let path = OmniPath::<Root>::from_str("@workspace").unwrap();
+        assert!(path.is_rooted(Root::Workspace));
+        assert_eq!(path.unresolved_path(), Path::new(""));
+    }
+
+    #[test]
+    fn test_from_str_rooted_and_unrooted_round_trip() {
+        let rooted = OmniPath::<Root>::from_str("@workspace/x").unwrap();
+        assert!(rooted.is_rooted(Root::Workspace));
+        assert_eq!(rooted.unresolved_path(), Path::new("x"));
+        assert_eq!(
+            OmniPath::<Root>::from_str(&rooted.to_string()).unwrap(),
+            rooted
+        );
+
+        let unrooted = OmniPath::<Root>::from_str("a/b").unwrap();
+        assert!(!unrooted.is_any_rooted());
+        assert_eq!(unrooted.unresolved_path(), Path::new("a/b"));
+        assert_eq!(
+            OmniPath::<Root>::from_str(&unrooted.to_string()).unwrap(),
+            unrooted
+        );
+    }
+
+    #[test]
+    fn test_from_str_rejects_unknown_root() {
+        assert!(OmniPath::<Root>::from_str("@nope/x").is_err());
+    }
+
+    #[test]
+    fn test_serde_escapes_literal_at() {
+        let json = r#""\\@myorg/pkg""#;
+        let path: OmniPath<Root> = serde_json::from_str(json).unwrap();
+        assert!(!path.is_any_rooted());
+        assert_eq!(path.unresolved_path(), Path::new("@myorg/pkg"));
+        assert_eq!(serde_json::to_string(&path).unwrap(), json);
     }
 }
