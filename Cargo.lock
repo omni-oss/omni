@@ -7466,6 +7466,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_projections"
+version = "0.1.0"
+dependencies = [
+ "derive-new",
+ "dir_walker",
+ "eyre",
+ "omni_configurations",
+ "omni_hasher",
+ "omni_types",
+ "strum 0.28.0",
+ "system_traits",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+]
+
+[[package]]
 name = "omni_prompt"
 version = "0.6.0"
 dependencies = [

@@ -260,6 +260,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_projections]
+path = "crates/omni_projections"
+include = [
+    "crates/omni_projections/**",
+]
+public_api = false
+
 [monorepo.packages.omni_remote_cache_client]
 path = "crates/omni_remote_cache_client"
 include = [
