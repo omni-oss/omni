@@ -7493,6 +7493,7 @@ dependencies = [
  "omni_projection_configurations",
  "omni_types",
  "path-clean",
+ "pathdiff",
  "serde_json",
  "strum 0.28.0",
  "system_traits",
