@@ -267,4 +267,12 @@ mod tests {
         );
         assert!(result.is_err(), "duplicate git uri must be rejected");
     }
+
+    #[test]
+    fn test_generators_rejects_duplicate_git_uri() {
+        let result = serde_json::from_str::<WorkspaceConfiguration>(
+            r#"{"projects": [], "generators": [{"source": "git", "uri": "https://example.com/a.git", "rev": "main"}, {"source": "git", "uri": "https://example.com/a.git", "rev": "dev"}]}"#,
+        );
+        assert!(result.is_err(), "duplicate git uri must be rejected");
+    }
 }
