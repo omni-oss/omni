@@ -7,6 +7,7 @@ use omni_projection_configurations::{
 use path_clean::PathClean;
 
 use crate::error::{ProjectionError, Result};
+use crate::guardrails::{Guardrails, check_dest};
 
 /// One resolved link the applier will materialize: `dest_abs` points at
 /// `source_abs`.
@@ -52,6 +53,8 @@ pub struct PlanInput<'a> {
     pub source_id: &'a str,
     pub projection: &'a Projection,
     pub entries: &'a [ScannedEntry],
+    /// Resolved workspace env-file names, used by the control-plane guardrail.
+    pub env_files: &'a [String],
 }
 
 /// Compute the full `LinkPair` set for one projection, applying dest-side and
@@ -99,6 +102,12 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
         )?,
     };
 
+    let guardrails = Guardrails {
+        allow_omni_config: input.projection.allow_omni_config,
+        allow_git: input.projection.allow_git,
+        env_files: input.env_files,
+    };
+
     for pair in &pairs {
         if !within(input.workspace_root, &pair.dest_abs)
             || !within(&target_abs, &pair.dest_abs)
@@ -114,6 +123,7 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
                 pair.source_abs.display()
             )));
         }
+        check_dest(&pair.dest_abs, &guardrails)?;
     }
 
     Ok(pairs)
@@ -327,6 +337,7 @@ mod tests {
             source_id,
             projection: proj,
             entries,
+            env_files: &[],
         })
     }
 
