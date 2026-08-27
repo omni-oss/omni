@@ -315,6 +315,32 @@ mod tests {
     }
 
     #[test]
+    fn test_schema_exposes_projection_sources() {
+        let schema = schemars::schema_for!(WorkspaceConfiguration);
+        let value = serde_json::to_value(&schema).unwrap();
+
+        // `projections` is an array of projection-flavored source configs,
+        // distinct from the plain generator/tool `SourceConfig`.
+        let items_ref = value["properties"]["projections"]["items"]["$ref"]
+            .as_str()
+            .expect("projections items is a $ref");
+        assert!(
+            items_ref.starts_with("#/$defs/SourceConfig"),
+            "projections should reference a SourceConfig instantiation, got {items_ref}"
+        );
+        assert_ne!(
+            items_ref, "#/$defs/SourceConfig",
+            "the projection source carries an `id`/`projections` extra and must be a distinct def"
+        );
+
+        // The projection routing vocabulary is present in the schema.
+        let defs = &value["$defs"];
+        assert!(defs.get("Projection").is_some());
+        assert!(defs.get("ProjectionRule").is_some());
+        assert!(defs.get("ProjectionStrategy").is_some());
+    }
+
+    #[test]
     fn test_generators_rejects_duplicate_git_uri() {
         let result = serde_json::from_str::<WorkspaceConfiguration>(
             r#"{"projects": [], "generators": [{"source": "git", "uri": "https://example.com/a.git", "rev": "main"}, {"source": "git", "uri": "https://example.com/a.git", "rev": "dev"}]}"#,
