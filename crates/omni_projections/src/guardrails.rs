@@ -1,9 +1,16 @@
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crate::error::{ProjectionError, Result};
 
-const MANIFEST_STEMS: [&str; 4] = ["workspace", "project", "tool", "generator"];
-const MANIFEST_EXTS: [&str; 4] = ["yml", "yaml", "json", "toml"];
+/// Every concrete control-plane manifest file name (each stem expanded across
+/// the supported config extensions), computed once.
+static CONTROL_PLANE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
+    omni_constants::CONTROL_PLANE_MANIFESTS
+        .iter()
+        .flat_map(|template| omni_constants::config_file_names(template))
+        .collect()
+});
 
 /// Plan-time safety policy for a single projection.
 pub struct Guardrails<'a> {
@@ -49,22 +56,16 @@ fn has_git_component(path: &Path) -> bool {
 }
 
 fn is_control_plane_basename(basename: &str) -> bool {
-    if basename == ".omniignore" {
+    if basename == omni_constants::OMNI_IGNORE {
         return true;
     }
-    if basename.starts_with("remote-cache.omni.") {
+    let remote_cache_prefix =
+        omni_constants::REMOTE_CACHE_OMNI.trim_end_matches("{ext}");
+    if basename.starts_with(remote_cache_prefix) {
         return true;
     }
 
-    for stem in MANIFEST_STEMS {
-        for ext in MANIFEST_EXTS {
-            if basename == format!("{stem}.omni.{ext}") {
-                return true;
-            }
-        }
-    }
-
-    false
+    CONTROL_PLANE_NAMES.iter().any(|name| name == basename)
 }
 
 fn is_env_file(basename: &str, env_files: &[String]) -> bool {

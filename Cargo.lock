@@ -6815,6 +6815,7 @@ dependencies = [
  "omni_config_types",
  "omni_configuration_discovery",
  "omni_configurations",
+ "omni_constants",
  "omni_context",
  "omni_core",
  "omni_execution_plan",
@@ -7033,6 +7034,7 @@ dependencies = [
  "omni_cache",
  "omni_collector",
  "omni_configurations",
+ "omni_constants",
  "omni_context",
  "omni_core",
  "omni_execution_plan",
@@ -7216,6 +7218,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_constants"
+version = "0.1.0"
+
+[[package]]
 name = "omni_context"
 version = "0.7.0"
 dependencies = [
@@ -7239,6 +7245,7 @@ dependencies = [
  "omni_command_config",
  "omni_configuration_discovery",
  "omni_configurations",
+ "omni_constants",
  "omni_core",
  "omni_execution_plan",
  "omni_hasher",
@@ -7422,6 +7429,7 @@ dependencies = [
  "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
+ "omni_constants",
  "omni_discovery",
  "omni_discovery_utils",
  "omni_file_data_serde",
@@ -7729,6 +7737,7 @@ dependencies = [
  "globset",
  "log",
  "omni_configurations",
+ "omni_constants",
  "omni_hasher",
  "omni_projection_configurations",
  "omni_types",
@@ -8126,6 +8135,7 @@ dependencies = [
  "omni_capability_enforcement",
  "omni_capability_sys",
  "omni_configuration_discovery",
+ "omni_constants",
  "omni_discovery",
  "omni_file_data_serde",
  "omni_messages",

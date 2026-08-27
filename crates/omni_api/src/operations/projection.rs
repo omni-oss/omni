@@ -428,14 +428,6 @@ fn workspace_routes(
     extra.routes.as_deref()
 }
 
-/// The candidate names for a source-owned projection manifest.
-const OWNED_MANIFEST_NAMES: [&str; 4] = [
-    "projection.omni.yaml",
-    "projection.omni.yml",
-    "projection.omni.json",
-    "projection.omni.toml",
-];
-
 /// Resolve the effective routes for one source. Workspace routes override the
 /// source's owned manifest wholesale; an absent workspace list inherits it.
 async fn resolve_effective_routes<TSys>(
@@ -478,15 +470,19 @@ async fn discover_owned_manifest<TSys>(
 where
     TSys: FsReadAsync + Send + Sync,
 {
-    let names: Vec<String> =
-        OWNED_MANIFEST_NAMES.iter().map(|s| s.to_string()).collect();
-    let ignore_files = [".omniignore".to_string()];
+    // The candidate names for a source-owned projection manifest, computed once
+    // from the shared config extensions.
+    static NAMES: std::sync::LazyLock<Vec<String>> =
+        std::sync::LazyLock::new(|| {
+            omni_constants::config_file_names(omni_constants::PROJECTION_OMNI)
+        });
+    const IGNORE_FILES: [&str; 1] = [omni_constants::OMNI_IGNORE];
 
     let discovery = ConfigurationDiscovery::new(
         source_root,
-        &names[..],
-        &names[..],
-        &ignore_files[..],
+        &NAMES[..],
+        &NAMES[..],
+        &IGNORE_FILES[..],
         "projection",
     );
 
@@ -621,10 +617,9 @@ mod tests {
         )
         .unwrap();
 
-        let routes =
-            resolve_effective_routes(&RealSys, "id", None, dir.path())
-                .await
-                .unwrap();
+        let routes = resolve_effective_routes(&RealSys, "id", None, dir.path())
+            .await
+            .unwrap();
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0], Projection::Namespaced(_)));
     }
@@ -655,7 +650,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result =
             resolve_effective_routes(&RealSys, "id", None, dir.path()).await;
-        assert!(result.is_err(), "no workspace routes and no manifest is an error");
+        assert!(
+            result.is_err(),
+            "no workspace routes and no manifest is an error"
+        );
     }
 
     #[tokio::test]
@@ -682,9 +680,7 @@ mod tests {
         use system_traits::impls::RealSys;
 
         let dir = tempfile::tempdir().unwrap();
-        let ws = vec![route(
-            r#"{"strategy":"namespaced","allow_git":true}"#,
-        )];
+        let ws = vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)];
         let routes =
             resolve_effective_routes(&RealSys, "id", Some(&ws), dir.path())
                 .await

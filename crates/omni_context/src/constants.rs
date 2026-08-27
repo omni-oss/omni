@@ -1,8 +1,8 @@
-pub const SUPPORTED_EXTENSIONS: [&str; 4] = ["yml", "yaml", "json", "toml"];
-pub const WORKSPACE_OMNI: &str = "workspace.omni.{ext}";
-pub const REMOTE_CACHE_OMNI: &str = "remote-cache.omni.{ext}";
-pub const PROJECT_OMNI: &str = "project.omni.{ext}";
-pub const OMNI_IGNORE: &str = ".omniignore";
+pub use omni_constants::{
+    OMNI_IGNORE, PROJECT_OMNI, REMOTE_CACHE_OMNI,
+    SUPPORTED_CONFIG_EXTS as SUPPORTED_EXTENSIONS, WORKSPACE_OMNI,
+};
+
 pub const CACHE_DIR: &str = ".omni/cache";
 pub const OMNI_DIR: &str = ".omni";
 pub const TRACE_DIR: &str = ".omni/trace";

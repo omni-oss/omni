@@ -35,6 +35,7 @@ system_traits = { workspace = true, features = [
 ] }
 omni_tool_configurations = { workspace = true }
 omni_configuration_discovery = { workspace = true }
+omni_constants = { workspace = true }
 omni_file_data_serde = { workspace = true }
 omni_discovery = { workspace = true }
 bridge_rpc_runner = { workspace = true }

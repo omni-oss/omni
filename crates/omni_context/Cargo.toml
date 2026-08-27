@@ -27,6 +27,7 @@ tracing = { workspace = true }
 strum = { workspace = true }
 system_traits = { workspace = true }
 omni_configurations = { workspace = true }
+omni_constants = { workspace = true }
 omni_core = { workspace = true }
 env = { workspace = true }
 env_loader = { workspace = true }
