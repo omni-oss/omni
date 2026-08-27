@@ -561,3 +561,68 @@ where
         .await
     }
 }
+
+// ── Projection operations ───────────────────────────────────────────────────────
+
+impl<TSys, S> OmniApi<TSys, S>
+where
+    TSys: crate::operations::projection::ProjectionSys,
+    S: OmniEventSubscriber,
+{
+    /// Materialize every configured projection into the workspace, persisting
+    /// the link ledger. Idempotent: unchanged links are left in place.
+    pub async fn projection_sync(
+        &self,
+        req: crate::operations::projection::ProjectionSyncRequest,
+    ) -> eyre::Result<crate::operations::projection::ProjectionSyncResponse>
+    {
+        let ctx = self.ctx.lock().await;
+        crate::operations::projection::handle_projection_sync(
+            ctx.as_context(),
+            req,
+        )
+        .await
+    }
+
+    /// Report the state of every recorded projection link (read-only).
+    pub async fn projection_status(
+        &self,
+        req: crate::operations::projection::ProjectionStatusRequest,
+    ) -> eyre::Result<crate::operations::projection::ProjectionStatusResponse>
+    {
+        let ctx = self.ctx.lock().await;
+        crate::operations::projection::handle_projection_status(
+            ctx.as_context(),
+            req,
+        )
+        .await
+    }
+
+    /// Tear down the links recorded for a single projection source `id`.
+    pub async fn projection_unlink(
+        &self,
+        req: crate::operations::projection::ProjectionUnlinkRequest,
+    ) -> eyre::Result<crate::operations::projection::ProjectionUnlinkResponse>
+    {
+        let ctx = self.ctx.lock().await;
+        crate::operations::projection::handle_projection_unlink(
+            ctx.as_context(),
+            req,
+        )
+        .await
+    }
+
+    /// Remove ledger-recorded links whose destinations have become dangling.
+    pub async fn projection_prune(
+        &self,
+        req: crate::operations::projection::ProjectionPruneRequest,
+    ) -> eyre::Result<crate::operations::projection::ProjectionPruneResponse>
+    {
+        let ctx = self.ctx.lock().await;
+        crate::operations::projection::handle_projection_prune(
+            ctx.as_context(),
+            req,
+        )
+        .await
+    }
+}

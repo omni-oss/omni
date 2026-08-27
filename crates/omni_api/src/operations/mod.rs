@@ -5,5 +5,6 @@ pub mod exec;
 pub mod generator;
 pub mod hash;
 pub mod project;
+pub mod projection;
 pub mod task;
 pub mod tool;

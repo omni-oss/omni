@@ -6590,6 +6590,8 @@ dependencies = [
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",
+ "omni_projection_configurations",
+ "omni_projections",
  "omni_remote_cache_client",
  "omni_remote_source",
  "omni_scm",
@@ -6612,6 +6614,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "trace",
+ "url",
  "value-bag",
 ]
 
