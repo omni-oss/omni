@@ -330,14 +330,23 @@ mod tests {
         );
         assert_ne!(
             items_ref, "#/$defs/SourceConfig",
-            "the projection source carries an `id`/`projections` extra and must be a distinct def"
+            "the projection source carries an `id`/`routes` extra and must be a distinct def"
         );
 
-        // The projection routing vocabulary is present in the schema.
+        // The strategy-tagged projection routing vocabulary is present: the
+        // `Projection` def plus the strongly-typed per-strategy rule defs.
         let defs = &value["$defs"];
         assert!(defs.get("Projection").is_some());
-        assert!(defs.get("ProjectionRule").is_some());
-        assert!(defs.get("ProjectionStrategy").is_some());
+        assert!(defs.get("ProjectionCommon").is_some());
+        assert!(defs.get("ExplicitRule").is_some());
+        assert!(defs.get("PatternRule").is_some());
+        assert!(defs.get("FlattenRule").is_some());
+
+        // `Projection` is a `oneOf` over the five strategies.
+        let one_of = defs["Projection"]["oneOf"]
+            .as_array()
+            .expect("Projection is a oneOf");
+        assert_eq!(one_of.len(), 5);
     }
 
     #[test]

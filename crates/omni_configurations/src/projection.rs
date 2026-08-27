@@ -24,19 +24,19 @@ mod tests {
     #[test]
     fn parses_git_and_local_projection_sources() {
         let git = parse_source(
-            r#"{"source":"git","uri":"https://example.com/a.git","rev":"main","id":"team-ai-skills","projections":[{"strategy":"namespaced"}]}"#,
+            r#"{"source":"git","uri":"https://example.com/a.git","rev":"main","id":"team-ai-skills","routes":[{"strategy":"namespaced"}]}"#,
         )
         .expect("valid git projection source");
         match git {
             SourceConfig::Git(g) => {
                 assert_eq!(g.extra.id, "team-ai-skills");
-                assert_eq!(g.extra.projections.len(), 1);
+                assert_eq!(g.extra.routes.as_deref().map(<[_]>::len), Some(1));
             }
             SourceConfig::Local(_) => panic!("expected git"),
         }
 
         let local = parse_source(
-            r#"{"source":"local","path":"./vendor","id":"shared_scripts","projections":[{"strategy":"flatten","rules":[{"match":"**/*.sh"}]}]}"#,
+            r#"{"source":"local","path":"./vendor","id":"shared_scripts","routes":[{"strategy":"flatten","rules":[{"match":"**/*.sh"}]}]}"#,
         )
         .expect("valid local projection source");
         match local {
@@ -48,10 +48,22 @@ mod tests {
     }
 
     #[test]
+    fn projection_source_omitting_routes_inherits() {
+        let source = parse_source(
+            r#"{"source":"local","path":"./vendor","id":"owned"}"#,
+        )
+        .expect("a projection source may omit routes");
+        match source {
+            SourceConfig::Local(l) => assert_eq!(l.extra.routes, None),
+            SourceConfig::Git(_) => panic!("expected local"),
+        }
+    }
+
+    #[test]
     fn projection_source_rejects_unknown_key() {
         assert!(
             parse_source(
-                r#"{"source":"git","uri":"https://example.com/a.git","rev":"main","id":"a","projections":[],"typo":1}"#,
+                r#"{"source":"git","uri":"https://example.com/a.git","rev":"main","id":"a","routes":[],"typo":1}"#,
             )
             .is_err(),
             "unknown key under a projection source must be rejected"
@@ -62,7 +74,7 @@ mod tests {
     fn workspace_rejects_duplicate_projection_id() {
         assert!(
             parse_workspace(
-                r#"{"projects":[],"projections":[{"source":"local","path":"./a","id":"dup","projections":[{"strategy":"namespaced"}]},{"source":"local","path":"./b","id":"dup","projections":[{"strategy":"namespaced"}]}]}"#,
+                r#"{"projects":[],"projections":[{"source":"local","path":"./a","id":"dup","routes":[{"strategy":"namespaced"}]},{"source":"local","path":"./b","id":"dup","routes":[{"strategy":"namespaced"}]}]}"#,
             )
             .is_err(),
             "duplicate projection id must be rejected"
@@ -73,10 +85,10 @@ mod tests {
     fn workspace_rejects_rules_on_namespaced_strategy() {
         assert!(
             parse_workspace(
-                r#"{"projects":[],"projections":[{"source":"local","path":"./a","id":"a","projections":[{"strategy":"namespaced","rules":[{"match":"**/*"}]}]}]}"#,
+                r#"{"projects":[],"projections":[{"source":"local","path":"./a","id":"a","routes":[{"strategy":"namespaced","rules":[{"match":"**/*"}]}]}]}"#,
             )
             .is_err(),
-            "`rules` on a namespaced strategy must be rejected"
+            "`rules` on a namespaced strategy must be rejected at deserialization"
         );
     }
 }
