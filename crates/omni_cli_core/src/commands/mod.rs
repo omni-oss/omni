@@ -21,7 +21,8 @@ use crate::{
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
         generator::GeneratorCommand, hash::HashCommand, init::InitCommand,
-        project::ProjectCommand, tool::ToolCommand,
+        project::ProjectCommand, projection::ProjectionCommand,
+        tool::ToolCommand,
     },
 };
 
@@ -37,6 +38,7 @@ pub mod hash;
 pub mod init;
 pub mod mcp;
 pub mod project;
+pub mod projection;
 pub mod run;
 pub mod tool;
 
@@ -200,6 +202,11 @@ pub enum CliSubcommands {
 
     #[command(about = "Project related commands")]
     Project(ProjectCommand),
+
+    #[command(
+        about = "Materialize files from sources into the workspace via links"
+    )]
+    Projection(ProjectionCommand),
 
     #[command(about = "Tool related subcommands")]
     Tool(ToolCommand),
