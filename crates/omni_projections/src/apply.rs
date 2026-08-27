@@ -13,7 +13,10 @@ use crate::error::{ProjectionError, Result};
 use crate::routing::LinkPair;
 
 /// The link kind that was actually materialized (after `auto` fallback).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum ResolvedKind {
     Symlink,
     Junction,

@@ -30,6 +30,12 @@ pub(crate) enum ProjectionErrorInner {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+
+    #[error(transparent)]
+    Hasher(#[from] omni_hasher::HasherError),
 }
 
 pub type Result<T, E = ProjectionError> = std::result::Result<T, E>;
