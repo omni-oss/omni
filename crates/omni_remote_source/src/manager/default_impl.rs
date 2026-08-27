@@ -157,6 +157,41 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
         Ok(())
     }
 
+    /// The commit currently locked for `(uri, rev)`, if any. Available after a
+    /// successful [`pull_git_repo`](Self::pull_git_repo) and usable as a stable
+    /// content pin.
+    pub async fn locked_commit(&self, uri: &Url, rev: &str) -> Option<String> {
+        self.lockfile.get_git_commit(uri, rev).await
+    }
+
+    /// Forget the locked commit for `(uri, rev)` so the next
+    /// [`pull_git_repo`](Self::pull_git_repo) re-resolves the revision. Used to
+    /// advance a mutable ref (e.g. a branch) on an explicit update.
+    pub async fn invalidate_git(
+        &self,
+        uri: &Url,
+        rev: &str,
+    ) -> Result<(), Error> {
+        let uri = uri.clone();
+        let rev = rev.to_string();
+        self.lockfile
+            .modify(|d| {
+                match d {
+                    LockfileData::V1_0_0(v1) => {
+                        if let Some(revs) = v1.git.get_mut(&uri) {
+                            revs.shift_remove(&rev);
+                            if revs.is_empty() {
+                                v1.git.shift_remove(&uri);
+                            }
+                        }
+                    }
+                }
+                Ok(())
+            })
+            .await?;
+        Ok(())
+    }
+
     async fn clone_repo_inner(
         &self,
         dest: &Path,
