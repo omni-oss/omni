@@ -301,6 +301,57 @@ jobs:
     with:
       version: ${{ needs.resolve-versions.outputs.omni_version }}
 
+  # Static gatekeeper: this is the ONLY status check to require in the
+  # branch protection rule / ruleset for `main`. GitHub cannot match the
+  # dynamic / matrix check names produced by the reusable workflows above
+  # (e.g. `test-rust / Run Multiplatform Jobs (...)`), so we collapse them
+  # into this single, stable check.
+  ci-gatekeeper:
+    name: CI Passed
+    needs:
+      - plan
+      - test-rust
+      - test-typescript
+      - build-rust
+      - build-typescript
+      - resolve-versions
+      - publish-generic
+      - publish-npm
+      - publish-rust-github
+      - publish-json-schemas
+    # Always run so the check reports even when upstream jobs fail or are
+    # skipped; otherwise the required check would never post a status.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate upstream job results
+        uses: actions/github-script@v8
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const needs = JSON.parse(process.env.NEEDS_JSON);
+
+            // A `skipped` result is expected (tag-only jobs on PRs, empty
+            // plans, etc.) and must NOT fail the gate. Only real failures
+            // and cancellations should block a merge.
+            const blocking = ['failure', 'cancelled'];
+            const failed = [];
+
+            for (const [name, data] of Object.entries(needs)) {
+              const result = data.result;
+              core.info(`${name}: ${result}`);
+              if (blocking.includes(result)) {
+                failed.push(`${name}: ${result}`);
+              }
+            }
+
+            if (failed.length > 0) {
+              core.setFailed(`Upstream jobs did not pass:\n${failed.join('\n')}`);
+            } else {
+              core.info('All required upstream jobs passed (or were skipped).');
+            }
+
   # publish-perf-comparison:
   #   needs:
   #     - plan
