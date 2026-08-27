@@ -56,6 +56,9 @@ export default mergeConfig(mergeConfig(baseConfig, e2eTestConfig), {
             {
                 name: "tool",
             },
+            {
+                name: "projection",
+            },
         ],
         strictTags: true,
     },
