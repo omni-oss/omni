@@ -105,7 +105,7 @@ bincode-next = { version = "^3.1.1", features = ["serde"] }
 notify = { version = "^8.2.0" }
 dir_walker = { path = "./crates/dir_walker" }
 which = { version = "^8.0.2" }
-tera = { version = "2.0.0" }
+tera = { version = "2.3.0" }
 tera-contrib = { version = "^0.3.0", features = [
     "base64",
     "date",
