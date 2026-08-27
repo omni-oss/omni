@@ -3,9 +3,7 @@ use std::{borrow::Cow, path::PathBuf};
 use bridge_rpc_services::{FsSys, ProcSys};
 use maps::UnorderedMap;
 use omni_capabilities::{PathRoots, Root};
-use omni_configurations::{
-    Subsystem, ToolSourceConfiguration, types::SingleOrMany,
-};
+use omni_configurations::{SourceConfig, Subsystem, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_input_schema::{ValidationConfig, to_json_schema, validate};
 use omni_tool::{LazyToolRunner, ToolEnforcement, ToolSys, run_named};
@@ -234,7 +232,7 @@ where
 
     for config in ctx.workspace_configuration().tools.iter() {
         match config {
-            ToolSourceConfiguration::Local(local) => {
+            SourceConfig::Local(local) => {
                 let local = local.clone();
                 let root_dir = ctx.root_dir().to_path_buf();
                 let sys = sys.clone();
@@ -252,7 +250,7 @@ where
                 });
             }
             // Remote (`git`) tool sources are reserved for a later revision.
-            ToolSourceConfiguration::Git(_) => {}
+            SourceConfig::Git(_) => {}
         }
     }
 

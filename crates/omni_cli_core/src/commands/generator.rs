@@ -15,7 +15,7 @@ use comfy_table::{TableStyle, presets::UTF8_FULL};
 use itertools::Itertools;
 use maps::{UnorderedMap, unordered_map};
 use omni_api::{GeneratorRunRequest, OmniApi};
-use omni_configurations::{GeneratorSourceConfiguration, types::SingleOrMany};
+use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::Context;
 use omni_core::Project;
 use omni_generator::GeneratorSys;
@@ -525,7 +525,7 @@ async fn get_generators(
         let scope_id = idx + 100;
 
         match config {
-            GeneratorSourceConfiguration::Local(local) => {
+            SourceConfig::Local(local) => {
                 let local = local.clone();
                 let root_dir = ctx.root_dir().to_path_buf();
                 let sys = sys.clone();
@@ -546,7 +546,7 @@ async fn get_generators(
                     ))
                 });
             }
-            GeneratorSourceConfiguration::Git(git) => {
+            SourceConfig::Git(git) => {
                 let remote_sources = remote_sources.clone();
 
                 git_sources.push((&git.uri, git.rev.as_str()));
