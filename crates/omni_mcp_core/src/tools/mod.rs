@@ -2,6 +2,7 @@ pub mod cache;
 pub mod generator;
 pub mod hash;
 pub mod project;
+pub mod projection;
 pub mod task;
 pub mod tool;
 pub mod workspace;
@@ -90,6 +91,26 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
             "Run a workspace tool by name with JSON arguments and return its captured value",
             false,
         ),
+        tool_typed::<ProjectionSyncParams>(
+            "projection_sync",
+            "Materialize configured projections into the workspace via links, persisting the ledger. Idempotent; not read-only.",
+            false,
+        ),
+        tool_typed::<ProjectionStatusParams>(
+            "projection_status",
+            "Report the state of every recorded projection link (ok/missing/broken/drifted)",
+            true,
+        ),
+        tool_typed::<ProjectionUnlinkParams>(
+            "projection_unlink",
+            "Tear down the links recorded for a single projection source id",
+            false,
+        ),
+        tool_typed::<ProjectionPruneParams>(
+            "projection_prune",
+            "Remove ledger-recorded links whose destinations have become dangling",
+            false,
+        ),
     ]
 }
 
@@ -158,5 +179,23 @@ mod tests {
         assert_eq!(read_only(&by_name("tool_list")), Some(true));
         assert_eq!(read_only(&by_name("tool_inspect")), Some(true));
         assert_eq!(read_only(&by_name("tool_run")), Some(false));
+    }
+
+    #[test]
+    fn exposes_projection_tools_with_correct_read_only_flags() {
+        let by_name = |name: &str| {
+            tool_list()
+                .into_iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing MCP tool entry `{name}`"))
+        };
+        let read_only = |t: &rmcp::model::Tool| {
+            t.annotations.as_ref().and_then(|a| a.read_only_hint)
+        };
+        // Only status is read-only; sync/unlink/prune mutate the workspace.
+        assert_eq!(read_only(&by_name("projection_status")), Some(true));
+        assert_eq!(read_only(&by_name("projection_sync")), Some(false));
+        assert_eq!(read_only(&by_name("projection_unlink")), Some(false));
+        assert_eq!(read_only(&by_name("projection_prune")), Some(false));
     }
 }

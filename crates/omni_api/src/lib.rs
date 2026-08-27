@@ -33,7 +33,7 @@ pub use operations::{
         AppliedLinkInfo, PlannedLinkInfo, ProjectionPruneRequest,
         ProjectionPruneResponse, ProjectionStatusRequest,
         ProjectionStatusResponse, ProjectionSyncRequest,
-        ProjectionSyncResponse, ProjectionUnlinkRequest,
+        ProjectionSyncResponse, ProjectionSys, ProjectionUnlinkRequest,
         ProjectionUnlinkResponse, StatusEntryInfo,
     },
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},

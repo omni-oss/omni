@@ -63,6 +63,7 @@ where
         + TaskExecutorSys
         + FsSys
         + ProcSys
+        + omni_api::ProjectionSys
         + Clone
         + Send
         + Sync
@@ -110,6 +111,7 @@ where
         + TaskExecutorSys
         + FsSys
         + ProcSys
+        + omni_api::ProjectionSys
         + Clone
         + Send
         + Sync
@@ -147,6 +149,18 @@ where
             "tool_list" => call0(self.tool_tool_list()).await,
             "tool_inspect" => call1(args, |p| self.tool_tool_inspect(p)).await,
             "tool_run" => call1(args, |p| self.tool_tool_run(p)).await,
+            "projection_sync" => {
+                call1(args, |p| self.tool_projection_sync(p)).await
+            }
+            "projection_status" => {
+                call1(args, |p| self.tool_projection_status(p)).await
+            }
+            "projection_unlink" => {
+                call1(args, |p| self.tool_projection_unlink(p)).await
+            }
+            "projection_prune" => {
+                call1(args, |p| self.tool_projection_prune(p)).await
+            }
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool: {unknown}"),

@@ -14,6 +14,7 @@ where
         + omni_task_executor::TaskExecutorSys
         + bridge_rpc_services::FsSys
         + bridge_rpc_services::ProcSys
+        + omni_api::ProjectionSys
         + Clone
         + Send
         + Sync
