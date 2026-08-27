@@ -7,12 +7,10 @@ version = "0.1.0"
 
 [dependencies]
 serde = { workspace = true }
+serde_json = { workspace = true }
 schemars = { workspace = true }
 omni_types = { workspace = true }
 enum-map = { workspace = true }
 strum = { workspace = true }
 lazy-regex = { workspace = true }
 serde_validate = { workspace = true }
-
-[dev-dependencies]
-serde_json = { workspace = true }
