@@ -7,6 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 omni_configurations = { workspace = true }
+omni_projection_configurations = { workspace = true }
 system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
 dir_walker = { workspace = true }
 omni_hasher = { workspace = true }

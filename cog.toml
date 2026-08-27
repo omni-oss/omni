@@ -267,6 +267,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_projection_configurations]
+path = "crates/omni_projection_configurations"
+include = [
+    "crates/omni_projection_configurations/**",
+]
+public_api = false
+
 [monorepo.packages.omni_remote_cache_client]
 path = "crates/omni_remote_cache_client"
 include = [

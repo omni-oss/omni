@@ -45,3 +45,4 @@ omni_file_data_serde = { workspace = true }
 url = { workspace = true }
 omni_capabilities = { workspace = true }
 enum-map = { workspace = true }
+omni_projection_configurations = { workspace = true }

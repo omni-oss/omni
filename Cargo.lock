@@ -6956,6 +6956,7 @@ dependencies = [
  "omni_experimental_features",
  "omni_expressions",
  "omni_file_data_serde",
+ "omni_projection_configurations",
  "omni_serde_validators",
  "omni_task_output_logs",
  "omni_types",
@@ -7466,6 +7467,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_projection_configurations"
+version = "0.1.0"
+dependencies = [
+ "enum-map",
+ "lazy-regex",
+ "omni_types",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_validate",
+ "strum 0.28.0",
+]
+
+[[package]]
 name = "omni_projections"
 version = "0.1.0"
 dependencies = [
@@ -7474,6 +7489,7 @@ dependencies = [
  "eyre",
  "omni_configurations",
  "omni_hasher",
+ "omni_projection_configurations",
  "omni_types",
  "strum 0.28.0",
  "system_traits",

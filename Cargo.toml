@@ -194,6 +194,7 @@ omni_experimental_features = { path = "crates/omni_experimental_features" }
 omni_tool = { path = "crates/omni_tool" }
 omni_tool_configurations = { path = "crates/omni_tool_configurations" }
 omni_projections = { path = "crates/omni_projections" }
+omni_projection_configurations = { path = "crates/omni_projection_configurations" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
