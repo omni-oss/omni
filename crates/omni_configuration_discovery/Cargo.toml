@@ -31,3 +31,7 @@ system_traits = { workspace = true }
 dir_walker = { workspace = true }
 globset = { workspace = true }
 omni_discovery_utils = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }
