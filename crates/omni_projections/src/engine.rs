@@ -280,7 +280,9 @@ where
     for link in ledger.links() {
         let dest = workspace_root.join(&link.dest);
         let is_symlink = sys.fs_is_symlink_no_err_async(&dest).await;
-        let resolves = sys.fs_exists_no_err_async(&dest).await;
+        // `resolves` must follow the link: a dangling symlink still has an
+        // lstat entry, so an existence check would wrongly report it healthy.
+        let resolves = sys.fs_metadata_async(&dest).await.is_ok();
 
         let state = match link.kind {
             ResolvedKind::Copy | ResolvedKind::Hardlink => {
@@ -498,11 +500,30 @@ mod tests {
         std::os::windows::fs::symlink_file(ws.join("dst/target.txt"), &good)
             .unwrap();
 
+        // A symlink whose target is then deleted must classify as `Broken`,
+        // not `Ok`: the link entry survives but no longer resolves.
+        let broken = ws.join("dst/broken.txt");
+        let broken_target = ws.join("dst/gone.txt");
+        std::fs::write(&broken_target, b"y").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&broken_target, &broken).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&broken_target, &broken).unwrap();
+        std::fs::remove_file(&broken_target).unwrap();
+
         let ledger = Ledger::from_links(vec![
             LedgerLink {
                 source_id: "s".to_string(),
                 dest: "dst/good.txt".to_string(),
                 target: "dst/target.txt".to_string(),
+                kind: ResolvedKind::Symlink,
+                source_pin: "p".to_string(),
+                backup: None,
+            },
+            LedgerLink {
+                source_id: "s".to_string(),
+                dest: "dst/broken.txt".to_string(),
+                target: "dst/gone.txt".to_string(),
                 kind: ResolvedKind::Symlink,
                 source_pin: "p".to_string(),
                 backup: None,
@@ -525,6 +546,12 @@ mod tests {
             .find(|e| e.dest == "dst/missing.txt")
             .unwrap();
         assert_eq!(missing.state, LinkState::Missing);
+        let broken = report
+            .entries
+            .iter()
+            .find(|e| e.dest == "dst/broken.txt")
+            .unwrap();
+        assert_eq!(broken.state, LinkState::Broken);
         let good = report
             .entries
             .iter()

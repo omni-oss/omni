@@ -193,7 +193,9 @@ where
     for link in std::mem::take(ledger.links_mut()) {
         let dest = workspace_root.join(&link.dest);
         let is_symlink = sys.fs_is_symlink_no_err_async(&dest).await;
-        let resolves = sys.fs_exists_no_err_async(&dest).await;
+        // Follow the link so a deleted target counts as dangling: a broken
+        // symlink still has an lstat entry an existence check would accept.
+        let resolves = sys.fs_metadata_async(&dest).await.is_ok();
 
         if is_symlink && !resolves {
             if remove_path(sys, &dest).await? {
@@ -394,5 +396,60 @@ mod tests {
         assert_eq!(report.removed.len(), 1);
         assert!(!dest.exists());
         assert!(ledger.links().is_empty());
+    }
+
+    #[tokio::test]
+    async fn prune_removes_symlink_with_deleted_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").unwrap();
+        let dest = dir.path().join("dest.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &dest).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&target, &dest).unwrap();
+        // Deleting the target leaves a dangling symlink the ledger still tracks.
+        std::fs::remove_file(&target).unwrap();
+
+        let mut ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "id".to_string(),
+            dest: "dest.txt".to_string(),
+            target: target.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "x".to_string(),
+            backup: None,
+        }]);
+
+        let report = prune(&RealSys, dir.path(), &mut ledger).await.unwrap();
+
+        assert_eq!(report.removed.len(), 1);
+        assert!(ledger.links().is_empty());
+        assert!(std::fs::symlink_metadata(&dest).is_err());
+    }
+
+    #[tokio::test]
+    async fn prune_keeps_healthy_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"data").unwrap();
+        let dest = dir.path().join("dest.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &dest).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&target, &dest).unwrap();
+
+        let mut ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "id".to_string(),
+            dest: "dest.txt".to_string(),
+            target: target.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "x".to_string(),
+            backup: None,
+        }]);
+
+        let report = prune(&RealSys, dir.path(), &mut ledger).await.unwrap();
+
+        assert!(report.removed.is_empty());
+        assert_eq!(ledger.links().len(), 1);
     }
 }
