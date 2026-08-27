@@ -4,10 +4,12 @@ use async_trait::async_trait;
 
 use crate::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCanonicalizeAsync,
-    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsHardLinkAsync,
-    BaseFsMetadataAsync, BaseFsReadAsync, BaseFsReadDirAsync,
-    BaseFsRemoveDirAllAsync, BaseFsRemoveDirAsync, BaseFsRemoveFileAsync,
-    BaseFsRenameAsync, BaseFsWriteAsync, EnvCurrentDirAsync, auto_impl,
+    BaseFsCopyAsync, BaseFsCreateDirAsync, BaseFsCreateJunctionAsync,
+    BaseFsHardLinkAsync, BaseFsMetadataAsync, BaseFsReadAsync,
+    BaseFsReadDirAsync, BaseFsReadLinkAsync, BaseFsRemoveDirAllAsync,
+    BaseFsRemoveDirAsync, BaseFsRemoveFileAsync, BaseFsRenameAsync,
+    BaseFsSymlinkDirAsync, BaseFsSymlinkFileAsync, BaseFsWriteAsync,
+    EnvCurrentDirAsync, auto_impl,
     impls::{RealFsMetadata, RealSys},
 };
 
@@ -163,6 +165,85 @@ impl BaseFsHardLinkAsync for RealSys {
 }
 
 #[async_trait]
+impl BaseFsSymlinkFileAsync for RealSys {
+    async fn base_fs_symlink_file_async(
+        &self,
+        original: &std::path::Path,
+        link: &std::path::Path,
+    ) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            tokio::fs::symlink(original, link).await
+        }
+        #[cfg(windows)]
+        {
+            tokio::fs::symlink_file(original, link).await
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (original, link);
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "symlinks are not supported on this platform",
+            ))
+        }
+    }
+}
+
+#[async_trait]
+impl BaseFsSymlinkDirAsync for RealSys {
+    async fn base_fs_symlink_dir_async(
+        &self,
+        original: &std::path::Path,
+        link: &std::path::Path,
+    ) -> io::Result<()> {
+        #[cfg(unix)]
+        {
+            tokio::fs::symlink(original, link).await
+        }
+        #[cfg(windows)]
+        {
+            tokio::fs::symlink_dir(original, link).await
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (original, link);
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "symlinks are not supported on this platform",
+            ))
+        }
+    }
+}
+
+#[async_trait]
+impl BaseFsCreateJunctionAsync for RealSys {
+    async fn base_fs_create_junction_async(
+        &self,
+        original: &std::path::Path,
+        junction: &std::path::Path,
+    ) -> io::Result<()> {
+        use sys_traits::BaseFsCreateJunction;
+        let original = original.to_path_buf();
+        let junction = junction.to_path_buf();
+        spawn_blocking(move || {
+            RealSys.base_fs_create_junction(&original, &junction)
+        })
+        .await
+    }
+}
+
+#[async_trait]
+impl BaseFsReadLinkAsync for RealSys {
+    async fn base_fs_read_link_async(
+        &self,
+        path: &std::path::Path,
+    ) -> io::Result<std::path::PathBuf> {
+        tokio::fs::read_link(path).await
+    }
+}
+
+#[async_trait]
 impl BaseFsRenameAsync for RealSys {
     async fn base_fs_rename_async(
         &self,
@@ -224,5 +305,64 @@ impl BaseFsAppendAsync for RealSys {
             .await?;
         file.write_all(data).await?;
         file.flush().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        FsCreateJunctionAsync, FsMetadataAsync, FsReadLinkAsync,
+        FsSymlinkDirAsync, FsSymlinkFileAsync,
+    };
+
+    #[tokio::test]
+    async fn symlink_file_then_read_link_round_trips() {
+        let sys = RealSys;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, b"hello").unwrap();
+        let link = dir.path().join("link.txt");
+
+        sys.fs_symlink_file_async(&target, &link).await.unwrap();
+
+        assert!(sys.fs_is_symlink_async(&link).await.unwrap());
+        assert_eq!(sys.fs_read_link_async(&link).await.unwrap(), target);
+    }
+
+    #[tokio::test]
+    async fn symlink_dir_then_read_link_round_trips() {
+        let sys = RealSys;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target_dir");
+        std::fs::create_dir(&target).unwrap();
+        let link = dir.path().join("link_dir");
+
+        sys.fs_symlink_dir_async(&target, &link).await.unwrap();
+
+        assert!(sys.fs_is_symlink_async(&link).await.unwrap());
+        assert_eq!(sys.fs_read_link_async(&link).await.unwrap(), target);
+    }
+
+    #[tokio::test]
+    async fn create_junction_on_dir() {
+        let sys = RealSys;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target_dir");
+        std::fs::create_dir(&target).unwrap();
+        let junction = dir.path().join("junction");
+
+        let result = sys.fs_create_junction_async(&target, &junction).await;
+
+        #[cfg(windows)]
+        {
+            result.unwrap();
+            assert!(junction.exists());
+        }
+        #[cfg(not(windows))]
+        {
+            // NTFS junctions are Windows-only; the call must report Unsupported.
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Unsupported);
+        }
     }
 }
