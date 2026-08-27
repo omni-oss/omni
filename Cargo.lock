@@ -6941,6 +6941,7 @@ dependencies = [
  "config_utils",
  "derive-new",
  "derive_more",
+ "enum-map",
  "eyre",
  "garde 0.23.0",
  "humantime",

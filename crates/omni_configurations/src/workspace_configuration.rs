@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    GeneratorSourceConfiguration, ToolSourceConfiguration, Ui,
+    GeneratorSourceConfiguration, ProjectionSourceConfiguration,
+    ToolSourceConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
@@ -41,6 +42,12 @@ pub struct WorkspaceConfiguration {
     /// `tool.omni.{yaml,yml,json,toml}` manifests.
     #[serde(default, deserialize_with = "validate_tool_sources")]
     pub tools: Vec<ToolSourceConfiguration>,
+
+    /// Registered projection sources. Each source materializes files from a
+    /// `local` or `git` source into workspace destinations per its routing
+    /// rules.
+    #[serde(default, deserialize_with = "validate_projection_sources")]
+    pub projections: Vec<ProjectionSourceConfiguration>,
 
     #[serde(default)]
     pub env: WorkspaceEnvConfiguration,
