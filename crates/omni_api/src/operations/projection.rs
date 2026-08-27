@@ -1,6 +1,9 @@
+use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys};
-use omni_projection_configurations::{Projection, ProjectionExtra};
+use omni_projection_configurations::{
+    OwnedProjectionConfiguration, Projection, ProjectionExtra,
+};
 use omni_projections::{
     ApplierSys, LinkState, ResolvedSource, SyncParams, sync_source,
 };
@@ -154,12 +157,21 @@ where
     };
 
     for source in sources {
-        let (id, projections) = source_id_and_projections(source);
+        let id = source_id(source);
 
         if let Some(filter) = &req.source {
             if filter != id {
                 continue;
             }
+        }
+
+        // An explicit empty `routes` list projects nothing: pure workspace
+        // config, caught before any source is materialized.
+        if matches!(workspace_routes(source), Some(routes) if routes.is_empty())
+        {
+            return Err(eyre::eyre!(
+                "projection source '{id}' declares an empty `routes` list; a projection source must project at least one route"
+            ));
         }
 
         let (source_root, git_pin) = match source {
@@ -178,11 +190,19 @@ where
             }
         };
 
+        let effective_routes = resolve_effective_routes(
+            &sys,
+            id,
+            workspace_routes(source),
+            &source_root,
+        )
+        .await?;
+
         let resolved = ResolvedSource {
             id,
             source_root: &source_root,
             git_pin,
-            projections,
+            projections: &effective_routes,
         };
         let params = SyncParams {
             workspace_root: &workspace_root,
@@ -391,17 +411,110 @@ fn ledger_path<TSys: ContextSys>(ctx: &Context<TSys>) -> std::path::PathBuf {
     projection_sources_dir(ctx).join("links.json")
 }
 
-fn source_id_and_projections(
-    source: &SourceConfig<ProjectionExtra>,
-) -> (&str, &[Projection]) {
+fn source_id(source: &SourceConfig<ProjectionExtra>) -> &str {
     match source {
-        SourceConfig::Local(l) => {
-            (l.extra.id.as_str(), l.extra.projections.as_slice())
+        SourceConfig::Local(l) => l.extra.id.as_str(),
+        SourceConfig::Git(g) => g.extra.id.as_str(),
+    }
+}
+
+fn workspace_routes(
+    source: &SourceConfig<ProjectionExtra>,
+) -> Option<&[Projection]> {
+    let extra = match source {
+        SourceConfig::Local(l) => &l.extra,
+        SourceConfig::Git(g) => &g.extra,
+    };
+    extra.routes.as_deref()
+}
+
+/// The candidate names for a source-owned projection manifest.
+const OWNED_MANIFEST_NAMES: [&str; 4] = [
+    "projection.omni.yaml",
+    "projection.omni.yml",
+    "projection.omni.json",
+    "projection.omni.toml",
+];
+
+/// Resolve the effective routes for one source. Workspace routes override the
+/// source's owned manifest wholesale; an absent workspace list inherits it.
+async fn resolve_effective_routes<TSys>(
+    sys: &TSys,
+    id: &str,
+    workspace_routes: Option<&[Projection]>,
+    source_root: &std::path::Path,
+) -> eyre::Result<Vec<Projection>>
+where
+    TSys: FsReadAsync + Send + Sync + Clone,
+{
+    match workspace_routes {
+        // Non-empty (the empty case is rejected before materialization).
+        Some(routes) => {
+            if discover_owned_manifest(sys, source_root).await?.is_some() {
+                log::debug!(
+                    "projection source '{id}': workspace `routes` override the source's projection.omni manifest"
+                );
+            }
+            Ok(routes.to_vec())
         }
-        SourceConfig::Git(g) => {
-            (g.extra.id.as_str(), g.extra.projections.as_slice())
+        None => match discover_owned_manifest(sys, source_root).await? {
+            Some(owned) if !owned.routes.is_empty() => {
+                reject_privilege_escalation(id, &owned.routes)?;
+                Ok(owned.routes)
+            }
+            _ => Err(eyre::eyre!(
+                "projection source '{id}' declares no routes and its source ships no projection.omni.yaml"
+            )),
+        },
+    }
+}
+
+/// Discover a `projection.omni.{yaml,yml,json,toml}` at the source root, honoring
+/// `.omniignore`. Mirrors `omni_generator::discover_one_in_dir`.
+async fn discover_owned_manifest<TSys>(
+    sys: &TSys,
+    source_root: &std::path::Path,
+) -> eyre::Result<Option<OwnedProjectionConfiguration>>
+where
+    TSys: FsReadAsync + Send + Sync,
+{
+    let names: Vec<String> =
+        OWNED_MANIFEST_NAMES.iter().map(|s| s.to_string()).collect();
+    let ignore_files = [".omniignore".to_string()];
+
+    let discovery = ConfigurationDiscovery::new(
+        source_root,
+        &names[..],
+        &names[..],
+        &ignore_files[..],
+        "projection",
+    );
+
+    for file in discovery.discover().await? {
+        let owned: OwnedProjectionConfiguration =
+            omni_file_data_serde::read_async(file.as_path(), sys).await?;
+        return Ok(Some(owned));
+    }
+
+    Ok(None)
+}
+
+/// The `allow_omni_config`/`allow_git` escape hatches are honored only when set
+/// in the workspace configuration; a source-declared route setting either is
+/// rejected so a source cannot grant itself control-plane access.
+fn reject_privilege_escalation(
+    id: &str,
+    routes: &[Projection],
+) -> eyre::Result<()> {
+    for route in routes {
+        let common = route.common();
+        if common.allow_omni_config || common.allow_git {
+            return Err(eyre::eyre!(
+                "owned projection from source '{id}' sets `allow_omni_config`/`allow_git`; those are honored only in workspace configuration"
+            ));
         }
     }
+    Ok(())
 }
 
 fn single_path<'a>(
@@ -491,5 +604,91 @@ mod tests {
         assert!(single_path("id", &many).is_err());
         let single = SingleOrMany::Single("a".into());
         assert_eq!(single_path("id", &single).unwrap(), "a");
+    }
+
+    fn route(json: &str) -> Projection {
+        serde_json::from_str(json).expect("valid route")
+    }
+
+    #[tokio::test]
+    async fn owned_manifest_is_inherited_when_workspace_omits_routes() {
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("projection.omni.yaml"),
+            "routes:\n  - strategy: namespaced\n    target: \"@workspace/vendored\"\n",
+        )
+        .unwrap();
+
+        let routes =
+            resolve_effective_routes(&RealSys, "id", None, dir.path())
+                .await
+                .unwrap();
+        assert_eq!(routes.len(), 1);
+        assert!(matches!(routes[0], Projection::Namespaced(_)));
+    }
+
+    #[tokio::test]
+    async fn workspace_routes_override_owned_manifest() {
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("projection.omni.yaml"),
+            "routes:\n  - strategy: namespaced\n",
+        )
+        .unwrap();
+
+        let ws = vec![route(r#"{"strategy":"mirror"}"#)];
+        let routes =
+            resolve_effective_routes(&RealSys, "id", Some(&ws), dir.path())
+                .await
+                .unwrap();
+        assert_eq!(routes, ws, "workspace routes win wholesale");
+    }
+
+    #[tokio::test]
+    async fn no_routes_anywhere_is_an_error() {
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        let result =
+            resolve_effective_routes(&RealSys, "id", None, dir.path()).await;
+        assert!(result.is_err(), "no workspace routes and no manifest is an error");
+    }
+
+    #[tokio::test]
+    async fn owned_routes_cannot_escalate_privileges() {
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("projection.omni.yaml"),
+            "routes:\n  - strategy: namespaced\n    allow_git: true\n",
+        )
+        .unwrap();
+
+        let result =
+            resolve_effective_routes(&RealSys, "id", None, dir.path()).await;
+        assert!(
+            result.is_err(),
+            "an owned route setting allow_git must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_routes_may_set_allow_flags() {
+        use system_traits::impls::RealSys;
+
+        let dir = tempfile::tempdir().unwrap();
+        let ws = vec![route(
+            r#"{"strategy":"namespaced","allow_git":true}"#,
+        )];
+        let routes =
+            resolve_effective_routes(&RealSys, "id", Some(&ws), dir.path())
+                .await
+                .unwrap();
+        assert_eq!(routes, ws, "workspace config may relax the safety floor");
     }
 }
