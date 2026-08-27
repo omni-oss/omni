@@ -337,7 +337,6 @@ mod tests {
         // `Projection` def plus the strongly-typed per-strategy rule defs.
         let defs = &value["$defs"];
         assert!(defs.get("Projection").is_some());
-        assert!(defs.get("ProjectionCommon").is_some());
         assert!(defs.get("ExplicitRule").is_some());
         assert!(defs.get("PatternRule").is_some());
         assert!(defs.get("FlattenRule").is_some());
@@ -347,6 +346,20 @@ mod tests {
             .as_array()
             .expect("Projection is a oneOf");
         assert_eq!(one_of.len(), 5);
+
+        // Each arm is a self-contained, closed object carrying the shared
+        // fields inline, so no arm rejects the sibling `strategy` key.
+        for arm in one_of {
+            assert_eq!(
+                arm["additionalProperties"],
+                serde_json::json!(false),
+                "each projection arm must be closed to unknown fields"
+            );
+            assert!(
+                arm["properties"]["target"].is_object(),
+                "each arm inlines the shared `target` field"
+            );
+        }
     }
 
     #[test]

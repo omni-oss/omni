@@ -1,5 +1,5 @@
 use schemars::{JsonSchema, Schema, generate::SchemaGenerator};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::projection::{
     ExplicitRule, FlattenRule, PatternRule, Projection, ProjectionCommon,
@@ -11,40 +11,28 @@ impl JsonSchema for Projection {
     }
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        let common = schema_val::<ProjectionCommon>(generator);
+        let common = common_properties(generator);
 
         let arms = vec![
-            arm("namespaced", &common, Vec::new()),
-            arm(
-                "mirror",
-                &common,
-                vec![props(json!({
-                    "scope": { "type": "string" }
-                }))],
-            ),
+            arm("namespaced", &common, Map::new(), &[]),
+            arm("mirror", &common, scope_property(), &[]),
             arm(
                 "explicit",
                 &common,
-                vec![rules_prop(
-                    schema_val::<ExplicitRule>(generator),
-                    true,
-                )],
+                rules_property(schema_val::<ExplicitRule>(generator)),
+                &["rules"],
             ),
             arm(
                 "pattern",
                 &common,
-                vec![rules_prop(
-                    schema_val::<PatternRule>(generator),
-                    true,
-                )],
+                rules_property(schema_val::<PatternRule>(generator)),
+                &["rules"],
             ),
             arm(
                 "flatten",
                 &common,
-                vec![rules_prop(
-                    schema_val::<FlattenRule>(generator),
-                    false,
-                )],
+                rules_property(schema_val::<FlattenRule>(generator)),
+                &[],
             ),
         ];
 
@@ -52,38 +40,64 @@ impl JsonSchema for Projection {
     }
 }
 
-/// Builds the `allOf` schema for one strategy arm: the `strategy` const, the
-/// shared `ProjectionCommon` schema, then any strategy-specific fields.
-fn arm(strategy: &str, common: &Value, extras: Vec<Value>) -> Value {
-    let mut all_of = vec![
-        json!({
-            "type": "object",
-            "properties": { "strategy": { "const": strategy } },
-            "required": ["strategy"]
-        }),
-        common.clone(),
-    ];
-    all_of.extend(extras);
-    json!({ "allOf": all_of })
-}
+/// Builds one strategy arm as a single flat object schema: the `strategy`
+/// const, the shared `ProjectionCommon` fields, and any strategy-specific
+/// fields, closed with `additionalProperties: false`.
+///
+/// The shared fields are inlined (rather than referenced through the
+/// `ProjectionCommon` definition) so the arm carries exactly one
+/// `additionalProperties: false`. Composing separate `additionalProperties:
+/// false` object schemas with `allOf` is invalid: each closed schema would
+/// reject the sibling arms' keys, so no instance could ever satisfy the arm.
+fn arm(
+    strategy: &str,
+    common: &Map<String, Value>,
+    extra: Map<String, Value>,
+    extra_required: &[&str],
+) -> Value {
+    let mut properties = common.clone();
+    properties.insert("strategy".into(), json!({ "const": strategy }));
+    properties.extend(extra);
 
-/// A `rules` array whose items are `item_schema`, marked required when the
-/// strategy demands at least the key be present.
-fn rules_prop(item_schema: Value, required: bool) -> Value {
-    let mut schema = json!({
+    let mut required = vec![json!("strategy")];
+    required.extend(extra_required.iter().map(|r| json!(r)));
+
+    json!({
         "type": "object",
-        "properties": {
-            "rules": { "type": "array", "items": item_schema }
-        }
-    });
-    if required {
-        schema["required"] = json!(["rules"]);
-    }
-    schema
+        "properties": properties,
+        "required": required,
+        "additionalProperties": false
+    })
 }
 
-fn props(properties: Value) -> Value {
-    json!({ "type": "object", "properties": properties })
+/// The `properties` of [`ProjectionCommon`], inlined so the shared fields can be
+/// merged into each arm without dragging along the definition's own
+/// `additionalProperties: false`.
+fn common_properties(generator: &mut SchemaGenerator) -> Map<String, Value> {
+    let schema = serde_json::to_value(ProjectionCommon::json_schema(generator))
+        .expect("ProjectionCommon schema serializes");
+    schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn scope_property() -> Map<String, Value> {
+    object(json!({ "scope": { "type": "string" } }))
+}
+
+fn rules_property(item_schema: Value) -> Map<String, Value> {
+    object(json!({
+        "rules": { "type": "array", "items": item_schema }
+    }))
+}
+
+fn object(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        _ => panic!("expected a JSON object"),
+    }
 }
 
 fn schema_val<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
@@ -117,15 +131,8 @@ mod tests {
     }
 
     fn strategy_const(arm: &Value) -> &str {
-        arm.get("allOf")
-            .and_then(Value::as_array)
-            .expect("arm is an allOf")
-            .iter()
-            .find_map(|clause| {
-                clause
-                    .pointer("/properties/strategy/const")
-                    .and_then(Value::as_str)
-            })
+        arm.pointer("/properties/strategy/const")
+            .and_then(Value::as_str)
             .expect("arm pins a strategy const")
     }
 
@@ -144,9 +151,41 @@ mod tests {
         );
     }
 
-    fn mentions_match_kind(value: &Value) -> bool {
-        let text = serde_json::to_string(value).unwrap();
-        text.contains("match_kind") || text.contains("match-kind")
+    #[test]
+    fn every_arm_carries_the_shared_common_fields() {
+        let schema = projection_schema();
+        for arm in one_of(&schema) {
+            let props = arm
+                .pointer("/properties")
+                .and_then(Value::as_object)
+                .expect("arm is an object schema");
+            for field in [
+                "target",
+                "on_collision",
+                "link",
+                "allow_omni_config",
+                "allow_git",
+            ] {
+                assert!(
+                    props.contains_key(field),
+                    "{} arm should carry `{field}`",
+                    strategy_const(arm)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_arm_is_closed_to_unknown_fields() {
+        let schema = projection_schema();
+        for arm in one_of(&schema) {
+            assert_eq!(
+                arm.get("additionalProperties"),
+                Some(&Value::Bool(false)),
+                "{} arm must reject unknown fields",
+                strategy_const(arm)
+            );
+        }
     }
 
     #[test]
@@ -156,6 +195,11 @@ mod tests {
             .get("$defs")
             .and_then(Value::as_object)
             .expect("root schema has $defs");
+
+        let mentions_match_kind = |value: &Value| {
+            let text = serde_json::to_string(value).unwrap();
+            text.contains("match_kind") || text.contains("match-kind")
+        };
 
         assert!(
             mentions_match_kind(&defs["PatternRule"]),
