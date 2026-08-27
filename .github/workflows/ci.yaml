@@ -326,11 +326,28 @@ jobs:
     steps:
       - name: Evaluate upstream job results
         uses: actions/github-script@v8
+        # Pass ONLY each job's small `.result` string. Do not use
+        # `toJSON(needs)` here: the `needs` context also carries every
+        # upstream job's outputs (e.g. `plan`'s large `jobs` payload), which
+        # overflows the process environment and fails with E2BIG /
+        # "Argument list too long" when the node runner starts.
         env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
+          RESULTS_JSON: |
+            {
+              "plan": "${{ needs.plan.result }}",
+              "test-rust": "${{ needs.test-rust.result }}",
+              "test-typescript": "${{ needs.test-typescript.result }}",
+              "build-rust": "${{ needs.build-rust.result }}",
+              "build-typescript": "${{ needs.build-typescript.result }}",
+              "resolve-versions": "${{ needs.resolve-versions.result }}",
+              "publish-generic": "${{ needs.publish-generic.result }}",
+              "publish-npm": "${{ needs.publish-npm.result }}",
+              "publish-rust-github": "${{ needs.publish-rust-github.result }}",
+              "publish-json-schemas": "${{ needs.publish-json-schemas.result }}"
+            }
         with:
           script: |
-            const needs = JSON.parse(process.env.NEEDS_JSON);
+            const results = JSON.parse(process.env.RESULTS_JSON);
 
             // A `skipped` result is expected (tag-only jobs on PRs, empty
             // plans, etc.) and must NOT fail the gate. Only real failures
@@ -338,8 +355,7 @@ jobs:
             const blocking = ['failure', 'cancelled'];
             const failed = [];
 
-            for (const [name, data] of Object.entries(needs)) {
-              const result = data.result;
+            for (const [name, result] of Object.entries(results)) {
               core.info(`${name}: ${result}`);
               if (blocking.includes(result)) {
                 failed.push(`${name}: ${result}`);
