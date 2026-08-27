@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use system_traits::{
-    FsCreateDirAllAsync, FsMetadataAsync, FsReadAsync, FsWriteAsync,
-};
+use system_traits::{FsCreateDirAllAsync, FsReadAsync, FsWriteAsync};
 
 use crate::apply::{ApplierSys, ResolvedKind};
 use crate::error::Result;
@@ -194,7 +192,7 @@ where
     Ok(report)
 }
 
-async fn copy_was_modified<S: FsReadAsync + Sync>(
+pub(crate) async fn copy_was_modified<S: FsReadAsync + Sync>(
     sys: &S,
     dest: &Path,
     source: &str,
@@ -211,7 +209,10 @@ async fn copy_was_modified<S: FsReadAsync + Sync>(
     dest_bytes != source_bytes
 }
 
-async fn remove_path<S: ApplierSys>(sys: &S, path: &Path) -> Result<bool> {
+pub(crate) async fn remove_path<S: ApplierSys>(
+    sys: &S,
+    path: &Path,
+) -> Result<bool> {
     if !sys.fs_is_symlink_no_err_async(path).await
         && !sys.fs_exists_no_err_async(path).await
     {
@@ -231,7 +232,7 @@ async fn remove_path<S: ApplierSys>(sys: &S, path: &Path) -> Result<bool> {
 
 /// Remove now-empty ancestor directories of a removed dest, stopping at the
 /// first non-empty directory or at the workspace root.
-async fn prune_empty_ancestors<S: ApplierSys>(
+pub(crate) async fn prune_empty_ancestors<S: ApplierSys>(
     sys: &S,
     workspace_root: &Path,
     dest: &Path,
