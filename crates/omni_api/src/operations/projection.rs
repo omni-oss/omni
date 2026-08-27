@@ -217,8 +217,8 @@ where
         response.warnings.extend(outcome.warnings.iter().cloned());
 
         if !req.dry_run {
-            ledger.links.retain(|l| l.source_id != *id);
-            ledger.links.extend(outcome.links);
+            ledger.links_mut().retain(|l| l.source_id != *id);
+            ledger.links_mut().extend(outcome.links);
         }
     }
 
@@ -452,10 +452,11 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let ws = dir.path();
-        let ledger = omni_projections::Ledger {
-            version: omni_projections::LEDGER_VERSION.to_string(),
-            links: vec![ledger_link("s", "missing.txt", "somewhere")],
-        };
+        let ledger = omni_projections::Ledger::from_links(vec![ledger_link(
+            "s",
+            "missing.txt",
+            "somewhere",
+        )]);
         omni_projections::save(&RealSys, ws, &ledger).await.unwrap();
 
         let report = omni_projections::status(&RealSys, ws, &ledger)

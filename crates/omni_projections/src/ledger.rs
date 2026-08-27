@@ -6,25 +6,49 @@ use system_traits::{FsCreateDirAllAsync, FsReadAsync, FsWriteAsync};
 use crate::apply::{ApplierSys, ResolvedKind};
 use crate::error::Result;
 
-pub const LEDGER_VERSION: &str = "1.0.0";
 pub const LEDGER_REL_PATH: &str = ".omni/sources/projection/links.json";
 
 /// The applied-link ledger: derived, machine-local state (not committed).
+///
+/// Versioned like the lockfile: the `version` tag selects the payload, so the
+/// schema can evolve without breaking older on-disk files.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Ledger {
-    pub version: String,
-
-    #[serde(default)]
-    pub links: Vec<LedgerLink>,
+#[serde(tag = "version", rename_all = "kebab-case")]
+pub enum Ledger {
+    #[serde(rename = "1.0.0")]
+    V1_0_0(LedgerV1_0_0),
 }
 
 impl Default for Ledger {
     fn default() -> Self {
-        Self {
-            version: LEDGER_VERSION.to_string(),
-            links: Vec::new(),
-        }
+        Self::V1_0_0(LedgerV1_0_0::default())
     }
+}
+
+impl Ledger {
+    /// Build a current-version ledger from a set of links.
+    pub fn from_links(links: Vec<LedgerLink>) -> Self {
+        Self::V1_0_0(LedgerV1_0_0 { links })
+    }
+
+    /// The recorded links, regardless of version.
+    pub fn links(&self) -> &[LedgerLink] {
+        let Ledger::V1_0_0(v) = self;
+        &v.links
+    }
+
+    /// Mutable access to the recorded links.
+    pub fn links_mut(&mut self) -> &mut Vec<LedgerLink> {
+        let Ledger::V1_0_0(v) = self;
+        &mut v.links
+    }
+}
+
+/// The `1.0.0` ledger payload.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct LedgerV1_0_0 {
+    #[serde(default)]
+    pub links: Vec<LedgerLink>,
 }
 
 /// One recorded link, keyed by the projection source `id`.
@@ -125,7 +149,7 @@ where
     let mut report = TeardownReport::default();
     let mut kept = Vec::new();
 
-    for link in std::mem::take(&mut ledger.links) {
+    for link in std::mem::take(ledger.links_mut()) {
         if link.source_id != source_id {
             kept.push(link);
             continue;
@@ -157,7 +181,7 @@ where
         }
     }
 
-    ledger.links = kept;
+    *ledger.links_mut() = kept;
     Ok(report)
 }
 
@@ -174,7 +198,7 @@ where
     let mut report = TeardownReport::default();
     let mut kept = Vec::new();
 
-    for link in std::mem::take(&mut ledger.links) {
+    for link in std::mem::take(ledger.links_mut()) {
         let dest = workspace_root.join(&link.dest);
         let is_symlink = sys.fs_is_symlink_no_err_async(&dest).await;
         let resolves = sys.fs_exists_no_err_async(&dest).await;
@@ -188,7 +212,7 @@ where
         }
     }
 
-    ledger.links = kept;
+    *ledger.links_mut() = kept;
     Ok(report)
 }
 
@@ -271,20 +295,27 @@ mod tests {
 
     #[test]
     fn ledger_serde_round_trips() {
-        let ledger = Ledger {
-            version: LEDGER_VERSION.to_string(),
-            links: vec![LedgerLink {
-                source_id: "team-ai-skills".to_string(),
-                dest: ".cursor/rules/main.md".to_string(),
-                target: "/abs/src/main.md".to_string(),
-                kind: ResolvedKind::Symlink,
-                source_pin: "deadbeef".to_string(),
-                backup: None,
-            }],
-        };
+        let ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "team-ai-skills".to_string(),
+            dest: ".cursor/rules/main.md".to_string(),
+            target: "/abs/src/main.md".to_string(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "deadbeef".to_string(),
+            backup: None,
+        }]);
         let json = serde_json::to_string(&ledger).unwrap();
         let back: Ledger = serde_json::from_str(&json).unwrap();
         assert_eq!(ledger, back);
+    }
+
+    #[test]
+    fn ledger_wire_shape_is_version_tagged() {
+        // The versioned enum must serialize to the same `{version, links}`
+        // object the pre-enum struct used, so existing files keep parsing.
+        let json = r#"{"version":"1.0.0","links":[]}"#;
+        let ledger: Ledger = serde_json::from_str(json).unwrap();
+        assert_eq!(ledger, Ledger::default());
+        assert_eq!(serde_json::to_string(&ledger).unwrap(), json);
     }
 
     #[tokio::test]
@@ -295,7 +326,7 @@ mod tests {
         std::fs::write(&path, b"{ not valid json").unwrap();
 
         let ledger = load(&RealSys, dir.path()).await;
-        assert!(ledger.links.is_empty());
+        assert!(ledger.links().is_empty());
     }
 
     #[tokio::test]
@@ -329,17 +360,14 @@ mod tests {
         let dest = dir.path().join("dest.txt");
         std::fs::write(&dest, b"user edited this").unwrap();
 
-        let mut ledger = Ledger {
-            version: LEDGER_VERSION.to_string(),
-            links: vec![LedgerLink {
-                source_id: "id".to_string(),
-                dest: "dest.txt".to_string(),
-                target: source.to_string_lossy().into_owned(),
-                kind: ResolvedKind::Copy,
-                source_pin: "x".to_string(),
-                backup: None,
-            }],
-        };
+        let mut ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "id".to_string(),
+            dest: "dest.txt".to_string(),
+            target: source.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Copy,
+            source_pin: "x".to_string(),
+            backup: None,
+        }]);
 
         let report = unlink(&RealSys, dir.path(), &mut ledger, "id", false)
             .await
@@ -348,7 +376,7 @@ mod tests {
         assert!(report.removed.is_empty());
         assert_eq!(report.warnings.len(), 1);
         assert!(dest.exists(), "modified copy must be preserved");
-        assert_eq!(ledger.links.len(), 1, "link kept in ledger");
+        assert_eq!(ledger.links().len(), 1, "link kept in ledger");
     }
 
     #[tokio::test]
@@ -359,17 +387,14 @@ mod tests {
         let dest = dir.path().join("dest.txt");
         std::fs::write(&dest, b"same").unwrap();
 
-        let mut ledger = Ledger {
-            version: LEDGER_VERSION.to_string(),
-            links: vec![LedgerLink {
-                source_id: "id".to_string(),
-                dest: "dest.txt".to_string(),
-                target: source.to_string_lossy().into_owned(),
-                kind: ResolvedKind::Copy,
-                source_pin: "x".to_string(),
-                backup: None,
-            }],
-        };
+        let mut ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "id".to_string(),
+            dest: "dest.txt".to_string(),
+            target: source.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Copy,
+            source_pin: "x".to_string(),
+            backup: None,
+        }]);
 
         let report = unlink(&RealSys, dir.path(), &mut ledger, "id", false)
             .await
@@ -377,6 +402,6 @@ mod tests {
 
         assert_eq!(report.removed.len(), 1);
         assert!(!dest.exists());
-        assert!(ledger.links.is_empty());
+        assert!(ledger.links().is_empty());
     }
 }

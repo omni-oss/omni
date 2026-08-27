@@ -132,7 +132,7 @@ where
             }
 
             let prior = prior_ledger
-                .links
+                .links()
                 .iter()
                 .find(|l| l.source_id == source.id && l.dest == dest_rel);
             let prior_link = prior.map(|l| PriorLink {
@@ -203,7 +203,7 @@ where
     S: ApplierSys + FsReadAsync,
 {
     for link in prior_ledger
-        .links
+        .links()
         .iter()
         .filter(|l| l.source_id == source.id)
     {
@@ -277,7 +277,7 @@ where
 {
     let mut report = StatusReport::default();
 
-    for link in &ledger.links {
+    for link in ledger.links() {
         let dest = workspace_root.join(&link.dest);
         let is_symlink = sys.fs_is_symlink_no_err_async(&dest).await;
         let resolves = sys.fs_exists_no_err_async(&dest).await;
@@ -466,17 +466,14 @@ mod tests {
         std::os::windows::fs::symlink_file(src_root.join("a.txt"), &stale)
             .unwrap();
 
-        let prior = Ledger {
-            version: crate::LEDGER_VERSION.to_string(),
-            links: vec![LedgerLink {
-                source_id: "pkg".to_string(),
-                dest: "dst/old.txt".to_string(),
-                target: src_root.join("a.txt").to_string_lossy().into_owned(),
-                kind: ResolvedKind::Symlink,
-                source_pin: "old".to_string(),
-                backup: None,
-            }],
-        };
+        let prior = Ledger::from_links(vec![LedgerLink {
+            source_id: "pkg".to_string(),
+            dest: "dst/old.txt".to_string(),
+            target: src_root.join("a.txt").to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "old".to_string(),
+            backup: None,
+        }]);
 
         let outcome = sync_source(&RealSys, &source, &params, &prior)
             .await
@@ -501,27 +498,24 @@ mod tests {
         std::os::windows::fs::symlink_file(ws.join("dst/target.txt"), &good)
             .unwrap();
 
-        let ledger = Ledger {
-            version: crate::LEDGER_VERSION.to_string(),
-            links: vec![
-                LedgerLink {
-                    source_id: "s".to_string(),
-                    dest: "dst/good.txt".to_string(),
-                    target: "dst/target.txt".to_string(),
-                    kind: ResolvedKind::Symlink,
-                    source_pin: "p".to_string(),
-                    backup: None,
-                },
-                LedgerLink {
-                    source_id: "s".to_string(),
-                    dest: "dst/missing.txt".to_string(),
-                    target: "somewhere".to_string(),
-                    kind: ResolvedKind::Symlink,
-                    source_pin: "p".to_string(),
-                    backup: None,
-                },
-            ],
-        };
+        let ledger = Ledger::from_links(vec![
+            LedgerLink {
+                source_id: "s".to_string(),
+                dest: "dst/good.txt".to_string(),
+                target: "dst/target.txt".to_string(),
+                kind: ResolvedKind::Symlink,
+                source_pin: "p".to_string(),
+                backup: None,
+            },
+            LedgerLink {
+                source_id: "s".to_string(),
+                dest: "dst/missing.txt".to_string(),
+                target: "somewhere".to_string(),
+                kind: ResolvedKind::Symlink,
+                source_pin: "p".to_string(),
+                backup: None,
+            },
+        ]);
 
         let report = status(&RealSys, ws, &ledger).await.unwrap();
         assert!(report.has_problems());
