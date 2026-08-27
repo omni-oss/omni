@@ -12,6 +12,8 @@ system_traits = { workspace = true, features = ["async", "real-async-tokio", "me
 dir_walker = { workspace = true }
 omni_hasher = { workspace = true }
 omni_types = { workspace = true }
+globset = { workspace = true }
+path-clean = { workspace = true }
 thiserror = { workspace = true }
 eyre = { workspace = true }
 strum = { workspace = true }
@@ -20,3 +22,4 @@ derive-new = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "fs"] }
+serde_json = { workspace = true }
