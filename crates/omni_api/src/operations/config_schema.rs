@@ -1,5 +1,6 @@
 use omni_configurations::{ProjectConfiguration, WorkspaceConfiguration};
 use omni_generator_configurations::GeneratorConfiguration;
+use omni_projection_configurations::OwnedProjectionConfiguration;
 use omni_tool_configurations::ToolConfiguration;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ pub enum SchemaKind {
     Project,
     Generator,
     Tool,
+    Projection,
 }
 
 // ── Response ──────────────────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ pub fn handle_config_schema(
         SchemaKind::Project => schema_for!(ProjectConfiguration),
         SchemaKind::Generator => schema_for!(GeneratorConfiguration),
         SchemaKind::Tool => schema_for!(ToolConfiguration),
+        SchemaKind::Projection => schema_for!(OwnedProjectionConfiguration),
     };
 
     let schema = serde_json::to_value(&schemars_schema)?;
@@ -75,12 +78,26 @@ mod tests {
     }
 
     #[test]
+    fn projection_schema_is_the_owned_manifest_shape() {
+        let resp = handle_config_schema(SchemaKind::Projection)
+            .expect("projection schema generation");
+        assert!(resp.schema.is_object(), "schema must be a JSON object");
+
+        // The owned `projection.omni` manifest is a `routes` list of
+        // strategy-tagged projections.
+        let text = serde_json::to_string(&resp.schema).unwrap();
+        assert!(text.contains("\"routes\""), "{text}");
+        assert!(text.contains("\"strategy\""), "{text}");
+    }
+
+    #[test]
     fn every_schema_kind_generates() {
         for kind in [
             SchemaKind::Workspace,
             SchemaKind::Project,
             SchemaKind::Generator,
             SchemaKind::Tool,
+            SchemaKind::Projection,
         ] {
             let resp = handle_config_schema(kind).expect("schema generation");
             assert!(resp.schema.is_object());

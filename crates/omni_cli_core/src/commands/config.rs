@@ -31,6 +31,7 @@ pub enum Schema {
     Project,
     Generator,
     Tool,
+    Projection,
 }
 
 #[derive(clap::Args)]
@@ -50,6 +51,7 @@ pub async fn run(config: &ConfigCommand) -> eyre::Result<()> {
                 Schema::Project => SchemaKind::Project,
                 Schema::Generator => SchemaKind::Generator,
                 Schema::Tool => SchemaKind::Tool,
+                Schema::Projection => SchemaKind::Projection,
             };
 
             let response = handle_config_schema(kind)?;
