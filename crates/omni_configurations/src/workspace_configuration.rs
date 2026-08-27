@@ -269,6 +269,45 @@ mod tests {
     }
 
     #[test]
+    fn test_source_config_schema_shape_is_unified() {
+        let schema = schemars::schema_for!(WorkspaceConfiguration);
+        let value = serde_json::to_value(&schema).unwrap();
+
+        // Both `generators` and `tools` resolve to the same unified definition.
+        assert_eq!(
+            value["properties"]["generators"]["items"]["$ref"],
+            "#/$defs/SourceConfig"
+        );
+        assert_eq!(
+            value["properties"]["tools"]["items"]["$ref"],
+            "#/$defs/SourceConfig"
+        );
+
+        let variants = value["$defs"]["SourceConfig"]["oneOf"]
+            .as_array()
+            .expect("SourceConfig is a tagged union");
+        assert_eq!(variants.len(), 2);
+
+        let by_tag = |tag: &str| {
+            variants
+                .iter()
+                .find(|v| v["properties"]["source"]["const"] == tag)
+                .unwrap_or_else(|| panic!("missing `{tag}` variant"))
+        };
+
+        let local = by_tag("local");
+        assert_eq!(local["additionalProperties"], serde_json::json!(false));
+        assert_eq!(local["required"], serde_json::json!(["source", "path"]));
+
+        let git = by_tag("git");
+        assert_eq!(git["additionalProperties"], serde_json::json!(false));
+        assert_eq!(
+            git["required"],
+            serde_json::json!(["source", "uri", "rev"])
+        );
+    }
+
+    #[test]
     fn test_generators_rejects_duplicate_git_uri() {
         let result = serde_json::from_str::<WorkspaceConfiguration>(
             r#"{"projects": [], "generators": [{"source": "git", "uri": "https://example.com/a.git", "rev": "main"}, {"source": "git", "uri": "https://example.com/a.git", "rev": "dev"}]}"#,
