@@ -6,8 +6,6 @@ use system_traits::{FsCreateDirAllAsync, FsReadAsync, FsWriteAsync};
 use crate::apply::{ApplierSys, ResolvedKind};
 use crate::error::Result;
 
-pub const LEDGER_REL_PATH: &str = ".omni/sources/projection/links.json";
-
 /// The applied-link ledger: derived, machine-local state (not committed).
 ///
 /// Versioned like the lockfile: the `version` tag selects the payload, so the
@@ -66,19 +64,18 @@ pub struct LedgerLink {
     pub backup: Option<String>,
 }
 
-/// Load the ledger. A missing, corrupt, or unparseable ledger is treated as
-/// empty (config stays authoritative) and never triggers a destructive
-/// teardown.
+/// Load the ledger from `ledger_path`. A missing, corrupt, or unparseable
+/// ledger is treated as empty (config stays authoritative) and never triggers a
+/// destructive teardown. The caller owns where the ledger lives.
 pub async fn load<S: FsReadAsync + Sync>(
     sys: &S,
-    workspace_root: &Path,
+    ledger_path: &Path,
 ) -> Ledger {
-    let path = workspace_root.join(LEDGER_REL_PATH);
-    match sys.fs_read_async(&path).await {
+    match sys.fs_read_async(ledger_path).await {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
             log::warn!(
                 "projection ledger at {} is unreadable, treating as empty: {e}",
-                path.display()
+                ledger_path.display()
             );
             Ledger::default()
         }),
@@ -86,21 +83,16 @@ pub async fn load<S: FsReadAsync + Sync>(
     }
 }
 
-/// Persist the ledger, creating its parent directory if needed.
-pub async fn save<S>(
-    sys: &S,
-    workspace_root: &Path,
-    ledger: &Ledger,
-) -> Result<()>
+/// Persist the ledger to `ledger_path`, creating its parent directory if needed.
+pub async fn save<S>(sys: &S, ledger_path: &Path, ledger: &Ledger) -> Result<()>
 where
     S: FsWriteAsync + FsCreateDirAllAsync + Sync,
 {
-    let path = workspace_root.join(LEDGER_REL_PATH);
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = ledger_path.parent() {
         sys.fs_create_dir_all_async(parent).await?;
     }
     let bytes = serde_json::to_vec_pretty(ledger)?;
-    sys.fs_write_async(&path, &bytes).await?;
+    sys.fs_write_async(ledger_path, &bytes).await?;
     Ok(())
 }
 
@@ -321,18 +313,17 @@ mod tests {
     #[tokio::test]
     async fn corrupt_ledger_is_treated_as_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(LEDGER_REL_PATH);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let path = dir.path().join("links.json");
         std::fs::write(&path, b"{ not valid json").unwrap();
 
-        let ledger = load(&RealSys, dir.path()).await;
+        let ledger = load(&RealSys, &path).await;
         assert!(ledger.links().is_empty());
     }
 
     #[tokio::test]
     async fn absent_ledger_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let ledger = load(&RealSys, dir.path()).await;
+        let ledger = load(&RealSys, &dir.path().join("links.json")).await;
         assert_eq!(ledger, Ledger::default());
     }
 

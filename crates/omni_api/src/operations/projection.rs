@@ -131,7 +131,8 @@ where
 
     let remote = build_remote_manager(ctx, &sys).await?;
 
-    let mut ledger = omni_projections::load(&sys, &workspace_root).await;
+    let ledger_path = ledger_path(ctx);
+    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
     let prior_ledger = ledger.clone();
 
     // Retain every configured git source so an unrelated, unfiltered run never
@@ -223,7 +224,7 @@ where
     }
 
     if !req.dry_run {
-        omni_projections::save(&sys, &workspace_root, &ledger).await?;
+        omni_projections::save(&sys, &ledger_path, &ledger).await?;
         let refs: Vec<(&Url, &str)> =
             all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
         remote.retain_git_sources(&refs).await?;
@@ -244,7 +245,7 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let ledger = omni_projections::load(&sys, &workspace_root).await;
+    let ledger = omni_projections::load(&sys, &ledger_path(ctx)).await;
     let report =
         omni_projections::status(&sys, &workspace_root, &ledger).await?;
 
@@ -285,7 +286,8 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let mut ledger = omni_projections::load(&sys, &workspace_root).await;
+    let ledger_path = ledger_path(ctx);
+    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
     let report = omni_projections::unlink(
         &sys,
         &workspace_root,
@@ -294,7 +296,7 @@ where
         req.clean_backups,
     )
     .await?;
-    omni_projections::save(&sys, &workspace_root, &ledger).await?;
+    omni_projections::save(&sys, &ledger_path, &ledger).await?;
 
     Ok(ProjectionUnlinkResponse {
         removed: report
@@ -318,7 +320,8 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
 
-    let mut ledger = omni_projections::load(&sys, &workspace_root).await;
+    let ledger_path = ledger_path(ctx);
+    let mut ledger = omni_projections::load(&sys, &ledger_path).await;
 
     if req.dry_run {
         // A prune preview classifies broken links without removing them.
@@ -340,7 +343,7 @@ where
 
     let report =
         omni_projections::prune(&sys, &workspace_root, &mut ledger).await?;
-    omni_projections::save(&sys, &workspace_root, &ledger).await?;
+    omni_projections::save(&sys, &ledger_path, &ledger).await?;
 
     Ok(ProjectionPruneResponse {
         dry_run: false,
@@ -361,7 +364,7 @@ async fn build_remote_manager<TSys>(
 where
     TSys: ContextSys + RemoteSourceSys,
 {
-    let sources_path = ctx.omni_dir().join("sources/projection");
+    let sources_path = projection_sources_dir(ctx);
     sys.fs_create_dir_all_async(&sources_path).await?;
     let lockfile_path = sources_path.join("lock.json");
 
@@ -373,6 +376,19 @@ where
         sys.clone(),
     )
     .await?)
+}
+
+/// The directory holding all projection-source state (git checkouts, lockfile,
+/// and the link ledger), alongside the other subsystem source caches.
+fn projection_sources_dir<TSys: ContextSys>(
+    ctx: &Context<TSys>,
+) -> std::path::PathBuf {
+    ctx.omni_dir().join("sources/projection")
+}
+
+/// The link ledger location. Owned by this layer, not the projection engine.
+fn ledger_path<TSys: ContextSys>(ctx: &Context<TSys>) -> std::path::PathBuf {
+    projection_sources_dir(ctx).join("links.json")
 }
 
 fn source_id_and_projections(
@@ -457,7 +473,9 @@ mod tests {
             "missing.txt",
             "somewhere",
         )]);
-        omni_projections::save(&RealSys, ws, &ledger).await.unwrap();
+        omni_projections::save(&RealSys, &ws.join("links.json"), &ledger)
+            .await
+            .unwrap();
 
         let report = omni_projections::status(&RealSys, ws, &ledger)
             .await
