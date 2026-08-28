@@ -23,8 +23,10 @@
 import { mkdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+    makeLocalGitRepoWithAnnotatedTag,
     makeWorkspace,
     runOmni,
+    skipUnlessGitCliAvailable,
     skipUnlessRemoteReachable,
     skipUnlessSshReachable,
     workspaceMinimalRepo,
@@ -193,6 +195,76 @@ describe("+init @e2e (clone + run primary generator)", {
             expect(ws.read("rev-commit/workspace.omni.yaml")).toContain(
                 "name: rev-commit-ws",
             );
+        },
+        CLONE_TIMEOUT_MS,
+    );
+});
+
+describe("+init @e2e (annotated tag, local clone)", {
+    tags: ["generator"],
+}, () => {
+    // A primary generator whose `add-content` bakes a revision marker into the
+    // output. The marker changes in a post-tag commit, so the generated file
+    // proves which tree was checked out: the annotated tag's, not the branch
+    // tip's. This clones over the local transport, so it needs no network.
+    const generatorAt = (revision: string) =>
+        [
+            "name: tag-template",
+            "description: init template pinned by an annotated tag",
+            "inputs:",
+            "  - type: string",
+            "    name: subject",
+            "    message: Who to greet?",
+            "    default: world",
+            "actions:",
+            "  - type: add-content",
+            "    output_path: marker.txt",
+            "    content: |",
+            `      revision=${revision}`,
+            "      subject={{ inputs.subject }}",
+            "",
+        ].join("\n");
+
+    it(
+        "`--git-rev <annotated-tag>` clones the tagged commit and runs its generator",
+        async (ctx) => {
+            await skipUnlessGitCliAvailable(ctx);
+
+            // Tagged commit renders `revision=tagged`; a later commit rewrites
+            // it to `revision=post-tag`. `rev_parse_single` resolves an
+            // annotated tag to the tag *object* (not a commit), which used to
+            // break `clone_repo`; this exercises the peel-to-commit fix.
+            const gitRepo = await makeLocalGitRepoWithAnnotatedTag({
+                tag: "v1.0.0",
+                files: { "generator.omni.yaml": generatorAt("tagged") },
+                postTagFiles: {
+                    "generator.omni.yaml": generatorAt("post-tag"),
+                },
+            });
+
+            const ws = makeWorkspace();
+
+            const result = await runOmni(
+                [
+                    "init",
+                    "--git",
+                    gitRepo.url,
+                    "--git-rev",
+                    gitRepo.tag,
+                    "-o",
+                    "tagged",
+                    "-v",
+                    "subject=annotated",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+            );
+
+            expect(result).toHaveSucceeded();
+            const marker = ws.read("tagged/marker.txt");
+            expect(marker).toContain("revision=tagged");
+            expect(marker).not.toContain("revision=post-tag");
+            expect(marker).toContain("subject=annotated");
         },
         CLONE_TIMEOUT_MS,
     );
