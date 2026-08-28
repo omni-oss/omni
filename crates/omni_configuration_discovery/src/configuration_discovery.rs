@@ -113,3 +113,61 @@ where
         Ok(discovered)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Discovery must not descend symlinked directories. A projection can
+    /// materialize a symlinked directory link into the workspace; the guardrail
+    /// that leaves symlinked directory contents unchecked relies on discovery
+    /// never loading a manifest through such a link. If discovery is ever
+    /// changed to follow symlinks, this test fails loudly and that guardrail
+    /// must be revisited.
+    #[tokio::test]
+    async fn discovery_does_not_follow_symlinked_directories() {
+        let config_files = ["project.omni.yaml".to_string()];
+
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+
+        // A real manifest under the root proves discovery works at all.
+        std::fs::write(
+            root.path().join("project.omni.yaml"),
+            b"name: real\n",
+        )
+        .unwrap();
+
+        // A manifest reachable only through a symlinked directory.
+        std::fs::write(
+            external.path().join("project.omni.yaml"),
+            b"name: hidden\n",
+        )
+        .unwrap();
+        let link = root.path().join("linked");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(external.path(), &link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(external.path(), &link).unwrap();
+
+        let ignore_files = [".omniignore".to_string()];
+        let discovery = ConfigurationDiscovery::new(
+            root.path(),
+            &config_files[..],
+            &config_files[..],
+            &ignore_files[..],
+            "project",
+        );
+        let found = discovery.discover().await.unwrap();
+
+        assert_eq!(
+            found.len(),
+            1,
+            "only the real manifest is discovered, not the symlinked one: {found:?}"
+        );
+        assert!(
+            found.iter().all(|p| !p.to_string_lossy().contains("linked")),
+            "a manifest inside a symlinked directory must not be discovered: {found:?}"
+        );
+    }
+}

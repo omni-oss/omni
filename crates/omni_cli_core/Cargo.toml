@@ -82,6 +82,7 @@ path-clean = { workspace = true }
 num_cpus = { workspace = true }
 omni_process = { workspace = true }
 omni_configurations = { workspace = true }
+omni_constants = { workspace = true }
 omni_generator_configurations = { workspace = true }
 omni_generator = { workspace = true }
 omni_context = { workspace = true }

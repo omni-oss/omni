@@ -100,8 +100,8 @@ where
         };
 
         let opts = ApplyOptions {
-            link: projection.link,
-            collision: projection.on_collision,
+            link: projection.common().link,
+            collision: projection.common().on_collision,
         };
 
         for pair in &pairs {
@@ -331,6 +331,18 @@ fn matched_files(
                     entries.iter().filter(|e| !e.is_dir).map(|e| e.rel.clone()),
                 );
             }
+            // A directory link: hash every file beneath the matched directory
+            // so the pin reflects its recursive content.
+            Ok(rel)
+                if entries.iter().any(|e| e.rel == rel && e.is_dir) =>
+            {
+                out.extend(
+                    entries
+                        .iter()
+                        .filter(|e| !e.is_dir && e.rel.starts_with(rel))
+                        .map(|e| e.rel.clone()),
+                );
+            }
             Ok(rel) => out.push(rel.to_path_buf()),
             Err(_) => {}
         }
@@ -558,5 +570,86 @@ mod tests {
             .find(|e| e.dest == "dst/good.txt")
             .unwrap();
         assert_eq!(good.state, LinkState::Ok);
+    }
+
+    #[tokio::test]
+    async fn explicit_local_dir_link_hashes_subtree() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let src_root = ws.join("vendor/pkg");
+        std::fs::create_dir_all(src_root.join("inner")).unwrap();
+        std::fs::write(src_root.join("inner/a.txt"), b"a").unwrap();
+
+        let projections = vec![projection(
+            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"match":"inner","dest":"@target/inner"}]}"#,
+        )];
+        let source = ResolvedSource {
+            id: "pkg",
+            source_root: &src_root,
+            git_pin: None,
+            projections: &projections,
+        };
+        let params = SyncParams {
+            workspace_root: ws,
+            env_files: &[],
+            force: false,
+            dry_run: false,
+        };
+
+        // A local directory link no longer errors trying to read the directory
+        // as a file, and records one link with a content pin over its subtree.
+        let first = sync_source(&RealSys, &source, &params, &Ledger::default())
+            .await
+            .unwrap();
+        assert_eq!(first.links.len(), 1);
+        assert_eq!(first.links[0].dest, "dst/inner");
+        let pin1 = first.links[0].source_pin.clone();
+        assert!(!pin1.is_empty());
+
+        // Editing a file beneath the linked directory changes the pin.
+        std::fs::write(src_root.join("inner/a.txt"), b"changed").unwrap();
+        let prior = Ledger::from_links(first.links.clone());
+        let second = sync_source(&RealSys, &source, &params, &prior)
+            .await
+            .unwrap();
+        assert_ne!(
+            second.links[0].source_pin, pin1,
+            "pin must reflect recursive directory content"
+        );
+    }
+
+    #[tokio::test]
+    async fn git_dir_link_uses_commit_pin_without_reading_the_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let src_root = ws.join("checkout");
+        std::fs::create_dir_all(src_root.join("inner")).unwrap();
+        std::fs::write(src_root.join("inner/a.txt"), b"a").unwrap();
+
+        let projections = vec![projection(
+            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"match":"inner","dest":"@target/inner"}]}"#,
+        )];
+        let source = ResolvedSource {
+            id: "pkg",
+            source_root: &src_root,
+            git_pin: Some("deadbeef".to_string()),
+            projections: &projections,
+        };
+        let params = SyncParams {
+            workspace_root: ws,
+            env_files: &[],
+            force: false,
+            dry_run: false,
+        };
+
+        let outcome =
+            sync_source(&RealSys, &source, &params, &Ledger::default())
+                .await
+                .unwrap();
+        assert_eq!(outcome.links.len(), 1);
+        assert_eq!(
+            outcome.links[0].source_pin, "deadbeef",
+            "a git source pins to its commit, not a content hash"
+        );
     }
 }

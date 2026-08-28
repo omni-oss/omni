@@ -492,7 +492,7 @@ fn write_projection_workspace(dir: &Path) {
             "  - source: local\n",
             "    path: ./vendor/skills\n",
             "    id: local-skills\n",
-            "    projections:\n",
+            "    routes:\n",
             "      - strategy: mirror\n",
             "        target: \"@workspace/.agents/skills\"\n",
         ),
@@ -589,4 +589,207 @@ async fn projection_unlink_removes_recorded_links() {
         .expect("unlink");
     assert_eq!(resp.removed.len(), 1);
     assert!(!tmp.path().join(".agents/skills/rust.md").exists());
+}
+
+/// A source that ships its own `projection.omni.yaml` and a workspace that omits
+/// `routes`, so the owned manifest is inherited.
+fn write_owned_projection_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("vendor/skills")).unwrap();
+    std::fs::write(dir.join("vendor/skills/rust.md"), b"# rust\n").unwrap();
+    std::fs::write(
+        dir.join("vendor/skills/projection.omni.yaml"),
+        concat!(
+            "routes:\n",
+            "  - strategy: mirror\n",
+            "    scope: \"*.md\"\n",
+            "    target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn projection_owned_manifest_is_inherited() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_owned_projection_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let resp = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync with inherited owned routes");
+    assert_eq!(resp.applied.len(), 1);
+    assert!(tmp.path().join(".agents/skills/rust.md").exists());
+}
+
+#[tokio::test]
+async fn projection_workspace_routes_override_owned_manifest() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    // Source ships a manifest targeting `.agents/skills`, but the workspace
+    // overrides it to `.other`.
+    std::fs::write(
+        tmp.path().join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        scope: \"*.md\"\n",
+            "        target: \"@workspace/.other\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("vendor/skills")).unwrap();
+    std::fs::write(tmp.path().join("vendor/skills/rust.md"), b"# rust\n")
+        .unwrap();
+    std::fs::write(
+        tmp.path().join("vendor/skills/projection.omni.yaml"),
+        "routes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
+    )
+    .unwrap();
+
+    let api = make_api(tmp.path());
+    api.projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("sync with workspace override");
+
+    assert!(tmp.path().join(".other/rust.md").exists(), "override target used");
+    assert!(
+        !tmp.path().join(".agents/skills/rust.md").exists(),
+        "owned manifest target must be ignored when overridden"
+    );
+}
+
+#[tokio::test]
+async fn projection_empty_routes_is_an_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+            "    routes: []\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("vendor/skills")).unwrap();
+
+    let api = make_api(tmp.path());
+    let result = api
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            dry_run: true,
+            ..Default::default()
+        })
+        .await;
+    assert!(result.is_err(), "an empty routes list must fail fast");
+}
+
+#[tokio::test]
+async fn projection_no_routes_anywhere_is_an_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("vendor/skills")).unwrap();
+    std::fs::write(tmp.path().join("vendor/skills/rust.md"), b"# rust\n")
+        .unwrap();
+
+    let api = make_api(tmp.path());
+    let result = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await;
+    assert!(
+        result.is_err(),
+        "a source with no workspace routes and no manifest is an error"
+    );
+}
+
+#[tokio::test]
+async fn projection_pattern_dir_links_directories() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/skills\n",
+            "    id: local-skills\n",
+            "    routes:\n",
+            "      - strategy: pattern\n",
+            "        target: \"@workspace/.agents/skills\"\n",
+            "        rules:\n",
+            "          - match: \"*\"\n",
+            "            match-kind: dir\n",
+            "            dest: \"@target/{basename}\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("vendor/skills/tdd")).unwrap();
+    std::fs::write(
+        tmp.path().join("vendor/skills/tdd/SKILL.md"),
+        b"# tdd\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("vendor/skills/review")).unwrap();
+    std::fs::write(
+        tmp.path().join("vendor/skills/review/SKILL.md"),
+        b"# review\n",
+    )
+    .unwrap();
+
+    let api = make_api(tmp.path());
+    let first = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("dir sync");
+    assert_eq!(first.applied.len(), 2, "one link per matched directory");
+    // The linked directories resolve through to the source content.
+    assert_eq!(
+        std::fs::read_to_string(
+            tmp.path().join(".agents/skills/tdd/SKILL.md")
+        )
+        .unwrap(),
+        "# tdd\n"
+    );
+    assert!(tmp.path().join(".agents/skills/review/SKILL.md").exists());
+
+    let second = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("idempotent dir re-sync");
+    assert!(
+        second.applied.iter().all(|a| a.skipped),
+        "an unchanged directory-link re-sync must be a no-op"
+    );
 }

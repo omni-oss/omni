@@ -10,16 +10,11 @@ use crate::{
 };
 
 static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    vec![
-        "tool.omni.yaml".to_string(),
-        "tool.omni.yml".to_string(),
-        "tool.omni.json".to_string(),
-        "tool.omni.toml".to_string(),
-    ]
+    omni_constants::config_file_names(omni_constants::TOOL_OMNI)
 });
 
 static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
-    LazyLock::new(|| vec![".omniignore".to_string()]);
+    LazyLock::new(|| vec![omni_constants::OMNI_IGNORE.to_string()]);
 
 /// Discover every `tool.omni.*` manifest under `root_dir` matching any of
 /// `glob_patterns`, deserializing each into a [`ToolConfiguration`] with its

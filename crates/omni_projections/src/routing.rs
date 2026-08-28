@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use globset::{GlobBuilder, GlobMatcher};
 use omni_projection_configurations::{
-    DestPath, OmniPath, Projection, ProjectionStrategy,
+    DestPath, MatchKind, OmniPath, Projection,
 };
 use path_clean::PathClean;
 
@@ -57,11 +57,19 @@ pub struct PlanInput<'a> {
     pub env_files: &'a [String],
 }
 
+/// A candidate link plus whether it links a whole directory (as opposed to a
+/// single file). The flag drives shallowest-wins pruning and the directory
+/// contents guardrail.
+struct Candidate {
+    pair: LinkPair,
+    is_dir_link: bool,
+}
+
 /// Compute the full `LinkPair` set for one projection, applying dest-side and
 /// lexical source-side containment. Pure: no filesystem access.
 pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
-    let target_abs =
-        resolve_target(input.workspace_root, &input.projection.target);
+    let common = input.projection.common();
+    let target_abs = resolve_target(input.workspace_root, &common.target);
 
     if !within(input.workspace_root, &target_abs) {
         return Err(ProjectionError::custom(format!(
@@ -70,45 +78,52 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
         )));
     }
 
-    let pairs = match input.projection.strategy {
-        ProjectionStrategy::Namespaced => {
-            plan_namespaced(input.source_root, input.source_id, &target_abs)
-        }
-        ProjectionStrategy::Mirror => plan_mirror(
+    let mut candidates = match input.projection {
+        Projection::Namespaced(_) => vec![Candidate {
+            pair: namespaced_pair(
+                input.source_root,
+                input.source_id,
+                &target_abs,
+            ),
+            is_dir_link: true,
+        }],
+        Projection::Mirror(p) => plan_mirror(
             input.source_root,
-            input.projection,
+            p.scope.as_deref(),
             input.entries,
             &target_abs,
         )?,
-        ProjectionStrategy::Explicit => plan_explicit(
+        Projection::Explicit(p) => plan_explicit(
             input.source_root,
-            input.projection,
+            &p.rules,
             input.entries,
             &target_abs,
         )?,
-        ProjectionStrategy::Pattern => plan_pattern(
+        Projection::Pattern(p) => plan_pattern(
             input.source_root,
-            input.projection,
+            &p.rules,
             input.entries,
             &target_abs,
-            false,
         )?,
-        ProjectionStrategy::Flatten => plan_pattern(
+        Projection::Flatten(p) => plan_flatten(
             input.source_root,
-            input.projection,
+            &p.rules,
             input.entries,
             &target_abs,
-            true,
         )?,
     };
 
+    prune_nested(&mut candidates);
+
     let guardrails = Guardrails {
-        allow_omni_config: input.projection.allow_omni_config,
-        allow_git: input.projection.allow_git,
+        allow_omni_config: common.allow_omni_config,
+        allow_git: common.allow_git,
         env_files: input.env_files,
     };
 
-    for pair in &pairs {
+    let mut pairs = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let pair = &candidate.pair;
         if !within(input.workspace_root, &pair.dest_abs)
             || !within(&target_abs, &pair.dest_abs)
         {
@@ -124,6 +139,17 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
             )));
         }
         check_dest(&pair.dest_abs, &guardrails)?;
+
+        if candidate.is_dir_link {
+            check_dir_contents(
+                input.source_root,
+                input.entries,
+                pair,
+                &guardrails,
+            )?;
+        }
+
+        pairs.push(candidate.pair);
     }
 
     Ok(pairs)
@@ -134,130 +160,218 @@ fn resolve_target(workspace_root: &Path, target: &OmniPath) -> PathBuf {
     workspace_root.join(target.unresolved_path()).clean()
 }
 
-fn plan_namespaced(
+fn namespaced_pair(
     source_root: &Path,
     source_id: &str,
     target_abs: &Path,
-) -> Vec<LinkPair> {
+) -> LinkPair {
     let mut dest = target_abs.to_path_buf();
     for segment in source_id.split('/') {
         dest.push(segment);
     }
 
-    vec![LinkPair {
+    LinkPair {
         source_abs: source_root.to_path_buf().clean(),
         dest_abs: dest.clean(),
-    }]
+    }
 }
 
 fn plan_mirror(
     source_root: &Path,
-    projection: &Projection,
+    scope: Option<&str>,
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<LinkPair>> {
-    let scope = match projection.rules.as_slice() {
-        [] => None,
-        [rule] => Some(build_glob(&rule.r#match)?),
-        _ => {
-            return Err(ProjectionError::custom(
-                "the `mirror` strategy accepts at most one scoping `match` rule",
-            ));
-        }
-    };
+) -> Result<Vec<Candidate>> {
+    let matcher = scope.map(build_glob).transpose()?;
 
-    let mut pairs = Vec::new();
+    let mut candidates = Vec::new();
     for entry in entries {
         if entry.is_dir {
             continue;
         }
         let rel_slash = to_slash(&entry.rel);
-        if let Some(matcher) = &scope {
+        if let Some(matcher) = &matcher {
             if !matcher.is_match(&rel_slash) {
                 continue;
             }
         }
-        pairs.push(LinkPair {
-            source_abs: source_root.join(&entry.rel).clean(),
-            dest_abs: target_abs.join(&entry.rel).clean(),
+        candidates.push(Candidate {
+            pair: LinkPair {
+                source_abs: source_root.join(&entry.rel).clean(),
+                dest_abs: target_abs.join(&entry.rel).clean(),
+            },
+            is_dir_link: false,
         });
     }
 
-    Ok(pairs)
+    Ok(candidates)
 }
 
 fn plan_explicit(
     source_root: &Path,
-    projection: &Projection,
+    rules: &[omni_projection_configurations::ExplicitRule],
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<LinkPair>> {
-    let mut pairs = Vec::new();
-    for rule in &projection.rules {
-        let dest = rule.dest.as_ref().ok_or_else(|| {
-            ProjectionError::custom(
-                "the `explicit` strategy requires a `dest` on every rule",
-            )
-        })?;
-
+) -> Result<Vec<Candidate>> {
+    let mut candidates = Vec::new();
+    for rule in rules {
         let rel = PathBuf::from(&rule.r#match);
-        if !entries.iter().any(|e| e.rel == rel) {
-            return Err(ProjectionError::custom(format!(
+        let entry = entries.iter().find(|e| e.rel == rel).ok_or_else(|| {
+            ProjectionError::custom(format!(
                 "explicit source path not found: {}",
                 rule.r#match
-            )));
-        }
+            ))
+        })?;
 
-        let tail =
-            expand_template(&dest_tail(dest), &TemplateVars::from_rel(&rel));
-        pairs.push(LinkPair {
-            source_abs: source_root.join(&rel).clean(),
-            dest_abs: target_abs.join(tail).clean(),
+        let tail = expand_template(
+            &dest_tail(&rule.dest),
+            &TemplateVars::from_rel(&rel),
+        );
+        candidates.push(Candidate {
+            pair: LinkPair {
+                source_abs: source_root.join(&rel).clean(),
+                dest_abs: target_abs.join(tail).clean(),
+            },
+            is_dir_link: entry.is_dir,
         });
     }
 
-    Ok(pairs)
+    Ok(candidates)
 }
 
 fn plan_pattern(
     source_root: &Path,
-    projection: &Projection,
+    rules: &[omni_projection_configurations::PatternRule],
     entries: &[ScannedEntry],
     target_abs: &Path,
-    flatten: bool,
-) -> Result<Vec<LinkPair>> {
-    let mut pairs = Vec::new();
-    for rule in &projection.rules {
+) -> Result<Vec<Candidate>> {
+    let mut candidates = Vec::new();
+    for rule in rules {
         let matcher = build_glob(&rule.r#match)?;
-        for entry in entries {
-            if entry.is_dir {
-                continue;
-            }
-            let rel_slash = to_slash(&entry.rel);
-            if !matcher.is_match(&rel_slash) {
-                continue;
-            }
-
+        for entry in matching_entries(entries, &matcher, rule.match_kind) {
             let vars = TemplateVars::from_rel(&entry.rel);
-            let tail = match (&rule.dest, flatten) {
-                (Some(dest), _) => expand_template(&dest_tail(dest), &vars),
-                // `flatten` defaults to `{name}` when no `dest` is given.
-                (None, true) => expand_template("{name}", &vars),
-                (None, false) => {
-                    return Err(ProjectionError::custom(
-                        "the `pattern` strategy requires a `dest` on every rule",
-                    ));
-                }
-            };
-
-            pairs.push(LinkPair {
-                source_abs: source_root.join(&entry.rel).clean(),
-                dest_abs: target_abs.join(tail).clean(),
-            });
+            let tail = expand_template(&dest_tail(&rule.dest), &vars);
+            candidates.push(candidate(
+                source_root,
+                target_abs,
+                &entry.rel,
+                tail,
+                rule.match_kind,
+            ));
         }
     }
 
-    Ok(pairs)
+    Ok(candidates)
+}
+
+fn plan_flatten(
+    source_root: &Path,
+    rules: &[omni_projection_configurations::FlattenRule],
+    entries: &[ScannedEntry],
+    target_abs: &Path,
+) -> Result<Vec<Candidate>> {
+    let mut candidates = Vec::new();
+    for rule in rules {
+        let matcher = build_glob(&rule.r#match)?;
+        for entry in matching_entries(entries, &matcher, rule.match_kind) {
+            let vars = TemplateVars::from_rel(&entry.rel);
+            let tail = match &rule.dest {
+                Some(dest) => expand_template(&dest_tail(dest), &vars),
+                // A directory has no meaningful stem/ext split, so its default
+                // is the whole basename; a file defaults to its stem.
+                None => match rule.match_kind {
+                    MatchKind::Dir => expand_template("{basename}", &vars),
+                    MatchKind::File => expand_template("{name}", &vars),
+                },
+            };
+            candidates.push(candidate(
+                source_root,
+                target_abs,
+                &entry.rel,
+                tail,
+                rule.match_kind,
+            ));
+        }
+    }
+
+    Ok(candidates)
+}
+
+/// Entries a glob selects, filtered to the kind (file vs. directory) the rule
+/// targets.
+fn matching_entries<'a>(
+    entries: &'a [ScannedEntry],
+    matcher: &'a GlobMatcher,
+    match_kind: MatchKind,
+) -> impl Iterator<Item = &'a ScannedEntry> {
+    let want_dir = matches!(match_kind, MatchKind::Dir);
+    entries.iter().filter(move |entry| {
+        entry.is_dir == want_dir && matcher.is_match(to_slash(&entry.rel))
+    })
+}
+
+fn candidate(
+    source_root: &Path,
+    target_abs: &Path,
+    rel: &Path,
+    tail: String,
+    match_kind: MatchKind,
+) -> Candidate {
+    Candidate {
+        pair: LinkPair {
+            source_abs: source_root.join(rel).clean(),
+            dest_abs: target_abs.join(tail).clean(),
+        },
+        is_dir_link: matches!(match_kind, MatchKind::Dir),
+    }
+}
+
+/// Drop any candidate whose destination is a strict descendant of a
+/// directory-link destination: writing through a directory link would land back
+/// inside the source. Identical destinations stay and resolve via
+/// `on_collision`. Shallowest directory link wins.
+fn prune_nested(candidates: &mut Vec<Candidate>) {
+    let dir_dests: Vec<PathBuf> = candidates
+        .iter()
+        .filter(|c| c.is_dir_link)
+        .map(|c| c.pair.dest_abs.clone())
+        .collect();
+
+    candidates.retain(|c| {
+        !dir_dests.iter().any(|dir| {
+            c.pair.dest_abs != *dir && c.pair.dest_abs.starts_with(dir)
+        })
+    });
+}
+
+/// Run the control-plane / `.git` refusal over the non-symlinked entries beneath
+/// a directory link. The scan does not descend symlinked subdirectories, so this
+/// sees exactly the subtree configuration discovery could reach through a
+/// copy-kind link.
+fn check_dir_contents(
+    source_root: &Path,
+    entries: &[ScannedEntry],
+    pair: &LinkPair,
+    guardrails: &Guardrails,
+) -> Result<()> {
+    let Ok(dir_rel) = pair.source_abs.strip_prefix(source_root) else {
+        return Ok(());
+    };
+
+    for entry in entries {
+        if entry.is_symlink {
+            continue;
+        }
+        let Ok(sub) = entry.rel.strip_prefix(dir_rel) else {
+            continue;
+        };
+        if sub.as_os_str().is_empty() {
+            continue;
+        }
+        check_dest(&pair.dest_abs.join(sub), guardrails)?;
+    }
+
+    Ok(())
 }
 
 /// The `dest` tail after its `@target` root, ready for template expansion.
@@ -369,9 +483,9 @@ mod tests {
     }
 
     #[test]
-    fn mirror_scopes_by_single_match_rule() {
+    fn mirror_scopes_by_scope_glob() {
         let proj = projection(
-            r#"{"strategy":"mirror","rules":[{"match":"**/*.txt"}]}"#,
+            r#"{"strategy":"mirror","scope":"**/*.txt"}"#,
         );
         let entries = [
             ScannedEntry::file("a.txt"),
@@ -405,6 +519,17 @@ mod tests {
             r#"{"strategy":"explicit","rules":[{"match":"nope.rs","dest":"nope.rs"}]}"#,
         );
         assert!(plan_with(&proj, "id", &[]).is_err());
+    }
+
+    #[test]
+    fn explicit_links_a_literal_directory() {
+        let proj = projection(
+            r#"{"strategy":"explicit","rules":[{"match":"pkg","dest":"@target/pkg"}]}"#,
+        );
+        let entries =
+            [ScannedEntry::dir("pkg"), ScannedEntry::file("pkg/inner.txt")];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs, vec![pair("/src/pkg", "/ws/pkg")]);
     }
 
     #[test]
@@ -465,6 +590,155 @@ mod tests {
         let proj = projection(r#"{"strategy":"mirror"}"#);
         let entries = [ScannedEntry::file("../evil")];
         assert!(plan_with(&proj, "id", &entries).is_err());
+    }
+
+    // ── Directory-aware pattern / flatten ────────────────────────────────────
+
+    #[test]
+    fn pattern_dir_links_each_matched_directory() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/.agents/skills","rules":[{"match":"skills/engineering/*","match-kind":"dir","dest":"@target/{basename}"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("skills"),
+            ScannedEntry::dir("skills/engineering"),
+            ScannedEntry::dir("skills/engineering/tdd"),
+            ScannedEntry::file("skills/engineering/tdd/SKILL.md"),
+            ScannedEntry::dir("skills/engineering/code-review"),
+            ScannedEntry::file("skills/engineering/code-review/SKILL.md"),
+        ];
+        let mut pairs = plan_with(&proj, "id", &entries).unwrap();
+        pairs.sort_by(|a, b| a.dest_abs.cmp(&b.dest_abs));
+        assert_eq!(
+            pairs,
+            vec![
+                pair(
+                    "/src/skills/engineering/code-review",
+                    "/ws/.agents/skills/code-review"
+                ),
+                pair(
+                    "/src/skills/engineering/tdd",
+                    "/ws/.agents/skills/tdd"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn flatten_dir_defaults_to_basename_preserving_dots() {
+        let proj = projection(
+            r#"{"strategy":"flatten","target":"@workspace/plugins","rules":[{"match":"vendor/*","match-kind":"dir"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("vendor"),
+            ScannedEntry::dir("vendor/my.plugin"),
+            ScannedEntry::file("vendor/my.plugin/index.js"),
+        ];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(
+            pairs,
+            vec![pair("/src/vendor/my.plugin", "/ws/plugins/my.plugin")]
+        );
+    }
+
+    #[test]
+    fn recursive_dir_glob_collapses_to_shallowest() {
+        // A structure-preserving dest makes `pkgs/a/nested` land inside
+        // `pkgs/a`, so the nested directory link is pruned in favor of the
+        // shallowest one.
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkgs/**","match-kind":"dir","dest":"@target/{path}/{basename}"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkgs"),
+            ScannedEntry::dir("pkgs/a"),
+            ScannedEntry::dir("pkgs/a/nested"),
+        ];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs, vec![pair("/src/pkgs/a", "/ws/out/pkgs/a")]);
+    }
+
+    #[test]
+    fn nested_dest_pair_is_pruned_under_dir_link() {
+        // A dir link to out/pkg and a file route landing inside out/pkg/... :
+        // the file pair is dropped because it would write back through the link.
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"},{"match":"pkg/**/*.md","dest":"pkg/{name}.md"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry::file("pkg/readme.md"),
+        ];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs, vec![pair("/src/pkg", "/ws/out/pkg")]);
+    }
+
+    #[test]
+    fn identical_dir_dests_remain_a_collision() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"a","match-kind":"dir","dest":"@target/same"},{"match":"b","match-kind":"dir","dest":"@target/same"}]}"#,
+        );
+        let entries = [ScannedEntry::dir("a"), ScannedEntry::dir("b")];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs.len(), 2, "identical dests are kept as a collision");
+    }
+
+    #[test]
+    fn dir_link_containing_control_plane_config_is_refused() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry::file("pkg/project.omni.yaml"),
+        ];
+        assert!(
+            plan_with(&proj, "id", &entries).is_err(),
+            "a dir link whose contents include a control-plane manifest is refused"
+        );
+    }
+
+    #[test]
+    fn dir_link_control_plane_allowed_with_flag() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","allow_omni_config":true,"rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry::file("pkg/project.omni.yaml"),
+        ];
+        assert!(plan_with(&proj, "id", &entries).is_ok());
+    }
+
+    #[test]
+    fn dir_link_git_contents_are_refused() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry::dir("pkg/.git"),
+            ScannedEntry::file("pkg/.git/config"),
+        ];
+        assert!(plan_with(&proj, "id", &entries).is_err());
+    }
+
+    #[test]
+    fn dir_link_ignores_symlinked_contents_for_guardrail() {
+        // A symlinked manifest beneath the dir is not part of the subtree
+        // discovery could reach, so it does not trip the guardrail.
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry {
+                rel: PathBuf::from("pkg/project.omni.yaml"),
+                is_dir: false,
+                is_symlink: true,
+            },
+        ];
+        assert!(plan_with(&proj, "id", &entries).is_ok());
     }
 
     #[tokio::test]

@@ -330,14 +330,36 @@ mod tests {
         );
         assert_ne!(
             items_ref, "#/$defs/SourceConfig",
-            "the projection source carries an `id`/`projections` extra and must be a distinct def"
+            "the projection source carries an `id`/`routes` extra and must be a distinct def"
         );
 
-        // The projection routing vocabulary is present in the schema.
+        // The strategy-tagged projection routing vocabulary is present: the
+        // `Projection` def plus the strongly-typed per-strategy rule defs.
         let defs = &value["$defs"];
         assert!(defs.get("Projection").is_some());
-        assert!(defs.get("ProjectionRule").is_some());
-        assert!(defs.get("ProjectionStrategy").is_some());
+        assert!(defs.get("ExplicitRule").is_some());
+        assert!(defs.get("PatternRule").is_some());
+        assert!(defs.get("FlattenRule").is_some());
+
+        // `Projection` is a `oneOf` over the five strategies.
+        let one_of = defs["Projection"]["oneOf"]
+            .as_array()
+            .expect("Projection is a oneOf");
+        assert_eq!(one_of.len(), 5);
+
+        // Each arm is a self-contained, closed object carrying the shared
+        // fields inline, so no arm rejects the sibling `strategy` key.
+        for arm in one_of {
+            assert_eq!(
+                arm["additionalProperties"],
+                serde_json::json!(false),
+                "each projection arm must be closed to unknown fields"
+            );
+            assert!(
+                arm["properties"]["target"].is_object(),
+                "each arm inlines the shared `target` field"
+            );
+        }
     }
 
     #[test]

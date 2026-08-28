@@ -6813,10 +6813,13 @@ dependencies = [
  "omni_cache",
  "omni_capabilities",
  "omni_config_types",
+ "omni_configuration_discovery",
  "omni_configurations",
+ "omni_constants",
  "omni_context",
  "omni_core",
  "omni_execution_plan",
+ "omni_file_data_serde",
  "omni_generator",
  "omni_generator_configurations",
  "omni_input_provider",
@@ -7031,6 +7034,7 @@ dependencies = [
  "omni_cache",
  "omni_collector",
  "omni_configurations",
+ "omni_constants",
  "omni_context",
  "omni_core",
  "omni_execution_plan",
@@ -7164,7 +7168,9 @@ dependencies = [
  "omni_discovery_utils",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "thiserror 2.0.18",
+ "tokio 1.52.3",
  "trace",
  "tracing",
 ]
@@ -7212,6 +7218,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_constants"
+version = "0.1.0"
+
+[[package]]
 name = "omni_context"
 version = "0.7.0"
 dependencies = [
@@ -7235,6 +7245,7 @@ dependencies = [
  "omni_command_config",
  "omni_configuration_discovery",
  "omni_configurations",
+ "omni_constants",
  "omni_core",
  "omni_execution_plan",
  "omni_hasher",
@@ -7418,6 +7429,7 @@ dependencies = [
  "omni_command_config",
  "omni_config_types",
  "omni_configuration_discovery",
+ "omni_constants",
  "omni_discovery",
  "omni_discovery_utils",
  "omni_file_data_serde",
@@ -7498,8 +7510,10 @@ dependencies = [
  "rstest_reuse",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "test-log",
  "thiserror 2.0.18",
+ "tokio 1.52.3",
  "trace",
  "tracing",
  "url",
@@ -7725,6 +7739,7 @@ dependencies = [
  "globset",
  "log",
  "omni_configurations",
+ "omni_constants",
  "omni_hasher",
  "omni_projection_configurations",
  "omni_types",
@@ -8122,6 +8137,7 @@ dependencies = [
  "omni_capability_enforcement",
  "omni_capability_sys",
  "omni_configuration_discovery",
+ "omni_constants",
  "omni_discovery",
  "omni_file_data_serde",
  "omni_messages",
@@ -11118,9 +11134,9 @@ dependencies = [
 
 [[package]]
 name = "tera"
-version = "2.0.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38ea62bd58771b570262e11ffa274fa9eda9986bd886e6e3a1f7f42afef8024c"
+checksum = "52fca06a22977165c6821c26e2bf0387cd7e0822107a6854d5fbb787307c4194"
 dependencies = [
  "serde",
 ]

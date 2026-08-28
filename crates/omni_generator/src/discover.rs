@@ -10,16 +10,11 @@ use crate::{
 };
 
 static CONFIG_FILE_NAMES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    vec![
-        "generator.omni.yaml".to_string(),
-        "generator.omni.yml".to_string(),
-        "generator.omni.json".to_string(),
-        "generator.omni.toml".to_string(),
-    ]
+    omni_constants::config_file_names(omni_constants::GENERATOR_OMNI)
 });
 
 static IGNORE_FILE_NAMES: LazyLock<Vec<String>> =
-    LazyLock::new(|| vec![".omniignore".to_string()]);
+    LazyLock::new(|| vec![omni_constants::OMNI_IGNORE.to_string()]);
 
 #[allow(clippy::result_large_err)]
 pub async fn discover<G: AsRef<str>>(

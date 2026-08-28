@@ -1,0 +1,8 @@
+[package]
+name = "omni_constants"
+rust-version.workspace = true
+edition.workspace = true
+repository.workspace = true
+version = "0.1.0"
+
+[dependencies]

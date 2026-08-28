@@ -12,6 +12,9 @@ dependencies:
   - omni_configurations
   - omni_projections
   - omni_projection_configurations
+  - omni_constants
+  - omni_configuration_discovery
+  - omni_file_data_serde
   - omni_generator
   - omni_generator_configurations
   - omni_input_provider

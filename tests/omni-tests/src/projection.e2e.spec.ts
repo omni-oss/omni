@@ -20,7 +20,7 @@ function projectionWorkspace(): WorkspaceSpec {
                     source: "local",
                     path: "./vendor/skills",
                     id: "local-skills",
-                    projections: [
+                    routes: [
                         {
                             strategy: "mirror",
                             target: "@workspace/.agents/skills",
@@ -47,7 +47,7 @@ function namespacedWorkspace(): WorkspaceSpec {
                     source: "local",
                     path: "./vendor/pkg",
                     id: "my-pkg",
-                    projections: [
+                    routes: [
                         {
                             strategy: "namespaced",
                             target: "@workspace/node_modules",
@@ -68,6 +68,62 @@ function ledgerLinkCount(ws: ReturnType<typeof makeWorkspace>): number {
         ws.read(".omni/sources/projection/links.json"),
     ) as { links: unknown[] };
     return ledger.links.length;
+}
+
+// A `pattern` projection with `match-kind: dir` links whole directories: one
+// directory link per matched folder, rather than a link per file.
+function dirRoutingWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/skills",
+                    id: "local-skills",
+                    routes: [
+                        {
+                            strategy: "pattern",
+                            target: "@workspace/.agents/skills",
+                            rules: [
+                                {
+                                    match: "engineering/*",
+                                    "match-kind": "dir",
+                                    dest: "@target/{basename}",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/skills/engineering/tdd/SKILL.md": "# tdd\n",
+            "vendor/skills/engineering/code-review/SKILL.md": "# review\n",
+        },
+    };
+}
+
+// A source that ships its own `projection.omni.yaml`; the workspace omits
+// `routes`, so the owned manifest is inherited.
+function ownedProjectionWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/skills",
+                    id: "local-skills",
+                },
+            ],
+        },
+        files: {
+            "vendor/skills/rust.md": "# rust\n",
+            "vendor/skills/projection.omni.yaml":
+                'routes:\n  - strategy: mirror\n    scope: "*.md"\n    target: "@workspace/.agents/skills"\n',
+        },
+    };
 }
 
 describe("+projection @e2e", { tags: ["projection"] }, () => {
@@ -203,5 +259,87 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
             cwd: ws.cwd,
         });
         expect(healthy.stdout).toContain("2 ok");
+    });
+
+    it("links whole directories with pattern match-kind: dir", async () => {
+        const ws = makeWorkspace(dirRoutingWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+
+        // One directory link per matched folder; contents resolve through it.
+        expect(ws.read(".agents/skills/tdd/SKILL.md")).toBe("# tdd\n");
+        expect(ws.read(".agents/skills/code-review/SKILL.md")).toBe(
+            "# review\n",
+        );
+        // Two directory links, not four file links.
+        expect(ledgerLinkCount(ws)).toBe(2);
+
+        const status = await runOmni(["projection", "status"], { cwd: ws.cwd });
+        expect(status.stdout).toContain("2 ok");
+
+        // An unchanged re-sync is a no-op.
+        const second = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(second).toHaveSucceeded();
+        expect(second.stdout).toContain("up-to-date");
+    });
+
+    it("prints planned directory-link dests on --dry-run without writing", async () => {
+        const ws = makeWorkspace(dirRoutingWorkspace());
+
+        const result = await runOmni(["projection", "sync", "--dry-run"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toContain(".agents/skills/tdd");
+        expect(result.stdout).toContain(".agents/skills/code-review");
+        expect(ws.exists(".agents/skills/tdd/SKILL.md")).toBe(false);
+    });
+
+    it("inherits routes from a source's own projection.omni.yaml", async () => {
+        const ws = makeWorkspace(ownedProjectionWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+        expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+    });
+
+    it("errors when a source declares no routes anywhere", async () => {
+        const ws = makeWorkspace({
+            workspace: {
+                projects: ["**"],
+                projections: [
+                    {
+                        source: "local",
+                        path: "./vendor/skills",
+                        id: "local-skills",
+                    },
+                ],
+            },
+            files: { "vendor/skills/rust.md": "# rust\n" },
+        });
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveFailed();
+    });
+
+    it("errors when routes is an explicit empty list", async () => {
+        const ws = makeWorkspace({
+            workspace: {
+                projects: ["**"],
+                projections: [
+                    {
+                        source: "local",
+                        path: "./vendor/skills",
+                        id: "local-skills",
+                        routes: [],
+                    },
+                ],
+            },
+            files: { "vendor/skills/rust.md": "# rust\n" },
+        });
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveFailed();
     });
 });

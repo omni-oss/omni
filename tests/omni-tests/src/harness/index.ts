@@ -31,6 +31,12 @@ export {
     sshReachable,
     workspaceMinimalRepo,
 } from "./git-remote";
+export type { LocalGitRepo, LocalGitRepoSpec } from "./local-git";
+export {
+    gitCliAvailable,
+    makeLocalGitRepoWithAnnotatedTag,
+    skipUnlessGitCliAvailable,
+} from "./local-git";
 export type { ConnectMcpOptions, McpClient } from "./mcp";
 export { connectMcp } from "./mcp";
 export { lines, normalize, normalizeLines } from "./normalize";

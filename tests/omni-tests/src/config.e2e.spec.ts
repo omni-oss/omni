@@ -1,6 +1,6 @@
 /**
- * `omni config schema <workspace|project|generator>` - prints the JSON Schema
- * for each configuration kind. Pinned to
+ * `omni config schema <workspace|project|generator|tool|projection>` - prints
+ * the JSON Schema for each configuration kind. Pinned to
  * `crates/omni_cli_core/src/commands/config.rs`.
  *
  * `config` takes no Context, so these run without a workspace.
@@ -9,7 +9,13 @@
 import { describe, expect, it } from "vitest";
 import { runOmni } from "@/harness";
 
-const SCHEMAS = ["workspace", "project", "generator", "tool"] as const;
+const SCHEMAS = [
+    "workspace",
+    "project",
+    "generator",
+    "tool",
+    "projection",
+] as const;
 
 /** Parse a command's stdout as JSON, failing the test with context on error. */
 function parseSchema(stdout: string): Record<string, unknown> {
@@ -60,7 +66,7 @@ describe("+config @output (schema emission)", () => {
         expect(result).toHaveExitCode(2);
         expect(result).toHaveStderrContaining("invalid value 'bogus'");
         expect(result).toHaveStderrContaining(
-            "[possible values: workspace, project, generator, tool]",
+            "[possible values: workspace, project, generator, tool, projection]",
         );
     });
 
@@ -86,7 +92,7 @@ describe("+config @output (schema emission)", () => {
         expect(parseSchema(pretty.stdout)).toEqual(parseSchema(compact.stdout));
     });
 
-    it("all three schemas expose distinct top-level titles", async () => {
+    it("every schema exposes a distinct top-level title", async () => {
         const titles: string[] = [];
         for (const schema of SCHEMAS) {
             const result = await runOmni(["config", "schema", schema]);

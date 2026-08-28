@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use lazy_regex::{Lazy, Regex, regex};
-use omni_projection_configurations::{ProjectionExtra, ProjectionStrategy};
+use omni_projection_configurations::ProjectionExtra;
 use serde_validate::{StaticValidator, declare_static_validator};
 use sets::unordered_set;
 
@@ -104,17 +104,6 @@ impl<T: Borrow<Vec<SourceConfig<ProjectionExtra>>>> StaticValidator<T>
                     "Duplicate projection source id found: {}\nEach projection source id must be unique",
                     extra.id
                 ));
-            }
-
-            for projection in &extra.projections {
-                if projection.strategy == ProjectionStrategy::Namespaced
-                    && !projection.rules.is_empty()
-                {
-                    return Err(format!(
-                        "Projection source '{}' uses the `namespaced` strategy with `rules`\nThe `namespaced` strategy links the whole source and does not accept `rules`",
-                        extra.id
-                    ));
-                }
             }
         }
 

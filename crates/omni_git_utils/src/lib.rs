@@ -34,11 +34,16 @@ pub async fn clone_repo(
         .main_worktree(Discard, &gix::interrupt::IS_INTERRUPTED)
         .map_err(gix::Error::from_error)?;
 
-    let oid = repo
+    // `rev` may resolve to an annotated tag (or a chain of tags) rather than a
+    // commit directly, so peel through any tags to the underlying commit.
+    let commit = repo
         .rev_parse_single(rev.unwrap_or("HEAD"))
         .map_err(gix::Error::from_error)?
-        .detach();
-    let commit = repo.find_commit(oid).map_err(gix::Error::from_error)?;
+        .object()
+        .map_err(gix::Error::from_error)?
+        .peel_to_commit()
+        .map_err(gix::Error::from_error)?;
+    let oid = commit.id;
     let tree_id = commit.tree().map_err(gix::Error::from_error)?.id();
 
     let mut index_state = gix::index::State::from_tree(
