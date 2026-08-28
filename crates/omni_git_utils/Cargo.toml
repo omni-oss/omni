@@ -30,3 +30,6 @@ url = { workspace = true }
 test-log = { workspace = true }
 rstest = { workspace = true }
 rstest_reuse = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+system_traits = { workspace = true, features = ["real-sync", "real-async-tokio"] }
