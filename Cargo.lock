@@ -3073,6 +3073,7 @@ dependencies = [
  "num_cpus",
  "path-slash",
  "strum 0.28.0",
+ "tempfile",
  "thiserror 2.0.18",
  "trace",
  "tracing",
