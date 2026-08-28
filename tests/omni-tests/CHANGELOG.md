@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/omni-tests-v0.5.0 - 2026-08-28
+#### Features
+- add projection config schema kind - (24746d1) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) directory routing and owned projection e2e coverage - (bd80bad) - Clarence Manuel
+- (**e2e**) cover init cloning at an annotated tag - (d1324d9) - Clarence Manuel
+- (**omni-tests**) include projection tools in mcp protocol expectations - (b110912) - Clarence Manuel
+- (**omni-tests**) cover projection prune, namespaced, and forced repair - (7187e8e) - Clarence Manuel
+- (**omni-tests**) add e2e coverage for omni projection - (b95ef88) - Clarence Manuel
+- add e2e coverage for hashing symlinked inputs bounded to the workspace - (dbe766d) - Clarence Manuel
+#### Miscellaneous Chores
+- update rust presets - (3273fe2) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/omni-tests-v0.4.0 - 2026-08-21
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

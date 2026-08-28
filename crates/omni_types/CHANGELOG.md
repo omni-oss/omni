@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_types-v0.4.0 - 2026-08-27
+#### Features
+- (**omni_types**) support \@ literal-escape and fix bare-root parse panic - (27aa3b5) - Clarence Manuel
+
+- - -
+
 ## omni_types-v0.3.0 - 2026-08-02
 #### Features
 - implement capability sandboxing - (eb3e5f9) - Clarence Manuel

@@ -2,6 +2,26 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.12.0 - 2026-08-28
+#### Features
+- (**omni_configurations**) add projection configuration types and validation - (b72ad6c) - Clarence Manuel
+#### Bug Fixes
+- emit closed projection strategy arms so routes validate - (1c58a96) - Clarence Manuel
+- add missing projection project manifests and dependency edges - (d900ea0) - Clarence Manuel
+- inherit extends on omission instead of clearing it during merge - (978dc0d) - Clarence Manuel
+#### Tests
+- (**omni_configurations**) guard workspace schema for projection sources - (2d0707a) - Clarence Manuel
+- (**omni_configurations**) pin workspace schema snapshot after source unification - (80abf17) - Clarence Manuel
+#### Refactoring
+- (**omni_configurations**) adopt strategy-tagged projection config; retire runtime strategy validators - (adffc20) - Clarence Manuel
+- (**omni_configurations**) collapse source validators into generic SourcesValidator - (ec48788) - Clarence Manuel
+- (**omni_configurations**) unify source configs into generic SourceConfig<E> - (e7200c1) - Clarence Manuel
+- extract projection config types into omni_projection_configurations crate - (3750255) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.11.0 - 2026-08-21
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

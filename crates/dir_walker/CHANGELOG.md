@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## dir_walker-v0.2.0 - 2026-08-28
+#### Features
+- (**dir_walker**) expose follow_links and plumb filter_entry through glob walker - (5abb266) - Clarence Manuel
+- (**omni_collector**) follow symlinks when hashing, bounded to the workspace root - (fc7dc21) - Clarence Manuel
+#### Performance Improvements
+- improve performance by removing unnecessary statx calls - (56efa53) - Clarence Manuel
+#### Refactoring
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## dir_walker-v0.1.2 - 2026-05-22
 #### Bug Fixes
 - bug in windows incorrectly resolving the topmost dir to traverse - (6104fef) - Clarence Manuel

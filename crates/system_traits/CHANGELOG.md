@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## system_traits-v0.3.0 - 2026-08-27
+#### Features
+- (**system_traits**) add InMemorySys impls for async link primitives - (5d507ee) - Clarence Manuel
+- (**system_traits**) add async symlink/junction/read_link traits and RealSys impls - (9b9f0a8) - Clarence Manuel
+
+- - -
+
 ## system_traits-v0.2.0 - 2026-08-02
 #### Features
 - implement capability sandboxing - (eb3e5f9) - Clarence Manuel

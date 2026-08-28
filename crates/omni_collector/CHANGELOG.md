@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_collector-v0.5.0 - 2026-08-28
+#### Features
+- (**omni_collector**) follow symlinks when hashing, bounded to the workspace root - (fc7dc21) - Clarence Manuel
+#### Performance Improvements
+- improve performance in path utils - (5f68dbb) - Clarence Manuel
+
+- - -
+
 ## omni_collector-v0.4.0 - 2026-07-13
 #### Features
 - support array style commands - (32c32aa) - Clarence Manuel

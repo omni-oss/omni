@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.16.0 - 2026-08-28
+#### Features
+- (**omni_api**) add projection sync/status/unlink/prune operations - (f2a160a) - Clarence Manuel
+- (**omni_configurations**) add projection configuration types and validation - (b72ad6c) - Clarence Manuel
+- (**omni_projections**) add link ledger with idempotent sync and safe teardown - (81e109f) - Clarence Manuel
+- (**omni_projections**) add link applier with kind resolution and collision policy - (39e6e78) - Clarence Manuel
+- (**omni_projections**) add routing engine with per-strategy planning and containment - (3203d43) - Clarence Manuel
+- (**system_traits**) add InMemorySys impls for async link primitives - (5d507ee) - Clarence Manuel
+#### Tests
+- (**omni_git_utils**) cover cloning at an annotated tag - (763541e) - Clarence Manuel
+#### Refactoring
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+- extract projection config types into omni_projection_configurations crate - (3750255) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_projections**) scaffold crate, error type, and dependencies - (4ada17b) - Clarence Manuel
+- update Cargo.lock for projection crate dependency edges - (142a028) - Clarence Manuel
+- bump tera to 2.3.0 to fix tera-contrib 0.3.0 incompatibility - (e41cf2c) - Clarence Manuel
+- update rust dependencies - (361f4db) - Clarence Manuel
+- update noyalib version - (3d9d974) - Clarence Manuel
+
+- - -
+
 ## root-v0.15.0 - 2026-08-21
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

@@ -2,6 +2,56 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.20.0 - 2026-08-28
+#### Features
+- (**dir_walker**) expose follow_links and plumb filter_entry through glob walker - (5abb266) - Clarence Manuel
+- (**omni_api**) owned projection manifests with workspace override and trust floor - (63e274a) - Clarence Manuel
+- (**omni_api**) add projection sync/status/unlink/prune operations - (f2a160a) - Clarence Manuel
+- (**omni_cli_core**) add omni projection CLI command - (9230d5d) - Clarence Manuel
+- (**omni_collector**) follow symlinks when hashing, bounded to the workspace root - (fc7dc21) - Clarence Manuel
+- (**omni_configurations**) add projection configuration types and validation - (b72ad6c) - Clarence Manuel
+- (**omni_mcp_core**) expose projection tools over MCP - (1e6af32) - Clarence Manuel
+- (**omni_projection_configurations**) strategy-tagged Projection, MatchKind, nullable routes, owned manifest - (53167e3) - Clarence Manuel
+- (**omni_projections**) directory-aware pattern/flatten routing, subtree pin, dir-contents guardrail - (1c61678) - Clarence Manuel
+- (**omni_projections**) add source scanner and sync/status engine - (a164214) - Clarence Manuel
+- (**omni_projections**) add link ledger with idempotent sync and safe teardown - (81e109f) - Clarence Manuel
+- (**omni_projections**) add link applier with kind resolution and collision policy - (39e6e78) - Clarence Manuel
+- (**omni_projections**) add plan-time control-plane and .git guardrails - (d5a880d) - Clarence Manuel
+- (**omni_projections**) add routing engine with per-strategy planning and containment - (3203d43) - Clarence Manuel
+- (**omni_remote_source**) expose locked commit and git invalidation - (b72a4d3) - Clarence Manuel
+- (**omni_types**) support \@ literal-escape and fix bare-root parse panic - (27aa3b5) - Clarence Manuel
+- (**system_traits**) add InMemorySys impls for async link primitives - (5d507ee) - Clarence Manuel
+- (**system_traits**) add async symlink/junction/read_link traits and RealSys impls - (9b9f0a8) - Clarence Manuel
+- add projection config schema kind - (24746d1) - Clarence Manuel
+#### Bug Fixes
+- (**omni_git_utils**) peel annotated tags to commit when cloning - (d87c8f3) - Clarence Manuel
+- (**omni_projections**) detect dangling symlinks by following the link - (70c2b91) - Clarence Manuel
+- emit closed projection strategy arms so routes validate - (1c58a96) - Clarence Manuel
+- add missing projection project manifests and dependency edges - (d900ea0) - Clarence Manuel
+- inherit extends on omission instead of clearing it during merge - (978dc0d) - Clarence Manuel
+#### Tests
+- (**omni_configuration_discovery**) pin that discovery does not follow symlinked directories - (33f44db) - Clarence Manuel
+- (**omni_configurations**) guard workspace schema for projection sources - (2d0707a) - Clarence Manuel
+- (**omni_configurations**) pin workspace schema snapshot after source unification - (80abf17) - Clarence Manuel
+- (**omni_git_utils**) cover cloning at an annotated tag - (763541e) - Clarence Manuel
+- (**omni_projection_configurations**) unit-test the projection id validator - (982d805) - Clarence Manuel
+#### Refactoring
+- (**omni_configurations**) adopt strategy-tagged projection config; retire runtime strategy validators - (adffc20) - Clarence Manuel
+- (**omni_configurations**) collapse source validators into generic SourcesValidator - (ec48788) - Clarence Manuel
+- (**omni_configurations**) unify source configs into generic SourceConfig<E> - (e7200c1) - Clarence Manuel
+- (**omni_projections**) let the caller own the ledger file location - (060041c) - Clarence Manuel
+- (**omni_projections**) version the link ledger like the lockfile - (26e65eb) - Clarence Manuel
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+- extract projection config types into omni_projection_configurations crate - (3750255) - Clarence Manuel
+- migrate source-config call sites to SourceConfig<E> - (cdcf403) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni**) fix omni project config - (e76afa5) - Clarence Manuel
+- (**omni_projections**) scaffold crate, error type, and dependencies - (4ada17b) - Clarence Manuel
+- add omni_constants project manifest and wire consumer project dependencies - (5dad87b) - Clarence Manuel
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni-v0.19.0 - 2026-08-21
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

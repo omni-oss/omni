@@ -2,6 +2,63 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.21.0 - 2026-08-28
+### Package updates
+- omni_cli_core bumped to omni_cli_core-v0.20.0
+- omni bumped to omni-v0.20.0
+- omni_remote_source bumped to omni_remote_source-v0.2.0
+- system_traits bumped to system_traits-v0.3.0
+- root bumped to root-v0.16.0
+- omni_projections bumped to omni_projections-v0.1.0
+- omni_collector bumped to omni_collector-v0.5.0
+- omni_projection_configurations bumped to omni_projection_configurations-v0.1.0
+- omni_mcp_core bumped to omni_mcp_core-v0.5.0
+- omni_configurations bumped to omni_configurations-v0.12.0
+- omni_types bumped to omni_types-v0.4.0
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.5.0
+- config_utils bumped to config_utils-v0.3.2
+- dir_walker bumped to dir_walker-v0.2.0
+### Global changes
+#### Features
+- (**omni_api**) owned projection manifests with workspace override and trust floor - (63e274a) - Clarence Manuel
+- (**omni_api**) add projection sync/status/unlink/prune operations - (f2a160a) - Clarence Manuel
+- (**omni_configurations**) add projection configuration types and validation - (b72ad6c) - Clarence Manuel
+- (**omni_mcp_core**) expose projection tools over MCP - (1e6af32) - Clarence Manuel
+- (**omni_projections**) add link ledger with idempotent sync and safe teardown - (81e109f) - Clarence Manuel
+- (**omni_projections**) add link applier with kind resolution and collision policy - (39e6e78) - Clarence Manuel
+- (**omni_projections**) add routing engine with per-strategy planning and containment - (3203d43) - Clarence Manuel
+- (**system_traits**) add InMemorySys impls for async link primitives - (5d507ee) - Clarence Manuel
+- add projection config schema kind - (24746d1) - Clarence Manuel
+#### Bug Fixes
+- (**ci**) avoid E2BIG in gatekeeper by passing only job results - (837c672) - Clarence Manuel
+- (**omni_git_utils**) peel annotated tags to commit when cloning - (d87c8f3) - Clarence Manuel
+- add missing projection project manifests and dependency edges - (d900ea0) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-remote-cache-service-tests**) update binary resolver - (253ce87) - Clarence Manuel
+- (**omni_git_utils**) cover cloning at an annotated tag - (763541e) - Clarence Manuel
+#### Continuous Integration
+- add static gatekeeper job for branch protection - (528bdb5) - Clarence Manuel
+- update omni version - (5ca0351) - Clarence Manuel
+- disable publish-perf-comparison job in ci - (2b644ac) - Clarence Manuel
+- rename publish-perf-comparison.yaml input name - (47d09f2) - Clarence Manuel
+#### Refactoring
+- (**omni_projections**) let the caller own the ledger file location - (060041c) - Clarence Manuel
+- (**omni_projections**) version the link ledger like the lockfile - (26e65eb) - Clarence Manuel
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+- extract projection config types into omni_projection_configurations crate - (3750255) - Clarence Manuel
+- migrate source-config call sites to SourceConfig<E> - (cdcf403) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_projections**) scaffold crate, error type, and dependencies - (4ada17b) - Clarence Manuel
+- add omni_constants project manifest and wire consumer project dependencies - (5dad87b) - Clarence Manuel
+- update Cargo.lock for projection crate dependency edges - (142a028) - Clarence Manuel
+- bump tera to 2.3.0 to fix tera-contrib 0.3.0 incompatibility - (e41cf2c) - Clarence Manuel
+- update rust dependencies - (361f4db) - Clarence Manuel
+- update rust presets - (3273fe2) - Clarence Manuel
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+- update noyalib version - (3d9d974) - Clarence Manuel
+
+- - -
+
 ## v0.20.0 - 2026-08-21
 ### Package updates
 - @omni-oss/bridge-rpc-services bumped to @omni-oss/bridge-rpc-services-v0.2.0

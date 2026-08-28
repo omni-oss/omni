@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_mcp_core-v0.5.0 - 2026-08-27
+#### Features
+- (**omni_mcp_core**) expose projection tools over MCP - (1e6af32) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_mcp_core-v0.4.0 - 2026-08-21
 #### Features
 - add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel

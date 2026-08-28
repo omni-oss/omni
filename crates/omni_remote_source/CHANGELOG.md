@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_source-v0.2.0 - 2026-08-27
+#### Features
+- (**omni_remote_source**) expose locked commit and git invalidation - (b72a4d3) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+- format files - (3b49082) - Clarence Manuel
+
+- - -
+
 ## omni_remote_source-v0.1.1 - 2026-05-24
 #### Bug Fixes
 - generator sources lock not removing stale git sources - (905b8dc) - Clarence Manuel

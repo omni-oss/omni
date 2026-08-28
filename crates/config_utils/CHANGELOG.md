@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## config_utils-v0.3.2 - 2026-08-21
+#### Bug Fixes
+- inherit extends on omission instead of clearing it during merge - (978dc0d) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## config_utils-v0.3.1 - 2026-07-02
 #### Bug Fixes
 - swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
