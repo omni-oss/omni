@@ -21,7 +21,9 @@ use omni_utils::glob::build_glob_set;
 use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, starts_with_path, topmost_dirs,
 };
-use system_traits::{FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys};
+use system_traits::{
+    FsCanonicalize, FsMetadata, FsMetadataAsync, auto_impl, impls::RealSys,
+};
 use trace::Level;
 
 use crate::error::{Error, ErrorInner};
@@ -52,7 +54,7 @@ pub struct ProjectTaskInfo<'a> {
 
 #[auto_impl]
 pub trait CollectorSys:
-    FsMetadata + FsMetadataAsync + Clone + Send + Sync
+    FsMetadata + FsMetadataAsync + FsCanonicalize + Clone + Send + Sync + 'static
 {
 }
 
@@ -127,6 +129,54 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
         let name = path_safe(project_name);
 
         self.cache_dir.join(name).join("output")
+    }
+
+    fn canonical_ws_root(&self) -> PathBuf {
+        self.sys
+            .fs_canonicalize(self.ws_root_dir)
+            .unwrap_or_else(|_| self.ws_root_dir.to_path_buf())
+    }
+
+    // A followed symlink must never pull content from outside the workspace
+    // root into an input hash, or the resulting cache key would depend on
+    // machine-external, non-reproducible state. This predicate rejects any
+    // symlink whose real target escapes the (canonicalized) workspace root.
+    // Non-symlink entries take the fast path so the common case pays nothing.
+    //
+    // The walker does not run this predicate on the walk roots themselves
+    // (only on entries discovered during descent), so escaping roots are
+    // dropped separately before the walk starts.
+    fn workspace_bound_predicate(
+        &self,
+        canonical_root: PathBuf,
+    ) -> impl Fn(&dir_walker::impls::IgnoreDirEntry) -> bool + Send + Sync + 'static
+    {
+        let sys = self.sys.clone();
+
+        move |entry| {
+            if !entry.path_is_symlink() {
+                return true;
+            }
+
+            let link = entry.path();
+
+            match sys.fs_canonicalize(link) {
+                Ok(target) if target.starts_with(&canonical_root) => true,
+                Ok(target) => {
+                    trace::warn!(
+                        link = ?link,
+                        target = ?target,
+                        "excluding symlink whose target escapes the workspace root"
+                    );
+                    false
+                }
+                // A target that cannot be resolved (e.g. a dangling link)
+                // is left for the walker's own not-found handling to skip,
+                // so containment rejection stays reserved for links that
+                // resolve outside the root.
+                Err(_) => true,
+            }
+        }
     }
 
     fn get_output_dir(
@@ -384,10 +434,31 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let forced_includes =
                 forced_includes.into_iter().collect::<Vec<_>>();
 
+            let canonical_root = self.canonical_ws_root();
+
             let topmost =
                 topmost_dirs(self.sys.clone(), &includes, self.ws_root_dir)
                     .into_iter()
                     .map(|p| p.to_path_buf())
+                    // Walk roots bypass the walker's per-entry containment
+                    // filter, so a root that resolves outside the workspace
+                    // must be dropped here or its external contents would
+                    // enter the hash.
+                    .filter(|root| match self.sys.fs_canonicalize(root) {
+                        Ok(target) => {
+                            let contained =
+                                target.starts_with(&canonical_root);
+                            if !contained {
+                                trace::warn!(
+                                    root = ?root,
+                                    target = ?target,
+                                    "excluding walk root whose target escapes the workspace root"
+                                );
+                            }
+                            contained
+                        }
+                        Err(_) => true,
+                    })
                     .collect::<Vec<_>>();
 
             let topmost =
@@ -406,98 +477,119 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                 .include(forced_includes)
                 .root_dir(self.ws_root_dir)
                 .custom_ignore_filenames(vec![".omniignore".to_string()])
+                .follow_links(true)
+                .filter_entry(self.workspace_bound_predicate(canonical_root))
                 .build()
                 .build_walker()?;
 
-            for res in dirwalker.walk_dir(&topmost)? {
-                let res = res?;
-                let original_file_abs_path = res.path();
+            // Every walk root may have been dropped for escaping the
+            // workspace, in which case there is nothing to enumerate.
+            if !topmost.is_empty() {
+                for res in dirwalker.walk_dir(&topmost)? {
+                    let res = match res {
+                        Ok(entry) => entry,
+                        Err(err) if is_symlink_loop(&err) => {
+                            trace::warn!(
+                                error = %err,
+                                "skipping symlink loop while hashing"
+                            );
+                            continue;
+                        }
+                        Err(err) => return Err(err.into()),
+                    };
+                    let original_file_abs_path = res.path();
 
-                log::trace!("walked path {original_file_abs_path:?}");
+                    log::trace!("walked path {original_file_abs_path:?}");
 
-                // Prefer the cheap `d_type` reported by the walker's
-                // `readdir`/`getdents` to avoid a per-entry `stat` syscall
-                // (dispatched via `spawn_blocking`) for the common case.
-                // Symlinks and unknown types still fall back to a
-                // symlink-following stat to preserve previous behavior.
-                let is_file = match res.file_type() {
-                    Some(FileType::File) => true,
-                    Some(FileType::Dir | FileType::Other) => false,
-                    Some(FileType::Symlink) | None => {
-                        self.sys
-                            .fs_is_file_async(original_file_abs_path)
-                            .await?
-                    }
-                };
+                    // Prefer the cheap `d_type` reported by the walker's
+                    // `readdir`/`getdents` to avoid a per-entry `stat` syscall
+                    // (dispatched via `spawn_blocking`) for the common case.
+                    // Symlinks and unknown types still fall back to a
+                    // symlink-following stat to preserve previous behavior.
+                    let is_file = match res.file_type() {
+                        Some(FileType::File) => true,
+                        Some(FileType::Dir | FileType::Other) => false,
+                        Some(FileType::Symlink) | None => {
+                            self.sys
+                                .fs_is_file_async(original_file_abs_path)
+                                .await?
+                        }
+                    };
 
-                if !is_file {
-                    continue;
-                }
-
-                // Build the match candidate once per file instead of letting
-                // `GlobSet::is_match` rebuild it (path normalization, basename
-                // and extension extraction, plus allocations) for every
-                // project's input and output globset below.
-                let candidate = Candidate::new(original_file_abs_path);
-
-                for project in &mut to_process {
-                    // Cheap rejection: a file can only match this project's
-                    // input/output globsets if it lives under one of the
-                    // literal prefixes of those globs. This skips the far more
-                    // expensive `is_match_candidate` glob search (and the
-                    // rooted-path construction below) for the many projects
-                    // that cannot own this file.
-                    if !project.match_bases.iter().any(|base| {
-                        starts_with_path(original_file_abs_path, base)
-                    }) {
+                    if !is_file {
                         continue;
                     }
 
-                    let project_dir = project.roots[Root::Project];
-                    let rooted_path = if starts_with_path(
-                        original_file_abs_path,
-                        project_dir,
-                    ) {
-                        OmniPath::new_rooted(
-                            relpath(original_file_abs_path, project_dir),
-                            Root::Project,
-                        )
-                    } else if starts_with_path(
-                        original_file_abs_path,
-                        self.ws_root_dir,
-                    ) {
-                        OmniPath::new_rooted(
-                            relpath(original_file_abs_path, self.ws_root_dir),
-                            Root::Workspace,
-                        )
-                    } else {
-                        OmniPath::new(original_file_abs_path)
-                    };
+                    // Build the match candidate once per file instead of letting
+                    // `GlobSet::is_match` rebuild it (path normalization, basename
+                    // and extension extraction, plus allocations) for every
+                    // project's input and output globset below.
+                    let candidate = Candidate::new(original_file_abs_path);
 
-                    if let Some(input_files_globset) =
-                        project.input_files_globset.as_ref()
-                        && input_files_globset.is_match_candidate(&candidate)
-                        && let Some(resolved_input_files) =
-                            project.resolved_input_files.as_mut()
-                    {
-                        trace::trace!(
-                            file = ?original_file_abs_path,
-                            "found_input_file",
-                        );
-                        resolved_input_files.push(rooted_path.clone());
-                    }
+                    for project in &mut to_process {
+                        // Cheap rejection: a file can only match this project's
+                        // input/output globsets if it lives under one of the
+                        // literal prefixes of those globs. This skips the far more
+                        // expensive `is_match_candidate` glob search (and the
+                        // rooted-path construction below) for the many projects
+                        // that cannot own this file.
+                        if !project.match_bases.iter().any(|base| {
+                            starts_with_path(original_file_abs_path, base)
+                        }) {
+                            continue;
+                        }
 
-                    if let Some(output_files_globset) =
-                        project.output_files_globset.as_ref()
-                        && output_files_globset.is_match_candidate(&candidate)
-                        && let Some(resolved_output_files) =
-                            project.resolved_output_files.as_mut()
-                    {
-                        trace::trace!(
-                            file = ?original_file_abs_path,
-                            "found_output_file",
-                        );
-                        resolved_output_files.push(rooted_path);
+                        let project_dir = project.roots[Root::Project];
+                        let rooted_path = if starts_with_path(
+                            original_file_abs_path,
+                            project_dir,
+                        ) {
+                            OmniPath::new_rooted(
+                                relpath(original_file_abs_path, project_dir),
+                                Root::Project,
+                            )
+                        } else if starts_with_path(
+                            original_file_abs_path,
+                            self.ws_root_dir,
+                        ) {
+                            OmniPath::new_rooted(
+                                relpath(
+                                    original_file_abs_path,
+                                    self.ws_root_dir,
+                                ),
+                                Root::Workspace,
+                            )
+                        } else {
+                            OmniPath::new(original_file_abs_path)
+                        };
+
+                        if let Some(input_files_globset) =
+                            project.input_files_globset.as_ref()
+                            && input_files_globset
+                                .is_match_candidate(&candidate)
+                            && let Some(resolved_input_files) =
+                                project.resolved_input_files.as_mut()
+                        {
+                            trace::trace!(
+                                file = ?original_file_abs_path,
+                                "found_input_file",
+                            );
+                            resolved_input_files.push(rooted_path.clone());
+                        }
+
+                        if let Some(output_files_globset) =
+                            project.output_files_globset.as_ref()
+                            && output_files_globset
+                                .is_match_candidate(&candidate)
+                            && let Some(resolved_output_files) =
+                                project.resolved_output_files.as_mut()
+                        {
+                            trace::trace!(
+                                file = ?original_file_abs_path,
+                                "found_output_file",
+                            );
+                            resolved_output_files.push(rooted_path);
+                        }
                     }
                 }
             }
@@ -585,6 +677,21 @@ fn populate_includes_and_patterns(
         includes.push(path);
     }
     Ok(())
+}
+
+// A symlink cycle surfaces as `Error::Loop` (possibly wrapped), which is not an
+// I/O error and so is not caught by the walker's not-found handling. Detecting
+// it lets the collector skip the cycle instead of aborting the whole hash.
+fn is_symlink_loop(err: &dir_walker::impls::IgnoreError) -> bool {
+    use dir_walker::impls::IgnoreError;
+    match err {
+        IgnoreError::Loop { .. } => true,
+        IgnoreError::WithLineNumber { err, .. }
+        | IgnoreError::WithPath { err, .. }
+        | IgnoreError::WithDepth { err, .. } => is_symlink_loop(err),
+        IgnoreError::Partial(errs) => errs.iter().any(is_symlink_loop),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -1056,6 +1163,272 @@ mod tests {
         assert_eq!(
             as_set(&results[1].input_files),
             rel_paths(&["src/two.txt"])
+        );
+    }
+
+    #[cfg(unix)]
+    fn symlink(target: &Path, link: &Path) {
+        if let Some(parent) = link.parent() {
+            std::fs::create_dir_all(parent).expect("create link parent");
+        }
+        std::os::unix::fs::symlink(target, link).expect("create symlink");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlinked_directory_contributes_to_input_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/real/a.txt"), "a");
+        write_file(&root.join("proj/real/nested/b.txt"), "b");
+        symlink(&root.join("proj/real"), &root.join("proj/linked"));
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("linked/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["linked/a.txt", "linked/nested/b.txt"]),
+            "content behind an in-workspace symlinked directory must be hashed",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn editing_file_behind_symlink_changes_digest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let target = root.join("proj/real/a.txt");
+
+        write_file(&target, "original");
+        symlink(&root.join("proj/real"), &root.join("proj/linked"));
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("linked/**/*.txt")];
+
+        let cfg = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+
+        let before =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+        write_file(&target, "a completely different, longer body");
+        let after =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+
+        assert_ne!(
+            before.digest, after.digest,
+            "editing a file behind a symlinked directory must change the digest",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn adding_file_behind_symlink_changes_digest() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/real/a.txt"), "a");
+        symlink(&root.join("proj/real"), &root.join("proj/linked"));
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("linked/**/*.txt")];
+
+        let cfg = CollectConfig {
+            digests: true,
+            ..Default::default()
+        };
+
+        let before =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+        write_file(&root.join("proj/real/c.txt"), "c");
+        let after =
+            collect_one(root, &fresh_cache_dir(root), &project, &cfg).await;
+
+        assert_ne!(
+            before.digest, after.digest,
+            "adding a file behind a symlinked directory must change the digest",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn escaping_symlinked_directory_child_is_excluded() {
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        write_file(&outside.path().join("secret.txt"), "secret");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        write_file(&root.join("proj/keep.txt"), "keep");
+        symlink(outside.path(), &root.join("proj/linked"));
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["keep.txt"]),
+            "content behind an escaping symlinked directory must be excluded",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn escaping_symlinked_directory_root_is_excluded() {
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        write_file(&outside.path().join("secret.txt"), "secret");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        symlink(outside.path(), &root.join("proj/linked"));
+
+        let mut project = Project::new(root, "proj");
+        // The glob points directly at the symlink, so the walk is rooted at
+        // it; an escaping root must be dropped before walking.
+        project.input_files = vec![OmniPath::new("linked/**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&[]),
+            "an escaping symlinked directory used as a walk root must be excluded",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn escaping_symlinked_file_excluded_but_in_workspace_link_hashed() {
+        let outside = tempfile::tempdir().expect("outside tempdir");
+        write_file(&outside.path().join("ext.txt"), "external");
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        write_file(&root.join("proj/target.txt"), "target");
+        symlink(
+            &outside.path().join("ext.txt"),
+            &root.join("proj/ext_link.txt"),
+        );
+        symlink(
+            &root.join("proj/target.txt"),
+            &root.join("proj/local_link.txt"),
+        );
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["target.txt", "local_link.txt"]),
+            "escaping symlinked files are excluded; in-workspace ones are kept",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn symlink_loop_is_skipped_not_fatal() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/keep.txt"), "keep");
+        // A link back to an ancestor forms a cycle when followed.
+        symlink(&root.join("proj"), &root.join("proj/loopself"));
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["keep.txt"]),
+            "a symlink cycle must be skipped without aborting the collect",
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dangling_symlink_is_skipped() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/keep.txt"), "keep");
+        symlink(
+            &root.join("proj/nonexistent"),
+            &root.join("proj/dangling.txt"),
+        );
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("**/*.txt")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(
+            as_set(&result.input_files),
+            rel_paths(&["keep.txt"]),
+            "a dangling symlink must be skipped without aborting the collect",
         );
     }
 }

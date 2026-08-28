@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 pub use globset::Error as GlobsetError;
+pub use ignore::DirEntry as IgnoreDirEntry;
 pub use ignore::Error as IgnoreError;
 use path_slash::PathExt;
 
