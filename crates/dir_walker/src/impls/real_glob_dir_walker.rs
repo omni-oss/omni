@@ -10,6 +10,7 @@ use crate::{
         IgnoreOverridesConfig, IgnoreRealDirEntry, IgnoreRealDirWalker,
         IgnoreRealDirWalkerConfig, IgnoreRealDirWalkerError,
         IgnoreRealWalkDirIntoIter, ignore_real_dir_walker,
+        ignore_real_dir_walker::Predicate,
     },
 };
 
@@ -37,6 +38,27 @@ pub struct RealGlobDirWalkerConfig {
     pub exclude: Vec<PathBuf>,
     #[builder(into)]
     pub root_dir: PathBuf,
+    #[builder(into)]
+    pub follow_links: Option<bool>,
+    #[builder(setters(vis = "", name = filter_entry_internal))]
+    pub filter_entry: Option<Predicate>,
+}
+
+impl<S: real_glob_dir_walker_config_builder::State>
+    RealGlobDirWalkerConfigBuilder<S>
+{
+    pub fn filter_entry<F>(
+        self,
+        filter_entry: F,
+    ) -> RealGlobDirWalkerConfigBuilder<
+        real_glob_dir_walker_config_builder::SetFilterEntry<S>,
+    >
+    where
+        F: Fn(&ignore::DirEntry) -> bool + Send + Sync + 'static,
+        S::FilterEntry: real_glob_dir_walker_config_builder::IsUnset,
+    {
+        self.filter_entry_internal(std::sync::Arc::new(filter_entry))
+    }
 }
 
 impl RealGlobDirWalkerConfig {
@@ -47,7 +69,8 @@ impl RealGlobDirWalkerConfig {
             IgnoreRealDirWalker::new_with_config(IgnoreRealDirWalkerConfig {
                 standard_filters: self.standard_filters,
                 custom_ignore_filenames: self.custom_ignore_filenames.clone(),
-                filter_entry: None,
+                follow_links: self.follow_links,
+                filter_entry: self.filter_entry.clone(),
                 git_exclude: self.git_exclude,
                 git_global: self.git_global,
                 ignore_case_insensitive: self.ignore_case_insensitive,
@@ -139,5 +162,118 @@ impl Iterator for RealGlobDirWalkDir {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.base.next()
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use crate::{DirEntry as _, DirWalker as _};
+
+    use super::*;
+
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent");
+        }
+        std::fs::write(path, content).expect("write file");
+    }
+
+    fn walked_rel_paths(
+        root: &Path,
+        follow_links: Option<bool>,
+        filter_entry: Option<Predicate>,
+    ) -> BTreeSet<PathBuf> {
+        let config = RealGlobDirWalkerConfig {
+            standard_filters: Some(false),
+            root_dir: root.to_path_buf(),
+            follow_links,
+            filter_entry,
+            ..Default::default()
+        };
+        let walker = config.build_walker().expect("build walker");
+
+        walker
+            .walk_dir(&[root])
+            .expect("walk")
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| {
+                entry
+                    .path()
+                    .strip_prefix(root)
+                    .ok()
+                    .map(|p| p.to_path_buf())
+            })
+            .filter(|p| !p.as_os_str().is_empty())
+            .collect()
+    }
+
+    #[test]
+    fn follow_links_descends_symlinked_directory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("real/inner.txt"), "x");
+        std::os::unix::fs::symlink(root.join("real"), root.join("link"))
+            .expect("symlink");
+
+        let followed = walked_rel_paths(root, Some(true), None);
+        assert!(
+            followed.contains(&PathBuf::from("link/inner.txt")),
+            "following should descend the symlinked directory: {followed:?}",
+        );
+    }
+
+    #[test]
+    fn default_does_not_descend_symlinked_directory() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("real/inner.txt"), "x");
+        std::os::unix::fs::symlink(root.join("real"), root.join("link"))
+            .expect("symlink");
+
+        let default = walked_rel_paths(root, None, None);
+        assert!(
+            !default.contains(&PathBuf::from("link/inner.txt")),
+            "default must not descend the symlinked directory: {default:?}",
+        );
+
+        let off = walked_rel_paths(root, Some(false), None);
+        assert!(
+            !off.contains(&PathBuf::from("link/inner.txt")),
+            "follow_links(false) must not descend: {off:?}",
+        );
+    }
+
+    #[test]
+    fn filter_entry_blocks_yield_and_descent() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("real/inner.txt"), "x");
+        std::os::unix::fs::symlink(root.join("real"), root.join("link"))
+            .expect("symlink");
+
+        let predicate: Predicate =
+            std::sync::Arc::new(|entry: &ignore::DirEntry| {
+                !entry.path_is_symlink()
+            });
+
+        let walked = walked_rel_paths(root, Some(true), Some(predicate));
+
+        assert!(
+            !walked.contains(&PathBuf::from("link")),
+            "filtered symlink must not be yielded: {walked:?}",
+        );
+        assert!(
+            !walked.contains(&PathBuf::from("link/inner.txt")),
+            "filtered symlink must not be descended: {walked:?}",
+        );
+        assert!(
+            walked.contains(&PathBuf::from("real/inner.txt")),
+            "non-symlinked content must still be yielded: {walked:?}",
+        );
     }
 }

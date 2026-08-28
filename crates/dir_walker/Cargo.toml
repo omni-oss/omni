@@ -33,3 +33,6 @@ crossbeam-channel = { workspace = true }
 num_cpus = { workspace = true }
 path-slash = { workspace = true }
 bon = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -31,6 +31,8 @@ pub struct IgnoreRealDirWalkerConfig {
     pub custom_ignore_filenames: Vec<String>,
     #[builder(into)]
     pub overrides: Option<IgnoreOverridesConfig>,
+    #[builder(into)]
+    pub follow_links: Option<bool>,
     #[builder(setters(vis = "", name = filter_entry_internal))]
     pub filter_entry: Option<Predicate>,
 }
@@ -68,6 +70,7 @@ impl Default for IgnoreRealDirWalkerConfig {
             git_global: None,
             custom_ignore_filenames: vec![],
             overrides: None,
+            follow_links: None,
             filter_entry: None,
         }
     }
@@ -120,6 +123,9 @@ impl IgnoreRealDirWalkerConfig {
         }
         if let Some(hidden) = self.hidden {
             builder.hidden(hidden);
+        }
+        if let Some(follow_links) = self.follow_links {
+            builder.follow_links(follow_links);
         }
 
         for ignore_filename in self.custom_ignore_filenames.iter() {
