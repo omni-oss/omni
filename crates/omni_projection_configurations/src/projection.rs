@@ -1,7 +1,11 @@
+use omni_config_types::SingleOrMany;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::id_validator::validate_projection_id;
+use crate::match_validator::{
+    option_validate_match_patterns, validate_match_patterns,
+};
 
 /// Root vocabulary for a projection `target`. `@workspace/...` and unrooted
 /// targets both resolve against the workspace root.
@@ -140,8 +144,7 @@ pub struct ProjectionCommon {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ExplicitRule {
-    #[serde(rename = "match")]
-    pub r#match: String,
+    pub source: String,
 
     pub dest: DestPath,
 }
@@ -151,12 +154,12 @@ pub struct ExplicitRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PatternRule {
-    #[serde(rename = "match")]
-    pub r#match: String,
+    #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
+    pub r#match: SingleOrMany<String>,
 
     pub dest: DestPath,
 
-    #[serde(default, rename = "match-kind")]
+    #[serde(default)]
     pub match_kind: MatchKind,
 }
 
@@ -165,13 +168,13 @@ pub struct PatternRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct FlattenRule {
-    #[serde(rename = "match")]
-    pub r#match: String,
+    #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
+    pub r#match: SingleOrMany<String>,
 
     #[serde(default)]
     pub dest: Option<DestPath>,
 
-    #[serde(default, rename = "match-kind")]
+    #[serde(default)]
     pub match_kind: MatchKind,
 }
 
@@ -191,8 +194,8 @@ pub struct MirrorProjection {
     #[serde(flatten)]
     pub common: ProjectionCommon,
 
-    #[serde(default)]
-    pub scope: Option<String>,
+    #[serde(default, deserialize_with = "option_validate_match_patterns")]
+    pub scope: Option<SingleOrMany<String>>,
 }
 
 /// Links literal source paths to explicit destinations.
@@ -282,15 +285,11 @@ pub struct OwnedProjectionConfiguration {
 mod tests {
     use super::*;
 
-    fn parse_extra(
-        json: &str,
-    ) -> Result<ProjectionExtra, serde_json::Error> {
+    fn parse_extra(json: &str) -> Result<ProjectionExtra, serde_json::Error> {
         serde_json::from_str(json)
     }
 
-    fn parse_projection(
-        json: &str,
-    ) -> Result<Projection, serde_json::Error> {
+    fn parse_projection(json: &str) -> Result<Projection, serde_json::Error> {
         serde_json::from_str(json)
     }
 
@@ -413,20 +412,18 @@ mod tests {
         // `match-kind` is a per-rule field of pattern/flatten only; it is not a
         // projection-level field on any strategy.
         assert!(
-            parse_projection(
-                r#"{"strategy":"mirror","match-kind":"dir"}"#,
-            )
-            .is_err(),
+            parse_projection(r#"{"strategy":"mirror","match-kind":"dir"}"#,)
+                .is_err(),
             "projection-level `match-kind` must be rejected"
         );
 
-        // `match-kind` is not a field of an explicit rule.
+        // `match_kind` is not a field of an explicit rule.
         assert!(
             parse_projection(
-                r#"{"strategy":"explicit","rules":[{"match":"a","dest":"b","match-kind":"dir"}]}"#,
+                r#"{"strategy":"explicit","rules":[{"source":"a","dest":"b","match_kind":"dir"}]}"#,
             )
             .is_err(),
-            "`match-kind` on an explicit rule must be rejected"
+            "`match_kind` on an explicit rule must be rejected"
         );
 
         // Unknown key on each variant.
@@ -444,7 +441,7 @@ mod tests {
         // Unknown key inside each rule type.
         assert!(
             parse_projection(
-                r#"{"strategy":"explicit","rules":[{"match":"a","dest":"b","bogus":1}]}"#,
+                r#"{"strategy":"explicit","rules":[{"source":"a","dest":"b","bogus":1}]}"#,
             )
             .is_err(),
         );
@@ -467,9 +464,9 @@ mod tests {
         let cases = [
             r#"{"strategy":"namespaced"}"#,
             r#"{"strategy":"mirror","scope":"**/*.md"}"#,
-            r#"{"strategy":"explicit","rules":[{"match":"a.txt","dest":"@target/a.txt"}]}"#,
-            r#"{"strategy":"pattern","rules":[{"match":"**/*.md","dest":"{name}.md","match-kind":"file"}]}"#,
-            r#"{"strategy":"flatten","rules":[{"match":"**/*","match-kind":"dir"}]}"#,
+            r#"{"strategy":"explicit","rules":[{"source":"a.txt","dest":"@target/a.txt"}]}"#,
+            r#"{"strategy":"pattern","rules":[{"match":"**/*.md","dest":"{name}.md","match_kind":"file"}]}"#,
+            r#"{"strategy":"flatten","rules":[{"match":"**/*","match_kind":"dir"}]}"#,
         ];
         for json in cases {
             let v1: Projection = serde_json::from_str(json)
@@ -485,7 +482,7 @@ mod tests {
     fn missing_required_dest_is_rejected() {
         assert!(
             parse_projection(
-                r#"{"strategy":"explicit","rules":[{"match":"a.txt"}]}"#,
+                r#"{"strategy":"explicit","rules":[{"source":"a.txt"}]}"#,
             )
             .is_err(),
             "explicit rule without dest must be rejected"
@@ -497,8 +494,10 @@ mod tests {
             .is_err(),
             "pattern rule without dest must be rejected"
         );
-        parse_projection(r#"{"strategy":"flatten","rules":[{"match":"a.txt"}]}"#)
-            .expect("flatten rule without dest is valid");
+        parse_projection(
+            r#"{"strategy":"flatten","rules":[{"match":"a.txt"}]}"#,
+        )
+        .expect("flatten rule without dest is valid");
     }
 
     #[test]
@@ -516,7 +515,7 @@ mod tests {
             [("file", MatchKind::File), ("dir", MatchKind::Dir)]
         {
             let json = format!(
-                r#"{{"strategy":"pattern","rules":[{{"match":"a","dest":"b","match-kind":"{raw}"}}]}}"#
+                r#"{{"strategy":"pattern","rules":[{{"match":"a","dest":"b","match_kind":"{raw}"}}]}}"#
             );
             let proj = parse_projection(&json).unwrap();
             let Projection::Pattern(p) = &proj else {
@@ -527,10 +526,10 @@ mod tests {
 
         assert!(
             parse_projection(
-                r#"{"strategy":"pattern","rules":[{"match":"a","dest":"b","match-kind":"tree"}]}"#,
+                r#"{"strategy":"pattern","rules":[{"match":"a","dest":"b","match_kind":"tree"}]}"#,
             )
             .is_err(),
-            "unknown match-kind must be rejected"
+            "unknown match_kind must be rejected"
         );
     }
 
@@ -545,19 +544,17 @@ mod tests {
             parse_extra(r#"{"id":"a","routes":[]}"#).unwrap().routes,
             Some(vec![])
         );
-        let some = parse_extra(
-            r#"{"id":"a","routes":[{"strategy":"namespaced"}]}"#,
-        )
-        .unwrap();
+        let some =
+            parse_extra(r#"{"id":"a","routes":[{"strategy":"namespaced"}]}"#)
+                .unwrap();
         assert_eq!(some.routes.as_deref().map(<[_]>::len), Some(1));
     }
 
     #[test]
     fn owned_configuration_round_trips_and_rejects_unknown_key() {
-        let owned: OwnedProjectionConfiguration = serde_json::from_str(
-            r#"{"routes":[{"strategy":"namespaced"}]}"#,
-        )
-        .unwrap();
+        let owned: OwnedProjectionConfiguration =
+            serde_json::from_str(r#"{"routes":[{"strategy":"namespaced"}]}"#)
+                .unwrap();
         assert_eq!(owned.routes.len(), 1);
         let re = serde_json::to_string(&owned).unwrap();
         let back: OwnedProjectionConfiguration =
@@ -570,6 +567,139 @@ mod tests {
             )
             .is_err(),
             "unknown key in owned manifest must be rejected"
+        );
+    }
+
+    #[test]
+    fn match_and_scope_accept_string_and_list_forms() {
+        let single = parse_projection(
+            r#"{"strategy":"pattern","rules":[{"match":"**/*.md","dest":"{name}.md"}]}"#,
+        )
+        .expect("string match is valid");
+        let Projection::Pattern(p) = &single else {
+            panic!("expected pattern");
+        };
+        assert_eq!(
+            p.rules[0].r#match,
+            SingleOrMany::Single("**/*.md".to_string())
+        );
+
+        let list = parse_projection(
+            r#"{"strategy":"pattern","rules":[{"match":["**/*.md","!drafts/**"],"dest":"{name}.md"}]}"#,
+        )
+        .expect("list match is valid");
+        let Projection::Pattern(p) = &list else {
+            panic!("expected pattern");
+        };
+        assert_eq!(
+            p.rules[0].r#match,
+            SingleOrMany::Many(vec![
+                "**/*.md".to_string(),
+                "!drafts/**".to_string()
+            ])
+        );
+
+        let brace = parse_projection(
+            r#"{"strategy":"flatten","rules":[{"match":"{a,b,c}"}]}"#,
+        )
+        .expect("brace-glob scalar is valid");
+        let Projection::Flatten(p) = &brace else {
+            panic!("expected flatten");
+        };
+        assert_eq!(
+            p.rules[0].r#match,
+            SingleOrMany::Single("{a,b,c}".to_string())
+        );
+
+        let scope_single =
+            parse_projection(r#"{"strategy":"mirror","scope":"docs/**"}"#)
+                .expect("string scope is valid");
+        let Projection::Mirror(m) = &scope_single else {
+            panic!("expected mirror");
+        };
+        assert_eq!(m.scope, Some(SingleOrMany::Single("docs/**".to_string())));
+
+        let scope_list = parse_projection(
+            r#"{"strategy":"mirror","scope":["docs/**","!docs/drafts/**"]}"#,
+        )
+        .expect("list scope is valid");
+        let Projection::Mirror(m) = &scope_list else {
+            panic!("expected mirror");
+        };
+        assert_eq!(
+            m.scope,
+            Some(SingleOrMany::Many(vec![
+                "docs/**".to_string(),
+                "!docs/drafts/**".to_string()
+            ]))
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_match_and_scope_lists() {
+        assert!(
+            parse_projection(
+                r#"{"strategy":"pattern","rules":[{"match":[],"dest":"x"}]}"#,
+            )
+            .is_err(),
+            "empty match list must be rejected"
+        );
+        assert!(
+            parse_projection(r#"{"strategy":"mirror","scope":[]}"#).is_err(),
+            "empty scope list must be rejected"
+        );
+
+        assert!(
+            parse_projection(
+                r#"{"strategy":"pattern","rules":[{"match":["a","  "],"dest":"x"}]}"#,
+            )
+            .is_err(),
+            "whitespace-only match entry must be rejected"
+        );
+        assert!(
+            parse_projection(
+                r#"{"strategy":"pattern","rules":[{"match":"","dest":"x"}]}"#,
+            )
+            .is_err(),
+            "empty match scalar must be rejected"
+        );
+
+        assert!(
+            parse_projection(
+                r#"{"strategy":"pattern","rules":[{"match":["!a","!b"],"dest":"x"}]}"#,
+            )
+            .is_err(),
+            "exclude-only match list must be rejected"
+        );
+        assert!(
+            parse_projection(r#"{"strategy":"mirror","scope":"!drafts/**"}"#,)
+                .is_err(),
+            "exclude-only scope scalar must be rejected"
+        );
+
+        parse_projection(r#"{"strategy":"mirror"}"#)
+            .expect("absent scope is valid");
+        parse_projection(r#"{"strategy":"mirror","scope":null}"#)
+            .expect("null scope is valid");
+    }
+
+    #[test]
+    fn explicit_rule_uses_source_not_match() {
+        let proj = parse_projection(
+            r#"{"strategy":"explicit","rules":[{"source":"a.txt","dest":"@target/a.txt"}]}"#,
+        )
+        .expect("explicit rule with source is valid");
+        let Projection::Explicit(p) = &proj else {
+            panic!("expected explicit");
+        };
+        assert_eq!(p.rules[0].source, "a.txt");
+
+        assert!(
+            parse_projection(
+                r#"{"strategy":"explicit","rules":[{"match":"a.txt","dest":"@target/a.txt"}]}"#,
+            )
+            .is_err(),
+            "`match` on an explicit rule must be an unknown-field error"
         );
     }
 }
