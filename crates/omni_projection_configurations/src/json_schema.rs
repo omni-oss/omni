@@ -84,7 +84,14 @@ fn common_properties(generator: &mut SchemaGenerator) -> Map<String, Value> {
 }
 
 fn scope_property() -> Map<String, Value> {
-    object(json!({ "scope": { "type": "string" } }))
+    object(json!({
+        "scope": {
+            "anyOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+            ]
+        }
+    }))
 }
 
 fn rules_property(item_schema: Value) -> Map<String, Value> {
@@ -234,5 +241,77 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn match_and_scope_schema_is_string_or_array_union() {
+        let schema = projection_schema();
+
+        let mirror = one_of(&schema)
+            .iter()
+            .find(|arm| strategy_const(arm) == "mirror")
+            .expect("mirror arm exists");
+        let scope = mirror
+            .pointer("/properties/scope/anyOf")
+            .and_then(Value::as_array)
+            .expect("scope is an anyOf union");
+        let scope_types: Vec<&str> = scope
+            .iter()
+            .filter_map(|v| v.get("type").and_then(Value::as_str))
+            .collect();
+        assert!(scope_types.contains(&"string"), "scope allows a string");
+        assert!(scope_types.contains(&"array"), "scope allows an array");
+
+        let defs = schema
+            .get("$defs")
+            .and_then(Value::as_object)
+            .expect("root schema has $defs");
+        for rule in ["PatternRule", "FlattenRule"] {
+            let match_ref = defs[rule]
+                .pointer("/properties/match/$ref")
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| panic!("{rule} match is a $ref"));
+            let def_name = match_ref
+                .strip_prefix("#/$defs/")
+                .expect("match $ref points into $defs");
+            let match_schema = defs[def_name]
+                .get("anyOf")
+                .and_then(Value::as_array)
+                .unwrap_or_else(|| {
+                    panic!("{rule} match def is an anyOf union")
+                });
+            let types: Vec<&str> = match_schema
+                .iter()
+                .filter_map(|v| v.get("type").and_then(Value::as_str))
+                .collect();
+            assert!(types.contains(&"string"), "{rule} match allows a string");
+            assert!(types.contains(&"array"), "{rule} match allows an array");
+        }
+    }
+
+    #[test]
+    fn explicit_rule_def_requires_source_not_match() {
+        let schema = projection_schema();
+        let defs = schema
+            .get("$defs")
+            .and_then(Value::as_object)
+            .expect("root schema has $defs");
+        let explicit = &defs["ExplicitRule"];
+        assert!(
+            explicit.pointer("/properties/source").is_some(),
+            "ExplicitRule exposes `source`"
+        );
+        assert!(
+            explicit.pointer("/properties/match").is_none(),
+            "ExplicitRule must not expose `match`"
+        );
+        let required = explicit
+            .get("required")
+            .and_then(Value::as_array)
+            .expect("ExplicitRule has required fields");
+        assert!(
+            required.iter().any(|v| v.as_str() == Some("source")),
+            "`source` is required on ExplicitRule"
+        );
     }
 }
