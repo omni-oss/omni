@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::{FsCreateDirAllAsync, FsReadAsync, FsWriteAsync};
 
@@ -118,31 +120,139 @@ pub async fn local_source_pin<S: FsReadAsync + Sync>(
     Ok(hex(&omni_hasher::default::hash_bytes(&buf)?))
 }
 
+/// How a teardown disposes of a link's recorded backup file.
+#[derive(
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum BackupHandling {
+    /// Remove the link; leave any recorded `.bak.<ts>` in place.
+    #[default]
+    Leave,
+    /// Remove the link and delete the recorded `.bak.<ts>`.
+    Clean,
+    /// Remove the link and rename the recorded `.bak.<ts>` back to the
+    /// link's original destination.
+    Restore,
+}
+
 /// The outcome of a teardown operation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TeardownReport {
     pub removed: Vec<PathBuf>,
+    pub restored: Vec<PathBuf>,
     pub warnings: Vec<String>,
 }
 
 /// Remove only the ledger-recorded links for `source_id`. A `copy`-kind link is
 /// removed only when its destination content still matches the source (else it
 /// is kept and a warning is recorded), so user edits are never silently lost.
+/// `handling` chooses what happens to each removed link's recorded backup.
 pub async fn unlink<S>(
     sys: &S,
     workspace_root: &Path,
     ledger: &mut Ledger,
     source_id: &str,
-    clean_backups: bool,
+    handling: BackupHandling,
 ) -> Result<TeardownReport>
 where
     S: ApplierSys + FsReadAsync,
 {
+    let links = std::mem::take(ledger.links_mut());
+    let (kept, report) = teardown_matching(
+        sys,
+        workspace_root,
+        links,
+        |l| l.source_id == source_id,
+        handling,
+        false,
+    )
+    .await?;
+    *ledger.links_mut() = kept;
+    Ok(report)
+}
+
+/// Tear down and de-record every ledger link whose `source_id` is not in
+/// `keep_ids`. Shares `unlink`'s safe-teardown body: a `copy`-kind link is
+/// removed only when its destination still matches the source, else it is kept
+/// and a warning is recorded. Recorded backups are always left in place.
+pub async fn retain_sources<S>(
+    sys: &S,
+    workspace_root: &Path,
+    ledger: &mut Ledger,
+    keep_ids: &HashSet<&str>,
+) -> Result<TeardownReport>
+where
+    S: ApplierSys + FsReadAsync,
+{
+    let links = std::mem::take(ledger.links_mut());
+    let (kept, report) = teardown_matching(
+        sys,
+        workspace_root,
+        links,
+        |l| !keep_ids.contains(l.source_id.as_str()),
+        BackupHandling::Leave,
+        false,
+    )
+    .await?;
+    *ledger.links_mut() = kept;
+    Ok(report)
+}
+
+/// Read-only preview of [`retain_sources`]: report the destinations that would
+/// be removed and the modified copies that would be kept, without touching disk
+/// or mutating the ledger.
+pub async fn plan_retain_sources<S>(
+    sys: &S,
+    workspace_root: &Path,
+    ledger: &Ledger,
+    keep_ids: &HashSet<&str>,
+) -> Result<TeardownReport>
+where
+    S: ApplierSys + FsReadAsync,
+{
+    let (_, report) = teardown_matching(
+        sys,
+        workspace_root,
+        ledger.links().to_vec(),
+        |l| !keep_ids.contains(l.source_id.as_str()),
+        BackupHandling::Leave,
+        true,
+    )
+    .await?;
+    Ok(report)
+}
+
+/// The shared teardown body behind [`unlink`], [`retain_sources`], and their
+/// dry-run preview. Consumes `links`, removing every one the `should_teardown`
+/// predicate selects, and returns the links kept alongside the report. A
+/// modified `copy` is always kept and warned on. On `dry_run` nothing on disk
+/// changes and every link is returned as kept.
+async fn teardown_matching<S, P>(
+    sys: &S,
+    workspace_root: &Path,
+    links: Vec<LedgerLink>,
+    should_teardown: P,
+    handling: BackupHandling,
+    dry_run: bool,
+) -> Result<(Vec<LedgerLink>, TeardownReport)>
+where
+    S: ApplierSys + FsReadAsync,
+    P: Fn(&LedgerLink) -> bool,
+{
     let mut report = TeardownReport::default();
     let mut kept = Vec::new();
 
-    for link in std::mem::take(ledger.links_mut()) {
-        if link.source_id != source_id {
+    for link in links {
+        if !should_teardown(&link) {
             kept.push(link);
             continue;
         }
@@ -156,25 +266,93 @@ where
                 "kept modified copy at {} (edited since projection)",
                 dest.display()
             ));
+            if handling == BackupHandling::Restore {
+                if let Some(backup) = &link.backup {
+                    report.warnings.push(format!(
+                        "backup {backup} not restored: destination holds an edited copy"
+                    ));
+                }
+            }
             kept.push(link);
             continue;
         }
 
-        if remove_path(sys, &dest).await? {
-            report.removed.push(dest.clone());
-            prune_empty_ancestors(sys, workspace_root, &dest).await;
+        if dry_run {
+            report.removed.push(dest);
+            kept.push(link);
+            continue;
         }
 
-        if clean_backups {
-            if let Some(backup) = &link.backup {
-                let backup_path = workspace_root.join(backup);
-                let _ = sys.fs_remove_file_async(&backup_path).await;
+        let removed = remove_path(sys, &dest).await?;
+        if removed {
+            report.removed.push(dest.clone());
+        }
+
+        match handling {
+            BackupHandling::Leave => {}
+            BackupHandling::Clean => {
+                if let Some(backup) = &link.backup {
+                    let backup_path = workspace_root.join(backup);
+                    let _ = sys.fs_remove_file_async(&backup_path).await;
+                }
             }
+            BackupHandling::Restore => {
+                restore_backup(sys, workspace_root, &link, &dest, &mut report)
+                    .await;
+            }
+        }
+
+        if removed {
+            prune_empty_ancestors(sys, workspace_root, &dest).await;
         }
     }
 
-    *ledger.links_mut() = kept;
-    Ok(report)
+    Ok((kept, report))
+}
+
+/// Rename a removed link's recorded backup back to its original destination.
+/// Non-destructive: a missing backup, an occupied destination, or a failed
+/// rename degrades to a warning and a skip, never a clobber and never an error.
+async fn restore_backup<S: ApplierSys>(
+    sys: &S,
+    workspace_root: &Path,
+    link: &LedgerLink,
+    dest: &Path,
+    report: &mut TeardownReport,
+) {
+    let Some(backup) = &link.backup else {
+        return;
+    };
+    let backup_path = workspace_root.join(backup);
+
+    if !sys.fs_is_symlink_no_err_async(&backup_path).await
+        && !sys.fs_exists_no_err_async(&backup_path).await
+    {
+        report.warnings.push(format!(
+            "backup {backup} not restored: the recorded backup is missing"
+        ));
+        return;
+    }
+
+    if sys.fs_is_symlink_no_err_async(dest).await
+        || sys.fs_exists_no_err_async(dest).await
+    {
+        report.warnings.push(format!(
+            "backup {backup} not restored: destination {} is still occupied",
+            dest.display()
+        ));
+        return;
+    }
+
+    if sys.fs_rename_async(&backup_path, dest).await.is_err() {
+        report.warnings.push(format!(
+            "backup {backup} not restored: could not rename it back to {}",
+            dest.display()
+        ));
+        return;
+    }
+
+    report.restored.push(dest.to_path_buf());
 }
 
 /// Remove ledger-recorded links whose destination is now a dangling symlink
@@ -336,10 +514,15 @@ mod tests {
         std::fs::write(&unrecorded, b"user data").unwrap();
 
         let mut ledger = Ledger::default();
-        let report =
-            unlink(&RealSys, dir.path(), &mut ledger, "nonexistent", false)
-                .await
-                .unwrap();
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "nonexistent",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
 
         assert!(report.removed.is_empty());
         assert!(unrecorded.exists());
@@ -362,9 +545,15 @@ mod tests {
             backup: None,
         }]);
 
-        let report = unlink(&RealSys, dir.path(), &mut ledger, "id", false)
-            .await
-            .unwrap();
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
 
         assert!(report.removed.is_empty());
         assert_eq!(report.warnings.len(), 1);
@@ -389,9 +578,15 @@ mod tests {
             backup: None,
         }]);
 
-        let report = unlink(&RealSys, dir.path(), &mut ledger, "id", false)
-            .await
-            .unwrap();
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(report.removed.len(), 1);
         assert!(!dest.exists());
@@ -451,5 +646,283 @@ mod tests {
 
         assert!(report.removed.is_empty());
         assert_eq!(ledger.links().len(), 1);
+    }
+
+    #[test]
+    fn backup_handling_serde_round_trips_kebab_case() {
+        for (value, wire) in [
+            (BackupHandling::Leave, "\"leave\""),
+            (BackupHandling::Clean, "\"clean\""),
+            (BackupHandling::Restore, "\"restore\""),
+        ] {
+            let json = serde_json::to_string(&value).unwrap();
+            assert_eq!(json, wire);
+            let back: BackupHandling = serde_json::from_str(&json).unwrap();
+            assert_eq!(value, back);
+        }
+    }
+
+    #[test]
+    fn backup_handling_defaults_to_leave() {
+        assert_eq!(BackupHandling::default(), BackupHandling::Leave);
+    }
+
+    fn copy_link(source_id: &str, dest: &str, target: &Path) -> LedgerLink {
+        LedgerLink {
+            source_id: source_id.to_string(),
+            dest: dest.to_string(),
+            target: target.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Copy,
+            source_pin: "x".to_string(),
+            backup: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn retain_sources_removes_orphan_and_keeps_configured() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+
+        let orphan = dir.path().join("orphan.txt");
+        std::fs::write(&orphan, b"same").unwrap();
+        let kept = dir.path().join("kept.txt");
+        std::fs::write(&kept, b"same").unwrap();
+
+        let mut ledger = Ledger::from_links(vec![
+            copy_link("gone", "orphan.txt", &source),
+            copy_link("present", "kept.txt", &source),
+        ]);
+
+        let keep_ids: HashSet<&str> = ["present"].into_iter().collect();
+        let report =
+            retain_sources(&RealSys, dir.path(), &mut ledger, &keep_ids)
+                .await
+                .unwrap();
+
+        assert_eq!(report.removed.len(), 1);
+        assert!(!orphan.exists(), "orphan dest removed");
+        assert!(kept.exists(), "configured dest untouched");
+        assert_eq!(ledger.links().len(), 1);
+        assert_eq!(ledger.links()[0].source_id, "present");
+    }
+
+    #[tokio::test]
+    async fn retain_sources_keeps_and_warns_modified_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"original").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"user edited").unwrap();
+
+        let mut ledger =
+            Ledger::from_links(vec![copy_link("gone", "dest.txt", &source)]);
+
+        let keep_ids: HashSet<&str> = HashSet::new();
+        let report =
+            retain_sources(&RealSys, dir.path(), &mut ledger, &keep_ids)
+                .await
+                .unwrap();
+
+        assert!(report.removed.is_empty());
+        assert_eq!(report.warnings.len(), 1);
+        assert!(dest.exists(), "edited copy preserved");
+        assert_eq!(ledger.links().len(), 1, "kept link stays recorded");
+    }
+
+    #[tokio::test]
+    async fn retain_sources_prunes_empty_ancestors() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+        let nested = dir.path().join("a/b/c/dest.txt");
+        std::fs::create_dir_all(nested.parent().unwrap()).unwrap();
+        std::fs::write(&nested, b"same").unwrap();
+
+        let mut ledger = Ledger::from_links(vec![copy_link(
+            "gone",
+            "a/b/c/dest.txt",
+            &source,
+        )]);
+
+        let keep_ids: HashSet<&str> = HashSet::new();
+        retain_sources(&RealSys, dir.path(), &mut ledger, &keep_ids)
+            .await
+            .unwrap();
+
+        assert!(!dir.path().join("a").exists(), "empty ancestors pruned");
+    }
+
+    #[tokio::test]
+    async fn plan_retain_sources_reports_without_touching_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"original").unwrap();
+        let removable = dir.path().join("removable.txt");
+        std::fs::write(&removable, b"original").unwrap();
+        let edited = dir.path().join("edited.txt");
+        std::fs::write(&edited, b"changed").unwrap();
+
+        let ledger = Ledger::from_links(vec![
+            copy_link("gone", "removable.txt", &source),
+            copy_link("gone", "edited.txt", &source),
+        ]);
+
+        let keep_ids: HashSet<&str> = HashSet::new();
+        let report =
+            plan_retain_sources(&RealSys, dir.path(), &ledger, &keep_ids)
+                .await
+                .unwrap();
+
+        assert_eq!(report.removed.len(), 1, "only the unmodified copy");
+        assert_eq!(report.warnings.len(), 1, "edited copy reported as warning");
+        assert!(removable.exists(), "dry-run touches nothing");
+        assert!(edited.exists());
+        assert_eq!(ledger.links().len(), 2, "ledger unchanged");
+    }
+
+    #[tokio::test]
+    async fn unlink_clean_deletes_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"same").unwrap();
+        let backup = dir.path().join("dest.txt.bak.1");
+        std::fs::write(&backup, b"pre-existing").unwrap();
+
+        let mut link = copy_link("id", "dest.txt", &source);
+        link.backup = Some("dest.txt.bak.1".to_string());
+        let mut ledger = Ledger::from_links(vec![link]);
+
+        unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Clean,
+        )
+        .await
+        .unwrap();
+
+        assert!(!dest.exists());
+        assert!(!backup.exists(), "backup deleted");
+    }
+
+    #[tokio::test]
+    async fn unlink_restore_renames_backup_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"same").unwrap();
+        let backup = dir.path().join("dest.txt.bak.1");
+        std::fs::write(&backup, b"pre-existing").unwrap();
+
+        let mut link = copy_link("id", "dest.txt", &source);
+        link.backup = Some("dest.txt.bak.1".to_string());
+        let mut ledger = Ledger::from_links(vec![link]);
+
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Restore,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.restored.len(), 1);
+        assert!(!backup.exists(), "backup moved");
+        assert!(dest.exists(), "backup restored to destination");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"pre-existing");
+    }
+
+    #[tokio::test]
+    async fn unlink_restore_keeps_edited_copy_and_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"original").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"user edited").unwrap();
+        let backup = dir.path().join("dest.txt.bak.1");
+        std::fs::write(&backup, b"pre-existing").unwrap();
+
+        let mut link = copy_link("id", "dest.txt", &source);
+        link.backup = Some("dest.txt.bak.1".to_string());
+        let mut ledger = Ledger::from_links(vec![link]);
+
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Restore,
+        )
+        .await
+        .unwrap();
+
+        assert!(report.restored.is_empty());
+        assert_eq!(report.warnings.len(), 2, "kept-copy and skipped-restore");
+        assert_eq!(std::fs::read(&dest).unwrap(), b"user edited");
+        assert!(backup.exists(), "backup left in place");
+        assert_eq!(ledger.links().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unlink_restore_missing_backup_warns_and_skips() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"same").unwrap();
+
+        let mut link = copy_link("id", "dest.txt", &source);
+        link.backup = Some("dest.txt.bak.1".to_string());
+        let mut ledger = Ledger::from_links(vec![link]);
+
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Restore,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.removed.len(), 1);
+        assert!(report.restored.is_empty());
+        assert_eq!(report.warnings.len(), 1, "missing backup warned");
+        assert!(!dest.exists());
+    }
+
+    #[tokio::test]
+    async fn unlink_leave_keeps_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.txt");
+        std::fs::write(&source, b"same").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"same").unwrap();
+        let backup = dir.path().join("dest.txt.bak.1");
+        std::fs::write(&backup, b"pre-existing").unwrap();
+
+        let mut link = copy_link("id", "dest.txt", &source);
+        link.backup = Some("dest.txt.bak.1".to_string());
+        let mut ledger = Ledger::from_links(vec![link]);
+
+        unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "id",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
+
+        assert!(!dest.exists());
+        assert!(backup.exists(), "backup untouched under Leave");
     }
 }
