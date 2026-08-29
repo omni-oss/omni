@@ -14,3 +14,28 @@ projects:
 generators:
   - source: local
     path: generators/**
+
+projections:
+  - id: cursor-plugin-skills
+    source: git
+    uri: https://github.com/cursor/plugins.git
+    rev: main
+    routes:
+      - strategy: pattern
+        target: "./.agents/skills"
+        rules:
+          - dest: "@target/{basename}"
+            match: "pstack/skills/{unslop,teach,show-me-your-work,technical-writing,why,how,bro,blast-radius,figure-it-out,interrogate}"
+            match-kind: dir
+
+  - id: mattpocock-skills
+    source: git
+    uri: https://github.com/mattpocock/skills.git
+    rev: main
+    routes:
+      - strategy: pattern
+        target: "./.agents/skills"
+        rules:
+          - match: "skills/productivity/{grill-me,grilling,to-questionnaire,wait-what,writing-for-agents,handoff}"
+            dest: "@target/{basename}"
+            match-kind: dir
