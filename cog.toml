@@ -554,6 +554,13 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_glob]
+path = "crates/omni_glob"
+include = [
+    "crates/omni_glob/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]
