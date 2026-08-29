@@ -918,7 +918,7 @@ async fn projection_pattern_dir_links_directories() {
             "        target: \"@workspace/.agents/skills\"\n",
             "        rules:\n",
             "          - match: \"*\"\n",
-            "            match-kind: dir\n",
+            "            match_kind: dir\n",
             "            dest: \"@target/{basename}\"\n",
         ),
     )
