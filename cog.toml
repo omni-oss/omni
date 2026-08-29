@@ -190,13 +190,6 @@ include = [
 ]
 public_api = false
 
-[monorepo.packages.omni_discovery_utils]
-path = "crates/omni_discovery_utils"
-include = [
-    "crates/omni_discovery_utils/**",
-]
-public_api = false
-
 [monorepo.packages.omni_execution_plan]
 path = "crates/omni_execution_plan"
 include = [
@@ -551,6 +544,13 @@ public_api = false
 path = "crates/omni_tool_configurations"
 include = [
     "crates/omni_tool_configurations/**",
+]
+public_api = false
+
+[monorepo.packages.omni_glob]
+path = "crates/omni_glob"
+include = [
+    "crates/omni_glob/**",
 ]
 public_api = false
 

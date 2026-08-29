@@ -8,22 +8,32 @@
 //! identical result.
 //!
 //! A compiled [`GlobSet`] is a pure function of its ordered pattern strings and
-//! is immutable once built, which makes it trivially memoizable with no
-//! invalidation. [`build_glob_set`] returns a shared, cached [`GlobSet`] keyed
-//! by the exact ordered patterns.
+//! its build options, and is immutable once built, which makes it trivially
+//! memoizable with no invalidation. [`build_glob_set`] returns a shared, cached
+//! [`GlobSet`] keyed by the exact ordered patterns.
 
 use std::{
     collections::HashMap,
     sync::{Arc, LazyLock, RwLock},
 };
 
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 
-/// Cache of compiled glob sets, keyed by the ordered list of pattern strings.
+/// Options controlling how patterns are compiled into a [`GlobSet`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct GlobOptions {
+    /// When true, `*` and `?` do not match across `/` (globset's
+    /// `literal_separator`). Defaults to false, matching [`Glob::new`].
+    pub literal_separator: bool,
+}
+
+/// Cache of compiled glob sets, keyed by the ordered list of pattern strings
+/// together with the options they were compiled with.
 ///
 /// The key stores the patterns verbatim (rather than a hash) so lookups are
-/// exact and can never return a set compiled from a different pattern list.
-type GlobSetCache = HashMap<Vec<String>, Arc<GlobSet>>;
+/// exact and can never return a set compiled from a different pattern list or
+/// under different options.
+type GlobSetCache = HashMap<(Vec<String>, GlobOptions), Arc<GlobSet>>;
 
 static GLOB_SET_CACHE: LazyLock<RwLock<GlobSetCache>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -42,8 +52,23 @@ static GLOB_SET_CACHE: LazyLock<RwLock<GlobSetCache>> =
 pub fn build_glob_set<S: AsRef<str>>(
     patterns: &[S],
 ) -> Result<Arc<GlobSet>, globset::Error> {
-    let key: Vec<String> =
-        patterns.iter().map(|p| p.as_ref().to_owned()).collect();
+    build_glob_set_with(patterns, GlobOptions::default())
+}
+
+/// Build, or reuse a previously built, compiled [`GlobSet`] for `patterns`
+/// under `opts`.
+///
+/// Behaves like [`build_glob_set`] but lets the caller control compilation via
+/// [`GlobOptions`]. The same patterns compiled under different options are
+/// distinct cache entries and never alias.
+pub fn build_glob_set_with<S: AsRef<str>>(
+    patterns: &[S],
+    opts: GlobOptions,
+) -> Result<Arc<GlobSet>, globset::Error> {
+    let key: (Vec<String>, GlobOptions) = (
+        patterns.iter().map(|p| p.as_ref().to_owned()).collect(),
+        opts,
+    );
 
     if let Some(hit) = read_cache().get(&key) {
         return Ok(Arc::clone(hit));
@@ -54,14 +79,25 @@ pub fn build_glob_set<S: AsRef<str>>(
     // it twice; because identical inputs produce identical sets, whichever
     // insertion lands first wins and the other is discarded.
     let mut builder = GlobSetBuilder::new();
-    for pattern in &key {
-        builder.add(Glob::new(pattern)?);
+    for pattern in &key.0 {
+        builder.add(compile_glob(pattern, opts)?);
     }
     let set = Arc::new(builder.build()?);
 
     let mut cache = write_cache();
     let entry = cache.entry(key).or_insert(set);
     Ok(Arc::clone(entry))
+}
+
+fn compile_glob(
+    pattern: &str,
+    opts: GlobOptions,
+) -> Result<Glob, globset::Error> {
+    if opts.literal_separator {
+        GlobBuilder::new(pattern).literal_separator(true).build()
+    } else {
+        Glob::new(pattern)
+    }
 }
 
 fn read_cache() -> std::sync::RwLockReadGuard<'static, GlobSetCache> {
@@ -142,5 +178,60 @@ mod tests {
     fn invalid_pattern_is_an_error() {
         // An unclosed character class is rejected by globset.
         assert!(build_glob_set(&["a[b"]).is_err());
+    }
+
+    #[test]
+    fn literal_separator_stops_star_at_slash() {
+        let opts = GlobOptions {
+            literal_separator: true,
+        };
+        let set = build_glob_set_with(&["src/*"], opts).unwrap();
+
+        assert!(set.is_match("src/a.rs"));
+        assert!(!set.is_match("src/nested/a.rs"));
+    }
+
+    #[test]
+    fn default_options_let_star_cross_slash() {
+        let set = build_glob_set(&["src/*"]).unwrap();
+
+        assert!(set.is_match("src/a.rs"));
+        assert!(set.is_match("src/nested/a.rs"));
+    }
+
+    #[test]
+    fn same_patterns_different_options_do_not_alias() {
+        let default = build_glob_set(&["src/*"]).unwrap();
+        let literal = build_glob_set_with(
+            &["src/*"],
+            GlobOptions {
+                literal_separator: true,
+            },
+        )
+        .unwrap();
+
+        assert!(!Arc::ptr_eq(&default, &literal));
+        assert!(default.is_match("src/nested/a.rs"));
+        assert!(!literal.is_match("src/nested/a.rs"));
+    }
+
+    #[test]
+    fn identical_patterns_and_options_share_one_instance() {
+        let opts = GlobOptions {
+            literal_separator: true,
+        };
+        let a = build_glob_set_with(&["src/*"], opts).unwrap();
+        let b = build_glob_set_with(&["src/*"], opts).unwrap();
+
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn build_glob_set_matches_explicit_default_options() {
+        let implicit = build_glob_set(&["a/*.rs"]).unwrap();
+        let explicit =
+            build_glob_set_with(&["a/*.rs"], GlobOptions::default()).unwrap();
+
+        assert!(Arc::ptr_eq(&implicit, &explicit));
     }
 }

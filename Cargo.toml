@@ -196,6 +196,7 @@ omni_tool = { path = "crates/omni_tool" }
 omni_tool_configurations = { path = "crates/omni_tool_configurations" }
 omni_projections = { path = "crates/omni_projections" }
 omni_projection_configurations = { path = "crates/omni_projection_configurations" }
+omni_glob = { path = "crates/omni_glob" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }
@@ -237,7 +238,6 @@ omni_input_provider = { path = "./crates/omni_input_provider" }
 omni_serde_validators = { path = "./crates/omni_serde_validators" }
 omni_configuration_discovery = { path = "./crates/omni_configuration_discovery" }
 omni_discovery = { path = "./crates/omni_discovery" }
-omni_discovery_utils = { path = "./crates/omni_discovery_utils" }
 omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.9", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.3" }

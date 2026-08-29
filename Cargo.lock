@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "config_utils"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "derive-new",
  "derive_more",
@@ -3061,7 +3061,7 @@ dependencies = [
 
 [[package]]
 name = "dir_walker"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "bon",
  "crossbeam-channel",
@@ -6777,7 +6777,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6802,7 +6802,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "bridge_rpc_services",
  "bytesize",
@@ -6997,7 +6997,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -7089,7 +7089,7 @@ dependencies = [
 
 [[package]]
 name = "omni_collector"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bs58",
  "derive-new",
@@ -7166,7 +7166,7 @@ dependencies = [
  "eyre",
  "globset",
  "log",
- "omni_discovery_utils",
+ "omni_glob",
  "strum 0.28.0",
  "system_traits",
  "tempfile",
@@ -7178,7 +7178,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -7307,23 +7307,7 @@ dependencies = [
  "eyre",
  "globset",
  "log",
- "omni_discovery_utils",
- "strum 0.28.0",
- "thiserror 2.0.18",
- "trace",
- "tracing",
-]
-
-[[package]]
-name = "omni_discovery_utils"
-version = "0.0.0"
-dependencies = [
- "derive-new",
- "derive_builder",
- "eyre",
- "globset",
- "log",
- "omni_utils",
+ "omni_glob",
  "strum 0.28.0",
  "thiserror 2.0.18",
  "trace",
@@ -7432,9 +7416,9 @@ dependencies = [
  "omni_configuration_discovery",
  "omni_constants",
  "omni_discovery",
- "omni_discovery_utils",
  "omni_file_data_serde",
  "omni_generator_configurations",
+ "omni_glob",
  "omni_input_provider",
  "omni_messages",
  "omni_process",
@@ -7500,7 +7484,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7518,6 +7502,14 @@ dependencies = [
  "trace",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "omni_glob"
+version = "0.0.0"
+dependencies = [
+ "globset",
+ "omni_utils",
 ]
 
 [[package]]
@@ -7580,7 +7572,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "either",
  "enumset",
@@ -7629,7 +7621,7 @@ dependencies = [
 
 [[package]]
 name = "omni_mcp_core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "bridge_rpc_services",
@@ -7667,7 +7659,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7746,6 +7738,7 @@ dependencies = [
  "omni_types",
  "path-clean",
  "pathdiff",
+ "schemars",
  "serde",
  "serde_json",
  "strum 0.28.0",
@@ -7883,7 +7876,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_source"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "bon",
  "derive-new",
@@ -8050,7 +8043,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "merge",
  "schemars",
@@ -8200,7 +8193,7 @@ dependencies = [
 
 [[package]]
 name = "omni_types"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "enum-map",
  "merge",
@@ -11089,7 +11082,7 @@ dependencies = [
 
 [[package]]
 name = "system_traits"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "sys_traits",

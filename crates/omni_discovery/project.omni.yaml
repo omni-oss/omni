@@ -4,5 +4,5 @@ extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
   - dir_walker
-  - omni_discovery_utils
+  - omni_glob
   - trace
