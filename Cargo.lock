@@ -7714,6 +7714,8 @@ version = "0.1.0"
 dependencies = [
  "enum-map",
  "lazy-regex",
+ "omni_config_types",
+ "omni_glob",
  "omni_types",
  "schemars",
  "serde",
@@ -7733,6 +7735,7 @@ dependencies = [
  "log",
  "omni_configurations",
  "omni_constants",
+ "omni_glob",
  "omni_hasher",
  "omni_projection_configurations",
  "omni_types",
