@@ -583,12 +583,177 @@ async fn projection_unlink_removes_recorded_links() {
     let resp = api
         .projection_unlink(omni_api::ProjectionUnlinkRequest {
             id: "local-skills".to_string(),
-            clean_backups: false,
+            backup_handling: None,
         })
         .await
         .expect("unlink");
     assert_eq!(resp.removed.len(), 1);
     assert!(!tmp.path().join(".agents/skills/rust.md").exists());
+}
+
+/// Write a workspace with two local projection sources mirroring into distinct
+/// destinations.
+fn write_two_source_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/a\n",
+            "    id: skills-a\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/a\"\n",
+            "  - source: local\n",
+            "    path: ./vendor/b\n",
+            "    id: skills-b\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/b\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("vendor/a")).unwrap();
+    std::fs::write(dir.join("vendor/a/one.md"), b"# one\n").unwrap();
+    std::fs::create_dir_all(dir.join("vendor/b")).unwrap();
+    std::fs::write(dir.join("vendor/b/two.md"), b"# two\n").unwrap();
+}
+
+/// The same workspace with `skills-b` removed from config.
+fn write_single_source_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/a\n",
+            "    id: skills-a\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/a\"\n",
+        ),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn projection_full_sync_reconciles_removed_source() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("initial sync");
+    assert!(tmp.path().join(".agents/a/one.md").exists());
+    assert!(tmp.path().join(".agents/b/two.md").exists());
+
+    write_single_source_workspace(tmp.path());
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("reconciling sync");
+
+    assert!(
+        resp.removed.iter().any(|r| r.ends_with("two.md")),
+        "dropped source's dest reported as removed: {:?}",
+        resp.removed
+    );
+    assert!(
+        !tmp.path().join(".agents/b/two.md").exists(),
+        "dropped source's dest is removed"
+    );
+    assert!(
+        tmp.path().join(".agents/a/one.md").exists(),
+        "surviving source is untouched"
+    );
+
+    let status = make_api(tmp.path())
+        .projection_status(omni_api::ProjectionStatusRequest { verbose: true })
+        .await
+        .expect("status");
+    assert_eq!(status.entries.len(), 1, "ledger holds only the survivor");
+    assert_eq!(status.entries[0].source_id, "skills-a");
+}
+
+#[tokio::test]
+async fn projection_filtered_sync_does_not_reconcile_orphans() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("initial sync");
+
+    write_single_source_workspace(tmp.path());
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("skills-a".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("filtered sync");
+
+    assert!(
+        resp.removed.is_empty(),
+        "a filtered run reconciles nothing: {:?}",
+        resp.removed
+    );
+    assert!(
+        tmp.path().join(".agents/b/two.md").exists(),
+        "orphan survives a filtered run"
+    );
+
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("later full sync");
+    assert!(
+        !tmp.path().join(".agents/b/two.md").exists(),
+        "a later full sync removes the orphan"
+    );
+    assert!(resp.removed.iter().any(|r| r.ends_with("two.md")));
+}
+
+#[tokio::test]
+async fn projection_dry_run_reports_orphans_without_removing() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("initial sync");
+
+    write_single_source_workspace(tmp.path());
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            dry_run: true,
+            ..Default::default()
+        })
+        .await
+        .expect("dry-run sync");
+
+    assert!(
+        resp.removed.iter().any(|r| r.ends_with("two.md")),
+        "dry-run reports the orphan: {:?}",
+        resp.removed
+    );
+    assert!(
+        tmp.path().join(".agents/b/two.md").exists(),
+        "dry-run removes nothing"
+    );
+
+    let status = make_api(tmp.path())
+        .projection_status(omni_api::ProjectionStatusRequest { verbose: true })
+        .await
+        .expect("status");
+    assert_eq!(status.entries.len(), 2, "dry-run leaves the ledger intact");
 }
 
 /// A source that ships its own `projection.omni.yaml` and a workspace that omits
@@ -669,7 +834,10 @@ async fn projection_workspace_routes_override_owned_manifest() {
         .await
         .expect("sync with workspace override");
 
-    assert!(tmp.path().join(".other/rust.md").exists(), "override target used");
+    assert!(
+        tmp.path().join(".other/rust.md").exists(),
+        "override target used"
+    );
     assert!(
         !tmp.path().join(".agents/skills/rust.md").exists(),
         "owned manifest target must be ignored when overridden"
@@ -756,11 +924,8 @@ async fn projection_pattern_dir_links_directories() {
     )
     .unwrap();
     std::fs::create_dir_all(tmp.path().join("vendor/skills/tdd")).unwrap();
-    std::fs::write(
-        tmp.path().join("vendor/skills/tdd/SKILL.md"),
-        b"# tdd\n",
-    )
-    .unwrap();
+    std::fs::write(tmp.path().join("vendor/skills/tdd/SKILL.md"), b"# tdd\n")
+        .unwrap();
     std::fs::create_dir_all(tmp.path().join("vendor/skills/review")).unwrap();
     std::fs::write(
         tmp.path().join("vendor/skills/review/SKILL.md"),
@@ -776,10 +941,8 @@ async fn projection_pattern_dir_links_directories() {
     assert_eq!(first.applied.len(), 2, "one link per matched directory");
     // The linked directories resolve through to the source content.
     assert_eq!(
-        std::fs::read_to_string(
-            tmp.path().join(".agents/skills/tdd/SKILL.md")
-        )
-        .unwrap(),
+        std::fs::read_to_string(tmp.path().join(".agents/skills/tdd/SKILL.md"))
+            .unwrap(),
         "# tdd\n"
     );
     assert!(tmp.path().join(".agents/skills/review/SKILL.md").exists());

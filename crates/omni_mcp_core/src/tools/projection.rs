@@ -55,7 +55,7 @@ where
         self.make_api()
             .projection_unlink(ProjectionUnlinkRequest {
                 id: params.id,
-                clean_backups: params.clean_backups,
+                backup_handling: params.backup_handling,
             })
             .await
     }

@@ -234,7 +234,8 @@ where
 }
 
 /// The classified state of a recorded link, reported by [`status`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "kebab-case")]
 pub enum LinkState {
     /// The destination exists and resolves.
     Ok,
@@ -333,9 +334,7 @@ fn matched_files(
             }
             // A directory link: hash every file beneath the matched directory
             // so the pin reflects its recursive content.
-            Ok(rel)
-                if entries.iter().any(|e| e.rel == rel && e.is_dir) =>
-            {
+            Ok(rel) if entries.iter().any(|e| e.rel == rel && e.is_dir) => {
                 out.extend(
                     entries
                         .iter()

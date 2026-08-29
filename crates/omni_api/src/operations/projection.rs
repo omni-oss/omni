@@ -1,9 +1,12 @@
+use std::collections::HashSet;
+
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys};
 use omni_projection_configurations::{
     OwnedProjectionConfiguration, Projection, ProjectionExtra,
 };
+pub use omni_projections::BackupHandling;
 use omni_projections::{
     ApplierSys, LinkState, ResolvedSource, SyncParams, sync_source,
 };
@@ -80,12 +83,23 @@ pub struct ProjectionStatusResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectionUnlinkRequest {
     pub id: String,
-    pub clean_backups: bool,
+    /// How to dispose of each removed link's recorded backup. Absent means
+    /// leave backups in place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_handling: Option<BackupHandling>,
+}
+
+impl ProjectionUnlinkRequest {
+    /// Resolve the effective backup handling, defaulting to `Leave`.
+    fn resolved_backup_handling(&self) -> BackupHandling {
+        self.backup_handling.unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectionUnlinkResponse {
     pub removed: Vec<String>,
+    pub restored: Vec<String>,
     pub warnings: Vec<String>,
 }
 
@@ -244,11 +258,56 @@ where
     }
 
     if !req.dry_run {
+        // Orphan reconciliation runs only on a full, unfiltered sync. A
+        // `--source=X` run is targeted and idempotent: it must not touch any
+        // other source's footprint, neither its ledger links nor its git
+        // checkout. Both reconcilers are gated on the same condition so a git
+        // source's links can never outlive its checkout.
+        let full_sync = req.source.is_none();
+
+        if full_sync {
+            let keep_ids: HashSet<&str> =
+                sources.iter().map(source_id).collect();
+            let report = omni_projections::retain_sources(
+                &sys,
+                &workspace_root,
+                &mut ledger,
+                &keep_ids,
+            )
+            .await?;
+            response.removed.extend(
+                report
+                    .removed
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            );
+            response.warnings.extend(report.warnings);
+        }
+
         omni_projections::save(&sys, &ledger_path, &ledger).await?;
-        let refs: Vec<(&Url, &str)> =
-            all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
-        remote.retain_git_sources(&refs).await?;
+
+        if full_sync {
+            let refs: Vec<(&Url, &str)> =
+                all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
+            remote.retain_git_sources(&refs).await?;
+        }
         remote.lock().await?;
+    } else if req.source.is_none() {
+        let keep_ids: HashSet<&str> = sources.iter().map(source_id).collect();
+        let report = omni_projections::plan_retain_sources(
+            &sys,
+            &workspace_root,
+            &prior_ledger,
+            &keep_ids,
+        )
+        .await?;
+        response.removed.extend(
+            report
+                .removed
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned()),
+        );
+        response.warnings.extend(report.warnings);
     }
 
     Ok(response)
@@ -288,7 +347,7 @@ where
         resp.entries.push(StatusEntryInfo {
             source_id: entry.source_id.clone(),
             dest: entry.dest.clone(),
-            state: state_str(entry.state).to_string(),
+            state: entry.state.to_string(),
         });
     }
 
@@ -313,7 +372,7 @@ where
         &workspace_root,
         &mut ledger,
         &req.id,
-        req.clean_backups,
+        req.resolved_backup_handling(),
     )
     .await?;
     omni_projections::save(&sys, &ledger_path, &ledger).await?;
@@ -321,6 +380,11 @@ where
     Ok(ProjectionUnlinkResponse {
         removed: report
             .removed
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+        restored: report
+            .restored
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect(),
@@ -540,15 +604,6 @@ fn kind_str(kind: omni_projections::ResolvedKind) -> &'static str {
         Junction => "junction",
         Hardlink => "hardlink",
         Copy => "copy",
-    }
-}
-
-fn state_str(state: LinkState) -> &'static str {
-    match state {
-        LinkState::Ok => "ok",
-        LinkState::Missing => "missing",
-        LinkState::Broken => "broken",
-        LinkState::Drifted => "drifted",
     }
 }
 

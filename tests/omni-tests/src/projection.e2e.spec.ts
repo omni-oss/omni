@@ -126,6 +126,51 @@ function ownedProjectionWorkspace(): WorkspaceSpec {
     };
 }
 
+// Two independent local sources mirroring into distinct destinations, used to
+// exercise reconciliation when one is later dropped from config.
+function twoSourceWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/a",
+                    id: "skills-a",
+                    routes: [
+                        { strategy: "mirror", target: "@workspace/.agents/a" },
+                    ],
+                },
+                {
+                    source: "local",
+                    path: "./vendor/b",
+                    id: "skills-b",
+                    routes: [
+                        { strategy: "mirror", target: "@workspace/.agents/b" },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/a/one.md": "# one\n",
+            "vendor/b/two.md": "# two\n",
+        },
+    };
+}
+
+// The same workspace with `skills-b` removed from config.
+const singleSourceConfig = {
+    projects: ["**"],
+    projections: [
+        {
+            source: "local",
+            path: "./vendor/a",
+            id: "skills-a",
+            routes: [{ strategy: "mirror", target: "@workspace/.agents/a" }],
+        },
+    ],
+};
+
 describe("+projection @e2e", { tags: ["projection"] }, () => {
     it("materializes a local source into the target on sync", async () => {
         const ws = makeWorkspace(projectionWorkspace());
@@ -340,6 +385,102 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         });
 
         const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveFailed();
+    });
+
+    it("reconciles a source removed from config on a full sync", async () => {
+        const ws = makeWorkspace(twoSourceWorkspace());
+
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(ws.exists(".agents/a/one.md")).toBe(true);
+        expect(ws.exists(".agents/b/two.md")).toBe(true);
+        expect(ledgerLinkCount(ws)).toBe(2);
+
+        // Drop `skills-b` from config, then run a full sync.
+        ws.write("workspace.omni.yaml", singleSourceConfig);
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toContain("removed");
+
+        // The dropped source's links are gone; the survivor is untouched.
+        expect(ws.exists(".agents/b/two.md")).toBe(false);
+        expect(ws.read(".agents/a/one.md")).toBe("# one\n");
+        expect(ledgerLinkCount(ws)).toBe(1);
+
+        const status = await runOmni(["projection", "status"], { cwd: ws.cwd });
+        expect(status.stdout).toContain("1 ok");
+    });
+
+    it("reports orphaned links on --dry-run without removing them", async () => {
+        const ws = makeWorkspace(twoSourceWorkspace());
+
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+
+        ws.write("workspace.omni.yaml", singleSourceConfig);
+        const result = await runOmni(["projection", "sync", "--dry-run"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveSucceeded();
+
+        // The orphan is still on disk and still recorded after a dry run.
+        expect(ws.exists(".agents/b/two.md")).toBe(true);
+        expect(ledgerLinkCount(ws)).toBe(2);
+    });
+
+    it("leaves orphans untouched on a filtered sync until the next full sync", async () => {
+        const ws = makeWorkspace(twoSourceWorkspace());
+
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        ws.write("workspace.omni.yaml", singleSourceConfig);
+
+        // A targeted run touches only `skills-a`, leaving the orphan in place.
+        const filtered = await runOmni(
+            ["projection", "sync", "--source", "skills-a"],
+            { cwd: ws.cwd },
+        );
+        expect(filtered).toHaveSucceeded();
+        expect(ws.exists(".agents/b/two.md")).toBe(true);
+
+        // A later full sync reconciles it.
+        const full = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(full).toHaveSucceeded();
+        expect(ws.exists(".agents/b/two.md")).toBe(false);
+    });
+
+    it("restores a displaced file with unlink --restore-backups", async () => {
+        const ws = makeWorkspace(projectionWorkspace());
+
+        // A pre-existing local file at the destination is backed up on sync
+        // (the default collision policy), and the backup is recorded.
+        ws.write(".agents/skills/rust.md", "my own notes\n");
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+
+        const result = await runOmni(
+            ["projection", "unlink", "local-skills", "--restore-backups"],
+            { cwd: ws.cwd },
+        );
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toContain("restored");
+
+        // The displaced file is back with its original content.
+        expect(ws.read(".agents/skills/rust.md")).toBe("my own notes\n");
+    });
+
+    it("rejects unlink with both --clean-backups and --restore-backups", async () => {
+        const ws = makeWorkspace(projectionWorkspace());
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+
+        const result = await runOmni(
+            [
+                "projection",
+                "unlink",
+                "local-skills",
+                "--clean-backups",
+                "--restore-backups",
+            ],
+            { cwd: ws.cwd },
+        );
         expect(result).toHaveFailed();
     });
 });

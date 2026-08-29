@@ -1,5 +1,5 @@
 use omni_api::{
-    OmniApi, ProjectionPruneRequest, ProjectionStatusRequest,
+    BackupHandling, OmniApi, ProjectionPruneRequest, ProjectionStatusRequest,
     ProjectionSyncRequest, ProjectionUnlinkRequest,
 };
 use omni_context::Context;
@@ -81,6 +81,27 @@ pub struct ProjectionUnlinkArgs {
         action = clap::ArgAction::SetTrue
     )]
     pub clean_backups: bool,
+
+    #[arg(
+        long,
+        help = "Restore any backups taken when the links were created to their original destinations",
+        default_value_t = false,
+        action = clap::ArgAction::SetTrue,
+        conflicts_with = "clean_backups"
+    )]
+    pub restore_backups: bool,
+}
+
+impl ProjectionUnlinkArgs {
+    fn backup_handling(&self) -> Option<BackupHandling> {
+        if self.clean_backups {
+            Some(BackupHandling::Clean)
+        } else if self.restore_backups {
+            Some(BackupHandling::Restore)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -178,12 +199,15 @@ async fn run_unlink(
     let response = OmniApi::new_with_sys(ctx.clone(), NoopSubscriber)
         .projection_unlink(ProjectionUnlinkRequest {
             id: args.id.clone(),
-            clean_backups: args.clean_backups,
+            backup_handling: args.backup_handling(),
         })
         .await?;
 
     for removed in &response.removed {
         println!("  removed {removed}");
+    }
+    for restored in &response.restored {
+        println!("  restored {restored}");
     }
     for warning in &response.warnings {
         println!("  {} {}", "warning:".yellow(), warning);
@@ -219,6 +243,7 @@ async fn run_prune(
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+    use omni_api::BackupHandling;
 
     use super::ProjectionSubcommand;
     use crate::commands::{Cli, CliSubcommands};
@@ -292,9 +317,56 @@ mod tests {
             ProjectionSubcommand::Unlink(args) => {
                 assert_eq!(args.id, "team-skills");
                 assert!(args.clean_backups);
+                assert!(!args.restore_backups);
+                assert_eq!(args.backup_handling(), Some(BackupHandling::Clean));
             }
             other => panic!("expected unlink, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_unlink_with_restore_backups() {
+        match projection_of(&[
+            "omni",
+            "projection",
+            "unlink",
+            "team-skills",
+            "--restore-backups",
+        ]) {
+            ProjectionSubcommand::Unlink(args) => {
+                assert!(args.restore_backups);
+                assert_eq!(
+                    args.backup_handling(),
+                    Some(BackupHandling::Restore)
+                );
+            }
+            other => panic!("expected unlink, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unlink_without_backup_flags_leaves_backups() {
+        match projection_of(&["omni", "projection", "unlink", "team-skills"]) {
+            ProjectionSubcommand::Unlink(args) => {
+                assert!(!args.clean_backups);
+                assert!(!args.restore_backups);
+                assert_eq!(args.backup_handling(), None);
+            }
+            other => panic!("expected unlink, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unlink_clean_and_restore_backups_conflict() {
+        let result = Cli::try_parse_from([
+            "omni",
+            "projection",
+            "unlink",
+            "team-skills",
+            "--clean-backups",
+            "--restore-backups",
+        ]);
+        assert!(result.is_err(), "the two flags must be mutually exclusive");
     }
 
     #[test]

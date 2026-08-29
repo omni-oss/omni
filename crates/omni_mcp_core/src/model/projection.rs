@@ -1,3 +1,4 @@
+use omni_api::BackupHandling;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -28,9 +29,10 @@ pub struct ProjectionStatusParams {
 pub struct ProjectionUnlinkParams {
     /// The id of the projection source to tear down.
     pub id: String,
-    /// Also remove any backups taken when the links were created.
-    #[serde(default)]
-    pub clean_backups: bool,
+    /// How to dispose of each removed link's recorded backup: `leave`
+    /// (default), `clean`, or `restore`. Absent means leave.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_handling: Option<BackupHandling>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
