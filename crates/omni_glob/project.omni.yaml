@@ -2,3 +2,5 @@
 name: omni_glob
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
+dependencies:
+  - omni_utils

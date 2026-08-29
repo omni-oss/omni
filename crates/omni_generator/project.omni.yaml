@@ -12,7 +12,7 @@ dependencies:
   - omni_messages
   - omni_configuration_discovery
   - omni_discovery
-  - omni_discovery_utils
+  - omni_glob
   - omni_tera
   - omni_types
   - omni_process
