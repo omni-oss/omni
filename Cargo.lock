@@ -7731,7 +7731,6 @@ dependencies = [
  "derive-new",
  "dir_walker",
  "eyre",
- "globset",
  "log",
  "omni_configurations",
  "omni_constants",

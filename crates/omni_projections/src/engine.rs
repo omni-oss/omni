@@ -580,7 +580,7 @@ mod tests {
         std::fs::write(src_root.join("inner/a.txt"), b"a").unwrap();
 
         let projections = vec![projection(
-            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"match":"inner","dest":"@target/inner"}]}"#,
+            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"source":"inner","dest":"@target/inner"}]}"#,
         )];
         let source = ResolvedSource {
             id: "pkg",
@@ -626,7 +626,7 @@ mod tests {
         std::fs::write(src_root.join("inner/a.txt"), b"a").unwrap();
 
         let projections = vec![projection(
-            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"match":"inner","dest":"@target/inner"}]}"#,
+            r#"{"strategy":"explicit","target":"@workspace/dst","rules":[{"source":"inner","dest":"@target/inner"}]}"#,
         )];
         let source = ResolvedSource {
             id: "pkg",
