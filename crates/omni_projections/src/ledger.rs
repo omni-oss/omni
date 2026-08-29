@@ -266,12 +266,12 @@ where
                 "kept modified copy at {} (edited since projection)",
                 dest.display()
             ));
-            if handling == BackupHandling::Restore {
-                if let Some(backup) = &link.backup {
-                    report.warnings.push(format!(
-                        "backup {backup} not restored: destination holds an edited copy"
-                    ));
-                }
+            if handling == BackupHandling::Restore
+                && let Some(backup) = &link.backup
+            {
+                report.warnings.push(format!(
+                    "backup {backup} not restored: destination holds an edited copy"
+                ));
             }
             kept.push(link);
             continue;
