@@ -87,23 +87,12 @@ pub struct ProjectionUnlinkRequest {
     /// leave backups in place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_handling: Option<BackupHandling>,
-    /// Deprecated: use `backup_handling`. When `backup_handling` is absent, a
-    /// `true` here is treated as `Clean`. Kept for one release for compatibility.
-    #[serde(default)]
-    pub clean_backups: bool,
 }
 
 impl ProjectionUnlinkRequest {
-    /// Resolve the effective backup handling, honoring the deprecated
-    /// `clean_backups` alias when `backup_handling` is not set.
+    /// Resolve the effective backup handling, defaulting to `Leave`.
     fn resolved_backup_handling(&self) -> BackupHandling {
-        self.backup_handling.unwrap_or({
-            if self.clean_backups {
-                BackupHandling::Clean
-            } else {
-                BackupHandling::Leave
-            }
-        })
+        self.backup_handling.unwrap_or_default()
     }
 }
 

@@ -33,10 +33,6 @@ pub struct ProjectionUnlinkParams {
     /// (default), `clean`, or `restore`. Absent means leave.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_handling: Option<BackupHandling>,
-    /// Deprecated: use `backup_handling`. A `true` here maps to `clean` when
-    /// `backup_handling` is absent.
-    #[serde(default)]
-    pub clean_backups: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]

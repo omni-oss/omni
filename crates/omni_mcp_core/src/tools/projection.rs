@@ -56,7 +56,6 @@ where
             .projection_unlink(ProjectionUnlinkRequest {
                 id: params.id,
                 backup_handling: params.backup_handling,
-                clean_backups: params.clean_backups,
             })
             .await
     }

@@ -200,7 +200,6 @@ async fn run_unlink(
         .projection_unlink(ProjectionUnlinkRequest {
             id: args.id.clone(),
             backup_handling: args.backup_handling(),
-            clean_backups: false,
         })
         .await?;
 

@@ -584,7 +584,6 @@ async fn projection_unlink_removes_recorded_links() {
         .projection_unlink(omni_api::ProjectionUnlinkRequest {
             id: "local-skills".to_string(),
             backup_handling: None,
-            clean_backups: false,
         })
         .await
         .expect("unlink");
