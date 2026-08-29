@@ -190,13 +190,6 @@ include = [
 ]
 public_api = false
 
-[monorepo.packages.omni_discovery_utils]
-path = "crates/omni_discovery_utils"
-include = [
-    "crates/omni_discovery_utils/**",
-]
-public_api = false
-
 [monorepo.packages.omni_execution_plan]
 path = "crates/omni_execution_plan"
 include = [

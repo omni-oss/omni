@@ -7315,22 +7315,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "omni_discovery_utils"
-version = "0.0.0"
-dependencies = [
- "derive-new",
- "derive_builder",
- "eyre",
- "globset",
- "log",
- "omni_utils",
- "strum 0.28.0",
- "thiserror 2.0.18",
- "trace",
- "tracing",
-]
-
-[[package]]
 name = "omni_execution_plan"
 version = "0.5.0"
 dependencies = [
