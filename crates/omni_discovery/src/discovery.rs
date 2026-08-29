@@ -8,7 +8,7 @@ use dir_walker::{
     DirEntry as _, DirWalker,
     impls::{IgnoreRealDirWalker, IgnoreRealDirWalkerConfig},
 };
-use omni_discovery_utils::glob::GlobMatcher;
+use omni_glob::GlobMatcher;
 
 use crate::error::{Error, ErrorInner};
 
@@ -99,7 +99,11 @@ impl<'a> Discovery<'a> {
     ) -> Result<Vec<PathBuf>, Error> {
         let mut discovered = vec![];
 
-        let matcher = GlobMatcher::new(self.root_dir, self.glob_patterns)?;
+        let matcher = GlobMatcher::rooted(
+            self.root_dir,
+            self.glob_patterns,
+            Default::default(),
+        )?;
 
         let start_walk_time = SystemTime::now();
 

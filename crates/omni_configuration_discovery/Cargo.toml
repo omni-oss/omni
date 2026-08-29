@@ -30,7 +30,7 @@ derive_builder = { workspace = true }
 system_traits = { workspace = true }
 dir_walker = { workspace = true }
 globset = { workspace = true }
-omni_discovery_utils = { workspace = true }
+omni_glob = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

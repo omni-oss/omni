@@ -8,7 +8,7 @@ use dir_walker::{
     DirEntry as _, DirWalker,
     impls::{IgnoreRealDirWalker, IgnoreRealDirWalkerConfig},
 };
-use omni_discovery_utils::glob::GlobMatcher;
+use omni_glob::GlobMatcher;
 
 use crate::error::{Error, ErrorInner};
 
@@ -70,7 +70,11 @@ where
     ) -> Result<Vec<PathBuf>, Error> {
         let mut discovered = vec![];
 
-        let matcher = GlobMatcher::new(self.root_dir, self.glob_patterns)?;
+        let matcher = GlobMatcher::rooted(
+            self.root_dir,
+            self.glob_patterns,
+            Default::default(),
+        )?;
 
         let start_walk_time = SystemTime::now();
 
@@ -132,11 +136,8 @@ mod tests {
         let external = tempfile::tempdir().unwrap();
 
         // A real manifest under the root proves discovery works at all.
-        std::fs::write(
-            root.path().join("project.omni.yaml"),
-            b"name: real\n",
-        )
-        .unwrap();
+        std::fs::write(root.path().join("project.omni.yaml"), b"name: real\n")
+            .unwrap();
 
         // A manifest reachable only through a symlinked directory.
         std::fs::write(
@@ -166,7 +167,9 @@ mod tests {
             "only the real manifest is discovered, not the symlinked one: {found:?}"
         );
         assert!(
-            found.iter().all(|p| !p.to_string_lossy().contains("linked")),
+            found
+                .iter()
+                .all(|p| !p.to_string_lossy().contains("linked")),
             "a manifest inside a symlinked directory must not be discovered: {found:?}"
         );
     }

@@ -41,7 +41,7 @@ use std::{
     time::SystemTime,
 };
 
-use omni_discovery_utils::glob::GlobMatcher;
+use omni_glob::GlobMatcher;
 use path_clean::PathClean;
 use system_traits::{
     BaseEnvSetCurrentDirAsync, BaseFsAppendAsync, BaseFsCopyAsync,
@@ -776,8 +776,9 @@ impl<S: GeneratorSys> BaseFsGlobAsync for TransactionSys<S> {
         root_dir: &Path,
         patterns: &[&str],
     ) -> io::Result<Vec<PathBuf>> {
-        let matcher = GlobMatcher::new(root_dir, patterns)
-            .map_err(|e| invalid(&format!("invalid glob pattern: {e}")))?;
+        let matcher =
+            GlobMatcher::rooted(root_dir, patterns, Default::default())
+                .map_err(|e| invalid(&format!("invalid glob pattern: {e}")))?;
 
         let st = self.state.lock().await;
         let matches = st
