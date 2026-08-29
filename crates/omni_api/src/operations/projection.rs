@@ -347,7 +347,7 @@ where
         resp.entries.push(StatusEntryInfo {
             source_id: entry.source_id.clone(),
             dest: entry.dest.clone(),
-            state: state_str(entry.state).to_string(),
+            state: entry.state.to_string(),
         });
     }
 
@@ -604,15 +604,6 @@ fn kind_str(kind: omni_projections::ResolvedKind) -> &'static str {
         Junction => "junction",
         Hardlink => "hardlink",
         Copy => "copy",
-    }
-}
-
-fn state_str(state: LinkState) -> &'static str {
-    match state {
-        LinkState::Ok => "ok",
-        LinkState::Missing => "missing",
-        LinkState::Broken => "broken",
-        LinkState::Drifted => "drifted",
     }
 }
 
