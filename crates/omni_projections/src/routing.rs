@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use globset::{GlobBuilder, GlobMatcher};
+use omni_glob::{GlobMatcher, GlobOptions};
 use omni_projection_configurations::{
     DestPath, MatchKind, OmniPath, Projection,
 };
@@ -87,12 +87,15 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
             ),
             is_dir_link: true,
         }],
-        Projection::Mirror(p) => plan_mirror(
-            input.source_root,
-            p.scope.as_deref(),
-            input.entries,
-            &target_abs,
-        )?,
+        Projection::Mirror(p) => {
+            let scope = p.scope.as_ref().map(|s| s.to_vec());
+            plan_mirror(
+                input.source_root,
+                scope.as_deref(),
+                input.entries,
+                &target_abs,
+            )?
+        }
         Projection::Explicit(p) => plan_explicit(
             input.source_root,
             &p.rules,
@@ -178,11 +181,11 @@ fn namespaced_pair(
 
 fn plan_mirror(
     source_root: &Path,
-    scope: Option<&str>,
+    scope: Option<&[String]>,
     entries: &[ScannedEntry],
     target_abs: &Path,
 ) -> Result<Vec<Candidate>> {
-    let matcher = scope.map(build_glob).transpose()?;
+    let matcher = scope.map(build_matcher).transpose()?;
 
     let mut candidates = Vec::new();
     for entry in entries {
@@ -215,11 +218,11 @@ fn plan_explicit(
 ) -> Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
     for rule in rules {
-        let rel = PathBuf::from(&rule.r#match);
+        let rel = PathBuf::from(&rule.source);
         let entry = entries.iter().find(|e| e.rel == rel).ok_or_else(|| {
             ProjectionError::custom(format!(
                 "explicit source path not found: {}",
-                rule.r#match
+                rule.source
             ))
         })?;
 
@@ -247,7 +250,7 @@ fn plan_pattern(
 ) -> Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
     for rule in rules {
-        let matcher = build_glob(&rule.r#match)?;
+        let matcher = build_matcher(&rule.r#match.to_vec())?;
         for entry in matching_entries(entries, &matcher, rule.match_kind) {
             let vars = TemplateVars::from_rel(&entry.rel);
             let tail = expand_template(&dest_tail(&rule.dest), &vars);
@@ -272,7 +275,7 @@ fn plan_flatten(
 ) -> Result<Vec<Candidate>> {
     let mut candidates = Vec::new();
     for rule in rules {
-        let matcher = build_glob(&rule.r#match)?;
+        let matcher = build_matcher(&rule.r#match.to_vec())?;
         for entry in matching_entries(entries, &matcher, rule.match_kind) {
             let vars = TemplateVars::from_rel(&entry.rel);
             let tail = match &rule.dest {
@@ -379,14 +382,16 @@ fn dest_tail(dest: &DestPath) -> String {
     dest.unresolved_path().to_string_lossy().into_owned()
 }
 
-fn build_glob(pattern: &str) -> Result<GlobMatcher> {
-    GlobBuilder::new(pattern)
-        .literal_separator(true)
-        .build()
-        .map(|glob| glob.compile_matcher())
-        .map_err(|e| {
-            ProjectionError::custom(format!("invalid glob `{pattern}`: {e}"))
-        })
+fn build_matcher(patterns: &[String]) -> Result<GlobMatcher> {
+    GlobMatcher::new(
+        patterns,
+        GlobOptions {
+            literal_separator: true,
+        },
+    )
+    .map_err(|e| {
+        ProjectionError::custom(format!("invalid glob in {patterns:?}: {e}"))
+    })
 }
 
 fn to_slash(path: &Path) -> String {
@@ -484,9 +489,7 @@ mod tests {
 
     #[test]
     fn mirror_scopes_by_scope_glob() {
-        let proj = projection(
-            r#"{"strategy":"mirror","scope":"**/*.txt"}"#,
-        );
+        let proj = projection(r#"{"strategy":"mirror","scope":"**/*.txt"}"#);
         let entries = [
             ScannedEntry::file("a.txt"),
             ScannedEntry::file("note.md"),
@@ -506,7 +509,7 @@ mod tests {
     #[test]
     fn explicit_links_literal_paths() {
         let proj = projection(
-            r#"{"strategy":"explicit","rules":[{"match":"src/main.rs","dest":"@target/main.rs"}]}"#,
+            r#"{"strategy":"explicit","rules":[{"source":"src/main.rs","dest":"@target/main.rs"}]}"#,
         );
         let entries = [ScannedEntry::file("src/main.rs")];
         let pairs = plan_with(&proj, "id", &entries).unwrap();
@@ -514,9 +517,73 @@ mod tests {
     }
 
     #[test]
+    fn pattern_match_list_is_an_or_union() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":["prompts/**/*.md","docs/**/*.md"],"dest":"{name}.md"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::file("prompts/a.md"),
+            ScannedEntry::file("docs/b.md"),
+            ScannedEntry::file("other/c.md"),
+        ];
+        let mut pairs = plan_with(&proj, "id", &entries).unwrap();
+        pairs.sort_by(|a, b| a.dest_abs.cmp(&b.dest_abs));
+        assert_eq!(
+            pairs,
+            vec![
+                pair("/src/prompts/a.md", "/ws/out/a.md"),
+                pair("/src/docs/b.md", "/ws/out/b.md"),
+            ]
+        );
+    }
+
+    #[test]
+    fn pattern_entry_matched_by_two_includes_yields_one_link() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":["**/*.md","prompts/*.md"],"dest":"{name}.md"}]}"#,
+        );
+        let entries = [ScannedEntry::file("prompts/a.md")];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs, vec![pair("/src/prompts/a.md", "/ws/out/a.md")]);
+    }
+
+    #[test]
+    fn pattern_match_list_excludes_win() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":["**/*.md","!secret/**"],"dest":"{name}.md"}]}"#,
+        );
+        let entries = [
+            ScannedEntry::file("a.md"),
+            ScannedEntry::file("secret/b.md"),
+        ];
+        let pairs = plan_with(&proj, "id", &entries).unwrap();
+        assert_eq!(pairs, vec![pair("/src/a.md", "/ws/out/a.md")]);
+    }
+
+    #[test]
+    fn mirror_scope_list_includes_and_excludes() {
+        let proj =
+            projection(r#"{"strategy":"mirror","scope":["**","!drafts/**"]}"#);
+        let entries = [
+            ScannedEntry::file("keep.txt"),
+            ScannedEntry::file("nested/keep.txt"),
+            ScannedEntry::file("drafts/skip.txt"),
+        ];
+        let mut pairs = plan_with(&proj, "id", &entries).unwrap();
+        pairs.sort_by(|a, b| a.dest_abs.cmp(&b.dest_abs));
+        assert_eq!(
+            pairs,
+            vec![
+                pair("/src/keep.txt", "/ws/keep.txt"),
+                pair("/src/nested/keep.txt", "/ws/nested/keep.txt"),
+            ]
+        );
+    }
+
+    #[test]
     fn explicit_errors_on_missing_source() {
         let proj = projection(
-            r#"{"strategy":"explicit","rules":[{"match":"nope.rs","dest":"nope.rs"}]}"#,
+            r#"{"strategy":"explicit","rules":[{"source":"nope.rs","dest":"nope.rs"}]}"#,
         );
         assert!(plan_with(&proj, "id", &[]).is_err());
     }
@@ -524,10 +591,12 @@ mod tests {
     #[test]
     fn explicit_links_a_literal_directory() {
         let proj = projection(
-            r#"{"strategy":"explicit","rules":[{"match":"pkg","dest":"@target/pkg"}]}"#,
+            r#"{"strategy":"explicit","rules":[{"source":"pkg","dest":"@target/pkg"}]}"#,
         );
-        let entries =
-            [ScannedEntry::dir("pkg"), ScannedEntry::file("pkg/inner.txt")];
+        let entries = [
+            ScannedEntry::dir("pkg"),
+            ScannedEntry::file("pkg/inner.txt"),
+        ];
         let pairs = plan_with(&proj, "id", &entries).unwrap();
         assert_eq!(pairs, vec![pair("/src/pkg", "/ws/pkg")]);
     }
@@ -597,7 +666,7 @@ mod tests {
     #[test]
     fn pattern_dir_links_each_matched_directory() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/.agents/skills","rules":[{"match":"skills/engineering/*","match-kind":"dir","dest":"@target/{basename}"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/.agents/skills","rules":[{"match":"skills/engineering/*","match_kind":"dir","dest":"@target/{basename}"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("skills"),
@@ -616,10 +685,7 @@ mod tests {
                     "/src/skills/engineering/code-review",
                     "/ws/.agents/skills/code-review"
                 ),
-                pair(
-                    "/src/skills/engineering/tdd",
-                    "/ws/.agents/skills/tdd"
-                ),
+                pair("/src/skills/engineering/tdd", "/ws/.agents/skills/tdd"),
             ]
         );
     }
@@ -627,7 +693,7 @@ mod tests {
     #[test]
     fn flatten_dir_defaults_to_basename_preserving_dots() {
         let proj = projection(
-            r#"{"strategy":"flatten","target":"@workspace/plugins","rules":[{"match":"vendor/*","match-kind":"dir"}]}"#,
+            r#"{"strategy":"flatten","target":"@workspace/plugins","rules":[{"match":"vendor/*","match_kind":"dir"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("vendor"),
@@ -647,7 +713,7 @@ mod tests {
         // `pkgs/a`, so the nested directory link is pruned in favor of the
         // shallowest one.
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkgs/**","match-kind":"dir","dest":"@target/{path}/{basename}"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkgs/**","match_kind":"dir","dest":"@target/{path}/{basename}"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkgs"),
@@ -663,7 +729,7 @@ mod tests {
         // A dir link to out/pkg and a file route landing inside out/pkg/... :
         // the file pair is dropped because it would write back through the link.
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"},{"match":"pkg/**/*.md","dest":"pkg/{name}.md"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"},{"match":"pkg/**/*.md","dest":"pkg/{name}.md"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkg"),
@@ -676,7 +742,7 @@ mod tests {
     #[test]
     fn identical_dir_dests_remain_a_collision() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"a","match-kind":"dir","dest":"@target/same"},{"match":"b","match-kind":"dir","dest":"@target/same"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"a","match_kind":"dir","dest":"@target/same"},{"match":"b","match_kind":"dir","dest":"@target/same"}]}"#,
         );
         let entries = [ScannedEntry::dir("a"), ScannedEntry::dir("b")];
         let pairs = plan_with(&proj, "id", &entries).unwrap();
@@ -686,7 +752,7 @@ mod tests {
     #[test]
     fn dir_link_containing_control_plane_config_is_refused() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkg"),
@@ -701,7 +767,7 @@ mod tests {
     #[test]
     fn dir_link_control_plane_allowed_with_flag() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","allow_omni_config":true,"rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","allow_omni_config":true,"rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkg"),
@@ -713,7 +779,7 @@ mod tests {
     #[test]
     fn dir_link_git_contents_are_refused() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkg"),
@@ -728,7 +794,7 @@ mod tests {
         // A symlinked manifest beneath the dir is not part of the subtree
         // discovery could reach, so it does not trip the guardrail.
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match-kind":"dir","dest":"@target/pkg"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"pkg","match_kind":"dir","dest":"@target/pkg"}]}"#,
         );
         let entries = [
             ScannedEntry::dir("pkg"),

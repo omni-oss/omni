@@ -70,7 +70,7 @@ function ledgerLinkCount(ws: ReturnType<typeof makeWorkspace>): number {
     return ledger.links.length;
 }
 
-// A `pattern` projection with `match-kind: dir` links whole directories: one
+// A `pattern` projection with `match_kind: dir` links whole directories: one
 // directory link per matched folder, rather than a link per file.
 function dirRoutingWorkspace(): WorkspaceSpec {
     return {
@@ -88,7 +88,7 @@ function dirRoutingWorkspace(): WorkspaceSpec {
                             rules: [
                                 {
                                     match: "engineering/*",
-                                    "match-kind": "dir",
+                                    match_kind: "dir",
                                     dest: "@target/{basename}",
                                 },
                             ],
@@ -100,6 +100,69 @@ function dirRoutingWorkspace(): WorkspaceSpec {
         files: {
             "vendor/skills/engineering/tdd/SKILL.md": "# tdd\n",
             "vendor/skills/engineering/code-review/SKILL.md": "# review\n",
+        },
+    };
+}
+
+// A `pattern` route whose `match` is a list: entries are the OR-union of the
+// include globs, and a leading `!` marks an exclusion that always wins.
+function listMatchWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/skills",
+                    id: "local-skills",
+                    routes: [
+                        {
+                            strategy: "pattern",
+                            target: "@workspace/.agents/skills",
+                            rules: [
+                                {
+                                    match: ["**/*.md", "!drafts/**"],
+                                    dest: "@target/{name}.md",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/skills/rust.md": "# rust\n",
+            "vendor/skills/go.md": "# go\n",
+            "vendor/skills/drafts/wip.md": "# wip\n",
+        },
+    };
+}
+
+// A `mirror` route whose `scope` is a list: mirror everything an include
+// matches except what a `!` exclude drops, preserving source structure.
+function listScopeWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/docs",
+                    id: "local-docs",
+                    routes: [
+                        {
+                            strategy: "mirror",
+                            target: "@workspace/.agents/docs",
+                            scope: ["docs/**", "!docs/drafts/**"],
+                        },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/docs/docs/guide.md": "# guide\n",
+            "vendor/docs/docs/drafts/wip.md": "# wip\n",
+            "vendor/docs/README.md": "# readme\n",
         },
     };
 }
@@ -306,7 +369,7 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         expect(healthy.stdout).toContain("2 ok");
     });
 
-    it("links whole directories with pattern match-kind: dir", async () => {
+    it("links whole directories with pattern match_kind: dir", async () => {
         const ws = makeWorkspace(dirRoutingWorkspace());
 
         const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
@@ -339,6 +402,34 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         expect(result.stdout).toContain(".agents/skills/tdd");
         expect(result.stdout).toContain(".agents/skills/code-review");
         expect(ws.exists(".agents/skills/tdd/SKILL.md")).toBe(false);
+    });
+
+    it("routes a list-valued match as an OR-union with ! exclusions", async () => {
+        const ws = makeWorkspace(listMatchWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+
+        // Both includes match; the `!drafts/**` exclude wins over `**/*.md`.
+        expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+        expect(ws.read(".agents/skills/go.md")).toBe("# go\n");
+        expect(ws.exists(".agents/skills/wip.md")).toBe(false);
+        // Two links, not three: the excluded draft never produces one.
+        expect(ledgerLinkCount(ws)).toBe(2);
+    });
+
+    it("narrows a mirror with a list-valued scope and ! exclusions", async () => {
+        const ws = makeWorkspace(listScopeWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+
+        // `docs/**` includes the guide; `!docs/drafts/**` drops the draft;
+        // `README.md` is outside every include, so it is not mirrored.
+        expect(ws.read(".agents/docs/docs/guide.md")).toBe("# guide\n");
+        expect(ws.exists(".agents/docs/docs/drafts/wip.md")).toBe(false);
+        expect(ws.exists(".agents/docs/README.md")).toBe(false);
+        expect(ledgerLinkCount(ws)).toBe(1);
     });
 
     it("inherits routes from a source's own projection.omni.yaml", async () => {
