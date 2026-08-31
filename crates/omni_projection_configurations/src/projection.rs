@@ -69,8 +69,8 @@ pub type DestPath = omni_types::OmniPath<DestRoot>;
 pub enum ExistingPolicy {
     Skip,
     Overwrite,
-    #[default]
     Backup,
+    #[default]
     Error,
 }
 
@@ -701,6 +701,11 @@ mod tests {
             .is_err(),
             "`match` on an explicit rule must be an unknown-field error"
         );
+    }
+
+    #[test]
+    fn on_existing_defaults_to_error() {
+        assert_eq!(ExistingPolicy::default(), ExistingPolicy::Error);
     }
 
     #[test]
