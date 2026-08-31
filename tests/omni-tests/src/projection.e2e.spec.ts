@@ -7,7 +7,7 @@
  * `crates/omni_cli_core/src/commands/projection.rs`.
  */
 
-import { rmSync, writeFileSync } from "node:fs";
+import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
@@ -59,6 +59,64 @@ function namespacedWorkspace(): WorkspaceSpec {
         files: {
             "vendor/pkg/index.js": "module.exports = 1;\n",
             "vendor/pkg/lib/util.js": "module.exports = 2;\n",
+        },
+    };
+}
+
+// A mirror projection that opts back into the pre-error move-aside behavior
+// with `on_existing: backup`.
+function backupMirrorWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/skills",
+                    id: "local-skills",
+                    routes: [
+                        {
+                            strategy: "mirror",
+                            target: "@workspace/.agents/skills",
+                            on_existing: "backup",
+                        },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/skills/rust.md": "# rust\n",
+        },
+    };
+}
+
+// Two explicit rules that point different source files at one destination, so
+// the plan contradicts itself: an always-fatal collision no policy can permit.
+function collidingRulesWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [
+                {
+                    source: "local",
+                    path: "./vendor/skills",
+                    id: "local-skills",
+                    routes: [
+                        {
+                            strategy: "explicit",
+                            target: "@workspace/out",
+                            rules: [
+                                { source: "a.md", dest: "@target/same.md" },
+                                { source: "b.md", dest: "@target/same.md" },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+        files: {
+            "vendor/skills/a.md": "# a\n",
+            "vendor/skills/b.md": "# b\n",
         },
     };
 }
@@ -539,10 +597,10 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
     });
 
     it("restores a displaced file with unlink --restore-backups", async () => {
-        const ws = makeWorkspace(projectionWorkspace());
+        const ws = makeWorkspace(backupMirrorWorkspace());
 
-        // A pre-existing local file at the destination is backed up on sync
-        // (the default collision policy), and the backup is recorded.
+        // With `on_existing: backup`, a pre-existing local file at the
+        // destination is moved aside on sync and the backup is recorded.
         ws.write(".agents/skills/rust.md", "my own notes\n");
         await runOmni(["projection", "sync"], { cwd: ws.cwd });
         expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
@@ -573,5 +631,48 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
             { cwd: ws.cwd },
         );
         expect(result).toHaveFailed();
+    });
+
+    it("fails the sync when a foreign file sits at a destination", async () => {
+        const ws = makeWorkspace(projectionWorkspace());
+        // A file omni does not own already occupies a destination.
+        ws.write(".agents/skills/rust.md", "FOREIGN");
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("already exists");
+
+        // The foreign file is untouched and the whole run wrote nothing.
+        expect(ws.read(".agents/skills/rust.md")).toBe("FOREIGN");
+        expect(ws.exists(".agents/skills/sub/python.md")).toBe(false);
+        expect(ws.exists(".omni/sources/projection/links.json")).toBe(false);
+    });
+
+    it("moves a foreign file aside with on_existing: backup", async () => {
+        const ws = makeWorkspace(backupMirrorWorkspace());
+        ws.write(".agents/skills/rust.md", "FOREIGN");
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+
+        // The link now resolves to the source, and the displaced file is kept
+        // as a timestamped backup sibling.
+        expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
+        const siblings = readdirSync(ws.path(".agents/skills"));
+        const backup = siblings.find((name) => name.startsWith("rust.md.bak."));
+        expect(backup).toBeDefined();
+        expect(ws.read(`.agents/skills/${backup}`)).toBe("FOREIGN");
+    });
+
+    it("aborts when two rules resolve to one destination", async () => {
+        const ws = makeWorkspace(collidingRulesWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveFailed();
+        expect(result).toHaveStderrContaining("collision");
+
+        // A self-contradictory plan writes nothing.
+        expect(ws.exists("out/same.md")).toBe(false);
+        expect(ws.exists(".omni/sources/projection/links.json")).toBe(false);
     });
 });
