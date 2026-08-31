@@ -331,8 +331,8 @@ fn candidate(
 
 /// Drop any candidate whose destination is a strict descendant of a
 /// directory-link destination: writing through a directory link would land back
-/// inside the source. Identical destinations stay and resolve via
-/// `on_collision`. Shallowest directory link wins.
+/// inside the source. Identical destinations stay and are resolved by the
+/// run-wide collision check. Shallowest directory link wins.
 fn prune_nested(candidates: &mut Vec<Candidate>) {
     let dir_dests: Vec<PathBuf> = candidates
         .iter()

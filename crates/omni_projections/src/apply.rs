@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use omni_projection_configurations::{CollisionPolicy, LinkKind};
+use omni_projection_configurations::{ExistingPolicy, LinkKind};
 use system_traits::{
     FileType, FsCopyAsync, FsCreateDirAllAsync, FsCreateJunctionAsync,
     FsHardLinkAsync, FsMetadataAsync, FsMetadataValue, FsReadDirAsync,
@@ -36,12 +36,12 @@ pub enum ApplyOutcome {
 
 pub struct ApplyOptions {
     pub link: LinkKind,
-    pub collision: CollisionPolicy,
+    pub on_existing: ExistingPolicy,
 }
 
 /// A destination omni already owns, per the ledger. Used for the idempotent
 /// "up-to-date" exception: an unchanged pin means the link is left untouched;
-/// a changed pin means omni re-points it (regardless of collision policy).
+/// a changed pin means omni re-points it (regardless of the existing-file policy).
 pub struct PriorLink<'a> {
     pub source_abs: &'a Path,
     pub pin_unchanged: bool,
@@ -80,7 +80,7 @@ impl<T> ApplierSys for T where
 {
 }
 
-/// Materialize one link, honoring the ownership exception and collision policy.
+/// Materialize one link, honoring the ownership exception and existing-file policy.
 pub async fn apply_link<S: ApplierSys>(
     sys: &S,
     pair: &LinkPair,
@@ -111,18 +111,18 @@ pub async fn apply_link<S: ApplierSys>(
 
     let mut backup = None;
     if dest_exists {
-        match opts.collision {
-            CollisionPolicy::Skip => return Ok(ApplyOutcome::Skipped),
-            CollisionPolicy::Error => {
+        match opts.on_existing {
+            ExistingPolicy::Skip => return Ok(ApplyOutcome::Skipped),
+            ExistingPolicy::Error => {
                 return Err(ProjectionError::custom(format!(
                     "destination already exists: {}",
                     pair.dest_abs.display()
                 )));
             }
-            CollisionPolicy::Overwrite => {
+            ExistingPolicy::Overwrite => {
                 remove_existing(sys, &pair.dest_abs).await?;
             }
-            CollisionPolicy::Backup => {
+            ExistingPolicy::Backup => {
                 let path = backup_path(&pair.dest_abs);
                 sys.fs_rename_async(&pair.dest_abs, &path).await?;
                 backup = Some(path);
@@ -302,8 +302,8 @@ mod tests {
     use super::*;
     use system_traits::{FsReadLinkAsync, impls::RealSys};
 
-    fn opts(link: LinkKind, collision: CollisionPolicy) -> ApplyOptions {
-        ApplyOptions { link, collision }
+    fn opts(link: LinkKind, on_existing: ExistingPolicy) -> ApplyOptions {
+        ApplyOptions { link, on_existing }
     }
 
     #[tokio::test]
@@ -322,7 +322,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Backup),
+            &opts(LinkKind::Auto, ExistingPolicy::Backup),
             None,
         )
         .await
@@ -357,7 +357,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Backup),
+            &opts(LinkKind::Auto, ExistingPolicy::Backup),
             None,
         )
         .await
@@ -390,7 +390,7 @@ mod tests {
         apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Error),
+            &opts(LinkKind::Auto, ExistingPolicy::Error),
             None,
         )
         .await
@@ -404,7 +404,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Error),
+            &opts(LinkKind::Auto, ExistingPolicy::Error),
             Some(&prior),
         )
         .await
@@ -428,7 +428,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Skip),
+            &opts(LinkKind::Auto, ExistingPolicy::Skip),
             None,
         )
         .await

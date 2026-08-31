@@ -101,7 +101,7 @@ where
 
         let opts = ApplyOptions {
             link: projection.common().link,
-            collision: projection.common().on_collision,
+            on_existing: projection.common().on_existing,
         };
 
         for pair in &pairs {

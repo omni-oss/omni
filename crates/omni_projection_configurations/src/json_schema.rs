@@ -168,7 +168,7 @@ mod tests {
                 .expect("arm is an object schema");
             for field in [
                 "target",
-                "on_collision",
+                "on_existing",
                 "link",
                 "allow_omni_config",
                 "allow_git",

@@ -66,7 +66,7 @@ pub type DestPath = omni_types::OmniPath<DestRoot>;
     Eq,
 )]
 #[serde(rename_all = "kebab-case")]
-pub enum CollisionPolicy {
+pub enum ExistingPolicy {
     Skip,
     Overwrite,
     #[default]
@@ -127,7 +127,7 @@ pub struct ProjectionCommon {
     pub target: OmniPath,
 
     #[serde(default)]
-    pub on_collision: CollisionPolicy,
+    pub on_existing: ExistingPolicy,
 
     #[serde(default)]
     pub link: LinkKind,
@@ -700,6 +700,20 @@ mod tests {
             )
             .is_err(),
             "`match` on an explicit rule must be an unknown-field error"
+        );
+    }
+
+    #[test]
+    fn on_existing_replaces_on_collision() {
+        parse_projection(r#"{"strategy":"mirror","on_existing":"backup"}"#)
+            .expect("on_existing is the accepted key");
+
+        assert!(
+            parse_projection(
+                r#"{"strategy":"mirror","on_collision":"backup"}"#,
+            )
+            .is_err(),
+            "the retired `on_collision` key must be an unknown-field error"
         );
     }
 }
