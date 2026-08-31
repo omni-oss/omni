@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use omni_projection_configurations::Projection;
+use omni_projection_configurations::{ExistingPolicy, LinkKind, Projection};
 use system_traits::{FsCanonicalizeAsync, FsMetadataAsync, FsReadAsync};
 
 use crate::apply::{
@@ -43,6 +43,27 @@ pub struct PlannedLink {
     pub source_abs: PathBuf,
 }
 
+/// One planned link with everything apply needs, resolved without writing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedItem {
+    pub source_id: String,
+    pub pair: LinkPair,
+    pub dest_rel: String,
+    pub is_dir_link: bool,
+    pub on_existing: ExistingPolicy,
+    pub link: LinkKind,
+    pub pin: String,
+}
+
+/// One source's full plan: every planned link plus the desired destination set
+/// used by stale reconciliation. Produced without any filesystem write.
+#[derive(Debug, Clone, Default)]
+pub struct SourcePlan {
+    pub items: Vec<PlannedItem>,
+    pub desired_dests: Vec<String>,
+    pub planned: Vec<PlannedLink>,
+}
+
 /// The result of materializing (or skipping) one planned link.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedLink {
@@ -67,6 +88,10 @@ pub struct SyncSourceOutcome {
 /// Plan and apply every projection for one resolved source, reconciling away
 /// any stale destinations previously recorded for it. Pure with respect to the
 /// network: the caller resolves git/local roots first.
+///
+/// This per-source wrapper does not run the whole-run preflight, so it is not
+/// atomic across sources. A driver that needs all-or-nothing behavior composes
+/// `plan_source` and `apply_source` with the preflight checks itself.
 pub async fn sync_source<S>(
     sys: &S,
     source: &ResolvedSource<'_>,
@@ -76,12 +101,34 @@ pub async fn sync_source<S>(
 where
     S: ApplierSys + FsReadAsync + FsCanonicalizeAsync,
 {
+    let plan = plan_source(sys, source, params).await?;
+
+    if params.dry_run {
+        return Ok(SyncSourceOutcome {
+            planned: plan.planned,
+            ..Default::default()
+        });
+    }
+
+    apply_source(sys, source, params, prior_ledger, &plan).await
+}
+
+/// Resolve every projection for one source into a concrete plan without writing
+/// anything. Scans the source, plans each projection, resolves the source pin,
+/// and runs the realpath containment guardrail.
+pub async fn plan_source<S>(
+    sys: &S,
+    source: &ResolvedSource<'_>,
+    params: &SyncParams<'_>,
+) -> Result<SourcePlan>
+where
+    S: ApplierSys + FsReadAsync + FsCanonicalizeAsync,
+{
     let entries = scan_source(sys, source.source_root).await?;
-    let mut outcome = SyncSourceOutcome::default();
-    let mut desired_dests: Vec<String> = Vec::new();
+    let mut plan_out = SourcePlan::default();
 
     for projection in source.projections {
-        let pairs = plan(&PlanInput {
+        let planned = plan(&PlanInput {
             workspace_root: params.workspace_root,
             source_root: source.source_root,
             source_id: source.id,
@@ -89,6 +136,8 @@ where
             entries: &entries,
             env_files: params.env_files,
         })?;
+        let pairs: Vec<LinkPair> =
+            planned.iter().map(|p| p.pair.clone()).collect();
 
         let pin = match &source.git_pin {
             Some(commit) => commit.clone(),
@@ -99,12 +148,11 @@ where
             }
         };
 
-        let opts = ApplyOptions {
-            link: projection.common().link,
-            collision: projection.common().on_collision,
-        };
+        let on_existing = projection.common().on_existing;
+        let link = projection.common().link;
 
-        for pair in &pairs {
+        for planned_pair in &planned {
+            let pair = &planned_pair.pair;
             if !source_realpath_contained(
                 sys,
                 source.source_root,
@@ -119,72 +167,101 @@ where
             }
 
             let dest_rel = rel_string(params.workspace_root, &pair.dest_abs)?;
-            desired_dests.push(dest_rel.clone());
-
-            outcome.planned.push(PlannedLink {
+            plan_out.desired_dests.push(dest_rel.clone());
+            plan_out.planned.push(PlannedLink {
                 source_id: source.id.to_string(),
                 dest: dest_rel.clone(),
                 source_abs: pair.source_abs.clone(),
             });
-
-            if params.dry_run {
-                continue;
-            }
-
-            let prior = prior_ledger
-                .links()
-                .iter()
-                .find(|l| l.source_id == source.id && l.dest == dest_rel);
-            let prior_link = prior.map(|l| PriorLink {
-                source_abs: Path::new(&l.target),
-                pin_unchanged: !params.force && l.source_pin == pin,
-            });
-
-            let apply_outcome =
-                apply_link(sys, pair, &opts, prior_link.as_ref()).await?;
-
-            let (kind, backup) = match &apply_outcome {
-                ApplyOutcome::Linked { kind, backup } => (
-                    *kind,
-                    backup
-                        .as_ref()
-                        .map(|b| rel_string_lossy(params.workspace_root, b)),
-                ),
-                ApplyOutcome::Skipped => (
-                    prior.map(|l| l.kind).unwrap_or(ResolvedKind::Symlink),
-                    prior.and_then(|l| l.backup.clone()),
-                ),
-            };
-
-            outcome.applied.push(AppliedLink {
-                dest: dest_rel.clone(),
-                kind,
-                backup: backup.clone(),
-                skipped: matches!(apply_outcome, ApplyOutcome::Skipped),
-            });
-
-            outcome.links.push(LedgerLink {
+            plan_out.items.push(PlannedItem {
                 source_id: source.id.to_string(),
-                dest: dest_rel,
-                target: pair.source_abs.to_string_lossy().into_owned(),
-                kind,
-                source_pin: pin.clone(),
-                backup,
+                pair: pair.clone(),
+                dest_rel,
+                is_dir_link: planned_pair.is_dir_link,
+                on_existing,
+                link,
+                pin: pin.clone(),
             });
         }
     }
 
-    if !params.dry_run {
-        reconcile_stale(
-            sys,
-            source,
-            params,
-            prior_ledger,
-            &desired_dests,
-            &mut outcome,
-        )
-        .await?;
+    Ok(plan_out)
+}
+
+/// Materialize a source plan: apply every link and reconcile away stale
+/// destinations. All filesystem writes for one source happen here.
+pub async fn apply_source<S>(
+    sys: &S,
+    source: &ResolvedSource<'_>,
+    params: &SyncParams<'_>,
+    prior_ledger: &Ledger,
+    plan: &SourcePlan,
+) -> Result<SyncSourceOutcome>
+where
+    S: ApplierSys + FsReadAsync,
+{
+    let mut outcome = SyncSourceOutcome {
+        planned: plan.planned.clone(),
+        ..Default::default()
+    };
+
+    for item in &plan.items {
+        let opts = ApplyOptions {
+            link: item.link,
+            on_existing: item.on_existing,
+        };
+
+        let prior = prior_ledger
+            .links()
+            .iter()
+            .find(|l| l.source_id == source.id && l.dest == item.dest_rel);
+        let prior_link = prior.map(|l| PriorLink {
+            source_abs: Path::new(&l.target),
+            pin_unchanged: !params.force && l.source_pin == item.pin,
+        });
+
+        let apply_outcome =
+            apply_link(sys, &item.pair, &opts, prior_link.as_ref()).await?;
+
+        let (kind, backup) = match &apply_outcome {
+            ApplyOutcome::Linked { kind, backup } => (
+                *kind,
+                backup
+                    .as_ref()
+                    .map(|b| rel_string_lossy(params.workspace_root, b)),
+            ),
+            ApplyOutcome::Skipped => (
+                prior.map(|l| l.kind).unwrap_or(ResolvedKind::Symlink),
+                prior.and_then(|l| l.backup.clone()),
+            ),
+        };
+
+        outcome.applied.push(AppliedLink {
+            dest: item.dest_rel.clone(),
+            kind,
+            backup: backup.clone(),
+            skipped: matches!(apply_outcome, ApplyOutcome::Skipped),
+        });
+
+        outcome.links.push(LedgerLink {
+            source_id: source.id.to_string(),
+            dest: item.dest_rel.clone(),
+            target: item.pair.source_abs.to_string_lossy().into_owned(),
+            kind,
+            source_pin: item.pin.clone(),
+            backup,
+        });
     }
+
+    reconcile_stale(
+        sys,
+        source,
+        params,
+        prior_ledger,
+        &plan.desired_dests,
+        &mut outcome,
+    )
+    .await?;
 
     Ok(outcome)
 }
@@ -444,6 +521,43 @@ mod tests {
         assert!(outcome.links.is_empty());
         assert!(outcome.applied.is_empty());
         assert!(!ws.join("dst/a.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn plan_source_writes_nothing_apply_source_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let src_root = ws.join("vendor/pkg");
+        std::fs::create_dir_all(&src_root).unwrap();
+        std::fs::write(src_root.join("a.txt"), b"a").unwrap();
+
+        let projections = vec![projection(
+            r#"{"strategy":"mirror","target":"@workspace/dst"}"#,
+        )];
+        let source = ResolvedSource {
+            id: "pkg",
+            source_root: &src_root,
+            git_pin: None,
+            projections: &projections,
+        };
+        let params = SyncParams {
+            workspace_root: ws,
+            env_files: &[],
+            force: false,
+            dry_run: false,
+        };
+
+        let plan = plan_source(&RealSys, &source, &params).await.unwrap();
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.items[0].dest_rel, "dst/a.txt");
+        assert!(!ws.join("dst/a.txt").exists(), "plan_source must not write");
+
+        let outcome =
+            apply_source(&RealSys, &source, &params, &Ledger::default(), &plan)
+                .await
+                .unwrap();
+        assert_eq!(outcome.links.len(), 1);
+        assert!(ws.join("dst/a.txt").exists(), "apply_source writes");
     }
 
     #[tokio::test]

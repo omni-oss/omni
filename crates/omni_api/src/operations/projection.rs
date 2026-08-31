@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{SourceConfig, types::SingleOrMany};
@@ -8,7 +9,9 @@ use omni_projection_configurations::{
 };
 pub use omni_projections::BackupHandling;
 use omni_projections::{
-    ApplierSys, LinkState, ResolvedSource, SyncParams, sync_source,
+    ApplierSys, ConflictReport, LinkState, ProjectionError, ResolvedSource,
+    SourcePlan, SyncParams, apply_source, collision_conflicts,
+    existing_file_conflicts, plan_source,
 };
 use omni_remote_sources::{
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
@@ -132,6 +135,16 @@ impl<T> ProjectionSys for T where
 
 // ── Operations ──────────────────────────────────────────────────────────────
 
+/// A source materialized and planned, held so the whole-run preflight can run
+/// over every source's plan before a single link is written.
+struct PreparedSource<'a> {
+    id: &'a str,
+    source_root: PathBuf,
+    git_pin: Option<String>,
+    routes: Vec<Projection>,
+    plan: SourcePlan,
+}
+
 /// Resolve every configured projection source, plan and apply its links, and
 /// persist the ledger. `resolve -> plan -> apply -> ledger -> retain -> lock`.
 pub async fn handle_projection_sync<TSys>(
@@ -170,6 +183,15 @@ where
         warnings: Vec::new(),
     };
 
+    let params = SyncParams {
+        workspace_root: &workspace_root,
+        env_files: &env_files,
+        force: req.force,
+        dry_run: req.dry_run,
+    };
+
+    // Phase 1: materialize and plan every in-scope source without writing.
+    let mut prepared: Vec<PreparedSource> = Vec::new();
     for source in sources {
         let id = source_id(source);
 
@@ -204,7 +226,7 @@ where
             }
         };
 
-        let effective_routes = resolve_effective_routes(
+        let routes = resolve_effective_routes(
             &sys,
             id,
             workspace_routes(source),
@@ -212,21 +234,87 @@ where
         )
         .await?;
 
-        let resolved = ResolvedSource {
-            id,
-            source_root: &source_root,
-            git_pin,
-            projections: &effective_routes,
-        };
-        let params = SyncParams {
-            workspace_root: &workspace_root,
-            env_files: &env_files,
-            force: req.force,
-            dry_run: req.dry_run,
+        let plan = {
+            let resolved = ResolvedSource {
+                id,
+                source_root: &source_root,
+                git_pin: git_pin.clone(),
+                projections: &routes,
+            };
+            plan_source(&sys, &resolved, &params).await?
         };
 
+        prepared.push(PreparedSource {
+            id,
+            source_root,
+            git_pin,
+            routes,
+            plan,
+        });
+    }
+
+    // Phase 2: run the whole-run preflight over every planned link. A conflict
+    // aborts before any filesystem write, in dry-run and real runs alike.
+    let all_items: Vec<_> = prepared
+        .iter()
+        .flat_map(|p| p.plan.items.iter().cloned())
+        .collect();
+    let (duplicate_dests, nested) = collision_conflicts(&all_items);
+    let existing =
+        existing_file_conflicts(&sys, &all_items, &prior_ledger).await?;
+    let report = ConflictReport {
+        duplicate_dests,
+        nested,
+        existing,
+    };
+    if !report.is_empty() {
+        return Err(ProjectionError::conflicts(report).into());
+    }
+
+    if req.dry_run {
+        for prep in &prepared {
+            response.planned.extend(prep.plan.planned.iter().map(|p| {
+                PlannedLinkInfo {
+                    source_id: p.source_id.clone(),
+                    dest: p.dest.clone(),
+                    target: p.source_abs.to_string_lossy().into_owned(),
+                }
+            }));
+        }
+
+        if req.source.is_none() {
+            let keep_ids: HashSet<&str> =
+                sources.iter().map(source_id).collect();
+            let report = omni_projections::plan_retain_sources(
+                &sys,
+                &workspace_root,
+                &prior_ledger,
+                &keep_ids,
+            )
+            .await?;
+            response.removed.extend(
+                report
+                    .removed
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            );
+            response.warnings.extend(report.warnings);
+        }
+
+        return Ok(response);
+    }
+
+    // Phase 3: apply each source's plan and update the ledger.
+    for prep in &prepared {
+        let resolved = ResolvedSource {
+            id: prep.id,
+            source_root: &prep.source_root,
+            git_pin: prep.git_pin.clone(),
+            projections: &prep.routes,
+        };
         let outcome =
-            sync_source(&sys, &resolved, &params, &prior_ledger).await?;
+            apply_source(&sys, &resolved, &params, &prior_ledger, &prep.plan)
+                .await?;
 
         response.planned.extend(outcome.planned.iter().map(|p| {
             PlannedLinkInfo {
@@ -251,53 +339,23 @@ where
         );
         response.warnings.extend(outcome.warnings.iter().cloned());
 
-        if !req.dry_run {
-            ledger.links_mut().retain(|l| l.source_id != *id);
-            ledger.links_mut().extend(outcome.links);
-        }
+        ledger.links_mut().retain(|l| l.source_id != *prep.id);
+        ledger.links_mut().extend(outcome.links);
     }
 
-    if !req.dry_run {
-        // Orphan reconciliation runs only on a full, unfiltered sync. A
-        // `--source=X` run is targeted and idempotent: it must not touch any
-        // other source's footprint, neither its ledger links nor its git
-        // checkout. Both reconcilers are gated on the same condition so a git
-        // source's links can never outlive its checkout.
-        let full_sync = req.source.is_none();
+    // Orphan reconciliation runs only on a full, unfiltered sync. A
+    // `--source=X` run is targeted and idempotent: it must not touch any
+    // other source's footprint, neither its ledger links nor its git
+    // checkout. Both reconcilers are gated on the same condition so a git
+    // source's links can never outlive its checkout.
+    let full_sync = req.source.is_none();
 
-        if full_sync {
-            let keep_ids: HashSet<&str> =
-                sources.iter().map(source_id).collect();
-            let report = omni_projections::retain_sources(
-                &sys,
-                &workspace_root,
-                &mut ledger,
-                &keep_ids,
-            )
-            .await?;
-            response.removed.extend(
-                report
-                    .removed
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned()),
-            );
-            response.warnings.extend(report.warnings);
-        }
-
-        omni_projections::save(&sys, &ledger_path, &ledger).await?;
-
-        if full_sync {
-            let refs: Vec<(&Url, &str)> =
-                all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
-            remote.retain_git_sources(&refs).await?;
-        }
-        remote.lock().await?;
-    } else if req.source.is_none() {
+    if full_sync {
         let keep_ids: HashSet<&str> = sources.iter().map(source_id).collect();
-        let report = omni_projections::plan_retain_sources(
+        let report = omni_projections::retain_sources(
             &sys,
             &workspace_root,
-            &prior_ledger,
+            &mut ledger,
             &keep_ids,
         )
         .await?;
@@ -309,6 +367,15 @@ where
         );
         response.warnings.extend(report.warnings);
     }
+
+    omni_projections::save(&sys, &ledger_path, &ledger).await?;
+
+    if full_sync {
+        let refs: Vec<(&Url, &str)> =
+            all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
+        remote.retain_git_sources(&refs).await?;
+    }
+    remote.lock().await?;
 
     Ok(response)
 }

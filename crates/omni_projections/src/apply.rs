@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use omni_projection_configurations::{CollisionPolicy, LinkKind};
+use omni_projection_configurations::{ExistingPolicy, LinkKind};
 use system_traits::{
     FileType, FsCopyAsync, FsCreateDirAllAsync, FsCreateJunctionAsync,
     FsHardLinkAsync, FsMetadataAsync, FsMetadataValue, FsReadDirAsync,
@@ -36,15 +36,31 @@ pub enum ApplyOutcome {
 
 pub struct ApplyOptions {
     pub link: LinkKind,
-    pub collision: CollisionPolicy,
+    pub on_existing: ExistingPolicy,
 }
 
 /// A destination omni already owns, per the ledger. Used for the idempotent
 /// "up-to-date" exception: an unchanged pin means the link is left untouched;
-/// a changed pin means omni re-points it (regardless of collision policy).
+/// a changed pin means omni re-points it (regardless of the existing-file policy).
 pub struct PriorLink<'a> {
     pub source_abs: &'a Path,
     pub pin_unchanged: bool,
+}
+
+/// Whether a destination is a foreign existing file: it is present on disk and
+/// the ledger does not record omni as its owner for this source. An omni-owned
+/// destination (matching source, whichever pin) is never foreign; omni re-points
+/// or leaves it and never treats it as a conflict. Shared by `apply_link` and the
+/// run-wide existing-file check so the two cannot disagree.
+pub fn is_foreign_existing(
+    dest_exists: bool,
+    source_abs: &Path,
+    prior: Option<&PriorLink<'_>>,
+) -> bool {
+    if !dest_exists {
+        return false;
+    }
+    !matches!(prior, Some(p) if p.source_abs == source_abs)
 }
 
 /// The full trait surface the applier needs from a system.
@@ -80,7 +96,7 @@ impl<T> ApplierSys for T where
 {
 }
 
-/// Materialize one link, honoring the ownership exception and collision policy.
+/// Materialize one link, honoring the ownership exception and existing-file policy.
 pub async fn apply_link<S: ApplierSys>(
     sys: &S,
     pair: &LinkPair,
@@ -95,34 +111,31 @@ pub async fn apply_link<S: ApplierSys>(
 
     // Ownership exception: omni already created this dest for this source.
     if let Some(prior) = prior {
-        if prior.source_abs == pair.source_abs {
+        if prior.source_abs == pair.source_abs && dest_exists {
             if prior.pin_unchanged {
-                if dest_exists {
-                    return Ok(ApplyOutcome::Skipped);
-                }
-            } else if dest_exists {
-                // Pin changed: re-point the link omni owns, no backup.
-                remove_existing(sys, &pair.dest_abs).await?;
-                let kind = materialize(sys, pair, opts.link).await?;
-                return Ok(ApplyOutcome::Linked { kind, backup: None });
+                return Ok(ApplyOutcome::Skipped);
             }
+            // Pin changed: re-point the link omni owns, no backup.
+            remove_existing(sys, &pair.dest_abs).await?;
+            let kind = materialize(sys, pair, opts.link).await?;
+            return Ok(ApplyOutcome::Linked { kind, backup: None });
         }
     }
 
     let mut backup = None;
-    if dest_exists {
-        match opts.collision {
-            CollisionPolicy::Skip => return Ok(ApplyOutcome::Skipped),
-            CollisionPolicy::Error => {
+    if is_foreign_existing(dest_exists, &pair.source_abs, prior) {
+        match opts.on_existing {
+            ExistingPolicy::Skip => return Ok(ApplyOutcome::Skipped),
+            ExistingPolicy::Error => {
                 return Err(ProjectionError::custom(format!(
                     "destination already exists: {}",
                     pair.dest_abs.display()
                 )));
             }
-            CollisionPolicy::Overwrite => {
+            ExistingPolicy::Overwrite => {
                 remove_existing(sys, &pair.dest_abs).await?;
             }
-            CollisionPolicy::Backup => {
+            ExistingPolicy::Backup => {
                 let path = backup_path(&pair.dest_abs);
                 sys.fs_rename_async(&pair.dest_abs, &path).await?;
                 backup = Some(path);
@@ -267,7 +280,7 @@ async fn remove_existing<S: ApplierSys>(sys: &S, path: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn symlink_meta<S: ApplierSys>(
+pub(crate) async fn symlink_meta<S: ApplierSys>(
     sys: &S,
     path: &Path,
 ) -> Result<Option<FileType>> {
@@ -302,8 +315,31 @@ mod tests {
     use super::*;
     use system_traits::{FsReadLinkAsync, impls::RealSys};
 
-    fn opts(link: LinkKind, collision: CollisionPolicy) -> ApplyOptions {
-        ApplyOptions { link, collision }
+    fn opts(link: LinkKind, on_existing: ExistingPolicy) -> ApplyOptions {
+        ApplyOptions { link, on_existing }
+    }
+
+    #[test]
+    fn foreign_existing_predicate_respects_ownership() {
+        let owner = Path::new("/src/a");
+        let owned = PriorLink {
+            source_abs: owner,
+            pin_unchanged: true,
+        };
+        let owned_changed = PriorLink {
+            source_abs: owner,
+            pin_unchanged: false,
+        };
+        let other = PriorLink {
+            source_abs: Path::new("/src/other"),
+            pin_unchanged: true,
+        };
+
+        assert!(!is_foreign_existing(false, owner, None));
+        assert!(is_foreign_existing(true, owner, None));
+        assert!(!is_foreign_existing(true, owner, Some(&owned)));
+        assert!(!is_foreign_existing(true, owner, Some(&owned_changed)));
+        assert!(is_foreign_existing(true, owner, Some(&other)));
     }
 
     #[tokio::test]
@@ -322,7 +358,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Backup),
+            &opts(LinkKind::Auto, ExistingPolicy::Backup),
             None,
         )
         .await
@@ -357,7 +393,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Backup),
+            &opts(LinkKind::Auto, ExistingPolicy::Backup),
             None,
         )
         .await
@@ -390,7 +426,7 @@ mod tests {
         apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Error),
+            &opts(LinkKind::Auto, ExistingPolicy::Error),
             None,
         )
         .await
@@ -404,7 +440,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Error),
+            &opts(LinkKind::Auto, ExistingPolicy::Error),
             Some(&prior),
         )
         .await
@@ -428,7 +464,7 @@ mod tests {
         let outcome = apply_link(
             &sys,
             &pair,
-            &opts(LinkKind::Auto, CollisionPolicy::Skip),
+            &opts(LinkKind::Auto, ExistingPolicy::Skip),
             None,
         )
         .await

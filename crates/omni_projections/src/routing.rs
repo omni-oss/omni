@@ -58,16 +58,16 @@ pub struct PlanInput<'a> {
 }
 
 /// A candidate link plus whether it links a whole directory (as opposed to a
-/// single file). The flag drives shallowest-wins pruning and the directory
-/// contents guardrail.
-struct Candidate {
-    pair: LinkPair,
-    is_dir_link: bool,
+/// single file). The flag drives shallowest-wins pruning, the directory
+/// contents guardrail, and the run-wide nested-collision check.
+pub struct PlannedPair {
+    pub pair: LinkPair,
+    pub is_dir_link: bool,
 }
 
 /// Compute the full `LinkPair` set for one projection, applying dest-side and
 /// lexical source-side containment. Pure: no filesystem access.
-pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
+pub fn plan(input: &PlanInput) -> Result<Vec<PlannedPair>> {
     let common = input.projection.common();
     let target_abs = resolve_target(input.workspace_root, &common.target);
 
@@ -79,7 +79,7 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
     }
 
     let mut candidates = match input.projection {
-        Projection::Namespaced(_) => vec![Candidate {
+        Projection::Namespaced(_) => vec![PlannedPair {
             pair: namespaced_pair(
                 input.source_root,
                 input.source_id,
@@ -152,7 +152,7 @@ pub fn plan(input: &PlanInput) -> Result<Vec<LinkPair>> {
             )?;
         }
 
-        pairs.push(candidate.pair);
+        pairs.push(candidate);
     }
 
     Ok(pairs)
@@ -184,7 +184,7 @@ fn plan_mirror(
     scope: Option<&[String]>,
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<Candidate>> {
+) -> Result<Vec<PlannedPair>> {
     let matcher = scope.map(build_matcher).transpose()?;
 
     let mut candidates = Vec::new();
@@ -198,7 +198,7 @@ fn plan_mirror(
                 continue;
             }
         }
-        candidates.push(Candidate {
+        candidates.push(PlannedPair {
             pair: LinkPair {
                 source_abs: source_root.join(&entry.rel).clean(),
                 dest_abs: target_abs.join(&entry.rel).clean(),
@@ -215,7 +215,7 @@ fn plan_explicit(
     rules: &[omni_projection_configurations::ExplicitRule],
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<Candidate>> {
+) -> Result<Vec<PlannedPair>> {
     let mut candidates = Vec::new();
     for rule in rules {
         let rel = PathBuf::from(&rule.source);
@@ -230,7 +230,7 @@ fn plan_explicit(
             &dest_tail(&rule.dest),
             &TemplateVars::from_rel(&rel),
         );
-        candidates.push(Candidate {
+        candidates.push(PlannedPair {
             pair: LinkPair {
                 source_abs: source_root.join(&rel).clean(),
                 dest_abs: target_abs.join(tail).clean(),
@@ -247,7 +247,7 @@ fn plan_pattern(
     rules: &[omni_projection_configurations::PatternRule],
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<Candidate>> {
+) -> Result<Vec<PlannedPair>> {
     let mut candidates = Vec::new();
     for rule in rules {
         let matcher = build_matcher(&rule.r#match.to_vec())?;
@@ -272,7 +272,7 @@ fn plan_flatten(
     rules: &[omni_projection_configurations::FlattenRule],
     entries: &[ScannedEntry],
     target_abs: &Path,
-) -> Result<Vec<Candidate>> {
+) -> Result<Vec<PlannedPair>> {
     let mut candidates = Vec::new();
     for rule in rules {
         let matcher = build_matcher(&rule.r#match.to_vec())?;
@@ -319,8 +319,8 @@ fn candidate(
     rel: &Path,
     tail: String,
     match_kind: MatchKind,
-) -> Candidate {
-    Candidate {
+) -> PlannedPair {
+    PlannedPair {
         pair: LinkPair {
             source_abs: source_root.join(rel).clean(),
             dest_abs: target_abs.join(tail).clean(),
@@ -331,9 +331,9 @@ fn candidate(
 
 /// Drop any candidate whose destination is a strict descendant of a
 /// directory-link destination: writing through a directory link would land back
-/// inside the source. Identical destinations stay and resolve via
-/// `on_collision`. Shallowest directory link wins.
-fn prune_nested(candidates: &mut Vec<Candidate>) {
+/// inside the source. Identical destinations stay and are resolved by the
+/// run-wide collision check. Shallowest directory link wins.
+fn prune_nested(candidates: &mut Vec<PlannedPair>) {
     let dir_dests: Vec<PathBuf> = candidates
         .iter()
         .filter(|c| c.is_dir_link)
@@ -458,6 +458,7 @@ mod tests {
             entries,
             env_files: &[],
         })
+        .map(|planned| planned.into_iter().map(|p| p.pair).collect())
     }
 
     fn pair(source: &str, dest: &str) -> LinkPair {
@@ -465,6 +466,45 @@ mod tests {
             source_abs: PathBuf::from(source),
             dest_abs: PathBuf::from(dest),
         }
+    }
+
+    fn plan_planned(
+        proj: &Projection,
+        source_id: &str,
+        entries: &[ScannedEntry],
+    ) -> Result<Vec<PlannedPair>> {
+        plan(&PlanInput {
+            workspace_root: Path::new("/ws"),
+            source_root: Path::new("/src"),
+            source_id,
+            projection: proj,
+            entries,
+            env_files: &[],
+        })
+    }
+
+    #[test]
+    fn plan_reports_is_dir_link_per_pair() {
+        let proj = projection(
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":"d","match_kind":"dir","dest":"@target/d"},{"match":"f.txt","dest":"@target/f.txt"}]}"#,
+        );
+        let entries = [ScannedEntry::dir("d"), ScannedEntry::file("f.txt")];
+        let planned = plan_planned(&proj, "id", &entries).unwrap();
+
+        let dir = planned
+            .iter()
+            .find(|p| p.pair.dest_abs.ends_with("d"))
+            .expect("dir link present");
+        assert!(dir.is_dir_link, "a dir-kind match is a directory link");
+
+        let file = planned
+            .iter()
+            .find(|p| p.pair.dest_abs.ends_with("f.txt"))
+            .expect("file link present");
+        assert!(
+            !file.is_dir_link,
+            "a file-kind match is not a directory link"
+        );
     }
 
     #[test]

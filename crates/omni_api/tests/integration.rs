@@ -956,3 +956,111 @@ async fn projection_pattern_dir_links_directories() {
         "an unchanged directory-link re-sync must be a no-op"
     );
 }
+
+/// Two local sources that both mirror into `.agents/shared`, so their `x.md`
+/// files resolve to one destination. Source `a` also has a non-colliding file.
+fn write_colliding_two_source_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./vendor/a\n",
+            "    id: skills-a\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/shared\"\n",
+            "  - source: local\n",
+            "    path: ./vendor/b\n",
+            "    id: skills-b\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/shared\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("vendor/a")).unwrap();
+    std::fs::write(dir.join("vendor/a/x.md"), b"# a\n").unwrap();
+    std::fs::write(dir.join("vendor/a/only-a.md"), b"# only a\n").unwrap();
+    std::fs::create_dir_all(dir.join("vendor/b")).unwrap();
+    std::fs::write(dir.join("vendor/b/x.md"), b"# b\n").unwrap();
+}
+
+#[tokio::test]
+async fn projection_run_wide_collision_aborts_before_any_write() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_colliding_two_source_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let result = api
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await;
+    assert!(
+        result.is_err(),
+        "a cross-source destination collision must abort the run"
+    );
+
+    assert!(
+        !tmp.path().join(".agents/shared/x.md").exists(),
+        "the colliding destination must not be written"
+    );
+    assert!(
+        !tmp.path().join(".agents/shared/only-a.md").exists(),
+        "no source is materialized when the whole run aborts"
+    );
+
+    let status = api
+        .projection_status(omni_api::ProjectionStatusRequest { verbose: true })
+        .await
+        .expect("status");
+    assert!(
+        status.entries.is_empty(),
+        "an aborted run persists no ledger links"
+    );
+}
+
+#[tokio::test]
+async fn projection_dry_run_reports_collisions_without_writing() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_colliding_two_source_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let result = api
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            dry_run: true,
+            ..Default::default()
+        })
+        .await;
+    assert!(
+        result.is_err(),
+        "a dry run over a conflicting plan reports the conflict"
+    );
+    assert!(
+        !tmp.path().join(".agents/shared/x.md").exists(),
+        "a dry run must not touch the filesystem"
+    );
+}
+
+#[tokio::test]
+async fn projection_targeted_source_applies_only_that_source() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+    let api = make_api(tmp.path());
+
+    let resp = api
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("skills-a".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("targeted sync");
+
+    assert_eq!(resp.applied.len(), 1, "only the targeted source applies");
+    assert!(tmp.path().join(".agents/a/one.md").exists());
+    assert!(
+        !tmp.path().join(".agents/b/two.md").exists(),
+        "an untargeted source is left untouched"
+    );
+}
