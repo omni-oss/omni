@@ -47,6 +47,22 @@ pub struct PriorLink<'a> {
     pub pin_unchanged: bool,
 }
 
+/// Whether a destination is a foreign existing file: it is present on disk and
+/// the ledger does not record omni as its owner for this source. An omni-owned
+/// destination (matching source, whichever pin) is never foreign; omni re-points
+/// or leaves it and never treats it as a conflict. Shared by `apply_link` and the
+/// run-wide existing-file check so the two cannot disagree.
+pub fn is_foreign_existing(
+    dest_exists: bool,
+    source_abs: &Path,
+    prior: Option<&PriorLink<'_>>,
+) -> bool {
+    if !dest_exists {
+        return false;
+    }
+    !matches!(prior, Some(p) if p.source_abs == source_abs)
+}
+
 /// The full trait surface the applier needs from a system.
 pub trait ApplierSys:
     FsSymlinkFileAsync
@@ -95,22 +111,19 @@ pub async fn apply_link<S: ApplierSys>(
 
     // Ownership exception: omni already created this dest for this source.
     if let Some(prior) = prior {
-        if prior.source_abs == pair.source_abs {
+        if prior.source_abs == pair.source_abs && dest_exists {
             if prior.pin_unchanged {
-                if dest_exists {
-                    return Ok(ApplyOutcome::Skipped);
-                }
-            } else if dest_exists {
-                // Pin changed: re-point the link omni owns, no backup.
-                remove_existing(sys, &pair.dest_abs).await?;
-                let kind = materialize(sys, pair, opts.link).await?;
-                return Ok(ApplyOutcome::Linked { kind, backup: None });
+                return Ok(ApplyOutcome::Skipped);
             }
+            // Pin changed: re-point the link omni owns, no backup.
+            remove_existing(sys, &pair.dest_abs).await?;
+            let kind = materialize(sys, pair, opts.link).await?;
+            return Ok(ApplyOutcome::Linked { kind, backup: None });
         }
     }
 
     let mut backup = None;
-    if dest_exists {
+    if is_foreign_existing(dest_exists, &pair.source_abs, prior) {
         match opts.on_existing {
             ExistingPolicy::Skip => return Ok(ApplyOutcome::Skipped),
             ExistingPolicy::Error => {
@@ -304,6 +317,29 @@ mod tests {
 
     fn opts(link: LinkKind, on_existing: ExistingPolicy) -> ApplyOptions {
         ApplyOptions { link, on_existing }
+    }
+
+    #[test]
+    fn foreign_existing_predicate_respects_ownership() {
+        let owner = Path::new("/src/a");
+        let owned = PriorLink {
+            source_abs: owner,
+            pin_unchanged: true,
+        };
+        let owned_changed = PriorLink {
+            source_abs: owner,
+            pin_unchanged: false,
+        };
+        let other = PriorLink {
+            source_abs: Path::new("/src/other"),
+            pin_unchanged: true,
+        };
+
+        assert!(!is_foreign_existing(false, owner, None));
+        assert!(is_foreign_existing(true, owner, None));
+        assert!(!is_foreign_existing(true, owner, Some(&owned)));
+        assert!(!is_foreign_existing(true, owner, Some(&owned_changed)));
+        assert!(is_foreign_existing(true, owner, Some(&other)));
     }
 
     #[tokio::test]
