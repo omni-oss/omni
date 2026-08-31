@@ -280,7 +280,7 @@ async fn remove_existing<S: ApplierSys>(sys: &S, path: &Path) -> Result<()> {
     Ok(())
 }
 
-async fn symlink_meta<S: ApplierSys>(
+pub(crate) async fn symlink_meta<S: ApplierSys>(
     sys: &S,
     path: &Path,
 ) -> Result<Option<FileType>> {

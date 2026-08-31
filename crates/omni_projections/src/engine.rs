@@ -46,6 +46,7 @@ pub struct PlannedLink {
 /// One planned link with everything apply needs, resolved without writing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedItem {
+    pub source_id: String,
     pub pair: LinkPair,
     pub dest_rel: String,
     pub is_dir_link: bool,
@@ -173,6 +174,7 @@ where
                 source_abs: pair.source_abs.clone(),
             });
             plan_out.items.push(PlannedItem {
+                source_id: source.id.to_string(),
                 pair: pair.clone(),
                 dest_rel,
                 is_dir_link: planned_pair.is_dir_link,

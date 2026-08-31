@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use omni_projection_configurations::ExistingPolicy;
+
+use crate::apply::{ApplierSys, PriorLink, is_foreign_existing, symlink_meta};
 use crate::engine::PlannedItem;
-use crate::error::{DuplicateDest, NestedDest};
+use crate::error::{DuplicateDest, ExistingConflict, NestedDest, Result};
+use crate::ledger::Ledger;
 
 /// Detect run-wide collisions across the union of every source's planned links.
 /// A collision is a self-contradictory plan and is always fatal, independent of
@@ -75,6 +79,50 @@ pub fn collision_conflicts(
     (duplicates, nested)
 }
 
+/// Detect existing-file conflicts across the union of planned links. For every
+/// link whose policy is `error`, stat the destination and, using the shared
+/// ownership predicate against the prior ledger, record a conflict when a
+/// foreign file already sits there. An omni-owned destination (matching source,
+/// whichever pin) is never a conflict, so a routine re-sync stays a no-op.
+pub async fn existing_file_conflicts<S>(
+    sys: &S,
+    items: &[PlannedItem],
+    prior_ledger: &Ledger,
+) -> Result<Vec<ExistingConflict>>
+where
+    S: ApplierSys,
+{
+    let mut conflicts = Vec::new();
+    for item in items {
+        if item.on_existing != ExistingPolicy::Error {
+            continue;
+        }
+
+        let dest_exists =
+            symlink_meta(sys, &item.pair.dest_abs).await?.is_some();
+
+        let prior = prior_ledger
+            .links()
+            .iter()
+            .find(|l| l.source_id == item.source_id && l.dest == item.dest_rel);
+        let prior_link = prior.map(|l| PriorLink {
+            source_abs: Path::new(&l.target),
+            pin_unchanged: true,
+        });
+
+        if is_foreign_existing(
+            dest_exists,
+            &item.pair.source_abs,
+            prior_link.as_ref(),
+        ) {
+            conflicts.push(ExistingConflict {
+                dest: item.pair.dest_abs.clone(),
+            });
+        }
+    }
+    Ok(conflicts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +137,7 @@ mod tests {
         on_existing: ExistingPolicy,
     ) -> PlannedItem {
         PlannedItem {
+            source_id: "src".to_string(),
             pair: LinkPair {
                 source_abs: PathBuf::from(source),
                 dest_abs: PathBuf::from(dest),
@@ -262,6 +311,7 @@ mod tests {
         let items: Vec<PlannedItem> = planned
             .into_iter()
             .map(|p| PlannedItem {
+                source_id: "id".to_string(),
                 dest_rel: p.pair.dest_abs.to_string_lossy().into_owned(),
                 pair: p.pair,
                 is_dir_link: p.is_dir_link,
@@ -276,6 +326,93 @@ mod tests {
         assert!(
             nested.is_empty(),
             "shallowest-wins pruning already removed the nested pair"
+        );
+    }
+
+    use crate::apply::ResolvedKind;
+    use crate::ledger::{Ledger, LedgerLink};
+    use system_traits::impls::RealSys;
+
+    fn real_item(source: &Path, dest: &Path, dest_rel: &str) -> PlannedItem {
+        PlannedItem {
+            source_id: "pkg".to_string(),
+            pair: LinkPair {
+                source_abs: source.to_path_buf(),
+                dest_abs: dest.to_path_buf(),
+            },
+            dest_rel: dest_rel.to_string(),
+            is_dir_link: false,
+            on_existing: ExistingPolicy::Error,
+            link: LinkKind::Auto,
+            pin: "pin".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn foreign_existing_file_under_error_is_flagged() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("src.txt");
+        std::fs::write(&source, b"s").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"foreign").unwrap();
+
+        let items = [real_item(&source, &dest, "dest.txt")];
+        let conflicts =
+            existing_file_conflicts(&RealSys, &items, &Ledger::default())
+                .await
+                .unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].dest, dest);
+    }
+
+    #[tokio::test]
+    async fn owned_unchanged_pin_dest_is_not_flagged() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("src.txt");
+        std::fs::write(&source, b"s").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"owned").unwrap();
+
+        let ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "pkg".to_string(),
+            dest: "dest.txt".to_string(),
+            target: source.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "pin".to_string(),
+            backup: None,
+        }]);
+
+        let items = [real_item(&source, &dest, "dest.txt")];
+        let conflicts = existing_file_conflicts(&RealSys, &items, &ledger)
+            .await
+            .unwrap();
+        assert!(conflicts.is_empty(), "re-sync of an owned dest is a no-op");
+    }
+
+    #[tokio::test]
+    async fn owned_changed_pin_dest_is_not_flagged() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("src.txt");
+        std::fs::write(&source, b"s").unwrap();
+        let dest = dir.path().join("dest.txt");
+        std::fs::write(&dest, b"owned").unwrap();
+
+        let ledger = Ledger::from_links(vec![LedgerLink {
+            source_id: "pkg".to_string(),
+            dest: "dest.txt".to_string(),
+            target: source.to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "old-pin".to_string(),
+            backup: None,
+        }]);
+
+        let items = [real_item(&source, &dest, "dest.txt")];
+        let conflicts = existing_file_conflicts(&RealSys, &items, &ledger)
+            .await
+            .unwrap();
+        assert!(
+            conflicts.is_empty(),
+            "an owned dest is re-pointed, not treated as a conflict"
         );
     }
 }
