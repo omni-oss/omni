@@ -81,7 +81,7 @@ where
     let mut desired_dests: Vec<String> = Vec::new();
 
     for projection in source.projections {
-        let pairs = plan(&PlanInput {
+        let planned = plan(&PlanInput {
             workspace_root: params.workspace_root,
             source_root: source.source_root,
             source_id: source.id,
@@ -89,6 +89,8 @@ where
             entries: &entries,
             env_files: params.env_files,
         })?;
+        let pairs: Vec<LinkPair> =
+            planned.iter().map(|p| p.pair.clone()).collect();
 
         let pin = match &source.git_pin {
             Some(commit) => commit.clone(),
