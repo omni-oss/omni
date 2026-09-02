@@ -2738,10 +2738,12 @@ mod tests {
         );
     }
 
-    // A leading `!` in a stats project glob is a literal character, not a
+    // A leading `!` in a stats project glob is a literal character here, not a
     // negation marker. `!other` matches only the literal name "!other", so
-    // "project1" is not selected. If `!` negated, `!other` would include every
-    // project except "other" and "project1" would show up.
+    // "project1" is not selected. This guards against negation leaking into
+    // get_stats during the include_set migration. When get_stats deliberately
+    // gains negation, this assertion no longer holds and the test should be
+    // removed or inverted.
     #[tokio::test]
     async fn test_get_stats_leading_bang_is_literal() {
         let temp = fixture(&["project1"]).await;

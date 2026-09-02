@@ -539,9 +539,12 @@ mod tests {
         );
     }
 
-    // A leading `!` in a task filter is a literal character, not a negation
-    // marker. `!build` matches only the literal name "!build", so an ordinary
-    // task like "test" stays excluded. If `!` negated, "test" would match.
+    // A leading `!` in a task filter is a literal character here, not a
+    // negation marker: `!build` matches only the literal name "!build", so an
+    // ordinary task like "test" stays excluded. This guards against negation
+    // leaking into the filters during the include_set migration. When task
+    // filters deliberately gain negation, this assertion no longer holds and
+    // the test should be removed or inverted.
     #[test_log::test]
     fn test_default_task_filter_leading_bang_is_literal() {
         let filter = DefaultTaskFilter::new(
