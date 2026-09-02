@@ -178,4 +178,59 @@ mod tests {
         assert!(m.is_match("src/a.rs"));
         assert!(!m.is_match("src/nested/a.rs"));
     }
+
+    // Patterns taken from the four build_glob_set callers (collector
+    // input/output globs, project-hasher task names, filter and get_stats
+    // globs) and the GlobMatcher consumers (discovery, generator, projections).
+    // None contains `\!` in its leading run of `!`, so the escape rewrite must
+    // not change how any of them classify.
+    #[test]
+    fn no_regression_corpus_classification() {
+        let cases: &[(&str, bool)] = &[
+            ("src/**/*.rs", true),
+            ("dist/**", true),
+            ("@workspace/shared/**/*.toml", true),
+            ("build", true),
+            ("*", true),
+            ("project-*", true),
+            ("!src/gen/**", false),
+            ("!!keep.rs", true),
+            ("!!!drop.rs", false),
+            ("\\foo", true),
+            ("foo\\!bar", true),
+        ];
+
+        for (pattern, expected_include) in cases {
+            assert_eq!(
+                is_include(pattern),
+                *expected_include,
+                "pattern: {pattern}"
+            );
+        }
+    }
+
+    #[test]
+    fn no_regression_corpus_matching() {
+        let m = GlobMatcher::new(
+            &["src/**/*.rs", "!src/gen/**", "!!keep.rs"],
+            opts(),
+        )
+        .unwrap();
+
+        assert!(m.is_match("src/a.rs"));
+        assert!(m.is_match("src/nested/b.rs"));
+        assert!(!m.is_match("src/gen/x.rs"));
+        assert!(m.is_match("keep.rs"));
+        assert!(!m.is_match("src/a.txt"));
+    }
+
+    #[test]
+    fn identical_patterns_share_one_compiled_set() {
+        let a = omni_utils::glob::build_glob_set(&["src/**/*.rs", "dist/**"])
+            .unwrap();
+        let b = omni_utils::glob::build_glob_set(&["src/**/*.rs", "dist/**"])
+            .unwrap();
+
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+    }
 }

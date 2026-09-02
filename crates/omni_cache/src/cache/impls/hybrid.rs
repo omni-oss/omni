@@ -1140,7 +1140,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 ..Default::default()
             })
             .await?;
-        let time_upper_limit = args.older_than.map(|older_than| OffsetDateTime::now_utc() - older_than);
+        let time_upper_limit = args
+            .older_than
+            .map(|older_than| OffsetDateTime::now_utc() - older_than);
 
         let mut entries = vec![];
 
@@ -2621,10 +2623,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let task = task("task", "project1", &root);
                 cache
-                    .cache(&new_cache_info(
-                        Some(&LOGS_CONTENT),
-                        *task.get(),
-                    ))
+                    .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string())
@@ -2739,6 +2738,36 @@ mod tests {
         );
     }
 
+    // A leading `!` in a stats project glob is a literal character, not a
+    // negation marker. `!other` matches only the literal name "!other", so
+    // "project1" is not selected. If `!` negated, `!other` would include every
+    // project except "other" and "project1" would show up.
+    #[tokio::test]
+    async fn test_get_stats_leading_bang_is_literal() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["!other"],
+                ..Default::default()
+            })
+            .await
+            .expect("failed to get stats");
+
+        assert!(
+            stats.projects.iter().all(|p| p.project_name != "project1"),
+            "a leading `!` must not negate: `!other` selects no project"
+        );
+    }
+
     /// Prune reclaims orphaned staging directories older than the threshold,
     /// but leaves fresh ones (which may belong to a concurrent publisher).
     #[tokio::test]
@@ -2790,10 +2819,7 @@ mod tests {
 
         let seed_task = task("task", "project1", &root);
         cache
-            .cache(&new_cache_info(
-                Some(&LOGS_CONTENT),
-                *seed_task.get(),
-            ))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *seed_task.get()))
             .await
             .expect("failed to cache");
 

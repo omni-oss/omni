@@ -535,4 +535,41 @@ mod tests {
             "task outside the dir filter should be excluded"
         );
     }
+
+    // A leading `!` in a task filter is a literal character, not a negation
+    // marker. `!build` matches only the literal name "!build", so an ordinary
+    // task like "test" stays excluded. If `!` negated, "test" would match.
+    #[test_log::test]
+    fn test_default_task_filter_leading_bang_is_literal() {
+        let filter = DefaultTaskFilter::new(
+            &["!build"],
+            &[],
+            &[],
+            Path::new(""),
+            None,
+            |_| None,
+        )
+        .unwrap();
+
+        let node = TaskExecutionNode::new(
+            "test".to_string(),
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
+            "project1".to_string(),
+            std::path::PathBuf::from(""),
+            vec![],
+            true.into(),
+            false,
+            false,
+            None,
+            None,
+        );
+
+        assert!(
+            !filter
+                .should_include_task(&node)
+                .expect("should have value"),
+            "a leading `!` must not negate: an unrelated task stays excluded"
+        );
+    }
 }
