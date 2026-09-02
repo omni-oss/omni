@@ -5,6 +5,24 @@ use omni_utils::glob::build_glob_set_with;
 
 pub use omni_utils::glob::GlobOptions;
 
+/// Build a memoized, include-only compiled [`GlobSet`] for `patterns`.
+///
+/// Patterns are matched exactly as written: a leading `!` is a literal
+/// character, never a negation marker. This is the entry point for callers that
+/// deliberately do not want negation, above all the hashed paths, where reading
+/// `!` as an exclude would silently change a cache key. Callers that do want
+/// negation use [`GlobMatcher`] instead.
+///
+/// The result shares the same process-wide cache as the matcher, so a set built
+/// here is the same [`Arc`] as one built for the same patterns and options
+/// elsewhere.
+pub fn include_set<S: AsRef<str>>(
+    patterns: &[S],
+    opts: GlobOptions,
+) -> Result<Arc<GlobSet>, globset::Error> {
+    build_glob_set_with(patterns, opts)
+}
+
 #[derive(Debug, Clone)]
 pub struct GlobMatcher {
     include: Arc<GlobSet>,
@@ -304,5 +322,24 @@ mod tests {
             .unwrap();
 
         assert!(std::sync::Arc::ptr_eq(&a, &b));
+    }
+
+    // include_set is a thin re-surfacing of the memoized builder, so a set built
+    // through it is the very same Arc as one built through build_glob_set. This
+    // is what makes the caller migration byte-identical.
+    #[test]
+    fn include_set_aliases_the_memoized_builder() {
+        let patterns = ["!literal.rs", "src/**/*.rs"];
+
+        let via_include =
+            include_set(&patterns, GlobOptions::default()).unwrap();
+        let via_builder = omni_utils::glob::build_glob_set(&patterns).unwrap();
+
+        assert!(std::sync::Arc::ptr_eq(&via_include, &via_builder));
+
+        // The leading `!` is a literal character here, not a negation: the set
+        // matches the name `!literal.rs`, and does not turn into an exclude.
+        assert!(via_include.is_match("!literal.rs"));
+        assert!(via_include.is_match("src/a.rs"));
     }
 }
