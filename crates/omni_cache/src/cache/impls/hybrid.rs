@@ -60,7 +60,7 @@ pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 
-use omni_utils::glob::build_glob_set;
+use omni_glob::{GlobOptions, include_set};
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
@@ -896,7 +896,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             } else {
                 project_name_globs
             };
-            build_glob_set(project_name_globs)?
+            include_set(project_name_globs, GlobOptions::default())?
         };
         let task_glob = {
             let task_name_globs: &[&str] = if task_name_globs.is_empty() {
@@ -904,7 +904,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             } else {
                 task_name_globs
             };
-            build_glob_set(task_name_globs)?
+            include_set(task_name_globs, GlobOptions::default())?
         };
 
         let mut futs = JoinSet::new();

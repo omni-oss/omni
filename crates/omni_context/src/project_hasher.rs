@@ -5,13 +5,13 @@ use maps::{Map, UnorderedMap, hash::HashMapExt};
 use omni_collector::{CollectConfig, Collector, ProjectTaskInfo};
 use omni_command_config::CommandConfig;
 use omni_execution_plan::{Call, ExecutionPlanProvider};
+use omni_glob::{GlobOptions, include_set};
 use omni_hasher::{
     Hasher as _,
     impls::{DefaultHash, DefaultHasher},
     project_dir_hasher::Hash,
 };
 use omni_types::OmniPath;
-use omni_utils::glob::build_glob_set;
 use strum::{EnumDiscriminants, EnumIs, IntoDiscriminant as _};
 
 use crate::{ContextSys, LoadedContext, LoadedContextError};
@@ -193,7 +193,7 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
 
         let mut hash = Hash::<DefaultHasher>::new(seed);
 
-        let task_matcher = build_glob_set(task_names)?;
+        let task_matcher = include_set(task_names, GlobOptions::default())?;
 
         let mut digests = task_result_digests
             .values()

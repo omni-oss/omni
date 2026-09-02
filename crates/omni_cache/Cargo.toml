@@ -37,6 +37,7 @@ trace = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true }
+omni_glob = { workspace = true }
 omni_utils = { workspace = true }
 omni_collector = { workspace = true }
 omni_command_config = { workspace = true }

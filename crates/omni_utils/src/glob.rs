@@ -40,7 +40,10 @@ static GLOB_SET_CACHE: LazyLock<RwLock<GlobSetCache>> =
 
 /// Build, or reuse a previously built, compiled [`GlobSet`] for `patterns`.
 ///
-/// Patterns are compiled with globset's default [`Glob::new`] options, so any
+/// This is the low-level builder. It compiles the patterns verbatim and knows
+/// nothing about the `!` negation convention, so most code should go through
+/// `omni_glob` instead (`include_set` for include-only sets, `GlobMatcher` for
+/// negation-aware ones). Patterns are compiled with globset's default [`Glob::new`] options, so any
 /// caller that would otherwise build its set with `Glob::new` can share cache
 /// entries. The returned set is shared behind an [`Arc`]; it is immutable and
 /// safe to use concurrently.

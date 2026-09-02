@@ -22,6 +22,7 @@ trace = { workspace = true }
 tracing = { workspace = true }
 enum-map = { workspace = true }
 globset = { workspace = true }
+omni_glob = { workspace = true }
 omni_utils = { workspace = true }
 derive-new = { workspace = true }
 maps = { workspace = true }
