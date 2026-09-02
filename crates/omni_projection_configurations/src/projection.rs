@@ -154,6 +154,10 @@ pub struct ExplicitRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PatternRule {
+    /// Glob patterns matched against source entries. Prefix a pattern with `!`
+    /// to exclude matches; `!!` re-includes (leading `!` are counted for
+    /// parity). To match a name that begins with a literal `!`, escape it as
+    /// `\!`.
     #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
     pub r#match: SingleOrMany<String>,
 
@@ -168,6 +172,10 @@ pub struct PatternRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct FlattenRule {
+    /// Glob patterns matched against source entries. Prefix a pattern with `!`
+    /// to exclude matches; `!!` re-includes (leading `!` are counted for
+    /// parity). To match a name that begins with a literal `!`, escape it as
+    /// `\!`.
     #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
     pub r#match: SingleOrMany<String>,
 
@@ -194,6 +202,10 @@ pub struct MirrorProjection {
     #[serde(flatten)]
     pub common: ProjectionCommon,
 
+    /// Narrows the mirror to source entries matching these globs. Prefix a
+    /// pattern with `!` to exclude matches; `!!` re-includes (leading `!` are
+    /// counted for parity). To match a name that begins with a literal `!`,
+    /// escape it as `\!`.
     #[serde(default, deserialize_with = "option_validate_match_patterns")]
     pub scope: Option<SingleOrMany<String>>,
 }

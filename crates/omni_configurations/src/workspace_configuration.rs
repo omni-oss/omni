@@ -29,6 +29,10 @@ pub struct WorkspaceConfiguration {
     #[garde(pattern(*WORKSPACE_NAME_REGEX))]
     pub name: Option<String>,
 
+    /// Globs matched against directories to discover projects. Prefix a pattern
+    /// with `!` to exclude matches; `!!` re-includes (leading `!` are counted
+    /// for parity). To match a directory whose name begins with a literal `!`,
+    /// escape it as `\!`.
     pub projects: Vec<String>,
 
     #[serde(default)]

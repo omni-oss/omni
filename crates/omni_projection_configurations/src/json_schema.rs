@@ -86,6 +86,7 @@ fn common_properties(generator: &mut SchemaGenerator) -> Map<String, Value> {
 fn scope_property() -> Map<String, Value> {
     object(json!({
         "scope": {
+            "description": "Narrows the mirror to source entries matching these globs. Prefix a pattern with `!` to exclude matches; `!!` re-includes (leading `!` are counted for parity). To match a name that begins with a literal `!`, escape it as `\\!`.",
             "anyOf": [
                 { "type": "string" },
                 { "type": "array", "items": { "type": "string" } }
