@@ -18,7 +18,10 @@ pub struct Discovery<'a> {
     root_dir: &'a Path,
 
     #[new(into)]
-    glob_patterns: &'a [String],
+    include_patterns: &'a [String],
+
+    #[new(into)]
+    exclude_patterns: &'a [String],
 
     #[new(into)]
     ignore_files: &'a [String],
@@ -30,13 +33,15 @@ pub struct Discovery<'a> {
 impl<'a> Discovery<'a> {
     pub fn new_with_config(
         root_dir: impl Into<&'a Path>,
-        glob_patterns: impl Into<&'a [String]>,
+        include_patterns: impl Into<&'a [String]>,
+        exclude_patterns: impl Into<&'a [String]>,
         ignore_files: impl Into<&'a [String]>,
         config: DiscoveryConfig,
     ) -> Self {
         Self {
             root_dir: root_dir.into(),
-            glob_patterns: glob_patterns.into(),
+            include_patterns: include_patterns.into(),
+            exclude_patterns: exclude_patterns.into(),
             ignore_files: ignore_files.into(),
             config: Some(config),
         }
@@ -99,9 +104,10 @@ impl<'a> Discovery<'a> {
     ) -> Result<Vec<PathBuf>, Error> {
         let mut discovered = vec![];
 
-        let matcher = GlobMatcher::rooted(
+        let matcher = GlobMatcher::from_globs_rooted(
             self.root_dir,
-            self.glob_patterns,
+            self.include_patterns,
+            self.exclude_patterns,
             Default::default(),
         )?;
 

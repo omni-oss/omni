@@ -105,12 +105,14 @@ actions:
   - type: add-many
     base_path: templates
     files:
-      - templates/**/*
-      - "!templates/src/add.ts.tpl"
-      - "!templates/src/cli/index.ts.tpl"
-      - "!templates/vitest.config.*.ts.tpl"
-      - "!templates/src/__tests__/integration.spec.ts.tpl"
-      - "!templates/src/add.spec.ts.tpl"
+      include:
+        - templates/**/*
+      exclude:
+        - "templates/src/add.ts.tpl"
+        - "templates/src/cli/index.ts.tpl"
+        - "templates/vitest.config.*.ts.tpl"
+        - "templates/src/__tests__/integration.spec.ts.tpl"
+        - "templates/src/add.spec.ts.tpl"
 
   - if: "{{ inputs.package_type == 'lib' or inputs.package_type == 'script' }}"
     type: add-many
