@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use omni_glob::{GlobMatcher, GlobOptions};
+use omni_glob::{GlobMatcher, GlobOptions, GlobPatterns};
 use omni_projection_configurations::{
     DestPath, MatchKind, OmniPath, Projection,
 };
@@ -88,13 +88,8 @@ pub fn plan(input: &PlanInput) -> Result<Vec<PlannedPair>> {
             is_dir_link: true,
         }],
         Projection::Mirror(p) => {
-            let scope = p.scope.as_ref().map(|s| s.to_vec());
-            plan_mirror(
-                input.source_root,
-                scope.as_deref(),
-                input.entries,
-                &target_abs,
-            )?
+            let scope = p.scope.as_ref().map(|s| s.clone().normalize());
+            plan_mirror(input.source_root, scope, input.entries, &target_abs)?
         }
         Projection::Explicit(p) => plan_explicit(
             input.source_root,
@@ -181,11 +176,14 @@ fn namespaced_pair(
 
 fn plan_mirror(
     source_root: &Path,
-    scope: Option<&[String]>,
+    scope: Option<GlobPatterns<String>>,
     entries: &[ScannedEntry],
     target_abs: &Path,
 ) -> Result<Vec<PlannedPair>> {
-    let matcher = scope.map(build_matcher).transpose()?;
+    let matcher = match &scope {
+        Some(p) => Some(build_matcher(&p.include, &p.exclude)?),
+        None => None,
+    };
 
     let mut candidates = Vec::new();
     for entry in entries {
@@ -250,7 +248,8 @@ fn plan_pattern(
 ) -> Result<Vec<PlannedPair>> {
     let mut candidates = Vec::new();
     for rule in rules {
-        let matcher = build_matcher(&rule.r#match.to_vec())?;
+        let patterns = rule.r#match.clone().normalize();
+        let matcher = build_matcher(&patterns.include, &patterns.exclude)?;
         for entry in matching_entries(entries, &matcher, rule.match_kind) {
             let vars = TemplateVars::from_rel(&entry.rel);
             let tail = expand_template(&dest_tail(&rule.dest), &vars);
@@ -275,7 +274,8 @@ fn plan_flatten(
 ) -> Result<Vec<PlannedPair>> {
     let mut candidates = Vec::new();
     for rule in rules {
-        let matcher = build_matcher(&rule.r#match.to_vec())?;
+        let patterns = rule.r#match.clone().normalize();
+        let matcher = build_matcher(&patterns.include, &patterns.exclude)?;
         for entry in matching_entries(entries, &matcher, rule.match_kind) {
             let vars = TemplateVars::from_rel(&entry.rel);
             let tail = match &rule.dest {
@@ -382,15 +382,21 @@ fn dest_tail(dest: &DestPath) -> String {
     dest.unresolved_path().to_string_lossy().into_owned()
 }
 
-fn build_matcher(patterns: &[String]) -> Result<GlobMatcher> {
-    GlobMatcher::new(
-        patterns,
+fn build_matcher(
+    include: &[String],
+    exclude: &[String],
+) -> Result<GlobMatcher> {
+    GlobMatcher::from_globs(
+        include,
+        exclude,
         GlobOptions {
             literal_separator: true,
         },
     )
     .map_err(|e| {
-        ProjectionError::custom(format!("invalid glob in {patterns:?}: {e}"))
+        ProjectionError::custom(format!(
+            "invalid glob in include={include:?} exclude={exclude:?}: {e}"
+        ))
     })
 }
 
@@ -588,9 +594,9 @@ mod tests {
     }
 
     #[test]
-    fn pattern_match_list_excludes_win() {
+    fn pattern_match_excludes_win() {
         let proj = projection(
-            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":["**/*.md","!secret/**"],"dest":"{name}.md"}]}"#,
+            r#"{"strategy":"pattern","target":"@workspace/out","rules":[{"match":{"include":["**/*.md"],"exclude":["secret/**"]},"dest":"{name}.md"}]}"#,
         );
         let entries = [
             ScannedEntry::file("a.md"),
@@ -601,9 +607,10 @@ mod tests {
     }
 
     #[test]
-    fn mirror_scope_list_includes_and_excludes() {
-        let proj =
-            projection(r#"{"strategy":"mirror","scope":["**","!drafts/**"]}"#);
+    fn mirror_scope_includes_and_excludes() {
+        let proj = projection(
+            r#"{"strategy":"mirror","scope":{"include":["**"],"exclude":["drafts/**"]}}"#,
+        );
         let entries = [
             ScannedEntry::file("keep.txt"),
             ScannedEntry::file("nested/keep.txt"),

@@ -1,11 +1,8 @@
-use omni_config_types::SingleOrMany;
+use omni_glob_config::GlobConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::id_validator::validate_projection_id;
-use crate::match_validator::{
-    option_validate_match_patterns, validate_match_patterns,
-};
 
 /// Root vocabulary for a projection `target`. `@workspace/...` and unrooted
 /// targets both resolve against the workspace root.
@@ -154,12 +151,13 @@ pub struct ExplicitRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PatternRule {
-    /// Glob patterns matched against source entries. Prefix a pattern with `!`
-    /// to exclude matches; `!!` re-includes (leading `!` are counted for
-    /// parity). To match a name that begins with a literal `!`, escape it as
-    /// `\!`.
-    #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
-    pub r#match: SingleOrMany<String>,
+    /// Globs matched against source entries. One of three forms: a single
+    /// pattern, a list of patterns, or an object with `include` and `exclude`
+    /// lists. The single and list forms are include-only. An entry matches
+    /// when it matches an `include` pattern and no `exclude` pattern; `exclude`
+    /// always wins regardless of order. A leading `!` is a literal character.
+    #[serde(rename = "match")]
+    pub r#match: GlobConfig<String>,
 
     pub dest: DestPath,
 
@@ -172,12 +170,13 @@ pub struct PatternRule {
 #[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct FlattenRule {
-    /// Glob patterns matched against source entries. Prefix a pattern with `!`
-    /// to exclude matches; `!!` re-includes (leading `!` are counted for
-    /// parity). To match a name that begins with a literal `!`, escape it as
-    /// `\!`.
-    #[serde(rename = "match", deserialize_with = "validate_match_patterns")]
-    pub r#match: SingleOrMany<String>,
+    /// Globs matched against source entries. One of three forms: a single
+    /// pattern, a list of patterns, or an object with `include` and `exclude`
+    /// lists. The single and list forms are include-only. An entry matches
+    /// when it matches an `include` pattern and no `exclude` pattern; `exclude`
+    /// always wins regardless of order. A leading `!` is a literal character.
+    #[serde(rename = "match")]
+    pub r#match: GlobConfig<String>,
 
     #[serde(default)]
     pub dest: Option<DestPath>,
@@ -202,12 +201,14 @@ pub struct MirrorProjection {
     #[serde(flatten)]
     pub common: ProjectionCommon,
 
-    /// Narrows the mirror to source entries matching these globs. Prefix a
-    /// pattern with `!` to exclude matches; `!!` re-includes (leading `!` are
-    /// counted for parity). To match a name that begins with a literal `!`,
-    /// escape it as `\!`.
-    #[serde(default, deserialize_with = "option_validate_match_patterns")]
-    pub scope: Option<SingleOrMany<String>>,
+    /// Narrows the mirror to source entries matching these globs. One of three
+    /// forms: a single pattern, a list of patterns, or an object with
+    /// `include` and `exclude` lists. The single and list forms are
+    /// include-only. An entry is mirrored when it matches an `include` pattern
+    /// and no `exclude` pattern; `exclude` always wins regardless of order. A
+    /// leading `!` is a literal character.
+    #[serde(default)]
+    pub scope: Option<GlobConfig<String>>,
 }
 
 /// Links literal source paths to explicit destinations.
@@ -583,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn match_and_scope_accept_string_and_list_forms() {
+    fn match_and_scope_accept_all_glob_forms() {
         let single = parse_projection(
             r#"{"strategy":"pattern","rules":[{"match":"**/*.md","dest":"{name}.md"}]}"#,
         )
@@ -591,11 +592,11 @@ mod tests {
         let Projection::Pattern(p) = &single else {
             panic!("expected pattern");
         };
-        assert_eq!(
-            p.rules[0].r#match,
-            SingleOrMany::Single("**/*.md".to_string())
-        );
+        let patterns = p.rules[0].r#match.clone().normalize();
+        assert_eq!(patterns.include, vec!["**/*.md".to_string()]);
+        assert!(patterns.exclude.is_empty());
 
+        // A list is include-only, so a leading `!` is a literal include here.
         let list = parse_projection(
             r#"{"strategy":"pattern","rules":[{"match":["**/*.md","!drafts/**"],"dest":"{name}.md"}]}"#,
         )
@@ -603,25 +604,24 @@ mod tests {
         let Projection::Pattern(p) = &list else {
             panic!("expected pattern");
         };
+        let patterns = p.rules[0].r#match.clone().normalize();
         assert_eq!(
-            p.rules[0].r#match,
-            SingleOrMany::Many(vec![
-                "**/*.md".to_string(),
-                "!drafts/**".to_string()
-            ])
+            patterns.include,
+            vec!["**/*.md".to_string(), "!drafts/**".to_string()]
         );
+        assert!(patterns.exclude.is_empty());
 
-        let brace = parse_projection(
-            r#"{"strategy":"flatten","rules":[{"match":"{a,b,c}"}]}"#,
+        // The object form is the only way to exclude.
+        let inc_exc = parse_projection(
+            r#"{"strategy":"pattern","rules":[{"match":{"include":["**/*.md"],"exclude":"drafts/**"},"dest":"{name}.md"}]}"#,
         )
-        .expect("brace-glob scalar is valid");
-        let Projection::Flatten(p) = &brace else {
-            panic!("expected flatten");
+        .expect("include/exclude match is valid");
+        let Projection::Pattern(p) = &inc_exc else {
+            panic!("expected pattern");
         };
-        assert_eq!(
-            p.rules[0].r#match,
-            SingleOrMany::Single("{a,b,c}".to_string())
-        );
+        let patterns = p.rules[0].r#match.clone().normalize();
+        assert_eq!(patterns.include, vec!["**/*.md".to_string()]);
+        assert_eq!(patterns.exclude, vec!["drafts/**".to_string()]);
 
         let scope_single =
             parse_projection(r#"{"strategy":"mirror","scope":"docs/**"}"#)
@@ -629,66 +629,32 @@ mod tests {
         let Projection::Mirror(m) = &scope_single else {
             panic!("expected mirror");
         };
-        assert_eq!(m.scope, Some(SingleOrMany::Single("docs/**".to_string())));
+        let patterns = m.scope.clone().unwrap().normalize();
+        assert_eq!(patterns.include, vec!["docs/**".to_string()]);
 
-        let scope_list = parse_projection(
-            r#"{"strategy":"mirror","scope":["docs/**","!docs/drafts/**"]}"#,
+        let scope_obj = parse_projection(
+            r#"{"strategy":"mirror","scope":{"include":"docs/**","exclude":["docs/drafts/**"]}}"#,
         )
-        .expect("list scope is valid");
-        let Projection::Mirror(m) = &scope_list else {
+        .expect("include/exclude scope is valid");
+        let Projection::Mirror(m) = &scope_obj else {
             panic!("expected mirror");
         };
-        assert_eq!(
-            m.scope,
-            Some(SingleOrMany::Many(vec![
-                "docs/**".to_string(),
-                "!docs/drafts/**".to_string()
-            ]))
-        );
+        let patterns = m.scope.clone().unwrap().normalize();
+        assert_eq!(patterns.include, vec!["docs/**".to_string()]);
+        assert_eq!(patterns.exclude, vec!["docs/drafts/**".to_string()]);
     }
 
     #[test]
-    fn rejects_invalid_match_and_scope_lists() {
+    fn match_and_scope_reject_unknown_object_key() {
         assert!(
             parse_projection(
-                r#"{"strategy":"pattern","rules":[{"match":[],"dest":"x"}]}"#,
+                r#"{"strategy":"pattern","rules":[{"match":{"include":["a"],"nope":["b"]},"dest":"x"}]}"#,
             )
             .is_err(),
-            "empty match list must be rejected"
-        );
-        assert!(
-            parse_projection(r#"{"strategy":"mirror","scope":[]}"#).is_err(),
-            "empty scope list must be rejected"
+            "an unknown key in the match object must be rejected"
         );
 
-        assert!(
-            parse_projection(
-                r#"{"strategy":"pattern","rules":[{"match":["a","  "],"dest":"x"}]}"#,
-            )
-            .is_err(),
-            "whitespace-only match entry must be rejected"
-        );
-        assert!(
-            parse_projection(
-                r#"{"strategy":"pattern","rules":[{"match":"","dest":"x"}]}"#,
-            )
-            .is_err(),
-            "empty match scalar must be rejected"
-        );
-
-        assert!(
-            parse_projection(
-                r#"{"strategy":"pattern","rules":[{"match":["!a","!b"],"dest":"x"}]}"#,
-            )
-            .is_err(),
-            "exclude-only match list must be rejected"
-        );
-        assert!(
-            parse_projection(r#"{"strategy":"mirror","scope":"!drafts/**"}"#,)
-                .is_err(),
-            "exclude-only scope scalar must be rejected"
-        );
-
+        // An absent or null scope is still valid.
         parse_projection(r#"{"strategy":"mirror"}"#)
             .expect("absent scope is valid");
         parse_projection(r#"{"strategy":"mirror","scope":null}"#)
