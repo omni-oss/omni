@@ -404,6 +404,41 @@ mod tests {
     }
 
     #[test]
+    fn append_nothing_overlay_preserves_the_base_exclude() {
+        // Layering a config-file-id prepend onto the include side must not
+        // disturb the exclude side. The overlay's exclude appends nothing
+        // (rather than an empty Value, which would replace and wipe it).
+        let mut base = MergeGlobConfig::IncludeAndExclude {
+            include: MergeSingleOrMany::from_vec(vec![
+                config_utils::Replace::new("src/**".to_string()),
+            ]),
+            exclude: MergeSingleOrMany::from_vec(vec![
+                config_utils::Replace::new("src/gen/**".to_string()),
+            ]),
+        };
+        let overlay = MergeGlobConfig::IncludeAndExclude {
+            include: MergeSingleOrMany::List(ListConfig::prepend(vec![
+                config_utils::Replace::new("id".to_string()),
+            ])),
+            exclude: MergeSingleOrMany::List(ListConfig::append(Vec::new())),
+        };
+
+        base.merge(overlay);
+        let patterns = base.normalize();
+        assert_eq!(
+            patterns.include,
+            vec![
+                config_utils::Replace::new("id".to_string()),
+                config_utils::Replace::new("src/**".to_string()),
+            ]
+        );
+        assert_eq!(
+            patterns.exclude,
+            vec![config_utils::Replace::new("src/gen/**".to_string())]
+        );
+    }
+
+    #[test]
     fn merge_glob_config_folds_cross_variant_many_into_include() {
         let mut base =
             MergeGlobConfig::Many(MergeSingleOrMany::from_vec(vec![

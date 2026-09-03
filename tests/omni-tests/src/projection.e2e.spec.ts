@@ -179,7 +179,10 @@ function listMatchWorkspace(): WorkspaceSpec {
                             target: "@workspace/.agents/skills",
                             rules: [
                                 {
-                                    match: ["**/*.md", "!drafts/**"],
+                                    match: {
+                                        include: ["**/*.md"],
+                                        exclude: ["drafts/**"],
+                                    },
                                     dest: "@target/{name}.md",
                                 },
                             ],
@@ -196,8 +199,9 @@ function listMatchWorkspace(): WorkspaceSpec {
     };
 }
 
-// A `mirror` route whose `scope` is a list: mirror everything an include
-// matches except what a `!` exclude drops, preserving source structure.
+// A `mirror` route whose `scope` uses the include/exclude object form: mirror
+// everything an include matches except what `exclude` drops, preserving source
+// structure.
 function listScopeWorkspace(): WorkspaceSpec {
     return {
         workspace: {
@@ -211,7 +215,10 @@ function listScopeWorkspace(): WorkspaceSpec {
                         {
                             strategy: "mirror",
                             target: "@workspace/.agents/docs",
-                            scope: ["docs/**", "!docs/drafts/**"],
+                            scope: {
+                                include: ["docs/**"],
+                                exclude: ["docs/drafts/**"],
+                            },
                         },
                     ],
                 },
@@ -462,13 +469,13 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         expect(ws.exists(".agents/skills/tdd/SKILL.md")).toBe(false);
     });
 
-    it("routes a list-valued match as an OR-union with ! exclusions", async () => {
+    it("routes an include/exclude match as an OR-union with excludes", async () => {
         const ws = makeWorkspace(listMatchWorkspace());
 
         const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
         expect(result).toHaveSucceeded();
 
-        // Both includes match; the `!drafts/**` exclude wins over `**/*.md`.
+        // Both includes match; the `drafts/**` exclude wins over `**/*.md`.
         expect(ws.read(".agents/skills/rust.md")).toBe("# rust\n");
         expect(ws.read(".agents/skills/go.md")).toBe("# go\n");
         expect(ws.exists(".agents/skills/wip.md")).toBe(false);
@@ -476,13 +483,13 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         expect(ledgerLinkCount(ws)).toBe(2);
     });
 
-    it("narrows a mirror with a list-valued scope and ! exclusions", async () => {
+    it("narrows a mirror with an include/exclude scope", async () => {
         const ws = makeWorkspace(listScopeWorkspace());
 
         const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
         expect(result).toHaveSucceeded();
 
-        // `docs/**` includes the guide; `!docs/drafts/**` drops the draft;
+        // `docs/**` includes the guide; `docs/drafts/**` excludes the draft;
         // `README.md` is outside every include, so it is not mirrored.
         expect(ws.read(".agents/docs/docs/guide.md")).toBe("# guide\n");
         expect(ws.exists(".agents/docs/docs/drafts/wip.md")).toBe(false);
