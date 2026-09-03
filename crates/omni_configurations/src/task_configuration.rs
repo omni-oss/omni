@@ -636,6 +636,12 @@ mod tests {
 
         a.merge(b);
 
+        // Merging two configs normalizes each glob field into an explicit
+        // include/exclude pair, so the merged cache is default-merged-default
+        // rather than the bare default.
+        let mut merged_cache = CacheConfiguration::default();
+        merged_cache.merge(CacheConfiguration::default());
+
         assert_eq!(
             a,
             TaskConfiguration::long_form(TaskConfigurationLongForm {
@@ -643,7 +649,7 @@ mod tests {
                 dependencies: ListConfig::append(vec![a_tdc, b_tdc]),
                 description: Some(Replace::new(String::from("a description"))),
                 env: Default::default(),
-                cache: Default::default(),
+                cache: merged_cache,
                 meta: Default::default(),
                 interactive: Some(Replace::new(true)),
                 persistent: Some(Replace::new(false)),

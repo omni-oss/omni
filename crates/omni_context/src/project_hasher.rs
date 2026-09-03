@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use derive_new::new;
 use maps::{Map, UnorderedMap, hash::HashMapExt};
@@ -65,7 +65,9 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
             task_exec: Option<&'a CommandConfig>,
             task_retry_exec: Option<&'a CommandConfig>,
             input_files: &'a [OmniPath],
+            input_files_exclude: &'a [OmniPath],
             output_files: &'a [OmniPath],
+            output_files_exclude: &'a [OmniPath],
             env_vars: Arc<Map<String, String>>,
             dependency_digests: Vec<DefaultHash>,
             input_env_keys: &'a [String],
@@ -94,8 +96,6 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                         )
                     })?;
 
-                let mut input_files = HashSet::new();
-
                 let ci = context
                     .get_cache_info(task.project_name(), task.task_name())
                     .ok_or_else(|| {
@@ -104,7 +104,6 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                             task.task_name().to_owned(),
                         )
                     })?;
-                input_files.extend(ci.key_input_files.clone());
 
                 let env_vars = context
                     .get_task_env_vars(task)
@@ -130,8 +129,10 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                         .tasks
                         .get(task.task_name())
                         .and_then(|t| t.retry_exec.as_ref()),
-                    output_files: &ci.cache_output_files,
-                    input_files: &ci.key_input_files,
+                    output_files: &ci.cache_output_files.include,
+                    output_files_exclude: &ci.cache_output_files.exclude,
+                    input_files: &ci.key_input_files.include,
+                    input_files_exclude: &ci.key_input_files.exclude,
                     dependency_digests: task
                         .dependencies()
                         .iter()
@@ -156,7 +157,9 @@ impl<'a, TSys: ContextSys> ProjectHasher<'a, TSys> {
                     task_exec: p.task_exec,
                     task_retry_exec: p.task_retry_exec,
                     input_files: p.input_files,
+                    input_files_exclude: p.input_files_exclude,
                     output_files: p.output_files,
+                    output_files_exclude: p.output_files_exclude,
                     dependency_digests: &p.dependency_digests,
                     env_vars: &p.env_vars,
                     input_env_keys: p.input_env_keys,

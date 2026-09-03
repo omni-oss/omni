@@ -17,6 +17,7 @@ serde = { workspace = true }
 derive-new = { workspace = true }
 derive_builder = { workspace = true }
 globset = { workspace = true }
+omni_glob = { workspace = true, features = ["serde"] }
 trace = { workspace = true }
 tracing = { workspace = true }
 maps = { workspace = true }

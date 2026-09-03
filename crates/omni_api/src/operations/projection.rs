@@ -609,9 +609,11 @@ where
         });
     const IGNORE_FILES: [&str; 1] = [omni_constants::OMNI_IGNORE];
 
+    let no_exclude: &[String] = &[];
     let discovery = ConfigurationDiscovery::new(
         source_root,
         &NAMES[..],
+        no_exclude,
         &NAMES[..],
         &IGNORE_FILES[..],
         "projection",

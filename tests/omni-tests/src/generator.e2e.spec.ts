@@ -680,7 +680,10 @@ function transformSpec() {
                     },
                     {
                         type: "transform-many",
-                        files: ["**/*.txt", "!greeting.txt"],
+                        files: {
+                            include: ["**/*.txt"],
+                            exclude: ["greeting.txt"],
+                        },
                         command: "tr a-z A-Z",
                     },
                 ],

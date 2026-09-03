@@ -12,6 +12,7 @@ schemars = { workspace = true }
 omni_types = { workspace = true }
 omni_config_types = { workspace = true }
 omni_glob = { workspace = true }
+omni_glob_config = { workspace = true }
 enum-map = { workspace = true }
 strum = { workspace = true }
 lazy-regex = { workspace = true }

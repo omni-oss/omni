@@ -23,7 +23,10 @@ where
     root_dir: &'a Path,
 
     #[new(into)]
-    glob_patterns: &'a [G],
+    include_patterns: &'a [G],
+
+    #[new(into)]
+    exclude_patterns: &'a [G],
 
     #[new(into)]
     config_files: &'a [C],
@@ -70,9 +73,10 @@ where
     ) -> Result<Vec<PathBuf>, Error> {
         let mut discovered = vec![];
 
-        let matcher = GlobMatcher::rooted(
+        let matcher = GlobMatcher::from_globs_rooted(
             self.root_dir,
-            self.glob_patterns,
+            self.include_patterns,
+            self.exclude_patterns,
             Default::default(),
         )?;
 
@@ -129,6 +133,60 @@ mod tests {
     /// changed to follow symlinks, this test fails loudly and that guardrail
     /// must be revisited.
     #[tokio::test]
+    async fn exclude_drops_matching_dirs_and_leading_bang_is_literal() {
+        let root = tempfile::tempdir().unwrap();
+
+        for dir in ["keep", "gen", "!lit"] {
+            std::fs::create_dir_all(root.path().join(dir)).unwrap();
+            std::fs::write(
+                root.path().join(dir).join("project.omni.yaml"),
+                format!("name: {dir}\n").as_bytes(),
+            )
+            .unwrap();
+        }
+
+        let config_files = ["project.omni.yaml".to_string()];
+        let ignore_files = [".omniignore".to_string()];
+        // A literal `!lit` include matches the directory literally named `!lit`
+        // (no escaping), and `gen/**` is excluded even though `**/*` includes it.
+        let include =
+            ["**/project.omni.yaml".to_string(), "!lit/**".to_string()];
+        let exclude = ["gen/**".to_string()];
+
+        let discovery = ConfigurationDiscovery::new(
+            root.path(),
+            &include[..],
+            &exclude[..],
+            &config_files[..],
+            &ignore_files[..],
+            "project",
+        );
+        let found = discovery.discover().await.unwrap();
+
+        let names = found
+            .iter()
+            .map(|p| {
+                p.parent()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert!(names.contains("keep"), "keep is included: {names:?}");
+        assert!(
+            names.contains("!lit"),
+            "a literal leading ! matches with no escape: {names:?}"
+        );
+        assert!(
+            !names.contains("gen"),
+            "an excluded dir is dropped even though include matched it: {names:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn discovery_does_not_follow_symlinked_directories() {
         let config_files = ["project.omni.yaml".to_string()];
 
@@ -155,6 +213,7 @@ mod tests {
         let discovery = ConfigurationDiscovery::new(
             root.path(),
             &config_files[..],
+            &[][..],
             &config_files[..],
             &ignore_files[..],
             "project",

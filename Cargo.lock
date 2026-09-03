@@ -7139,6 +7139,7 @@ dependencies = [
 name = "omni_config_types"
 version = "0.3.0"
 dependencies = [
+ "config_utils",
  "derive-new",
  "derive_builder",
  "either",
@@ -7200,6 +7201,7 @@ dependencies = [
  "omni_experimental_features",
  "omni_expressions",
  "omni_file_data_serde",
+ "omni_glob_config",
  "omni_projection_configurations",
  "omni_serde_validators",
  "omni_task_output_logs",
@@ -7246,12 +7248,14 @@ dependencies = [
  "omni_cache",
  "omni_collector",
  "omni_command_config",
+ "omni_config_types",
  "omni_configuration_discovery",
  "omni_configurations",
  "omni_constants",
  "omni_core",
  "omni_execution_plan",
  "omni_glob",
+ "omni_glob_config",
  "omni_hasher",
  "omni_remote_cache_client",
  "omni_setup",
@@ -7467,6 +7471,7 @@ dependencies = [
  "omni_capabilities",
  "omni_core",
  "omni_expressions",
+ "omni_glob_config",
  "omni_input_provider",
  "omni_input_schema",
  "omni_serde_validators",
@@ -7513,7 +7518,24 @@ name = "omni_glob"
 version = "0.0.0"
 dependencies = [
  "globset",
+ "omni_types",
  "omni_utils",
+ "serde",
+]
+
+[[package]]
+name = "omni_glob_config"
+version = "0.0.0"
+dependencies = [
+ "config_utils",
+ "merge",
+ "omni_config_types",
+ "omni_glob",
+ "schemars",
+ "serde",
+ "serde-untagged",
+ "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -7720,6 +7742,7 @@ dependencies = [
  "lazy-regex",
  "omni_config_types",
  "omni_glob",
+ "omni_glob_config",
  "omni_types",
  "schemars",
  "serde",
@@ -7982,6 +8005,7 @@ dependencies = [
  "maps",
  "omni_configurations",
  "omni_core",
+ "omni_glob",
  "omni_hasher",
  "omni_task_output_logs",
  "omni_tera",
@@ -8024,6 +8048,7 @@ dependencies = [
  "omni_core",
  "omni_execution_plan",
  "omni_expressions",
+ "omni_glob",
  "omni_hasher",
  "omni_messages",
  "omni_process",

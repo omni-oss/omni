@@ -6,4 +6,5 @@ dependencies:
   - omni_types
   - omni_config_types
   - omni_glob
+  - omni_glob_config
   - serde_validate

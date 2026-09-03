@@ -776,9 +776,14 @@ impl<S: GeneratorSys> BaseFsGlobAsync for TransactionSys<S> {
         root_dir: &Path,
         patterns: &[&str],
     ) -> io::Result<Vec<PathBuf>> {
-        let matcher =
-            GlobMatcher::rooted(root_dir, patterns, Default::default())
-                .map_err(|e| invalid(&format!("invalid glob pattern: {e}")))?;
+        let no_exclude: &[&str] = &[];
+        let matcher = GlobMatcher::from_globs_rooted(
+            root_dir,
+            patterns,
+            no_exclude,
+            Default::default(),
+        )
+        .map_err(|e| invalid(&format!("invalid glob pattern: {e}")))?;
 
         let st = self.state.lock().await;
         let matches = st
@@ -2150,7 +2155,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn glob_supports_exclusions() {
+    async fn glob_is_include_only_and_leading_bang_is_literal() {
         let dir = temp();
         let root = dir.path();
         let sys = TransactionSys::new(RealSys);
@@ -2161,18 +2166,30 @@ mod tests {
         sys.fs_write_async(root.join("skip.test.ts"), b"s")
             .await
             .unwrap();
+        sys.fs_write_async(root.join("!lit.ts"), b"l")
+            .await
+            .unwrap();
 
+        // This primitive is include-only: every pattern matches literally, so a
+        // leading `!` matches a file literally named `!lit.ts` rather than
+        // negating. Exclusion is applied by the caller, not here.
         let matches = sys
             .fs_glob_async(
                 root,
-                &["**/*.ts".to_string(), "!**/*.test.ts".to_string()],
+                &["**/*.ts".to_string(), "!lit.ts".to_string()],
             )
             .await
             .unwrap();
 
         assert_eq!(
             names(&matches),
-            ["keep.ts".to_string()].into_iter().collect()
+            [
+                "keep.ts".to_string(),
+                "skip.test.ts".to_string(),
+                "!lit.ts".to_string()
+            ]
+            .into_iter()
+            .collect()
         );
     }
 

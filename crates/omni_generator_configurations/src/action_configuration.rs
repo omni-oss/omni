@@ -12,6 +12,7 @@ use derive_new::new;
 use garde::Validate;
 use maps::{Map, UnorderedMap};
 use omni_capabilities::CapabilityPolicyConfig;
+use omni_glob_config::GlobConfig;
 use omni_serde_validators::tera_expr::{
     option_validate_tera_expr, validate_tera_expr,
 };
@@ -175,11 +176,12 @@ pub struct AddManyActionConfiguration {
     #[serde(flatten)]
     pub base: BaseAddActionConfiguration,
 
-    /// Provide a list of template files to add, accepts glob patterns.
-    /// Prefix a pattern with `!` to exclude matches; `!!` re-includes (leading
-    /// `!` are counted for parity). To match a name that begins with a literal
-    /// `!`, escape it as `\!`.
-    pub files: Vec<PathBuf>,
+    /// Template files to add, one of three forms: a single glob, a list of
+    /// globs, or an object with `include` and `exclude` lists. The single and
+    /// list forms are include-only. A file is added when it matches an
+    /// `include` glob and no `exclude` glob; `exclude` always wins regardless
+    /// of order. A leading `!` is a literal character.
+    pub files: GlobConfig<PathBuf>,
 
     /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
     #[serde(default)]
@@ -502,12 +504,14 @@ pub struct TransformManyActionConfiguration {
     #[serde(deserialize_with = "validate_tera_expr")]
     pub command: String,
 
-    /// Glob patterns matched against the files that have pending writes in the
-    /// current generation. Patterns are resolved relative to the output
-    /// directory. Prefix a pattern with `!` to exclude matches; `!!` re-includes
-    /// (leading `!` are counted for parity). To match a name that begins with a
-    /// literal `!`, escape it as `\!`.
-    pub files: Vec<PathBuf>,
+    /// Globs matched against the files that have pending writes in the current
+    /// generation, resolved relative to the output directory. One of three
+    /// forms: a single glob, a list of globs, or an object with `include` and
+    /// `exclude` lists. The single and list forms are include-only. A file is
+    /// transformed when it matches an `include` glob and no `exclude` glob;
+    /// `exclude` always wins regardless of order. A leading `!` is a literal
+    /// character.
+    pub files: GlobConfig<PathBuf>,
 
     #[serde(flatten)]
     pub common: CommonRunCustomActionConfiguration,

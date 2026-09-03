@@ -248,66 +248,34 @@ where
 
         for task_ctx in task_contexts {
             if let Some(ci) = task_ctx.cache_info.as_ref() {
-                if (!ci.cache_output_files.is_empty()
-                    && ci
-                        .cache_output_files
-                        .iter()
-                        .any(|fi| omni_path_contains_byte(fi, b'{')))
-                    || (!ci.key_input_files.is_empty()
-                        && ci
-                            .key_input_files
-                            .iter()
-                            .any(|fi| omni_path_contains_byte(fi, b'{')))
+                let has_template = |files: &[omni_types::OmniPath]| {
+                    files.iter().any(|fi| omni_path_contains_byte(fi, b'{'))
+                };
+
+                if has_template(&ci.cache_output_files.include)
+                    || has_template(&ci.cache_output_files.exclude)
+                    || has_template(&ci.key_input_files.include)
+                    || has_template(&ci.key_input_files.exclude)
                 {
                     let mut new_ci = ci.as_ref().clone();
+                    let ctx = &task_ctx.template_context;
 
-                    if !ci.cache_output_files.is_empty() {
-                        let mut new_files =
-                            Vec::with_capacity(ci.cache_output_files.len());
+                    let expand = |files: &[omni_types::OmniPath]| {
+                        files
+                            .iter()
+                            .map(|file| expand_omni_path(file, ctx))
+                            .collect::<Result<Vec<_>, _>>()
+                    };
 
-                        trace::trace!(
-                            ?ci.cache_output_files,
-                            "original_cache_output_files"
-                        );
+                    new_ci.cache_output_files.include =
+                        expand(&ci.cache_output_files.include)?;
+                    new_ci.cache_output_files.exclude =
+                        expand(&ci.cache_output_files.exclude)?;
+                    new_ci.key_input_files.include =
+                        expand(&ci.key_input_files.include)?;
+                    new_ci.key_input_files.exclude =
+                        expand(&ci.key_input_files.exclude)?;
 
-                        for file in &ci.cache_output_files {
-                            let expanded = expand_omni_path(
-                                file,
-                                &task_ctx.template_context,
-                            )?;
-                            new_files.push(expanded);
-                        }
-
-                        new_ci.cache_output_files = new_files;
-                        trace::trace!(
-                            ?new_ci.cache_output_files,
-                            "expanded_cache_output_files"
-                        );
-                    }
-
-                    if !ci.key_input_files.is_empty() {
-                        let mut new_files =
-                            Vec::with_capacity(ci.key_input_files.len());
-
-                        trace::trace!(
-                            ?ci.key_input_files,
-                            "original_key_input_files"
-                        );
-
-                        for file in &ci.key_input_files {
-                            let expanded = expand_omni_path(
-                                file,
-                                &task_ctx.template_context,
-                            )?;
-                            new_files.push(expanded);
-                        }
-
-                        new_ci.key_input_files = new_files;
-                        trace::trace!(
-                            ?new_ci.key_input_files,
-                            "expanded_key_input_files"
-                        );
-                    }
                     let mut new_ctx = task_ctx.clone();
                     new_ctx.cache_info = Some(Cow::Owned(new_ci));
                     new_task_contexts.push(Cow::Owned(new_ctx));
@@ -349,6 +317,7 @@ where
                 if details.output_files.is_none() {
                     details.output_files = Some(
                         ci.cache_output_files
+                            .include
                             .iter()
                             .map(|f| f.resolve(bases).into_owned())
                             .collect(),
@@ -358,6 +327,7 @@ where
                 if details.cache_key_input_files.is_none() {
                     details.cache_key_input_files = Some(
                         ci.key_input_files
+                            .include
                             .iter()
                             .map(|f| f.resolve(bases).into_owned())
                             .collect(),

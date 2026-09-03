@@ -13,6 +13,7 @@ use omni_configurations::{
 };
 use omni_core::{Project, ProjectGraph, ProjectGraphError, TaskExecutionNode};
 use omni_execution_plan::DefaultExecutionPlanProvider;
+use omni_glob::GlobPatterns;
 use omni_hasher::impls::DefaultHash;
 use omni_task_context::CacheInfo;
 use omni_task_output_logs::OutputLogsConfiguration;
@@ -377,10 +378,10 @@ impl<'a, TSys: ContextSys> omni_execution_plan::Context
         &self,
         project_name: &str,
         task_name: &str,
-    ) -> &[OmniPath] {
-        self.0
-            .get_cache_info(project_name, task_name)
-            .map(|c| &c.key_input_files[..])
-            .unwrap_or(&[])
+    ) -> &GlobPatterns<OmniPath> {
+        match self.0.get_cache_info(project_name, task_name) {
+            Some(c) => &c.key_input_files,
+            None => omni_execution_plan::empty_cache_input_files(),
+        }
     }
 }

@@ -195,8 +195,17 @@ async fn run_main() -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn main() -> eyre::Result<()> {
+// The generator pipeline awaits its `run-generator` recursion on the thread
+// that calls `block_on`, and each nested level keeps a suspended async frame
+// live. Debug builds make those frames large, and the Windows process main
+// thread has only about 1 MiB of stack, so a few levels of nesting overflow it.
+// Run the runtime on a thread with a generous stack (and give tokio's own
+// workers the same) so nesting depth is bounded by `max_depth`, not the OS.
+const RUNTIME_STACK_SIZE: usize = 32 * 1024 * 1024;
+
+fn run_runtime() -> eyre::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .thread_stack_size(RUNTIME_STACK_SIZE)
         .enable_all()
         .build()?;
     let result = rt.block_on(run_main());
@@ -204,4 +213,16 @@ pub fn main() -> eyre::Result<()> {
     // instead of waiting for them to finish
     rt.shutdown_background();
     result
+}
+
+pub fn main() -> eyre::Result<()> {
+    let worker = std::thread::Builder::new()
+        .name("omni-main".to_string())
+        .stack_size(RUNTIME_STACK_SIZE)
+        .spawn(run_runtime)?;
+
+    match worker.join() {
+        Ok(result) => result,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
 }

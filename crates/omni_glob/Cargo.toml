@@ -10,6 +10,12 @@ repository.workspace = true
 name = "omni_glob"
 path = "src/lib.rs"
 
+[features]
+default = []
+serde = ["dep:serde", "omni_types/serde"]
+
 [dependencies]
 globset = { workspace = true }
+omni_types = { workspace = true, default-features = false }
 omni_utils = { workspace = true }
+serde = { workspace = true, optional = true }

@@ -25,9 +25,11 @@ pub async fn discover<G: AsRef<str>>(
     glob_patterns: &[G],
     sys: &impl ToolSys,
 ) -> Result<Vec<Cow<'static, ToolConfiguration>>, Error> {
+    let no_exclude: &[G] = &[];
     let discovery = ConfigurationDiscovery::new(
         root_dir,
         glob_patterns,
+        no_exclude,
         CONFIG_FILE_NAMES.as_slice(),
         IGNORE_FILE_NAMES.as_slice(),
         "tool",

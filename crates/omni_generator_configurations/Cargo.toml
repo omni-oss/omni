@@ -32,6 +32,7 @@ system_traits = { workspace = true }
 lazy-regex = { workspace = true }
 omni_input_schema = { workspace = true }
 omni_capabilities = { workspace = true }
+omni_glob_config = { workspace = true }
 enumset = { workspace = true }
 omni_input_provider = { workspace = true }
 omni_serde_validators = { workspace = true }

@@ -22,9 +22,11 @@ pub async fn discover<G: AsRef<str>>(
     glob_patterns: &[G],
     sys: &impl GeneratorSys,
 ) -> Result<Vec<Cow<'static, GeneratorConfiguration>>, Error> {
+    let no_exclude: &[G] = &[];
     let discovery = ConfigurationDiscovery::new(
         root_dir,
         glob_patterns,
+        no_exclude,
         CONFIG_FILE_NAMES.as_slice(),
         IGNORE_FILE_NAMES.as_slice(),
         "generator",
@@ -65,9 +67,11 @@ pub async fn discover_one_in_dir<D: AsRef<Path>>(
     dir: D,
     sys: &impl GeneratorSys,
 ) -> Result<Option<GeneratorConfiguration>, Error> {
+    let no_exclude: &[String] = &[];
     let discovery = ConfigurationDiscovery::new(
         dir.as_ref(),
         CONFIG_FILE_NAMES.as_slice(),
+        no_exclude,
         CONFIG_FILE_NAMES.as_slice(),
         IGNORE_FILE_NAMES.as_slice(),
         "generator",

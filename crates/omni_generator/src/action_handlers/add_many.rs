@@ -13,15 +13,13 @@ pub async fn add_many<'a, S: GeneratorEventSubscriber>(
     ctx: &HandlerContext<'a, S>,
     sys: &impl GeneratorSys,
 ) -> Result<(), Error> {
-    let glob_patterns = config
-        .files
-        .iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+    let (include_patterns, exclude_patterns) =
+        config.files.clone().normalize().to_pattern_strings();
     let ignore_files = [".omniignore".to_string()];
     let discovery = Discovery::new_with_config(
         ctx.generator_dir,
-        glob_patterns.as_slice(),
+        include_patterns.as_slice(),
+        exclude_patterns.as_slice(),
         ignore_files.as_slice(),
         DiscoveryConfig::builder().standard_filters(false).build(),
     );

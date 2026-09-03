@@ -60,7 +60,7 @@ pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 
-use omni_glob::{GlobOptions, include_set};
+use omni_glob::{GlobOptions, GlobPatterns, include_set};
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
@@ -199,7 +199,9 @@ impl HybridTaskExecutionCacheStore {
             .iter()
             .map(|task| omni_collector::ProjectTaskInfo {
                 input_files: task.input_files,
+                input_files_exclude: task.input_files_exclude,
                 output_files: task.output_files,
+                output_files_exclude: task.output_files_exclude,
                 project_dir: task.project_dir,
                 project_name: task.project_name,
                 task_exec: task.task_exec,
@@ -1384,11 +1386,11 @@ impl<'a, T: Context> omni_execution_plan::Context for ContextWrapper<'a, T> {
         &self,
         project_name: &str,
         task_name: &str,
-    ) -> &[OmniPath] {
-        self.inner
-            .get_cache_info(project_name, task_name)
-            .map(|c| &c.key_input_files[..])
-            .unwrap_or(&[])
+    ) -> &GlobPatterns<OmniPath> {
+        match self.inner.get_cache_info(project_name, task_name) {
+            Some(c) => &c.key_input_files,
+            None => omni_execution_plan::empty_cache_input_files(),
+        }
     }
 
     fn root_dir(&self) -> &Path {
@@ -1639,7 +1641,9 @@ mod tests {
         project_name: String,
         project_dir: PathBuf,
         input_files: Vec<OmniPath>,
+        input_files_exclude: Vec<OmniPath>,
         output_files: Vec<OmniPath>,
+        output_files_exclude: Vec<OmniPath>,
         env_vars: maps::Map<String, String>,
         input_env_cache_keys: Vec<String>,
         pub dependency_digests: Vec<DefaultHash>,
@@ -1656,7 +1660,9 @@ mod tests {
             &task.project_name,
             &task.project_dir,
             &task.output_files,
+            &task.output_files_exclude,
             &task.input_files,
+            &task.input_files_exclude,
             &task.input_env_cache_keys,
             &task.env_vars,
             &task.dependency_digests,
@@ -1676,7 +1682,9 @@ mod tests {
             task_exec: CommandConfig::Shell(format!("ls {}", task_name)),
             project_name: project_name.to_string(),
             input_files: vec![OmniPath::new("src/**/*.txt")],
+            input_files_exclude: vec![],
             output_files: vec![OmniPath::new("dist/**/*.js")],
+            output_files_exclude: vec![],
             project_dir,
             env_vars: env_vars(),
             input_env_cache_keys: env_cache_keys(),

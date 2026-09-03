@@ -1,5 +1,5 @@
-use config_utils::ListConfig;
 use merge::Merge;
+use omni_glob_config::MergeGlobConfig;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -18,8 +18,12 @@ use serde::{Deserialize, Serialize};
 )]
 #[serde(deny_unknown_fields)]
 pub struct TaskOutputConfiguration {
-    #[serde(default = "super::utils::list_config_default::<OmniPath>")]
-    pub files: ListConfig<OmniPath>,
+    /// One of three forms: a single pattern, a list of patterns, or an object
+    /// with `include` and `exclude` lists. The single and list forms are
+    /// include-only. Exclusion is expressed only through `exclude`, which
+    /// always wins regardless of order. A leading `!` is a literal character.
+    #[serde(default = "super::utils::merge_glob_config_default::<OmniPath>")]
+    pub files: MergeGlobConfig<OmniPath>,
 
     #[serde(default = "super::utils::default_true")]
     #[merge(strategy = config_utils::replace)]
@@ -29,7 +33,7 @@ pub struct TaskOutputConfiguration {
 impl Default for TaskOutputConfiguration {
     fn default() -> Self {
         Self {
-            files: ListConfig::append(vec![]),
+            files: super::utils::merge_glob_config_default(),
             logs: true,
         }
     }

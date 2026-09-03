@@ -23,6 +23,7 @@ dependencies:
   - omni_cache
   - omni_messages
   - omni_execution_plan
+  - omni_glob
   - omni_task_context
   - omni_collector
   - omni_types

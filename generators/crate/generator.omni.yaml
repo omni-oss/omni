@@ -80,8 +80,10 @@ actions:
     base_path: templates
     target: root
     files:
-      - templates/**
-      - "!templates/src/main.rs.tpl"
+      include:
+        - templates/**
+      exclude:
+        - "templates/src/main.rs.tpl"
 
   - if: "{{ inputs.crate_type == 'bin' }}"
     type: add

@@ -8,12 +8,14 @@ use env::{
 use env_loader::EnvLoaderError;
 use maps::{Map, UnorderedMap};
 use merge::Merge as _;
+use omni_config_types::MergeSingleOrMany;
 use omni_configurations::{
     MetaConfiguration, ProjectConfiguration, WorkspaceConfiguration,
 };
 use omni_core::{
     ExtensionGraph, ExtensionGraphError, ExtensionGraphNode as _, Project, Task,
 };
+use omni_glob_config::MergeGlobConfig;
 use omni_task_context::CacheInfo;
 use omni_task_output_logs::OutputLogsConfiguration;
 use omni_types::OmniPathError;
@@ -196,17 +198,27 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
 
                 let use_defaults = cache.key.defaults.unwrap_or(true);
 
-                let key_files = if use_defaults {
+                let key_input_files = if use_defaults {
                     let mut files = cache.key.files.clone();
                     let mut additional_files = extension_graph
                         .get_transitive_extendee_ids(project_config.id())?;
 
                     additional_files.push(project_config.id().clone());
 
-                    files.merge(ListConfig::prepend(additional_files));
-                    files.to_vec()
+                    // The project's own config-file ids seed the include side
+                    // only; defaults are always includes. The exclude side
+                    // appends nothing so the project's excludes survive.
+                    files.merge(MergeGlobConfig::IncludeAndExclude {
+                        include: MergeSingleOrMany::List(ListConfig::prepend(
+                            additional_files,
+                        )),
+                        exclude: MergeSingleOrMany::List(ListConfig::append(
+                            Vec::new(),
+                        )),
+                    });
+                    files.normalize()
                 } else {
-                    cache.key.files.to_vec()
+                    cache.key.files.clone().normalize()
                 };
 
                 cache_infos.insert(
@@ -218,8 +230,12 @@ impl<'a, TSys: EnvCacheSys> ProjectDataExtractor<'a, TSys> {
                             .unwrap_or(true),
                         key_defaults: use_defaults,
                         key_env_keys: cache.key.env.to_vec_to_inner(),
-                        key_input_files: key_files,
-                        cache_output_files: cache.output.files.to_vec(),
+                        key_input_files,
+                        cache_output_files: cache
+                            .output
+                            .files
+                            .clone()
+                            .normalize(),
                         cache_logs: cache.output.logs,
                         args: task
                             .args()
