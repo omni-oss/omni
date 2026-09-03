@@ -1,11 +1,13 @@
 mod all_or_keyed;
 mod maybe_expr;
+mod merge_single_or_many;
 mod single_or_many;
 mod tera_expr;
 mod tera_expr_boolean;
 
 pub use all_or_keyed::*;
 pub use maybe_expr::*;
+pub use merge_single_or_many::*;
 pub use single_or_many::*;
 pub use tera_expr::*;
 pub use tera_expr_boolean::*;

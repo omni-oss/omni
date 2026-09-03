@@ -16,6 +16,7 @@ merge = ["dep:merge"]
 serde = ["dep:serde", "dep:omni_serde_validators", "dep:serde-untagged", "dep:serde_json"]
 
 [dependencies]
+config_utils = { workspace = true }
 eyre = { workspace = true }
 maps = { workspace = true }
 thiserror = { workspace = true }
