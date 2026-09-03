@@ -6,6 +6,7 @@ use garde::Validate;
 use maps::Map;
 use omni_capabilities::CapabilityPolicyConfig;
 pub use omni_experimental_features::ExperimentalFeatures;
+use omni_glob_config::GlobConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
@@ -29,11 +30,14 @@ pub struct WorkspaceConfiguration {
     #[garde(pattern(*WORKSPACE_NAME_REGEX))]
     pub name: Option<String>,
 
-    /// Globs matched against directories to discover projects. Prefix a pattern
-    /// with `!` to exclude matches; `!!` re-includes (leading `!` are counted
-    /// for parity). To match a directory whose name begins with a literal `!`,
-    /// escape it as `\!`.
-    pub projects: Vec<String>,
+    /// Globs matched against directories to discover projects. One of three
+    /// forms: a single pattern, a list of patterns, or an object with
+    /// `include` and `exclude` lists. The single and list forms are
+    /// include-only. A directory is discovered when it matches an `include`
+    /// pattern and no `exclude` pattern; `exclude` always wins regardless of
+    /// order. A leading `!` is a literal character, so a pattern like
+    /// `!keep` matches a directory literally named `!keep`.
+    pub projects: GlobConfig<String>,
 
     #[serde(default)]
     pub ui: Ui,

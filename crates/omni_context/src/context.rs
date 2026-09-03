@@ -156,9 +156,11 @@ impl<TSys: ContextSys> Context<TSys> {
         &self,
     ) -> Result<Vec<ProjectConfiguration>, ContextError> {
         let start = std::time::Instant::now();
+        let projects = self.workspace.projects.clone().normalize();
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
-            self.workspace.projects.as_slice(),
+            &projects.include,
+            &projects.exclude,
         )
         .discover_project_files()
         .await?;
@@ -196,9 +198,11 @@ impl<TSys: ContextSys> Context<TSys> {
         self,
     ) -> Result<LoadedContext<TSys>, ContextError> {
         let start = std::time::Instant::now();
+        let projects = self.workspace.projects.clone().normalize();
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
-            self.workspace.projects.as_slice(),
+            &projects.include,
+            &projects.exclude,
         )
         .discover_project_files()
         .await?;
@@ -220,9 +224,11 @@ impl<TSys: ContextSys> Context<TSys> {
         walker: &TDirWalker,
     ) -> Result<LoadedContext<TSys>, ContextError> {
         let start = std::time::Instant::now();
+        let projects = self.workspace.projects.clone().normalize();
         let project_paths = ProjectDiscovery::new(
             self.root_dir(),
-            self.workspace.projects.as_slice(),
+            &projects.include,
+            &projects.exclude,
         )
         .discover_project_files_with_walker(walker)
         .await?;

@@ -26,11 +26,16 @@ static CONFIG_FILES: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 impl<'a> ProjectDiscovery<'a> {
-    pub fn new(root_dir: &'a Path, project_patterns: &'a [String]) -> Self {
+    pub fn new(
+        root_dir: &'a Path,
+        include_patterns: &'a [String],
+        exclude_patterns: &'a [String],
+    ) -> Self {
         Self {
             discovery: ConfigurationDiscovery::new(
                 root_dir,
-                project_patterns,
+                include_patterns,
+                exclude_patterns,
                 &CONFIG_FILES[..],
                 &IGNORE_FILES[..],
                 "project",
