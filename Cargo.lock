@@ -7139,6 +7139,7 @@ dependencies = [
 name = "omni_config_types"
 version = "0.3.0"
 dependencies = [
+ "config_utils",
  "derive-new",
  "derive_builder",
  "either",
@@ -7513,7 +7514,23 @@ name = "omni_glob"
 version = "0.0.0"
 dependencies = [
  "globset",
+ "omni_types",
  "omni_utils",
+]
+
+[[package]]
+name = "omni_glob_config"
+version = "0.0.0"
+dependencies = [
+ "config_utils",
+ "merge",
+ "omni_config_types",
+ "omni_glob",
+ "schemars",
+ "serde",
+ "serde-untagged",
+ "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]

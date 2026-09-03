@@ -3,6 +3,7 @@ name: omni_config_types
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
+  - config_utils
   - trace
   - maps
   - omni_serde_validators

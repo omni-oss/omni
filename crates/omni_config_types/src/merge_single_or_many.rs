@@ -20,6 +20,10 @@ impl<T: Merge> MergeSingleOrMany<T> {
         Self::List(ListConfig::value(Vec::new()))
     }
 
+    pub fn from_vec(items: Vec<T>) -> Self {
+        Self::List(ListConfig::value(items))
+    }
+
     pub fn into_vec(self) -> Vec<T> {
         self.into_list().into_vec()
     }

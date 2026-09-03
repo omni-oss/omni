@@ -1,0 +1,35 @@
+[package]
+name = "omni_glob_config"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_glob_config"
+path = "src/lib.rs"
+
+[features]
+default = ["serde", "schemars"]
+serde = [
+    "dep:serde",
+    "dep:serde-untagged",
+    "dep:serde_json",
+    "dep:serde_path_to_error",
+]
+schemars = ["dep:schemars"]
+
+[dependencies]
+omni_glob = { workspace = true }
+omni_config_types = { workspace = true }
+merge = { workspace = true }
+serde = { workspace = true, optional = true }
+serde-untagged = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+serde_path_to_error = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+config_utils = { workspace = true }
