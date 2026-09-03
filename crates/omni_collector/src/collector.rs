@@ -11,13 +11,13 @@ use enum_map::enum_map;
 use globset::{Candidate, GlobSet};
 use maps::Map;
 use omni_command_config::CommandConfig;
+use omni_glob::{GlobOptions, include_set};
 use omni_hasher::{
     Hasher,
     impls::{DefaultHash, DefaultHasher},
     project_dir_hasher::{ProjectDirHasher, impls::RealDirHasher},
 };
 use omni_types::{OmniPath, Root, RootMap};
-use omni_utils::glob::build_glob_set;
 use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, starts_with_path, topmost_dirs,
 };
@@ -356,7 +356,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut output_patterns,
                 )?;
 
-                output_files_globset = Some(build_glob_set(&output_patterns)?);
+                output_files_globset = Some(include_set(
+                    &output_patterns,
+                    GlobOptions::default(),
+                )?);
             }
 
             let mut input_files_globset = None;
@@ -373,7 +376,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &mut input_patterns,
                 )?;
 
-                input_files_globset = Some(build_glob_set(&input_patterns)?);
+                input_files_globset =
+                    Some(include_set(&input_patterns, GlobOptions::default())?);
             }
 
             to_process.push(Holder {

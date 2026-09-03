@@ -8,9 +8,9 @@ use globset::GlobSet;
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, TaskExecutionNode};
 use omni_expressions::Evaluator;
+use omni_glob::{GlobOptions, include_set};
 use omni_scm::{Scm, get_scm_implementation};
 use omni_types::{OmniPath, Root, enum_map};
-use omni_utils::glob::build_glob_set;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
 use crate::{ProjectFilter, ScmAffectedFilter, TaskFilter};
@@ -26,7 +26,7 @@ impl DefaultProjectFilter {
             None
         } else {
             Some(
-                build_glob_set(project_filters)
+                include_set(project_filters, GlobOptions::default())
                     .map_err(FilterErrorInner::Glob)?,
             )
         };
@@ -85,7 +85,10 @@ where
         let task_matcher = if task_filters.is_empty() {
             None
         } else {
-            Some(build_glob_set(task_filters).map_err(FilterErrorInner::Glob)?)
+            Some(
+                include_set(task_filters, GlobOptions::default())
+                    .map_err(FilterErrorInner::Glob)?,
+            )
         };
 
         let meta_filter = meta_filter
@@ -99,7 +102,7 @@ where
             None
         } else {
             Some(
-                build_glob_set(project_filters)
+                include_set(project_filters, GlobOptions::default())
                     .map_err(FilterErrorInner::Glob)?,
             )
         };
@@ -128,7 +131,7 @@ where
                 .collect::<Vec<_>>();
 
             Some(
-                build_glob_set(&dir_patterns)
+                include_set(&dir_patterns, GlobOptions::default())
                     .map_err(FilterErrorInner::Glob)?,
             )
         };
@@ -301,7 +304,7 @@ where
             })
             .collect::<Vec<String>>();
 
-        let globset = build_glob_set(&patterns)?;
+        let globset = include_set(&patterns, GlobOptions::default())?;
 
         for file in &self.changed_files {
             if globset.is_match(file.to_string_lossy().as_ref()) {
@@ -533,6 +536,46 @@ mod tests {
                 .should_include_task(&node)
                 .expect("should have value"),
             "task outside the dir filter should be excluded"
+        );
+    }
+
+    // A leading `!` in a task filter is a literal character here, not a
+    // negation marker: `!build` matches only the literal name "!build", so an
+    // ordinary task like "test" stays excluded. This guards against negation
+    // leaking into the filters during the include_set migration. When task
+    // filters deliberately gain negation, this assertion no longer holds and
+    // the test should be removed or inverted.
+    #[test_log::test]
+    fn test_default_task_filter_leading_bang_is_literal() {
+        let filter = DefaultTaskFilter::new(
+            &["!build"],
+            &[],
+            &[],
+            Path::new(""),
+            None,
+            |_| None,
+        )
+        .unwrap();
+
+        let node = TaskExecutionNode::new(
+            "test".to_string(),
+            Some(CommandConfig::Shell("echo test".to_string())),
+            None,
+            "project1".to_string(),
+            std::path::PathBuf::from(""),
+            vec![],
+            true.into(),
+            false,
+            false,
+            None,
+            None,
+        );
+
+        assert!(
+            !filter
+                .should_include_task(&node)
+                .expect("should have value"),
+            "a leading `!` must not negate: an unrelated task stays excluded"
         );
     }
 }

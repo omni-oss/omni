@@ -60,7 +60,7 @@ pub use omni_utils::path::{
     has_globs, path_safe, relpath, remove_globs, topmost_dirs,
 };
 
-use omni_utils::glob::build_glob_set;
+use omni_glob::{GlobOptions, include_set};
 
 use omni_hasher::project_dir_hasher::impls::RealDirHasherError;
 
@@ -896,7 +896,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             } else {
                 project_name_globs
             };
-            build_glob_set(project_name_globs)?
+            include_set(project_name_globs, GlobOptions::default())?
         };
         let task_glob = {
             let task_name_globs: &[&str] = if task_name_globs.is_empty() {
@@ -904,7 +904,7 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
             } else {
                 task_name_globs
             };
-            build_glob_set(task_name_globs)?
+            include_set(task_name_globs, GlobOptions::default())?
         };
 
         let mut futs = JoinSet::new();
@@ -1140,7 +1140,9 @@ impl TaskExecutionCacheStore for HybridTaskExecutionCacheStore {
                 ..Default::default()
             })
             .await?;
-        let time_upper_limit = args.older_than.map(|older_than| OffsetDateTime::now_utc() - older_than);
+        let time_upper_limit = args
+            .older_than
+            .map(|older_than| OffsetDateTime::now_utc() - older_than);
 
         let mut entries = vec![];
 
@@ -2621,10 +2623,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let task = task("task", "project1", &root);
                 cache
-                    .cache(&new_cache_info(
-                        Some(&LOGS_CONTENT),
-                        *task.get(),
-                    ))
+                    .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string())
@@ -2739,6 +2738,38 @@ mod tests {
         );
     }
 
+    // A leading `!` in a stats project glob is a literal character here, not a
+    // negation marker. `!other` matches only the literal name "!other", so
+    // "project1" is not selected. This guards against negation leaking into
+    // get_stats during the include_set migration. When get_stats deliberately
+    // gains negation, this assertion no longer holds and the test should be
+    // removed or inverted.
+    #[tokio::test]
+    async fn test_get_stats_leading_bang_is_literal() {
+        let temp = fixture(&["project1"]).await;
+        let dir = temp.path();
+        let cache = cache_store(dir);
+        let task = task("task", "project1", dir);
+
+        cache
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *task.get()))
+            .await
+            .expect("failed to cache");
+
+        let stats = cache
+            .get_stats(&CacheStatsArgs::<()> {
+                project_name_globs: &["!other"],
+                ..Default::default()
+            })
+            .await
+            .expect("failed to get stats");
+
+        assert!(
+            stats.projects.iter().all(|p| p.project_name != "project1"),
+            "a leading `!` must not negate: `!other` selects no project"
+        );
+    }
+
     /// Prune reclaims orphaned staging directories older than the threshold,
     /// but leaves fresh ones (which may belong to a concurrent publisher).
     #[tokio::test]
@@ -2790,10 +2821,7 @@ mod tests {
 
         let seed_task = task("task", "project1", &root);
         cache
-            .cache(&new_cache_info(
-                Some(&LOGS_CONTENT),
-                *seed_task.get(),
-            ))
+            .cache(&new_cache_info(Some(&LOGS_CONTENT), *seed_task.get()))
             .await
             .expect("failed to cache");
 

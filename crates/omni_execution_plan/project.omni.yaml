@@ -14,3 +14,4 @@ dependencies:
   - maps
   - omni_config_types
   - omni_utils
+  - omni_glob

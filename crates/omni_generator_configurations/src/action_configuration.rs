@@ -176,6 +176,9 @@ pub struct AddManyActionConfiguration {
     pub base: BaseAddActionConfiguration,
 
     /// Provide a list of template files to add, accepts glob patterns.
+    /// Prefix a pattern with `!` to exclude matches; `!!` re-includes (leading
+    /// `!` are counted for parity). To match a name that begins with a literal
+    /// `!`, escape it as `\!`.
     pub files: Vec<PathBuf>,
 
     /// Disregard the folder structure of the template files and flatten them into write them into a single directory.
@@ -501,7 +504,9 @@ pub struct TransformManyActionConfiguration {
 
     /// Glob patterns matched against the files that have pending writes in the
     /// current generation. Patterns are resolved relative to the output
-    /// directory. Prefix a pattern with `!` to exclude matches.
+    /// directory. Prefix a pattern with `!` to exclude matches; `!!` re-includes
+    /// (leading `!` are counted for parity). To match a name that begins with a
+    /// literal `!`, escape it as `\!`.
     pub files: Vec<PathBuf>,
 
     #[serde(flatten)]
