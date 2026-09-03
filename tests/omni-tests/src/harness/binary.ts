@@ -3,9 +3,9 @@
  *
  * Resolution order:
  *   1. `OMNI_TEST_BIN` env var, if set (must point at an existing file).
- *   2. `target/<triple>/release/omni` for each triple in `RUST_TARGET`
- *      (semicolon-separated), then `target/release/omni`, then
- *      `target/debug/omni`, all under the workspace root.
+ *   2. `target/debug/omni`, then `target/<triple>/release/omni` for each
+ *      triple in `RUST_TARGET` (semicolon-separated), then
+ *      `target/release/omni`, all under the workspace root.
  *
  * The workspace root is `WORKSPACE_DIR` (the env var omni injects when running
  * tasks) when set, otherwise it is discovered by walking up to the workspace
@@ -32,8 +32,8 @@ export interface ResolveOmniBinOptions {
     /** Explicit override; defaults to the `OMNI_TEST_BIN` env var. */
     override?: string;
     /**
-     * Restrict resolution to a single profile. When omitted, a release build
-     * (cross-compiled or native) is preferred over a debug build.
+     * Restrict resolution to a single profile. When omitted, a local debug
+     * build is preferred, then a cross-compiled or native release build.
      */
     profile?: CargoProfile;
     /**
@@ -74,9 +74,10 @@ function candidatePaths(
 
     if (profile === "debug") return [debug];
     if (profile === "release") return [...crossReleases, release];
-    // No explicit profile: prefer a (possibly cross-compiled) release build,
-    // then a native release, then a local debug build.
-    return [...crossReleases, release, debug];
+    // No explicit profile: prefer a local debug build (what the test tasks
+    // produce via `omni#build:debug`), then a cross-compiled release, then a
+    // native release.
+    return [debug, ...crossReleases, release];
 }
 
 /**
@@ -141,7 +142,7 @@ export function ensureOmniBinary(): string {
 
     if (!forceBuild) {
         try {
-            // Prefer any existing binary: cross-release, native release, or debug.
+            // Prefer any existing binary: debug, cross-release, or native release.
             return resolveOmniBin();
         } catch {
             // Nothing built yet - fall through and build one locally.

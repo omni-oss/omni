@@ -4,11 +4,11 @@
  *
  * Resolution order (deduped, each candidate probed once):
  *   1. `<BIN>_TEST_BIN` env override, if set (must point at an existing file).
- *   2. `target/release/<bin>` when it matches the host target.
- *   3. `target/<triple>/release/<bin>` for each triple in `RUST_TARGET`
+ *   2. `target/debug/<bin>` (native debug).
+ *   3. `target/release/<bin>` when it matches the host target.
+ *   4. `target/<triple>/release/<bin>` for each triple in `RUST_TARGET`
  *      (semicolon-separated).
- *   4. `target/release/<bin>` (native release).
- *   5. `target/debug/<bin>` (native debug).
+ *   5. `target/release/<bin>` (native release).
  *
  * The workspace root comes from `WORKSPACE_DIR` (injected by omni when running
  * tasks). This mirrors the binary-lookup convention in
@@ -43,8 +43,9 @@ export interface ResolveServiceBinOptions {
     targets?: string[];
     /**
      * Detected host target triple. When it matches one of `targets`, the native
-     * `target/release/<bin>` is preferred first. Callers typically pass the
-     * result of `getHost()` (or `""` when it can't be determined).
+     * `target/release/<bin>` is preferred ahead of cross-compiled releases, but
+     * still after a local debug build. Callers typically pass the result of
+     * `getHost()` (or `""` when it can't be determined).
      */
     host?: string;
 }
@@ -102,14 +103,14 @@ function candidatePaths(
     } else if (profile === "release") {
         ordered = [...crossReleases, release];
     } else {
-        // Prefer a host-matching native release, then cross-compiled releases,
-        // then a native release, then a local debug build.
+        // Prefer a local debug build, then a host-matching native release,
+        // then cross-compiled releases, then a native release.
         const preferNative = host !== "" && targets.includes(host);
         ordered = [
+            debug,
             ...(preferNative ? [release] : []),
             ...crossReleases,
             release,
-            debug,
         ];
     }
 
