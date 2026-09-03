@@ -83,9 +83,16 @@ fn normalize_separators(s: Cow<'_, str>) -> Cow<'_, str> {
 /// A file is selected when it matches at least one include pattern and no
 /// exclude pattern. The two sides are unordered and exclude always wins.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlobPatterns<T> {
     pub include: Vec<T>,
     pub exclude: Vec<T>,
+}
+
+impl<T> GlobPatterns<T> {
+    pub fn is_empty(&self) -> bool {
+        self.include.is_empty() && self.exclude.is_empty()
+    }
 }
 
 impl<T: ToGlobPattern> GlobPatterns<T> {

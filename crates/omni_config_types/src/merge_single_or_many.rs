@@ -5,7 +5,7 @@ use config_utils::{ListConfig, merge::Merge};
 /// The list and the `append`/`prepend`/`replace`/`merge` layering forms are
 /// [`ListConfig`]'s. This adds only the bare-scalar shorthand, which normalizes
 /// to a one-element list.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "serde", serde(untagged))]
@@ -32,6 +32,13 @@ impl<T: Merge> MergeSingleOrMany<T> {
         match self {
             Self::Single(t) => ListConfig::value(vec![t]),
             Self::List(l) => l,
+        }
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        match self {
+            Self::Single(t) => std::slice::from_mut(t).iter_mut(),
+            Self::List(l) => l.as_vec_mut().iter_mut(),
         }
     }
 }

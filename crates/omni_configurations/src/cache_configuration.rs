@@ -1,10 +1,14 @@
 use config_utils::{ListConfig, Replace};
 use merge::Merge;
+use omni_glob_config::MergeGlobConfig;
 use omni_types::OmniPath;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{TaskOutputConfiguration, utils::list_config_default};
+use crate::{
+    TaskOutputConfiguration,
+    utils::{list_config_default, merge_glob_config_default},
+};
 
 #[derive(
     Debug,
@@ -76,8 +80,12 @@ pub struct CacheKeyConfiguration {
     #[serde(default = "super::utils::list_config_default::<Replace<String>>")]
     pub env: ListConfig<Replace<String>>,
 
-    #[serde(default = "super::utils::list_config_default::<OmniPath>")]
-    pub files: ListConfig<OmniPath>,
+    /// One of three forms: a single pattern, a list of patterns, or an object
+    /// with `include` and `exclude` lists. The single and list forms are
+    /// include-only. Exclusion is expressed only through `exclude`, which
+    /// always wins regardless of order. A leading `!` is a literal character.
+    #[serde(default = "super::utils::merge_glob_config_default::<OmniPath>")]
+    pub files: MergeGlobConfig<OmniPath>,
 }
 
 impl Default for CacheKeyConfiguration {
@@ -86,7 +94,7 @@ impl Default for CacheKeyConfiguration {
         Self {
             defaults: default_defaults(),
             env: list_config_default(),
-            files: list_config_default(),
+            files: merge_glob_config_default(),
         }
     }
 }

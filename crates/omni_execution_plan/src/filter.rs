@@ -8,7 +8,7 @@ use globset::GlobSet;
 use omni_configurations::MetaConfiguration;
 use omni_core::{Project, TaskExecutionNode};
 use omni_expressions::Evaluator;
-use omni_glob::{GlobOptions, include_set};
+use omni_glob::{GlobMatcher, GlobOptions, GlobPatterns, include_set};
 use omni_scm::{Scm, get_scm_implementation};
 use omni_types::{OmniPath, Root, enum_map};
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
@@ -206,7 +206,8 @@ where
 
 pub struct DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
 where
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+    TGetCacheInputFilesFn:
+        for<'a> Fn(&'a TaskExecutionNode) -> &'b GlobPatterns<OmniPath>,
 {
     get_cache_input_files: TGetCacheInputFilesFn,
     changed_files: Vec<PathBuf>,
@@ -216,7 +217,8 @@ where
 impl<'b, TGetCacheInputFilesFn>
     DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
 where
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+    TGetCacheInputFilesFn:
+        for<'a> Fn(&'a TaskExecutionNode) -> &'b GlobPatterns<OmniPath>,
 {
     pub fn new(
         workspace_root_dir: &Path,
@@ -273,7 +275,8 @@ where
 impl<'b, TGetCacheInputFilesFn> TaskFilter
     for DefaultTaskScmAffectedFilter<'b, TGetCacheInputFilesFn>
 where
-    TGetCacheInputFilesFn: for<'a> Fn(&'a TaskExecutionNode) -> &'b [OmniPath],
+    TGetCacheInputFilesFn:
+        for<'a> Fn(&'a TaskExecutionNode) -> &'b GlobPatterns<OmniPath>,
 {
     type Error = FilterError;
 
@@ -286,28 +289,40 @@ where
             Root::Project => node.project_dir(),
             Root::Workspace => self.workspace_root_dir.as_path(),
         };
-        let patterns = cache_input_files
-            .iter()
-            .map(|file| {
-                let resolved = file.resolve(&root_map);
-                let resolved = if !resolved.is_absolute() {
-                    node.project_dir().join(path_clean::clean(resolved))
-                } else {
-                    resolved.to_path_buf()
-                };
-                let resolved = resolved.to_string_lossy();
-                if cfg!(windows) {
-                    resolved.replace("\\", "/")
-                } else {
-                    resolved.into_owned()
-                }
-            })
-            .collect::<Vec<String>>();
+        let resolve = |files: &[OmniPath]| {
+            files
+                .iter()
+                .map(|file| {
+                    let resolved = file.resolve(&root_map);
+                    let resolved = if !resolved.is_absolute() {
+                        node.project_dir().join(path_clean::clean(resolved))
+                    } else {
+                        resolved.to_path_buf()
+                    };
+                    let resolved = resolved.to_string_lossy();
+                    if cfg!(windows) {
+                        resolved.replace("\\", "/")
+                    } else {
+                        resolved.into_owned()
+                    }
+                })
+                .collect::<Vec<String>>()
+        };
 
-        let globset = include_set(&patterns, GlobOptions::default())?;
+        let include = resolve(&cache_input_files.include);
+        let exclude = resolve(&cache_input_files.exclude);
+
+        // A changed file counts only when it matches the include set and no
+        // exclude pattern, keeping this filter in lockstep with what the cache
+        // hashes.
+        let matcher = GlobMatcher::from_globs(
+            &include,
+            &exclude,
+            GlobOptions::default(),
+        )?;
 
         for file in &self.changed_files {
-            if globset.is_match(file.to_string_lossy().as_ref()) {
+            if matcher.is_match(file.to_string_lossy().as_ref()) {
                 return Ok(true);
             }
         }

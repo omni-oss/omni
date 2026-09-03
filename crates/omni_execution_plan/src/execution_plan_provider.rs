@@ -11,6 +11,7 @@ use omni_core::{
     BatchedExecutionPlan, Task, TaskDependency, TaskExecutionGraphError,
     TaskExecutionNode,
 };
+use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
 use strum::{EnumDiscriminants, IntoDiscriminant as _};
 
@@ -224,7 +225,7 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
     ) -> Result<
         DefaultTaskScmAffectedFilter<
             'a,
-            impl Fn(&'_ TaskExecutionNode) -> &'a [OmniPath],
+            impl Fn(&'_ TaskExecutionNode) -> &'a GlobPatterns<OmniPath>,
         >,
         ExecutionPlanProviderError,
     > {
@@ -258,11 +259,9 @@ impl<'a, TContext: Context> DefaultExecutionPlanProvider<'a, TContext> {
                 .iter()
                 .any(|p| pf.should_include_project(p).unwrap_or(false))
         {
-            Err(
-                ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
-                    filter: project_filters.join(", "),
-                },
-            )?;
+            Err(ExecutionPlanProviderErrorInner::NoProjectFoundForFilter {
+                filter: project_filters.join(", "),
+            })?;
         }
 
         let mut project_graph = self

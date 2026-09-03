@@ -56,8 +56,10 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
             let mut input_files = HashSet::new();
 
             for key in tasks_keys {
-                let ci =
-                    extracted_data.cache_infos[key].key_input_files.clone();
+                let ci = extracted_data.cache_infos[key]
+                    .key_input_files
+                    .include
+                    .clone();
                 input_files.extend(ci);
             }
 
@@ -86,7 +88,9 @@ impl<'a, TSys: CollectorSys + Clone> WorkspaceHasher<'a, TSys> {
                 task_exec: p.task_exec,
                 task_retry_exec: p.task_retry_exec,
                 input_files: &p.input_files,
+                input_files_exclude: &[],
                 output_files: &[],
+                output_files_exclude: &[],
                 dependency_digests: &[],
                 env_vars: &p.env_vars,
                 input_env_keys: &p.input_env_keys,

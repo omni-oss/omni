@@ -45,7 +45,9 @@ pub struct ProjectTaskInfo<'a> {
     pub task_exec: Option<&'a CommandConfig>,
     pub task_retry_exec: Option<&'a CommandConfig>,
     pub output_files: &'a [OmniPath],
+    pub output_files_exclude: &'a [OmniPath],
     pub input_files: &'a [OmniPath],
+    pub input_files_exclude: &'a [OmniPath],
     pub input_env_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
@@ -76,6 +78,7 @@ struct HashInput<'a> {
     pub project_dir: &'a Path,
     pub input_files: &'a [OmniPath],
     pub cached_output_files_glob: &'a [OmniPath],
+    pub cached_output_files_exclude_glob: &'a [OmniPath],
     pub input_env_cache_keys: &'a [String],
     pub env_vars: &'a Map<String, String>,
     pub dependency_digests: &'a [DefaultHash],
@@ -84,9 +87,12 @@ struct HashInput<'a> {
 
 struct Holder<'a> {
     output_files_globset: Option<Arc<GlobSet>>,
+    output_files_exclude_globset: Option<Arc<GlobSet>>,
     output_files_glob: Vec<OmniPath>,
+    output_files_exclude_glob: Vec<OmniPath>,
     resolved_output_files: Option<Vec<OmniPath>>,
     input_files_globset: Option<Arc<GlobSet>>,
+    input_files_exclude_globset: Option<Arc<GlobSet>>,
     resolved_input_files: Option<Vec<OmniPath>>,
     /// Literal (glob-free) prefixes of this project's include paths. A walked
     /// file can only match one of the globsets if it lives under one of these
@@ -263,6 +269,26 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             }
         }
 
+        // Exclude patterns change which output files are cached, so they are
+        // part of the key. They hash under a distinct prefix, and an empty
+        // exclude set contributes nothing, so an include-only config hashes
+        // exactly as before.
+        if !hash_input.cached_output_files_exclude_glob.is_empty() {
+            let mut sorted = hash_input
+                .cached_output_files_exclude_glob
+                .iter()
+                .map(|p| p.unresolved_path())
+                .collect::<Vec<_>>();
+
+            sorted.sort();
+
+            for path in sorted {
+                tree.insert(DefaultHasher::hash(
+                    format!("exclude:{}", path.to_string_lossy()).as_bytes(),
+                ));
+            }
+        }
+
         let full_task_name =
             format!("{}#{}", hash_input.project_name, hash_input.task_name);
 
@@ -344,6 +370,7 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
             let mut match_bases = Vec::new();
 
             let mut output_files_globset = None;
+            let mut output_files_exclude_globset = None;
             if should_collect_output_files {
                 let mut output_patterns = Vec::new();
 
@@ -360,9 +387,22 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                     &output_patterns,
                     GlobOptions::default(),
                 )?);
+
+                let mut output_exclude_patterns = Vec::new();
+                resolve_exclude_patterns(
+                    project.output_files_exclude,
+                    project.project_dir,
+                    &roots,
+                    &mut output_exclude_patterns,
+                )?;
+                output_files_exclude_globset = Some(include_set(
+                    &output_exclude_patterns,
+                    GlobOptions::default(),
+                )?);
             }
 
             let mut input_files_globset = None;
+            let mut input_files_exclude_globset = None;
 
             // the output dirs are based on the hashes so need to be collected here
             if should_collect_input_files {
@@ -378,12 +418,29 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
 
                 input_files_globset =
                     Some(include_set(&input_patterns, GlobOptions::default())?);
+
+                let mut input_exclude_patterns = Vec::new();
+                resolve_exclude_patterns(
+                    project.input_files_exclude,
+                    project.project_dir,
+                    &roots,
+                    &mut input_exclude_patterns,
+                )?;
+                input_files_exclude_globset = Some(include_set(
+                    &input_exclude_patterns,
+                    GlobOptions::default(),
+                )?);
             }
 
             to_process.push(Holder {
                 input_files_globset,
+                input_files_exclude_globset,
                 output_files_globset,
+                output_files_exclude_globset,
                 output_files_glob: project.output_files.to_vec(),
+                output_files_exclude_glob: project
+                    .output_files_exclude
+                    .to_vec(),
                 match_bases,
                 resolved_input_files: if should_collect_input_files {
                     // just in the collected input files will be the same as the
@@ -571,6 +628,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             project.input_files_globset.as_ref()
                             && input_files_globset
                                 .is_match_candidate(&candidate)
+                            && !exclude_matches(
+                                project.input_files_exclude_globset.as_ref(),
+                                &candidate,
+                            )
                             && let Some(resolved_input_files) =
                                 project.resolved_input_files.as_mut()
                         {
@@ -585,6 +646,10 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                             project.output_files_globset.as_ref()
                             && output_files_globset
                                 .is_match_candidate(&candidate)
+                            && !exclude_matches(
+                                project.output_files_exclude_globset.as_ref(),
+                                &candidate,
+                            )
                             && let Some(resolved_output_files) =
                                 project.resolved_output_files.as_mut()
                         {
@@ -616,6 +681,8 @@ impl<'a, TSys: CollectorSys> Collector<'a, TSys> {
                         env_vars: holder.task.env_vars,
                         dependency_digests: holder.task.dependency_digests,
                         cached_output_files_glob: &holder.output_files_glob,
+                        cached_output_files_exclude_glob: &holder
+                            .output_files_exclude_glob,
                         args: holder.task.args,
                     })
                     .await?;
@@ -683,6 +750,38 @@ fn populate_includes_and_patterns(
     Ok(())
 }
 
+// Exclude patterns compile into their own globset but never seed the walk:
+// they only remove already-walked files, so they do not touch `includes`,
+// `match_bases`, or the walk roots. The path resolution matches
+// `populate_includes_and_patterns` so a pattern compiles against the same
+// walked paths.
+fn resolve_exclude_patterns(
+    files: &[OmniPath],
+    project_dir: &Path,
+    roots: &RootMap,
+    patterns: &mut Vec<String>,
+) -> Result<(), Error> {
+    for p in files {
+        let p = p.resolve(roots);
+
+        let path = if p.is_relative() {
+            std::path::absolute(project_dir.join(p))?
+        } else {
+            p.to_path_buf()
+        };
+
+        patterns.push(path.to_string_lossy().into_owned());
+    }
+    Ok(())
+}
+
+fn exclude_matches(
+    globset: Option<&Arc<GlobSet>>,
+    candidate: &Candidate,
+) -> bool {
+    globset.is_some_and(|g| g.is_match_candidate(candidate))
+}
+
 // A symlink cycle surfaces as `Error::Loop` (possibly wrapped), which is not an
 // I/O error and so is not caught by the walker's not-found handling. Detecting
 // it lets the collector skip the cycle instead of aborting the whole hash.
@@ -731,7 +830,9 @@ mod tests {
         project_dir: PathBuf,
         task_name: String,
         input_files: Vec<OmniPath>,
+        input_files_exclude: Vec<OmniPath>,
         output_files: Vec<OmniPath>,
+        output_files_exclude: Vec<OmniPath>,
         input_env_keys: Vec<String>,
         env_vars: Map<String, String>,
         dependency_digests: Vec<DefaultHash>,
@@ -745,7 +846,9 @@ mod tests {
                 project_dir: root.join(name),
                 task_name: "build".to_string(),
                 input_files: vec![],
+                input_files_exclude: vec![],
                 output_files: vec![],
+                output_files_exclude: vec![],
                 input_env_keys: vec![],
                 env_vars: Map::default(),
                 dependency_digests: vec![],
@@ -761,7 +864,9 @@ mod tests {
                 task_exec: None,
                 task_retry_exec: None,
                 output_files: &self.output_files,
+                output_files_exclude: &self.output_files_exclude,
                 input_files: &self.input_files,
+                input_files_exclude: &self.input_files_exclude,
                 input_env_keys: &self.input_env_keys,
                 env_vars: &self.env_vars,
                 dependency_digests: &self.dependency_digests,
@@ -928,6 +1033,61 @@ mod tests {
         .await;
 
         assert_eq!(as_set(&result.input_files), rel_paths(&["src/keep.txt"]));
+    }
+
+    #[tokio::test]
+    async fn exclude_removes_a_subtree_the_include_walks() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+        write_file(&root.join("proj/src/gen/b.txt"), "b");
+        write_file(&root.join("proj/src/gen/nested/c.txt"), "c");
+
+        let mut project = Project::new(root, "proj");
+        project.input_files = vec![OmniPath::new("src/**/*.txt")];
+        project.input_files_exclude = vec![OmniPath::new("src/gen/**")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        // Only the include-and-not-exclude file survives; the excluded subtree
+        // is dropped even though the include glob matched it.
+        assert_eq!(as_set(&result.input_files), rel_paths(&["src/a.txt"]));
+    }
+
+    #[tokio::test]
+    async fn exclude_only_seeds_no_walk_and_collects_nothing() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        write_file(&root.join("proj/src/a.txt"), "a");
+
+        let mut project = Project::new(root, "proj");
+        // An exclude with no include seeds no walk root, so nothing is
+        // collected: exclude patterns never pull files in.
+        project.input_files_exclude = vec![OmniPath::new("src/**")];
+
+        let result = collect_one(
+            root,
+            &fresh_cache_dir(root),
+            &project,
+            &CollectConfig {
+                input_files: true,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert!(as_set(&result.input_files).is_empty());
     }
 
     // A glob such as `src/*` matches the directory entry `src/sub` as well as

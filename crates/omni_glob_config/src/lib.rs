@@ -18,7 +18,7 @@ use omni_glob::GlobPatterns;
 /// A bare pattern, a list of patterns, or an explicit include/exclude object.
 ///
 /// Merges last-writer-wins, so a later layer replaces an earlier one whole.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "serde", serde(untagged))]
@@ -66,7 +66,7 @@ impl<T> Merge for GlobConfig<T> {
 /// The layering counterpart of [`GlobConfig`]. Each side keeps
 /// [`config_utils::ListConfig`]'s `append`/`prepend`/`replace`/`merge` forms so
 /// a project can extend a workspace default without restating it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "serde", serde(untagged))]
@@ -98,6 +98,17 @@ impl<T: Merge> MergeGlobConfig<T> {
             }
             Self::Many(m) => (m, MergeSingleOrMany::empty()),
             Self::IncludeAndExclude { include, exclude } => (include, exclude),
+        }
+    }
+
+    /// Mutable access to every pattern on both sides, for in-place resolution.
+    pub fn iter_mut(&mut self) -> Box<dyn Iterator<Item = &mut T> + '_> {
+        match self {
+            Self::Single(t) => Box::new(std::slice::from_mut(t).iter_mut()),
+            Self::Many(m) => Box::new(m.iter_mut()),
+            Self::IncludeAndExclude { include, exclude } => {
+                Box::new(include.iter_mut().chain(exclude.iter_mut()))
+            }
         }
     }
 }

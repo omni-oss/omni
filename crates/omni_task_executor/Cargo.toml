@@ -69,6 +69,7 @@ num_cpus = { workspace = true }
 omni_messages = { workspace = true }
 
 omni_execution_plan = { workspace = true }
+omni_glob = { workspace = true }
 omni_task_context = { workspace = true }
 omni_task_output_logs = { workspace = true }
 omni_collector = { workspace = true }

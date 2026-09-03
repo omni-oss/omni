@@ -169,7 +169,9 @@ where
                 .iter()
                 .map(|info| ProjectTaskInfo {
                     input_files: info.task.input_files,
+                    input_files_exclude: info.task.input_files_exclude,
                     output_files: info.task.output_files,
+                    output_files_exclude: info.task.output_files_exclude,
                     project_dir: info.task.project_dir,
                     project_name: info.task.project_name,
                     task_exec: info.task.task_exec,

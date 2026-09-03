@@ -34,3 +34,5 @@ dependencies:
   - dir_walker
   - omni_utils
   - omni_glob
+  - omni_glob_config
+  - omni_config_types

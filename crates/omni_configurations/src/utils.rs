@@ -1,5 +1,7 @@
 use config_utils::ListConfig;
 use merge::Merge;
+use omni_config_types::MergeSingleOrMany;
+use omni_glob_config::MergeGlobConfig;
 
 #[inline(always)]
 pub fn default_true() -> bool {
@@ -9,6 +11,13 @@ pub fn default_true() -> bool {
 #[inline(always)]
 pub fn list_config_default<T: Merge>() -> ListConfig<T> {
     ListConfig::append(vec![])
+}
+
+/// A glob field left unset appends nothing onto the layer below it, so a
+/// project extends a workspace default instead of replacing it.
+#[inline(always)]
+pub fn merge_glob_config_default<T: Merge>() -> MergeGlobConfig<T> {
+    MergeGlobConfig::Many(MergeSingleOrMany::List(ListConfig::append(vec![])))
 }
 
 pub mod fs {

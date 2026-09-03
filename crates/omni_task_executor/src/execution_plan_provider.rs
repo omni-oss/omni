@@ -5,6 +5,7 @@ use omni_execution_plan::{
     Call, Context as ContextTrait, DefaultExecutionPlanProvider,
     ExecutionPlanProvider, ExecutionPlanProviderError, ScmAffectedFilter,
 };
+use omni_glob::GlobPatterns;
 use omni_types::OmniPath;
 
 #[derive(Debug)]
@@ -97,10 +98,10 @@ impl<'a, TSys: ContextSys> ContextTrait for ContextWrapper<'a, TSys> {
         &self,
         project_name: &str,
         task_name: &str,
-    ) -> &[OmniPath] {
-        self.inner
-            .get_cache_info(project_name, task_name)
-            .map(|c| &c.key_input_files[..])
-            .unwrap_or(&[])
+    ) -> &GlobPatterns<OmniPath> {
+        match self.inner.get_cache_info(project_name, task_name) {
+            Some(c) => &c.key_input_files,
+            None => omni_execution_plan::empty_cache_input_files(),
+        }
     }
 }
