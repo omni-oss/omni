@@ -1205,3 +1205,58 @@ async fn projection_targeted_source_selects_one_bundle_member() {
         "a sibling member is not applied"
     );
 }
+
+#[tokio::test]
+async fn projection_targeted_update_warns_about_dropped_member() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_local_bundle_workspace(tmp.path());
+
+    // Full sync links both members.
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("initial sync");
+    assert!(tmp.path().join(".agents/rules/b.md").exists());
+
+    // Drop `rules` from the bundle manifest.
+    std::fs::write(
+        tmp.path().join("bundle/projection.omni.yaml"),
+        concat!(
+            "sources:\n",
+            "  - source: local\n",
+            "    path: ./skills\n",
+            "    id: skills\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+
+    // A targeted, update run must warn but leave the dropped member's links.
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("org".to_string()),
+            update: true,
+            ..Default::default()
+        })
+        .await
+        .expect("targeted update");
+
+    assert!(
+        resp.warnings.iter().any(|w| w.contains("org::rules")),
+        "a dropped member is named in a warning: {:?}",
+        resp.warnings
+    );
+    assert!(
+        tmp.path().join(".agents/rules/b.md").exists(),
+        "a targeted run never removes the dropped member's links"
+    );
+
+    // A full sync reconciles the dropped member away.
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("full reconciling sync");
+    assert!(!tmp.path().join(".agents/rules/b.md").exists());
+}

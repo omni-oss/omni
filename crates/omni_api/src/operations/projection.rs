@@ -9,7 +9,7 @@ use omni_configurations::{
 use omni_context::{Context, ContextSys};
 use omni_meta::{
     DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
-    SourceIdentity, expand,
+    SourceIdentity, expand, matches as meta_matches,
 };
 use omni_projection_configurations::{Projection, ProjectionExtra};
 pub use omni_projections::BackupHandling;
@@ -214,6 +214,33 @@ where
     if let Some(arg) = &req.source {
         if effective.is_empty() {
             return Err(eyre::eyre!("no projection source matches '{arg}'"));
+        }
+    }
+
+    // A targeted run never garbage-collects, so a member dropped from a re-read
+    // bundle manifest keeps its links. Warn (naming the member and its lingering
+    // links) and point the user at a full sync to reconcile.
+    if let Some(arg) = &req.source {
+        let live: HashSet<&str> =
+            effective.iter().map(|e| e.qualified_id.as_str()).collect();
+        let mut dropped: std::collections::BTreeMap<&str, Vec<&str>> =
+            std::collections::BTreeMap::new();
+        for link in prior_ledger.links() {
+            if meta_matches(&link.source_id, arg)
+                && !live.contains(link.source_id.as_str())
+            {
+                dropped
+                    .entry(link.source_id.as_str())
+                    .or_default()
+                    .push(link.dest.as_str());
+            }
+        }
+        for (qualified_id, dests) in dropped {
+            response.warnings.push(format!(
+                "bundle member '{qualified_id}' is no longer present but still has {} lingering link(s) ({}); run a full `omni projection sync` to reconcile",
+                dests.len(),
+                dests.join(", ")
+            ));
         }
     }
 
