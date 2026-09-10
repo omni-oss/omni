@@ -152,10 +152,13 @@ pub struct TeardownReport {
     pub warnings: Vec<String>,
 }
 
-/// Remove only the ledger-recorded links for `source_id`. A `copy`-kind link is
-/// removed only when its destination content still matches the source (else it
-/// is kept and a warning is recorded), so user edits are never silently lost.
-/// `handling` chooses what happens to each removed link's recorded backup.
+/// Remove the ledger-recorded links selected by `source_id`. A link is selected
+/// when its recorded id equals `source_id` or is a descendant of it
+/// (`source_id::...`), so tearing down a bundle removes every member it
+/// contributed. A `copy`-kind link is removed only when its destination content
+/// still matches the source (else it is kept and a warning is recorded), so user
+/// edits are never silently lost. `handling` chooses what happens to each
+/// removed link's recorded backup.
 pub async fn unlink<S>(
     sys: &S,
     workspace_root: &Path,
@@ -166,12 +169,13 @@ pub async fn unlink<S>(
 where
     S: ApplierSys + FsReadAsync,
 {
+    let prefix = format!("{source_id}::");
     let links = std::mem::take(ledger.links_mut());
     let (kept, report) = teardown_matching(
         sys,
         workspace_root,
         links,
-        |l| l.source_id == source_id,
+        |l| l.source_id == source_id || l.source_id.starts_with(&prefix),
         handling,
         false,
     )
@@ -591,6 +595,116 @@ mod tests {
         assert_eq!(report.removed.len(), 1);
         assert!(!dest.exists());
         assert!(ledger.links().is_empty());
+    }
+
+    #[tokio::test]
+    async fn unlink_matches_a_bundle_prefix_but_not_a_lookalike() {
+        let dir = tempfile::tempdir().unwrap();
+        let make_symlink = |name: &str| {
+            let target = dir.path().join(format!("{name}-target"));
+            std::fs::write(&target, b"data").unwrap();
+            let dest = dir.path().join(name);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&target, &dest).unwrap();
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_file(&target, &dest).unwrap();
+        };
+        make_symlink("a");
+        make_symlink("b");
+        make_symlink("c");
+
+        let link = |source_id: &str, dest: &str| LedgerLink {
+            source_id: source_id.to_string(),
+            dest: dest.to_string(),
+            target: dir
+                .path()
+                .join(format!("{dest}-target"))
+                .to_string_lossy()
+                .into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "x".to_string(),
+            backup: None,
+        };
+        let mut ledger = Ledger::from_links(vec![
+            link("org::team-a", "a"),
+            link("org::team-b", "b"),
+            // A lookalike top-level id sharing a text prefix but not a `::`
+            // boundary must be untouched.
+            link("org-standard", "c"),
+        ]);
+
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "org",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.removed.len(), 2, "both org::* members removed");
+        let kept: Vec<&str> = ledger
+            .links()
+            .iter()
+            .map(|l| l.source_id.as_str())
+            .collect();
+        assert_eq!(kept, vec!["org-standard"], "the lookalike is untouched");
+    }
+
+    #[tokio::test]
+    async fn unlink_can_target_a_single_member_subtree() {
+        let dir = tempfile::tempdir().unwrap();
+        let make_symlink = |name: &str| {
+            let target = dir.path().join(format!("{name}-target"));
+            std::fs::write(&target, b"data").unwrap();
+            let dest = dir.path().join(name);
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&target, &dest).unwrap();
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_file(&target, &dest).unwrap();
+        };
+        make_symlink("a");
+        make_symlink("b");
+
+        let link = |source_id: &str, dest: &str| LedgerLink {
+            source_id: source_id.to_string(),
+            dest: dest.to_string(),
+            target: dir
+                .path()
+                .join(format!("{dest}-target"))
+                .to_string_lossy()
+                .into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "x".to_string(),
+            backup: None,
+        };
+        let mut ledger = Ledger::from_links(vec![
+            link("org::team-a", "a"),
+            link("org::team-b", "b"),
+        ]);
+
+        let report = unlink(
+            &RealSys,
+            dir.path(),
+            &mut ledger,
+            "org::team-a",
+            BackupHandling::Leave,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.removed.len(), 1);
+        let kept: Vec<&str> = ledger
+            .links()
+            .iter()
+            .map(|l| l.source_id.as_str())
+            .collect();
+        assert_eq!(
+            kept,
+            vec!["org::team-b"],
+            "only the targeted subtree is torn down"
+        );
     }
 
     #[tokio::test]
