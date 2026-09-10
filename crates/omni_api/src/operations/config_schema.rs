@@ -1,6 +1,7 @@
-use omni_configurations::{ProjectConfiguration, WorkspaceConfiguration};
+use omni_configurations::{
+    OwnedProjectionConfiguration, ProjectConfiguration, WorkspaceConfiguration,
+};
 use omni_generator_configurations::GeneratorConfiguration;
-use omni_projection_configurations::OwnedProjectionConfiguration;
 use omni_tool_configurations::ToolConfiguration;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
@@ -83,10 +84,19 @@ mod tests {
             .expect("projection schema generation");
         assert!(resp.schema.is_object(), "schema must be a JSON object");
 
-        // The owned `projection.omni` manifest is a `routes` list of
-        // strategy-tagged projections.
+        // The owned `projection.omni` manifest is a `oneOf` of a leaf shape
+        // (a `routes` list of strategy-tagged projections) and a meta shape
+        // (a `sources` list).
+        let arms = resp
+            .schema
+            .get("oneOf")
+            .and_then(|v| v.as_array())
+            .expect("manifest schema is a oneOf");
+        assert_eq!(arms.len(), 2, "one leaf arm and one meta arm");
+
         let text = serde_json::to_string(&resp.schema).unwrap();
         assert!(text.contains("\"routes\""), "{text}");
+        assert!(text.contains("\"sources\""), "{text}");
         assert!(text.contains("\"strategy\""), "{text}");
     }
 

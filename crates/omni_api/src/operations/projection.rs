@@ -2,11 +2,11 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
-use omni_configurations::{SourceConfig, types::SingleOrMany};
-use omni_context::{Context, ContextSys};
-use omni_projection_configurations::{
-    OwnedProjectionConfiguration, Projection, ProjectionExtra,
+use omni_configurations::{
+    OwnedProjectionConfiguration, SourceConfig, types::SingleOrMany,
 };
+use omni_context::{Context, ContextSys};
+use omni_projection_configurations::{Projection, ProjectionExtra};
 pub use omni_projections::BackupHandling;
 use omni_projections::{
     ApplierSys, ConflictReport, LinkState, ProjectionError, ResolvedSource,
@@ -581,13 +581,22 @@ where
             Ok(routes.to_vec())
         }
         None => match discover_owned_manifest(sys, source_root).await? {
-            Some(owned) if !owned.routes.is_empty() => {
-                reject_privilege_escalation(id, &owned.routes)?;
-                Ok(owned.routes)
+            Some(OwnedProjectionConfiguration::Leaf { routes })
+                if !routes.is_empty() =>
+            {
+                reject_privilege_escalation(id, &routes)?;
+                Ok(routes)
             }
-            _ => Err(eyre::eyre!(
-                "projection source '{id}' declares no routes and its source ships no projection.omni.yaml"
-            )),
+            Some(OwnedProjectionConfiguration::Meta { .. }) => {
+                Err(eyre::eyre!(
+                    "projection source '{id}' ships a bundle manifest; bundle expansion resolves its members"
+                ))
+            }
+            Some(OwnedProjectionConfiguration::Leaf { .. }) | None => {
+                Err(eyre::eyre!(
+                    "projection source '{id}' declares no routes and its source ships no projection.omni.yaml"
+                ))
+            }
         },
     }
 }
