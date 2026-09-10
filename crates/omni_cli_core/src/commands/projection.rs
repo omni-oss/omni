@@ -134,6 +134,7 @@ async fn run_sync(
             force: args.force,
             update: args.update,
             source: args.source.clone(),
+            max_depth: None,
         })
         .await?;
 

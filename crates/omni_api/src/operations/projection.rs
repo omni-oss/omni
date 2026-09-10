@@ -1,11 +1,16 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
     OwnedProjectionConfiguration, SourceConfig, types::SingleOrMany,
 };
 use omni_context::{Context, ContextSys};
+use omni_meta::{
+    DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
+    SourceIdentity, expand,
+};
 use omni_projection_configurations::{Projection, ProjectionExtra};
 pub use omni_projections::BackupHandling;
 use omni_projections::{
@@ -35,6 +40,10 @@ pub struct ProjectionSyncRequest {
     pub update: bool,
     /// Limit the pass to the projection source with this `id`.
     pub source: Option<String>,
+    /// Override the maximum meta-bundle nesting depth. `None` uses the
+    /// default backstop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_depth: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -137,8 +146,9 @@ impl<T> ProjectionSys for T where
 
 /// A source materialized and planned, held so the whole-run preflight can run
 /// over every source's plan before a single link is written.
-struct PreparedSource<'a> {
-    id: &'a str,
+struct PreparedSource {
+    id: String,
+    qualified_id: String,
     source_root: PathBuf,
     git_pin: Option<String>,
     routes: Vec<Projection>,
@@ -165,16 +175,6 @@ where
     let mut ledger = omni_projections::load(&sys, &ledger_path).await;
     let prior_ledger = ledger.clone();
 
-    // Retain every configured git source so an unrelated, unfiltered run never
-    // garbage-collects a source it simply did not touch.
-    let all_git: Vec<(Url, String)> = sources
-        .iter()
-        .filter_map(|s| match s {
-            SourceConfig::Git(g) => Some((g.uri.clone(), g.rev.clone())),
-            SourceConfig::Local(_) => None,
-        })
-        .collect();
-
     let mut response = ProjectionSyncResponse {
         dry_run: req.dry_run,
         planned: Vec::new(),
@@ -190,66 +190,59 @@ where
         dry_run: req.dry_run,
     };
 
-    // Phase 1: materialize and plan every in-scope source without writing.
+    // Expand every workspace source into its effective leaf sources, flattening
+    // any meta bundles. All git/local materialization happens inside the
+    // expander, which also records every git ref it pulls for GC retention.
+    let expander = ProjectionMetaExpand {
+        sys: &sys,
+        remote: &remote,
+        update: req.update,
+        git_refs: Mutex::new(Vec::new()),
+    };
+    let max_depth = req.max_depth.unwrap_or(DEFAULT_META_PROJECTION_DEPTH);
+    let effective = expand(
+        &expander,
+        sources,
+        &workspace_root,
+        max_depth,
+        req.source.as_deref(),
+    )
+    .await?;
+
+    // A targeted `--source` that resolves to nothing is a hard error, not a
+    // silent no-op.
+    if let Some(arg) = &req.source {
+        if effective.is_empty() {
+            return Err(eyre::eyre!("no projection source matches '{arg}'"));
+        }
+    }
+
+    // Every git ref pulled during expansion (meta repos and git children at any
+    // depth) must be retained on a full sync so reconciliation never deletes a
+    // source it just fetched.
+    let all_git: Vec<(Url, String)> =
+        expander.git_refs.into_inner().unwrap_or_default();
+
+    // Phase 1: plan every expanded source without writing.
     let mut prepared: Vec<PreparedSource> = Vec::new();
-    for source in sources {
-        let id = source_id(source);
-
-        if let Some(filter) = &req.source {
-            if filter != id {
-                continue;
-            }
-        }
-
-        // An explicit empty `routes` list projects nothing: pure workspace
-        // config, caught before any source is materialized.
-        if matches!(workspace_routes(source), Some(routes) if routes.is_empty())
-        {
-            return Err(eyre::eyre!(
-                "projection source '{id}' declares an empty `routes` list; a projection source must project at least one route"
-            ));
-        }
-
-        let (source_root, git_pin) = match source {
-            SourceConfig::Local(local) => {
-                let path = single_path(id, &local.path)?;
-                let root = path_clean::clean(workspace_root.join(path));
-                (root, None)
-            }
-            SourceConfig::Git(git) => {
-                if req.update {
-                    remote.invalidate_git(&git.uri, &git.rev).await?;
-                }
-                let dir = remote.pull_git_repo(&git.uri, &git.rev).await?;
-                let pin = remote.locked_commit(&git.uri, &git.rev).await;
-                (dir, pin)
-            }
-        };
-
-        let routes = resolve_effective_routes(
-            &sys,
-            id,
-            workspace_routes(source),
-            &source_root,
-        )
-        .await?;
-
+    for eff in effective {
         let plan = {
             let resolved = ResolvedSource {
-                id,
-                qualified_id: id,
-                source_root: &source_root,
-                git_pin: git_pin.clone(),
-                projections: &routes,
+                id: &eff.id,
+                qualified_id: &eff.qualified_id,
+                source_root: &eff.root,
+                git_pin: eff.pin.clone(),
+                projections: &eff.leaf,
             };
             plan_source(&sys, &resolved, &params).await?
         };
 
         prepared.push(PreparedSource {
-            id,
-            source_root,
-            git_pin,
-            routes,
+            id: eff.id,
+            qualified_id: eff.qualified_id,
+            source_root: eff.root,
+            git_pin: eff.pin,
+            routes: eff.leaf,
             plan,
         });
     }
@@ -285,7 +278,7 @@ where
 
         if req.source.is_none() {
             let keep_ids: HashSet<&str> =
-                sources.iter().map(source_id).collect();
+                prepared.iter().map(|p| p.qualified_id.as_str()).collect();
             let report = omni_projections::plan_retain_sources(
                 &sys,
                 &workspace_root,
@@ -308,8 +301,8 @@ where
     // Phase 3: apply each source's plan and update the ledger.
     for prep in &prepared {
         let resolved = ResolvedSource {
-            id: prep.id,
-            qualified_id: prep.id,
+            id: &prep.id,
+            qualified_id: &prep.qualified_id,
             source_root: &prep.source_root,
             git_pin: prep.git_pin.clone(),
             projections: &prep.routes,
@@ -341,7 +334,9 @@ where
         );
         response.warnings.extend(outcome.warnings.iter().cloned());
 
-        ledger.links_mut().retain(|l| l.source_id != *prep.id);
+        ledger
+            .links_mut()
+            .retain(|l| l.source_id != prep.qualified_id);
         ledger.links_mut().extend(outcome.links);
     }
 
@@ -353,7 +348,8 @@ where
     let full_sync = req.source.is_none();
 
     if full_sync {
-        let keep_ids: HashSet<&str> = sources.iter().map(source_id).collect();
+        let keep_ids: HashSet<&str> =
+            prepared.iter().map(|p| p.qualified_id.as_str()).collect();
         let report = omni_projections::retain_sources(
             &sys,
             &workspace_root,
@@ -544,59 +540,128 @@ fn ledger_path<TSys: ContextSys>(ctx: &Context<TSys>) -> std::path::PathBuf {
     projection_sources_dir(ctx).join("links.json")
 }
 
-fn source_id(source: &SourceConfig<ProjectionExtra>) -> &str {
-    match source {
-        SourceConfig::Local(l) => l.extra.id.as_str(),
-        SourceConfig::Git(g) => g.extra.id.as_str(),
+/// The projection subsystem's implementation of the meta-expansion seam.
+/// `classify` is the only place that touches the network or filesystem;
+/// `classify_routes` (below) is the pure route-resolution decision it delegates
+/// to.
+struct ProjectionMetaExpand<'a, TSys: RemoteSourceSys> {
+    sys: &'a TSys,
+    remote: &'a RemoteSourceManager<TSys>,
+    update: bool,
+    /// Every git ref pulled during expansion, recorded so a full sync can
+    /// retain the meta repos and every git child from garbage collection.
+    git_refs: Mutex<Vec<(Url, String)>>,
+}
+
+impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
+where
+    TSys: RemoteSourceSys + FsReadAsync + FsCanonicalizeAsync + Send + Sync,
+{
+    type Extra = ProjectionExtra;
+    type Leaf = Vec<Projection>;
+    type Error = eyre::Report;
+
+    async fn classify(
+        &self,
+        src: &SourceConfig<ProjectionExtra>,
+        qualified_id: &str,
+        parent_root: &Path,
+        depth: usize,
+    ) -> eyre::Result<Materialized<Vec<Projection>, ProjectionExtra>> {
+        let workspace_routes = src.extra().routes.as_deref();
+
+        // An explicit empty `routes` list projects nothing: caught before the
+        // source is materialized.
+        if matches!(workspace_routes, Some(routes) if routes.is_empty()) {
+            return Err(eyre::eyre!(
+                "projection source '{qualified_id}' declares an empty `routes` list; a projection source must project at least one route"
+            ));
+        }
+
+        let (root, pin, identity) = match src {
+            SourceConfig::Local(local) => {
+                let path = single_path(qualified_id, &local.path)?;
+                let root =
+                    resolve_child_root(parent_root, path, depth, qualified_id)?;
+                let identity = SourceIdentity::Local(root.clone());
+                (root, None, identity)
+            }
+            SourceConfig::Git(git) => {
+                if self.update {
+                    self.remote.invalidate_git(&git.uri, &git.rev).await?;
+                }
+                let dir = self.remote.pull_git_repo(&git.uri, &git.rev).await?;
+                let pin = self.remote.locked_commit(&git.uri, &git.rev).await;
+                if let Ok(mut refs) = self.git_refs.lock() {
+                    refs.push((git.uri.clone(), git.rev.clone()));
+                }
+                let identity = SourceIdentity::Git {
+                    uri: git.uri.clone(),
+                    rev: git.rev.clone(),
+                };
+                (dir, pin, identity)
+            }
+        };
+
+        let manifest = discover_owned_manifest(self.sys, &root).await?;
+        let trusted = depth == 0 && workspace_routes.is_some();
+        let node =
+            classify_routes(qualified_id, workspace_routes, manifest, trusted)?;
+
+        Ok(Materialized {
+            node,
+            identity,
+            root,
+            pin,
+        })
+    }
+
+    fn member_id<'a>(&self, src: &'a SourceConfig<ProjectionExtra>) -> &'a str {
+        src.extra().id.as_str()
     }
 }
 
-fn workspace_routes(
-    source: &SourceConfig<ProjectionExtra>,
-) -> Option<&[Projection]> {
-    let extra = match source {
-        SourceConfig::Local(l) => &l.extra,
-        SourceConfig::Git(g) => &g.extra,
-    };
-    extra.routes.as_deref()
-}
-
-/// Resolve the effective routes for one source. Workspace routes override the
-/// source's owned manifest wholesale; an absent workspace list inherits it.
-async fn resolve_effective_routes<TSys>(
-    sys: &TSys,
-    id: &str,
+/// Decide whether a source is a leaf (contributing routes) or a bundle
+/// (contributing member sources), given its own declared `routes` and its
+/// discovered manifest.
+///
+/// Everything reachable through a manifest is untrusted: only a top-level
+/// workspace `routes` override may set the control-plane flags, so the floor is
+/// applied to every other route set.
+fn classify_routes(
+    qualified_id: &str,
     workspace_routes: Option<&[Projection]>,
-    source_root: &std::path::Path,
-) -> eyre::Result<Vec<Projection>>
-where
-    TSys: FsReadAsync + Send + Sync + Clone,
-{
+    manifest: Option<OwnedProjectionConfiguration>,
+    trusted: bool,
+) -> eyre::Result<Node<Vec<Projection>, ProjectionExtra>> {
     match workspace_routes {
-        // Non-empty (the empty case is rejected before materialization).
         Some(routes) => {
-            if discover_owned_manifest(sys, source_root).await?.is_some() {
-                log::debug!(
-                    "projection source '{id}': workspace `routes` override the source's projection.omni manifest"
-                );
+            if matches!(
+                manifest,
+                Some(OwnedProjectionConfiguration::Meta { .. })
+            ) {
+                return Err(eyre::eyre!(
+                    "projection source '{qualified_id}' declares `routes` but its source ships a bundle manifest; a bundle cannot be overridden wholesale"
+                ));
             }
-            Ok(routes.to_vec())
+            if !trusted {
+                reject_privilege_escalation(qualified_id, routes)?;
+            }
+            Ok(Node::Leaf(routes.to_vec()))
         }
-        None => match discover_owned_manifest(sys, source_root).await? {
+        None => match manifest {
+            Some(OwnedProjectionConfiguration::Meta { sources }) => {
+                Ok(Node::Meta(sources))
+            }
             Some(OwnedProjectionConfiguration::Leaf { routes })
                 if !routes.is_empty() =>
             {
-                reject_privilege_escalation(id, &routes)?;
-                Ok(routes)
-            }
-            Some(OwnedProjectionConfiguration::Meta { .. }) => {
-                Err(eyre::eyre!(
-                    "projection source '{id}' ships a bundle manifest; bundle expansion resolves its members"
-                ))
+                reject_privilege_escalation(qualified_id, &routes)?;
+                Ok(Node::Leaf(routes))
             }
             Some(OwnedProjectionConfiguration::Leaf { .. }) | None => {
                 Err(eyre::eyre!(
-                    "projection source '{id}' declares no routes and its source ships no projection.omni.yaml"
+                    "projection source '{qualified_id}' declares no routes and its source ships no projection.omni.yaml"
                 ))
             }
         },
@@ -670,6 +735,28 @@ fn single_path<'a>(
     }
 }
 
+/// Resolve a local source's root against its parent. A member reached through a
+/// bundle (`depth > 0`) must stay within its parent's root; only a top-level
+/// workspace source may point anywhere.
+fn resolve_child_root(
+    parent_root: &Path,
+    path: &str,
+    depth: usize,
+    id: &str,
+) -> eyre::Result<PathBuf> {
+    let root = path_clean::clean(parent_root.join(path));
+    if depth > 0 {
+        let base = path_clean::clean(parent_root);
+        if !root.starts_with(&base) {
+            return Err(eyre::eyre!(
+                "local member '{id}' resolves outside its bundle root {}",
+                base.display()
+            ));
+        }
+    }
+    Ok(root)
+}
+
 fn env_file_names<TSys: ContextSys>(ctx: &Context<TSys>) -> Vec<String> {
     ctx.env_files()
         .iter()
@@ -737,89 +824,125 @@ mod tests {
         assert_eq!(single_path("id", &single).unwrap(), "a");
     }
 
+    #[test]
+    fn child_root_containment_is_enforced_only_below_the_top_level() {
+        let parent = Path::new("/ws/bundle");
+
+        // A top-level source (depth 0) may point anywhere.
+        assert!(
+            resolve_child_root(parent, "../outside", 0, "top").is_ok(),
+            "a top-level source is not contained"
+        );
+
+        // A bundled member (depth > 0) that stays within its parent is fine.
+        let ok = resolve_child_root(parent, "child", 1, "b::child").unwrap();
+        assert_eq!(ok, Path::new("/ws/bundle/child"));
+
+        // A bundled member escaping its parent root is rejected.
+        assert!(
+            resolve_child_root(parent, "../../etc", 1, "b::child").is_err(),
+            "a bundled member escaping its root must be rejected"
+        );
+    }
+
     fn route(json: &str) -> Projection {
         serde_json::from_str(json).expect("valid route")
     }
 
-    #[tokio::test]
-    async fn owned_manifest_is_inherited_when_workspace_omits_routes() {
-        use system_traits::impls::RealSys;
+    fn leaf(routes: Vec<Projection>) -> Option<OwnedProjectionConfiguration> {
+        Some(OwnedProjectionConfiguration::Leaf { routes })
+    }
 
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("projection.omni.yaml"),
-            "routes:\n  - strategy: namespaced\n    target: \"@workspace/vendored\"\n",
-        )
-        .unwrap();
-
-        let routes = resolve_effective_routes(&RealSys, "id", None, dir.path())
-            .await
-            .unwrap();
+    #[test]
+    fn owned_manifest_is_inherited_when_workspace_omits_routes() {
+        let manifest = leaf(vec![route(
+            r#"{"strategy":"namespaced","target":"@workspace/vendored"}"#,
+        )]);
+        let node = classify_routes("id", None, manifest, false).unwrap();
+        let Node::Leaf(routes) = node else {
+            panic!("expected a leaf");
+        };
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0], Projection::Namespaced(_)));
     }
 
-    #[tokio::test]
-    async fn workspace_routes_override_owned_manifest() {
-        use system_traits::impls::RealSys;
-
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("projection.omni.yaml"),
-            "routes:\n  - strategy: namespaced\n",
-        )
-        .unwrap();
-
+    #[test]
+    fn workspace_routes_override_owned_manifest() {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
-        let routes =
-            resolve_effective_routes(&RealSys, "id", Some(&ws), dir.path())
-                .await
-                .unwrap();
+        let manifest = leaf(vec![route(r#"{"strategy":"namespaced"}"#)]);
+        let node = classify_routes("id", Some(&ws), manifest, true).unwrap();
+        let Node::Leaf(routes) = node else {
+            panic!("expected a leaf");
+        };
         assert_eq!(routes, ws, "workspace routes win wholesale");
     }
 
-    #[tokio::test]
-    async fn no_routes_anywhere_is_an_error() {
-        use system_traits::impls::RealSys;
-
-        let dir = tempfile::tempdir().unwrap();
-        let result =
-            resolve_effective_routes(&RealSys, "id", None, dir.path()).await;
+    #[test]
+    fn no_routes_anywhere_is_an_error() {
+        let result = classify_routes("id", None, None, false);
         assert!(
             result.is_err(),
             "no workspace routes and no manifest is an error"
         );
     }
 
-    #[tokio::test]
-    async fn owned_routes_cannot_escalate_privileges() {
-        use system_traits::impls::RealSys;
-
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("projection.omni.yaml"),
-            "routes:\n  - strategy: namespaced\n    allow_git: true\n",
-        )
-        .unwrap();
-
-        let result =
-            resolve_effective_routes(&RealSys, "id", None, dir.path()).await;
+    #[test]
+    fn owned_routes_cannot_escalate_privileges() {
+        let manifest =
+            leaf(vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)]);
+        let result = classify_routes("id", None, manifest, false);
         assert!(
             result.is_err(),
             "an owned route setting allow_git must be rejected"
         );
     }
 
-    #[tokio::test]
-    async fn workspace_routes_may_set_allow_flags() {
-        use system_traits::impls::RealSys;
+    #[test]
+    fn inline_child_routes_are_untrusted_and_cannot_escalate() {
+        // A child's own `routes` arriving through a bundle are untrusted even
+        // though they are the source's declared routes.
+        let child =
+            vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)];
+        let result = classify_routes("org::child", Some(&child), None, false);
+        assert!(
+            result.is_err(),
+            "inline child routes must not set control-plane flags"
+        );
+    }
 
-        let dir = tempfile::tempdir().unwrap();
+    #[test]
+    fn workspace_routes_may_set_allow_flags() {
         let ws = vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)];
-        let routes =
-            resolve_effective_routes(&RealSys, "id", Some(&ws), dir.path())
-                .await
-                .unwrap();
+        let node = classify_routes("id", Some(&ws), None, true).unwrap();
+        let Node::Leaf(routes) = node else {
+            panic!("expected a leaf");
+        };
         assert_eq!(routes, ws, "workspace config may relax the safety floor");
+    }
+
+    #[test]
+    fn a_bundle_manifest_classifies_as_meta() {
+        let sources: Vec<SourceConfig<ProjectionExtra>> = vec![
+            serde_json::from_str(
+                r#"{"source":"local","path":"./child","id":"child"}"#,
+            )
+            .unwrap(),
+        ];
+        let manifest = Some(OwnedProjectionConfiguration::Meta { sources });
+        let node = classify_routes("org", None, manifest, false).unwrap();
+        assert!(matches!(node, Node::Meta(m) if m.len() == 1));
+    }
+
+    #[test]
+    fn workspace_routes_cannot_override_a_bundle_manifest() {
+        let ws = vec![route(r#"{"strategy":"mirror"}"#)];
+        let manifest = Some(OwnedProjectionConfiguration::Meta {
+            sources: Vec::new(),
+        });
+        let result = classify_routes("id", Some(&ws), manifest, true);
+        assert!(
+            result.is_err(),
+            "a bundle manifest cannot be overridden by top-level routes"
+        );
     }
 }

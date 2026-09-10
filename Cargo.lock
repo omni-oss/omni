@@ -6825,6 +6825,7 @@ dependencies = [
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",
+ "omni_meta",
  "omni_projection_configurations",
  "omni_projections",
  "omni_remote_cache_client",
