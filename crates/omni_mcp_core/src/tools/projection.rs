@@ -33,7 +33,7 @@ where
                 force: params.force,
                 update: params.update,
                 source: params.source,
-                max_depth: None,
+                max_depth: params.max_depth,
             })
             .await
     }

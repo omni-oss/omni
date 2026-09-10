@@ -16,6 +16,9 @@ pub struct ProjectionSyncParams {
     /// Limit the pass to the projection source with this id.
     #[serde(default)]
     pub source: Option<String>,
+    /// Override the maximum meta-bundle nesting depth (default 16).
+    #[serde(default)]
+    pub max_depth: Option<usize>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
