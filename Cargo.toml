@@ -198,6 +198,7 @@ omni_projections = { path = "crates/omni_projections" }
 omni_projection_configurations = { path = "crates/omni_projection_configurations" }
 omni_glob = { path = "crates/omni_glob" }
 omni_glob_config = { path = "crates/omni_glob_config" }
+omni_meta = { path = "crates/omni_meta" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

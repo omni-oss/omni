@@ -7697,6 +7697,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_meta"
+version = "0.21.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "omni_configurations",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
 name = "omni_path_utils"
 version = "0.1.0"
 dependencies = [
