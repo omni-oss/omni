@@ -1,20 +1,12 @@
 pub mod error;
+pub mod expand;
 
 // @anchor:mods
 
+pub use error::{Error, ErrorKind};
+pub use expand::{
+    DEFAULT_META_PROJECTION_DEPTH, EffectiveSource, Materialized, MetaExpand,
+    Node, SourceIdentity, expand, first_segment, matches, selected_or_on_path,
+};
+
 // @anchor:uses
-
-pub fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}

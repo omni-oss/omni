@@ -9,6 +9,27 @@ impl Error {
     pub fn custom(message: impl Into<String>) -> Self {
         Self(ErrorInner::Custom(eyre::Report::msg(message.into())))
     }
+
+    pub fn cycle_detected(chain: impl Into<String>) -> Self {
+        Self(ErrorInner::CycleDetected(chain.into()))
+    }
+
+    pub fn depth_exceeded(max: usize, qualified_id: impl Into<String>) -> Self {
+        Self(ErrorInner::DepthExceeded {
+            max,
+            qualified_id: qualified_id.into(),
+        })
+    }
+
+    pub fn duplicate_member_id(
+        bundle: Option<impl Into<String>>,
+        id: impl Into<String>,
+    ) -> Self {
+        Self(ErrorInner::DuplicateMemberId {
+            bundle: bundle.map(Into::into),
+            id: id.into(),
+        })
+    }
 }
 
 impl Error {
@@ -31,4 +52,24 @@ impl<T: Into<ErrorInner>> From<T> for Error {
 pub(crate) enum ErrorInner {
     #[error(transparent)]
     Custom(#[from] eyre::Report),
+
+    #[error("cycle detected in meta source graph: {0}")]
+    CycleDetected(String),
+
+    #[error(
+        "meta source nesting exceeded the maximum depth of {max} at '{qualified_id}'"
+    )]
+    DepthExceeded { max: usize, qualified_id: String },
+
+    #[error("{}", duplicate_member_message(bundle.as_deref(), id))]
+    DuplicateMemberId { bundle: Option<String>, id: String },
+}
+
+fn duplicate_member_message(bundle: Option<&str>, id: &str) -> String {
+    match bundle {
+        Some(bundle) => {
+            format!("duplicate member id '{id}' in bundle '{bundle}'")
+        }
+        None => format!("duplicate projection source id '{id}'"),
+    }
 }

@@ -7706,6 +7706,7 @@ dependencies = [
  "omni_configurations",
  "strum 0.28.0",
  "thiserror 2.0.18",
+ "tokio 1.52.3",
  "url",
 ]
 
