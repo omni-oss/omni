@@ -705,7 +705,12 @@ describe("+cache @cache (remote setup)", () => {
         expect(result).toHaveSucceeded();
         expect(ws.exists(".omni/remote-cache.omni.yaml")).toBe(true);
         const config = ws.read(".omni/remote-cache.omni.yaml");
-        expect(config).toContain(`api_base_url: "${baseUrl}"`);
+        // The YAML emitter may or may not quote the URL scalar; both round-trip
+        // to the same string, so accept either form.
+        const escapedBaseUrl = baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        expect(config).toMatch(
+            new RegExp(`api_base_url: "?${escapedBaseUrl}"?`),
+        );
         expect(config).toContain("tenant_code: test-tenant");
         expect(config).toContain("workspace_code: test-ws");
     });
