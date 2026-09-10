@@ -237,6 +237,7 @@ where
         let plan = {
             let resolved = ResolvedSource {
                 id,
+                qualified_id: id,
                 source_root: &source_root,
                 git_pin: git_pin.clone(),
                 projections: &routes,
@@ -308,6 +309,7 @@ where
     for prep in &prepared {
         let resolved = ResolvedSource {
             id: prep.id,
+            qualified_id: prep.id,
             source_root: &prep.source_root,
             git_pin: prep.git_pin.clone(),
             projections: &prep.routes,
