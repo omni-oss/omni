@@ -161,6 +161,8 @@ where
             "projection_prune" => {
                 call1(args, |p| self.tool_projection_prune(p)).await
             }
+            "ignore_sync" => call1(args, |p| self.tool_ignore_sync(p)).await,
+            "ignore_clean" => call1(args, |p| self.tool_ignore_clean(p)).await,
             unknown => Err(rmcp::model::ErrorData::new(
                 rmcp::model::ErrorCode::METHOD_NOT_FOUND,
                 format!("unknown tool: {unknown}"),

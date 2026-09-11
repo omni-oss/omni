@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod generator;
 pub mod hash;
+pub mod ignore;
 pub mod project;
 pub mod projection;
 pub mod task;
@@ -111,6 +112,16 @@ pub fn tool_list() -> Vec<rmcp::model::Tool> {
             "Remove ledger-recorded links whose destinations have become dangling",
             false,
         ),
+        tool_typed::<IgnoreSyncParams>(
+            "ignore_sync",
+            "Maintain omni's managed block in the configured ignore files. dry_run previews the block; check reports staleness. Not read-only.",
+            false,
+        ),
+        tool_typed::<IgnoreCleanParams>(
+            "ignore_clean",
+            "Remove omni's managed block from every configured ignore file",
+            false,
+        ),
     ]
 }
 
@@ -197,5 +208,20 @@ mod tests {
         assert_eq!(read_only(&by_name("projection_sync")), Some(false));
         assert_eq!(read_only(&by_name("projection_unlink")), Some(false));
         assert_eq!(read_only(&by_name("projection_prune")), Some(false));
+    }
+
+    #[test]
+    fn exposes_ignore_tools_that_are_not_read_only() {
+        let by_name = |name: &str| {
+            tool_list()
+                .into_iter()
+                .find(|t| t.name == name)
+                .unwrap_or_else(|| panic!("missing MCP tool entry `{name}`"))
+        };
+        let read_only = |t: &rmcp::model::Tool| {
+            t.annotations.as_ref().and_then(|a| a.read_only_hint)
+        };
+        assert_eq!(read_only(&by_name("ignore_sync")), Some(false));
+        assert_eq!(read_only(&by_name("ignore_clean")), Some(false));
     }
 }
