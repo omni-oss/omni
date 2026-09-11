@@ -7567,6 +7567,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "omni_ignore_contributors"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "omni_constants",
+ "omni_ignore_core",
+ "omni_projections",
+ "system_traits",
+ "tokio 1.52.3",
+]
+
+[[package]]
+name = "omni_ignore_core"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "mockall",
+ "ntest",
+ "omni_hasher",
+ "regex",
+ "system_traits",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+]
+
+[[package]]
 name = "omni_input_provider"
 version = "0.2.0"
 dependencies = [
