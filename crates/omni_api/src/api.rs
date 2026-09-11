@@ -626,3 +626,29 @@ where
         .await
     }
 }
+
+impl<TSys, S> OmniApi<TSys, S>
+where
+    TSys: crate::operations::ignore::IgnoreSys,
+    S: OmniEventSubscriber,
+{
+    /// Patch omni's managed block into every configured ignore file.
+    pub async fn ignore_sync(
+        &self,
+        req: crate::operations::ignore::IgnoreSyncRequest,
+    ) -> eyre::Result<crate::operations::ignore::IgnoreSyncResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::ignore::handle_ignore_sync(ctx.as_context(), req)
+            .await
+    }
+
+    /// Remove omni's managed block from every configured ignore file.
+    pub async fn ignore_clean(
+        &self,
+        req: crate::operations::ignore::IgnoreCleanRequest,
+    ) -> eyre::Result<crate::operations::ignore::IgnoreCleanResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::ignore::handle_ignore_clean(ctx.as_context(), req)
+            .await
+    }
+}

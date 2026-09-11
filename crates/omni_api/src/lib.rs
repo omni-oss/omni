@@ -29,6 +29,10 @@ pub use operations::{
         WidgetView,
     },
     hash::HashResponse,
+    ignore::{
+        IgnoreCleanRequest, IgnoreCleanResponse, IgnoreFileChange,
+        IgnoreSyncRequest, IgnoreSyncResponse, IgnoreSys,
+    },
     projection::{
         AppliedLinkInfo, BackupHandling, PlannedLinkInfo,
         ProjectionPruneRequest, ProjectionPruneResponse,

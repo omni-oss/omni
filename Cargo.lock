@@ -6822,6 +6822,8 @@ dependencies = [
  "omni_file_data_serde",
  "omni_generator",
  "omni_generator_configurations",
+ "omni_ignore_contributors",
+ "omni_ignore_core",
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",

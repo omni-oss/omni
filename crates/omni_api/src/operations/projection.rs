@@ -565,7 +565,9 @@ fn projection_sources_dir<TSys: ContextSys>(
 }
 
 /// The link ledger location. Owned by this layer, not the projection engine.
-fn ledger_path<TSys: ContextSys>(ctx: &Context<TSys>) -> std::path::PathBuf {
+pub(crate) fn ledger_path<TSys: ContextSys>(
+    ctx: &Context<TSys>,
+) -> std::path::PathBuf {
     projection_sources_dir(ctx).join("links.json")
 }
 
