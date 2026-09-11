@@ -542,7 +542,7 @@ where
 {
     let sources_path = projection_sources_dir(ctx);
     sys.fs_create_dir_all_async(&sources_path).await?;
-    let lockfile_path = sources_path.join("lock.json");
+    let lockfile_path = sources_path.join(omni_constants::SOURCE_LOCKFILE_NAME);
 
     Ok(RemoteSourceManager::new(
         RemoteSourceConfig::builder()
@@ -559,7 +559,9 @@ where
 fn projection_sources_dir<TSys: ContextSys>(
     ctx: &Context<TSys>,
 ) -> std::path::PathBuf {
-    ctx.omni_dir().join("sources/projection")
+    ctx.omni_dir()
+        .join(omni_constants::SOURCES_SEGMENT)
+        .join("projection")
 }
 
 /// The link ledger location. Owned by this layer, not the projection engine.

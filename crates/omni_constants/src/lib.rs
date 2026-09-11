@@ -14,6 +14,35 @@ pub const SUPPORTED_CONFIG_EXTS: &[&str] = &["yml", "yaml", "json", "toml"];
 /// The per-directory ignore file honored by configuration discovery.
 pub const OMNI_IGNORE: &str = ".omniignore";
 
+/// The workspace-relative root of all omni-managed state.
+pub const OMNI_DIR: &str = ".omni";
+
+/// Directory segments that live directly under [`OMNI_DIR`]. Both the code that
+/// writes into `.omni/` and any code that needs to name those locations (for
+/// example ignore-file management) read these, so the two never drift.
+pub const CACHE_SEGMENT: &str = "cache";
+pub const SCRATCH_SEGMENT: &str = "scratch";
+pub const TRACE_SEGMENT: &str = "trace";
+pub const LOCKS_SEGMENT: &str = "locks";
+pub const SOURCES_SEGMENT: &str = "sources";
+
+/// The per-source lockfile kept inside each `.omni/sources/<id>/` checkout.
+pub const SOURCE_LOCKFILE_NAME: &str = "lock.json";
+
+/// `.omni/` subdirectories composed from [`OMNI_DIR`] and the segments above.
+pub const OMNI_CACHE_DIR: &str = ".omni/cache";
+pub const OMNI_SCRATCH_DIR: &str = ".omni/scratch";
+pub const OMNI_TRACE_DIR: &str = ".omni/trace";
+pub const OMNI_LOCKS_DIR: &str = ".omni/locks";
+pub const OMNI_SOURCES_DIR: &str = ".omni/sources";
+
+/// Ignore files omni maintains by default when a workspace does not configure
+/// its own list. `.omniignore` and `.ignore` are also honored by configuration
+/// discovery, so naming them here keeps discovery and ignore management aligned.
+pub const GITIGNORE: &str = ".gitignore";
+pub const IGNORE: &str = ".ignore";
+pub const DEFAULT_IGNORE_FILES: &[&str] = &[GITIGNORE, IGNORE, OMNI_IGNORE];
+
 /// `<stem>.omni.{ext}` manifest name templates. `{ext}` is expanded with
 /// [`config_file_names`] (or a caller-chosen extension via `str::replace`).
 pub const WORKSPACE_OMNI: &str = "workspace.omni.{ext}";
@@ -76,6 +105,27 @@ mod tests {
         assert_eq!(
             CONTROL_PLANE_MANIFESTS,
             &[WORKSPACE_OMNI, PROJECT_OMNI, TOOL_OMNI, GENERATOR_OMNI]
+        );
+    }
+
+    #[test]
+    fn composed_omni_dirs_are_the_root_joined_with_their_segment() {
+        for (composed, segment) in [
+            (OMNI_CACHE_DIR, CACHE_SEGMENT),
+            (OMNI_SCRATCH_DIR, SCRATCH_SEGMENT),
+            (OMNI_TRACE_DIR, TRACE_SEGMENT),
+            (OMNI_LOCKS_DIR, LOCKS_SEGMENT),
+            (OMNI_SOURCES_DIR, SOURCES_SEGMENT),
+        ] {
+            assert_eq!(composed, format!("{OMNI_DIR}/{segment}"));
+        }
+    }
+
+    #[test]
+    fn default_ignore_files_are_the_three_named_files() {
+        assert_eq!(
+            DEFAULT_IGNORE_FILES,
+            &[".gitignore", ".ignore", ".omniignore"]
         );
     }
 }

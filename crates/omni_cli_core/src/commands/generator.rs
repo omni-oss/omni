@@ -500,8 +500,11 @@ async fn get_generators(
     sys: &impl GeneratorSys,
 ) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>> {
     let omni_path = ctx.omni_dir();
-    let generator_sources_path = omni_path.join("./sources/generator");
-    let lockfile_path = generator_sources_path.join("lock.json");
+    let generator_sources_path = omni_path
+        .join(omni_constants::SOURCES_SEGMENT)
+        .join("generator");
+    let lockfile_path =
+        generator_sources_path.join(omni_constants::SOURCE_LOCKFILE_NAME);
 
     let remote_sources = Arc::new(
         RemoteSourceManager::new(
