@@ -7584,6 +7584,7 @@ name = "omni_ignore_core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "eyre",
  "mockall",
  "ntest",
  "omni_hasher",

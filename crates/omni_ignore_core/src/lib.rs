@@ -1,18 +1,23 @@
-// @anchor:mods
+//! The subsystem-agnostic engine behind `omni ignore sync`: the pattern data
+//! boundary, the block renderer, the fence parser, and the per-file patch. The
+//! concrete pattern sources live in `omni_ignore_contributors`.
 
-// @anchor:uses
+mod contributor;
+mod error;
+mod fence;
+mod patch;
+mod pattern;
+mod render;
 
-pub fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
+pub use contributor::{Contribution, IgnoreContributor};
+pub use error::{FenceError, IgnoreError};
+pub use fence::{Eol, FENCE_BEGIN, FENCE_END_PREFIX, is_fence_line};
+pub use patch::{
+    CheckOutcome, CleanOutcome, FileReport, SyncOutcome, check_files,
+    clean_files, sync_files,
+};
+pub use pattern::IgnorePattern;
+pub use render::render_block;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub(crate) use contributor::MockIgnoreContributor;
