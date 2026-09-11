@@ -27,6 +27,16 @@ pub enum SourceConfig<E = NoExtra> {
     Git(GitSource<E>),
 }
 
+impl<E> SourceConfig<E> {
+    /// The flattened `extra` family carried by either variant.
+    pub fn extra(&self) -> &E {
+        match self {
+            SourceConfig::Local(local) => &local.extra,
+            SourceConfig::Git(git) => &git.extra,
+        }
+    }
+}
+
 /// A `local` source: one or more workspace-relative paths.
 #[derive(
     Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Validate,
@@ -116,5 +126,21 @@ mod tests {
         let json = r#"{"source":"local","path":"./x","typo":1}"#;
         let result = serde_json::from_str::<SourceConfig>(json);
         assert!(result.is_err(), "unknown key must be rejected");
+    }
+
+    #[test]
+    fn extra_returns_the_flattened_extra_for_both_variants() {
+        let local = SourceConfig::Local(LocalSource {
+            path: SingleOrMany::Single("./x".to_string()),
+            extra: NoExtra {},
+        });
+        assert_eq!(local.extra(), &NoExtra {});
+
+        let git = SourceConfig::Git(GitSource {
+            uri: Url::parse("https://example.com/a.git").unwrap(),
+            rev: "main".to_string(),
+            extra: NoExtra {},
+        });
+        assert_eq!(git.extra(), &NoExtra {});
     }
 }

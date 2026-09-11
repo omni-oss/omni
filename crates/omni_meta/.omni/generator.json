@@ -1,0 +1,18 @@
+{
+  "crate": {
+    "targets": {},
+    "inputs": {}
+  },
+  "rust-error": {
+    "targets": {
+      "root": "./src"
+    },
+    "inputs": {
+      "use_tracing": false,
+      "crate_name": "omni_meta",
+      "crate_type": "lib",
+      "version": "workspace",
+      "add_error_type": true
+    }
+  }
+}

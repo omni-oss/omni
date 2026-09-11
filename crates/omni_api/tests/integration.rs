@@ -1064,3 +1064,199 @@ async fn projection_targeted_source_applies_only_that_source() {
         "an untargeted source is left untouched"
     );
 }
+
+#[tokio::test]
+async fn projection_unknown_source_is_a_hard_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_two_source_workspace(tmp.path());
+
+    let result = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("does-not-exist".to_string()),
+            ..Default::default()
+        })
+        .await;
+
+    assert!(
+        result.is_err(),
+        "a --source that matches nothing must be a hard error"
+    );
+}
+
+/// A workspace source with no routes whose root ships a bundle manifest listing
+/// local children.
+fn write_local_bundle_workspace(dir: &Path) {
+    std::fs::write(
+        dir.join("workspace.omni.yaml"),
+        concat!(
+            "projects:\n",
+            "  - \"projects/**\"\n",
+            "projections:\n",
+            "  - source: local\n",
+            "    path: ./bundle\n",
+            "    id: org\n",
+        ),
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(dir.join("bundle")).unwrap();
+    std::fs::write(
+        dir.join("bundle/projection.omni.yaml"),
+        concat!(
+            "sources:\n",
+            "  - source: local\n",
+            "    path: ./skills\n",
+            "    id: skills\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/skills\"\n",
+            "  - source: local\n",
+            "    path: ./rules\n",
+            "    id: rules\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/rules\"\n",
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("bundle/skills")).unwrap();
+    std::fs::write(dir.join("bundle/skills/a.md"), b"# a\n").unwrap();
+    std::fs::create_dir_all(dir.join("bundle/rules")).unwrap();
+    std::fs::write(dir.join("bundle/rules/b.md"), b"# b\n").unwrap();
+}
+
+#[tokio::test]
+async fn projection_local_bundle_expands_and_links_every_member() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_local_bundle_workspace(tmp.path());
+
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("bundle sync");
+
+    assert!(tmp.path().join(".agents/skills/a.md").exists());
+    assert!(tmp.path().join(".agents/rules/b.md").exists());
+
+    // The applied links are recorded under the composed identifiers, and the
+    // `::` never leaks onto disk.
+    assert!(
+        resp.applied.iter().all(|a| !a.dest.contains("::")),
+        "the composed id must never reach an on-disk path"
+    );
+
+    let status = make_api(tmp.path())
+        .projection_status(omni_api::ProjectionStatusRequest::default())
+        .await
+        .expect("status");
+    let ids: std::collections::HashSet<&str> = status
+        .entries
+        .iter()
+        .map(|e| e.source_id.as_str())
+        .collect();
+    assert!(ids.contains("org::skills"), "ledger keys by composed id");
+    assert!(ids.contains("org::rules"), "ledger keys by composed id");
+}
+
+#[tokio::test]
+async fn projection_unlink_tears_down_a_whole_bundle() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_local_bundle_workspace(tmp.path());
+
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("bundle sync");
+
+    let resp = make_api(tmp.path())
+        .projection_unlink(omni_api::ProjectionUnlinkRequest {
+            id: "org".to_string(),
+            backup_handling: None,
+        })
+        .await
+        .expect("unlink bundle");
+
+    assert_eq!(
+        resp.removed.len(),
+        2,
+        "both members are torn down by id prefix"
+    );
+    assert!(!tmp.path().join(".agents/skills/a.md").exists());
+    assert!(!tmp.path().join(".agents/rules/b.md").exists());
+}
+
+#[tokio::test]
+async fn projection_targeted_source_selects_one_bundle_member() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_local_bundle_workspace(tmp.path());
+
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("org::skills".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("targeted member sync");
+
+    assert_eq!(resp.applied.len(), 1, "only the selected member applies");
+    assert!(tmp.path().join(".agents/skills/a.md").exists());
+    assert!(
+        !tmp.path().join(".agents/rules/b.md").exists(),
+        "a sibling member is not applied"
+    );
+}
+
+#[tokio::test]
+async fn projection_targeted_update_warns_about_dropped_member() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    write_local_bundle_workspace(tmp.path());
+
+    // Full sync links both members.
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("initial sync");
+    assert!(tmp.path().join(".agents/rules/b.md").exists());
+
+    // Drop `rules` from the bundle manifest.
+    std::fs::write(
+        tmp.path().join("bundle/projection.omni.yaml"),
+        concat!(
+            "sources:\n",
+            "  - source: local\n",
+            "    path: ./skills\n",
+            "    id: skills\n",
+            "    routes:\n",
+            "      - strategy: mirror\n",
+            "        target: \"@workspace/.agents/skills\"\n",
+        ),
+    )
+    .unwrap();
+
+    // A targeted, update run must warn but leave the dropped member's links.
+    let resp = make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest {
+            source: Some("org".to_string()),
+            update: true,
+            ..Default::default()
+        })
+        .await
+        .expect("targeted update");
+
+    assert!(
+        resp.warnings.iter().any(|w| w.contains("org::rules")),
+        "a dropped member is named in a warning: {:?}",
+        resp.warnings
+    );
+    assert!(
+        tmp.path().join(".agents/rules/b.md").exists(),
+        "a targeted run never removes the dropped member's links"
+    );
+
+    // A full sync reconciles the dropped member away.
+    make_api(tmp.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("full reconciling sync");
+    assert!(!tmp.path().join(".agents/rules/b.md").exists());
+}

@@ -6597,9 +6597,9 @@ checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
 name = "noyalib"
-version = "0.0.28"
+version = "0.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f075ef19fa3bcf8697c0ef96c37d5c435d339a40ab8081cae3aac3a4e7fee9a"
+checksum = "55f03682003f288e23f94d8f6222de0dcf15c77329b5e42b2f37421243c1d373"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -6608,7 +6608,6 @@ dependencies = [
  "memchr",
  "rustc-hash 2.1.1",
  "ryu",
- "serde",
  "serde_core",
  "serde_ignored",
  "smallvec 1.15.1",
@@ -6826,6 +6825,7 @@ dependencies = [
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",
+ "omni_meta",
  "omni_projection_configurations",
  "omni_projections",
  "omni_remote_cache_client",
@@ -7695,6 +7695,20 @@ dependencies = [
  "tokio 1.52.3",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_meta"
+version = "0.21.0"
+dependencies = [
+ "bon",
+ "derive-new",
+ "eyre",
+ "omni_configurations",
+ "strum 0.28.0",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
+ "url",
 ]
 
 [[package]]

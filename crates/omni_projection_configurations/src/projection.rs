@@ -286,14 +286,6 @@ pub struct ProjectionExtra {
     pub routes: Option<Vec<Projection>>,
 }
 
-/// A `projection.omni.{yaml,yml,json,toml}` shipped by a source repository,
-/// declaring the routes it recommends for consumers that do not override them.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct OwnedProjectionConfiguration {
-    pub routes: Vec<Projection>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,26 +553,6 @@ mod tests {
             parse_extra(r#"{"id":"a","routes":[{"strategy":"namespaced"}]}"#)
                 .unwrap();
         assert_eq!(some.routes.as_deref().map(<[_]>::len), Some(1));
-    }
-
-    #[test]
-    fn owned_configuration_round_trips_and_rejects_unknown_key() {
-        let owned: OwnedProjectionConfiguration =
-            serde_json::from_str(r#"{"routes":[{"strategy":"namespaced"}]}"#)
-                .unwrap();
-        assert_eq!(owned.routes.len(), 1);
-        let re = serde_json::to_string(&owned).unwrap();
-        let back: OwnedProjectionConfiguration =
-            serde_json::from_str(&re).unwrap();
-        assert_eq!(owned, back);
-
-        assert!(
-            serde_json::from_str::<OwnedProjectionConfiguration>(
-                r#"{"routes":[],"typo":1}"#,
-            )
-            .is_err(),
-            "unknown key in owned manifest must be rejected"
-        );
     }
 
     #[test]

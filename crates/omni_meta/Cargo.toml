@@ -1,0 +1,23 @@
+[package]
+name = "omni_meta"
+rust-version.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_meta"
+path = "src/lib.rs"
+
+[dependencies]
+omni_configurations = { workspace = true }
+url = { workspace = true }
+eyre = { workspace = true }
+thiserror = { workspace = true }
+strum = { workspace = true }
+bon = { workspace = true }
+derive-new = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

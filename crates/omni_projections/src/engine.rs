@@ -17,7 +17,11 @@ use crate::scan::scan_source;
 
 /// A projection source resolved to a concrete root directory on disk.
 pub struct ResolvedSource<'a> {
+    /// The authored id. Used for the on-disk placement of a namespaced link.
     pub id: &'a str,
+    /// The system-composed identity (`<parent>::<child>`, or the authored id at
+    /// the top level). Used for the ledger, reconciliation, and reporting.
+    pub qualified_id: &'a str,
     pub source_root: &'a Path,
     /// The git commit pin when the source is a repository; `None` for local
     /// sources, for which a content hash over matched files is computed.
@@ -169,12 +173,12 @@ where
             let dest_rel = rel_string(params.workspace_root, &pair.dest_abs)?;
             plan_out.desired_dests.push(dest_rel.clone());
             plan_out.planned.push(PlannedLink {
-                source_id: source.id.to_string(),
+                source_id: source.qualified_id.to_string(),
                 dest: dest_rel.clone(),
                 source_abs: pair.source_abs.clone(),
             });
             plan_out.items.push(PlannedItem {
-                source_id: source.id.to_string(),
+                source_id: source.qualified_id.to_string(),
                 pair: pair.clone(),
                 dest_rel,
                 is_dir_link: planned_pair.is_dir_link,
@@ -211,10 +215,9 @@ where
             on_existing: item.on_existing,
         };
 
-        let prior = prior_ledger
-            .links()
-            .iter()
-            .find(|l| l.source_id == source.id && l.dest == item.dest_rel);
+        let prior = prior_ledger.links().iter().find(|l| {
+            l.source_id == source.qualified_id && l.dest == item.dest_rel
+        });
         let prior_link = prior.map(|l| PriorLink {
             source_abs: Path::new(&l.target),
             pin_unchanged: !params.force && l.source_pin == item.pin,
@@ -244,7 +247,7 @@ where
         });
 
         outcome.links.push(LedgerLink {
-            source_id: source.id.to_string(),
+            source_id: source.qualified_id.to_string(),
             dest: item.dest_rel.clone(),
             target: item.pair.source_abs.to_string_lossy().into_owned(),
             kind,
@@ -282,7 +285,7 @@ where
     for link in prior_ledger
         .links()
         .iter()
-        .filter(|l| l.source_id == source.id)
+        .filter(|l| l.source_id == source.qualified_id)
     {
         if desired_dests.contains(&link.dest) {
             continue;
@@ -467,6 +470,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: None,
             projections: &projections,
@@ -501,6 +505,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: None,
             projections: &projections,
@@ -536,6 +541,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: None,
             projections: &projections,
@@ -573,6 +579,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: None,
             projections: &projections,
@@ -698,6 +705,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: None,
             projections: &projections,
@@ -744,6 +752,7 @@ mod tests {
         )];
         let source = ResolvedSource {
             id: "pkg",
+            qualified_id: "pkg",
             source_root: &src_root,
             git_pin: Some("deadbeef".to_string()),
             projections: &projections,
@@ -763,6 +772,96 @@ mod tests {
         assert_eq!(
             outcome.links[0].source_pin, "deadbeef",
             "a git source pins to its commit, not a content hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn namespaced_path_uses_authored_id_ledger_uses_qualified_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let src_root = ws.join("vendor/pkg");
+        std::fs::create_dir_all(&src_root).unwrap();
+        std::fs::write(src_root.join("a.txt"), b"a").unwrap();
+
+        let projections = vec![projection(
+            r#"{"strategy":"namespaced","target":"@workspace/dst"}"#,
+        )];
+        let source = ResolvedSource {
+            id: "skills",
+            qualified_id: "org::skills",
+            source_root: &src_root,
+            git_pin: None,
+            projections: &projections,
+        };
+        let params = SyncParams {
+            workspace_root: ws,
+            env_files: &[],
+            force: false,
+            dry_run: false,
+        };
+
+        let outcome =
+            sync_source(&RealSys, &source, &params, &Ledger::default())
+                .await
+                .unwrap();
+
+        assert_eq!(outcome.links.len(), 1);
+        assert_eq!(
+            outcome.links[0].dest, "dst/skills",
+            "the on-disk path is built from the authored id, never the ::-composed id"
+        );
+        assert_eq!(
+            outcome.links[0].source_id, "org::skills",
+            "the ledger records the qualified id"
+        );
+        assert!(ws.join("dst/skills").exists());
+        assert!(!ws.join("dst/org::skills").exists());
+    }
+
+    #[tokio::test]
+    async fn reconcile_matches_prior_links_by_qualified_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        let src_root = ws.join("vendor/pkg");
+        std::fs::create_dir_all(&src_root).unwrap();
+        std::fs::write(src_root.join("a.txt"), b"a").unwrap();
+
+        let projections = vec![projection(
+            r#"{"strategy":"mirror","target":"@workspace/dst"}"#,
+        )];
+        let source = ResolvedSource {
+            id: "skills",
+            qualified_id: "org::skills",
+            source_root: &src_root,
+            git_pin: None,
+            projections: &projections,
+        };
+        let params = SyncParams {
+            workspace_root: ws,
+            env_files: &[],
+            force: false,
+            dry_run: false,
+        };
+
+        // A stale link recorded under the qualified id must be reconciled away.
+        std::fs::create_dir_all(ws.join("dst")).unwrap();
+        std::fs::write(ws.join("dst/old.txt"), b"old").unwrap();
+        let prior = Ledger::from_links(vec![LedgerLink {
+            source_id: "org::skills".to_string(),
+            dest: "dst/old.txt".to_string(),
+            target: src_root.join("a.txt").to_string_lossy().into_owned(),
+            kind: ResolvedKind::Symlink,
+            source_pin: "old".to_string(),
+            backup: None,
+        }]);
+
+        let outcome = sync_source(&RealSys, &source, &params, &prior)
+            .await
+            .unwrap();
+
+        assert!(
+            outcome.removed.iter().any(|p| p.ends_with("dst/old.txt")),
+            "the stale link recorded under the qualified id is reconciled"
         );
     }
 }

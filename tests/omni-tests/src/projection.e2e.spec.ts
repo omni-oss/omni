@@ -299,6 +299,38 @@ const singleSourceConfig = {
     ],
 };
 
+// A workspace source with no routes whose root ships a bundle manifest listing
+// two local member sources. The `::` composed identity is a system artifact and
+// never appears on disk: members land where a directly-declared source would.
+const bundleManifest =
+    "sources:\n" +
+    "  - source: local\n" +
+    "    path: ./skills\n" +
+    "    id: skills\n" +
+    "    routes:\n" +
+    "      - strategy: mirror\n" +
+    '        target: "@workspace/.agents/skills"\n' +
+    "  - source: local\n" +
+    "    path: ./rules\n" +
+    "    id: rules\n" +
+    "    routes:\n" +
+    "      - strategy: mirror\n" +
+    '        target: "@workspace/.agents/rules"\n';
+
+function metaBundleWorkspace(): WorkspaceSpec {
+    return {
+        workspace: {
+            projects: ["**"],
+            projections: [{ source: "local", path: "./bundle", id: "org" }],
+        },
+        files: {
+            "bundle/projection.omni.yaml": bundleManifest,
+            "bundle/skills/a.md": "# a\n",
+            "bundle/rules/b.md": "# b\n",
+        },
+    };
+}
+
 describe("+projection @e2e", { tags: ["projection"] }, () => {
     it("materializes a local source into the target on sync", async () => {
         const ws = makeWorkspace(projectionWorkspace());
@@ -681,5 +713,88 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         // A self-contradictory plan writes nothing.
         expect(ws.exists("out/same.md")).toBe(false);
         expect(ws.exists(".omni/sources/projection/links.json")).toBe(false);
+    });
+
+    it("expands a bundle manifest into every member on sync", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        const result = await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(result).toHaveSucceeded();
+
+        // Both members land where a directly-declared source would; the `::`
+        // composed id never reaches disk.
+        expect(ws.read(".agents/skills/a.md")).toBe("# a\n");
+        expect(ws.read(".agents/rules/b.md")).toBe("# b\n");
+
+        // The ledger keys the members by their composed identity.
+        const ledger = JSON.parse(
+            ws.read(".omni/sources/projection/links.json"),
+        ) as { links: { source_id: string }[] };
+        const ids = ledger.links.map((l) => l.source_id).sort();
+        expect(ids).toEqual(["org::rules", "org::skills"]);
+    });
+
+    it("lists expanded members on --dry-run without writing", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        const result = await runOmni(["projection", "sync", "--dry-run"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveSucceeded();
+        expect(result.stdout).toContain(".agents/skills/a.md");
+        expect(result.stdout).toContain(".agents/rules/b.md");
+        expect(ws.exists(".agents/skills/a.md")).toBe(false);
+    });
+
+    it("targets a single bundle member with --source <bundle>::<child>", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        const result = await runOmni(
+            ["projection", "sync", "--source", "org::skills"],
+            { cwd: ws.cwd },
+        );
+        expect(result).toHaveSucceeded();
+        expect(ws.read(".agents/skills/a.md")).toBe("# a\n");
+        expect(ws.exists(".agents/rules/b.md")).toBe(false);
+    });
+
+    it("tears down a whole bundle with unlink <bundle>", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        expect(ws.exists(".agents/skills/a.md")).toBe(true);
+        expect(ws.exists(".agents/rules/b.md")).toBe(true);
+
+        const result = await runOmni(["projection", "unlink", "org"], {
+            cwd: ws.cwd,
+        });
+        expect(result).toHaveSucceeded();
+        expect(ws.exists(".agents/skills/a.md")).toBe(false);
+        expect(ws.exists(".agents/rules/b.md")).toBe(false);
+    });
+
+    it("renders bundled members as a tree in status", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        await runOmni(["projection", "sync"], { cwd: ws.cwd });
+        const status = await runOmni(["projection", "status", "--verbose"], {
+            cwd: ws.cwd,
+        });
+        expect(status).toHaveSucceeded();
+        // The bundle name heads the tree with its two members nested beneath.
+        expect(status.stdout).toContain("org");
+        expect(status.stdout).toContain("skills");
+        expect(status.stdout).toContain("rules");
+        expect(status.stdout).toContain("2 ok");
+    });
+
+    it("errors when --source matches no configured source", async () => {
+        const ws = makeWorkspace(metaBundleWorkspace());
+
+        const result = await runOmni(
+            ["projection", "sync", "--source", "does-not-exist"],
+            { cwd: ws.cwd },
+        );
+        expect(result).toHaveFailed();
     });
 });

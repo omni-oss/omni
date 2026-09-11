@@ -55,6 +55,12 @@ pub struct ProjectionSyncArgs {
 
     #[arg(long, help = "Limit the pass to the projection source with this id")]
     pub source: Option<String>,
+
+    #[arg(
+        long,
+        help = "Override the maximum meta-bundle nesting depth (default 16)"
+    )]
+    pub max_depth: Option<usize>,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -134,6 +140,7 @@ async fn run_sync(
             force: args.force,
             update: args.update,
             source: args.source.clone(),
+            max_depth: args.max_depth,
         })
         .await?;
 
@@ -176,11 +183,9 @@ async fn run_status(
         .await?;
 
     if args.verbose {
-        for entry in &response.entries {
-            println!(
-                "  [{}] {} ({})",
-                entry.state, entry.dest, entry.source_id
-            );
+        let tree = build_status_tree(&response.entries);
+        for line in render_status_tree(&tree, true) {
+            println!("{line}");
         }
     }
 
@@ -190,6 +195,125 @@ async fn run_status(
     );
 
     Ok(())
+}
+
+// ── Status tree rendering ────────────────────────────────────────────────────
+
+/// A node in the status tree, keyed by one `::` segment of a composed id. An
+/// internal node is a bundle; a node carrying `entries` is a link-bearing leaf
+/// source.
+#[derive(Default)]
+struct StatusNode {
+    children: std::collections::BTreeMap<String, StatusNode>,
+    entries: Vec<(String, String)>,
+}
+
+#[derive(Default, Clone, Copy)]
+struct StateCounts {
+    ok: usize,
+    missing: usize,
+    broken: usize,
+    drifted: usize,
+}
+
+impl StateCounts {
+    fn add(&mut self, state: &str) {
+        match state {
+            "ok" => self.ok += 1,
+            "missing" => self.missing += 1,
+            "broken" => self.broken += 1,
+            "drifted" => self.drifted += 1,
+            _ => {}
+        }
+    }
+
+    fn merge(&mut self, other: StateCounts) {
+        self.ok += other.ok;
+        self.missing += other.missing;
+        self.broken += other.broken;
+        self.drifted += other.drifted;
+    }
+
+    fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ok > 0 {
+            parts.push(format!("{} ok", self.ok));
+        }
+        if self.missing > 0 {
+            parts.push(format!("{} missing", self.missing));
+        }
+        if self.broken > 0 {
+            parts.push(format!("{} broken", self.broken));
+        }
+        if self.drifted > 0 {
+            parts.push(format!("{} drifted", self.drifted));
+        }
+        format!("({})", parts.join(", "))
+    }
+}
+
+/// Reconstruct the bundle tree purely from the flat status entries: split each
+/// composed id on `::` and insert its link rows at the leaf segment.
+fn build_status_tree(entries: &[omni_api::StatusEntryInfo]) -> StatusNode {
+    let mut root = StatusNode::default();
+    for entry in entries {
+        let mut node = &mut root;
+        for segment in entry.source_id.split("::") {
+            node = node.children.entry(segment.to_string()).or_default();
+        }
+        node.entries.push((entry.state.clone(), entry.dest.clone()));
+    }
+    root
+}
+
+fn rollup(node: &StatusNode) -> StateCounts {
+    let mut counts = StateCounts::default();
+    for (state, _) in &node.entries {
+        counts.add(state);
+    }
+    for child in node.children.values() {
+        counts.merge(rollup(child));
+    }
+    counts
+}
+
+/// Render the tree to lines. `color` bolds bundle-group names (a node with
+/// children); leaf sources show their local id and one row per link. Passing
+/// `color = false` yields plain text for testing.
+fn render_status_tree(root: &StatusNode, color: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    render_level(root, 0, color, &mut out);
+    out
+}
+
+fn render_level(
+    node: &StatusNode,
+    depth: usize,
+    color: bool,
+    out: &mut Vec<String>,
+) {
+    let indent = "  ".repeat(depth);
+    for (segment, child) in &node.children {
+        if child.children.is_empty() {
+            // A leaf source: its local id followed by one row per link.
+            out.push(format!("{indent}{segment}"));
+            for (state, dest) in &child.entries {
+                out.push(format!("{indent}  [{state}] {dest}"));
+            }
+        } else {
+            // A bundle: a bold group header carrying a descendant rollup.
+            let name = if color {
+                segment.bold().to_string()
+            } else {
+                segment.clone()
+            };
+            out.push(format!("{indent}{name} {}", rollup(child).summary()));
+            render_level(child, depth + 1, color, out);
+            for (state, dest) in &child.entries {
+                out.push(format!("{indent}  [{state}] {dest}"));
+            }
+        }
+    }
 }
 
 async fn run_unlink(
@@ -243,9 +367,9 @@ async fn run_prune(
 #[cfg(test)]
 mod tests {
     use clap::Parser;
-    use omni_api::BackupHandling;
+    use omni_api::{BackupHandling, StatusEntryInfo};
 
-    use super::ProjectionSubcommand;
+    use super::{ProjectionSubcommand, build_status_tree, render_status_tree};
     use crate::commands::{Cli, CliSubcommands};
 
     fn projection_of(args: &[&str]) -> ProjectionSubcommand {
@@ -375,5 +499,87 @@ mod tests {
             ProjectionSubcommand::Prune(args) => assert!(args.dry_run),
             other => panic!("expected prune, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_sync_max_depth() {
+        match projection_of(&[
+            "omni",
+            "projection",
+            "sync",
+            "--max-depth",
+            "32",
+        ]) {
+            ProjectionSubcommand::Sync(args) => {
+                assert_eq!(args.max_depth, Some(32));
+            }
+            other => panic!("expected sync, got {other:?}"),
+        }
+
+        match projection_of(&["omni", "projection", "sync"]) {
+            ProjectionSubcommand::Sync(args) => {
+                assert_eq!(args.max_depth, None)
+            }
+            other => panic!("expected sync, got {other:?}"),
+        }
+    }
+
+    fn entry(source_id: &str, dest: &str, state: &str) -> StatusEntryInfo {
+        StatusEntryInfo {
+            source_id: source_id.to_string(),
+            dest: dest.to_string(),
+            state: state.to_string(),
+        }
+    }
+
+    #[test]
+    fn status_tree_groups_by_segment_with_rollups() {
+        let entries = vec![
+            entry("org::rules", ".agents/rules", "drifted"),
+            entry("org::skills", ".agents/skills", "ok"),
+            entry("solo", ".agents/solo", "ok"),
+        ];
+        let tree = build_status_tree(&entries);
+        let lines = render_status_tree(&tree, false);
+
+        assert_eq!(
+            lines,
+            vec![
+                "org (1 ok, 1 drifted)".to_string(),
+                "  rules".to_string(),
+                "    [drifted] .agents/rules".to_string(),
+                "  skills".to_string(),
+                "    [ok] .agents/skills".to_string(),
+                "solo".to_string(),
+                "  [ok] .agents/solo".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn status_tree_renders_a_plain_source_as_a_flat_leaf() {
+        let entries = vec![entry("skills-a", ".agents/a", "ok")];
+        let tree = build_status_tree(&entries);
+        let lines = render_status_tree(&tree, false);
+        assert_eq!(
+            lines,
+            vec!["skills-a".to_string(), "  [ok] .agents/a".to_string()]
+        );
+    }
+
+    #[test]
+    fn status_tree_nests_one_indent_per_segment() {
+        let entries = vec![entry("org::team::skills", ".agents/skills", "ok")];
+        let tree = build_status_tree(&entries);
+        let lines = render_status_tree(&tree, false);
+        assert_eq!(
+            lines,
+            vec![
+                "org (1 ok)".to_string(),
+                "  team (1 ok)".to_string(),
+                "    skills".to_string(),
+                "      [ok] .agents/skills".to_string(),
+            ]
+        );
     }
 }
