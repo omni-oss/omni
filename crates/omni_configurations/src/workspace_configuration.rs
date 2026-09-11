@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    GeneratorSourceConfiguration, ProjectionSourceConfiguration,
+    GeneratorSourceConfiguration, IgnoreConfig, ProjectionSourceConfiguration,
     ToolSourceConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
@@ -90,6 +90,13 @@ pub struct WorkspaceConfiguration {
     /// floor-gap stance combined most-severe with each generator/action.
     #[serde(default)]
     pub capabilities: CapabilityPolicyConfig<Workspace>,
+
+    /// Configures `omni ignore sync`: the ignore files omni maintains a managed
+    /// block in, and which pattern sources contribute to it. Absent behaves as
+    /// the full default (`.gitignore`, `.ignore`, `.omniignore`; both sources
+    /// on).
+    #[serde(default)]
+    pub ignore: IgnoreConfig,
 }
 
 impl WorkspaceConfiguration {

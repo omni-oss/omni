@@ -4,6 +4,7 @@
 mod cache_configuration;
 mod capabilities;
 mod constants;
+mod ignore;
 mod meta_configuration;
 mod owned_projection;
 mod project_configuration;
@@ -21,6 +22,7 @@ mod workspace_configuration;
 
 pub use cache_configuration::*;
 pub use capabilities::*;
+pub use ignore::*;
 pub use meta_configuration::*;
 pub use omni_config_types as types;
 pub use owned_projection::*;
