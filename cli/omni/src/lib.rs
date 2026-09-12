@@ -111,6 +111,11 @@ pub async fn run(
             let context = create_ctx()?;
             commands::projection::run(cmd, &context).await?;
         }
+        CliSubcommands::Ignore(cmd) => {
+            let context = create_ctx()?;
+            let res = commands::ignore::run(cmd, &context).await?;
+            exit(res);
+        }
         CliSubcommands::Tool(cmd) => {
             let context = create_ctx()?;
             commands::tool::run(cmd, &context).await?;

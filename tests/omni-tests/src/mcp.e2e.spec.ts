@@ -288,7 +288,7 @@ function conditionalRequiredGeneratorSpec(): WorkspaceSpec {
 describe("+mcp @mcp @cli (protocol)", {
     tags: ["mcp"],
 }, () => {
-    it("tools/list returns all 20 expected tools", async () => {
+    it("tools/list returns all 22 expected tools", async () => {
         const ws = makeWorkspace(singleProjectSpec());
         const { client } = await connectMcp({ cwd: ws.cwd });
 
@@ -306,6 +306,8 @@ describe("+mcp @mcp @cli (protocol)", {
                 "generator_validate_input",
                 "hash_project",
                 "hash_workspace",
+                "ignore_clean",
+                "ignore_sync",
                 "project_config",
                 "project_list",
                 "projection_prune",

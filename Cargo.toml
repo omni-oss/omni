@@ -199,6 +199,8 @@ omni_projection_configurations = { path = "crates/omni_projection_configurations
 omni_glob = { path = "crates/omni_glob" }
 omni_glob_config = { path = "crates/omni_glob_config" }
 omni_meta = { path = "crates/omni_meta" }
+omni_ignore_core = { path = "crates/omni_ignore_core" }
+omni_ignore_contributors = { path = "crates/omni_ignore_contributors" }
 # @anchor:new-crate
 tracing-futures = { version = "^0.2.5", features = ["tokio"] }
 pathdiff = { version = "^0.2.3" }

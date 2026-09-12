@@ -20,9 +20,9 @@ use crate::{
     build,
     commands::{
         cache::CacheCommand, declspec::DeclspecCommand,
-        generator::GeneratorCommand, hash::HashCommand, init::InitCommand,
-        project::ProjectCommand, projection::ProjectionCommand,
-        tool::ToolCommand,
+        generator::GeneratorCommand, hash::HashCommand, ignore::IgnoreCommand,
+        init::InitCommand, project::ProjectCommand,
+        projection::ProjectionCommand, tool::ToolCommand,
     },
 };
 
@@ -35,6 +35,7 @@ pub mod exec;
 pub mod generator;
 mod generator_utils;
 pub mod hash;
+pub mod ignore;
 pub mod init;
 pub mod mcp;
 pub mod project;
@@ -210,6 +211,11 @@ pub enum CliSubcommands {
 
     #[command(about = "Tool related subcommands")]
     Tool(ToolCommand),
+
+    #[command(
+        about = "Maintain omni's managed block in ignore files (.gitignore, .ignore, .omniignore)"
+    )]
+    Ignore(IgnoreCommand),
 
     #[command(about = "Start an MCP server for AI agent integration")]
     Mcp(McpCommand),

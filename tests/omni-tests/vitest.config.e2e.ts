@@ -62,6 +62,9 @@ export default mergeConfig(
                 {
                     name: "projection",
                 },
+                {
+                    name: "ignore",
+                },
             ],
             // Some outputs (notably workspace content hashes) depend on the OS,
             // because path handling differs. Give each platform its own snapshot

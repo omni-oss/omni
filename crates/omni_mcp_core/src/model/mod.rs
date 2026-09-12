@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod generator;
 pub mod hash;
+pub mod ignore;
 pub mod project;
 pub mod projection;
 pub mod task;
@@ -10,6 +11,7 @@ pub mod workspace;
 pub use cache::*;
 pub use generator::*;
 pub use hash::*;
+pub use ignore::*;
 pub use project::*;
 pub use projection::*;
 pub use task::*;

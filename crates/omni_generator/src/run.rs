@@ -156,8 +156,7 @@ async fn run_in_transaction<'a, S: GeneratorEventSubscriber>(
     // is the only safe granularity.
     let lock_path = config
         .workspace_dir
-        .join(".omni")
-        .join("locks")
+        .join(omni_constants::OMNI_LOCKS_DIR)
         .join("generator.lock");
     let _lock = LockGuard::acquire_exclusive(lock_path).await?;
 

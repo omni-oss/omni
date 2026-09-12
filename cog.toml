@@ -568,6 +568,20 @@ include = [
 ]
 public_api = false
 
+[monorepo.packages.omni_ignore_core]
+path = "crates/omni_ignore_core"
+include = [
+    "crates/omni_ignore_core/**",
+]
+public_api = false
+
+[monorepo.packages.omni_ignore_contributors]
+path = "crates/omni_ignore_contributors"
+include = [
+    "crates/omni_ignore_contributors/**",
+]
+public_api = false
+
 # @anchor:new-rust-package
 
 [monorepo.packages."@omni-oss/async-utils"]

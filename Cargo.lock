@@ -6822,6 +6822,8 @@ dependencies = [
  "omni_file_data_serde",
  "omni_generator",
  "omni_generator_configurations",
+ "omni_ignore_contributors",
+ "omni_ignore_core",
  "omni_input_provider",
  "omni_input_schema",
  "omni_messages",
@@ -7564,6 +7566,34 @@ dependencies = [
  "tokio 1.52.3",
  "trace",
  "tracing",
+]
+
+[[package]]
+name = "omni_ignore_contributors"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "omni_constants",
+ "omni_ignore_core",
+ "omni_projections",
+ "system_traits",
+ "tokio 1.52.3",
+]
+
+[[package]]
+name = "omni_ignore_core"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "mockall",
+ "ntest",
+ "omni_hasher",
+ "regex",
+ "system_traits",
+ "thiserror 2.0.18",
+ "tokio 1.52.3",
 ]
 
 [[package]]

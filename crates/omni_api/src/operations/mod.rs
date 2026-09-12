@@ -4,6 +4,7 @@ pub mod env;
 pub mod exec;
 pub mod generator;
 pub mod hash;
+pub mod ignore;
 pub mod project;
 pub mod projection;
 pub mod task;
