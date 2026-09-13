@@ -8,18 +8,6 @@ dist
 *.profraw
 *.profdata
 
-###############
-#### omni #####
-###############
-**/.omni/cache/**
-**/.omni/scratch/**
-**/.omni/trace/**
-**/.omni/locks/**
-**/.omni/remote-cache.omni.*
-**/.omni/sources/*/**
-**/.omni/remote_cache/**
-!**/.omni/sources/*/lock.json
-
 node_modules
 **/node_modules
 perf.data*
@@ -45,3 +33,29 @@ orcs.config.json
 **/AGENTS.md
 **/.worklog
 .agents
+
+# @@omni-managed:begin (managed by `omni ignore sync`; do not edit by hand)
+/.omni/cache/**
+/.omni/locks/**
+/.omni/remote-cache.omni.*
+/.omni/scratch/**
+/.omni/sources/*/**
+!/.omni/sources/*/lock.json
+/.omni/trace/**
+/.agents/skills/blast-radius
+/.agents/skills/bro
+/.agents/skills/figure-it-out
+/.agents/skills/grill-me
+/.agents/skills/grilling
+/.agents/skills/handoff
+/.agents/skills/how
+/.agents/skills/interrogate
+/.agents/skills/show-me-your-work
+/.agents/skills/teach
+/.agents/skills/technical-writing
+/.agents/skills/to-questionnaire
+/.agents/skills/unslop
+/.agents/skills/wait-what
+/.agents/skills/why
+/.agents/skills/writing-for-agents
+# @@omni-managed:end 529808ce
