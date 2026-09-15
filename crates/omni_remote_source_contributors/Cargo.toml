@@ -1,0 +1,29 @@
+[package]
+name = "omni_remote_source_contributors"
+rust-version.workspace = true
+edition.workspace = true
+version = "0.0.0"
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "omni_remote_source_contributors"
+path = "src/lib.rs"
+
+[dependencies]
+omni_remote_source = { workspace = true }
+omni_configurations = { workspace = true }
+omni_projection_configurations = { workspace = true }
+omni_configuration_discovery = { workspace = true }
+omni_meta = { workspace = true }
+omni_constants = { workspace = true }
+omni_file_data_serde = { workspace = true }
+system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
+url = { workspace = true }
+eyre = { workspace = true }
+async-trait = { workspace = true }
+path-clean = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = { workspace = true }

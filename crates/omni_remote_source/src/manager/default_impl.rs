@@ -51,6 +51,13 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
 }
 
 impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
+    /// The filesystem handle this manager operates through. Callers that need
+    /// to read alongside materialization (for example discovering a manifest at
+    /// a freshly materialized root) share the same handle.
+    pub fn sys(&self) -> &TSys {
+        &self.sys
+    }
+
     /// Materialize a remote source into the shared, content-addressed store,
     /// returning its checkout root and immutable pin. The git arm honors a
     /// locked commit (materializing offline when the checkout is already

@@ -1,6 +1,5 @@
 use crate::{
-    error::Error, manager::RemoteSourceManager, source::RemoteSourceRef,
-    sys::RemoteSourceSys,
+    manager::RemoteSourceManager, source::RemoteSourceRef, sys::RemoteSourceSys,
 };
 
 /// Options that steer an install pass across all contributors.
@@ -30,7 +29,7 @@ pub trait RemoteSourceContributor<TSys: RemoteSourceSys>: Send + Sync {
         &self,
         manager: &RemoteSourceManager<TSys>,
         options: &InstallOptions,
-    ) -> Result<Vec<RemoteSourceRef>, Error>;
+    ) -> eyre::Result<Vec<RemoteSourceRef>>;
 }
 
 #[cfg(test)]
