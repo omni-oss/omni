@@ -12,7 +12,7 @@ use url::Url;
 use crate::{
     LockfileSys,
     error::Error,
-    lockfile_data::{GitRepoLockData, LockfileData},
+    lockfile_data::{GitRepoLockData, LockfileData, LockfileDataV1_0_0},
 };
 
 #[derive(new)]
@@ -127,9 +127,94 @@ impl Lockfile {
         let is_modified = self.is_modified.load(Ordering::Relaxed);
         if is_modified {
             let data = self.data.lock().await;
-            omni_file_data_serde::write_async(self.path.as_path(), &*data, sys)
-                .await?;
+            let sorted = sorted_view(&data);
+            omni_file_data_serde::write_async(
+                self.path.as_path(),
+                &sorted,
+                sys,
+            )
+            .await?;
         }
         Ok(())
+    }
+}
+
+fn sorted_view(data: &LockfileData) -> LockfileData {
+    match data {
+        LockfileData::V1_0_0(v1) => {
+            let mut git = v1.git.clone();
+            for revs in git.values_mut() {
+                revs.sort_unstable_keys();
+            }
+            git.sort_unstable_keys();
+            LockfileData::V1_0_0(LockfileDataV1_0_0 { git })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn keys_of(data: &LockfileData) -> Vec<(String, Vec<String>)> {
+        match data {
+            LockfileData::V1_0_0(v1) => v1
+                .git
+                .iter()
+                .map(|(uri, revs)| {
+                    (uri.to_string(), revs.keys().cloned().collect::<Vec<_>>())
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn sorted_view_is_stable_across_insertion_orders() {
+        let a = Url::parse("https://example.com/a.git").unwrap();
+        let b = Url::parse("https://example.com/b.git").unwrap();
+
+        let forward = LockfileData::V1_0_0(LockfileDataV1_0_0 {
+            git: map! {
+                a.clone() => map! {
+                    "main".to_string() => GitRepoLockData::new("c1"),
+                    "dev".to_string() => GitRepoLockData::new("c2"),
+                },
+                b.clone() => map! {
+                    "v2".to_string() => GitRepoLockData::new("c3"),
+                    "v1".to_string() => GitRepoLockData::new("c4"),
+                },
+            },
+        });
+
+        let reversed = LockfileData::V1_0_0(LockfileDataV1_0_0 {
+            git: map! {
+                b => map! {
+                    "v1".to_string() => GitRepoLockData::new("c4"),
+                    "v2".to_string() => GitRepoLockData::new("c3"),
+                },
+                a => map! {
+                    "dev".to_string() => GitRepoLockData::new("c2"),
+                    "main".to_string() => GitRepoLockData::new("c1"),
+                },
+            },
+        });
+
+        assert_eq!(
+            keys_of(&sorted_view(&forward)),
+            keys_of(&sorted_view(&reversed))
+        );
+        assert_eq!(
+            keys_of(&sorted_view(&forward)),
+            vec![
+                (
+                    "https://example.com/a.git".to_string(),
+                    vec!["dev".to_string(), "main".to_string()]
+                ),
+                (
+                    "https://example.com/b.git".to_string(),
+                    vec!["v1".to_string(), "v2".to_string()]
+                ),
+            ]
+        );
     }
 }
