@@ -33,8 +33,8 @@ use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
-use omni_remote_sources::manager::{
-    RemoteSourceManager, config::RemoteSourceConfig,
+use omni_remote_sources::{
+    RemoteSource, RemoteSourceRef, sys::RemoteSourceSys,
 };
 use tokio::task::JoinSet;
 use value_bag::{OwnedValueBag, ValueBag};
@@ -109,7 +109,7 @@ pub async fn handle_generator_run<TSys, S>(
     req: GeneratorRunRequest,
 ) -> eyre::Result<GeneratorRunResponse>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
     S: GeneratorEventSubscriber,
 {
     let name = req.name.ok_or_else(|| {
@@ -318,7 +318,7 @@ pub async fn handle_generator_list<TSys>(
     ctx: &Context<TSys>,
 ) -> eyre::Result<GeneratorListResponse>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -346,32 +346,18 @@ pub async fn get_generators<TSys>(
     sys: &TSys,
 ) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + RemoteSourceSys + Clone,
 {
-    let omni_path = ctx.omni_dir();
-    let generator_sources_path = omni_path
-        .join(omni_constants::SOURCES_SEGMENT)
-        .join("generator");
-    let lockfile_path =
-        generator_sources_path.join(omni_constants::SOURCE_LOCKFILE_NAME);
-
-    sys.fs_create_dir_all_async(&generator_sources_path).await?;
-
     let remote_sources = Arc::new(
-        RemoteSourceManager::new(
-            RemoteSourceConfig::builder()
-                .lockfile_path(lockfile_path)
-                .store_root_path(generator_sources_path)
-                .build(),
-            sys.clone(),
-        )
-        .await?,
+        crate::operations::remote_source::open_source_store(ctx, sys).await?,
     );
 
     let mut retrieval_tasks: JoinSet<
-        eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>>,
+        eyre::Result<(
+            Vec<Cow<'static, GeneratorConfiguration>>,
+            Option<RemoteSourceRef>,
+        )>,
     > = JoinSet::new();
-    let mut git_sources = vec![];
 
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()
@@ -394,26 +380,42 @@ where
                                 .await?
                         }
                     };
-                    Ok(omni_generator::assign_scope_id(
-                        scope_id,
-                        configurations,
+                    Ok((
+                        omni_generator::assign_scope_id(
+                            scope_id,
+                            configurations,
+                        ),
+                        None,
                     ))
                 });
             }
             SourceConfig::Git(git) => {
                 let remote_sources = remote_sources.clone();
-                git_sources.push((&git.uri, git.rev.as_str()));
                 let sys = sys.clone();
                 let git = git.clone();
                 retrieval_tasks.spawn(async move {
-                    let dir = remote_sources
-                        .pull_git_repo(&git.uri, &git.rev)
-                        .await?;
-                    let configurations =
-                        omni_generator::discover(&dir, &["**"], &sys).await?;
-                    Ok(omni_generator::assign_scope_id(
-                        scope_id,
-                        configurations,
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let configurations = omni_generator::discover(
+                        &materialized.root,
+                        &["**"],
+                        &sys,
+                    )
+                    .await?;
+                    let git_ref = RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    };
+                    Ok((
+                        omni_generator::assign_scope_id(
+                            scope_id,
+                            configurations,
+                        ),
+                        Some(git_ref),
                     ))
                 });
             }
@@ -421,12 +423,17 @@ where
     }
 
     let mut configurations = vec![];
-    for configs in retrieval_tasks.join_all().await {
-        configurations.extend(configs?);
+    let mut refs = vec![];
+    for result in retrieval_tasks.join_all().await {
+        let (configs, git_ref) = result?;
+        configurations.extend(configs);
+        if let Some(git_ref) = git_ref {
+            refs.push(git_ref);
+        }
     }
 
-    remote_sources.retain_git_sources(&git_sources).await?;
-    remote_sources.lock().await?;
+    remote_sources.record_refs("generator", &refs).await?;
+    remote_sources.persist_pins().await?;
 
     Ok(configurations)
 }
@@ -603,7 +610,7 @@ pub async fn handle_generator_inspect<TSys>(
     view: InspectViewKind,
 ) -> eyre::Result<GeneratorInspectResponse>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -944,7 +951,7 @@ pub async fn handle_generator_validate_input<TSys>(
     req: GeneratorValidateInputRequest,
 ) -> eyre::Result<GeneratorValidateInputResponse>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;

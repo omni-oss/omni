@@ -19,13 +19,12 @@ use omni_projections::{
     existing_file_conflicts, plan_source,
 };
 use omni_remote_sources::{
-    manager::{RemoteSourceManager, config::RemoteSourceConfig},
+    RemoteSource, RemoteSourceRef, manager::RemoteSourceManager,
     sys::RemoteSourceSys,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use system_traits::{FsCanonicalizeAsync, FsReadAsync};
-use url::Url;
 
 // ── Request / response types ────────────────────────────────────────────────
 
@@ -169,7 +168,8 @@ where
     let env_files = env_file_names(ctx);
     let sources = &ctx.workspace_configuration().projections;
 
-    let remote = build_remote_manager(ctx, &sys).await?;
+    let remote =
+        crate::operations::remote_source::open_source_store(ctx, &sys).await?;
 
     let ledger_path = ledger_path(ctx);
     let mut ledger = omni_projections::load(&sys, &ledger_path).await;
@@ -245,9 +245,9 @@ where
     }
 
     // Every git ref pulled during expansion (meta repos and git children at any
-    // depth) must be retained on a full sync so reconciliation never deletes a
-    // source it just fetched.
-    let all_git: Vec<(Url, String)> =
+    // depth) is recorded so a full sync can refresh the projection reference
+    // set that guards the shared store from garbage collection.
+    let all_git: Vec<RemoteSourceRef> =
         expander.git_refs.into_inner().unwrap_or_default();
 
     // Phase 1: plan every expanded source without writing.
@@ -395,12 +395,13 @@ where
 
     omni_projections::save(&sys, &ledger_path, &ledger).await?;
 
+    // Refresh the projection reference set on a full sync so `install`'s union
+    // GC keeps every source this sync materialized. A targeted run sees only a
+    // subset, so it leaves the recorded set untouched to avoid under-retaining.
     if full_sync {
-        let refs: Vec<(&Url, &str)> =
-            all_git.iter().map(|(u, r)| (u, r.as_str())).collect();
-        remote.retain_git_sources(&refs).await?;
+        remote.record_refs("projection", &all_git).await?;
     }
-    remote.lock().await?;
+    remote.persist_pins().await?;
 
     Ok(response)
 }
@@ -533,27 +534,6 @@ where
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-async fn build_remote_manager<TSys>(
-    ctx: &Context<TSys>,
-    sys: &TSys,
-) -> eyre::Result<RemoteSourceManager<TSys>>
-where
-    TSys: ContextSys + RemoteSourceSys,
-{
-    let sources_path = projection_sources_dir(ctx);
-    sys.fs_create_dir_all_async(&sources_path).await?;
-    let lockfile_path = sources_path.join(omni_constants::SOURCE_LOCKFILE_NAME);
-
-    Ok(RemoteSourceManager::new(
-        RemoteSourceConfig::builder()
-            .lockfile_path(lockfile_path)
-            .store_root_path(sources_path)
-            .build(),
-        sys.clone(),
-    )
-    .await?)
-}
-
 /// The directory holding all projection-source state (git checkouts, lockfile,
 /// and the link ledger), alongside the other subsystem source caches.
 fn projection_sources_dir<TSys: ContextSys>(
@@ -581,7 +561,7 @@ struct ProjectionMetaExpand<'a, TSys: RemoteSourceSys> {
     update: bool,
     /// Every git ref pulled during expansion, recorded so a full sync can
     /// retain the meta repos and every git child from garbage collection.
-    git_refs: Mutex<Vec<(Url, String)>>,
+    git_refs: Mutex<Vec<RemoteSourceRef>>,
 }
 
 impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
@@ -621,16 +601,23 @@ where
                 if self.update {
                     self.remote.invalidate_git(&git.uri, &git.rev).await?;
                 }
-                let dir = self.remote.pull_git_repo(&git.uri, &git.rev).await?;
-                let pin = self.remote.locked_commit(&git.uri, &git.rev).await;
+                let source = RemoteSource::Git {
+                    uri: git.uri.clone(),
+                    rev: git.rev.clone(),
+                };
+                let materialized = self.remote.materialize(&source).await?;
+                let pin = Some(materialized.pin.clone());
                 if let Ok(mut refs) = self.git_refs.lock() {
-                    refs.push((git.uri.clone(), git.rev.clone()));
+                    refs.push(RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    });
                 }
                 let identity = SourceIdentity::Git {
                     uri: git.uri.clone(),
                     rev: git.rev.clone(),
                 };
-                (dir, pin, identity)
+                (materialized.root, pin, identity)
             }
         };
 

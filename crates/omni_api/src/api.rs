@@ -447,7 +447,7 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
     S: OmniEventSubscriber,
 {
     /// Run a generator against the workspace.
@@ -517,7 +517,7 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
     S: OmniEventSubscriber,
 {
     /// List all discovered tools in the workspace.
