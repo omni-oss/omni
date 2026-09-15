@@ -897,9 +897,9 @@ describe("+generator @tui (interactive run via PTY)", {
 
 /**
  * A workspace whose `generators` config points at a real git remote. Pulling
- * is what gen-014 exercises: the repo is cloned into
- * `.omni/sources/generator/git/<slug>/<rev>/`, locked in
- * `.omni/sources/generator/lock.json`, and its generators become discoverable.
+ * is what gen-014 exercises: the repo is cloned into the shared store at
+ * `.omni/sources/store/git/<slug>/<commit>/`, locked in the shared
+ * `.omni/sources/lock.json`, and its generators become discoverable.
  */
 function gitGeneratorSourceSpec() {
     return {
@@ -962,8 +962,8 @@ describe("+generator @e2e (git sources)", {
             );
             expect(result).toOutputContaining(workspaceMinimalRepo.generatorId);
 
-            // The pull is recorded in the lockfile with a resolved commit.
-            const lockPath = ".omni/sources/generator/lock.json";
+            // The pull is recorded in the shared lockfile with a resolved commit.
+            const lockPath = ".omni/sources/lock.json";
             expect(ws.exists(lockPath)).toBe(true);
             const lock = parseLockfile(ws.read(lockPath));
             const revs = lock.git[workspaceMinimalRepo.https];
@@ -1026,7 +1026,7 @@ describe("+generator @e2e (git sources)", {
             expect(result).toHaveSucceeded();
             expect(result).toOutputContaining(workspaceMinimalRepo.generatorId);
 
-            const lockPath = ".omni/sources/generator/lock.json";
+            const lockPath = ".omni/sources/lock.json";
             const lock = parseLockfile(ws.read(lockPath));
             // The lockfile keys the source by its `ssh://` URI.
             const revs = lock.git[workspaceMinimalRepo.sshUrl];

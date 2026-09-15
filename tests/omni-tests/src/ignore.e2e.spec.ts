@@ -42,8 +42,12 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
     it("writes the managed block into every default file after a projection sync", async () => {
         const ws = makeWorkspace(projectionWorkspace());
 
-        expect(await runOmni(["projection", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["projection", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         for (const file of [".gitignore", ".ignore", ".omniignore"]) {
             const content = ws.read(file);
@@ -51,8 +55,8 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
             expect(content).toContain(END);
             // Internal `.omni/` state, ordered with the keep-rule after its base.
             expect(content).toContain("/.omni/cache/**");
-            expect(content).toContain("/.omni/sources/*/**");
-            expect(content).toContain("!/.omni/sources/*/lock.json");
+            expect(content).toContain("/.omni/sources/**");
+            expect(content).toContain("!/.omni/sources/lock.json");
             // One anchored pattern per projection link from the ledger.
             expect(content).toContain("/.agents/skills/rust.md");
         }
@@ -73,7 +77,9 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
     it("is idempotent: a second sync reports every file unchanged", async () => {
         const ws = makeWorkspace(projectionWorkspace());
 
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
         const before = ws.read(".gitignore");
 
         const second = await runOmni(["ignore", "sync"], { cwd: ws.cwd });
@@ -85,8 +91,12 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
     it("--check passes when fresh and fails after a projection is added", async () => {
         const ws = makeWorkspace(projectionWorkspace());
 
-        expect(await runOmni(["projection", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["projection", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         const fresh = await runOmni(["ignore", "sync", "--check"], {
             cwd: ws.cwd,
@@ -96,7 +106,9 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
         // A new source file becomes a new ledger link, so the rendered block no
         // longer matches what is on disk.
         ws.write("vendor/skills/python.md", "# python\n");
-        expect(await runOmni(["projection", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["projection", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         const stale = await runOmni(["ignore", "sync", "--check"], {
             cwd: ws.cwd,
@@ -110,10 +122,14 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
             files: { ".gitignore": "node_modules\ndist\n" },
         });
 
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
         expect(ws.read(".gitignore")).toContain(BEGIN);
 
-        expect(await runOmni(["ignore", "clean"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "clean"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
         const cleaned = ws.read(".gitignore");
         expect(cleaned).not.toContain(BEGIN);
         expect(cleaned).not.toContain(END);
@@ -129,7 +145,9 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
             },
         });
 
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
         expect(ws.read("custom.ignore")).toContain(BEGIN);
         expect(ws.exists(".gitignore")).toBe(false);
         expect(ws.exists(".ignore")).toBe(false);
@@ -144,7 +162,9 @@ describe("+ignore @e2e", { tags: ["ignore"] }, () => {
             },
         });
 
-        expect(await runOmni(["ignore", "sync"], { cwd: ws.cwd })).toHaveSucceeded();
+        expect(
+            await runOmni(["ignore", "sync"], { cwd: ws.cwd }),
+        ).toHaveSucceeded();
 
         const crlf = ws.read(".gitignore");
         expect(crlf).toContain(BEGIN);

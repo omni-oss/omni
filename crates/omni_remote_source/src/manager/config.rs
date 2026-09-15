@@ -8,5 +8,5 @@ pub struct RemoteSourceConfig {
     pub lockfile_path: PathBuf,
 
     #[builder(into)]
-    pub soure_dir_path: PathBuf,
+    pub store_root_path: PathBuf,
 }

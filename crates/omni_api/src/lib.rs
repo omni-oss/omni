@@ -40,6 +40,10 @@ pub use operations::{
         ProjectionSyncRequest, ProjectionSyncResponse, ProjectionSys,
         ProjectionUnlinkRequest, ProjectionUnlinkResponse, StatusEntryInfo,
     },
+    remote_source::{
+        RemoteSourcesInstallRequest, RemoteSourcesInstallResponse,
+        SubsystemReportView, SubsystemSelection,
+    },
     task::{TaskRunFilters, TaskRunRequest, TaskRunResponse},
     tool::{ToolInfo, ToolInspectResponse, ToolListResponse, ToolWorkingDir},
 };

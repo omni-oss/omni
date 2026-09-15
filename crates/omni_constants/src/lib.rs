@@ -26,7 +26,18 @@ pub const TRACE_SEGMENT: &str = "trace";
 pub const LOCKS_SEGMENT: &str = "locks";
 pub const SOURCES_SEGMENT: &str = "sources";
 
-/// The per-source lockfile kept inside each `.omni/sources/<id>/` checkout.
+/// Segments nested under `.omni/sources/`. The store holds commit-keyed
+/// checkouts, `.pending` holds in-progress clones awaiting an atomic publish
+/// into the store, and `refs` holds the per-subsystem reference sets that drive
+/// garbage collection. Both the code that writes these locations and any code
+/// that names them (ignore-file management, garbage collection) read these, so
+/// the two never drift.
+pub const STORE_SEGMENT: &str = "store";
+pub const PENDING_SEGMENT: &str = ".pending";
+pub const REFS_SEGMENT: &str = "refs";
+
+/// The single committed lockfile that pins every remote source in a workspace,
+/// kept at `.omni/sources/lock.json` and shared across all subsystems.
 pub const SOURCE_LOCKFILE_NAME: &str = "lock.json";
 
 /// `.omni/` subdirectories composed from [`OMNI_DIR`] and the segments above.
@@ -127,5 +138,13 @@ mod tests {
             DEFAULT_IGNORE_FILES,
             &[".gitignore", ".ignore", ".omniignore"]
         );
+    }
+
+    #[test]
+    fn sources_nested_segments_have_their_expected_names() {
+        assert_eq!(STORE_SEGMENT, "store");
+        assert_eq!(PENDING_SEGMENT, ".pending");
+        assert_eq!(REFS_SEGMENT, "refs");
+        assert_eq!(SOURCE_LOCKFILE_NAME, "lock.json");
     }
 }

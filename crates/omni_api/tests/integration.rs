@@ -1260,3 +1260,129 @@ async fn projection_targeted_update_warns_about_dropped_member() {
         .expect("full reconciling sync");
     assert!(!tmp.path().join(".agents/rules/b.md").exists());
 }
+
+// ── shared store dedup across subsystems ──────────────────────────────
+
+fn git(cwd: &Path, args: &[&str]) {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_AUTHOR_NAME", "omni test")
+        .env("GIT_AUTHOR_EMAIL", "omni@example.com")
+        .env("GIT_COMMITTER_NAME", "omni test")
+        .env("GIT_COMMITTER_EMAIL", "omni@example.com")
+        .output()
+        .expect("failed to spawn git");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn git_available() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// A source referenced by both `generators:` and `projections:` is fetched once
+/// into the shared store; the second subsystem to run is a cache hit that
+/// re-clones nothing and leaves the committed lockfile unchanged.
+#[tokio::test]
+async fn a_source_used_by_two_subsystems_is_fetched_once() {
+    if !git_available() {
+        eprintln!("skipping: `git` is not available on PATH");
+        return;
+    }
+
+    // A repo mirrored by a projection and scanned by the generator subsystem.
+    let repo = tempfile::TempDir::new().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.path().join("README.md"), b"# shared\n").unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial commit"]);
+    let uri = format!("file://{}", repo.path().display());
+
+    let ws = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        ws.path().join("workspace.omni.yaml"),
+        format!(
+            concat!(
+                "projects:\n",
+                "  - \"projects/**\"\n",
+                "generators:\n",
+                "  - source: git\n",
+                "    uri: {uri}\n",
+                "    rev: main\n",
+                "projections:\n",
+                "  - source: git\n",
+                "    uri: {uri}\n",
+                "    rev: main\n",
+                "    id: shared\n",
+                "    routes:\n",
+                "      - strategy: mirror\n",
+                "        allow_git: true\n",
+                "        target: \"@workspace/.agents/shared\"\n",
+            ),
+            uri = uri
+        ),
+    )
+    .unwrap();
+
+    let lockfile = ws.path().join(".omni/sources/lock.json");
+    let store_git = ws.path().join(".omni/sources/store/git");
+
+    // First subsystem: the generator path materializes and pins the repo.
+    make_api(ws.path())
+        .generator_list()
+        .await
+        .expect("gen list");
+    let lock_after_generators =
+        std::fs::read_to_string(&lockfile).expect("lockfile written");
+    let store_dirs_after_generators = count_commit_dirs(&store_git);
+    assert_eq!(
+        store_dirs_after_generators, 1,
+        "exactly one checkout after the generator run"
+    );
+
+    // Second subsystem: the projection path resolves the same commit as a cache
+    // hit and applies the mirror.
+    let sync = make_api(ws.path())
+        .projection_sync(omni_api::ProjectionSyncRequest::default())
+        .await
+        .expect("projection sync");
+    assert!(!sync.applied.is_empty(), "the mirror is applied");
+    assert!(ws.path().join(".agents/shared/README.md").exists());
+
+    let lock_after_projections =
+        std::fs::read_to_string(&lockfile).expect("lockfile still present");
+    assert_eq!(
+        lock_after_generators, lock_after_projections,
+        "the shared commit must not change between subsystems"
+    );
+    assert_eq!(
+        count_commit_dirs(&store_git),
+        1,
+        "the second subsystem must not create a second checkout"
+    );
+}
+
+/// Count `store/git/<slug>/<commit>` directories across every slug.
+fn count_commit_dirs(store_git: &Path) -> usize {
+    let mut count = 0;
+    let Ok(slugs) = std::fs::read_dir(store_git) else {
+        return 0;
+    };
+    for slug in slugs.flatten() {
+        if let Ok(commits) = std::fs::read_dir(slug.path()) {
+            count += commits.flatten().count();
+        }
+    }
+    count
+}

@@ -65,6 +65,9 @@ export default mergeConfig(
                 {
                     name: "ignore",
                 },
+                {
+                    name: "remote-sources",
+                },
             ],
             // Some outputs (notably workspace content hashes) depend on the OS,
             // because path handling differs. Give each platform its own snapshot

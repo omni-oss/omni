@@ -27,9 +27,7 @@ use omni_input_provider::configuration::builder::string;
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::{CliInputProvider, builder::allowed};
-use omni_remote_sources::manager::{
-    RemoteSourceManager, config::RemoteSourceConfig,
-};
+use omni_remote_source::{RemoteSource, RemoteSourceRef};
 use owo_colors::OwoColorize;
 use sets::OrderedSet;
 use tokio::task::JoinSet;
@@ -499,27 +497,17 @@ async fn get_generators(
     ctx: &Context,
     sys: &impl GeneratorSys,
 ) -> eyre::Result<Vec<Cow<'static, GeneratorConfiguration>>> {
-    let omni_path = ctx.omni_dir();
-    let generator_sources_path = omni_path
-        .join(omni_constants::SOURCES_SEGMENT)
-        .join("generator");
-    let lockfile_path =
-        generator_sources_path.join(omni_constants::SOURCE_LOCKFILE_NAME);
-
     let remote_sources = Arc::new(
-        RemoteSourceManager::new(
-            RemoteSourceConfig::builder()
-                .lockfile_path(lockfile_path)
-                .soure_dir_path(generator_sources_path)
-                .build(),
-            sys.clone(),
-        )
-        .await?,
+        omni_api::operations::remote_source::open_source_store(ctx, ctx.sys())
+            .await?,
     );
 
-    let mut retrieval_tasks = JoinSet::new();
-
-    let mut git_sources = vec![];
+    let mut retrieval_tasks: JoinSet<
+        eyre::Result<(
+            Vec<Cow<'static, GeneratorConfiguration>>,
+            Option<RemoteSourceRef>,
+        )>,
+    > = JoinSet::new();
 
     for (idx, config) in
         ctx.workspace_configuration().generators.iter().enumerate()
@@ -543,30 +531,43 @@ async fn get_generators(
                                 .await?
                         }
                     };
-                    Ok::<_, eyre::Report>(omni_generator::assign_scope_id(
-                        scope_id,
-                        configurations,
+                    Ok::<_, eyre::Report>((
+                        omni_generator::assign_scope_id(
+                            scope_id,
+                            configurations,
+                        ),
+                        None,
                     ))
                 });
             }
             SourceConfig::Git(git) => {
                 let remote_sources = remote_sources.clone();
-
-                git_sources.push((&git.uri, git.rev.as_str()));
-
                 let sys = sys.clone();
                 let git = git.clone();
 
                 retrieval_tasks.spawn(async move {
-                    let dir = remote_sources
-                        .pull_git_repo(&git.uri, &git.rev)
-                        .await?;
-                    let configurations =
-                        omni_generator::discover(&dir, &["**"], &sys).await?;
-
-                    Ok::<_, eyre::Report>(omni_generator::assign_scope_id(
-                        scope_id,
-                        configurations,
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let configurations = omni_generator::discover(
+                        &materialized.root,
+                        &["**"],
+                        &sys,
+                    )
+                    .await?;
+                    let git_ref = RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    };
+                    Ok::<_, eyre::Report>((
+                        omni_generator::assign_scope_id(
+                            scope_id,
+                            configurations,
+                        ),
+                        Some(git_ref),
                     ))
                 });
             }
@@ -574,13 +575,18 @@ async fn get_generators(
     }
 
     let mut configurations = vec![];
+    let mut refs = vec![];
 
-    for configs in retrieval_tasks.join_all().await {
-        configurations.extend(configs?);
+    for result in retrieval_tasks.join_all().await {
+        let (configs, git_ref) = result?;
+        configurations.extend(configs);
+        if let Some(git_ref) = git_ref {
+            refs.push(git_ref);
+        }
     }
 
-    remote_sources.retain_git_sources(&git_sources).await?;
-    remote_sources.lock().await?;
+    remote_sources.record_refs("generator", &refs).await?;
+    remote_sources.persist_pins().await?;
 
     Ok(configurations)
 }

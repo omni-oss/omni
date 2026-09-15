@@ -22,7 +22,8 @@ use crate::{
         cache::CacheCommand, declspec::DeclspecCommand,
         generator::GeneratorCommand, hash::HashCommand, ignore::IgnoreCommand,
         init::InitCommand, project::ProjectCommand,
-        projection::ProjectionCommand, tool::ToolCommand,
+        projection::ProjectionCommand, remote_source::RemoteSourcesCommand,
+        tool::ToolCommand,
     },
 };
 
@@ -40,6 +41,7 @@ pub mod init;
 pub mod mcp;
 pub mod project;
 pub mod projection;
+pub mod remote_source;
 pub mod run;
 pub mod tool;
 
@@ -211,6 +213,12 @@ pub enum CliSubcommands {
 
     #[command(about = "Tool related subcommands")]
     Tool(ToolCommand),
+
+    #[command(
+        about = "Prefetch and pin remote sources for every subsystem",
+        alias = "remote-source"
+    )]
+    RemoteSources(RemoteSourcesCommand),
 
     #[command(
         about = "Maintain omni's managed block in ignore files (.gitignore, .ignore, .omniignore)"
