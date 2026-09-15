@@ -23,6 +23,7 @@ log = { workspace = true }
 derive-new = { workspace = true }
 bon = { workspace = true }
 serde = { workspace = true }
+async-trait = { workspace = true }
 omni_lockfile = { workspace = true }
 omni_git_utils = { workspace = true }
 omni_utils = { workspace = true }
@@ -36,3 +37,4 @@ tokio = { workspace = true }
 test-log = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+mockall = { workspace = true }
