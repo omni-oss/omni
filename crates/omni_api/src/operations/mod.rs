@@ -7,5 +7,6 @@ pub mod hash;
 pub mod ignore;
 pub mod project;
 pub mod projection;
+pub mod remote_source;
 pub mod task;
 pub mod tool;

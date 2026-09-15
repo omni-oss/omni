@@ -116,7 +116,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     /// (including orphans left by an advanced mutable ref), prune unreferenced
     /// lockfile pins, and write the pruned lockfile. Runs under the exclusive
     /// advisory lock so no concurrent write races the reconcile.
-    pub async fn retain(&self) -> Result<(), Error> {
+    pub async fn retain(&self) -> Result<usize, Error> {
         let _guard =
             LockGuard::acquire_exclusive(self.advisory_lock_path()).await?;
 
@@ -148,12 +148,12 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
         }
 
-        self.prune_store(&retained_dirs).await?;
+        let removed = self.prune_store(&retained_dirs).await?;
         self.prune_lockfile_pins(&retained_keys).await?;
         self.ensure_lockfile_parent().await?;
         self.lockfile.save(&self.sys).await?;
 
-        Ok(())
+        Ok(removed)
     }
 
     /// Merge this manager's in-memory pins onto whatever is currently on disk
@@ -227,12 +227,13 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
     async fn prune_store(
         &self,
         retained_dirs: &HashSet<PathBuf>,
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         let git_root = self.store_root_path.join(GIT_KIND_SEGMENT);
         if !self.sys.fs_exists_no_err_async(&git_root).await {
-            return Ok(());
+            return Ok(0);
         }
 
+        let mut removed = 0;
         for slug_dir in self.sys.fs_read_dir_async(&git_root).await? {
             let commit_dirs = match self.sys.fs_read_dir_async(&slug_dir).await
             {
@@ -243,6 +244,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             for commit_dir in commit_dirs {
                 if !retained_dirs.contains(&commit_dir) {
                     self.sys.fs_remove_dir_all_async(&commit_dir).await?;
+                    removed += 1;
                     log::debug!(
                         "removed unreferenced store checkout: {commit_dir:?}"
                     );
@@ -250,7 +252,7 @@ impl<TSys: RemoteSourceSys> RemoteSourceManager<TSys> {
             }
         }
 
-        Ok(())
+        Ok(removed)
     }
 
     async fn prune_lockfile_pins(
