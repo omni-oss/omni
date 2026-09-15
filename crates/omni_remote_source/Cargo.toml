@@ -7,7 +7,7 @@ authors.workspace = true
 repository.workspace = true
 
 [lib]
-name = "omni_remote_sources"
+name = "omni_remote_source"
 path = "src/lib.rs"
 [features]
 default = ["enable-tracing"]

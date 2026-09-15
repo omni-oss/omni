@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use omni_configurations::SourceConfig;
-use omni_remote_sources::{
+use omni_remote_source::{
     InstallOptions, RemoteSourceContributor, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };

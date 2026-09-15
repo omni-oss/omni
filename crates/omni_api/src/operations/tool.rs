@@ -6,7 +6,7 @@ use omni_capabilities::{PathRoots, Root};
 use omni_configurations::{SourceConfig, Subsystem, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_input_schema::{ValidationConfig, to_json_schema, validate};
-use omni_remote_sources::{
+use omni_remote_source::{
     RemoteSource, RemoteSourceRef, sys::RemoteSourceSys,
 };
 use omni_tool::{LazyToolRunner, ToolEnforcement, ToolSys, run_named};
@@ -54,7 +54,7 @@ pub async fn handle_tool_list<TSys>(
     ctx: &Context<TSys>,
 ) -> eyre::Result<ToolListResponse>
 where
-    TSys: ContextSys + ToolSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let tools = get_tools(ctx, &sys).await?;
@@ -76,7 +76,7 @@ pub async fn handle_tool_inspect<TSys>(
     name: &str,
 ) -> eyre::Result<ToolInspectResponse>
 where
-    TSys: ContextSys + ToolSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let tools = get_tools(ctx, &sys).await?;
@@ -106,7 +106,7 @@ pub async fn handle_tool_run<TSys>(
     working_dir: Option<ToolWorkingDir>,
 ) -> eyre::Result<serde_json::Value>
 where
-    TSys: ContextSys + ToolSys + omni_remote_sources::sys::RemoteSourceSys + FsSys + ProcSys + EnvVars + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + FsSys + ProcSys + EnvVars + Clone,
     <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     let sys = ctx.sys().clone();

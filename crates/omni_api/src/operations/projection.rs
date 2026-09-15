@@ -18,7 +18,7 @@ use omni_projections::{
     SourcePlan, SyncParams, apply_source, collision_conflicts,
     existing_file_conflicts, plan_source,
 };
-use omni_remote_sources::{
+use omni_remote_source::{
     RemoteSource, RemoteSourceRef, manager::RemoteSourceManager,
     sys::RemoteSourceSys,
 };

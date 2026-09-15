@@ -10,7 +10,7 @@
         "prompts": {
             "use_tracing": true,
             "add_error_type": true,
-            "crate_name": "omni_remote_sources",
+            "crate_name": "omni_remote_source",
             "version": "workspace",
             "crate_type": "lib"
         }

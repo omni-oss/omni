@@ -5,7 +5,7 @@ use omni_remote_source_contributors::{
     GeneratorRemoteContributor, ProjectionRemoteContributor,
     ToolRemoteContributor,
 };
-use omni_remote_sources::{
+use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
     sys::RemoteSourceSys,
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn every_workspace_source_list_has_a_registered_contributor() {
-        use omni_remote_sources::sys::RemoteSourceSys;
+        use omni_remote_source::sys::RemoteSourceSys;
         use system_traits::impls::InMemorySys;
 
         // Each list on WorkspaceConfiguration must map to a contributor id. If a
@@ -245,7 +245,7 @@ mod tests {
 
     struct StubContributor {
         id: &'static str,
-        refs: Vec<omni_remote_sources::RemoteSourceRef>,
+        refs: Vec<omni_remote_source::RemoteSourceRef>,
     }
 
     #[async_trait::async_trait]
@@ -261,7 +261,7 @@ mod tests {
             &self,
             _manager: &RemoteSourceManager<TSys>,
             _options: &InstallOptions,
-        ) -> eyre::Result<Vec<omni_remote_sources::RemoteSourceRef>> {
+        ) -> eyre::Result<Vec<omni_remote_source::RemoteSourceRef>> {
             Ok(self.refs.clone())
         }
     }
@@ -270,8 +270,8 @@ mod tests {
         uri: &str,
         rev: &str,
         commit: &str,
-    ) -> omni_remote_sources::RemoteSourceRef {
-        omni_remote_sources::RemoteSourceRef {
+    ) -> omni_remote_source::RemoteSourceRef {
+        omni_remote_source::RemoteSourceRef {
             source: RemoteSource::Git {
                 uri: Url::parse(uri).unwrap(),
                 rev: rev.to_string(),

@@ -6,7 +6,7 @@
 
 use std::{path::Path, process::Command};
 
-use omni_remote_sources::{
+use omni_remote_source::{
     RemoteSource, RemoteSourceRef,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
 };

@@ -13,7 +13,7 @@ pub use projection::ProjectionRemoteContributor;
 pub use tool::ToolRemoteContributor;
 
 use omni_configurations::SourceConfig;
-use omni_remote_sources::{
+use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };

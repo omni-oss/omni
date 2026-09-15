@@ -33,7 +33,7 @@ use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
-use omni_remote_sources::{
+use omni_remote_source::{
     RemoteSource, RemoteSourceRef, sys::RemoteSourceSys,
 };
 use tokio::task::JoinSet;
@@ -109,7 +109,7 @@ pub async fn handle_generator_run<TSys, S>(
     req: GeneratorRunRequest,
 ) -> eyre::Result<GeneratorRunResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
     S: GeneratorEventSubscriber,
 {
     let name = req.name.ok_or_else(|| {
@@ -318,7 +318,7 @@ pub async fn handle_generator_list<TSys>(
     ctx: &Context<TSys>,
 ) -> eyre::Result<GeneratorListResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -610,7 +610,7 @@ pub async fn handle_generator_inspect<TSys>(
     view: InspectViewKind,
 ) -> eyre::Result<GeneratorInspectResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -951,7 +951,7 @@ pub async fn handle_generator_validate_input<TSys>(
     req: GeneratorValidateInputRequest,
 ) -> eyre::Result<GeneratorValidateInputResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_sources::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;

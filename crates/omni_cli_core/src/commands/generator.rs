@@ -27,7 +27,7 @@ use omni_input_provider::configuration::builder::string;
 use omni_input_provider::{AllowedValue, ValidationConfig, collect_one};
 use omni_messages::NoopSubscriber;
 use omni_prompt::{CliInputProvider, builder::allowed};
-use omni_remote_sources::{RemoteSource, RemoteSourceRef};
+use omni_remote_source::{RemoteSource, RemoteSourceRef};
 use owo_colors::OwoColorize;
 use sets::OrderedSet;
 use tokio::task::JoinSet;

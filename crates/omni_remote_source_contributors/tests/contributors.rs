@@ -11,7 +11,7 @@ use omni_projection_configurations::ProjectionExtra;
 use omni_remote_source_contributors::{
     GeneratorRemoteContributor, ProjectionRemoteContributor,
 };
-use omni_remote_sources::{
+use omni_remote_source::{
     InstallOptions, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
 };

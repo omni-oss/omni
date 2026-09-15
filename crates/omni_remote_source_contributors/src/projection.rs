@@ -13,7 +13,7 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_projection_configurations::ProjectionExtra;
-use omni_remote_sources::{
+use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
