@@ -6,3 +6,6 @@ dependencies:
   - trace
   - omni_lockfile
   - omni_git_utils
+  - omni_utils
+  - omni_constants
+  - omni_file_data_serde

@@ -510,7 +510,7 @@ async fn get_generators(
         RemoteSourceManager::new(
             RemoteSourceConfig::builder()
                 .lockfile_path(lockfile_path)
-                .soure_dir_path(generator_sources_path)
+                .store_root_path(generator_sources_path)
                 .build(),
             sys.clone(),
         )

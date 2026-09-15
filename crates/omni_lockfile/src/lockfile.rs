@@ -123,6 +123,21 @@ impl Lockfile {
         }
     }
 
+    /// A snapshot of every pinned git source as `(uri, rev, commit)` tuples.
+    pub async fn git_pins(&self) -> Vec<(Url, String, String)> {
+        match &*self.data.lock().await {
+            LockfileData::V1_0_0(v1) => v1
+                .git
+                .iter()
+                .flat_map(|(uri, revs)| {
+                    revs.iter().map(move |(rev, data)| {
+                        (uri.clone(), rev.clone(), data.commit.clone())
+                    })
+                })
+                .collect(),
+        }
+    }
+
     pub async fn save(&self, sys: &impl LockfileSys) -> Result<(), Error> {
         let is_modified = self.is_modified.load(Ordering::Relaxed);
         if is_modified {

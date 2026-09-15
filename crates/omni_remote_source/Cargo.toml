@@ -22,11 +22,17 @@ tracing = { workspace = true, optional = true }
 log = { workspace = true }
 derive-new = { workspace = true }
 bon = { workspace = true }
+serde = { workspace = true }
 omni_lockfile = { workspace = true }
 omni_git_utils = { workspace = true }
+omni_utils = { workspace = true }
+omni_constants = { workspace = true }
+omni_file_data_serde = { workspace = true }
 system_traits = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
