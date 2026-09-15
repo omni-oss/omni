@@ -6803,6 +6803,7 @@ dependencies = [
 name = "omni_api"
 version = "0.21.0"
 dependencies = [
+ "async-trait",
  "bridge_rpc_services",
  "bytesize",
  "derive-new",
@@ -6832,6 +6833,7 @@ dependencies = [
  "omni_projections",
  "omni_remote_cache_client",
  "omni_remote_source",
+ "omni_remote_source_contributors",
  "omni_scm",
  "omni_setup",
  "omni_task_context",
@@ -7951,19 +7953,46 @@ dependencies = [
 name = "omni_remote_source"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "bon",
  "derive-new",
  "eyre",
  "log",
+ "mockall",
+ "omni_constants",
+ "omni_file_data_serde",
  "omni_git_utils",
  "omni_lockfile",
+ "omni_utils",
+ "serde",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "test-log",
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "trace",
  "tracing",
+ "url",
+]
+
+[[package]]
+name = "omni_remote_source_contributors"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "omni_configuration_discovery",
+ "omni_configurations",
+ "omni_constants",
+ "omni_file_data_serde",
+ "omni_meta",
+ "omni_projection_configurations",
+ "omni_remote_source",
+ "path-clean",
+ "system_traits",
+ "tempfile",
+ "tokio 1.52.3",
  "url",
 ]
 
