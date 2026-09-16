@@ -1,11 +1,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/omni-oss/json-schemas/refs/heads/main/project.json
-name: omni_remote_source
+name: omni_remote_source_contributors
 extends:
   - "@workspace/omni/presets/rust-lib.omni.yaml"
 dependencies:
-  - trace
-  - omni_lockfile
-  - omni_git_utils
-  - omni_utils
+  - omni_remote_source
+  - omni_configurations
+  - omni_projection_configurations
+  - omni_configuration_discovery
+  - omni_meta
   - omni_constants
   - omni_file_data_serde
+  - system_traits

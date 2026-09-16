@@ -10,7 +10,7 @@ use rmcp::{
     ServerHandler,
     model::{
         CallToolRequestParams, CallToolResponse, CallToolResult,
-        ListToolsResult, PaginatedRequestParams, ServerInfo,
+        ListToolsResult, PaginatedRequestParams, ServerConfig,
     },
     service::{RequestContext, RoleServer},
 };
@@ -70,8 +70,8 @@ where
         + 'static,
     <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::default();
+    fn get_info(&self) -> ServerConfig {
+        let mut info = ServerConfig::default();
         info.server_info = rmcp::model::Implementation::new(
             env!("CARGO_PKG_NAME"),
             env!("CARGO_PKG_VERSION"),

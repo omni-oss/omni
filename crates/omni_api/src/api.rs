@@ -447,7 +447,7 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
     S: OmniEventSubscriber,
 {
     /// Run a generator against the workspace.
@@ -517,7 +517,7 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + Clone,
+    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
     S: OmniEventSubscriber,
 {
     /// List all discovered tools in the workspace.
@@ -650,5 +650,29 @@ where
         let ctx = self.ctx.lock().await;
         crate::operations::ignore::handle_ignore_clean(ctx.as_context(), req)
             .await
+    }
+}
+
+impl<TSys, S> OmniApi<TSys, S>
+where
+    TSys: crate::operations::remote_source::RemoteSourceInstallSys,
+    S: OmniEventSubscriber,
+{
+    /// Prefetch and pin every remote source declared in the workspace across
+    /// the selected subsystems, sharing one content store.
+    pub async fn remote_sources_install(
+        &self,
+        req: crate::operations::remote_source::RemoteSourcesInstallRequest,
+    ) -> eyre::Result<
+        crate::operations::remote_source::RemoteSourcesInstallResponse,
+    > {
+        let ctx = self.ctx.lock().await;
+        let sys = ctx.as_context().sys().clone();
+        crate::operations::remote_source::handle_remote_sources_install(
+            ctx.as_context(),
+            &sys,
+            req,
+        )
+        .await
     }
 }

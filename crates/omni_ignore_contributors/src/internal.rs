@@ -7,7 +7,7 @@ use omni_ignore_core::{IgnoreContributor, IgnorePattern};
 /// Emits the ordered set of patterns for omni's own state under `.omni/`. The
 /// patterns are built from the same `omni_constants` segments the subsystems use
 /// to write those paths, so a rename moves the writer and the ignore pattern
-/// together. The `sources/*/lock.json` keep-rule is emitted right after the base
+/// together. The `sources/lock.json` keep-rule is emitted right after the base
 /// it re-includes and must never be reordered ahead of it.
 pub struct InternalContributor;
 
@@ -19,8 +19,8 @@ impl InternalContributor {
             format!("/{OMNI_LOCKS_DIR}/**"),
             format!("/{OMNI_DIR}/{remote_cache}"),
             format!("/{OMNI_SCRATCH_DIR}/**"),
-            format!("/{OMNI_SOURCES_DIR}/*/**"),
-            format!("!/{OMNI_SOURCES_DIR}/*/{SOURCE_LOCKFILE_NAME}"),
+            format!("/{OMNI_SOURCES_DIR}/**"),
+            format!("!/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_NAME}"),
             format!("/{OMNI_TRACE_DIR}/**"),
         ]
     }
@@ -57,8 +57,8 @@ mod tests {
                 "/.omni/locks/**",
                 "/.omni/remote-cache.omni.*",
                 "/.omni/scratch/**",
-                "/.omni/sources/*/**",
-                "!/.omni/sources/*/lock.json",
+                "/.omni/sources/**",
+                "!/.omni/sources/lock.json",
                 "/.omni/trace/**",
             ]
         );
@@ -73,13 +73,10 @@ mod tests {
     #[tokio::test]
     async fn keep_rule_follows_its_base_pattern() {
         let lines = InternalContributor::lines();
-        let base = lines
-            .iter()
-            .position(|l| l == "/.omni/sources/*/**")
-            .unwrap();
+        let base = lines.iter().position(|l| l == "/.omni/sources/**").unwrap();
         let keep = lines
             .iter()
-            .position(|l| l == "!/.omni/sources/*/lock.json")
+            .position(|l| l == "!/.omni/sources/lock.json")
             .unwrap();
         assert_eq!(keep, base + 1);
     }
@@ -88,10 +85,10 @@ mod tests {
     async fn patterns_are_derived_from_constants() {
         let lines = InternalContributor::lines();
         assert_eq!(lines[0], format!("/{OMNI_CACHE_DIR}/**"));
-        assert_eq!(lines[4], format!("/{OMNI_SOURCES_DIR}/*/**"));
+        assert_eq!(lines[4], format!("/{OMNI_SOURCES_DIR}/**"));
         assert_eq!(
             lines[5],
-            format!("!/{OMNI_SOURCES_DIR}/*/{SOURCE_LOCKFILE_NAME}")
+            format!("!/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_NAME}")
         );
     }
 }

@@ -39,5 +39,8 @@ pub(crate) enum ErrorInner {
     GitUtils(#[from] omni_git_utils::Error),
 
     #[error(transparent)]
+    FileData(#[from] omni_file_data_serde::Error),
+
+    #[error(transparent)]
     Io(#[from] std::io::Error),
 }

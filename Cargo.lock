@@ -3097,7 +3097,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3347,7 +3347,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4290,7 +4290,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -5301,7 +5301,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio 1.52.3",
  "tower-service",
@@ -6044,7 +6044,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if 1.0.4",
- "windows-targets 0.53.3",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -6652,7 +6652,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6803,6 +6803,7 @@ dependencies = [
 name = "omni_api"
 version = "0.21.0"
 dependencies = [
+ "async-trait",
  "bridge_rpc_services",
  "bytesize",
  "derive-new",
@@ -6832,6 +6833,7 @@ dependencies = [
  "omni_projections",
  "omni_remote_cache_client",
  "omni_remote_source",
+ "omni_remote_source_contributors",
  "omni_scm",
  "omni_setup",
  "omni_task_context",
@@ -7951,19 +7953,46 @@ dependencies = [
 name = "omni_remote_source"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "bon",
  "derive-new",
  "eyre",
  "log",
+ "mockall",
+ "omni_constants",
+ "omni_file_data_serde",
  "omni_git_utils",
  "omni_lockfile",
+ "omni_utils",
+ "serde",
  "strum 0.28.0",
  "system_traits",
+ "tempfile",
  "test-log",
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "trace",
  "tracing",
+ "url",
+]
+
+[[package]]
+name = "omni_remote_source_contributors"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "omni_configuration_discovery",
+ "omni_configurations",
+ "omni_constants",
+ "omni_file_data_serde",
+ "omni_meta",
+ "omni_projection_configurations",
+ "omni_remote_source",
+ "path-clean",
+ "system_traits",
+ "tempfile",
+ "tokio 1.52.3",
  "url",
 ]
 
@@ -8385,7 +8414,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -9070,7 +9099,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.32",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio 1.52.3",
  "tracing",
@@ -9108,9 +9137,9 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9680,9 +9709,9 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "rmcp"
-version = "3.1.3"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f17072af977b0f86f714dbd64b3d37d0715bb63064f9d13483f0a1775813374"
+checksum = "b23c62fe489ac1d401ab32688cfacac3737a8978dc3343e5361464c7724fd3cb"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -9703,9 +9732,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "3.1.3"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54817231d63a35330d5c3a5782a4a166fbe3b914a9faab440d3dd8bd37971890"
+checksum = "cd740c45d66ceb87e5579082abc27bd771665e464e9660a17a048c721b2a6025"
 dependencies = [
  "darling 0.24.0",
  "proc-macro2",
@@ -9925,7 +9954,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9995,7 +10024,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys 2.15.0",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11198,7 +11227,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11241,7 +11270,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

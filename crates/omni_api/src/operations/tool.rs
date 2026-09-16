@@ -6,6 +6,9 @@ use omni_capabilities::{PathRoots, Root};
 use omni_configurations::{SourceConfig, Subsystem, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_input_schema::{ValidationConfig, to_json_schema, validate};
+use omni_remote_source::{
+    RemoteSource, RemoteSourceRef, sys::RemoteSourceSys,
+};
 use omni_tool::{LazyToolRunner, ToolEnforcement, ToolSys, run_named};
 use omni_tool_configurations::ToolConfiguration;
 use schemars::JsonSchema;
@@ -51,7 +54,7 @@ pub async fn handle_tool_list<TSys>(
     ctx: &Context<TSys>,
 ) -> eyre::Result<ToolListResponse>
 where
-    TSys: ContextSys + ToolSys + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let tools = get_tools(ctx, &sys).await?;
@@ -73,7 +76,7 @@ pub async fn handle_tool_inspect<TSys>(
     name: &str,
 ) -> eyre::Result<ToolInspectResponse>
 where
-    TSys: ContextSys + ToolSys + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + Clone,
 {
     let sys = ctx.sys().clone();
     let tools = get_tools(ctx, &sys).await?;
@@ -103,7 +106,7 @@ pub async fn handle_tool_run<TSys>(
     working_dir: Option<ToolWorkingDir>,
 ) -> eyre::Result<serde_json::Value>
 where
-    TSys: ContextSys + ToolSys + FsSys + ProcSys + EnvVars + Clone,
+    TSys: ContextSys + ToolSys + omni_remote_source::sys::RemoteSourceSys + FsSys + ProcSys + EnvVars + Clone,
     <TSys as BaseFsMetadataAsync>::Metadata: Send,
 {
     let sys = ctx.sys().clone();
@@ -216,18 +219,22 @@ where
 }
 
 /// Discover and load every tool declared in the workspace's `tools:` sources.
-///
-/// v1 resolves `local` sources only; `git` sources are reserved for a later
-/// revision and are currently ignored.
 pub async fn get_tools<TSys>(
     ctx: &Context<TSys>,
     sys: &TSys,
 ) -> eyre::Result<Vec<Cow<'static, ToolConfiguration>>>
 where
-    TSys: ContextSys + ToolSys + Clone,
+    TSys: ContextSys + ToolSys + RemoteSourceSys + Clone,
 {
+    let remote_sources = std::sync::Arc::new(
+        crate::operations::remote_source::open_source_store(ctx, sys).await?,
+    );
+
     let mut retrieval_tasks: JoinSet<
-        eyre::Result<Vec<Cow<'static, ToolConfiguration>>>,
+        eyre::Result<(
+            Vec<Cow<'static, ToolConfiguration>>,
+            Option<RemoteSourceRef>,
+        )>,
     > = JoinSet::new();
 
     for config in ctx.workspace_configuration().tools.iter() {
@@ -246,18 +253,45 @@ where
                             omni_tool::discover(&root_dir, &items, &sys).await?
                         }
                     };
-                    Ok(configurations)
+                    Ok((configurations, None))
                 });
             }
-            // Remote (`git`) tool sources are reserved for a later revision.
-            SourceConfig::Git(_) => {}
+            SourceConfig::Git(git) => {
+                let remote_sources = remote_sources.clone();
+                let sys = sys.clone();
+                let git = git.clone();
+                retrieval_tasks.spawn(async move {
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let configurations =
+                        omni_tool::discover(&materialized.root, &["**"], &sys)
+                            .await?;
+                    let git_ref = RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    };
+                    Ok((configurations, Some(git_ref)))
+                });
+            }
         }
     }
 
     let mut configurations = vec![];
-    for configs in retrieval_tasks.join_all().await {
-        configurations.extend(configs?);
+    let mut refs = vec![];
+    for result in retrieval_tasks.join_all().await {
+        let (configs, git_ref) = result?;
+        configurations.extend(configs);
+        if let Some(git_ref) = git_ref {
+            refs.push(git_ref);
+        }
     }
+
+    remote_sources.record_refs("tool", &refs).await?;
+    remote_sources.persist_pins().await?;
 
     Ok(configurations)
 }
