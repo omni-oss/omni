@@ -137,9 +137,9 @@ where
         let manifest = discover_owned_manifest(self.sys, &root).await?;
         let node = match manifest {
             Some(OwnedProjectionConfiguration::Meta { sources }) => {
-                Node::Meta(sources)
+                Node::meta(sources)
             }
-            _ => Node::Leaf(()),
+            _ => Node::leaf(()),
         };
 
         Ok(Materialized {

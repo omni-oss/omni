@@ -646,6 +646,13 @@ where
 /// Everything reachable through a manifest is untrusted: only a top-level
 /// workspace `routes` override may set the control-plane flags, so the floor is
 /// applied to every other route set.
+///
+/// This deliberately produces only leaf-only or meta-only [`Node`]s, never a
+/// both-and node, preserving RFC 0010's `Leaf` XOR `Meta` constraint: a
+/// `projection.omni.*` either declares routes or composes member sources, not
+/// both. `omni_meta::Node` now supports both-and (generalized as a prerequisite
+/// for source packs, RFC 0014), so projections could relax this in the future
+/// if a need arises; until then the existing behaviour is kept unchanged.
 fn classify_routes(
     qualified_id: &str,
     workspace_routes: Option<&[Projection]>,
@@ -665,17 +672,17 @@ fn classify_routes(
             if !trusted {
                 reject_privilege_escalation(qualified_id, routes)?;
             }
-            Ok(Node::Leaf(routes.to_vec()))
+            Ok(Node::leaf(routes.to_vec()))
         }
         None => match manifest {
             Some(OwnedProjectionConfiguration::Meta { sources }) => {
-                Ok(Node::Meta(sources))
+                Ok(Node::meta(sources))
             }
             Some(OwnedProjectionConfiguration::Leaf { routes })
                 if !routes.is_empty() =>
             {
                 reject_privilege_escalation(qualified_id, &routes)?;
-                Ok(Node::Leaf(routes))
+                Ok(Node::leaf(routes))
             }
             Some(OwnedProjectionConfiguration::Leaf { .. }) | None => {
                 Err(eyre::eyre!(
@@ -877,9 +884,14 @@ mod tests {
             r#"{"strategy":"namespaced","target":"@workspace/vendored"}"#,
         )]);
         let node = classify_routes("id", None, manifest, false).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0], Projection::Namespaced(_)));
     }
@@ -889,9 +901,14 @@ mod tests {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
         let manifest = leaf(vec![route(r#"{"strategy":"namespaced"}"#)]);
         let node = classify_routes("id", Some(&ws), manifest, true).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes, ws, "workspace routes win wholesale");
     }
 
@@ -932,9 +949,14 @@ mod tests {
     fn workspace_routes_may_set_allow_flags() {
         let ws = vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)];
         let node = classify_routes("id", Some(&ws), None, true).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes, ws, "workspace config may relax the safety floor");
     }
 
@@ -948,7 +970,8 @@ mod tests {
         ];
         let manifest = Some(OwnedProjectionConfiguration::Meta { sources });
         let node = classify_routes("org", None, manifest, false).unwrap();
-        assert!(matches!(node, Node::Meta(m) if m.len() == 1));
+        assert!(node.leaf.is_none(), "a bundle contributes no routes itself");
+        assert_eq!(node.children.len(), 1);
     }
 
     #[test]

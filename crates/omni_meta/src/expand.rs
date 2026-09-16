@@ -24,12 +24,45 @@ pub enum SourceIdentity {
     Local(PathBuf),
 }
 
-/// The classification of a materialized source: either a leaf that contributes
-/// a resolved payload, or a bundle that contributes further member sources.
+/// The classification of a materialized source: an optional resolved payload
+/// the node contributes itself, together with any member sources to expand
+/// beneath it. A node may be leaf-only (`leaf` set, `children` empty),
+/// meta-only (`leaf` `None`, `children` populated), or both at once. Whether a
+/// given subsystem ever produces a both-and node is that subsystem's choice;
+/// the projection subsystem, for instance, only ever produces leaf-only or
+/// meta-only nodes, so its behavior is unchanged by the both-and capability.
 #[derive(Debug)]
-pub enum Node<Leaf, Extra> {
-    Leaf(Leaf),
-    Meta(Vec<SourceConfig<Extra>>),
+pub struct Node<Leaf, Extra> {
+    /// The payload this node contributes directly, if any.
+    pub leaf: Option<Leaf>,
+    /// Member sources to expand beneath this node, if any.
+    pub children: Vec<SourceConfig<Extra>>,
+}
+
+impl<Leaf, Extra> Node<Leaf, Extra> {
+    /// A node that only contributes its own payload (no member sources).
+    pub fn leaf(leaf: Leaf) -> Self {
+        Self {
+            leaf: Some(leaf),
+            children: Vec::new(),
+        }
+    }
+
+    /// A node that only bundles member sources (contributes no payload itself).
+    pub fn meta(children: Vec<SourceConfig<Extra>>) -> Self {
+        Self {
+            leaf: None,
+            children,
+        }
+    }
+
+    /// A node that both contributes its own payload and bundles member sources.
+    pub fn both(leaf: Leaf, children: Vec<SourceConfig<Extra>>) -> Self {
+        Self {
+            leaf: Some(leaf),
+            children,
+        }
+    }
 }
 
 /// The result of materializing (fetching/pinning) and classifying one source.
@@ -236,44 +269,49 @@ where
             .into());
         }
 
-        match materialized.node {
-            Node::Leaf(leaf) => {
-                let selected = select.is_none_or(|s| matches(&qualified_id, s));
-                if selected {
-                    out.push(EffectiveSource {
-                        id: expander.member_id(&frame.src).to_string(),
-                        qualified_id,
-                        root: materialized.root,
-                        pin: materialized.pin,
-                        leaf,
-                    });
-                }
+        let Node { leaf, children } = materialized.node;
+
+        // A node contributes its own payload (if any) at its qualified id.
+        if let Some(leaf) = leaf {
+            let selected = select.is_none_or(|s| matches(&qualified_id, s));
+            if selected {
+                out.push(EffectiveSource {
+                    id: expander.member_id(&frame.src).to_string(),
+                    qualified_id: qualified_id.clone(),
+                    root: materialized.root.clone(),
+                    pin: materialized.pin,
+                    leaf,
+                });
             }
-            Node::Meta(children) => {
-                detect_duplicates(expander, &children, Some(&qualified_id))?;
+        }
 
-                let child_qids: Vec<String> = children
-                    .iter()
-                    .map(|s| {
-                        compose_qualified_id(
-                            Some(&qualified_id),
-                            expander.member_id(s),
-                        )
-                    })
-                    .collect();
+        // Then it expands its member sources (if any) beneath it. A leaf-only
+        // node has no children and stops here; a meta-only node contributed no
+        // payload above; a both-and node does both, in that order (pre-order).
+        if !children.is_empty() {
+            detect_duplicates(expander, &children, Some(&qualified_id))?;
 
-                let mut ancestors = frame.ancestors;
-                ancestors.push((materialized.identity, qualified_id));
+            let child_qids: Vec<String> = children
+                .iter()
+                .map(|s| {
+                    compose_qualified_id(
+                        Some(&qualified_id),
+                        expander.member_id(s),
+                    )
+                })
+                .collect();
 
-                push_children(
-                    &mut stack,
-                    children,
-                    child_qids,
-                    materialized.root,
-                    frame.depth + 1,
-                    ancestors,
-                );
-            }
+            let mut ancestors = frame.ancestors;
+            ancestors.push((materialized.identity, qualified_id));
+
+            push_children(
+                &mut stack,
+                children,
+                child_qids,
+                materialized.root,
+                frame.depth + 1,
+                ancestors,
+            );
         }
     }
 
@@ -312,6 +350,7 @@ mod tests {
     enum FakeNode {
         Leaf(String),
         Meta(Vec<SourceConfig<TestExtra>>),
+        Both(String, Vec<SourceConfig<TestExtra>>),
     }
 
     struct Fake {
@@ -341,6 +380,18 @@ mod tests {
             children: Vec<SourceConfig<TestExtra>>,
         ) -> Self {
             self.nodes.insert(id.to_string(), FakeNode::Meta(children));
+            self
+        }
+
+        fn both(
+            mut self,
+            id: &str,
+            children: Vec<SourceConfig<TestExtra>>,
+        ) -> Self {
+            self.nodes.insert(
+                id.to_string(),
+                FakeNode::Both(format!("payload:{id}"), children),
+            );
             self
         }
     }
@@ -384,9 +435,12 @@ mod tests {
             };
 
             let node = match self.nodes.get(&id) {
-                Some(FakeNode::Leaf(p)) => Node::Leaf(p.clone()),
-                Some(FakeNode::Meta(children)) => Node::Meta(children.clone()),
-                None => Node::Leaf(format!("payload:{id}")),
+                Some(FakeNode::Leaf(p)) => Node::leaf(p.clone()),
+                Some(FakeNode::Meta(children)) => Node::meta(children.clone()),
+                Some(FakeNode::Both(p, children)) => {
+                    Node::both(p.clone(), children.clone())
+                }
+                None => Node::leaf(format!("payload:{id}")),
             };
 
             Ok(Materialized {
@@ -507,6 +561,60 @@ mod tests {
         let qids: Vec<&str> =
             out.iter().map(|e| e.qualified_id.as_str()).collect();
         assert_eq!(qids, vec!["org::team-a::shared", "org::team-b::shared"]);
+    }
+
+    #[tokio::test]
+    async fn both_node_contributes_its_own_leaf_and_recurses() {
+        // `org` both contributes its own payload and composes a child. Its own
+        // contribution is emitted in pre-order, before the child's.
+        let fake = Fake::new()
+            .both("org", vec![git("child", "https://x/c.git", "main")])
+            .leaf("child");
+        let sources = vec![git("org", "https://x/org.git", "main")];
+
+        let out = expand_all(&fake, &sources).await.unwrap();
+        let qids: Vec<&str> =
+            out.iter().map(|e| e.qualified_id.as_str()).collect();
+        assert_eq!(qids, vec!["org", "org::child"]);
+
+        let payloads: Vec<&str> = out.iter().map(|e| e.leaf.as_str()).collect();
+        assert_eq!(payloads, vec!["payload:org", "payload:child"]);
+    }
+
+    #[tokio::test]
+    async fn selecting_a_child_prunes_a_both_nodes_own_leaf() {
+        // `org` is on the path to the selection and is therefore traversed, but
+        // its own payload is outside the selected subtree, so only the child's
+        // contribution is emitted.
+        let fake = Fake::new()
+            .both("org", vec![git("child", "https://x/c.git", "main")])
+            .leaf("child");
+        let sources = vec![git("org", "https://x/org.git", "main")];
+
+        let out = expand(
+            &fake,
+            &sources,
+            &root(),
+            DEFAULT_META_PROJECTION_DEPTH,
+            Some("org::child"),
+        )
+        .await
+        .unwrap();
+        let qids: Vec<&str> =
+            out.iter().map(|e| e.qualified_id.as_str()).collect();
+        assert_eq!(qids, vec!["org::child"]);
+    }
+
+    #[tokio::test]
+    async fn detects_a_cycle_through_a_both_node() {
+        // A both-and node is pushed onto the ancestor path before recursing, so
+        // a child that resolves back to it is still caught as a cycle.
+        let fake = Fake::new()
+            .both("org", vec![git("org", "https://x/org.git", "main")]);
+        let sources = vec![git("org", "https://x/org.git", "main")];
+
+        let err = expand_all(&fake, &sources).await.unwrap_err();
+        assert!(err.to_string().contains("cycle detected"));
     }
 
     #[tokio::test]
