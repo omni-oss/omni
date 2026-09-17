@@ -5,10 +5,14 @@
 //! Discovery of the configuration itself stays with the caller.
 
 mod generator;
+mod pack;
 mod projection;
 mod tool;
 
 pub use generator::GeneratorRemoteContributor;
+pub use pack::{
+    ExpandedPackNode, ExpandedPacks, PackContributedSource, expand_packs,
+};
 pub use projection::ProjectionRemoteContributor;
 pub use tool::ToolRemoteContributor;
 

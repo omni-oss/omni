@@ -27,3 +27,4 @@ path-clean = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = { workspace = true }
+serde_json = { workspace = true }
