@@ -588,6 +588,69 @@ async fn get_generators(
         }
     }
 
+    let packs = ctx.workspace_configuration().packs.clone();
+    if !packs.is_empty() {
+        let (expanded, pack_refs) =
+            omni_remote_source_contributors::expand_packs(
+                remote_sources.as_ref(),
+                &packs,
+                ctx.root_dir(),
+                false,
+            )
+            .await?;
+        refs.extend(pack_refs);
+
+        for contributed in expanded.effective_generator_sources() {
+            let discovered = match &contributed.source {
+                SourceConfig::Local(local) => {
+                    let paths: Vec<String> = match &local.path {
+                        SingleOrMany::Single(p) => vec![p.clone()],
+                        SingleOrMany::Many(ps) => ps.clone(),
+                    };
+                    omni_generator::discover(&contributed.root, &paths, sys)
+                        .await?
+                }
+                SourceConfig::Git(git) => {
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let discovered = omni_generator::discover(
+                        &materialized.root,
+                        &["**"],
+                        sys,
+                    )
+                    .await?;
+                    refs.push(RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    });
+                    discovered
+                }
+                SourceConfig::Registry(_) => {
+                    unreachable!("registry sources are never constructed")
+                }
+            };
+
+            let namespaced: Vec<Cow<'static, GeneratorConfiguration>> =
+                discovered
+                    .into_iter()
+                    .map(|c| {
+                        let mut c = c.into_owned();
+                        c.name =
+                            format!("{}:{}", contributed.qualified_id, c.name);
+                        Cow::Owned(c)
+                    })
+                    .collect();
+            configurations.extend(omni_generator::assign_scope_id(
+                &contributed.qualified_id,
+                namespaced,
+            ));
+        }
+    }
+
     remote_sources.record_refs("generator", &refs).await?;
     remote_sources.persist_pins().await?;
 

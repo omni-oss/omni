@@ -167,10 +167,29 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
     let env_files = env_file_names(ctx);
-    let sources = &ctx.workspace_configuration().projections;
 
     let remote =
         crate::operations::remote_source::open_source_store(ctx, &sys).await?;
+
+    // Pack-contributed projection sources (author-opt-in, `provides`-gated) join
+    // the workspace's own list before expansion: their `local` paths are already
+    // rebased onto the materialized pack root and their ids prefixed with the
+    // pack qualified id, so they slot in as ordinary top-level sources.
+    let packs = ctx.workspace_configuration().packs.clone();
+    let mut sources = ctx.workspace_configuration().projections.clone();
+    let mut pack_refs = Vec::new();
+    if !packs.is_empty() {
+        let (expanded, refs) = omni_remote_source_contributors::expand_packs(
+            &remote,
+            &packs,
+            &workspace_root,
+            req.update,
+        )
+        .await?;
+        pack_refs = refs;
+        sources.extend(expanded.effective_projection_sources());
+    }
+    let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
     let mut ledger = omni_projections::load(&sys, &ledger_path).await;
@@ -248,8 +267,11 @@ where
     // Every git ref pulled during expansion (meta repos and git children at any
     // depth) is recorded so a full sync can refresh the projection reference
     // set that guards the shared store from garbage collection.
-    let all_git: Vec<RemoteSourceRef> =
-        expander.git_refs.into_inner().unwrap_or_default();
+    let all_git: Vec<RemoteSourceRef> = {
+        let mut refs = expander.git_refs.into_inner().unwrap_or_default();
+        refs.extend(pack_refs);
+        refs
+    };
 
     // Phase 1: plan every expanded source without writing.
     let mut prepared: Vec<PreparedSource> = Vec::new();

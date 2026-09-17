@@ -4,6 +4,7 @@ use std::{
     sync::Mutex,
 };
 
+use async_trait::async_trait;
 use omni_configurations::{
     GeneratorSourceConfiguration, GitSource, LocalSource, PackManifest,
     PackProfile, PackSourceConfiguration, PackSubsystem, ProjectionId,
@@ -15,8 +16,8 @@ use omni_meta::{
     SourceIdentity, expand,
 };
 use omni_remote_source::{
-    RemoteSource, RemoteSourceRef, manager::RemoteSourceManager,
-    sys::RemoteSourceSys,
+    InstallOptions, RemoteSource, RemoteSourceContributor, RemoteSourceRef,
+    manager::RemoteSourceManager, sys::RemoteSourceSys,
 };
 use system_traits::FsReadAsync;
 
@@ -498,4 +499,69 @@ where
     }
 
     Ok(None)
+}
+
+/// Materializes the workspace's `packs:` graph into the shared store: every pack
+/// root, transitively, plus each git subsystem source a pack manifest declares.
+/// Built from the already-loaded pack source list and the workspace root.
+pub struct PackRemoteContributor {
+    sources: Vec<PackSourceConfiguration>,
+    workspace_root: PathBuf,
+}
+
+impl PackRemoteContributor {
+    pub fn new(
+        sources: Vec<PackSourceConfiguration>,
+        workspace_root: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            sources,
+            workspace_root: workspace_root.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl<TSys> RemoteSourceContributor<TSys> for PackRemoteContributor
+where
+    TSys: RemoteSourceSys + FsReadAsync + Send + Sync,
+{
+    fn id(&self) -> &'static str {
+        "pack"
+    }
+
+    async fn contribute(
+        &self,
+        manager: &RemoteSourceManager<TSys>,
+        options: &InstallOptions,
+    ) -> eyre::Result<Vec<RemoteSourceRef>> {
+        let (expanded, mut refs) = expand_packs(
+            manager,
+            &self.sources,
+            &self.workspace_root,
+            options.update,
+        )
+        .await?;
+
+        for node in &expanded.nodes {
+            refs.extend(
+                crate::materialize_flat_git(manager, &node.generators, options)
+                    .await?,
+            );
+            refs.extend(
+                crate::materialize_flat_git(manager, &node.tools, options)
+                    .await?,
+            );
+            refs.extend(
+                crate::materialize_flat_git(
+                    manager,
+                    &node.projections,
+                    options,
+                )
+                .await?,
+            );
+        }
+
+        Ok(refs)
+    }
 }

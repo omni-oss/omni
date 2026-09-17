@@ -11,7 +11,8 @@ mod tool;
 
 pub use generator::GeneratorRemoteContributor;
 pub use pack::{
-    ExpandedPackNode, ExpandedPacks, PackContributedSource, expand_packs,
+    ExpandedPackNode, ExpandedPacks, PackContributedSource,
+    PackRemoteContributor, expand_packs,
 };
 pub use projection::ProjectionRemoteContributor;
 pub use tool::ToolRemoteContributor;

@@ -299,8 +299,72 @@ where
         }
     }
 
+    let packs = ctx.workspace_configuration().packs.clone();
+    if !packs.is_empty() {
+        let (expanded, pack_refs) =
+            omni_remote_source_contributors::expand_packs(
+                remote_sources.as_ref(),
+                &packs,
+                ctx.root_dir(),
+                false,
+            )
+            .await?;
+        refs.extend(pack_refs);
+
+        for contributed in expanded.effective_tool_sources() {
+            let discovered = match &contributed.source {
+                SourceConfig::Local(local) => {
+                    let paths: Vec<String> = match &local.path {
+                        SingleOrMany::Single(p) => vec![p.clone()],
+                        SingleOrMany::Many(ps) => ps.clone(),
+                    };
+                    omni_tool::discover(&contributed.root, &paths, sys).await?
+                }
+                SourceConfig::Git(git) => {
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let discovered =
+                        omni_tool::discover(&materialized.root, &["**"], sys)
+                            .await?;
+                    refs.push(RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    });
+                    discovered
+                }
+                SourceConfig::Registry(_) => {
+                    unreachable!("registry sources are never constructed")
+                }
+            };
+
+            configurations
+                .extend(namespace_tools(&contributed.qualified_id, discovered));
+        }
+    }
+
     remote_sources.record_refs("tool", &refs).await?;
     remote_sources.persist_pins().await?;
 
     Ok(configurations)
+}
+
+/// Namespace every discovered tool's unique name by the pack's qualified id
+/// (`<qualified-id>:<name>`), so pack-contributed tools cannot collide with the
+/// workspace's own names or another pack's.
+fn namespace_tools(
+    qualified_id: &str,
+    configs: Vec<Cow<'static, ToolConfiguration>>,
+) -> Vec<Cow<'static, ToolConfiguration>> {
+    configs
+        .into_iter()
+        .map(|c| {
+            let mut c = c.into_owned();
+            c.name = format!("{qualified_id}:{}", c.name);
+            Cow::Owned(c)
+        })
+        .collect()
 }
