@@ -132,7 +132,7 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     // A git child that the bundle references.
     let (_child, child_url, child_commit) = build_repo(&[(
         "projection.omni.yaml",
-        "routes:\n  - strategy: mirror\n",
+        "name: \"@vendor/child\"\nroutes:\n  - strategy: mirror\n",
     )]);
 
     // A local bundle inside the workspace whose manifest is a meta bundle
@@ -141,7 +141,7 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     let bundle_dir = ws.path().join("bundle");
     std::fs::create_dir_all(&bundle_dir).expect("bundle dir");
     let manifest = format!(
-        "sources:\n  - source: git\n    uri: {}\n    rev: main\n    id: child\n",
+        "name: \"@vendor/bundle\"\nsources:\n  - source: git\n    uri: {}\n    rev: main\n    id: child\n",
         child_url
     );
     std::fs::write(bundle_dir.join("projection.omni.yaml"), manifest)

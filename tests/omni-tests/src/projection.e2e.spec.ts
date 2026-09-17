@@ -249,7 +249,7 @@ function ownedProjectionWorkspace(): WorkspaceSpec {
         files: {
             "vendor/skills/rust.md": "# rust\n",
             "vendor/skills/projection.omni.yaml":
-                'routes:\n  - strategy: mirror\n    scope: "*.md"\n    target: "@workspace/.agents/skills"\n',
+                'name: "@vendor/skills"\nroutes:\n  - strategy: mirror\n    scope: "*.md"\n    target: "@workspace/.agents/skills"\n',
         },
     };
 }
@@ -303,6 +303,7 @@ const singleSourceConfig = {
 // two local member sources. The `::` composed identity is a system artifact and
 // never appears on disk: members land where a directly-declared source would.
 const bundleManifest =
+    'name: "@vendor/bundle"\n' +
     "sources:\n" +
     "  - source: local\n" +
     "    path: ./skills\n" +

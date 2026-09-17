@@ -910,7 +910,7 @@ mod tests {
 
     fn leaf(routes: Vec<Projection>) -> Option<OwnedProjectionConfiguration> {
         Some(OwnedProjectionConfiguration {
-            name: None,
+            name: "@org/anon".to_string(),
             version: None,
             description: None,
             body: OwnedProjectionBody::Leaf { routes },
@@ -922,7 +922,7 @@ mod tests {
         routes: Vec<Projection>,
     ) -> Option<OwnedProjectionConfiguration> {
         Some(OwnedProjectionConfiguration {
-            name: Some(name.to_string()),
+            name: name.to_string(),
             version: Some("1.0.0".to_string()),
             description: Some("desc".to_string()),
             body: OwnedProjectionBody::Leaf { routes },
@@ -1041,7 +1041,7 @@ mod tests {
             .unwrap(),
         ];
         let manifest = Some(OwnedProjectionConfiguration {
-            name: None,
+            name: "@org/bundle".to_string(),
             version: None,
             description: None,
             body: OwnedProjectionBody::Meta { sources },
@@ -1055,7 +1055,7 @@ mod tests {
     fn workspace_routes_cannot_override_a_bundle_manifest() {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
         let manifest = Some(OwnedProjectionConfiguration {
-            name: None,
+            name: "@org/bundle".to_string(),
             version: None,
             description: None,
             body: OwnedProjectionBody::Meta {
