@@ -10,7 +10,6 @@ use omni_remote_source::manager::{
 };
 use omni_remote_source_contributors::expand_packs;
 use system_traits::impls::RealSys;
-use tempfile::TempDir;
 
 async fn manager(sources_root: &Path) -> RemoteSourceManager<RealSys> {
     RemoteSourceManager::new(
@@ -72,9 +71,10 @@ async fn both_and_pack_contributes_its_own_sources_and_recurses() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", None)];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
-        .await
-        .unwrap();
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
 
     assert_eq!(packs.nodes.len(), 2, "the pack and its sub-pack");
     let gens = packs.effective_generator_sources();
@@ -96,9 +96,10 @@ async fn a_pack_without_projections_contributes_no_projection_face() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", None)];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
-        .await
-        .unwrap();
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
 
     assert!(
         packs.effective_projection_sources().is_empty(),
@@ -124,9 +125,10 @@ async fn provides_narrows_and_cascades_and_never_widens() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", Some(r#"["generators"]"#))];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
-        .await
-        .unwrap();
+    let (packs, _refs) =
+        expand_packs(&manager, &sources, ws.path(), false, None)
+            .await
+            .unwrap();
 
     let b = packs
         .nodes
