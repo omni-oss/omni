@@ -11,7 +11,15 @@ use serde::{Deserialize, Serialize};
 
 /// Which configuration schema to return.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    strum::EnumIter,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum SchemaKind {
@@ -123,14 +131,9 @@ mod tests {
 
     #[test]
     fn every_schema_kind_generates() {
-        for kind in [
-            SchemaKind::Workspace,
-            SchemaKind::Project,
-            SchemaKind::Generator,
-            SchemaKind::Tool,
-            SchemaKind::Projection,
-            SchemaKind::Pack,
-        ] {
+        use strum::IntoEnumIterator;
+
+        for kind in SchemaKind::iter() {
             let resp = handle_config_schema(kind).expect("schema generation");
             assert!(resp.schema.is_object());
         }
