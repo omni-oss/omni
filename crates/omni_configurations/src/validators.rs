@@ -120,10 +120,8 @@ declare_static_validator!(
 );
 
 #[derive(Debug, Clone, Copy, Default)]
-#[allow(unused)]
 struct SourceNameValidator;
 
-#[allow(unused)]
 static SOURCE_NAME_REGEX: &Lazy<Regex> =
     regex!(r"^(?:@[a-zA-Z0-9._-]+/)?[a-zA-Z0-9._-]+$");
 

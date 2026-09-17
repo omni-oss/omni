@@ -6,8 +6,8 @@ use std::{
 use async_trait::async_trait;
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
-    OwnedProjectionConfiguration, ProjectionProfile, SourceConfig,
-    types::SingleOrMany,
+    OwnedProjectionBody, OwnedProjectionConfiguration, ProjectionProfile,
+    SourceConfig, types::SingleOrMany,
 };
 use omni_meta::{
     DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
@@ -138,10 +138,8 @@ where
         };
 
         let manifest = discover_owned_manifest(self.sys, &root).await?;
-        let node = match manifest {
-            Some(OwnedProjectionConfiguration::Meta { sources }) => {
-                Node::meta(sources)
-            }
+        let node = match manifest.map(|m| m.body) {
+            Some(OwnedProjectionBody::Meta { sources }) => Node::meta(sources),
             _ => Node::leaf(()),
         };
 

@@ -4,8 +4,8 @@ use std::sync::Mutex;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
-    OwnedProjectionConfiguration, ProjectionProfile, SourceConfig,
-    types::SingleOrMany,
+    OwnedProjectionBody, OwnedProjectionConfiguration, ProjectionProfile,
+    SourceConfig, types::SingleOrMany,
 };
 use omni_context::{Context, ContextSys};
 use omni_meta::{
@@ -675,8 +675,8 @@ fn classify_routes(
     match workspace_routes {
         Some(routes) => {
             if matches!(
-                manifest,
-                Some(OwnedProjectionConfiguration::Meta { .. })
+                manifest.as_ref().map(|m| &m.body),
+                Some(OwnedProjectionBody::Meta { .. })
             ) {
                 return Err(eyre::eyre!(
                     "projection source '{qualified_id}' declares `routes` but its source ships a bundle manifest; a bundle cannot be overridden wholesale"
@@ -687,21 +687,19 @@ fn classify_routes(
             }
             Ok(Node::leaf(routes.to_vec()))
         }
-        None => match manifest {
-            Some(OwnedProjectionConfiguration::Meta { sources }) => {
+        None => match manifest.map(|m| m.body) {
+            Some(OwnedProjectionBody::Meta { sources }) => {
                 Ok(Node::meta(sources))
             }
-            Some(OwnedProjectionConfiguration::Leaf { routes })
+            Some(OwnedProjectionBody::Leaf { routes })
                 if !routes.is_empty() =>
             {
                 reject_privilege_escalation(qualified_id, &routes)?;
                 Ok(Node::leaf(routes))
             }
-            Some(OwnedProjectionConfiguration::Leaf { .. }) | None => {
-                Err(eyre::eyre!(
-                    "projection source '{qualified_id}' declares no routes and its source ships no projection.omni.yaml"
-                ))
-            }
+            Some(OwnedProjectionBody::Leaf { .. }) | None => Err(eyre::eyre!(
+                "projection source '{qualified_id}' declares no routes and its source ships no projection.omni.yaml"
+            )),
         },
     }
 }
@@ -888,7 +886,45 @@ mod tests {
     }
 
     fn leaf(routes: Vec<Projection>) -> Option<OwnedProjectionConfiguration> {
-        Some(OwnedProjectionConfiguration::Leaf { routes })
+        Some(OwnedProjectionConfiguration {
+            name: None,
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Leaf { routes },
+        })
+    }
+
+    fn named_leaf(
+        name: &str,
+        routes: Vec<Projection>,
+    ) -> Option<OwnedProjectionConfiguration> {
+        Some(OwnedProjectionConfiguration {
+            name: Some(name.to_string()),
+            version: Some("1.0.0".to_string()),
+            description: Some("desc".to_string()),
+            body: OwnedProjectionBody::Leaf { routes },
+        })
+    }
+
+    #[test]
+    fn author_name_does_not_affect_classification() {
+        // The ledger keys links by the consumer id / qualified id, never by the
+        // author `name`. Adding a name to a manifest must produce the identical
+        // classification, proving the name never enters the keyed output.
+        let routes = vec![route(
+            r#"{"strategy":"namespaced","target":"@workspace/vendored"}"#,
+        )];
+        let anonymous =
+            classify_routes("id", None, leaf(routes.clone()), false).unwrap();
+        let named = classify_routes(
+            "id",
+            None,
+            named_leaf("@org/skills", routes),
+            false,
+        )
+        .unwrap();
+        assert_eq!(anonymous.leaf, named.leaf);
+        assert_eq!(anonymous.children.len(), named.children.len());
     }
 
     #[test]
@@ -981,7 +1017,12 @@ mod tests {
             )
             .unwrap(),
         ];
-        let manifest = Some(OwnedProjectionConfiguration::Meta { sources });
+        let manifest = Some(OwnedProjectionConfiguration {
+            name: None,
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Meta { sources },
+        });
         let node = classify_routes("org", None, manifest, false).unwrap();
         assert!(node.leaf.is_none(), "a bundle contributes no routes itself");
         assert_eq!(node.children.len(), 1);
@@ -990,8 +1031,13 @@ mod tests {
     #[test]
     fn workspace_routes_cannot_override_a_bundle_manifest() {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
-        let manifest = Some(OwnedProjectionConfiguration::Meta {
-            sources: Vec::new(),
+        let manifest = Some(OwnedProjectionConfiguration {
+            name: None,
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Meta {
+                sources: Vec::new(),
+            },
         });
         let result = classify_routes("id", Some(&ws), manifest, true);
         assert!(

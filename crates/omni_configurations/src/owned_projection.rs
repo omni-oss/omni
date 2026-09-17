@@ -8,17 +8,32 @@ use serde::{
 };
 use serde_json::{Value, json};
 
-use crate::{ProjectionProfile, SourceConfig};
+use crate::{
+    ProjectionProfile, SourceConfig, validators::option_validate_source_name,
+};
 
 /// A `projection.omni.{yaml,yml,json,toml}` shipped by a source repository.
 ///
-/// A manifest is either a leaf that declares the routes it recommends for
-/// consumers, or a bundle that references further projection sources. The two
+/// A manifest carries optional author metadata (`name`/`version`/`description`)
+/// alongside a body that is either a leaf declaring the routes it recommends for
+/// consumers, or a bundle referencing further projection sources. The two body
 /// shapes are mutually exclusive: exactly one of `routes` or `sources` must be
-/// present. The wire form carries no discriminator, so an existing leaf
-/// manifest (`{routes: [...]}`) parses unchanged.
+/// present. The wire form carries no discriminator, so an existing leaf manifest
+/// (`{routes: [...]}`) parses unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OwnedProjectionConfiguration {
+pub struct OwnedProjectionConfiguration {
+    /// The author-declared canonical name (`@org/name` or a bare `name`). It is
+    /// a display label and future registry coordinate, never a ledger key.
+    pub name: Option<String>,
+    /// Author metadata; not a version constraint or resolution key.
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub body: OwnedProjectionBody,
+}
+
+/// The mutually-exclusive body of a projection manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OwnedProjectionBody {
     Leaf {
         routes: Vec<Projection>,
     },
@@ -30,6 +45,12 @@ pub enum OwnedProjectionConfiguration {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawManifest {
+    #[serde(default, deserialize_with = "option_validate_source_name")]
+    name: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
     #[serde(default)]
     routes: Option<Vec<Projection>>,
     #[serde(default)]
@@ -40,16 +61,27 @@ impl TryFrom<RawManifest> for OwnedProjectionConfiguration {
     type Error = &'static str;
 
     fn try_from(raw: RawManifest) -> Result<Self, Self::Error> {
-        match (raw.routes, raw.sources) {
-            (Some(routes), None) => Ok(Self::Leaf { routes }),
-            (None, Some(sources)) => Ok(Self::Meta { sources }),
-            (Some(_), Some(_)) => Err(
-                "a projection manifest declares either `routes` or `sources`, not both",
-            ),
-            (None, None) => Err(
-                "a projection manifest must declare exactly one of `routes` or `sources`",
-            ),
-        }
+        let body = match (raw.routes, raw.sources) {
+            (Some(routes), None) => OwnedProjectionBody::Leaf { routes },
+            (None, Some(sources)) => OwnedProjectionBody::Meta { sources },
+            (Some(_), Some(_)) => {
+                return Err(
+                    "a projection manifest declares either `routes` or `sources`, not both",
+                );
+            }
+            (None, None) => {
+                return Err(
+                    "a projection manifest must declare exactly one of `routes` or `sources`",
+                );
+            }
+        };
+
+        Ok(Self {
+            name: raw.name,
+            version: raw.version,
+            description: raw.description,
+            body,
+        })
     }
 }
 
@@ -68,11 +100,28 @@ impl Serialize for OwnedProjectionConfiguration {
     where
         S: Serializer,
     {
-        let mut st =
-            serializer.serialize_struct("OwnedProjectionConfiguration", 1)?;
-        match self {
-            Self::Leaf { routes } => st.serialize_field("routes", routes)?,
-            Self::Meta { sources } => st.serialize_field("sources", sources)?,
+        let field_count = 1
+            + self.name.is_some() as usize
+            + self.version.is_some() as usize
+            + self.description.is_some() as usize;
+        let mut st = serializer
+            .serialize_struct("OwnedProjectionConfiguration", field_count)?;
+        if let Some(name) = &self.name {
+            st.serialize_field("name", name)?;
+        }
+        if let Some(version) = &self.version {
+            st.serialize_field("version", version)?;
+        }
+        if let Some(description) = &self.description {
+            st.serialize_field("description", description)?;
+        }
+        match &self.body {
+            OwnedProjectionBody::Leaf { routes } => {
+                st.serialize_field("routes", routes)?
+            }
+            OwnedProjectionBody::Meta { sources } => {
+                st.serialize_field("sources", sources)?
+            }
         }
         st.end()
     }
@@ -87,15 +136,28 @@ impl JsonSchema for OwnedProjectionConfiguration {
         let projection = subschema::<Projection>(generator);
         let source = subschema::<SourceConfig<ProjectionProfile>>(generator);
 
+        let metadata = json!({
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "description": { "type": "string" },
+        });
+
+        let mut leaf_properties = metadata.clone();
+        leaf_properties["routes"] =
+            json!({ "type": "array", "items": projection });
         let leaf = json!({
             "type": "object",
-            "properties": { "routes": { "type": "array", "items": projection } },
+            "properties": leaf_properties,
             "required": ["routes"],
             "additionalProperties": false
         });
+
+        let mut meta_properties = metadata;
+        meta_properties["sources"] =
+            json!({ "type": "array", "items": source });
         let meta = json!({
             "type": "object",
-            "properties": { "sources": { "type": "array", "items": source } },
+            "properties": meta_properties,
             "required": ["sources"],
             "additionalProperties": false
         });
@@ -126,7 +188,8 @@ mod tests {
         let owned: OwnedProjectionConfiguration =
             serde_json::from_str(r#"{"routes":[{"strategy":"namespaced"}]}"#)
                 .expect("leaf manifest parses");
-        let OwnedProjectionConfiguration::Leaf { routes } = &owned else {
+        assert_eq!(owned.name, None);
+        let OwnedProjectionBody::Leaf { routes } = &owned.body else {
             panic!("expected leaf");
         };
         assert_eq!(routes.len(), 1);
@@ -134,6 +197,7 @@ mod tests {
         let re = serde_json::to_string(&owned).unwrap();
         assert!(re.contains("\"routes\""));
         assert!(!re.contains("\"sources\""));
+        assert!(!re.contains("\"name\""));
         let back: OwnedProjectionConfiguration =
             serde_json::from_str(&re).unwrap();
         assert_eq!(owned, back);
@@ -145,7 +209,7 @@ mod tests {
             r#"{"sources":[{"source":"git","uri":"https://example.com/a.git","rev":"main","id":"skills"}]}"#,
         )
         .expect("meta manifest parses");
-        let OwnedProjectionConfiguration::Meta { sources } = &owned else {
+        let OwnedProjectionBody::Meta { sources } = &owned.body else {
             panic!("expected meta");
         };
         assert_eq!(sources.len(), 1);
@@ -154,6 +218,33 @@ mod tests {
         let back: OwnedProjectionConfiguration =
             serde_json::from_str(&re).unwrap();
         assert_eq!(owned, back);
+    }
+
+    #[test]
+    fn manifest_with_name_version_description_round_trips() {
+        let owned: OwnedProjectionConfiguration = serde_json::from_str(
+            r#"{"name":"@org/skills","version":"1.0.0","description":"House skills","routes":[{"strategy":"namespaced"}]}"#,
+        )
+        .expect("manifest with metadata parses");
+        assert_eq!(owned.name.as_deref(), Some("@org/skills"));
+        assert_eq!(owned.version.as_deref(), Some("1.0.0"));
+        assert_eq!(owned.description.as_deref(), Some("House skills"));
+
+        let re = serde_json::to_string(&owned).unwrap();
+        let back: OwnedProjectionConfiguration =
+            serde_json::from_str(&re).unwrap();
+        assert_eq!(owned, back);
+    }
+
+    #[test]
+    fn invalid_name_is_rejected() {
+        assert!(
+            serde_json::from_str::<OwnedProjectionConfiguration>(
+                r#"{"name":"not a valid name","routes":[]}"#,
+            )
+            .is_err(),
+            "a name that violates the source-name rule must be rejected"
+        );
     }
 
     #[test]
@@ -188,6 +279,17 @@ mod tests {
     }
 
     #[test]
+    fn ambient_key_is_rejected() {
+        assert!(
+            serde_json::from_str::<OwnedProjectionConfiguration>(
+                r#"{"routes":[],"env":{}}"#,
+            )
+            .is_err(),
+            "an ambient key in a manifest must be rejected"
+        );
+    }
+
+    #[test]
     fn schema_is_a_one_of_leaf_and_meta() {
         let generator = SchemaGenerator::default();
         let schema = serde_json::to_value(
@@ -208,6 +310,7 @@ mod tests {
         };
         assert!(has_property("routes"), "a leaf arm exposes `routes`");
         assert!(has_property("sources"), "a meta arm exposes `sources`");
+        assert!(has_property("name"), "arms expose the optional `name`");
 
         for arm in arms {
             assert_eq!(
