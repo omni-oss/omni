@@ -52,7 +52,7 @@ async fn missing_manifest_is_a_hard_error() {
     let manager = manager(&sources_root).await;
 
     let sources = vec![pack_source("empty", "./empty", None)];
-    let result = expand_packs(&manager, &sources, ws.path(), false).await;
+    let result = expand_packs(&manager, &sources, ws.path(), false, None).await;
     assert!(result.is_err(), "a pack with no manifest must error");
 }
 
@@ -72,7 +72,7 @@ async fn both_and_pack_contributes_its_own_sources_and_recurses() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", None)];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false)
+    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
         .await
         .unwrap();
 
@@ -96,7 +96,7 @@ async fn a_pack_without_projections_contributes_no_projection_face() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", None)];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false)
+    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
         .await
         .unwrap();
 
@@ -124,7 +124,7 @@ async fn provides_narrows_and_cascades_and_never_widens() {
 
     let manager = manager(&sources_root).await;
     let sources = vec![pack_source("a", "./a", Some(r#"["generators"]"#))];
-    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false)
+    let (packs, _refs) = expand_packs(&manager, &sources, ws.path(), false, None)
         .await
         .unwrap();
 

@@ -596,6 +596,7 @@ async fn get_generators(
                 &packs,
                 ctx.root_dir(),
                 false,
+                None,
             )
             .await?;
         refs.extend(pack_refs);

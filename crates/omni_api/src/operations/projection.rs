@@ -184,6 +184,7 @@ where
             &packs,
             &workspace_root,
             req.update,
+            None,
         )
         .await?;
         pack_refs = refs;

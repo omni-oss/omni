@@ -186,6 +186,7 @@ pub async fn expand_packs<TSys>(
     sources: &[PackSourceConfiguration],
     workspace_root: &Path,
     update: bool,
+    select: Option<&str>,
 ) -> eyre::Result<(ExpandedPacks, Vec<RemoteSourceRef>)>
 where
     TSys: RemoteSourceSys + FsReadAsync + Send + Sync,
@@ -202,7 +203,7 @@ where
         sources,
         workspace_root,
         DEFAULT_META_PROJECTION_DEPTH,
-        None,
+        select,
     )
     .await?;
 
@@ -540,6 +541,7 @@ where
             &self.sources,
             &self.workspace_root,
             options.update,
+            None,
         )
         .await?;
 
