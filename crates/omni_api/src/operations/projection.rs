@@ -4,14 +4,15 @@ use std::sync::Mutex;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
-    OwnedProjectionConfiguration, SourceConfig, types::SingleOrMany,
+    OwnedProjectionBody, OwnedProjectionConfiguration, ProjectionProfile,
+    SourceConfig, types::SingleOrMany,
 };
 use omni_context::{Context, ContextSys};
 use omni_meta::{
     DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
     SourceIdentity, expand, matches as meta_matches,
 };
-use omni_projection_configurations::{Projection, ProjectionExtra};
+use omni_projection_configurations::Projection;
 pub use omni_projections::BackupHandling;
 use omni_projections::{
     ApplierSys, ConflictReport, LinkState, ProjectionError, ResolvedSource,
@@ -166,10 +167,30 @@ where
     let sys = ctx.sys().clone();
     let workspace_root = ctx.root_dir().to_path_buf();
     let env_files = env_file_names(ctx);
-    let sources = &ctx.workspace_configuration().projections;
 
     let remote =
         crate::operations::remote_source::open_source_store(ctx, &sys).await?;
+
+    // Pack-contributed projection sources (author-opt-in, `provides`-gated) join
+    // the workspace's own list before expansion: their `local` paths are already
+    // rebased onto the materialized pack root and their ids prefixed with the
+    // pack qualified id, so they slot in as ordinary top-level sources.
+    let packs = ctx.workspace_configuration().packs.clone();
+    let mut sources = ctx.workspace_configuration().projections.clone();
+    let mut pack_refs = Vec::new();
+    if !packs.is_empty() {
+        let (expanded, refs) = omni_remote_source_contributors::expand_packs(
+            &remote,
+            &packs,
+            &workspace_root,
+            req.update,
+            None,
+        )
+        .await?;
+        pack_refs = refs;
+        sources.extend(expanded.effective_projection_sources());
+    }
+    let sources = &sources;
 
     let ledger_path = ledger_path(ctx);
     let mut ledger = omni_projections::load(&sys, &ledger_path).await;
@@ -247,8 +268,11 @@ where
     // Every git ref pulled during expansion (meta repos and git children at any
     // depth) is recorded so a full sync can refresh the projection reference
     // set that guards the shared store from garbage collection.
-    let all_git: Vec<RemoteSourceRef> =
-        expander.git_refs.into_inner().unwrap_or_default();
+    let all_git: Vec<RemoteSourceRef> = {
+        let mut refs = expander.git_refs.into_inner().unwrap_or_default();
+        refs.extend(pack_refs);
+        refs
+    };
 
     // Phase 1: plan every expanded source without writing.
     let mut prepared: Vec<PreparedSource> = Vec::new();
@@ -568,18 +592,18 @@ impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
 where
     TSys: RemoteSourceSys + FsReadAsync + FsCanonicalizeAsync + Send + Sync,
 {
-    type Extra = ProjectionExtra;
+    type Profile = ProjectionProfile;
     type Leaf = Vec<Projection>;
     type Error = eyre::Report;
 
     async fn classify(
         &self,
-        src: &SourceConfig<ProjectionExtra>,
+        src: &SourceConfig<ProjectionProfile>,
         qualified_id: &str,
         parent_root: &Path,
         depth: usize,
-    ) -> eyre::Result<Materialized<Vec<Projection>, ProjectionExtra>> {
-        let workspace_routes = src.extra().routes.as_deref();
+    ) -> eyre::Result<Materialized<Vec<Projection>, ProjectionProfile>> {
+        let workspace_routes = src.base().routes.as_deref();
 
         // An explicit empty `routes` list projects nothing: caught before the
         // source is materialized.
@@ -619,6 +643,9 @@ where
                 };
                 (materialized.root, pin, identity)
             }
+            SourceConfig::Registry(_) => {
+                unreachable!("registry sources are never constructed")
+            }
         };
 
         let manifest = discover_owned_manifest(self.sys, &root).await?;
@@ -634,8 +661,17 @@ where
         })
     }
 
-    fn member_id<'a>(&self, src: &'a SourceConfig<ProjectionExtra>) -> &'a str {
-        src.extra().id.as_str()
+    fn declared_id<'a>(
+        &self,
+        src: &'a SourceConfig<ProjectionProfile>,
+    ) -> &'a str {
+        match src {
+            SourceConfig::Local(local) => local.extra.id.as_str(),
+            SourceConfig::Git(git) => git.extra.id.as_str(),
+            SourceConfig::Registry(registry) => {
+                registry.extra.id.as_deref().unwrap_or_default()
+            }
+        }
     }
 }
 
@@ -646,17 +682,24 @@ where
 /// Everything reachable through a manifest is untrusted: only a top-level
 /// workspace `routes` override may set the control-plane flags, so the floor is
 /// applied to every other route set.
+///
+/// This deliberately produces only leaf-only or meta-only [`Node`]s, never a
+/// both-and node, preserving RFC 0010's `Leaf` XOR `Meta` constraint: a
+/// `projection.omni.*` either declares routes or composes member sources, not
+/// both. `omni_meta::Node` now supports both-and (generalized as a prerequisite
+/// for source packs, RFC 0014), so projections could relax this in the future
+/// if a need arises; until then the existing behaviour is kept unchanged.
 fn classify_routes(
     qualified_id: &str,
     workspace_routes: Option<&[Projection]>,
     manifest: Option<OwnedProjectionConfiguration>,
     trusted: bool,
-) -> eyre::Result<Node<Vec<Projection>, ProjectionExtra>> {
+) -> eyre::Result<Node<Vec<Projection>, ProjectionProfile>> {
     match workspace_routes {
         Some(routes) => {
             if matches!(
-                manifest,
-                Some(OwnedProjectionConfiguration::Meta { .. })
+                manifest.as_ref().map(|m| &m.body),
+                Some(OwnedProjectionBody::Meta { .. })
             ) {
                 return Err(eyre::eyre!(
                     "projection source '{qualified_id}' declares `routes` but its source ships a bundle manifest; a bundle cannot be overridden wholesale"
@@ -665,23 +708,21 @@ fn classify_routes(
             if !trusted {
                 reject_privilege_escalation(qualified_id, routes)?;
             }
-            Ok(Node::Leaf(routes.to_vec()))
+            Ok(Node::leaf(routes.to_vec()))
         }
-        None => match manifest {
-            Some(OwnedProjectionConfiguration::Meta { sources }) => {
-                Ok(Node::Meta(sources))
+        None => match manifest.map(|m| m.body) {
+            Some(OwnedProjectionBody::Meta { sources }) => {
+                Ok(Node::meta(sources))
             }
-            Some(OwnedProjectionConfiguration::Leaf { routes })
+            Some(OwnedProjectionBody::Leaf { routes })
                 if !routes.is_empty() =>
             {
                 reject_privilege_escalation(qualified_id, &routes)?;
-                Ok(Node::Leaf(routes))
+                Ok(Node::leaf(routes))
             }
-            Some(OwnedProjectionConfiguration::Leaf { .. }) | None => {
-                Err(eyre::eyre!(
-                    "projection source '{qualified_id}' declares no routes and its source ships no projection.omni.yaml"
-                ))
-            }
+            Some(OwnedProjectionBody::Leaf { .. }) | None => Err(eyre::eyre!(
+                "projection source '{qualified_id}' declares no routes and its source ships no projection.omni.yaml"
+            )),
         },
     }
 }
@@ -868,7 +909,45 @@ mod tests {
     }
 
     fn leaf(routes: Vec<Projection>) -> Option<OwnedProjectionConfiguration> {
-        Some(OwnedProjectionConfiguration::Leaf { routes })
+        Some(OwnedProjectionConfiguration {
+            name: "@org/anon".to_string(),
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Leaf { routes },
+        })
+    }
+
+    fn named_leaf(
+        name: &str,
+        routes: Vec<Projection>,
+    ) -> Option<OwnedProjectionConfiguration> {
+        Some(OwnedProjectionConfiguration {
+            name: name.to_string(),
+            version: Some("1.0.0".to_string()),
+            description: Some("desc".to_string()),
+            body: OwnedProjectionBody::Leaf { routes },
+        })
+    }
+
+    #[test]
+    fn author_name_does_not_affect_classification() {
+        // The ledger keys links by the consumer id / qualified id, never by the
+        // author `name`. Adding a name to a manifest must produce the identical
+        // classification, proving the name never enters the keyed output.
+        let routes = vec![route(
+            r#"{"strategy":"namespaced","target":"@workspace/vendored"}"#,
+        )];
+        let anonymous =
+            classify_routes("id", None, leaf(routes.clone()), false).unwrap();
+        let named = classify_routes(
+            "id",
+            None,
+            named_leaf("@org/skills", routes),
+            false,
+        )
+        .unwrap();
+        assert_eq!(anonymous.leaf, named.leaf);
+        assert_eq!(anonymous.children.len(), named.children.len());
     }
 
     #[test]
@@ -877,9 +956,14 @@ mod tests {
             r#"{"strategy":"namespaced","target":"@workspace/vendored"}"#,
         )]);
         let node = classify_routes("id", None, manifest, false).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes.len(), 1);
         assert!(matches!(routes[0], Projection::Namespaced(_)));
     }
@@ -889,9 +973,14 @@ mod tests {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
         let manifest = leaf(vec![route(r#"{"strategy":"namespaced"}"#)]);
         let node = classify_routes("id", Some(&ws), manifest, true).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes, ws, "workspace routes win wholesale");
     }
 
@@ -932,30 +1021,46 @@ mod tests {
     fn workspace_routes_may_set_allow_flags() {
         let ws = vec![route(r#"{"strategy":"namespaced","allow_git":true}"#)];
         let node = classify_routes("id", Some(&ws), None, true).unwrap();
-        let Node::Leaf(routes) = node else {
+        let Node {
+            leaf: Some(routes),
+            children,
+        } = node
+        else {
             panic!("expected a leaf");
         };
+        assert!(children.is_empty(), "a leaf contributes no member sources");
         assert_eq!(routes, ws, "workspace config may relax the safety floor");
     }
 
     #[test]
     fn a_bundle_manifest_classifies_as_meta() {
-        let sources: Vec<SourceConfig<ProjectionExtra>> = vec![
+        let sources: Vec<SourceConfig<ProjectionProfile>> = vec![
             serde_json::from_str(
                 r#"{"source":"local","path":"./child","id":"child"}"#,
             )
             .unwrap(),
         ];
-        let manifest = Some(OwnedProjectionConfiguration::Meta { sources });
+        let manifest = Some(OwnedProjectionConfiguration {
+            name: "@org/bundle".to_string(),
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Meta { sources },
+        });
         let node = classify_routes("org", None, manifest, false).unwrap();
-        assert!(matches!(node, Node::Meta(m) if m.len() == 1));
+        assert!(node.leaf.is_none(), "a bundle contributes no routes itself");
+        assert_eq!(node.children.len(), 1);
     }
 
     #[test]
     fn workspace_routes_cannot_override_a_bundle_manifest() {
         let ws = vec![route(r#"{"strategy":"mirror"}"#)];
-        let manifest = Some(OwnedProjectionConfiguration::Meta {
-            sources: Vec::new(),
+        let manifest = Some(OwnedProjectionConfiguration {
+            name: "@org/bundle".to_string(),
+            version: None,
+            description: None,
+            body: OwnedProjectionBody::Meta {
+                sources: Vec::new(),
+            },
         });
         let result = classify_routes("id", Some(&ws), manifest, true);
         assert!(

@@ -776,6 +776,7 @@ fn write_owned_projection_workspace(dir: &Path) {
     std::fs::write(
         dir.join("vendor/skills/projection.omni.yaml"),
         concat!(
+            "name: \"@vendor/skills\"\n",
             "routes:\n",
             "  - strategy: mirror\n",
             "    scope: \"*.md\"\n",
@@ -825,7 +826,7 @@ async fn projection_workspace_routes_override_owned_manifest() {
         .unwrap();
     std::fs::write(
         tmp.path().join("vendor/skills/projection.omni.yaml"),
-        "routes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
+        "name: \"@vendor/skills\"\nroutes:\n  - strategy: mirror\n    scope: \"*.md\"\n    target: \"@workspace/.agents/skills\"\n",
     )
     .unwrap();
 
@@ -1103,6 +1104,7 @@ fn write_local_bundle_workspace(dir: &Path) {
     std::fs::write(
         dir.join("bundle/projection.omni.yaml"),
         concat!(
+            "name: \"@vendor/bundle\"\n",
             "sources:\n",
             "  - source: local\n",
             "    path: ./skills\n",
@@ -1222,6 +1224,7 @@ async fn projection_targeted_update_warns_about_dropped_member() {
     std::fs::write(
         tmp.path().join("bundle/projection.omni.yaml"),
         concat!(
+            "name: \"@vendor/bundle\"\n",
             "sources:\n",
             "  - source: local\n",
             "    path: ./skills\n",

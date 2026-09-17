@@ -13,6 +13,7 @@ declare module "vitest" {
             | "output"
             | "capability"
             | "tool"
-            | "projection";
+            | "projection"
+            | "pack";
     }
 }

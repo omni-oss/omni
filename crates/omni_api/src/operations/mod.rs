@@ -5,6 +5,7 @@ pub mod exec;
 pub mod generator;
 pub mod hash;
 pub mod ignore;
+pub mod pack;
 pub mod project;
 pub mod projection;
 pub mod remote_source;

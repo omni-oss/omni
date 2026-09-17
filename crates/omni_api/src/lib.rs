@@ -33,6 +33,10 @@ pub use operations::{
         IgnoreCleanRequest, IgnoreCleanResponse, IgnoreFileChange,
         IgnoreSyncRequest, IgnoreSyncResponse, IgnoreSys,
     },
+    pack::{
+        PackInfoRequest, PackListRequest, PackListResponse, PackNodeInfo,
+        PackTreeRequest,
+    },
     projection::{
         AppliedLinkInfo, BackupHandling, PlannedLinkInfo,
         ProjectionPruneRequest, ProjectionPruneResponse,

@@ -66,7 +66,7 @@ describe("+config @output (schema emission)", () => {
         expect(result).toHaveExitCode(2);
         expect(result).toHaveStderrContaining("invalid value 'bogus'");
         expect(result).toHaveStderrContaining(
-            "[possible values: workspace, project, generator, tool, projection]",
+            "[possible values: workspace, project, generator, tool, projection, pack]",
         );
     });
 

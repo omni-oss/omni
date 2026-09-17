@@ -5,15 +5,15 @@
 use std::{path::Path, process::Command};
 
 use omni_configurations::{
-    GitSource, LocalSource, SourceConfig, types::SingleOrMany,
-};
-use omni_projection_configurations::ProjectionExtra;
-use omni_remote_source_contributors::{
-    GeneratorRemoteContributor, ProjectionRemoteContributor,
+    GitSource, LocalSource, ProjectionId, ProjectionRoutes, SourceConfig,
+    types::SingleOrMany,
 };
 use omni_remote_source::{
     InstallOptions, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
+};
+use omni_remote_source_contributors::{
+    GeneratorRemoteContributor, ProjectionRemoteContributor,
 };
 use system_traits::impls::RealSys;
 use tempfile::TempDir;
@@ -94,7 +94,8 @@ fn git_source(uri: &Url) -> SourceConfig {
     SourceConfig::Git(GitSource {
         uri: uri.clone(),
         rev: "main".to_string(),
-        extra: Default::default(),
+        base: (),
+        extra: (),
     })
 }
 
@@ -131,7 +132,7 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     // A git child that the bundle references.
     let (_child, child_url, child_commit) = build_repo(&[(
         "projection.omni.yaml",
-        "routes:\n  - strategy: mirror\n",
+        "name: \"@vendor/child\"\nroutes:\n  - strategy: mirror\n",
     )]);
 
     // A local bundle inside the workspace whose manifest is a meta bundle
@@ -140,7 +141,7 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
     let bundle_dir = ws.path().join("bundle");
     std::fs::create_dir_all(&bundle_dir).expect("bundle dir");
     let manifest = format!(
-        "sources:\n  - source: git\n    uri: {}\n    rev: main\n    id: child\n",
+        "name: \"@vendor/bundle\"\nsources:\n  - source: git\n    uri: {}\n    rev: main\n    id: child\n",
         child_url
     );
     std::fs::write(bundle_dir.join("projection.omni.yaml"), manifest)
@@ -150,9 +151,9 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
 
     let top = SourceConfig::Local(LocalSource {
         path: SingleOrMany::Single("./bundle".to_string()),
-        extra: ProjectionExtra {
+        base: ProjectionRoutes { routes: None },
+        extra: ProjectionId {
             id: "b".to_string(),
-            routes: None,
         },
     });
 

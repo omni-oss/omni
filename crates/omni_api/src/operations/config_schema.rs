@@ -1,5 +1,6 @@
 use omni_configurations::{
-    OwnedProjectionConfiguration, ProjectConfiguration, WorkspaceConfiguration,
+    OwnedProjectionConfiguration, PackManifest, ProjectConfiguration,
+    WorkspaceConfiguration,
 };
 use omni_generator_configurations::GeneratorConfiguration;
 use omni_tool_configurations::ToolConfiguration;
@@ -10,7 +11,15 @@ use serde::{Deserialize, Serialize};
 
 /// Which configuration schema to return.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    strum::VariantArray,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum SchemaKind {
@@ -19,6 +28,7 @@ pub enum SchemaKind {
     Generator,
     Tool,
     Projection,
+    Pack,
 }
 
 // ── Response ──────────────────────────────────────────────────────────────────
@@ -52,6 +62,7 @@ pub fn handle_config_schema(
         SchemaKind::Generator => schema_for!(GeneratorConfiguration),
         SchemaKind::Tool => schema_for!(ToolConfiguration),
         SchemaKind::Projection => schema_for!(OwnedProjectionConfiguration),
+        SchemaKind::Pack => schema_for!(PackManifest),
     };
 
     let schema = serde_json::to_value(&schemars_schema)?;
@@ -98,17 +109,31 @@ mod tests {
         assert!(text.contains("\"routes\""), "{text}");
         assert!(text.contains("\"sources\""), "{text}");
         assert!(text.contains("\"strategy\""), "{text}");
+        // The manifest now also carries optional author metadata.
+        assert!(text.contains("\"name\""), "{text}");
+        assert!(text.contains("\"version\""), "{text}");
+        assert!(text.contains("\"description\""), "{text}");
+    }
+
+    #[test]
+    fn pack_schema_is_the_pack_manifest_shape() {
+        let resp = handle_config_schema(SchemaKind::Pack)
+            .expect("pack schema generation");
+        assert!(resp.schema.is_object(), "schema must be a JSON object");
+
+        let text = serde_json::to_string(&resp.schema).unwrap();
+        assert!(text.contains("\"name\""), "{text}");
+        assert!(text.contains("\"generators\""), "{text}");
+        assert!(text.contains("\"tools\""), "{text}");
+        assert!(text.contains("\"projections\""), "{text}");
+        assert!(text.contains("\"packs\""), "{text}");
     }
 
     #[test]
     fn every_schema_kind_generates() {
-        for kind in [
-            SchemaKind::Workspace,
-            SchemaKind::Project,
-            SchemaKind::Generator,
-            SchemaKind::Tool,
-            SchemaKind::Projection,
-        ] {
+        use strum::VariantArray as _;
+
+        for &kind in SchemaKind::VARIANTS {
             let resp = handle_config_schema(kind).expect("schema generation");
             assert!(resp.schema.is_object());
         }

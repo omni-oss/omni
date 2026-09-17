@@ -6,13 +6,13 @@ use std::{
 use async_trait::async_trait;
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
-    OwnedProjectionConfiguration, SourceConfig, types::SingleOrMany,
+    OwnedProjectionBody, OwnedProjectionConfiguration, ProjectionProfile,
+    SourceConfig, types::SingleOrMany,
 };
 use omni_meta::{
     DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
     SourceIdentity, expand,
 };
-use omni_projection_configurations::ProjectionExtra;
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
@@ -24,13 +24,13 @@ use system_traits::FsReadAsync;
 /// projection root is fetched. Built from the already-loaded projection source
 /// list and the workspace root.
 pub struct ProjectionRemoteContributor {
-    sources: Vec<SourceConfig<ProjectionExtra>>,
+    sources: Vec<SourceConfig<ProjectionProfile>>,
     workspace_root: PathBuf,
 }
 
 impl ProjectionRemoteContributor {
     pub fn new(
-        sources: Vec<SourceConfig<ProjectionExtra>>,
+        sources: Vec<SourceConfig<ProjectionProfile>>,
         workspace_root: impl Into<PathBuf>,
     ) -> Self {
         Self {
@@ -88,17 +88,17 @@ impl<TSys> MetaExpand for MaterializeOnlyExpand<'_, TSys>
 where
     TSys: RemoteSourceSys + FsReadAsync + Send + Sync,
 {
-    type Extra = ProjectionExtra;
+    type Profile = ProjectionProfile;
     type Leaf = ();
     type Error = eyre::Report;
 
     async fn classify(
         &self,
-        src: &SourceConfig<ProjectionExtra>,
+        src: &SourceConfig<ProjectionProfile>,
         qualified_id: &str,
         parent_root: &Path,
         depth: usize,
-    ) -> eyre::Result<Materialized<(), ProjectionExtra>> {
+    ) -> eyre::Result<Materialized<(), ProjectionProfile>> {
         let (root, pin, identity) = match src {
             SourceConfig::Local(local) => {
                 let path = single_path(qualified_id, &local.path)?;
@@ -132,14 +132,15 @@ where
                 };
                 (materialized.root, Some(pin), identity)
             }
+            SourceConfig::Registry(_) => {
+                unreachable!("registry sources are never constructed")
+            }
         };
 
         let manifest = discover_owned_manifest(self.sys, &root).await?;
-        let node = match manifest {
-            Some(OwnedProjectionConfiguration::Meta { sources }) => {
-                Node::Meta(sources)
-            }
-            _ => Node::Leaf(()),
+        let node = match manifest.map(|m| m.body) {
+            Some(OwnedProjectionBody::Meta { sources }) => Node::meta(sources),
+            _ => Node::leaf(()),
         };
 
         Ok(Materialized {
@@ -150,8 +151,17 @@ where
         })
     }
 
-    fn member_id<'a>(&self, src: &'a SourceConfig<ProjectionExtra>) -> &'a str {
-        src.extra().id.as_str()
+    fn declared_id<'a>(
+        &self,
+        src: &'a SourceConfig<ProjectionProfile>,
+    ) -> &'a str {
+        match src {
+            SourceConfig::Local(local) => local.extra.id.as_str(),
+            SourceConfig::Git(git) => git.extra.id.as_str(),
+            SourceConfig::Registry(registry) => {
+                registry.extra.id.as_deref().unwrap_or_default()
+            }
+        }
     }
 }
 
@@ -211,7 +221,8 @@ where
         "projection",
     );
 
-    for file in discovery.discover().await? {
+    let discoveries = discovery.discover().await?;
+    if let Some(file) = discoveries.first() {
         let owned: OwnedProjectionConfiguration =
             omni_file_data_serde::read_async(file.as_path(), sys).await?;
         return Ok(Some(owned));

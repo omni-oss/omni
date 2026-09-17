@@ -5,14 +5,19 @@
 //! Discovery of the configuration itself stays with the caller.
 
 mod generator;
+mod pack;
 mod projection;
 mod tool;
 
 pub use generator::GeneratorRemoteContributor;
+pub use pack::{
+    ExpandedPackNode, ExpandedPacks, PackContributedSource,
+    PackRemoteContributor, expand_packs,
+};
 pub use projection::ProjectionRemoteContributor;
 pub use tool::ToolRemoteContributor;
 
-use omni_configurations::SourceConfig;
+use omni_configurations::{SourceConfig, SourceConfigProfile};
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceRef,
     manager::RemoteSourceManager, sys::RemoteSourceSys,
@@ -21,13 +26,14 @@ use omni_remote_source::{
 /// Materialize every git source in a flat source list, invalidating locked
 /// commits first when the caller asked to advance mutable refs. Shared by the
 /// generator and tool contributors, whose source lists carry no extra fields.
-async fn materialize_flat_git<TSys, E>(
+async fn materialize_flat_git<TSys, P>(
     manager: &RemoteSourceManager<TSys>,
-    sources: &[SourceConfig<E>],
+    sources: &[SourceConfig<P>],
     options: &InstallOptions,
 ) -> eyre::Result<Vec<RemoteSourceRef>>
 where
     TSys: RemoteSourceSys,
+    P: SourceConfigProfile,
 {
     let mut refs = Vec::new();
 

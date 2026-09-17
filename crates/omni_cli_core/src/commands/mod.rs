@@ -39,6 +39,7 @@ pub mod hash;
 pub mod ignore;
 pub mod init;
 pub mod mcp;
+pub mod pack;
 pub mod project;
 pub mod projection;
 pub mod remote_source;
@@ -210,6 +211,9 @@ pub enum CliSubcommands {
         about = "Materialize files from sources into the workspace via links"
     )]
     Projection(ProjectionCommand),
+
+    #[command(about = "Inspect source packs declared in the workspace")]
+    Pack(pack::PackCommand),
 
     #[command(about = "Tool related subcommands")]
     Tool(ToolCommand),

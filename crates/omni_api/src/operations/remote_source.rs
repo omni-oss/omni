@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
 use omni_context::{Context, ContextSys};
-use omni_remote_source_contributors::{
-    GeneratorRemoteContributor, ProjectionRemoteContributor,
-    ToolRemoteContributor,
-};
 use omni_remote_source::{
     InstallOptions, RemoteSource, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
     sys::RemoteSourceSys,
+};
+use omni_remote_source_contributors::{
+    GeneratorRemoteContributor, PackRemoteContributor,
+    ProjectionRemoteContributor, ToolRemoteContributor,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -140,6 +140,12 @@ where
     if select.tools {
         contributors
             .push(Box::new(ToolRemoteContributor::new(ws.tools.clone())));
+    }
+    if !ws.packs.is_empty() {
+        contributors.push(Box::new(PackRemoteContributor::new(
+            ws.packs.clone(),
+            ctx.root_dir().to_path_buf(),
+        )));
     }
 
     run_contributors(&manager, contributors, &options).await

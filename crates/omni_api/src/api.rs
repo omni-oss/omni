@@ -447,7 +447,10 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
     S: OmniEventSubscriber,
 {
     /// Run a generator against the workspace.
@@ -517,7 +520,10 @@ where
 
 impl<TSys, S> OmniApi<TSys, S>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
     S: OmniEventSubscriber,
 {
     /// List all discovered tools in the workspace.
@@ -624,6 +630,44 @@ where
             req,
         )
         .await
+    }
+}
+
+// ── Pack operations (read-only) ──────────────────────────────────────
+
+impl<TSys, S> OmniApi<TSys, S>
+where
+    TSys: ContextSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + system_traits::FsReadAsync
+        + Clone,
+    S: OmniEventSubscriber,
+{
+    /// List the top-level packs declared in the workspace.
+    pub async fn pack_list(
+        &self,
+        req: crate::operations::pack::PackListRequest,
+    ) -> eyre::Result<crate::operations::pack::PackListResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::pack::handle_pack_list(ctx.as_context(), req).await
+    }
+
+    /// Report the whole expanded pack-of-packs graph.
+    pub async fn pack_tree(
+        &self,
+        req: crate::operations::pack::PackTreeRequest,
+    ) -> eyre::Result<crate::operations::pack::PackListResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::pack::handle_pack_tree(ctx.as_context(), req).await
+    }
+
+    /// Report one pack and its subtree, selected by qualified id.
+    pub async fn pack_info(
+        &self,
+        req: crate::operations::pack::PackInfoRequest,
+    ) -> eyre::Result<crate::operations::pack::PackListResponse> {
+        let ctx = self.ctx.lock().await;
+        crate::operations::pack::handle_pack_info(ctx.as_context(), req).await
     }
 }
 

@@ -33,9 +33,7 @@ use omni_configurations::{SourceConfig, types::SingleOrMany};
 use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
-use omni_remote_source::{
-    RemoteSource, RemoteSourceRef, sys::RemoteSourceSys,
-};
+use omni_remote_source::{RemoteSource, RemoteSourceRef, sys::RemoteSourceSys};
 use tokio::task::JoinSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -109,7 +107,10 @@ pub async fn handle_generator_run<TSys, S>(
     req: GeneratorRunRequest,
 ) -> eyre::Result<GeneratorRunResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
     S: GeneratorEventSubscriber,
 {
     let name = req.name.ok_or_else(|| {
@@ -318,7 +319,10 @@ pub async fn handle_generator_list<TSys>(
     ctx: &Context<TSys>,
 ) -> eyre::Result<GeneratorListResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -419,6 +423,9 @@ where
                     ))
                 });
             }
+            SourceConfig::Registry(_) => {
+                unreachable!("registry sources are never constructed")
+            }
         }
     }
 
@@ -432,10 +439,83 @@ where
         }
     }
 
+    let packs = ctx.workspace_configuration().packs.clone();
+    if !packs.is_empty() {
+        let (expanded, pack_refs) =
+            omni_remote_source_contributors::expand_packs(
+                remote_sources.as_ref(),
+                &packs,
+                ctx.root_dir(),
+                false,
+                None,
+            )
+            .await?;
+        refs.extend(pack_refs);
+
+        for contributed in expanded.effective_generator_sources() {
+            let discovered = match &contributed.source {
+                SourceConfig::Local(local) => {
+                    let paths: Vec<String> = match &local.path {
+                        SingleOrMany::Single(p) => vec![p.clone()],
+                        SingleOrMany::Many(ps) => ps.clone(),
+                    };
+                    omni_generator::discover(&contributed.root, &paths, sys)
+                        .await?
+                }
+                SourceConfig::Git(git) => {
+                    let source = RemoteSource::Git {
+                        uri: git.uri.clone(),
+                        rev: git.rev.clone(),
+                    };
+                    let materialized =
+                        remote_sources.materialize(&source).await?;
+                    let discovered = omni_generator::discover(
+                        &materialized.root,
+                        &["**"],
+                        sys,
+                    )
+                    .await?;
+                    refs.push(RemoteSourceRef {
+                        source,
+                        pin: materialized.pin,
+                    });
+                    discovered
+                }
+                SourceConfig::Registry(_) => {
+                    unreachable!("registry sources are never constructed")
+                }
+            };
+
+            let namespaced =
+                namespace_generators(&contributed.qualified_id, discovered);
+            configurations.extend(omni_generator::assign_scope_id(
+                &contributed.qualified_id,
+                namespaced,
+            ));
+        }
+    }
+
     remote_sources.record_refs("generator", &refs).await?;
     remote_sources.persist_pins().await?;
 
     Ok(configurations)
+}
+
+/// Namespace every discovered generator's unique name by the pack's qualified
+/// id (`<qualified-id>:<name>`), so pack-contributed generators can never
+/// collide with the workspace's own names or another pack's.
+fn namespace_generators(
+    qualified_id: &str,
+    configs: Vec<Cow<'static, GeneratorConfiguration>>,
+) -> Vec<Cow<'static, GeneratorConfiguration>> {
+    configs
+        .into_iter()
+        .map(|c| {
+            let mut c = c.into_owned();
+            c.name = format!("{qualified_id}:{}", c.name);
+            Cow::Owned(c)
+        })
+        .collect()
 }
 
 // ── Generator Inspect view types ────────────────────────────────────────────
@@ -610,7 +690,10 @@ pub async fn handle_generator_inspect<TSys>(
     view: InspectViewKind,
 ) -> eyre::Result<GeneratorInspectResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;
@@ -951,7 +1034,10 @@ pub async fn handle_generator_validate_input<TSys>(
     req: GeneratorValidateInputRequest,
 ) -> eyre::Result<GeneratorValidateInputResponse>
 where
-    TSys: ContextSys + GeneratorSys + omni_remote_source::sys::RemoteSourceSys + Clone,
+    TSys: ContextSys
+        + GeneratorSys
+        + omni_remote_source::sys::RemoteSourceSys
+        + Clone,
 {
     let sys = ctx.sys().clone();
     let generators = get_generators(ctx, &sys).await?;

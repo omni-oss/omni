@@ -29,6 +29,7 @@ dependencies:
   - omni_api
   - omni_tracing_subscriber
   - omni_remote_source
+  - omni_remote_source_contributors
   - omni_git_utils
   - env
   - env_loader

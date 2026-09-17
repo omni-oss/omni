@@ -1,8 +1,28 @@
 pub use omni_projection_configurations::*;
 
-use crate::SourceConfig;
+use crate::{SourceConfig, SourceConfigProfile};
 
-pub type ProjectionSourceConfiguration = SourceConfig<ProjectionExtra>;
+/// Profile for projection sources: a shared `routes` override plus a required
+/// declaration-site `id` on `git`/`local` (optional on the hidden registry).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectionProfile;
+
+impl SourceConfigProfile for ProjectionProfile {
+    type BaseExtra = ProjectionRoutes;
+    type LocalExtra = ProjectionId;
+    type GitExtra = ProjectionId;
+    type RegistryExtra = ProjectionRegistryId;
+
+    fn declared_id(source: &SourceConfig<Self>) -> Option<&str> {
+        match source {
+            SourceConfig::Local(local) => Some(local.extra.id.as_str()),
+            SourceConfig::Git(git) => Some(git.extra.id.as_str()),
+            SourceConfig::Registry(registry) => registry.extra.id.as_deref(),
+        }
+    }
+}
+
+pub type ProjectionSourceConfiguration = SourceConfig<ProjectionProfile>;
 
 #[cfg(test)]
 mod tests {
@@ -30,9 +50,11 @@ mod tests {
         match git {
             SourceConfig::Git(g) => {
                 assert_eq!(g.extra.id, "team-ai-skills");
-                assert_eq!(g.extra.routes.as_deref().map(<[_]>::len), Some(1));
+                assert_eq!(g.base.routes.as_deref().map(<[_]>::len), Some(1));
             }
-            SourceConfig::Local(_) => panic!("expected git"),
+            SourceConfig::Local(_) | SourceConfig::Registry(_) => {
+                panic!("expected git")
+            }
         }
 
         let local = parse_source(
@@ -43,7 +65,9 @@ mod tests {
             SourceConfig::Local(l) => {
                 assert_eq!(l.extra.id, "shared_scripts");
             }
-            SourceConfig::Git(_) => panic!("expected local"),
+            SourceConfig::Git(_) | SourceConfig::Registry(_) => {
+                panic!("expected local")
+            }
         }
     }
 
@@ -54,8 +78,10 @@ mod tests {
         )
         .expect("a projection source may omit routes");
         match source {
-            SourceConfig::Local(l) => assert_eq!(l.extra.routes, None),
-            SourceConfig::Git(_) => panic!("expected local"),
+            SourceConfig::Local(l) => assert_eq!(l.base.routes, None),
+            SourceConfig::Git(_) | SourceConfig::Registry(_) => {
+                panic!("expected local")
+            }
         }
     }
 
