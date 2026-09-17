@@ -1,6 +1,7 @@
 use omni_constants::{
     OMNI_CACHE_DIR, OMNI_DIR, OMNI_LOCKS_DIR, OMNI_SCRATCH_DIR,
-    OMNI_SOURCES_DIR, OMNI_TRACE_DIR, REMOTE_CACHE_OMNI, SOURCE_LOCKFILE_NAME,
+    OMNI_SOURCES_DIR, OMNI_TRACE_DIR, REMOTE_CACHE_OMNI,
+    SOURCE_LOCKFILE_LOCK_NAME, SOURCE_LOCKFILE_NAME,
 };
 use omni_ignore_core::{IgnoreContributor, IgnorePattern};
 
@@ -8,7 +9,9 @@ use omni_ignore_core::{IgnoreContributor, IgnorePattern};
 /// patterns are built from the same `omni_constants` segments the subsystems use
 /// to write those paths, so a rename moves the writer and the ignore pattern
 /// together. The `sources/lock.json` keep-rule is emitted right after the base
-/// it re-includes and must never be reordered ahead of it.
+/// it re-includes and must never be reordered ahead of it. Its advisory lock
+/// guard (`sources/lock.json.lock`) follows the keep-rule so the machine-only
+/// lock file stays ignored even though the committed lockfile beside it does not.
 pub struct InternalContributor;
 
 impl InternalContributor {
@@ -21,6 +24,7 @@ impl InternalContributor {
             format!("/{OMNI_SCRATCH_DIR}/**"),
             format!("/{OMNI_SOURCES_DIR}/**"),
             format!("!/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_NAME}"),
+            format!("/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_LOCK_NAME}"),
             format!("/{OMNI_TRACE_DIR}/**"),
         ]
     }
@@ -59,6 +63,7 @@ mod tests {
                 "/.omni/scratch/**",
                 "/.omni/sources/**",
                 "!/.omni/sources/lock.json",
+                "/.omni/sources/lock.json.lock",
                 "/.omni/trace/**",
             ]
         );
@@ -89,6 +94,10 @@ mod tests {
         assert_eq!(
             lines[5],
             format!("!/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_NAME}")
+        );
+        assert_eq!(
+            lines[6],
+            format!("/{OMNI_SOURCES_DIR}/{SOURCE_LOCKFILE_LOCK_NAME}")
         );
     }
 }

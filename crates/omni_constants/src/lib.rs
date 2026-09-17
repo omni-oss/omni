@@ -40,6 +40,12 @@ pub const REFS_SEGMENT: &str = "refs";
 /// kept at `.omni/sources/lock.json` and shared across all subsystems.
 pub const SOURCE_LOCKFILE_NAME: &str = "lock.json";
 
+/// The workspace-local advisory lock file that guards the load-modify-save of
+/// [`SOURCE_LOCKFILE_NAME`], kept alongside it at `.omni/sources/lock.json.lock`.
+/// Unlike the lockfile it guards, this is machine-only state and is never
+/// committed, so ignore management keeps it excluded.
+pub const SOURCE_LOCKFILE_LOCK_NAME: &str = "lock.json.lock";
+
 /// `.omni/` subdirectories composed from [`OMNI_DIR`] and the segments above.
 pub const OMNI_CACHE_DIR: &str = ".omni/cache";
 pub const OMNI_SCRATCH_DIR: &str = ".omni/scratch";
@@ -147,5 +153,14 @@ mod tests {
         assert_eq!(PENDING_SEGMENT, ".pending");
         assert_eq!(REFS_SEGMENT, "refs");
         assert_eq!(SOURCE_LOCKFILE_NAME, "lock.json");
+        assert_eq!(SOURCE_LOCKFILE_LOCK_NAME, "lock.json.lock");
+    }
+
+    #[test]
+    fn advisory_lock_name_is_the_lockfile_name_with_a_lock_suffix() {
+        assert_eq!(
+            SOURCE_LOCKFILE_LOCK_NAME,
+            format!("{SOURCE_LOCKFILE_NAME}.lock")
+        );
     }
 }
