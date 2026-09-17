@@ -2,7 +2,9 @@ use omni_glob_config::GlobConfig;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::id_validator::validate_projection_id;
+use crate::id_validator::{
+    option_validate_projection_id, validate_projection_id,
+};
 
 /// Root vocabulary for a projection `target`. `@workspace/...` and unrooted
 /// targets both resolve against the workspace root.
@@ -272,25 +274,49 @@ impl Projection {
     }
 }
 
-/// The `extra` family for projection sources: a stable `id` (a relative,
-/// `/`-delimited, path-safe namespace) plus optional workspace-declared
-/// `routes`. Absent/null `routes` means "inherit the source's owned manifest";
-/// present `routes` override it wholesale.
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq)]
+/// The workspace-declared `routes` override shared by every projection source
+/// variant. Absent/null means "inherit the source's owned manifest"; present
+/// `routes` override it wholesale. This is the projection profile's `BaseExtra`.
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, Clone, Default, PartialEq, Eq,
+)]
 #[serde(deny_unknown_fields)]
-pub struct ProjectionExtra {
-    #[serde(deserialize_with = "validate_projection_id")]
-    pub id: String,
-
+pub struct ProjectionRoutes {
     #[serde(default)]
     pub routes: Option<Vec<Projection>>,
+}
+
+/// The required declaration-site `id` carried by a `git`/`local` projection
+/// source: a stable, relative, `/`-delimited, path-safe namespace.
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, Clone, Default, PartialEq, Eq,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionId {
+    #[serde(deserialize_with = "validate_projection_id")]
+    pub id: String,
+}
+
+/// The optional declaration-site `id` for a (serde-hidden) registry projection
+/// source; defaults to the registry name when absent.
+#[derive(
+    Serialize, Deserialize, JsonSchema, Debug, Clone, Default, PartialEq, Eq,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectionRegistryId {
+    #[serde(default, deserialize_with = "option_validate_projection_id")]
+    pub id: Option<String>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn parse_extra(json: &str) -> Result<ProjectionExtra, serde_json::Error> {
+    fn parse_id(json: &str) -> Result<ProjectionId, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    fn parse_routes(json: &str) -> Result<ProjectionRoutes, serde_json::Error> {
         serde_json::from_str(json)
     }
 
@@ -363,10 +389,8 @@ mod tests {
     #[test]
     fn projection_id_accepts_safe_values() {
         for id in ["team-ai-skills", "shared_scripts", "a", "@myorg/pkg"] {
-            let json = format!(
-                r#"{{"id":"{id}","routes":[{{"strategy":"namespaced"}}]}}"#
-            );
-            parse_extra(&json)
+            let json = format!(r#"{{"id":"{id}"}}"#);
+            parse_id(&json)
                 .unwrap_or_else(|e| panic!("id `{id}` should be valid: {e}"));
         }
     }
@@ -377,13 +401,8 @@ mod tests {
             "a\\b", "..", ".hidden", "abc.", "con", "CON", "a<b>", "a:b",
             "a|b", "a?b", "a*b", "", "//a", "/abs", "a/../b",
         ] {
-            let json = format!(
-                r#"{{"id":"{id}","routes":[{{"strategy":"namespaced"}}]}}"#
-            );
-            assert!(
-                parse_extra(&json).is_err(),
-                "id `{id}` should be rejected"
-            );
+            let json = format!(r#"{{"id":"{id}"}}"#);
+            assert!(parse_id(&json).is_err(), "id `{id}` should be rejected");
         }
     }
 
@@ -540,18 +559,14 @@ mod tests {
 
     #[test]
     fn routes_absence_null_and_lists_deserialize() {
-        assert_eq!(parse_extra(r#"{"id":"a"}"#).unwrap().routes, None);
+        assert_eq!(parse_routes(r#"{}"#).unwrap().routes, None);
+        assert_eq!(parse_routes(r#"{"routes":null}"#).unwrap().routes, None);
         assert_eq!(
-            parse_extra(r#"{"id":"a","routes":null}"#).unwrap().routes,
-            None
-        );
-        assert_eq!(
-            parse_extra(r#"{"id":"a","routes":[]}"#).unwrap().routes,
+            parse_routes(r#"{"routes":[]}"#).unwrap().routes,
             Some(vec![])
         );
         let some =
-            parse_extra(r#"{"id":"a","routes":[{"strategy":"namespaced"}]}"#)
-                .unwrap();
+            parse_routes(r#"{"routes":[{"strategy":"namespaced"}]}"#).unwrap();
         assert_eq!(some.routes.as_deref().map(<[_]>::len), Some(1));
     }
 

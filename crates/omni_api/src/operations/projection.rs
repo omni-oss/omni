@@ -4,14 +4,15 @@ use std::sync::Mutex;
 
 use omni_configuration_discovery::ConfigurationDiscovery;
 use omni_configurations::{
-    OwnedProjectionConfiguration, SourceConfig, types::SingleOrMany,
+    OwnedProjectionConfiguration, ProjectionProfile, SourceConfig,
+    types::SingleOrMany,
 };
 use omni_context::{Context, ContextSys};
 use omni_meta::{
     DEFAULT_META_PROJECTION_DEPTH, Materialized, MetaExpand, Node,
     SourceIdentity, expand, matches as meta_matches,
 };
-use omni_projection_configurations::{Projection, ProjectionExtra};
+use omni_projection_configurations::Projection;
 pub use omni_projections::BackupHandling;
 use omni_projections::{
     ApplierSys, ConflictReport, LinkState, ProjectionError, ResolvedSource,
@@ -568,18 +569,18 @@ impl<TSys> MetaExpand for ProjectionMetaExpand<'_, TSys>
 where
     TSys: RemoteSourceSys + FsReadAsync + FsCanonicalizeAsync + Send + Sync,
 {
-    type Extra = ProjectionExtra;
+    type Profile = ProjectionProfile;
     type Leaf = Vec<Projection>;
     type Error = eyre::Report;
 
     async fn classify(
         &self,
-        src: &SourceConfig<ProjectionExtra>,
+        src: &SourceConfig<ProjectionProfile>,
         qualified_id: &str,
         parent_root: &Path,
         depth: usize,
-    ) -> eyre::Result<Materialized<Vec<Projection>, ProjectionExtra>> {
-        let workspace_routes = src.extra().routes.as_deref();
+    ) -> eyre::Result<Materialized<Vec<Projection>, ProjectionProfile>> {
+        let workspace_routes = src.base().routes.as_deref();
 
         // An explicit empty `routes` list projects nothing: caught before the
         // source is materialized.
@@ -619,6 +620,9 @@ where
                 };
                 (materialized.root, pin, identity)
             }
+            SourceConfig::Registry(_) => {
+                unreachable!("registry sources are never constructed")
+            }
         };
 
         let manifest = discover_owned_manifest(self.sys, &root).await?;
@@ -634,8 +638,17 @@ where
         })
     }
 
-    fn member_id<'a>(&self, src: &'a SourceConfig<ProjectionExtra>) -> &'a str {
-        src.extra().id.as_str()
+    fn declared_id<'a>(
+        &self,
+        src: &'a SourceConfig<ProjectionProfile>,
+    ) -> &'a str {
+        match src {
+            SourceConfig::Local(local) => local.extra.id.as_str(),
+            SourceConfig::Git(git) => git.extra.id.as_str(),
+            SourceConfig::Registry(registry) => {
+                registry.extra.id.as_deref().unwrap_or_default()
+            }
+        }
     }
 }
 
@@ -658,7 +671,7 @@ fn classify_routes(
     workspace_routes: Option<&[Projection]>,
     manifest: Option<OwnedProjectionConfiguration>,
     trusted: bool,
-) -> eyre::Result<Node<Vec<Projection>, ProjectionExtra>> {
+) -> eyre::Result<Node<Vec<Projection>, ProjectionProfile>> {
     match workspace_routes {
         Some(routes) => {
             if matches!(
@@ -962,7 +975,7 @@ mod tests {
 
     #[test]
     fn a_bundle_manifest_classifies_as_meta() {
-        let sources: Vec<SourceConfig<ProjectionExtra>> = vec![
+        let sources: Vec<SourceConfig<ProjectionProfile>> = vec![
             serde_json::from_str(
                 r#"{"source":"local","path":"./child","id":"child"}"#,
             )

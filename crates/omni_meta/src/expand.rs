@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use omni_configurations::SourceConfig;
+use omni_configurations::{SourceConfig, SourceConfigProfile};
 use url::Url;
 
 use crate::error::Error;
@@ -32,14 +32,14 @@ pub enum SourceIdentity {
 /// the projection subsystem, for instance, only ever produces leaf-only or
 /// meta-only nodes, so its behavior is unchanged by the both-and capability.
 #[derive(Debug)]
-pub struct Node<Leaf, Extra> {
+pub struct Node<Leaf, P: SourceConfigProfile> {
     /// The payload this node contributes directly, if any.
     pub leaf: Option<Leaf>,
     /// Member sources to expand beneath this node, if any.
-    pub children: Vec<SourceConfig<Extra>>,
+    pub children: Vec<SourceConfig<P>>,
 }
 
-impl<Leaf, Extra> Node<Leaf, Extra> {
+impl<Leaf, P: SourceConfigProfile> Node<Leaf, P> {
     /// A node that only contributes its own payload (no member sources).
     pub fn leaf(leaf: Leaf) -> Self {
         Self {
@@ -49,7 +49,7 @@ impl<Leaf, Extra> Node<Leaf, Extra> {
     }
 
     /// A node that only bundles member sources (contributes no payload itself).
-    pub fn meta(children: Vec<SourceConfig<Extra>>) -> Self {
+    pub fn meta(children: Vec<SourceConfig<P>>) -> Self {
         Self {
             leaf: None,
             children,
@@ -57,7 +57,7 @@ impl<Leaf, Extra> Node<Leaf, Extra> {
     }
 
     /// A node that both contributes its own payload and bundles member sources.
-    pub fn both(leaf: Leaf, children: Vec<SourceConfig<Extra>>) -> Self {
+    pub fn both(leaf: Leaf, children: Vec<SourceConfig<P>>) -> Self {
         Self {
             leaf: Some(leaf),
             children,
@@ -67,8 +67,8 @@ impl<Leaf, Extra> Node<Leaf, Extra> {
 
 /// The result of materializing (fetching/pinning) and classifying one source.
 #[derive(Debug)]
-pub struct Materialized<Leaf, Extra> {
-    pub node: Node<Leaf, Extra>,
+pub struct Materialized<Leaf, P: SourceConfigProfile> {
+    pub node: Node<Leaf, P>,
     pub identity: SourceIdentity,
     pub root: PathBuf,
     pub pin: Option<String>,
@@ -91,8 +91,9 @@ pub struct EffectiveSource<Leaf> {
 /// Materialize and classify one source. All I/O lives behind this trait so the
 /// traversal itself is pure and unit-testable with a fake implementation.
 pub trait MetaExpand {
-    /// The `extra` family carried by each source (e.g. `ProjectionExtra`).
-    type Extra;
+    /// The source-config profile carried by each source (e.g. the projection or
+    /// pack profile).
+    type Profile: SourceConfigProfile;
     /// The resolved payload a leaf source contributes.
     type Leaf;
     /// The caller's error type; it must absorb this crate's traversal errors.
@@ -101,14 +102,14 @@ pub trait MetaExpand {
     #[allow(async_fn_in_trait)]
     async fn classify(
         &self,
-        src: &SourceConfig<Self::Extra>,
+        src: &SourceConfig<Self::Profile>,
         qualified_id: &str,
         parent_root: &Path,
         depth: usize,
-    ) -> Result<Materialized<Self::Leaf, Self::Extra>, Self::Error>;
+    ) -> Result<Materialized<Self::Leaf, Self::Profile>, Self::Error>;
 
     /// The authored id of a member source, read without any I/O.
-    fn member_id<'a>(&self, src: &'a SourceConfig<Self::Extra>) -> &'a str;
+    fn declared_id<'a>(&self, src: &'a SourceConfig<Self::Profile>) -> &'a str;
 }
 
 /// Return the first `::`-delimited segment of a selection argument.
@@ -142,8 +143,8 @@ fn compose_qualified_id(prefix: Option<&str>, id: &str) -> String {
     }
 }
 
-struct Frame<Extra> {
-    src: SourceConfig<Extra>,
+struct Frame<P: SourceConfigProfile> {
+    src: SourceConfig<P>,
     qualified_id: String,
     parent_root: PathBuf,
     depth: usize,
@@ -152,7 +153,7 @@ struct Frame<Extra> {
 
 fn detect_duplicates<X>(
     expander: &X,
-    siblings: &[SourceConfig<X::Extra>],
+    siblings: &[SourceConfig<X::Profile>],
     bundle: Option<&str>,
 ) -> Result<(), Error>
 where
@@ -160,7 +161,7 @@ where
 {
     let mut seen: HashSet<&str> = HashSet::new();
     for src in siblings {
-        let id = expander.member_id(src);
+        let id = expander.declared_id(src);
         if !seen.insert(id) {
             return Err(Error::duplicate_member_id(bundle, id));
         }
@@ -168,9 +169,9 @@ where
     Ok(())
 }
 
-fn push_children<Extra>(
-    stack: &mut Vec<Frame<Extra>>,
-    children: Vec<SourceConfig<Extra>>,
+fn push_children<P: SourceConfigProfile>(
+    stack: &mut Vec<Frame<P>>,
+    children: Vec<SourceConfig<P>>,
     child_qualified_ids: Vec<String>,
     parent_root: PathBuf,
     depth: usize,
@@ -208,21 +209,20 @@ fn cycle_chain(
 /// matching subtree is traversed, so unrelated sources are never materialized.
 pub async fn expand<X>(
     expander: &X,
-    sources: &[SourceConfig<X::Extra>],
+    sources: &[SourceConfig<X::Profile>],
     root: &Path,
     max_depth: usize,
     select: Option<&str>,
 ) -> Result<Vec<EffectiveSource<X::Leaf>>, X::Error>
 where
     X: MetaExpand,
-    X::Extra: Clone,
 {
     detect_duplicates(expander, sources, None)?;
 
-    let mut stack: Vec<Frame<X::Extra>> = Vec::new();
+    let mut stack: Vec<Frame<X::Profile>> = Vec::new();
     let child_qids: Vec<String> = sources
         .iter()
-        .map(|s| compose_qualified_id(None, expander.member_id(s)))
+        .map(|s| compose_qualified_id(None, expander.declared_id(s)))
         .collect();
     push_children(
         &mut stack,
@@ -276,7 +276,7 @@ where
             let selected = select.is_none_or(|s| matches(&qualified_id, s));
             if selected {
                 out.push(EffectiveSource {
-                    id: expander.member_id(&frame.src).to_string(),
+                    id: expander.declared_id(&frame.src).to_string(),
                     qualified_id: qualified_id.clone(),
                     root: materialized.root.clone(),
                     pin: materialized.pin,
@@ -296,7 +296,7 @@ where
                 .map(|s| {
                     compose_qualified_id(
                         Some(&qualified_id),
-                        expander.member_id(s),
+                        expander.declared_id(s),
                     )
                 })
                 .collect();
@@ -323,34 +323,34 @@ mod tests {
     use std::{cell::RefCell, collections::HashMap};
 
     use omni_configurations::types::SingleOrMany;
-    use omni_configurations::{GitSource, LocalSource};
+    use omni_configurations::{
+        GitSource, LocalSource, ProjectionId, ProjectionProfile,
+        ProjectionRoutes,
+    };
 
     use super::*;
 
-    #[derive(Clone)]
-    struct TestExtra {
-        id: String,
-    }
-
-    fn git(id: &str, uri: &str, rev: &str) -> SourceConfig<TestExtra> {
+    fn git(id: &str, uri: &str, rev: &str) -> SourceConfig<ProjectionProfile> {
         SourceConfig::Git(GitSource {
             uri: Url::parse(uri).unwrap(),
             rev: rev.to_string(),
-            extra: TestExtra { id: id.to_string() },
+            base: ProjectionRoutes::default(),
+            extra: ProjectionId { id: id.to_string() },
         })
     }
 
-    fn local(id: &str, path: &str) -> SourceConfig<TestExtra> {
+    fn local(id: &str, path: &str) -> SourceConfig<ProjectionProfile> {
         SourceConfig::Local(LocalSource {
             path: SingleOrMany::Single(path.to_string()),
-            extra: TestExtra { id: id.to_string() },
+            base: ProjectionRoutes::default(),
+            extra: ProjectionId { id: id.to_string() },
         })
     }
 
     enum FakeNode {
         Leaf(String),
-        Meta(Vec<SourceConfig<TestExtra>>),
-        Both(String, Vec<SourceConfig<TestExtra>>),
+        Meta(Vec<SourceConfig<ProjectionProfile>>),
+        Both(String, Vec<SourceConfig<ProjectionProfile>>),
     }
 
     struct Fake {
@@ -377,7 +377,7 @@ mod tests {
         fn meta(
             mut self,
             id: &str,
-            children: Vec<SourceConfig<TestExtra>>,
+            children: Vec<SourceConfig<ProjectionProfile>>,
         ) -> Self {
             self.nodes.insert(id.to_string(), FakeNode::Meta(children));
             self
@@ -386,7 +386,7 @@ mod tests {
         fn both(
             mut self,
             id: &str,
-            children: Vec<SourceConfig<TestExtra>>,
+            children: Vec<SourceConfig<ProjectionProfile>>,
         ) -> Self {
             self.nodes.insert(
                 id.to_string(),
@@ -396,7 +396,7 @@ mod tests {
         }
     }
 
-    fn local_path(src: &SourceConfig<TestExtra>) -> String {
+    fn local_path(src: &SourceConfig<ProjectionProfile>) -> String {
         match src {
             SourceConfig::Local(l) => match &l.path {
                 SingleOrMany::Single(p) => p.clone(),
@@ -404,32 +404,35 @@ mod tests {
                     ps.first().cloned().unwrap_or_default()
                 }
             },
-            SourceConfig::Git(_) => String::new(),
+            SourceConfig::Git(_) | SourceConfig::Registry(_) => String::new(),
         }
     }
 
     impl MetaExpand for Fake {
-        type Extra = TestExtra;
+        type Profile = ProjectionProfile;
         type Leaf = String;
         type Error = Error;
 
         async fn classify(
             &self,
-            src: &SourceConfig<Self::Extra>,
+            src: &SourceConfig<Self::Profile>,
             qualified_id: &str,
             parent_root: &Path,
             _depth: usize,
-        ) -> Result<Materialized<Self::Leaf, Self::Extra>, Self::Error>
+        ) -> Result<Materialized<Self::Leaf, Self::Profile>, Self::Error>
         {
             self.classified.borrow_mut().push(qualified_id.to_string());
 
-            let id = self.member_id(src).to_string();
+            let id = self.declared_id(src).to_string();
             let identity = match src {
                 SourceConfig::Git(g) => SourceIdentity::Git {
                     uri: g.uri.clone(),
                     rev: g.rev.clone(),
                 },
                 SourceConfig::Local(_) => {
+                    SourceIdentity::Local(PathBuf::from(local_path(src)))
+                }
+                SourceConfig::Registry(_) => {
                     SourceIdentity::Local(PathBuf::from(local_path(src)))
                 }
             };
@@ -451,10 +454,14 @@ mod tests {
             })
         }
 
-        fn member_id<'a>(&self, src: &'a SourceConfig<Self::Extra>) -> &'a str {
+        fn declared_id<'a>(
+            &self,
+            src: &'a SourceConfig<Self::Profile>,
+        ) -> &'a str {
             match src {
                 SourceConfig::Git(g) => &g.extra.id,
                 SourceConfig::Local(l) => &l.extra.id,
+                SourceConfig::Registry(_) => "",
             }
         }
     }
@@ -465,7 +472,7 @@ mod tests {
 
     async fn expand_all(
         fake: &Fake,
-        sources: &[SourceConfig<TestExtra>],
+        sources: &[SourceConfig<ProjectionProfile>],
     ) -> Result<Vec<EffectiveSource<String>>, Error> {
         expand(fake, sources, &root(), DEFAULT_META_PROJECTION_DEPTH, None)
             .await

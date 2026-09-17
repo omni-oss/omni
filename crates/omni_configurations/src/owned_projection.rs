@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use omni_projection_configurations::{Projection, ProjectionExtra};
+use omni_projection_configurations::Projection;
 use schemars::{JsonSchema, Schema, generate::SchemaGenerator};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer, de::Error as _,
@@ -8,7 +8,7 @@ use serde::{
 };
 use serde_json::{Value, json};
 
-use crate::SourceConfig;
+use crate::{ProjectionProfile, SourceConfig};
 
 /// A `projection.omni.{yaml,yml,json,toml}` shipped by a source repository.
 ///
@@ -23,7 +23,7 @@ pub enum OwnedProjectionConfiguration {
         routes: Vec<Projection>,
     },
     Meta {
-        sources: Vec<SourceConfig<ProjectionExtra>>,
+        sources: Vec<SourceConfig<ProjectionProfile>>,
     },
 }
 
@@ -33,7 +33,7 @@ struct RawManifest {
     #[serde(default)]
     routes: Option<Vec<Projection>>,
     #[serde(default)]
-    sources: Option<Vec<SourceConfig<ProjectionExtra>>>,
+    sources: Option<Vec<SourceConfig<ProjectionProfile>>>,
 }
 
 impl TryFrom<RawManifest> for OwnedProjectionConfiguration {
@@ -85,7 +85,7 @@ impl JsonSchema for OwnedProjectionConfiguration {
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         let projection = subschema::<Projection>(generator);
-        let source = subschema::<SourceConfig<ProjectionExtra>>(generator);
+        let source = subschema::<SourceConfig<ProjectionProfile>>(generator);
 
         let leaf = json!({
             "type": "object",

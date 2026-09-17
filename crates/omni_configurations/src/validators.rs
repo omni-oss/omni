@@ -2,11 +2,10 @@ use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use lazy_regex::{Lazy, Regex, regex};
-use omni_projection_configurations::ProjectionExtra;
 use serde_validate::{StaticValidator, declare_static_validator};
 use sets::unordered_set;
 
-use crate::{NoExtra, SourceConfig};
+use crate::{ProjectionProfile, SourceConfig, SourceConfigProfile};
 
 /// Compile-time label distinguishing source kinds in validation error messages.
 pub trait SourceKindLabel {
@@ -34,9 +33,10 @@ impl SourceKindLabel for ProjectionLabel {
 #[derive(Debug, Clone, Copy, Default)]
 struct SourcesValidator<E, L>(PhantomData<(E, L)>);
 
-impl<E, L, T> StaticValidator<T> for SourcesValidator<E, L>
+impl<P, L, T> StaticValidator<T> for SourcesValidator<P, L>
 where
-    T: Borrow<Vec<SourceConfig<E>>>,
+    P: SourceConfigProfile,
+    T: Borrow<Vec<SourceConfig<P>>>,
     L: SourceKindLabel,
 {
     fn validate_static(value: &T) -> Result<(), String> {
@@ -57,6 +57,9 @@ where
                         ));
                     }
                 }
+                SourceConfig::Registry(_) => {
+                    // registry sources are never constructed today
+                }
             }
         }
 
@@ -65,15 +68,15 @@ where
 }
 
 declare_static_validator!(
-    SourcesValidator<NoExtra, GeneratorLabel>,
-    Vec<SourceConfig<NoExtra>>,
+    SourcesValidator<(), GeneratorLabel>,
+    Vec<SourceConfig<()>>,
     validate_generator_sources,
     option_validate_generator_sources,
 );
 
 declare_static_validator!(
-    SourcesValidator<NoExtra, ToolLabel>,
-    Vec<SourceConfig<NoExtra>>,
+    SourcesValidator<(), ToolLabel>,
+    Vec<SourceConfig<()>>,
     validate_tool_sources,
     option_validate_tool_sources,
 );
@@ -81,28 +84,26 @@ declare_static_validator!(
 #[derive(Debug, Clone, Copy, Default)]
 struct ProjectionSourcesValidator;
 
-impl<T: Borrow<Vec<SourceConfig<ProjectionExtra>>>> StaticValidator<T>
+impl<T: Borrow<Vec<SourceConfig<ProjectionProfile>>>> StaticValidator<T>
     for ProjectionSourcesValidator
 {
     fn validate_static(value: &T) -> Result<(), String> {
         let sources = value.borrow();
 
         // Reuse the shared git-uri dedup for projection sources.
-        SourcesValidator::<ProjectionExtra, ProjectionLabel>::validate_static(
+        SourcesValidator::<ProjectionProfile, ProjectionLabel>::validate_static(
             sources,
         )?;
 
         let mut encountered_id = unordered_set!();
         for source in sources {
-            let extra = match source {
-                SourceConfig::Local(local) => &local.extra,
-                SourceConfig::Git(git) => &git.extra,
+            let Some(id) = source.declared_id() else {
+                continue;
             };
 
-            if !encountered_id.insert(extra.id.as_str()) {
+            if !encountered_id.insert(id) {
                 return Err(format!(
-                    "Duplicate projection source id found: {}\nEach projection source id must be unique",
-                    extra.id
+                    "Duplicate projection source id found: {id}\nEach projection source id must be unique"
                 ));
             }
         }
@@ -113,7 +114,7 @@ impl<T: Borrow<Vec<SourceConfig<ProjectionExtra>>>> StaticValidator<T>
 
 declare_static_validator!(
     ProjectionSourcesValidator,
-    Vec<SourceConfig<ProjectionExtra>>,
+    Vec<SourceConfig<ProjectionProfile>>,
     validate_projection_sources,
     option_validate_projection_sources,
 );

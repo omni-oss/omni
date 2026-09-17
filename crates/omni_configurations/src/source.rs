@@ -4,12 +4,78 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-/// A registered source of configuration artifacts (generator manifests, tool
-/// manifests, or projection inputs).
+/// Assigns each [`SourceConfig`] variant its own extra family plus one shared
+/// base that every variant carries.
 ///
-/// The type is generic over an `extra` family `E` that is flattened into each
-/// variant. `E = NoExtra` yields the plain `local`/`git` source shared by
-/// generators and tools; richer families (e.g. projections) add sibling fields
+/// A profile is a zero-sized marker that selects the extra families flattened
+/// into each source variant, mirroring the `InputProfile` pattern. `()` is the
+/// null profile used by generators and tools, which carry no extra fields; the
+/// serialized shape of a `SourceConfig<()>` is exactly the bare
+/// `source`/`path`/`uri`/`rev` object.
+pub trait SourceConfigProfile: Default + Clone + Sized {
+    /// Fields identical across every source kind (e.g. a pack's `provides`, a
+    /// projection's inline `routes`). Profiles that need nothing here use `()`.
+    type BaseExtra: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + std::fmt::Debug
+        + Clone
+        + PartialEq
+        + Eq
+        + Default
+        + Send
+        + Sync;
+
+    /// Extra fields carried only by a `local` source.
+    type LocalExtra: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + std::fmt::Debug
+        + Clone
+        + PartialEq
+        + Eq
+        + Default
+        + Send
+        + Sync;
+
+    /// Extra fields carried only by a `git` source.
+    type GitExtra: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + std::fmt::Debug
+        + Clone
+        + PartialEq
+        + Eq
+        + Default
+        + Send
+        + Sync;
+
+    /// Extra fields carried only by the (serde-hidden) `registry` source.
+    type RegistryExtra: for<'de> Deserialize<'de>
+        + Serialize
+        + JsonSchema
+        + std::fmt::Debug
+        + Clone
+        + PartialEq
+        + Eq
+        + Default
+        + Send
+        + Sync;
+
+    /// The declaration-site identity handle, if this source kind carries one.
+    ///
+    /// Uniform accessor over the per-variant extras: `git`/`local` carry a
+    /// required `id`; the registry variant an optional one. Generators and
+    /// tools are identity-less and return `None`.
+    fn declared_id(source: &SourceConfig<Self>) -> Option<&str>;
+}
+
+/// A registered source of configuration artifacts (generator manifests, tool
+/// manifests, projection inputs, or packs).
+///
+/// The type is generic over a [`SourceConfigProfile`] that assigns each variant
+/// its own flattened extra family. `P = ()` yields the plain `local`/`git`
+/// source shared by generators and tools; richer profiles add sibling fields
 /// without changing the wire shape of the `source`/`path`/`uri`/`rev` keys.
 #[derive(
     Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Validate,
@@ -18,22 +84,36 @@ use url::Url;
     tag = "source",
     rename_all = "kebab-case",
     deny_unknown_fields,
-    bound(deserialize = "E: Deserialize<'de>", serialize = "E: Serialize")
+    bound(deserialize = "", serialize = "")
 )]
-#[schemars(bound = "E: JsonSchema")]
+#[schemars(bound(deserialize = "", serialize = ""))]
 #[garde(allow_unvalidated)]
-pub enum SourceConfig<E = NoExtra> {
-    Local(LocalSource<E>),
-    Git(GitSource<E>),
+pub enum SourceConfig<P: SourceConfigProfile = ()> {
+    Local(LocalSource<P>),
+    Git(GitSource<P>),
+    /// Inert stub for a future package registry. Never constructed today and
+    /// hidden from both the wire format and the published schema. It exists so
+    /// the future registry is a pure addition: [`SourceConfigProfile::RegistryExtra`]
+    /// already gives `id` a place to be optional here while it is required on
+    /// `git`/`local`, and the locator fields already follow the `git` pattern.
+    #[serde(skip)]
+    #[schemars(skip)]
+    Registry(RegistrySource<P>),
 }
 
-impl<E> SourceConfig<E> {
-    /// The flattened `extra` family carried by either variant.
-    pub fn extra(&self) -> &E {
+impl<P: SourceConfigProfile> SourceConfig<P> {
+    /// The shared base extras carried by every variant.
+    pub fn base(&self) -> &P::BaseExtra {
         match self {
-            SourceConfig::Local(local) => &local.extra,
-            SourceConfig::Git(git) => &git.extra,
+            SourceConfig::Local(local) => &local.base,
+            SourceConfig::Git(git) => &git.base,
+            SourceConfig::Registry(registry) => &registry.base,
         }
+    }
+
+    /// The declaration-site identity handle, if this source kind carries one.
+    pub fn declared_id(&self) -> Option<&str> {
+        P::declared_id(self)
     }
 }
 
@@ -41,53 +121,84 @@ impl<E> SourceConfig<E> {
 #[derive(
     Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Validate,
 )]
-#[serde(
-    deny_unknown_fields,
-    bound(deserialize = "E: Deserialize<'de>", serialize = "E: Serialize")
-)]
-#[schemars(bound = "E: JsonSchema")]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
+#[schemars(bound(deserialize = "", serialize = ""))]
 #[garde(allow_unvalidated)]
-pub struct LocalSource<E = NoExtra> {
+pub struct LocalSource<P: SourceConfigProfile = ()> {
     pub path: SingleOrMany<String>,
 
     #[serde(flatten)]
     #[garde(skip)]
-    pub extra: E,
+    pub base: P::BaseExtra,
+
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub extra: P::LocalExtra,
 }
 
 /// A `git` source: a repository URI pinned to a revision.
 #[derive(
     Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Validate,
 )]
-#[serde(
-    deny_unknown_fields,
-    bound(deserialize = "E: Deserialize<'de>", serialize = "E: Serialize")
-)]
-#[schemars(bound = "E: JsonSchema")]
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
+#[schemars(bound(deserialize = "", serialize = ""))]
 #[garde(allow_unvalidated)]
-pub struct GitSource<E = NoExtra> {
+pub struct GitSource<P: SourceConfigProfile = ()> {
     pub uri: Url,
 
     pub rev: String,
 
     #[serde(flatten)]
     #[garde(skip)]
-    pub extra: E,
+    pub base: P::BaseExtra,
+
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub extra: P::GitExtra,
 }
 
-/// The empty `extra` family: a source with no additional fields.
+/// A `registry` source: a package name pinned to a version. See the
+/// [`SourceConfig::Registry`] doc comment for why this inert stub exists.
 #[derive(
-    Serialize, Deserialize, JsonSchema, Debug, Clone, Default, PartialEq, Eq,
+    Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq, Eq, Validate,
 )]
-#[serde(deny_unknown_fields)]
-pub struct NoExtra {}
+#[serde(bound(deserialize = "", serialize = ""), deny_unknown_fields)]
+#[schemars(bound(deserialize = "", serialize = ""))]
+#[garde(allow_unvalidated)]
+pub struct RegistrySource<P: SourceConfigProfile = ()> {
+    pub name: String,
+
+    #[serde(default)]
+    pub version: Option<String>,
+
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub base: P::BaseExtra,
+
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub extra: P::RegistryExtra,
+}
+
+/// The null profile: every extra family is `()`, so a `SourceConfig<()>` has no
+/// fields beyond `source`/`path`/`uri`/`rev` and carries no identity.
+impl SourceConfigProfile for () {
+    type BaseExtra = ();
+    type LocalExtra = ();
+    type GitExtra = ();
+    type RegistryExtra = ();
+
+    fn declared_id(_source: &SourceConfig<Self>) -> Option<&str> {
+        None
+    }
+}
 
 /// Generator sources have no extra fields.
-pub type GeneratorSourceConfiguration = SourceConfig<NoExtra>;
+pub type GeneratorSourceConfiguration = SourceConfig<()>;
 
 /// Tool sources have no extra fields; the serialized shape is identical to
 /// [`GeneratorSourceConfiguration`].
-pub type ToolSourceConfiguration = SourceConfig<NoExtra>;
+pub type ToolSourceConfiguration = SourceConfig<()>;
 
 #[cfg(test)]
 mod tests {
@@ -101,7 +212,8 @@ mod tests {
             parsed,
             SourceConfig::Local(LocalSource {
                 path: SingleOrMany::Single("./tools".to_string()),
-                extra: NoExtra {},
+                base: (),
+                extra: (),
             })
         );
         assert_eq!(serde_json::to_string(&parsed).expect("serialize"), json);
@@ -129,18 +241,22 @@ mod tests {
     }
 
     #[test]
-    fn extra_returns_the_flattened_extra_for_both_variants() {
-        let local = SourceConfig::Local(LocalSource {
+    fn base_and_declared_id_for_the_null_profile() {
+        let local: SourceConfig = SourceConfig::Local(LocalSource {
             path: SingleOrMany::Single("./x".to_string()),
-            extra: NoExtra {},
+            base: (),
+            extra: (),
         });
-        assert_eq!(local.extra(), &NoExtra {});
+        assert_eq!(local.base(), &());
+        assert_eq!(local.declared_id(), None);
 
-        let git = SourceConfig::Git(GitSource {
+        let git: SourceConfig = SourceConfig::Git(GitSource {
             uri: Url::parse("https://example.com/a.git").unwrap(),
             rev: "main".to_string(),
-            extra: NoExtra {},
+            base: (),
+            extra: (),
         });
-        assert_eq!(git.extra(), &NoExtra {});
+        assert_eq!(git.base(), &());
+        assert_eq!(git.declared_id(), None);
     }
 }

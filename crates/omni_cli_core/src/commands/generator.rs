@@ -571,6 +571,9 @@ async fn get_generators(
                     ))
                 });
             }
+            SourceConfig::Registry(_) => {
+                unreachable!("registry sources are never constructed")
+            }
         }
     }
 

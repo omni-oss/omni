@@ -5,15 +5,15 @@
 use std::{path::Path, process::Command};
 
 use omni_configurations::{
-    GitSource, LocalSource, SourceConfig, types::SingleOrMany,
-};
-use omni_projection_configurations::ProjectionExtra;
-use omni_remote_source_contributors::{
-    GeneratorRemoteContributor, ProjectionRemoteContributor,
+    GitSource, LocalSource, ProjectionId, ProjectionRoutes, SourceConfig,
+    types::SingleOrMany,
 };
 use omni_remote_source::{
     InstallOptions, RemoteSourceContributor,
     manager::{RemoteSourceManager, config::RemoteSourceConfig},
+};
+use omni_remote_source_contributors::{
+    GeneratorRemoteContributor, ProjectionRemoteContributor,
 };
 use system_traits::impls::RealSys;
 use tempfile::TempDir;
@@ -94,7 +94,8 @@ fn git_source(uri: &Url) -> SourceConfig {
     SourceConfig::Git(GitSource {
         uri: uri.clone(),
         rev: "main".to_string(),
-        extra: Default::default(),
+        base: (),
+        extra: (),
     })
 }
 
@@ -150,9 +151,9 @@ async fn projection_contributor_recurses_meta_bundles_to_git_children() {
 
     let top = SourceConfig::Local(LocalSource {
         path: SingleOrMany::Single("./bundle".to_string()),
-        extra: ProjectionExtra {
+        base: ProjectionRoutes { routes: None },
+        extra: ProjectionId {
             id: "b".to_string(),
-            routes: None,
         },
     });
 
