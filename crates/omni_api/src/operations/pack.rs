@@ -132,6 +132,7 @@ fn effective_provides_labels(
     node: &omni_remote_source_contributors::ExpandedPackNode,
 ) -> Vec<String> {
     use omni_configurations::PackSubsystem;
+    use strum::IntoEnumIterator;
 
     let declares = |subsystem: PackSubsystem| match subsystem {
         PackSubsystem::Generators => !node.generators.is_empty(),
@@ -145,13 +146,8 @@ fn effective_provides_labels(
             .is_none_or(|set| set.contains(&subsystem))
     };
 
-    [
-        (PackSubsystem::Generators, "generators"),
-        (PackSubsystem::Tools, "tools"),
-        (PackSubsystem::Projections, "projections"),
-    ]
-    .into_iter()
-    .filter(|(s, _)| declares(*s) && gated(*s))
-    .map(|(_, label)| label.to_string())
-    .collect()
+    PackSubsystem::iter()
+        .filter(|s| declares(*s) && gated(*s))
+        .map(|s| <&'static str>::from(s).to_string())
+        .collect()
 }

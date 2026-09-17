@@ -10,9 +10,20 @@ use crate::{
 /// The subsystems a pack may contribute to. Used by a consumer's `provides`
 /// gate to narrow what a pack registers.
 #[derive(
-    Serialize, Deserialize, JsonSchema, Debug, Clone, Copy, PartialEq, Eq, Hash,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::EnumIter,
+    strum::IntoStaticStr,
 )]
 #[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
 pub enum PackSubsystem {
     Generators,
     Tools,
