@@ -5,7 +5,9 @@ use lazy_regex::{Lazy, Regex, regex};
 use serde_validate::{StaticValidator, declare_static_validator};
 use sets::unordered_set;
 
-use crate::{ProjectionProfile, SourceConfig, SourceConfigProfile};
+use crate::{
+    PackProfile, ProjectionProfile, SourceConfig, SourceConfigProfile,
+};
 
 /// Compile-time label distinguishing source kinds in validation error messages.
 pub trait SourceKindLabel {
@@ -28,6 +30,12 @@ impl SourceKindLabel for ToolLabel {
 pub struct ProjectionLabel;
 impl SourceKindLabel for ProjectionLabel {
     const LABEL: &'static str = "projection";
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PackLabel;
+impl SourceKindLabel for PackLabel {
+    const LABEL: &'static str = "pack";
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -117,6 +125,42 @@ declare_static_validator!(
     Vec<SourceConfig<ProjectionProfile>>,
     validate_projection_sources,
     option_validate_projection_sources,
+);
+
+#[derive(Debug, Clone, Copy, Default)]
+struct PackSourcesValidator;
+
+impl<T: Borrow<Vec<SourceConfig<PackProfile>>>> StaticValidator<T>
+    for PackSourcesValidator
+{
+    fn validate_static(value: &T) -> Result<(), String> {
+        let sources = value.borrow();
+
+        // Reuse the shared git-uri dedup for pack sources.
+        SourcesValidator::<PackProfile, PackLabel>::validate_static(sources)?;
+
+        let mut encountered_id = unordered_set!();
+        for source in sources {
+            let Some(id) = source.declared_id() else {
+                continue;
+            };
+
+            if !encountered_id.insert(id) {
+                return Err(format!(
+                    "Duplicate pack source id found: {id}\nEach pack source id must be unique"
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+declare_static_validator!(
+    PackSourcesValidator,
+    Vec<SourceConfig<PackProfile>>,
+    validate_pack_sources,
+    option_validate_pack_sources,
 );
 
 #[derive(Debug, Clone, Copy, Default)]

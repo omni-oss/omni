@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use system_traits::{FsRead, FsReadAsync};
 
 use crate::{
-    GeneratorSourceConfiguration, IgnoreConfig, ProjectionSourceConfiguration,
-    ToolSourceConfiguration, Ui,
+    GeneratorSourceConfiguration, IgnoreConfig, PackSourceConfiguration,
+    ProjectionSourceConfiguration, ToolSourceConfiguration, Ui,
     constants::WORKSPACE_NAME_REGEX,
     utils::{self, fs::LoadConfigError},
 };
@@ -56,6 +56,12 @@ pub struct WorkspaceConfiguration {
     /// rules.
     #[serde(default, deserialize_with = "validate_projection_sources")]
     pub projections: Vec<ProjectionSourceConfiguration>,
+
+    /// Registered packs. Each entry is one `local` or `git` source that bundles
+    /// generators, tools, and projections behind a single `pack.omni.*`
+    /// manifest, registering into all three subsystems at once.
+    #[serde(default, deserialize_with = "validate_pack_sources")]
+    pub packs: Vec<PackSourceConfiguration>,
 
     #[serde(default)]
     pub env: WorkspaceEnvConfiguration,

@@ -61,6 +61,7 @@ pub const PROJECT_OMNI: &str = "project.omni.{ext}";
 pub const GENERATOR_OMNI: &str = "generator.omni.{ext}";
 pub const TOOL_OMNI: &str = "tool.omni.{ext}";
 pub const PROJECTION_OMNI: &str = "projection.omni.{ext}";
+pub const PACK_OMNI: &str = "pack.omni.{ext}";
 pub const REMOTE_CACHE_OMNI: &str = "remote-cache.omni.{ext}";
 
 /// The manifest templates that make up omni's control plane. Projecting a
