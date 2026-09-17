@@ -221,7 +221,8 @@ where
         "projection",
     );
 
-    if let Some(file) = discovery.discover().await?.into_iter().next() {
+    let discoveries = discovery.discover().await?;
+    if let Some(file) = discoveries.first() {
         let owned: OwnedProjectionConfiguration =
             omni_file_data_serde::read_async(file.as_path(), sys).await?;
         return Ok(Some(owned));
