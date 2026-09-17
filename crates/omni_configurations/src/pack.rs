@@ -19,8 +19,8 @@ use crate::{
     PartialEq,
     Eq,
     Hash,
-    strum::EnumIter,
-    strum::IntoStaticStr,
+    strum::Display,
+    strum::VariantArray,
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]

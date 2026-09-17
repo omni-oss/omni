@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     JsonSchema,
-    strum::EnumIter,
+    strum::VariantArray,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum SchemaKind {
@@ -131,9 +131,9 @@ mod tests {
 
     #[test]
     fn every_schema_kind_generates() {
-        use strum::IntoEnumIterator;
+        use strum::VariantArray as _;
 
-        for kind in SchemaKind::iter() {
+        for &kind in SchemaKind::VARIANTS {
             let resp = handle_config_schema(kind).expect("schema generation");
             assert!(resp.schema.is_object());
         }
