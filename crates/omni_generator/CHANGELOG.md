@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator-v0.13.0 - 2026-09-12
+#### Features
+- migrate generator files to structured globs - (9e6e844) - Clarence Manuel
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+#### Refactoring
+- centralize .omni/ layout constants in omni_constants - (07663b0) - Clarence Manuel
+- sync project.omni.yaml dependency graph to omni_glob - (4d46d3a) - Clarence Manuel
+- migrate glob matcher consumers to omni_glob - (5ce1eff) - Clarence Manuel
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+#### Miscellaneous Chores
+- add omni_constants project manifest and wire consumer project dependencies - (5dad87b) - Clarence Manuel
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_generator-v0.12.0 - 2026-08-21
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

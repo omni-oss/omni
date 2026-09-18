@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configurations-v0.13.0 - 2026-09-17
+#### Features
+- (**omni_configurations**) add ignore config surface - (9ca0781) - Clarence Manuel
+- require a name on projection manifests - (3c8c91d) - Clarence Manuel
+- add pack config types, manifest, and packs workspace field - (7a1dec2) - Clarence Manuel
+- add optional author name/version/description to projection manifests - (acc74d9) - Clarence Manuel
+- leaf-XOR-meta projection manifest with tag-free wire - (71b2c19) - Clarence Manuel
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+- document and end-to-end test the backslash-bang glob escape - (d27c954) - Clarence Manuel
+#### Refactoring
+- align enum iteration/labels to the repo's strum VariantArray and Display idioms - (1d299e6) - Clarence Manuel
+- derive PackSubsystem iteration and labels via strum - (29ddb0c) - Clarence Manuel
+- generalize SourceConfig to a per-variant profile and add registry stub - (248fa4b) - Clarence Manuel
+
+- - -
+
 ## omni_configurations-v0.12.0 - 2026-08-28
 #### Features
 - (**omni_configurations**) add projection configuration types and validation - (b72ad6c) - Clarence Manuel

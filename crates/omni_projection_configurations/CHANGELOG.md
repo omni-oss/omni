@@ -2,6 +2,23 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_projection_configurations-v0.2.0 - 2026-09-17
+#### Features
+- (**omni_projection_configurations**) widen projection schema for list match/scope and renames - (034c1db) - Clarence Manuel
+- (**omni_projection_configurations**) list-valued match/scope with ! negation and field renames - (92016e1) - Clarence Manuel
+- leaf-XOR-meta projection manifest with tag-free wire - (71b2c19) - Clarence Manuel
+- migrate projection match/scope to structured globs - (804594e) - Clarence Manuel
+- document and end-to-end test the backslash-bang glob escape - (d27c954) - Clarence Manuel
+- default projection on_existing to error - (ca9d624) - Clarence Manuel
+#### Refactoring
+- generalize SourceConfig to a per-variant profile and add registry stub - (248fa4b) - Clarence Manuel
+- rename projection on_collision to on_existing (ExistingPolicy) - (dbb8670) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_projection_configurations**) document structured glob forms in projection scope schema - (e37fabf) - Clarence Manuel
+- wire omni_glob and omni_config_types deps for projection crates - (9263699) - Clarence Manuel
+
+- - -
+
 ## omni_projection_configurations-v0.1.0 - 2026-08-28
 #### Features
 - (**omni_projection_configurations**) strategy-tagged Projection, MatchKind, nullable routes, owned manifest - (53167e3) - Clarence Manuel

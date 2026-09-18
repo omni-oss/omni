@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_generator_configurations-v0.11.0 - 2026-09-03
+#### Features
+- migrate generator files to structured globs - (9e6e844) - Clarence Manuel
+- document and end-to-end test the backslash-bang glob escape - (d27c954) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_generator_configurations-v0.10.0 - 2026-08-21
 #### Features
 - add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel

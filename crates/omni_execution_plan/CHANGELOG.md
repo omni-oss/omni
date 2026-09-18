@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_execution_plan-v0.6.0 - 2026-09-03
+#### Features
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+#### Tests
+- note that the literal-bang guards are removed when negation lands - (34bdae7) - Clarence Manuel
+- pin glob classification, memoization, and filter/stats behavior - (990000e) - Clarence Manuel
+#### Refactoring
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_execution_plan-v0.5.0 - 2026-07-13
 #### Features
 - support array style commands - (32c32aa) - Clarence Manuel

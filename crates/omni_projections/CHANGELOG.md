@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_projections-v0.2.0 - 2026-09-11
+#### Features
+- (**omni_projections**) separate authored id (path) from qualified id (ledger) - (441de53) - Clarence Manuel
+- (**omni_projections**) add run-wide existing-file preflight check - (adc51f7) - Clarence Manuel
+- (**omni_projections**) add run-wide collision preflight check - (663ea3a) - Clarence Manuel
+- (**omni_projections**) add aggregated projection conflict error - (a606c33) - Clarence Manuel
+- (**omni_projections**) reconcile removed sources and add three-way backup handling - (c22bb7f) - Clarence Manuel
+- per-child --source selection and ::-prefix unlink - (20db355) - Clarence Manuel
+- migrate projection match/scope to structured globs - (804594e) - Clarence Manuel
+#### Refactoring
+- (**omni_projections**) split sync_source into plan and apply phases - (ac2a1c3) - Clarence Manuel
+- (**omni_projections**) extract shared foreign-existing predicate - (f9cb3b2) - Clarence Manuel
+- (**omni_projections**) surface is_dir_link from plan - (892ea6f) - Clarence Manuel
+- (**omni_projections**) route via omni_glob matcher with ! negation - (d40ff7b) - Clarence Manuel
+- (**omni_projections**) stringify LinkState with strum - (9230d4d) - Clarence Manuel
+- (**omni_projections**) collapse restore-skip warning branch - (27680ca) - Clarence Manuel
+- rename projection on_collision to on_existing (ExistingPolicy) - (dbb8670) - Clarence Manuel
+#### Miscellaneous Chores
+- wire omni_glob and omni_config_types deps for projection crates - (9263699) - Clarence Manuel
+
+- - -
+
 ## omni_projections-v0.1.0 - 2026-08-28
 #### Features
 - (**omni_projections**) directory-aware pattern/flatten routing, subtree pin, dir-contents guardrail - (1c61678) - Clarence Manuel

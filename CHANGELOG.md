@@ -2,6 +2,103 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.22.0 - 2026-09-18
+### Package updates
+- omni_lockfile bumped to omni_lockfile-v0.2.0
+- @omni-oss/omni-tests bumped to @omni-oss/omni-tests-v0.6.0
+- omni_configurations bumped to omni_configurations-v0.13.0
+- omni bumped to omni-v0.21.0
+- omni_execution_plan bumped to omni_execution_plan-v0.6.0
+- omni_task_context bumped to omni_task_context-v0.8.0
+- omni_configuration_discovery bumped to omni_configuration_discovery-v0.2.0
+- omni_cli_core bumped to omni_cli_core-v0.21.0
+- omni_glob bumped to omni_glob-v0.1.0
+- omni_meta bumped to omni_meta-v0.1.0
+- omni_ignore_core bumped to omni_ignore_core-v0.1.0
+- omni_ignore_contributors bumped to omni_ignore_contributors-v0.1.0
+- omni_utils bumped to omni_utils-v0.2.0
+- omni_context bumped to omni_context-v0.8.0
+- omni_glob_config bumped to omni_glob_config-v0.1.0
+- omni_generator bumped to omni_generator-v0.13.0
+- omni_task_executor bumped to omni_task_executor-v0.11.0
+- omni_remote_source_contributors bumped to omni_remote_source_contributors-v0.1.0
+- omni_generator_configurations bumped to omni_generator_configurations-v0.11.0
+- omni_mcp_core bumped to omni_mcp_core-v0.6.0
+- root bumped to root-v0.17.0
+- omni_tool bumped to omni_tool-v0.2.0
+- omni_config_types bumped to omni_config_types-v0.4.0
+- omni_discovery bumped to omni_discovery-v0.1.0
+- omni_cache bumped to omni_cache-v0.9.0
+- omni_projection_configurations bumped to omni_projection_configurations-v0.2.0
+- omni_projections bumped to omni_projections-v0.2.0
+- omni_collector bumped to omni_collector-v0.6.0
+- omni_remote_source bumped to omni_remote_source-v0.3.0
+### Global changes
+#### Features
+- (**omni_api**) add remote-sources install operation, shared store facade, and coverage guard - (69f3791) - Clarence Manuel
+- (**omni_api**) ignore sync/clean operations - (7b28c09) - Clarence Manuel
+- (**omni_api**) warn on dropped bundle members during a targeted update - (a3fc2bc) - Clarence Manuel
+- (**omni_api**) expand meta projection sources at sync time - (e728979) - Clarence Manuel
+- (**omni_api**) drive projection sync through a whole-run preflight - (c03d277) - Clarence Manuel
+- (**omni_api**) reconcile removed projection sources on sync and add unlink backup handling - (6575845) - Clarence Manuel
+- (**omni_ignore_core**) fence parser, renderer, patch engine, and contributor trait - (660bc33) - Clarence Manuel
+- (**omni_meta**) add generic meta-expansion traversal, guards, and selection - (3566cef) - Clarence Manuel
+- (**omni_projections**) separate authored id (path) from qualified id (ledger) - (441de53) - Clarence Manuel
+- (**omni_remote_source**) add commit-keyed store, materialize/record_refs/retain, and the source seam - (11dcc09) - Clarence Manuel
+- require a name on projection manifests - (3c8c91d) - Clarence Manuel
+- publish pack manifest schema and update projection schema - (d90b057) - Clarence Manuel
+- add read-only omni pack list/tree/info commands - (351dc56) - Clarence Manuel
+- register pack-contributed generators, tools, and projections via the effective-source seam - (f82667f) - Clarence Manuel
+- add pack config types, manifest, and packs workspace field - (7a1dec2) - Clarence Manuel
+- add optional author name/version/description to projection manifests - (acc74d9) - Clarence Manuel
+- add generator, tool, and projection remote-source contributors - (4be670c) - Clarence Manuel
+- add store/refs path segments and sort the source lockfile on save - (efe29f5) - Clarence Manuel
+- per-child --source selection and ::-prefix unlink - (20db355) - Clarence Manuel
+- leaf-XOR-meta projection manifest with tag-free wire - (71b2c19) - Clarence Manuel
+- migrate generator files to structured globs - (9e6e844) - Clarence Manuel
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+- add omni_glob_config with GlobConfig and MergeGlobConfig - (4a7fbb5) - Clarence Manuel
+#### Bug Fixes
+- (**omni_mcp_core**) use rmcp ServerConfig in place of the deprecated ServerInfo alias - (ff429de) - Clarence Manuel
+- keep the source lockfile advisory lock ignored - (3287fde) - Clarence Manuel
+#### Tests
+- prefer a debug build over release when resolving the binary under test - (fcd692d) - Clarence Manuel
+- migrate projection fixtures to source/match_kind - (60462ba) - Clarence Manuel
+#### Continuous Integration
+- update publish-json-schema workflow - (e72bfb6) - Clarence Manuel
+- update omni version - (278e848) - Clarence Manuel
+#### Refactoring
+- (**omni_api**) iterate SchemaKind variants via strum in test - (9a18e3e) - Clarence Manuel
+- (**omni_api**) route generators, tools, and projections through the shared store facade - (e96da01) - Clarence Manuel
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**omni_api**) drop deprecated clean_backups unlink alias - (9f912b0) - Clarence Manuel
+- (**omni_projections**) route via omni_glob matcher with ! negation - (d40ff7b) - Clarence Manuel
+- (**omni_projections**) stringify LinkState with strum - (9230d4d) - Clarence Manuel
+- align enum iteration/labels to the repo's strum VariantArray and Display idioms - (1d299e6) - Clarence Manuel
+- derive PackSubsystem iteration and labels via strum - (29ddb0c) - Clarence Manuel
+- generalize SourceConfig to a per-variant profile and add registry stub - (248fa4b) - Clarence Manuel
+- allow Node meta to also carry leaf data - (691f10f) - Clarence Manuel
+- centralize .omni/ layout constants in omni_constants - (07663b0) - Clarence Manuel
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+- remove omni_discovery_utils in favor of omni_glob - (9eb5243) - Clarence Manuel
+- migrate glob matcher consumers to omni_glob - (5ce1eff) - Clarence Manuel
+#### Miscellaneous Chores
+- update noyalib version - (73f52d7) - Clarence Manuel
+- register omni_remote_source_contributors in cog.toml - (0ba8676) - Clarence Manuel
+- rename omni_remote_source lib to match its package name - (64545db) - Clarence Manuel
+- update Cargo.lock for the remote-source store crates - (268997b) - Clarence Manuel
+- update gitignore files - (ba6314d) - Clarence Manuel
+- scaffold omni_ignore_core and omni_ignore_contributors crates - (4804ff9) - Clarence Manuel
+- scaffold omni_meta crate - (40f367b) - Clarence Manuel
+- update dependencies - (d99c21d) - Clarence Manuel
+- update Cargo.lock for structured glob config crate deps - (b744e46) - Clarence Manuel
+- add skills - (920baf7) - Clarence Manuel
+- wire omni_glob and omni_config_types deps for projection crates - (9263699) - Clarence Manuel
+- scaffold omni_glob crate - (e599941) - Clarence Manuel
+- update lockfiles - (94cbfbb) - Clarence Manuel
+
+- - -
+
 ## v0.21.0 - 2026-08-28
 ### Package updates
 - omni_cli_core bumped to omni_cli_core-v0.20.0

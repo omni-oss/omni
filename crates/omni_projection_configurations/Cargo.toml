@@ -3,7 +3,7 @@ name = "omni_projection_configurations"
 rust-version.workspace = true
 edition.workspace = true
 repository.workspace = true
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 serde = { workspace = true }

@@ -2,6 +2,22 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_context-v0.8.0 - 2026-09-12
+#### Features
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+#### Bug Fixes
+- preserve cache exclude globs when layering use_defaults ids, add e2e coverage for structured glob config - (c0270aa) - Clarence Manuel
+#### Refactoring
+- centralize .omni/ layout constants in omni_constants - (07663b0) - Clarence Manuel
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+#### Miscellaneous Chores
+- add omni_constants project manifest and wire consumer project dependencies - (5dad87b) - Clarence Manuel
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_context-v0.7.0 - 2026-08-09
 #### Features
 - (**omni_context**) resolve task extensions and reject dangling task deps - (6a73976) - Clarence Manuel

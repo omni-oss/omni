@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_config_types-v0.4.0 - 2026-09-03
+#### Features
+- (**omni_config_types**) add MergeSingleOrMany over ListConfig - (f9249bd) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+- add omni_glob_config with GlobConfig and MergeGlobConfig - (4a7fbb5) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_config_types-v0.3.0 - 2026-08-09
 #### Features
 - <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**capabilities**) broker-authoritative Windows fs sandbox with import-closure grants and an experimental enforcement gate - (f3e15a6) - Clarence Manuel

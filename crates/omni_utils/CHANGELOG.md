@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_utils-v0.2.0 - 2026-09-03
+#### Features
+- (**omni_utils**) add options-aware glob set memoization - (49b9ce1) - Clarence Manuel
+#### Performance Improvements
+- improve performance in path utils - (5f68dbb) - Clarence Manuel
+- cache globset construction - (14bfff8) - Clarence Manuel
+- improve performance in collection code - (5ed50d1) - Clarence Manuel
+#### Refactoring
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_utils-v0.1.3 - 2026-07-02
 #### Bug Fixes
 - (**omni_cli_core**) improve generator output summary - (e6b4ca5) - Clarence Manuel

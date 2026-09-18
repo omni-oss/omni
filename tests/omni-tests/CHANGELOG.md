@@ -2,6 +2,30 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## @omni-oss/omni-tests-v0.6.0 - 2026-09-17
+#### Features
+- require a name on projection manifests - (3c8c91d) - Clarence Manuel
+- document and end-to-end test the backslash-bang glob escape - (d27c954) - Clarence Manuel
+#### Bug Fixes
+- preserve cache exclude globs when layering use_defaults ids, add e2e coverage for structured glob config - (c0270aa) - Clarence Manuel
+#### Tests
+- (**@omni-oss/omni-tests**) add tag to shim - (c73bb3c) - Clarence Manuel
+- (**@omni-oss/omni-tests**) cover on_existing default, backup, and collisions - (90d6e83) - Clarence Manuel
+- (**@omni-oss/omni-tests**) migrate projection e2e to match_kind and cover list match/scope - (e81cb89) - Clarence Manuel
+- (**omni-tests**) include pack in config schema value-enum help assertion - (198e1bb) - Clarence Manuel
+- (**omni-tests**) expect ignore_sync and ignore_clean in MCP tool list - (9d6edf6) - Clarence Manuel
+- (**omni-tests**) accept unquoted url scalar in remote-cache config assertion - (7db8172) - Clarence Manuel
+- (**omni-tests**) golden workspace-hash snapshot with per-os wiring - (a5d3a48) - Clarence Manuel
+- add e2e coverage for source packs - (db3053b) - Clarence Manuel
+- align e2e specs with the shared source store layout - (3dfd632) - Clarence Manuel
+- add e2e coverage for remote-sources install and shared-store dedup - (83e2729) - Clarence Manuel
+- e2e coverage for omni ignore sync - (962436f) - Clarence Manuel
+- e2e coverage for meta projection sources - (cbe4140) - Clarence Manuel
+- prefer a debug build over release when resolving the binary under test - (fcd692d) - Clarence Manuel
+- add e2e coverage for projection source reconciliation and backup handling - (16319d9) - Clarence Manuel
+
+- - -
+
 ## @omni-oss/omni-tests-v0.5.0 - 2026-08-28
 #### Features
 - add projection config schema kind - (24746d1) - Clarence Manuel

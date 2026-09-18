@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_task_executor-v0.11.0 - 2026-09-03
+#### Features
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+#### Refactoring
+- make DiagnosticSubscriber::on_diagnostic synchronous - (9dcd4bd) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_task_executor-v0.10.0 - 2026-07-12
 #### Features
 - include logs in task_run mcp output - (d877087) - Clarence Manuel

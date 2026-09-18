@@ -2,6 +2,37 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## root-v0.17.0 - 2026-09-17
+#### Features
+- (**omni_api**) ignore sync/clean operations - (7b28c09) - Clarence Manuel
+- (**omni_api**) expand meta projection sources at sync time - (e728979) - Clarence Manuel
+- (**omni_ignore_core**) fence parser, renderer, patch engine, and contributor trait - (660bc33) - Clarence Manuel
+- (**omni_meta**) add generic meta-expansion traversal, guards, and selection - (3566cef) - Clarence Manuel
+- register pack-contributed generators, tools, and projections via the effective-source seam - (f82667f) - Clarence Manuel
+- add generator, tool, and projection remote-source contributors - (4be670c) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+- add omni_glob_config with GlobConfig and MergeGlobConfig - (4a7fbb5) - Clarence Manuel
+#### Bug Fixes
+- (**omni_mcp_core**) use rmcp ServerConfig in place of the deprecated ServerInfo alias - (ff429de) - Clarence Manuel
+#### Refactoring
+- (**omni_projections**) route via omni_glob matcher with ! negation - (d40ff7b) - Clarence Manuel
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+- remove omni_discovery_utils in favor of omni_glob - (9eb5243) - Clarence Manuel
+- migrate glob matcher consumers to omni_glob - (5ce1eff) - Clarence Manuel
+#### Miscellaneous Chores
+- update noyalib version - (73f52d7) - Clarence Manuel
+- update Cargo.lock for the remote-source store crates - (268997b) - Clarence Manuel
+- scaffold omni_ignore_core and omni_ignore_contributors crates - (4804ff9) - Clarence Manuel
+- scaffold omni_meta crate - (40f367b) - Clarence Manuel
+- update dependencies - (d99c21d) - Clarence Manuel
+- update Cargo.lock for structured glob config crate deps - (b744e46) - Clarence Manuel
+- add skills - (920baf7) - Clarence Manuel
+- wire omni_glob and omni_config_types deps for projection crates - (9263699) - Clarence Manuel
+- scaffold omni_glob crate - (e599941) - Clarence Manuel
+- update lockfiles - (94cbfbb) - Clarence Manuel
+
+- - -
+
 ## root-v0.16.0 - 2026-08-28
 #### Features
 - (**omni_api**) add projection sync/status/unlink/prune operations - (f2a160a) - Clarence Manuel

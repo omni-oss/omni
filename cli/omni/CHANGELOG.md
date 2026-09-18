@@ -2,6 +2,101 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni-v0.21.0 - 2026-09-18
+#### Features
+- (**omni_api**) add remote-sources install operation, shared store facade, and coverage guard - (69f3791) - Clarence Manuel
+- (**omni_api**) ignore sync/clean operations - (7b28c09) - Clarence Manuel
+- (**omni_api**) warn on dropped bundle members during a targeted update - (a3fc2bc) - Clarence Manuel
+- (**omni_api**) expand meta projection sources at sync time - (e728979) - Clarence Manuel
+- (**omni_api**) drive projection sync through a whole-run preflight - (c03d277) - Clarence Manuel
+- (**omni_api**) reconcile removed projection sources on sync and add unlink backup handling - (6575845) - Clarence Manuel
+- (**omni_cli_core**) omni ignore sync/clean command - (c834e36) - Clarence Manuel
+- (**omni_cli_core**) status tree and --max-depth for bundled projections - (651cec0) - Clarence Manuel
+- (**omni_config_types**) add MergeSingleOrMany over ListConfig - (f9249bd) - Clarence Manuel
+- (**omni_configurations**) add ignore config surface - (9ca0781) - Clarence Manuel
+- (**omni_glob**) add GlobPatterns, ToGlobPattern, and include/exclude matcher constructors - (808211e) - Clarence Manuel
+- (**omni_glob**) add include-only include_set entry point - (6ea7dfc) - Clarence Manuel
+- (**omni_glob**) portable backslash-bang escape for a literal leading bang - (ea28557) - Clarence Manuel
+- (**omni_glob**) shared include/exclude glob matcher with anchoring and separator options - (7b52db4) - Clarence Manuel
+- (**omni_ignore_contributors**) ignore the whole sources tree except the single shared lockfile - (4f6323a) - Clarence Manuel
+- (**omni_ignore_contributors**) projections and internal contributors - (426dd47) - Clarence Manuel
+- (**omni_ignore_core**) fence parser, renderer, patch engine, and contributor trait - (660bc33) - Clarence Manuel
+- (**omni_mcp_core**) ignore_sync and ignore_clean MCP tools - (af8ad01) - Clarence Manuel
+- (**omni_meta**) add generic meta-expansion traversal, guards, and selection - (3566cef) - Clarence Manuel
+- (**omni_projection_configurations**) widen projection schema for list match/scope and renames - (034c1db) - Clarence Manuel
+- (**omni_projection_configurations**) list-valued match/scope with ! negation and field renames - (92016e1) - Clarence Manuel
+- (**omni_projections**) separate authored id (path) from qualified id (ledger) - (441de53) - Clarence Manuel
+- (**omni_projections**) add run-wide existing-file preflight check - (adc51f7) - Clarence Manuel
+- (**omni_projections**) add run-wide collision preflight check - (663ea3a) - Clarence Manuel
+- (**omni_projections**) add aggregated projection conflict error - (a606c33) - Clarence Manuel
+- (**omni_projections**) reconcile removed sources and add three-way backup handling - (c22bb7f) - Clarence Manuel
+- (**omni_remote_source**) add RemoteSourceContributor trait and install options - (de7266b) - Clarence Manuel
+- (**omni_remote_source**) add commit-keyed store, materialize/record_refs/retain, and the source seam - (11dcc09) - Clarence Manuel
+- (**omni_remote_source_contributors**) expand packs and fan out effective subsystem sources - (a83bbba) - Clarence Manuel
+- (**omni_utils**) add options-aware glob set memoization - (49b9ce1) - Clarence Manuel
+- require a name on projection manifests - (3c8c91d) - Clarence Manuel
+- publish pack manifest schema and update projection schema - (d90b057) - Clarence Manuel
+- add read-only omni pack list/tree/info commands - (351dc56) - Clarence Manuel
+- register pack-contributed generators, tools, and projections via the effective-source seam - (f82667f) - Clarence Manuel
+- add pack config types, manifest, and packs workspace field - (7a1dec2) - Clarence Manuel
+- add optional author name/version/description to projection manifests - (acc74d9) - Clarence Manuel
+- add omni remote-sources install command and route the CLI generator path through the facade - (64b238d) - Clarence Manuel
+- add generator, tool, and projection remote-source contributors - (4be670c) - Clarence Manuel
+- add store/refs path segments and sort the source lockfile on save - (efe29f5) - Clarence Manuel
+- per-child --source selection and ::-prefix unlink - (20db355) - Clarence Manuel
+- leaf-XOR-meta projection manifest with tag-free wire - (71b2c19) - Clarence Manuel
+- migrate projection match/scope to structured globs - (804594e) - Clarence Manuel
+- migrate generator files to structured globs - (9e6e844) - Clarence Manuel
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+- add omni_glob_config with GlobConfig and MergeGlobConfig - (4a7fbb5) - Clarence Manuel
+- document and end-to-end test the backslash-bang glob escape - (d27c954) - Clarence Manuel
+- default projection on_existing to error - (ca9d624) - Clarence Manuel
+- expose three-way projection unlink backup handling in MCP and CLI - (8e2ea3a) - Clarence Manuel
+#### Bug Fixes
+- (**omni**) run the async runtime on a thread with a larger stack - (93318cc) - Clarence Manuel
+- (**omni_mcp_core**) use rmcp ServerConfig in place of the deprecated ServerInfo alias - (ff429de) - Clarence Manuel
+- keep the source lockfile advisory lock ignored - (3287fde) - Clarence Manuel
+- preserve cache exclude globs when layering use_defaults ids, add e2e coverage for structured glob config - (c0270aa) - Clarence Manuel
+#### Tests
+- note that the literal-bang guards are removed when negation lands - (34bdae7) - Clarence Manuel
+- pin glob classification, memoization, and filter/stats behavior - (990000e) - Clarence Manuel
+- migrate projection fixtures to source/match_kind - (60462ba) - Clarence Manuel
+#### Refactoring
+- (**omni_api**) iterate SchemaKind variants via strum in test - (9a18e3e) - Clarence Manuel
+- (**omni_api**) route generators, tools, and projections through the shared store facade - (e96da01) - Clarence Manuel
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**omni_api**) drop deprecated clean_backups unlink alias - (9f912b0) - Clarence Manuel
+- (**omni_glob**) drop leading-! parsing now callers pass explicit include/exclude - (39585af) - Clarence Manuel
+- (**omni_projections**) split sync_source into plan and apply phases - (ac2a1c3) - Clarence Manuel
+- (**omni_projections**) extract shared foreign-existing predicate - (f9cb3b2) - Clarence Manuel
+- (**omni_projections**) surface is_dir_link from plan - (892ea6f) - Clarence Manuel
+- (**omni_projections**) route via omni_glob matcher with ! negation - (d40ff7b) - Clarence Manuel
+- (**omni_projections**) stringify LinkState with strum - (9230d4d) - Clarence Manuel
+- (**omni_projections**) collapse restore-skip warning branch - (27680ca) - Clarence Manuel
+- (**omni_remote_source**) remove the rev-keyed fetch path superseded by the shared store - (0f2db19) - Clarence Manuel
+- (**omni_remote_source_contributors**) borrow the first discovered manifest with .first() - (e69aedb) - Clarence Manuel
+- (**omni_remote_source_contributors**) take first discovered manifest instead of a never-looping for loop - (35dfcd9) - Clarence Manuel
+- align enum iteration/labels to the repo's strum VariantArray and Display idioms - (1d299e6) - Clarence Manuel
+- derive PackSubsystem iteration and labels via strum - (29ddb0c) - Clarence Manuel
+- generalize SourceConfig to a per-variant profile and add registry stub - (248fa4b) - Clarence Manuel
+- allow Node meta to also carry leaf data - (691f10f) - Clarence Manuel
+- centralize .omni/ layout constants in omni_constants - (07663b0) - Clarence Manuel
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+- rename projection on_collision to on_existing (ExistingPolicy) - (dbb8670) - Clarence Manuel
+- sync project.omni.yaml dependency graph to omni_glob - (4d46d3a) - Clarence Manuel
+- remove omni_discovery_utils in favor of omni_glob - (9eb5243) - Clarence Manuel
+- migrate glob matcher consumers to omni_glob - (5ce1eff) - Clarence Manuel
+#### Miscellaneous Chores
+- (**omni_projection_configurations**) document structured glob forms in projection scope schema - (e37fabf) - Clarence Manuel
+- (**omni_remote_source_contributors**) drop unused TempDir import in pack tests - (ffc630b) - Clarence Manuel
+- rename omni_remote_source lib to match its package name - (64545db) - Clarence Manuel
+- scaffold omni_ignore_core and omni_ignore_contributors crates - (4804ff9) - Clarence Manuel
+- scaffold omni_meta crate - (40f367b) - Clarence Manuel
+- wire omni_glob and omni_config_types deps for projection crates - (9263699) - Clarence Manuel
+- scaffold omni_glob crate - (e599941) - Clarence Manuel
+
+- - -
+
 ## omni-v0.20.0 - 2026-08-28
 #### Features
 - (**dir_walker**) expose follow_links and plumb filter_entry through glob walker - (5abb266) - Clarence Manuel

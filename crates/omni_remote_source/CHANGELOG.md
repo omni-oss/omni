@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_remote_source-v0.3.0 - 2026-09-16
+#### Features
+- (**omni_api**) add remote-sources install operation, shared store facade, and coverage guard - (69f3791) - Clarence Manuel
+- (**omni_remote_source**) add RemoteSourceContributor trait and install options - (de7266b) - Clarence Manuel
+- (**omni_remote_source**) add commit-keyed store, materialize/record_refs/retain, and the source seam - (11dcc09) - Clarence Manuel
+- add generator, tool, and projection remote-source contributors - (4be670c) - Clarence Manuel
+#### Refactoring
+- (**omni_remote_source**) remove the rev-keyed fetch path superseded by the shared store - (0f2db19) - Clarence Manuel
+#### Miscellaneous Chores
+- rename omni_remote_source lib to match its package name - (64545db) - Clarence Manuel
+
+- - -
+
 ## omni_remote_source-v0.2.0 - 2026-08-27
 #### Features
 - (**omni_remote_source**) expose locked commit and git invalidation - (b72a4d3) - Clarence Manuel

@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_mcp_core-v0.6.0 - 2026-09-16
+#### Features
+- (**omni_api**) expand meta projection sources at sync time - (e728979) - Clarence Manuel
+- (**omni_cli_core**) status tree and --max-depth for bundled projections - (651cec0) - Clarence Manuel
+- (**omni_mcp_core**) ignore_sync and ignore_clean MCP tools - (af8ad01) - Clarence Manuel
+- expose three-way projection unlink backup handling in MCP and CLI - (8e2ea3a) - Clarence Manuel
+#### Bug Fixes
+- (**omni_mcp_core**) use rmcp ServerConfig in place of the deprecated ServerInfo alias - (ff429de) - Clarence Manuel
+#### Refactoring
+- <span style="background-color: #d73a49; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold; font-size: 0.85em;">BREAKING</span>(**omni_api**) drop deprecated clean_backups unlink alias - (9f912b0) - Clarence Manuel
+
+- - -
+
 ## omni_mcp_core-v0.5.0 - 2026-08-27
 #### Features
 - (**omni_mcp_core**) expose projection tools over MCP - (1e6af32) - Clarence Manuel

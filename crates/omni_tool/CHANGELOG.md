@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_tool-v0.2.0 - 2026-09-03
+#### Features
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+#### Refactoring
+- centralize shared config-manifest constants into omni_constants crate - (9712f41) - Clarence Manuel
+#### Miscellaneous Chores
+- add omni_constants project manifest and wire consumer project dependencies - (5dad87b) - Clarence Manuel
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_tool-v0.1.0 - 2026-08-21
 #### Features
 - add reusable imperative tool subsystem - (0f195cb) - Clarence Manuel

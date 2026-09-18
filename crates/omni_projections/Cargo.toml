@@ -3,7 +3,7 @@ name = "omni_projections"
 rust-version.workspace = true
 edition.workspace = true
 repository.workspace = true
-version = "0.1.0"
+version = "0.2.0"
 
 [dependencies]
 omni_configurations = { workspace = true }

@@ -2,6 +2,24 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_configuration_discovery-v0.2.0 - 2026-09-03
+#### Features
+- migrate workspace project discovery to structured globs - (2fb4408) - Clarence Manuel
+#### Performance Improvements
+- improve performance by removing unnecessary statx calls - (56efa53) - Clarence Manuel
+#### Tests
+- (**omni_configuration_discovery**) pin that discovery does not follow symlinked directories - (33f44db) - Clarence Manuel
+#### Refactoring
+- sync project.omni.yaml dependency graph to omni_glob - (4d46d3a) - Clarence Manuel
+- migrate glob matcher consumers to omni_glob - (5ce1eff) - Clarence Manuel
+- expose more walkdir options in dir_walker - (98973ca) - Clarence Manuel
+- use log for user facing logs - (4ddf7c5) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+- update omni configs json schema links [skip ci] - (d484be7) - Clarence Manuel
+
+- - -
+
 ## omni_configuration_discovery-v0.1.0 - 2026-01-31
 #### Features
 - implement run-generator action - (9cb9f7c) - Clarence Manuel

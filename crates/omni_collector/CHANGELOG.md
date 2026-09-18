@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_collector-v0.6.0 - 2026-09-03
+#### Features
+- migrate cache input/output files to structured include/exclude globs - (27761a4) - Clarence Manuel
+#### Refactoring
+- route glob callers through omni_glob::include_set - (87374a1) - Clarence Manuel
+
+- - -
+
 ## omni_collector-v0.5.0 - 2026-08-28
 #### Features
 - (**omni_collector**) follow symlinks when hashing, bounded to the workspace root - (fc7dc21) - Clarence Manuel

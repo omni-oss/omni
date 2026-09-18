@@ -2,6 +2,15 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## omni_lockfile-v0.2.0 - 2026-09-16
+#### Features
+- (**omni_remote_source**) add commit-keyed store, materialize/record_refs/retain, and the source seam - (11dcc09) - Clarence Manuel
+- add store/refs path segments and sort the source lockfile on save - (efe29f5) - Clarence Manuel
+#### Miscellaneous Chores
+- fix clippy clint errors - (92c5d0a) - Clarence Manuel
+
+- - -
+
 ## omni_lockfile-v0.1.2 - 2026-07-02
 #### Bug Fixes
 - swap serde_norway for noyalib and improve serialization-related error reporting - (7c65947) - Clarence Manuel
