@@ -6776,7 +6776,7 @@ dependencies = [
 
 [[package]]
 name = "omni"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "clap",
  "color-eyre",
@@ -6801,7 +6801,7 @@ dependencies = [
 
 [[package]]
 name = "omni_api"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "async-trait",
  "bridge_rpc_services",
@@ -6912,7 +6912,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cache"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -7002,7 +7002,7 @@ dependencies = [
 
 [[package]]
 name = "omni_cli_core"
-version = "0.20.0"
+version = "0.21.0"
 dependencies = [
  "ahash 0.8.12",
  "atty",
@@ -7095,7 +7095,7 @@ dependencies = [
 
 [[package]]
 name = "omni_collector"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bs58",
  "derive-new",
@@ -7142,7 +7142,7 @@ dependencies = [
 
 [[package]]
 name = "omni_config_types"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -7166,7 +7166,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configuration_discovery"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7186,7 +7186,7 @@ dependencies = [
 
 [[package]]
 name = "omni_configurations"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "config_utils",
  "derive-new",
@@ -7233,7 +7233,7 @@ version = "0.1.0"
 
 [[package]]
 name = "omni_context"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "async-trait",
  "bs58",
@@ -7310,7 +7310,7 @@ dependencies = [
 
 [[package]]
 name = "omni_discovery"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "bon",
  "derive-new",
@@ -7328,7 +7328,7 @@ dependencies = [
 
 [[package]]
 name = "omni_execution_plan"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "ahash 0.8.12",
  "bs58",
@@ -7405,7 +7405,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -7460,7 +7460,7 @@ dependencies = [
 
 [[package]]
 name = "omni_generator_configurations"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bon",
  "config_utils",
@@ -7498,7 +7498,7 @@ dependencies = [
 
 [[package]]
 name = "omni_git_utils"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7520,7 +7520,7 @@ dependencies = [
 
 [[package]]
 name = "omni_glob"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "globset",
  "omni_types",
@@ -7530,7 +7530,7 @@ dependencies = [
 
 [[package]]
 name = "omni_glob_config"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "config_utils",
  "merge",
@@ -7573,7 +7573,7 @@ dependencies = [
 
 [[package]]
 name = "omni_ignore_contributors"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "eyre",
@@ -7586,7 +7586,7 @@ dependencies = [
 
 [[package]]
 name = "omni_ignore_core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "eyre",
@@ -7631,7 +7631,7 @@ dependencies = [
 
 [[package]]
 name = "omni_input_schema"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "either",
  "enumset",
@@ -7657,7 +7657,7 @@ dependencies = [
 
 [[package]]
 name = "omni_lockfile"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -7680,7 +7680,7 @@ dependencies = [
 
 [[package]]
 name = "omni_mcp_core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "bridge_rpc_services",
@@ -7718,7 +7718,7 @@ dependencies = [
 
 [[package]]
 name = "omni_messages"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "omni_task_output_logs",
  "serde",
@@ -7732,7 +7732,7 @@ dependencies = [
 
 [[package]]
 name = "omni_meta"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "bon",
  "derive-new",
@@ -7783,7 +7783,7 @@ dependencies = [
 
 [[package]]
 name = "omni_projection_configurations"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "enum-map",
  "lazy-regex",
@@ -7800,7 +7800,7 @@ dependencies = [
 
 [[package]]
 name = "omni_projections"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "derive-new",
  "dir_walker",
@@ -7952,7 +7952,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_source"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -7979,7 +7979,7 @@ dependencies = [
 
 [[package]]
 name = "omni_remote_source_contributors"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "eyre",
@@ -8071,7 +8071,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_context"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "derive-new",
  "derive_builder",
@@ -8095,7 +8095,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_executor"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "ahash 0.8.12",
  "base64 0.23.1",
@@ -8149,7 +8149,7 @@ dependencies = [
 
 [[package]]
 name = "omni_task_output_logs"
-version = "0.21.0"
+version = "0.22.0"
 dependencies = [
  "merge",
  "schemars",
@@ -8223,7 +8223,7 @@ dependencies = [
 
 [[package]]
 name = "omni_tool"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "bon",
@@ -8313,7 +8313,7 @@ dependencies = [
 
 [[package]]
 name = "omni_utils"
-version = "0.1.3"
+version = "0.2.0"
 dependencies = [
  "bs58",
  "eyre",

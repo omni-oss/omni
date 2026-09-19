@@ -39,8 +39,9 @@ orcs.config.json
 /.omni/locks/**
 /.omni/remote-cache.omni.*
 /.omni/scratch/**
-/.omni/sources/*/**
-!/.omni/sources/*/lock.json
+/.omni/sources/**
+!/.omni/sources/lock.json
+/.omni/sources/lock.json.lock
 /.omni/trace/**
 /.agents/skills/blast-radius
 /.agents/skills/bro
@@ -58,4 +59,4 @@ orcs.config.json
 /.agents/skills/wait-what
 /.agents/skills/why
 /.agents/skills/writing-for-agents
-# @@omni-managed:end 529808ce
+# @@omni-managed:end 6faad3bd
