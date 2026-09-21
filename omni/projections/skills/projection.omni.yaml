@@ -8,20 +8,38 @@ sources:
     rev: main
     routes:
       - strategy: pattern
+        on_existing: overwrite
         target: "./.agents/skills"
         rules:
           - dest: "@target/{basename}"
-            match: "pstack/skills/{unslop,teach,show-me-your-work,technical-writing,why,how,bro,blast-radius,figure-it-out,interrogate}"
+            match:
+              - pstack/skills/unslop
+              - pstack/skills/teach
+              - pstack/skills/show-me-your-work
+              - pstack/skills/technical-writing
+              - pstack/skills/why
+              - pstack/skills/how
+              - pstack/skills/bro
+              - pstack/skills/blast-radius
+              - pstack/skills/figure-it-out
+              - pstack/skills/interrogate
             match_kind: dir
 
   - id: mattpocock-skills
     source: git
     uri: https://github.com/mattpocock/skills.git
-    rev: main
+    rev: v1.2.3
     routes:
       - strategy: pattern
+        on_existing: overwrite
         target: "./.agents/skills"
         rules:
-          - match: "skills/productivity/{grill-me,grilling,to-questionnaire,wait-what,writing-for-agents,handoff}"
+          - match:
+              - skills/productivity/grill-me
+              - skills/productivity/grilling
+              - skills/productivity/to-questionnaire
+              - skills/productivity/wait-what
+              - skills/productivity/writing-for-agents
+              - skills/productivity/handoff
             dest: "@target/{basename}"
             match_kind: dir
