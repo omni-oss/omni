@@ -1,24 +1,6 @@
 {
     "name": "@omni-oss/root",
     "version": "0.22.0",
-    "dependencies": {
-        "@omni-oss/biome-config": "workspace:^",
-        "@omni-oss/tsconfig": "catalog:",
-        "@biomejs/biome": "^2.5.14",
-        "@omni-oss/summarize-results": "workspace:^",
-        "@omni-oss/set-version": "workspace:^",
-        "@omni-oss/create-jobs": "workspace:^",
-        "@microsoft/api-extractor": "catalog:",
-        "@vitest/coverage-v8": "catalog:",
-        "vite": "catalog:",
-        "vitest": "catalog:",
-        "typescript": "catalog:",
-        "@typescript/typescript6": "catalog:"
-    },
-    "packageManager": "bun@1.4.2",
-    "trustedDependencies": [
-        "@homebridge/node-pty-prebuilt-multiarch"
-    ],
     "workspaces": [
         "packages/*",
         "scripts/*",
@@ -27,6 +9,24 @@
         "tests/*",
         ".github/actions/*"
     ],
+    "dependencies": {
+        "@biomejs/biome": "^2.5.14",
+        "@microsoft/api-extractor": "catalog:",
+        "@omni-oss/biome-config": "workspace:^",
+        "@omni-oss/create-jobs": "workspace:^",
+        "@omni-oss/oxfmt-config": "workspace:^",
+        "@omni-oss/oxlint-config": "workspace:^",
+        "@omni-oss/set-version": "workspace:^",
+        "@omni-oss/summarize-results": "workspace:^",
+        "@omni-oss/tsconfig": "catalog:",
+        "@typescript/typescript6": "catalog:",
+        "@vitest/coverage-v8": "catalog:",
+        "oxfmt": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:"
+    },
+    "packageManager": "bun@1.4.2",
     "catalog": {
         "@omni-oss/channels": "workspace:^",
         "@omni-oss/tsconfig": "workspace:^",
@@ -53,6 +53,25 @@
         "@types/semver": "^7.8.0",
         "smol-toml": "^1.8.0",
         "@modelcontextprotocol/client": "^2.0.0",
-        "@microsoft/api-extractor": "^7.59.1"
-    }
+        "@microsoft/api-extractor": "^7.59.1",
+        "oxfmt": "^0.70.0",
+        "oxlint": "^1.85.0",
+        "jsdom": "^30.1.1",
+        "eslint-plugin-solid": "^0.18.0",
+        "filesystem-routing": "^0.3.1",
+        "@solidjs/diagnostics": "^2.0.0-rc.9",
+        "@solidjs/start-devtools": "^1.0.0-next.4",
+        "@solidjs/testing-library": "^1.0.0-beta.3",
+        "@solidjs/vite-plugin": "^3.0.0-next.44",
+        "@tanstack/router-plugin": "1.168.40",
+        "@testing-library/jest-dom": "^7.0.1",
+        "@remix-run/cookie": "^0.7.0",
+        "@solidjs/web": "^2.0.0-rc.9",
+        "@tanstack/solid-query": "^6.0.0-rc.3",
+        "@tanstack/solid-router": "^2.0.0-rc.7",
+        "solid-js": "^2.0.0-rc.9"
+    },
+    "trustedDependencies": [
+        "@homebridge/node-pty-prebuilt-multiarch"
+    ]
 }
