@@ -1,5 +1,6 @@
 import { LOG_LEVELS, type LogLevel } from "@omni-oss/log";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
     adaptConsole,
     type ConsoleLike,

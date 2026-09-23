@@ -4,7 +4,6 @@ name: "@omni-oss/task-bench"
 extends:
   - "@workspace/omni/presets/ts-vite-script.omni.yaml"
 
-
 dependencies:
   append:
     - "@omni-oss/tsconfig"

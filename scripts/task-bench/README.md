@@ -16,10 +16,10 @@ possible from a single source of truth.
 For a given config the harness generates one workspace on disk containing:
 
 - `packages/<prefix><n>/` — minimal JS projects, each with:
-  - `package.json` (scripts + `workspace:*` deps encoding the project graph),
-  - `src/index.js` (a cache input),
-  - `task.mjs` (the shared, deterministic task runner),
-  - `project.omni.yaml` (omni), `project.json` (nx), and `moon.yml` (moon).
+    - `package.json` (scripts + `workspace:*` deps encoding the project graph),
+    - `src/index.js` (a cache input),
+    - `task.mjs` (the shared, deterministic task runner),
+    - `project.omni.yaml` (omni), `project.json` (nx), and `moon.yml` (moon).
 - Root `workspace.omni.yaml`, `turbo.json`, `nx.json`, and `.moon/*.yml`
   describing the same task graph (`tN` depends on `t(N-1)` and/or `^tN`) with
   identical inputs (`package.json`, `task.mjs`, `src/**`) and outputs
@@ -35,7 +35,7 @@ It then benchmarks each enabled tool in two scenarios:
 ### Fairness & correctness
 
 - **Verified cache hits.** Each task appends one line to an out-of-tree log
-  *only when it actually executes* (cache hits skip the process entirely).
+  _only when it actually executes_ (cache hits skip the process entirely).
   The harness counts these to report a real, tool-agnostic cache-hit rate per
   run, so "warm == all cached" is verified rather than assumed. A warm run that
   is not 100% cached is flagged in the report. (Turbo's strict env mode is
@@ -54,8 +54,8 @@ It then benchmarks each enabled tool in two scenarios:
   no daemon.
 - **Statistics.** Reports median ± standard deviation; full per-run samples
   (duration, exit code, executed-task count) are written to the JSON output.
-- **Resource usage.** Peak RSS and CPU time of the *entire process tree an
-  invocation spawns* — the CLI, its task workers, and any persistent daemon —
+- **Resource usage.** Peak RSS and CPU time of the _entire process tree an
+  invocation spawns_ — the CLI, its task workers, and any persistent daemon —
   are measured in dedicated passes, kept separate from the timed runs so the
   resource probe can never inflate the reported durations. Sampling uses a
   native, cross-platform probe: `/proc` on Linux, `ps` on macOS, and on Windows
@@ -65,9 +65,9 @@ It then benchmarks each enabled tool in two scenarios:
   daemon PID each adapter locates (`turbo daemon status`, `nx daemon`); omni and
   moon have none. CPU is summed from each process's cumulative CPU-time counter
   (immune to short-lived spikes) and reported with average parallelism
-  (`cpu-time / wall-time`); a *persistent* daemon only contributes its `ctime`
+  (`cpu-time / wall-time`); a _persistent_ daemon only contributes its `ctime`
   delta for the run, while a daemon the run starts itself (cold) counts in full.
-  Peak RSS is a *sampled maximum* and both metrics are lower bounds: a process
+  Peak RSS is a _sampled maximum_ and both metrics are lower bounds: a process
   that spawns and exits entirely between two samples is missed. Set
   `--resource-runs 0` to skip it.
 
@@ -94,30 +94,34 @@ task-bench inspect --projects 50 --strategy chain
 
 ### Key options
 
-| Option | Description |
-| --- | --- |
-| `-o, --out <dir>` | Root dir to generate the workspace into. |
-| `--projects <n>` | Number of projects. |
-| `--tasks <n>` | Tasks per project (`t0..tN-1`). |
-| `--strategy <s>` | `isolated`, `chain`, `fan-out`, `layered`, or `random`. |
-| `--layers <n>` | Layers for the `layered` strategy. |
-| `--fanout <n>` | Max upstream deps per project. |
-| `--edge-probability <p>` | Edge probability for the `random` strategy. |
-| `--log-lines <n>` | Log lines printed per task. |
-| `--work <n>` | CPU work iterations per task. |
-| `--output-files <n>` | Output files written per task. |
-| `--tools <list>` | Comma-separated `omni,turbo,nx,moon`. |
-| `--turbo-version` / `--nx-version` / `--moon-version` / `--bun-version` | Pin the version of each tool to install. |
-| `--concurrency <n>` | Max parallel tasks, applied identically to every runner (default: CPU count). |
-| `--resource-runs <n>` | Dedicated RSS/CPU measurement passes per scenario (`0` disables). |
-| `--no-daemon` | Disable each tool's persistent daemon (Turbo, Nx). |
-| `--no-chain` / `--no-fan-upstream` | Disable intra/inter-project task deps. |
-| `--config <file>` | JSON config to use as a base for overrides. |
+| Option                                                                  | Description                                                                   |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `-o, --out <dir>`                                                       | Root dir to generate the workspace into.                                      |
+| `--projects <n>`                                                        | Number of projects.                                                           |
+| `--tasks <n>`                                                           | Tasks per project (`t0..tN-1`).                                               |
+| `--strategy <s>`                                                        | `isolated`, `chain`, `fan-out`, `layered`, or `random`.                       |
+| `--layers <n>`                                                          | Layers for the `layered` strategy.                                            |
+| `--fanout <n>`                                                          | Max upstream deps per project.                                                |
+| `--edge-probability <p>`                                                | Edge probability for the `random` strategy.                                   |
+| `--log-lines <n>`                                                       | Log lines printed per task.                                                   |
+| `--work <n>`                                                            | CPU work iterations per task.                                                 |
+| `--output-files <n>`                                                    | Output files written per task.                                                |
+| `--tools <list>`                                                        | Comma-separated `omni,turbo,nx,moon`.                                         |
+| `--turbo-version` / `--nx-version` / `--moon-version` / `--bun-version` | Pin the version of each tool to install.                                      |
+| `--concurrency <n>`                                                     | Max parallel tasks, applied identically to every runner (default: CPU count). |
+| `--resource-runs <n>`                                                   | Dedicated RSS/CPU measurement passes per scenario (`0` disables).             |
+| `--no-daemon`                                                           | Disable each tool's persistent daemon (Turbo, Nx).                            |
+| `--no-chain` / `--no-fan-upstream`                                      | Disable intra/inter-project task deps.                                        |
+| `--config <file>`                                                       | JSON config to use as a base for overrides.                                   |
 
 ## Library
 
 ```ts
-import { generateWorkspace, runBenchmark, formatReport } from "@omni-oss/task-bench";
+import {
+    generateWorkspace,
+    runBenchmark,
+    formatReport,
+} from "@omni-oss/task-bench";
 
 await generateWorkspace("/tmp/bench", {
     projects: 100,
@@ -163,17 +167,37 @@ density). A custom preset file looks like:
 
 ```jsonc
 {
-  "name": "my-sweep",
-  "displayName": "My Sweep",
-  "defaults": {
-    "config": { "tasksPerProject": 3, "dependency": { "strategy": "layered" } },
-    "run": { "concurrency": 8, "coldRuns": 2, "warmRuns": 3, "resourceRuns": 3 }
-  },
-  "scenarios": [
-    { "name": "small", "displayName": "50 projects", "config": { "projects": 50 } },
-    { "name": "large", "displayName": "500 projects", "config": { "projects": 500 } },
-    { "name": "large-nodaemon", "config": { "projects": 500 }, "run": { "daemon": false } }
-  ]
+    "name": "my-sweep",
+    "displayName": "My Sweep",
+    "defaults": {
+        "config": {
+            "tasksPerProject": 3,
+            "dependency": { "strategy": "layered" },
+        },
+        "run": {
+            "concurrency": 8,
+            "coldRuns": 2,
+            "warmRuns": 3,
+            "resourceRuns": 3,
+        },
+    },
+    "scenarios": [
+        {
+            "name": "small",
+            "displayName": "50 projects",
+            "config": { "projects": 50 },
+        },
+        {
+            "name": "large",
+            "displayName": "500 projects",
+            "config": { "projects": 500 },
+        },
+        {
+            "name": "large-nodaemon",
+            "config": { "projects": 500 },
+            "run": { "daemon": false },
+        },
+    ],
 }
 ```
 
@@ -252,16 +276,16 @@ like.
 
 Collected on one machine (Linux, 8-way concurrency, 3 tasks/project, layered
 unless noted; `warm` = verified 100% cache hit, the discovery + cache-restore
-overhead metric). Absolute numbers are hardware-dependent — read the *ratios*.
+overhead metric). Absolute numbers are hardware-dependent — read the _ratios_.
 
 **Four-runner snapshot** (40 projects × 3 tasks, 120 nodes, layered):
 
-| tool | warm | cold |
-| --- | --- | --- |
-| omni | **76ms** | 990ms |
-| turbo | 135ms | 915ms |
-| nx | 434ms | 2.27s |
-| moon | 448ms | 1.45s |
+| tool  | warm     | cold  |
+| ----- | -------- | ----- |
+| omni  | **76ms** | 990ms |
+| turbo | 135ms    | 915ms |
+| nx    | 434ms    | 2.27s |
+| moon  | 448ms    | 1.45s |
 
 The larger sweeps below predate the moon addition (omni/turbo/nx only); rerun
 `task-bench suite --preset full` to regenerate them with all four runners.
@@ -271,27 +295,27 @@ The larger sweeps below predate the moon addition (omni/turbo/nx only); rerun
 **Dependency-shape sweep** (120 projects × 3 tasks, 360 task-graph nodes):
 
 | strategy | omni warm | turbo warm | nx warm | omni cold | turbo cold | nx cold |
-| --- | --- | --- | --- | --- | --- | --- |
-| isolated | 292ms | **239ms** | 644ms | 3.27s | 2.52s | 8.22s |
-| chain    | 403ms | **231ms** | 1.09s | 5.36s | 4.91s | 9.09s |
-| fan-out  | 304ms | **246ms** | 678ms | 3.46s | 2.61s | 8.79s |
-| layered  | 252ms | **246ms** | 678ms | 3.21s | 2.63s | 8.71s |
-| random   | 284ms | **254ms** | 797ms | 3.59s | 3.12s | 8.72s |
+| -------- | --------- | ---------- | ------- | --------- | ---------- | ------- |
+| isolated | 292ms     | **239ms**  | 644ms   | 3.27s     | 2.52s      | 8.22s   |
+| chain    | 403ms     | **231ms**  | 1.09s   | 5.36s     | 4.91s      | 9.09s   |
+| fan-out  | 304ms     | **246ms**  | 678ms   | 3.46s     | 2.61s      | 8.79s   |
+| layered  | 252ms     | **246ms**  | 678ms   | 3.21s     | 2.63s      | 8.71s   |
+| random   | 284ms     | **254ms**  | 797ms   | 3.59s     | 3.12s      | 8.72s   |
 
 **Scale sweep** (layered, 3 tasks):
 
 | projects (nodes) | omni warm | turbo warm | nx warm | omni cold | turbo cold | nx cold |
-| --- | --- | --- | --- | --- | --- | --- |
-| 50 (150)  | **106ms** | 134ms | 478ms | 1.34s | 1.14s | 2.81s |
-| 150 (450) | 295ms | **287ms** | 764ms | 4.05s | 3.25s | 12.23s |
-| 300 (900) | 715ms | **523ms** | 1.17s | 8.62s | 6.44s | 38.68s |
+| ---------------- | --------- | ---------- | ------- | --------- | ---------- | ------- |
+| 50 (150)         | **106ms** | 134ms      | 478ms   | 1.34s     | 1.14s      | 2.81s   |
+| 150 (450)        | 295ms     | **287ms**  | 764ms   | 4.05s     | 3.25s      | 12.23s  |
+| 300 (900)        | 715ms     | **523ms**  | 1.17s   | 8.62s     | 6.44s      | 38.68s  |
 
 **Daemon on vs off** (200 projects × 3 tasks, 600 nodes):
 
-| mode | omni warm | turbo warm | nx warm | omni cold | turbo cold | nx cold |
-| --- | --- | --- | --- | --- | --- | --- |
-| daemon on  | 454ms | **361ms** | 915ms | 5.60s | 4.31s | 19.50s |
-| daemon off | 455ms | **359ms** | 924ms | 5.62s | 4.32s | 15.27s |
+| mode       | omni warm | turbo warm | nx warm | omni cold | turbo cold | nx cold |
+| ---------- | --------- | ---------- | ------- | --------- | ---------- | ------- |
+| daemon on  | 454ms     | **361ms**  | 915ms   | 5.60s     | 4.31s      | 19.50s  |
+| daemon off | 455ms     | **359ms**  | 924ms   | 5.62s     | 4.32s      | 15.27s  |
 
 **Observations**
 
@@ -316,7 +340,7 @@ The larger sweeps below predate the moon addition (omni/turbo/nx only); rerun
 ## Tool adapters
 
 Each runner is a self-contained adapter (`src/tools/<tool>.ts`) that owns
-*everything* tool-specific, so the generator and the other tools stay
+_everything_ tool-specific, so the generator and the other tools stay
 decoupled. An adapter declares:
 
 - `supportedVersions` — semver ranges it supports. The version to install is
@@ -346,7 +370,7 @@ runner is a single new file plus registering it in `src/tools/index.ts`.
 ### Known limitations
 
 - Numbers are wall-clock process timings on a single machine; absolute values
-  vary by hardware, but the harness isolates *relative* discovery/caching
+  vary by hardware, but the harness isolates _relative_ discovery/caching
   overhead.
 - Cold runs are fully fresh per tool (caches cleared; daemons torn down in
   daemon mode), so cold includes each tool's start-up cost. Warm runs are the

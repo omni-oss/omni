@@ -1,6 +1,8 @@
 import { builtinModules } from "node:module";
+
 import { esmExternalRequirePlugin } from "rolldown/plugins";
 import { mergeConfig, type Rolldown, type UserConfig } from "vite";
+
 import type { PackageJson } from "./types";
 
 const config: UserConfig = {

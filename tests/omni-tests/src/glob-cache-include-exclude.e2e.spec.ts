@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 const RAW_HASH_PATTERN = /^[A-Za-z0-9]{40,}$/;
@@ -40,22 +41,26 @@ async function projectHash(cwd: string): Promise<string> {
     return result.stdout;
 }
 
-describe("+hashing @e2e (cache include/exclude globs)", {
-    tags: ["hashing"],
-}, () => {
-    it("an excluded file never changes the hash; an included file does", async () => {
-        const ws = makeWorkspace(
-            cacheGlobSpec({ include: ["src/**"], exclude: ["src/gen/**"] }),
-        );
+describe(
+    "+hashing @e2e (cache include/exclude globs)",
+    {
+        tags: ["hashing"],
+    },
+    () => {
+        it("an excluded file never changes the hash; an included file does", async () => {
+            const ws = makeWorkspace(
+                cacheGlobSpec({ include: ["src/**"], exclude: ["src/gen/**"] }),
+            );
 
-        const base = await projectHash(ws.cwd);
+            const base = await projectHash(ws.cwd);
 
-        // Editing an excluded file leaves the hashed input set untouched.
-        ws.write("app/src/gen/b.txt", "b changed\n");
-        expect(await projectHash(ws.cwd)).toBe(base);
+            // Editing an excluded file leaves the hashed input set untouched.
+            ws.write("app/src/gen/b.txt", "b changed\n");
+            expect(await projectHash(ws.cwd)).toBe(base);
 
-        // Editing an included file moves the hash.
-        ws.write("app/src/a.txt", "a changed\n");
-        expect(await projectHash(ws.cwd)).not.toBe(base);
-    });
-});
+            // Editing an included file moves the hash.
+            ws.write("app/src/a.txt", "a changed\n");
+            expect(await projectHash(ws.cwd)).not.toBe(base);
+        });
+    },
+);

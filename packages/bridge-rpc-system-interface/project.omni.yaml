@@ -2,7 +2,6 @@
 name: "@omni-oss/bridge-rpc-system-interface"
 
 extends:
-
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
 
 dependencies:

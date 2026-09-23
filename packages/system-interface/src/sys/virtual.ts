@@ -1,6 +1,8 @@
 import { memfs } from "memfs";
+
 import { VirtualFileSystem } from "@/fs/virtual";
 import { VirtualProcess } from "@/proc/virtual";
+
 import type { System } from "./interfaces";
 
 export class VirtualSystem implements System {

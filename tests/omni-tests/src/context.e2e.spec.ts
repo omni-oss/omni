@@ -10,7 +10,9 @@
  */
 
 import { rmSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
 import {
     extendsSpec,
     makeWorkspace,
@@ -67,7 +69,9 @@ describe("+context @config (root & project discovery)", () => {
         );
         const outOfGlob = await runOmni(
             ["-l", "off", "hash", "project", "out-of-glob"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(inGlob).toHaveSucceeded();

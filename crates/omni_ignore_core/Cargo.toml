@@ -11,7 +11,11 @@ name = "omni_ignore_core"
 path = "src/lib.rs"
 
 [dependencies]
-system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
+system_traits = { workspace = true, features = [
+    "async",
+    "real-async-tokio",
+    "memory-async",
+] }
 omni_hasher = { workspace = true }
 async-trait = { workspace = true }
 regex = { workspace = true }

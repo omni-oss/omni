@@ -1,4 +1,5 @@
 import { defineProject, mergeConfig } from "vitest/config";
+
 import { coverage } from "./coverage.ts";
 
 export default mergeConfig(

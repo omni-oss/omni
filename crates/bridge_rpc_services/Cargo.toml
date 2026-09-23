@@ -30,7 +30,10 @@ rmpv = { workspace = true }
 rmp-serde = { workspace = true }
 bridge_rpc_utils = { workspace = true }
 bridge_rpc_router = { workspace = true }
-system_traits = { workspace = true, features = ["real-async-tokio", "real-sync"] }
+system_traits = { workspace = true, features = [
+    "real-async-tokio",
+    "real-sync",
+] }
 
 [dev-dependencies]
 test-log = { workspace = true }

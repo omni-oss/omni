@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { platform } from "node:os";
 import { join } from "node:path";
+
 import type { HarnessConfig, Tool } from "../config";
 import type { ProjectModel, WorkspaceModel } from "../model";
 

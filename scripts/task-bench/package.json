@@ -1,11 +1,8 @@
 {
     "name": "@omni-oss/task-bench",
-    "description": "Generate configurable test workspaces and benchmark omni/turbo/nx task execution performance",
     "version": "0.1.1",
+    "description": "Generate configurable test workspaces and benchmark omni/turbo/nx task execution performance",
     "bin": "./dist/task-bench-cli.mjs",
-    "publishConfig": {
-        "access": "public"
-    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -19,12 +16,15 @@
             }
         }
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "dependencies": {
-        "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
         "@omni-oss/log": "workspace:^",
-        "execa": "catalog:",
         "@omni-oss/workspace-gen": "workspace:^",
+        "commander": "catalog:",
+        "execa": "catalog:",
         "semver": "catalog:",
         "yaml": "catalog:",
         "zod": "catalog:"
@@ -33,10 +33,10 @@
         "@omni-oss/tsconfig": "workspace:^",
         "@omni-oss/vite-config": "workspace:^",
         "@omni-oss/vitest-config": "workspace:^",
-        "vite": "catalog:",
-        "vitest": "catalog:",
         "@types/node": "catalog:",
         "@types/semver": "catalog:",
-        "typescript": "catalog:"
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }

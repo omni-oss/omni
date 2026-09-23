@@ -21,8 +21,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+
 import { execa } from "execa";
 import { onTestFinished } from "vitest";
+
 import { cleanPath } from "@/utils";
 
 /** A test context that supports Vitest's conditional `skip(condition, note)`. */

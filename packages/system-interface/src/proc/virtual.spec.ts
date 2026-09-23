@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+
 import { declareProcTests } from "./test-declarations";
 import { VirtualProcess } from "./virtual";
 

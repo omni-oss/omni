@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+
 import {
     ENV_INJECTION_DENYLIST,
     isEnvInjectionVector,

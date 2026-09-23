@@ -1,4 +1,5 @@
 import type { FetchFn } from "@omni-oss/gen-sdk-core";
+
 import type { CapabilityPolicy } from "./capability-policy";
 
 /** Default ports for the protocols a `fetch` request may use. */

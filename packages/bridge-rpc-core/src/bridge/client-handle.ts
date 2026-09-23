@@ -1,4 +1,5 @@
 import type { Id } from "@/id";
+
 import type { PendingRequest } from "./client/request";
 
 export abstract class ClientHandle {

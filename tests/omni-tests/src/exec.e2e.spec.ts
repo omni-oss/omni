@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 /** Two named projects (`app`, `other`) so project/dir filters are observable. */
@@ -122,7 +123,9 @@ describe("+exec @e2e (dry run)", () => {
 
         const result = await runOmni(
             ["exec", "-p", "app", "--dry-run", "--", "echo", "DRY-MARK"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -175,7 +178,9 @@ describe("+exec @e2e (combined project & dir filters)", () => {
         // survives and the command runs exactly once.
         const result = await runOmni(
             ["exec", "-p", "app*", "--dir", "apps/**", "--", "echo", "hi"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -206,7 +211,9 @@ describe("+exec @e2e (meta filter)", () => {
 
         const result = await runOmni(
             ["exec", "-m", 'tier == "fast"', "--", "echo", "hi"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -279,7 +286,9 @@ describe("+exec @output (result file)", () => {
 
         const result = await runOmni(
             ["exec", "--result", "results.json", "--", "echo", "hi"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();

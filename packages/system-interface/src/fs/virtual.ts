@@ -1,7 +1,10 @@
 import nodeFs from "node:fs";
 import nodePath from "node:path";
+
 import type { IFs, Volume } from "memfs";
+
 import type { Process } from "@/proc";
+
 import { promisify, promisifyNoErr } from "./helper";
 import type { FileStat, FileSystem } from "./interfaces";
 

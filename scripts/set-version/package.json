@@ -1,11 +1,8 @@
 {
     "name": "@omni-oss/set-version",
-    "description": "Sets version of various package manifests",
     "version": "0.2.1",
+    "description": "Sets version of various package manifests",
     "bin": "./dist/set-version.mjs",
-    "publishConfig": {
-        "access": "public"
-    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -19,28 +16,31 @@
             }
         }
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "dependencies": {
-        "zod": "catalog:",
-        "commander": "catalog:",
         "@commander-js/extra-typings": "catalog:",
-        "@omni-oss/system-interface": "workspace:^",
-        "fast-xml-parser": "^5.8.0",
         "@nodable/compact-builder": "^1.0.8",
-        "fast-xml-builder": "^1.2.0",
-        "yaml": "^2.8.3",
+        "@omni-oss/system-interface": "workspace:^",
+        "commander": "catalog:",
         "comment-json": "^5.0.0",
+        "fast-xml-builder": "^1.2.0",
+        "fast-xml-parser": "^5.8.0",
+        "picomatch": "^4.0.4",
         "smol-toml": "^1.6.1",
-        "picomatch": "^4.0.4"
+        "yaml": "^2.8.3",
+        "zod": "catalog:"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
-        "vite": "catalog:",
-        "vitest": "catalog:",
-        "@types/node": "catalog:",
         "@types/bun": "catalog:",
+        "@types/node": "catalog:",
         "@types/picomatch": "^4.0.3",
-        "typescript": "catalog:"
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }

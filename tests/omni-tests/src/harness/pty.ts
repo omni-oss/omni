@@ -28,6 +28,7 @@
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
 import { Terminal } from "@xterm/headless";
 import { onTestFinished } from "vitest";
+
 import { resolveOmniBin } from "./binary";
 import { normalize } from "./normalize";
 

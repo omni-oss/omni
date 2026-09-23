@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import {
     BridgeRpc,
     type ClientHandle,
@@ -12,6 +13,7 @@ import type { Response } from "@omni-oss/bridge-rpc-core/client";
 import type { Request } from "@omni-oss/bridge-rpc-core/server";
 import { readBody } from "@omni-oss/bridge-rpc-utils/body";
 import { describe, expect, test, vi } from "vitest";
+
 import { ExecScript, type LoadedScript } from "@/exec-script";
 
 function createTestService() {

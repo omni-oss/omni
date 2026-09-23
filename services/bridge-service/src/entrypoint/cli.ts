@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Writable } from "node:stream";
+
 import { Command } from "@commander-js/extra-typings";
 import {
     CapabilityPolicy,
@@ -12,8 +13,10 @@ import {
     getStreamSink,
     withLogTapeRoot,
 } from "@omni-oss/log/logtape";
+
 import { createStudioRpcInstance } from "@/index";
 import { getBridgeRpcSink } from "@/logging";
+
 import { description, name, version } from "../../package.json";
 
 const program = new Command();

@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
+
 import { LocalFsDataSource } from "../sources";
 import { normalize } from "./normalize";
 import { parseSuite } from "./schema";

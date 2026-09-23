@@ -6,9 +6,9 @@
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
-        "vite": "catalog:",
-        "vitest": "catalog:",
+        "@types/node": "catalog:",
         "typescript": "catalog:",
-        "@types/node": "catalog:"
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }

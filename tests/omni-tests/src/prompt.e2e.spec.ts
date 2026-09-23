@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import {
     makeWorkspace,
     promptGeneratorSpec,
@@ -76,326 +77,375 @@ function singleGenerator(inputs: Json[], content: string) {
     });
 }
 
-describe("+input @tui (string input)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("drives a requestty string input and bakes the answer into output", async () => {
-        const ws = makeWorkspace(promptGeneratorSpec());
+describe(
+    "+input @tui (string input)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("drives a requestty string input and bakes the answer into output", async () => {
+            const ws = makeWorkspace(promptGeneratorSpec());
 
-        const pty = spawnOmniPty(
-            [
-                "generator",
-                "run",
-                "-n",
-                "greeter",
-                "-o",
-                "out",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-
-        // The prompt only reads input once requestty has rendered it.
-        await pty.waitFor("Who to greet?");
-        pty.type("omni");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/greeting.txt")).toContain("Hello omni!");
-    });
-});
-
-describe("+input @tui (select input)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("selecting a different generator from the list runs that one", async () => {
-        const ws = generatorWorkspace({
-            alpha: {
-                actions: [
-                    {
-                        type: "add-content",
-                        output_path: "alpha.txt",
-                        content: "alpha",
-                    },
+            const pty = spawnOmniPty(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "greeter",
+                    "-o",
+                    "out",
+                    "--save-session",
                 ],
-            },
-            beta: {
-                actions: [
-                    {
-                        type: "add-content",
-                        output_path: "beta.txt",
-                        content: "beta",
-                    },
-                ],
-            },
+                { cwd: ws.cwd },
+            );
+
+            // The prompt only reads input once requestty has rendered it.
+            await pty.waitFor("Who to greet?");
+            pty.type("omni");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/greeting.txt")).toContain("Hello omni!");
         });
+    },
+);
 
-        // No -n: omni renders the generator-selection `select` widget.
-        const pty = spawnOmniPty(["generator", "run", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Select generator");
-
-        // Discovery order isn't guaranteed, so read the rendered list to learn
-        // which generator sits below the (highlighted) first one.
-        const screen = pty.screen();
-        const order = ["alpha", "beta"]
-            .map((name) => ({ name, at: screen.indexOf(name) }))
-            .filter((entry) => entry.at >= 0)
-            .sort((a, b) => a.at - b.at)
-            .map((entry) => entry.name);
-        expect(order).toHaveLength(2);
-        const [first, second] = order;
-
-        // Move down to the second option and select it.
-        pty.press("down");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.exists(`out/${second}.txt`)).toBe(true);
-        expect(ws.exists(`out/${first}.txt`)).toBe(false);
-    });
-});
-
-describe("+input @tui (string-array input)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("space toggles options and enter submits the selected values", async () => {
-        const ws = singleGenerator(
-            [
-                {
-                    type: "string-array",
-                    name: "tags",
-                    message: "Pick tags",
-                    allowed: [
-                        { name: "a", value: "a" },
-                        { name: "b", value: "b" },
-                        { name: "c", value: "c" },
-                    ],
-                },
-            ],
-            '{{ inputs.tags | join(sep="-") }}',
-        );
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Pick tags");
-        pty.press("space"); // toggle the first option (a)
-        pty.press("down");
-        pty.press("space"); // toggle the second option (b)
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        // Values are emitted in option order, not selection order.
-        expect(ws.read("out/result.txt")).toBe("a-b");
-    });
-});
-
-describe("+input @tui (boolean input)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    function confirmWorkspace() {
-        return singleGenerator(
-            [
-                {
-                    type: "boolean",
-                    name: "flag",
-                    message: "Proceed?",
-                    default: true,
-                },
-            ],
-            "{{ inputs.flag }}",
-        );
-    }
-
-    it("pressing n answers false", async () => {
-        const ws = confirmWorkspace();
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Proceed?");
-        pty.type("n");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/result.txt")).toBe("false");
-    });
-
-    it("pressing enter accepts the (true) default", async () => {
-        const ws = confirmWorkspace();
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Proceed?");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/result.txt")).toBe("true");
-    });
-});
-
-describe("+input @tui (validation)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("re-prompts on invalid input and proceeds once valid", async () => {
-        const ws = singleGenerator(
-            [
-                {
-                    type: "string",
-                    name: "code",
-                    message: "Enter code",
-                    validators: [
+describe(
+    "+input @tui (select input)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("selecting a different generator from the list runs that one", async () => {
+            const ws = generatorWorkspace({
+                alpha: {
+                    actions: [
                         {
-                            condition: "{{ value == 'abc' }}",
-                            error_message: "must be abc",
+                            type: "add-content",
+                            output_path: "alpha.txt",
+                            content: "alpha",
                         },
                     ],
                 },
-            ],
-            "{{ inputs.code }}",
-        );
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Enter code");
-        // Submit an invalid value first; the validator rejects and re-prompts.
-        pty.type("ab");
-        pty.press("enter");
-        await pty.waitFor("must be abc");
-
-        // Append to the existing input so it becomes the valid "abc".
-        pty.type("c");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/result.txt")).toBe("abc");
-    });
-});
-
-describe("+input @tui (if-skip & secret)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("an `if: false` prompt is skipped and never rendered", async () => {
-        const ws = singleGenerator(
-            [
-                {
-                    type: "string",
-                    name: "hidden",
-                    message: "SHOULD-NOT-APPEAR",
-                    if: false,
-                    default: "x",
-                },
-                { type: "string", name: "shown", message: "Type value" },
-            ],
-            "hidden={{ inputs.hidden | default(value='MISSING') }} shown={{ inputs.shown }}",
-        );
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Type value");
-        // The skipped prompt's message must never have been drawn.
-        expect(pty.text()).not.toContain("SHOULD-NOT-APPEAR");
-        pty.type("here");
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/result.txt")).toBe("hidden=MISSING shown=here");
-    });
-
-    it("a secret string input captures input without echoing it", async () => {
-        const secret = "topsecret-123";
-        const ws = singleGenerator(
-            [
-                {
-                    type: "string",
-                    name: "secret",
-                    secret: true,
-                    message: "Enter secret",
-                },
-            ],
-            "secret={{ inputs.secret }}",
-        );
-
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
-        });
-
-        await pty.waitFor("Enter secret");
-        pty.type(secret);
-        pty.press("enter");
-
-        const exit = await pty.waitForExit();
-
-        expect(exit.exitCode).toBe(0);
-        // The value was captured...
-        expect(ws.read("out/result.txt")).toBe(`secret=${secret}`);
-        // ...but the plaintext never appeared on screen.
-        expect(pty.text()).not.toContain(secret);
-    });
-});
-
-describe("+input @tui (object input)", {
-    tags: ["generator", "prompt"],
-}, () => {
-    it("prompts for each field individually and assembles them into an object", async () => {
-        // Object inputs in the CLI use the emulated path: CliInputProvider does
-        // not implement supports_native_object_input(), so collect_from_object()
-        // iterates the declared fields and prompts for each one in turn.
-        const ws = singleGenerator(
-            [
-                {
-                    type: "object",
-                    name: "db",
-                    message: "Database",
-                    fields: [
-                        { type: "string", name: "host", message: "Host" },
-                        { type: "integer", name: "port", message: "Port" },
+                beta: {
+                    actions: [
+                        {
+                            type: "add-content",
+                            output_path: "beta.txt",
+                            content: "beta",
+                        },
                     ],
                 },
-            ],
-            "{{ inputs.db.host }}:{{ inputs.db.port }}",
-        );
+            });
 
-        const pty = spawnOmniPty(["generator", "run", "-n", "g", "-o", "out"], {
-            cwd: ws.cwd,
+            // No -n: omni renders the generator-selection `select` widget.
+            const pty = spawnOmniPty(["generator", "run", "-o", "out"], {
+                cwd: ws.cwd,
+            });
+
+            await pty.waitFor("Select generator");
+
+            // Discovery order isn't guaranteed, so read the rendered list to learn
+            // which generator sits below the (highlighted) first one.
+            const screen = pty.screen();
+            const order = ["alpha", "beta"]
+                .map((name) => ({ name, at: screen.indexOf(name) }))
+                .filter((entry) => entry.at >= 0)
+                .sort((a, b) => a.at - b.at)
+                .map((entry) => entry.name);
+            expect(order).toHaveLength(2);
+            const [first, second] = order;
+
+            // Move down to the second option and select it.
+            pty.press("down");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.exists(`out/${second}.txt`)).toBe(true);
+            expect(ws.exists(`out/${first}.txt`)).toBe(false);
+        });
+    },
+);
+
+describe(
+    "+input @tui (string-array input)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("space toggles options and enter submits the selected values", async () => {
+            const ws = singleGenerator(
+                [
+                    {
+                        type: "string-array",
+                        name: "tags",
+                        message: "Pick tags",
+                        allowed: [
+                            { name: "a", value: "a" },
+                            { name: "b", value: "b" },
+                            { name: "c", value: "c" },
+                        ],
+                    },
+                ],
+                '{{ inputs.tags | join(sep="-") }}',
+            );
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Pick tags");
+            pty.press("space"); // toggle the first option (a)
+            pty.press("down");
+            pty.press("space"); // toggle the second option (b)
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            // Values are emitted in option order, not selection order.
+            expect(ws.read("out/result.txt")).toBe("a-b");
+        });
+    },
+);
+
+describe(
+    "+input @tui (boolean input)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        function confirmWorkspace() {
+            return singleGenerator(
+                [
+                    {
+                        type: "boolean",
+                        name: "flag",
+                        message: "Proceed?",
+                        default: true,
+                    },
+                ],
+                "{{ inputs.flag }}",
+            );
+        }
+
+        it("pressing n answers false", async () => {
+            const ws = confirmWorkspace();
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Proceed?");
+            pty.type("n");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/result.txt")).toBe("false");
         });
 
-        await pty.waitFor("Host");
-        pty.type("myhost");
-        pty.press("enter");
+        it("pressing enter accepts the (true) default", async () => {
+            const ws = confirmWorkspace();
 
-        await pty.waitFor("Port");
-        pty.type("9999");
-        pty.press("enter");
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
 
-        const exit = await pty.waitForExit();
+            await pty.waitFor("Proceed?");
+            pty.press("enter");
 
-        expect(exit.exitCode).toBe(0);
-        expect(ws.read("out/result.txt")).toBe("myhost:9999");
-    });
-});
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/result.txt")).toBe("true");
+        });
+    },
+);
+
+describe(
+    "+input @tui (validation)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("re-prompts on invalid input and proceeds once valid", async () => {
+            const ws = singleGenerator(
+                [
+                    {
+                        type: "string",
+                        name: "code",
+                        message: "Enter code",
+                        validators: [
+                            {
+                                condition: "{{ value == 'abc' }}",
+                                error_message: "must be abc",
+                            },
+                        ],
+                    },
+                ],
+                "{{ inputs.code }}",
+            );
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Enter code");
+            // Submit an invalid value first; the validator rejects and re-prompts.
+            pty.type("ab");
+            pty.press("enter");
+            await pty.waitFor("must be abc");
+
+            // Append to the existing input so it becomes the valid "abc".
+            pty.type("c");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/result.txt")).toBe("abc");
+        });
+    },
+);
+
+describe(
+    "+input @tui (if-skip & secret)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("an `if: false` prompt is skipped and never rendered", async () => {
+            const ws = singleGenerator(
+                [
+                    {
+                        type: "string",
+                        name: "hidden",
+                        message: "SHOULD-NOT-APPEAR",
+                        if: false,
+                        default: "x",
+                    },
+                    { type: "string", name: "shown", message: "Type value" },
+                ],
+                "hidden={{ inputs.hidden | default(value='MISSING') }} shown={{ inputs.shown }}",
+            );
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Type value");
+            // The skipped prompt's message must never have been drawn.
+            expect(pty.text()).not.toContain("SHOULD-NOT-APPEAR");
+            pty.type("here");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/result.txt")).toBe("hidden=MISSING shown=here");
+        });
+
+        it("a secret string input captures input without echoing it", async () => {
+            const secret = "topsecret-123";
+            const ws = singleGenerator(
+                [
+                    {
+                        type: "string",
+                        name: "secret",
+                        secret: true,
+                        message: "Enter secret",
+                    },
+                ],
+                "secret={{ inputs.secret }}",
+            );
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Enter secret");
+            pty.type(secret);
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            // The value was captured...
+            expect(ws.read("out/result.txt")).toBe(`secret=${secret}`);
+            // ...but the plaintext never appeared on screen.
+            expect(pty.text()).not.toContain(secret);
+        });
+    },
+);
+
+describe(
+    "+input @tui (object input)",
+    {
+        tags: ["generator", "prompt"],
+    },
+    () => {
+        it("prompts for each field individually and assembles them into an object", async () => {
+            // Object inputs in the CLI use the emulated path: CliInputProvider does
+            // not implement supports_native_object_input(), so collect_from_object()
+            // iterates the declared fields and prompts for each one in turn.
+            const ws = singleGenerator(
+                [
+                    {
+                        type: "object",
+                        name: "db",
+                        message: "Database",
+                        fields: [
+                            { type: "string", name: "host", message: "Host" },
+                            { type: "integer", name: "port", message: "Port" },
+                        ],
+                    },
+                ],
+                "{{ inputs.db.host }}:{{ inputs.db.port }}",
+            );
+
+            const pty = spawnOmniPty(
+                ["generator", "run", "-n", "g", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
+
+            await pty.waitFor("Host");
+            pty.type("myhost");
+            pty.press("enter");
+
+            await pty.waitFor("Port");
+            pty.type("9999");
+            pty.press("enter");
+
+            const exit = await pty.waitForExit();
+
+            expect(exit.exitCode).toBe(0);
+            expect(ws.read("out/result.txt")).toBe("myhost:9999");
+        });
+    },
+);

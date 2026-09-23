@@ -10,9 +10,10 @@
 // exposed as an importer-parametrized `resolve`, and `deno info` already gives
 // the exact closure the runtime will load.
 
-import type { ClosureResult } from "./closure";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+
+import type { ClosureResult } from "./closure";
 
 /**
  * Normalize a scan entry to a `file:` URL when it is a filesystem path.
@@ -29,9 +30,7 @@ export function toEntryUrl(entry: string): string {
     // `npm:`/`jsr:`/`node:`/`data:`. A Windows drive path (`C:\\…`) is NOT a URL
     // despite matching `x:`.
     const isWindowsDrivePath = /^[a-zA-Z]:[\\/]/.test(entry);
-    const isUrl =
-        !isWindowsDrivePath &&
-        /^[a-z][a-z0-9+\-.]*:/i.test(entry);
+    const isUrl = !isWindowsDrivePath && /^[a-z][a-z0-9+\-.]*:/i.test(entry);
     if (isUrl) {
         return entry;
     }

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+
 import type { SpawnOptions, SpawnResult } from "@omni-oss/gen-sdk-core";
+
 import type { CapabilityPolicy } from "./capability-policy";
 import { isEnvInjectionVector, isPathKey } from "./enforced-env";
 

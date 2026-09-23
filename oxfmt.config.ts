@@ -42,9 +42,9 @@ export default defineConfig({
         "./**/*.generated.*",
         "./**/bin/**/*",
         "**/render/html/template.html",
-        "./.omni/**/*",
+        ".omni/**/*.*",
         "**/CHANGELOG.md",
-        "./CHANGELOG.root.md",
+        "CHANGELOG.root.md",
     ],
     overrides: [
         {

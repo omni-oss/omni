@@ -1,5 +1,6 @@
 import { configure, resetSync } from "@logtape/logtape";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+
 import { LogTapeLoggerFactory } from "../logtape/logtape-logger";
 import {
     type Capturer,

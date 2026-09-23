@@ -1,6 +1,8 @@
 import path from "node:path";
+
 import { type System, VirtualSystem } from "@omni-oss/system-interface";
 import { describe, expect, it } from "vitest";
+
 import { serialize } from "./codec-utils";
 import type { SetVersionConfig } from "./config";
 import {
@@ -38,14 +40,15 @@ describe("findConfigAtDir", () => {
         ).resolves.toBeUndefined();
     });
 
-    it.each(
-        CONFIG_FILE_NAMES,
-    )("should parse config file (%s)", async (configName) => {
-        const system = await createTempSystem(configName);
-        const config = await findConfigAtDir(TEST_PATH, true, system);
+    it.each(CONFIG_FILE_NAMES)(
+        "should parse config file (%s)",
+        async (configName) => {
+            const system = await createTempSystem(configName);
+            const config = await findConfigAtDir(TEST_PATH, true, system);
 
-        expect(config).toEqual(CONFIG);
-    });
+            expect(config).toEqual(CONFIG);
+        },
+    );
 });
 
 async function createTempSystem(configName?: string): Promise<System> {

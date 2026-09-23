@@ -3,12 +3,14 @@ import fsSync from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
+
 import { createRpcInstance } from "@omni-oss/bridge-rpc-bootstrap";
 import { ResponseStatusCode, StreamTransport } from "@omni-oss/bridge-rpc-core";
 import { readBody, readBodyAsJson } from "@omni-oss/bridge-rpc-utils/body";
 import type { LogLevel } from "@omni-oss/log";
 import { RUNTIME } from "@omni-oss/runtime-utils";
 import { afterAll, beforeAll } from "vitest";
+
 import { delay, getHost } from "@/helpers";
 
 // ---------------------------------------------------------------------------
@@ -195,9 +197,7 @@ beforeAll(async () => {
 
     if (!testServiceBin) {
         throw new Error(
-            `Could not find ${binaryName} in:\n${lookupPaths.join(
-                "\n",
-            )}\n${compileInfo}`,
+            `Could not find ${binaryName} in:\n${lookupPaths.join("\n")}\n${compileInfo}`,
         );
     }
 

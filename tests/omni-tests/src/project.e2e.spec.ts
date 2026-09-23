@@ -15,6 +15,7 @@
 import { parse as parseToml } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+
 import { extendsSpec, lines, makeWorkspace, runOmni } from "@/harness";
 
 const NAMES = ["alpha", "beta", "gamma"] as const;
@@ -119,11 +120,15 @@ describe("+project @output (print-config)", () => {
 
         const yaml = await runOmni(
             ["project", "print-config", "alpha", "-r", "-f", "yaml"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         const toml = await runOmni(
             ["project", "print-config", "alpha", "-r", "-f", "toml"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(yaml).toHaveSucceeded();
@@ -190,7 +195,9 @@ describe("+project @output (raw + format combinations)", () => {
 
         const result = await runOmni(
             ["project", "print-config", "-r", "-f", "yaml", "alpha"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -209,7 +216,9 @@ describe("+project @output (raw + format combinations)", () => {
 
         const result = await runOmni(
             ["project", "print-config", "-f", "toml", "alpha"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();

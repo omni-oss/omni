@@ -9,7 +9,9 @@
  */
 
 import { spawnSync } from "node:child_process";
+
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 /**
@@ -399,7 +401,9 @@ describe("+tool @e2e (working dir validation)", { tags: ["tool"] }, () => {
         const ws = makeWorkspace(workingDirWorkspace());
         const result = await runOmni(
             ["tool", "run", "writer", "--cwd", "sub", "-p", "pkg"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(result.exitCode).not.toBe(0);
     });

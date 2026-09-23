@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { BridgeRpc } from "@/bridge";
 import { decode, decodeFrame, encode, encodeFrame } from "@/bridge/codec-utils";
 import { RequestErrorCode, ResponseErrorCode } from "@/bridge/error-code";

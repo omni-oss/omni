@@ -1,6 +1,8 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+
 import { stringify as stringifyYaml } from "yaml";
+
 import type { ProjectModel } from "../model";
 import {
     type GenerationContext,

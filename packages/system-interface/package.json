@@ -36,11 +36,11 @@
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
-        "vite": "catalog:",
-        "vitest": "catalog:",
-        "typescript": "catalog:",
-        "@types/node": "catalog:",
         "@types/bun": "catalog:",
-        "@types/deno": "^2.5.0"
+        "@types/deno": "^2.5.0",
+        "@types/node": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }

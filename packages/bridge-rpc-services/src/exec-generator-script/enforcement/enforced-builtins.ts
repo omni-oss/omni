@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+
 import type { CapabilityPolicy } from "./capability-policy";
 import { scrubChildEnv } from "./enforced-env";
 import { NetworkPolicyError, netTargetFromUrl } from "./enforced-net";
@@ -817,9 +818,7 @@ function patchDenoProcess(
             enforceProgram(policy, programFromArg(args[0]));
             // `Deno.Command` is a class; reconstruct with `new`.
             return Reflect.construct(
-                Original as unknown as new (
-                    ...a: unknown[]
-                ) => unknown,
+                Original as unknown as new (...a: unknown[]) => unknown,
                 args,
             );
         };
@@ -1069,9 +1068,7 @@ function patchWebSocket(
     }
     try {
         const patched = new Proxy(
-            Original as new (
-                ...a: unknown[]
-            ) => unknown,
+            Original as new (...a: unknown[]) => unknown,
             {
                 construct(target, args, newTarget) {
                     enforceNet(policy, netTargetFromUrl(args[0]));

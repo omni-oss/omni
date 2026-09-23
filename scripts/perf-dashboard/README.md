@@ -39,15 +39,14 @@ Sources: `local-fs` (`--path`), `github` (`--repo owner/repo`, optional `--ref`,
 ## Library
 
 ```ts
-import {
-  GitHubDataSource,
-  HtmlRenderer,
-  run,
-} from "@omni-oss/perf-dashboard";
+import { GitHubDataSource, HtmlRenderer, run } from "@omni-oss/perf-dashboard";
 
 const output = await run({
-  source: new GitHubDataSource({ owner: "omni-oss", repo: "performance-comparison" }),
-  renderer: new HtmlRenderer(),
+    source: new GitHubDataSource({
+        owner: "omni-oss",
+        repo: "performance-comparison",
+    }),
+    renderer: new HtmlRenderer(),
 });
 // output.files -> [{ path: "index.html", content, mime }]
 ```

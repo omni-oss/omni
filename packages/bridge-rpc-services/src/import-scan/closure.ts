@@ -22,6 +22,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
 import { init as lexerInit, parse as lexerParse } from "es-module-lexer";
 
 /**
@@ -173,7 +174,9 @@ export async function computeClosure({
             try {
                 url = await resolve(spec, parentUrl);
             } catch (e) {
-                diagnostics.push(`unresolved "${spec}" from ${c}: ${codeOf(e)}`);
+                diagnostics.push(
+                    `unresolved "${spec}" from ${c}: ${codeOf(e)}`,
+                );
                 continue;
             }
             if (!url?.startsWith("file:")) continue; // node: builtins etc.

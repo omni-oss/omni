@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { autoDetectFormat, deserialize, serialize } from "./codec-utils";
 import { Format } from "./format";
 
@@ -51,32 +52,28 @@ const SERDE_TEST_DATA: SerdeTestData[] = [
 ];
 
 describe("autoDetectFormat", () => {
-    it.each(SERDE_TEST_DATA)("should detect format ($file)", async ({
-        file,
-        format,
-    }) => {
-        expect(autoDetectFormat(file)).toEqual(format);
-    });
+    it.each(SERDE_TEST_DATA)(
+        "should detect format ($file)",
+        async ({ file, format }) => {
+            expect(autoDetectFormat(file)).toEqual(format);
+        },
+    );
 });
 
 describe("serialize", () => {
-    it.each(SERDE_TEST_DATA)("should serialize $format", ({
-        file,
-        serialized,
-        format,
-        deserialized,
-    }) => {
-        expect(serialize(file, deserialized, format)).toEqual(serialized);
-    });
+    it.each(SERDE_TEST_DATA)(
+        "should serialize $format",
+        ({ file, serialized, format, deserialized }) => {
+            expect(serialize(file, deserialized, format)).toEqual(serialized);
+        },
+    );
 });
 
 describe("deserialize", () => {
-    it.each(SERDE_TEST_DATA)("should deserialize $format", ({
-        file,
-        serialized,
-        format,
-        deserialized,
-    }) => {
-        expect(deserialize(file, serialized, format)).toEqual(deserialized);
-    });
+    it.each(SERDE_TEST_DATA)(
+        "should deserialize $format",
+        ({ file, serialized, format, deserialized }) => {
+            expect(deserialize(file, serialized, format)).toEqual(deserialized);
+        },
+    );
 });

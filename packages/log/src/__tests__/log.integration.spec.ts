@@ -1,5 +1,6 @@
 import { resetSync } from "@logtape/logtape";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+
 import { ambientContextKind, createAmbientContext } from "../ambient-context";
 import type { Logger } from "../core";
 import { Log } from "../log";

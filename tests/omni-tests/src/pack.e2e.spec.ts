@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 // A workspace with one local pack that ships a projection face.

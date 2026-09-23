@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+
 import { toEntryUrl } from "./deno-graph";
 
 // `deno info --json` only populates a module's `local` path when the entry is

@@ -14,6 +14,7 @@
 
 import { execa } from "execa";
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type Workspace } from "@/harness";
 
 let gitProbe: Promise<boolean> | undefined;

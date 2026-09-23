@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+
 import { isKnownTarget, osArchToTarget } from "./target";
 import type {
     DataSource,

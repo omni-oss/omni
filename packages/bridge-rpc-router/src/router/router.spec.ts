@@ -16,6 +16,7 @@ import {
 } from "@omni-oss/bridge-rpc-core/server";
 import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it, vi } from "vitest";
+
 import { Router } from "./router";
 
 describe("Router", () => {

@@ -1,4 +1,5 @@
 import semver from "semver";
+
 import type { AxisSpec } from "../chart/ir";
 import type { Metric, NormalizedRun, SamplePoint } from "../ingest/model";
 

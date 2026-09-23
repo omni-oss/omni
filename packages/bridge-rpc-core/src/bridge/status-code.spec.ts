@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { ResponseStatusCode } from "./status-code";
 
 describe("ResponseStatusCode", () => {

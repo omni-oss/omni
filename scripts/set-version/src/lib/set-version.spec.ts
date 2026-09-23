@@ -1,10 +1,11 @@
 import { VirtualSystem } from "@omni-oss/system-interface";
 import JSONC from "comment-json";
-import { XMLParser } from "fast-xml-parser";
 import XMLBuilder from "fast-xml-builder";
+import { XMLParser } from "fast-xml-parser";
 import TOML from "smol-toml";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
+
 import { UnsupportedFileTypeError } from "./codec-utils";
 import { Format } from "./format";
 import type { TaggedPathProfile, TaggedRegexProfile } from "./profile";
@@ -45,28 +46,33 @@ const PATH_PROFILES = [
 ] satisfies TaggedPathProfile[];
 
 describe("applyVersion", () => {
-    it.each(
-        PATH_PROFILES,
-    )("apply version using path profile ($format)", (profile) => {
-        const fileName = profile.files[0];
-        const file = serialize(fileName, profile.format, DATA);
+    it.each(PATH_PROFILES)(
+        "apply version using path profile ($format)",
+        (profile) => {
+            const fileName = profile.files[0];
+            const file = serialize(fileName, profile.format, DATA);
 
-        const updatedContent = applyVersion(
-            {
-                content: file,
-                path: fileName,
-            },
-            NEW_VERSION,
-            profile,
-        );
+            const updatedContent = applyVersion(
+                {
+                    content: file,
+                    path: fileName,
+                },
+                NEW_VERSION,
+                profile,
+            );
 
-        const updated = deserialize(fileName, profile.format, updatedContent);
+            const updated = deserialize(
+                fileName,
+                profile.format,
+                updatedContent,
+            );
 
-        expect(updated).toEqual({
-            ...DATA,
-            version: NEW_VERSION,
-        });
-    });
+            expect(updated).toEqual({
+                ...DATA,
+                version: NEW_VERSION,
+            });
+        },
+    );
 
     it("apply version using regex profile", () => {
         const regexProfile: TaggedRegexProfile = {
@@ -92,37 +98,38 @@ describe("applyVersion", () => {
 });
 
 describe("setVersionAtDir", () => {
-    it.each(
-        PATH_PROFILES,
-    )("should set version of files in a directory ($format)", async (profile) => {
-        const system = await VirtualSystem.create();
-        await system.fs.createDirectory("/test");
-        system.proc.setCurrentDir("/test");
+    it.each(PATH_PROFILES)(
+        "should set version of files in a directory ($format)",
+        async (profile) => {
+            const system = await VirtualSystem.create();
+            await system.fs.createDirectory("/test");
+            system.proc.setCurrentDir("/test");
 
-        const fileName = profile.files[0];
-        await system.fs.writeStringToFile(
-            fileName,
-            serialize(fileName, profile.format, DATA),
-        );
+            const fileName = profile.files[0];
+            await system.fs.writeStringToFile(
+                fileName,
+                serialize(fileName, profile.format, DATA),
+            );
 
-        await setVersionAtDir(
-            system.proc.currentDir(),
-            NEW_VERSION,
-            [profile],
-            system,
-        );
+            await setVersionAtDir(
+                system.proc.currentDir(),
+                NEW_VERSION,
+                [profile],
+                system,
+            );
 
-        const updated = deserialize(
-            fileName,
-            profile.format,
-            await system.fs.readFileAsString(fileName),
-        );
+            const updated = deserialize(
+                fileName,
+                profile.format,
+                await system.fs.readFileAsString(fileName),
+            );
 
-        expect(updated).toEqual({
-            ...DATA,
-            version: NEW_VERSION,
-        });
-    });
+            expect(updated).toEqual({
+                ...DATA,
+                version: NEW_VERSION,
+            });
+        },
+    );
 
     it("should support globs", async () => {
         const system = await VirtualSystem.create();
@@ -223,7 +230,9 @@ describe("setVersionAtDir", () => {
             NEW_VERSION,
             [profile],
             system,
-            { dryRun: true },
+            {
+                dryRun: true,
+            },
         );
 
         const updated = deserialize(

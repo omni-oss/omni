@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni } from "@/harness";
 
 const SUBCOMMANDS = [
@@ -313,13 +314,18 @@ describe("+global @env (env resolution)", () => {
 
         const flag = await runOmni(
             ["-e", ".env.{ENV}", "--env", "staging", "env", "get", "PICK"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(flag).toOutputContaining("stg");
 
         const fromEnv = await runOmni(
             ["-e", ".env.{ENV}", "env", "get", "PICK"],
-            { cwd: ws.cwd, env: { OMNI_ENV: "staging" } },
+            {
+                cwd: ws.cwd,
+                env: { OMNI_ENV: "staging" },
+            },
         );
         expect(fromEnv).toOutputContaining("stg");
     });
@@ -463,7 +469,10 @@ describe("+global @cli (explicit flags override env-var forms)", () => {
         // warn-level output (so the missing-var warning appears).
         const overridden = await runOmni(
             ["-l", "warn", "env", "get", "MISSING"],
-            { cwd: ws.cwd, env: { OMNI_STDOUT_LOG_LEVEL: "off" } },
+            {
+                cwd: ws.cwd,
+                env: { OMNI_STDOUT_LOG_LEVEL: "off" },
+            },
         );
         const fromEnv = await runOmni(["env", "get", "MISSING"], {
             cwd: ws.cwd,

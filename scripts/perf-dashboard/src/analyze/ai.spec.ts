@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { Report } from "../chart/ir";
 import { makeRun } from "../testing/run-factory";
 import {
@@ -151,7 +152,9 @@ describe("annotateReportWithAi", () => {
                 });
                 return new Response(
                     JSON.stringify({ choices: [{ message: { content } }] }),
-                    { status: 200 },
+                    {
+                        status: 200,
+                    },
                 );
             }) as unknown as typeof fetch,
         };

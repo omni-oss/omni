@@ -1,6 +1,8 @@
 import { Mpsc, Oneshot } from "@omni-oss/channels";
 import { describe, expect, it } from "vitest";
+
 import { Id } from "@/id";
+
 import { readAll } from "../byte-array-utils";
 import type { Headers } from "../dyn-map";
 import { RequestErrorCode } from "../error-code";

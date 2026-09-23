@@ -4,6 +4,7 @@ import {
     type EncoderOptions,
     encode as encodeMsgPack,
 } from "@msgpack/msgpack";
+
 import { Id } from "../id";
 import { RequestErrorCode, ResponseErrorCode } from "./error-code";
 import { Frame } from "./frame";

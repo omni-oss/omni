@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni } from "@/harness";
 
 /** A single project with a hidden `base` task and a task that extends it. */
@@ -65,7 +66,9 @@ describe("+task-extension @e2e (base / extends)", () => {
 
         const result = await runOmni(
             ["run", "derived", "-p", "app", "--output-logs=all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -99,7 +102,9 @@ describe("+task-extension @e2e (base / extends)", () => {
 
         const result = await runOmni(
             ["run", "derived", "-p", "app", "--output-logs=all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -127,7 +132,9 @@ describe("+task-extension @e2e (base / extends)", () => {
 
         const result = await runOmni(
             ["run", "derived", "-p", "child", "--output-logs=all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();

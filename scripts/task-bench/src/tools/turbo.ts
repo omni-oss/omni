@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+
 import { execa } from "execa";
+
 import type { WorkspaceModel } from "../model";
 import {
     type GenerationContext,

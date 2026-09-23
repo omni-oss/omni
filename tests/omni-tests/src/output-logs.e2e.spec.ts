@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 /** A workspace whose single task prints a marker and succeeds. */
@@ -122,7 +123,9 @@ describe("+run @output-logs (cached output policy)", () => {
 
         const second = await runOmni(
             ["run", "build", "--output-cached-logs", "never"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(second).toHaveSucceeded();
         expect(second).toOutputContaining("Cache hits");
@@ -138,7 +141,9 @@ describe("+run @output-logs (progress ui)", () => {
         // the run still completes and honors the output-logs policy.
         const result = await runOmni(
             ["run", "build", "--ui", "progress", "--output-logs", "all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -365,7 +370,9 @@ describe("+run @output-logs (cached config + flag precedence)", () => {
 
         const second = await runOmni(
             ["run", "build", "--output-cached-logs", "never"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(second).toHaveSucceeded();
         expect(second).toOutputContaining("Cache hits");

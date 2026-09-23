@@ -14,7 +14,11 @@ path = "src/lib.rs"
 omni_ignore_core = { workspace = true }
 omni_constants = { workspace = true }
 omni_projections = { workspace = true }
-system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
+system_traits = { workspace = true, features = [
+    "async",
+    "real-async-tokio",
+    "memory-async",
+] }
 async-trait = { workspace = true }
 eyre = { workspace = true }
 

@@ -13,7 +13,9 @@
 import { rmSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+
 import { afterEach, describe, expect, it } from "vitest";
+
 import {
     makeWorkspace,
     runOmni,
@@ -21,6 +23,7 @@ import {
     type Workspace,
     type WorkspaceSpec,
 } from "@/harness";
+
 import { cleanPath } from "./utils";
 
 /** A workspace with `alpha` (build+test) and `beta` (build) echo tasks. */
@@ -124,7 +127,9 @@ describe("+cache @cache @e2e (run cache hit / log replay)", () => {
 
         const replayed = await runOmni(
             ["run", "build", "--output-cached-logs", "never"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(replayed).toHaveSucceeded();
         expect(replayed).toOutputContaining("Cache hit for task 'app#build'");
@@ -324,7 +329,9 @@ describe("+cache @cache (prune filters)", () => {
 
         const dry = await runOmni(
             ["cache", "prune", "--project", "alpha", "--dry-run"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining("Project: alpha");
@@ -366,7 +373,9 @@ describe("+cache @cache (prune filters)", () => {
 
         const dry = await runOmni(
             ["cache", "prune", "--meta", 'tier == "fast"', "--dry-run"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining("Task: fast");
@@ -381,7 +390,9 @@ describe("+cache @cache (prune filters)", () => {
         // The just-created entry is younger than 1h, so nothing matches.
         const dry = await runOmni(
             ["cache", "prune", "--older-than", "1h", "--dry-run"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining(
@@ -397,7 +408,9 @@ describe("+cache @cache (prune filters)", () => {
         // The echo task's cache entry is well under 1GB.
         const dry = await runOmni(
             ["cache", "prune", "--larger-than", "1GB", "--dry-run"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining(
@@ -603,7 +616,9 @@ describe("+cache @cache (combined filters)", () => {
 
         const dry = await runOmni(
             ["cache", "prune", "--project", "alpha", "--dry-run"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(dry).toHaveSucceeded();
         expect(dry).toOutputContaining("Project: alpha");

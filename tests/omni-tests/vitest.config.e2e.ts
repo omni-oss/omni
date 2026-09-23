@@ -1,6 +1,8 @@
 import { basename, dirname, join } from "node:path";
+
 import e2eTestConfig from "@omni-oss/vitest-config/e2e";
 import { defineConfig, mergeConfig } from "vitest/config";
+
 import baseConfig from "./vite.config";
 
 export default mergeConfig(

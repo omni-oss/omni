@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 /** Two named projects whose `build` echoes a distinct, project-specific marker. */
@@ -440,7 +441,9 @@ describe("+run-filters @e2e (retry overrides)", () => {
 
         const result = await runOmni(
             ["run", "flaky", "--retry-interval", "notaduration"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveExitCode(2);

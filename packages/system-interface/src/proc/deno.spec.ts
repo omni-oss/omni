@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+
 import { DenoProcess } from "./deno";
 import { declareProcTests } from "./test-declarations";
 

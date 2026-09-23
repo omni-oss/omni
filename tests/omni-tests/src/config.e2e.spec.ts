@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { runOmni } from "@/harness";
 
 const SCHEMAS = [

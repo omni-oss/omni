@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+
 import { Id } from "@/id";
 import type { Transport } from "@/transport";
+
 import { BridgeRpc } from "./bridge-impl";
 import { decodeFrame, encodeFrame } from "./codec-utils";
 import { Frame } from "./frame";

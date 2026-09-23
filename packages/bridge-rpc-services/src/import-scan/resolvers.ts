@@ -17,7 +17,9 @@ import { statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
 import { RUNTIME } from "@omni-oss/runtime-utils";
+
 import type { ResolveFn } from "./closure";
 
 const EXTS = [

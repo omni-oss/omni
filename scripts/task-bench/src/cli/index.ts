@@ -2,12 +2,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
 import {
     Command,
     Option,
     type OptionValues,
 } from "@commander-js/extra-typings";
-import { description, name, version } from "../../package.json";
+
 import {
     type BenchEvent,
     type BenchmarkResult,
@@ -30,6 +31,7 @@ import {
     TOOLS,
     type Tool,
 } from "..";
+import { description, name, version } from "../../package.json";
 
 const program = new Command();
 program.name(name).version(version).description(description);

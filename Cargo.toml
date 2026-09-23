@@ -39,7 +39,9 @@ tracing-log = { version = "^0.2.0" }
 tracing-core = { version = "^0.1.36" }
 tracing-subscriber = { version = "^0.3.23", features = ["json"] }
 tracing-serde = { version = "^0.2.0" }
-test-log = { version = "=0.2.20", default-features = false, features = ["trace"] }
+test-log = { version = "=0.2.20", default-features = false, features = [
+    "trace",
+] }
 futures = { version = "^0.3.32" }
 thiserror = "^2.0.18"
 eyre = "^0.6.12"
@@ -126,7 +128,11 @@ mockall = { version = "^0.15.0" }
 ntest = { version = "^0.9.5" }
 bytes = { version = "^1.11.1" }
 byteorder = { version = "^1.5.0" }
-rust-embed = { version = "8.11.0", features = ["compression", "include-exclude", "deterministic-timestamps"] }
+rust-embed = { version = "8.11.0", features = [
+    "compression",
+    "include-exclude",
+    "deterministic-timestamps",
+] }
 garde = { version = "^0.23.0", features = ["full"] }
 os_pipe = { version = "^1.2.3" }
 indexmap = { version = "^2.14.0", features = ["serde", "rayon"] }
@@ -153,7 +159,13 @@ owo-colors = { version = "^4.3.0" }
 tiny-gradient = { version = "^0.1.0" }
 omni_expressions = { path = "./crates/omni_expressions" }
 omni_cli_core = { path = "./crates/omni_cli_core" }
-cel = { version = "^0.14.0", features = ["chrono", "json", "regex", "bytes", "structs"] }
+cel = { version = "^0.14.0", features = [
+    "chrono",
+    "json",
+    "regex",
+    "bytes",
+    "structs",
+] }
 omni_test_utils = { path = "./crates/omni_test_utils" }
 crossbeam-channel = { version = "^0.5.15" }
 shlex = { version = "^2.0.1" }
@@ -247,14 +259,16 @@ omni_tera = { path = "./crates/omni_tera" }
 axum = { version = "^0.8.9", features = ["macros", "http2", "multipart"] }
 tower = { version = "^0.5.3" }
 tower-http = { version = "^0.6.11", features = ["trace", "catch-panic"] }
-axum-valid = { version = "^0.24.0", default-features = false, features = ["full_garde"] }
+axum-valid = { version = "^0.24.0", default-features = false, features = [
+    "full_garde",
+] }
 axum-extra = { version = "^0.12.6", features = [
     "async-read-body",
     "typed-header",
     "typed-routing",
     "form",
     "file-stream",
-    "error-response"
+    "error-response",
 ] }
 axum-test = { version = "^20.0.0", features = ["all"] }
 validator = { version = "^0.20.0" }
@@ -272,24 +286,40 @@ utoipa = { version = "^5.5.0", features = [
     "ulid",
     "openapi_extensions",
     "repr",
-    "non_strict_integers"
+    "non_strict_integers",
 ] }
 utoipa-scalar = { version = "^0.3.0", features = ["axum"] }
 omni_path_utils = { path = "./crates/omni_path_utils" }
 async-stream = { version = "^0.3.6" }
-flate2 = { version = "^1.1.9", features = ["zlib-rs"], default-features = false }
+flate2 = { version = "^1.1.9", features = [
+    "zlib-rs",
+], default-features = false }
 tar = { version = "^0.4.46" }
 keyring-core = { version = "^1.0.0", features = ["sample"] }
 apple-native-keyring-store = { version = "^1.0.0", features = ["keychain"] }
 windows-native-keyring-store = { version = "^1.0.0" }
-zbus-secret-service-keyring-store = { version = "^1.0.0", features = ["crypto-rust"] }
+zbus-secret-service-keyring-store = { version = "^1.0.0", features = [
+    "crypto-rust",
+] }
 linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }
-gix = { version = "^0.87.1", features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls"] }
-requestty = { version = "^0.6.3", features = ["crossterm", "smallvec", "macros"] }
-value-bag = { version = "^1.12.0", features = ["serde", "error", "seq", "owned"] }
+gix = { version = "^0.87.1", features = [
+    "blocking-network-client",
+    "blocking-http-transport-reqwest-rust-tls",
+] }
+requestty = { version = "^0.6.3", features = [
+    "crossterm",
+    "smallvec",
+    "macros",
+] }
+value-bag = { version = "^1.12.0", features = [
+    "serde",
+    "error",
+    "seq",
+    "owned",
+] }
 serde_validate = { path = "./crates/serde_validate" }
 serde_repr = { version = "^0.1.20" }
 heck = { version = "^0.5.0" }
@@ -302,9 +332,9 @@ sqlx = { version = "^0.9.0", features = [
     "time",
     "bigdecimal",
     "bstr",
-    "ipnet"
+    "ipnet",
 ] }
-postcard = { version = "^1.1.3",  features = ["use-std"] }
+postcard = { version = "^1.1.3", features = ["use-std"] }
 cruet = { version = "^1.0.0" }
 scopeguard = { version = "^1.2.0" }
 mimalloc = { version = "^0.1.52", default-features = false }
@@ -330,9 +360,9 @@ security-framework = { git = "https://github.com/kornelski/rust-security-framewo
 
 [profile.release]
 incremental = true
-opt-level = 3       # optimize for speed but increase binary size
-codegen-units = 1   # less parallel compilation but more optimization can be done
-lto = true          # can perform faster but slower compilation
+opt-level = 3 # optimize for speed but increase binary size
+codegen-units = 1 # less parallel compilation but more optimization can be done
+lto = true # can perform faster but slower compilation
 strip = "debuginfo" # strip debug info from binary to reduce binary size
 #debug = false
 debug = "line-tables-only"
@@ -350,8 +380,11 @@ strip = "none"
 inherits = "bench"
 debug = true
 strip = "none"
-split-debuginfo = "off"                        # embed DWARF so perf always finds symbols
-rustflags = ["-C", "force-frame-pointers=yes"] # reliable stack unwinding for flamegraphs (requires -Zprofile-rustflags)
+split-debuginfo = "off" # embed DWARF so perf always finds symbols
+rustflags = [
+    "-C",
+    "force-frame-pointers=yes",
+] # reliable stack unwinding for flamegraphs (requires -Zprofile-rustflags)
 
 # Faster to compile than `release` but with similar performance.
 [profile.release-lite]

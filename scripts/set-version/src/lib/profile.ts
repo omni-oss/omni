@@ -1,4 +1,5 @@
 import z from "zod";
+
 import { FormatSchema } from "./format";
 
 const ProfileBaseSchema = z.object({

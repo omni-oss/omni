@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { ChartSpec, Report } from "../chart/ir";
 import { makeRun } from "../testing/run-factory";
 import { analyzeChart, annotateReport } from "./analysis";

@@ -3,6 +3,7 @@
  */
 
 import { execa, type Options } from "execa";
+
 import { resolveOmniBin } from "./binary";
 import { normalize } from "./normalize";
 

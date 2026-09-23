@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+
 import { CapabilityPolicy } from "./capability-policy";
 import { createEnforcedFetch, NetworkPolicyError } from "./enforced-net";
 

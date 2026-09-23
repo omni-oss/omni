@@ -11,7 +11,9 @@
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { describe, expect, it, onTestFinished } from "vitest";
+
 import { makeWorkspace, runOmni } from "@/harness";
 
 const RAW_HASH = /^[A-Za-z0-9]{40,}$/;

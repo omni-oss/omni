@@ -7,19 +7,21 @@ import {
 } from "@omni-oss/channels";
 import { Log, type Logger } from "@omni-oss/log";
 import { Mutex } from "async-mutex";
+
 import { Id } from "@/id";
 import { TimeoutError, withTimeout } from "@/promise-utils";
 import type { Transport } from "@/transport";
+
 import { BackgroundProcessor } from "./background-processor";
 import {
     PendingResponse as ClientPendingResponse,
     PendingRequest,
 } from "./client";
+import { ClientHandle } from "./client-handle";
 import {
     type ResponseFrameEvent,
     ResponseFrameEventType,
 } from "./client/response";
-import { ClientHandle } from "./client-handle";
 import { decodeFrame, encodeFrame } from "./codec-utils";
 import { RESPONSE_BUFFER_SIZE } from "./constants";
 import { RequestSessionContext, ResponseSessionContext } from "./contexts";

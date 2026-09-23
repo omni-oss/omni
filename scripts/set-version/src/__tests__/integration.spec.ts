@@ -1,7 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
 import { describe, expect, test } from "vitest";
+
 import { BUILT_IN_PROFILES, findConfig, setVersion } from "..";
 
 describe("setVersion", () => {

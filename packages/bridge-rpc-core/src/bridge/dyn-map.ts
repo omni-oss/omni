@@ -1,4 +1,5 @@
 import z from "zod";
+
 import { SerializableValueSchema } from "./serializable-value";
 
 export const DynMapSchema = z.record(z.string(), SerializableValueSchema);

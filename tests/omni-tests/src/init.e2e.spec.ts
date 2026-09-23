@@ -21,7 +21,9 @@
  */
 
 import { mkdirSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
 import {
     makeLocalGitRepoWithAnnotatedTag,
     makeWorkspace,
@@ -38,237 +40,245 @@ const repo = workspaceMinimalRepo;
 // tests more headroom than the default 30s.
 const CLONE_TIMEOUT_MS = 60_000;
 
-describe("+init @e2e (clone + run primary generator)", {
-    tags: ["generator"],
-}, () => {
-    it(
-        "`--git <url>` clones the repo and runs its primary generator into cwd",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+describe(
+    "+init @e2e (clone + run primary generator)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it(
+            "`--git <url>` clones the repo and runs its primary generator into cwd",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            // A fresh empty dir as cwd: `init` writes the new workspace here,
-            // and an existing `workspace.omni.yaml` would trigger an overwrite
-            // prompt that hangs under a non-interactive run.
-            const ws = makeWorkspace();
-            const dest = ws.path("init-here");
-            mkdirSync(dest, { recursive: true });
+                // A fresh empty dir as cwd: `init` writes the new workspace here,
+                // and an existing `workspace.omni.yaml` would trigger an overwrite
+                // prompt that hangs under a non-interactive run.
+                const ws = makeWorkspace();
+                const dest = ws.path("init-here");
+                mkdirSync(dest, { recursive: true });
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    repo.https,
-                    "-v",
-                    `${repo.promptName}=cwd-ws`,
-                    "--use-defaults",
-                ],
-                { cwd: dest, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        repo.https,
+                        "-v",
+                        `${repo.promptName}=cwd-ws`,
+                        "--use-defaults",
+                    ],
+                    { cwd: dest, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            const workspaceFile = ws.read("init-here/workspace.omni.yaml");
-            expect(workspaceFile).toContain("name: cwd-ws");
-        },
-        CLONE_TIMEOUT_MS,
-    );
+                expect(result).toHaveSucceeded();
+                const workspaceFile = ws.read("init-here/workspace.omni.yaml");
+                expect(workspaceFile).toContain("name: cwd-ws");
+            },
+            CLONE_TIMEOUT_MS,
+        );
 
-    it(
-        "`-o/--output <dir>` initializes into the given directory",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+        it(
+            "`-o/--output <dir>` initializes into the given directory",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            const ws = makeWorkspace();
+                const ws = makeWorkspace();
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    repo.https,
-                    "-o",
-                    "generated",
-                    "-v",
-                    `${repo.promptName}=out-ws`,
-                    "--use-defaults",
-                ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        repo.https,
+                        "-o",
+                        "generated",
+                        "-v",
+                        `${repo.promptName}=out-ws`,
+                        "--use-defaults",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            expect(ws.exists("generated/workspace.omni.yaml")).toBe(true);
-            expect(ws.read("generated/workspace.omni.yaml")).toContain(
-                "name: out-ws",
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
+                expect(result).toHaveSucceeded();
+                expect(ws.exists("generated/workspace.omni.yaml")).toBe(true);
+                expect(ws.read("generated/workspace.omni.yaml")).toContain(
+                    "name: out-ws",
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
 
-    it(
-        "forwards `-v/--value` to the generator run so inputs are prefilled",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+        it(
+            "forwards `-v/--value` to the generator run so inputs are prefilled",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            const ws = makeWorkspace();
-            const customName = "forwarded-name";
+                const ws = makeWorkspace();
+                const customName = "forwarded-name";
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    repo.https,
-                    "-o",
-                    "fwd",
-                    "-v",
-                    `${repo.promptName}=${customName}`,
-                    "--use-defaults",
-                ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        repo.https,
+                        "-o",
+                        "fwd",
+                        "-v",
+                        `${repo.promptName}=${customName}`,
+                        "--use-defaults",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            // The `-v` value reaching the generator is proven by it being baked
-            // into the rendered `workspace.omni.yaml`.
-            expect(ws.read("fwd/workspace.omni.yaml")).toContain(
-                `name: ${customName}`,
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
+                expect(result).toHaveSucceeded();
+                // The `-v` value reaching the generator is proven by it being baked
+                // into the rendered `workspace.omni.yaml`.
+                expect(ws.read("fwd/workspace.omni.yaml")).toContain(
+                    `name: ${customName}`,
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
 
-    it(
-        "`--git-rev <branch>` clones at the given revision and runs the generator",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+        it(
+            "`--git-rev <branch>` clones at the given revision and runs the generator",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            const ws = makeWorkspace();
+                const ws = makeWorkspace();
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    repo.https,
-                    "--git-rev",
-                    repo.rev,
-                    "-o",
-                    "rev-branch",
-                    "-v",
-                    `${repo.promptName}=rev-branch-ws`,
-                    "--use-defaults",
-                ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        repo.https,
+                        "--git-rev",
+                        repo.rev,
+                        "-o",
+                        "rev-branch",
+                        "-v",
+                        `${repo.promptName}=rev-branch-ws`,
+                        "--use-defaults",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            expect(ws.read("rev-branch/workspace.omni.yaml")).toContain(
-                "name: rev-branch-ws",
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
+                expect(result).toHaveSucceeded();
+                expect(ws.read("rev-branch/workspace.omni.yaml")).toContain(
+                    "name: rev-branch-ws",
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
 
-    it(
-        "`--git-rev <commit>` clones at the specific commit hash",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+        it(
+            "`--git-rev <commit>` clones at the specific commit hash",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            // The current (single) commit on `main`. A full clone fetches all
-            // of `main`'s history, so this SHA stays resolvable by
-            // `rev_parse_single` even if the branch advances later.
-            const ws = makeWorkspace();
+                // The current (single) commit on `main`. A full clone fetches all
+                // of `main`'s history, so this SHA stays resolvable by
+                // `rev_parse_single` even if the branch advances later.
+                const ws = makeWorkspace();
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    repo.https,
-                    "--git-rev",
-                    repo.pinCommit,
-                    "-o",
-                    "rev-commit",
-                    "-v",
-                    `${repo.promptName}=rev-commit-ws`,
-                    "--use-defaults",
-                ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        repo.https,
+                        "--git-rev",
+                        repo.pinCommit,
+                        "-o",
+                        "rev-commit",
+                        "-v",
+                        `${repo.promptName}=rev-commit-ws`,
+                        "--use-defaults",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            expect(ws.read("rev-commit/workspace.omni.yaml")).toContain(
-                "name: rev-commit-ws",
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
-});
+                expect(result).toHaveSucceeded();
+                expect(ws.read("rev-commit/workspace.omni.yaml")).toContain(
+                    "name: rev-commit-ws",
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
+    },
+);
 
-describe("+init @e2e (annotated tag, local clone)", {
-    tags: ["generator"],
-}, () => {
-    // A primary generator whose `add-content` bakes a revision marker into the
-    // output. The marker changes in a post-tag commit, so the generated file
-    // proves which tree was checked out: the annotated tag's, not the branch
-    // tip's. This clones over the local transport, so it needs no network.
-    const generatorAt = (revision: string) =>
-        [
-            "name: tag-template",
-            "description: init template pinned by an annotated tag",
-            "inputs:",
-            "  - type: string",
-            "    name: subject",
-            "    message: Who to greet?",
-            "    default: world",
-            "actions:",
-            "  - type: add-content",
-            "    output_path: marker.txt",
-            "    content: |",
-            `      revision=${revision}`,
-            "      subject={{ inputs.subject }}",
-            "",
-        ].join("\n");
+describe(
+    "+init @e2e (annotated tag, local clone)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        // A primary generator whose `add-content` bakes a revision marker into the
+        // output. The marker changes in a post-tag commit, so the generated file
+        // proves which tree was checked out: the annotated tag's, not the branch
+        // tip's. This clones over the local transport, so it needs no network.
+        const generatorAt = (revision: string) =>
+            [
+                "name: tag-template",
+                "description: init template pinned by an annotated tag",
+                "inputs:",
+                "  - type: string",
+                "    name: subject",
+                "    message: Who to greet?",
+                "    default: world",
+                "actions:",
+                "  - type: add-content",
+                "    output_path: marker.txt",
+                "    content: |",
+                `      revision=${revision}`,
+                "      subject={{ inputs.subject }}",
+                "",
+            ].join("\n");
 
-    it(
-        "`--git-rev <annotated-tag>` clones the tagged commit and runs its generator",
-        async (ctx) => {
-            await skipUnlessGitCliAvailable(ctx);
+        it(
+            "`--git-rev <annotated-tag>` clones the tagged commit and runs its generator",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
 
-            // Tagged commit renders `revision=tagged`; a later commit rewrites
-            // it to `revision=post-tag`. `rev_parse_single` resolves an
-            // annotated tag to the tag *object* (not a commit), which used to
-            // break `clone_repo`; this exercises the peel-to-commit fix.
-            const gitRepo = await makeLocalGitRepoWithAnnotatedTag({
-                tag: "v1.0.0",
-                files: { "generator.omni.yaml": generatorAt("tagged") },
-                postTagFiles: {
-                    "generator.omni.yaml": generatorAt("post-tag"),
-                },
-            });
+                // Tagged commit renders `revision=tagged`; a later commit rewrites
+                // it to `revision=post-tag`. `rev_parse_single` resolves an
+                // annotated tag to the tag *object* (not a commit), which used to
+                // break `clone_repo`; this exercises the peel-to-commit fix.
+                const gitRepo = await makeLocalGitRepoWithAnnotatedTag({
+                    tag: "v1.0.0",
+                    files: { "generator.omni.yaml": generatorAt("tagged") },
+                    postTagFiles: {
+                        "generator.omni.yaml": generatorAt("post-tag"),
+                    },
+                });
 
-            const ws = makeWorkspace();
+                const ws = makeWorkspace();
 
-            const result = await runOmni(
-                [
-                    "init",
-                    "--git",
-                    gitRepo.url,
-                    "--git-rev",
-                    gitRepo.tag,
-                    "-o",
-                    "tagged",
-                    "-v",
-                    "subject=annotated",
-                    "--use-defaults",
-                ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
-            );
+                const result = await runOmni(
+                    [
+                        "init",
+                        "--git",
+                        gitRepo.url,
+                        "--git-rev",
+                        gitRepo.tag,
+                        "-o",
+                        "tagged",
+                        "-v",
+                        "subject=annotated",
+                        "--use-defaults",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
 
-            expect(result).toHaveSucceeded();
-            const marker = ws.read("tagged/marker.txt");
-            expect(marker).toContain("revision=tagged");
-            expect(marker).not.toContain("revision=post-tag");
-            expect(marker).toContain("subject=annotated");
-        },
-        CLONE_TIMEOUT_MS,
-    );
-});
+                expect(result).toHaveSucceeded();
+                const marker = ws.read("tagged/marker.txt");
+                expect(marker).toContain("revision=tagged");
+                expect(marker).not.toContain("revision=post-tag");
+                expect(marker).toContain("subject=annotated");
+            },
+            CLONE_TIMEOUT_MS,
+        );
+    },
+);
 
 describe("+init @e2e @scm (SSH remote)", { tags: ["generator"] }, () => {
     it(

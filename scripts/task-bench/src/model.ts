@@ -3,6 +3,7 @@ import {
     modelVersion as modelVersionWasm,
     renderOmni as renderOmniWasm,
 } from "@omni-oss/workspace-gen";
+
 import type { HarnessConfig } from "./config";
 
 /** A single task within a project (mirrors the core `TaskModel`). */

@@ -17,6 +17,6 @@ dependencies:
 tasks:
   publish: bun publish --tolerate-republish
   test:
-    exec: ''
+    exec: ""
     dependencies:
       - passthrough

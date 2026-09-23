@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { runOmni } from "@/harness";
 
 const PROGRAM_NAME = "omni_cli_core";

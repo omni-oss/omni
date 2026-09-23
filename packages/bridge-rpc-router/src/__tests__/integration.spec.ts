@@ -5,6 +5,7 @@ import {
     StreamTransport,
 } from "@omni-oss/bridge-rpc-core";
 import { describe, expect, it } from "vitest";
+
 import { Router } from "@/index";
 
 const TEST_DATA = bytesFromObject({ test: "data" });

@@ -1,5 +1,6 @@
 import { Mpsc, type MpscReceiver } from "@omni-oss/channels";
 import { Mutex } from "async-mutex";
+
 import { encodeFrame } from "./codec-utils";
 import { FRAME_WORKER_BUFFER_SIZE } from "./constants";
 import type { Frame } from "./frame";

@@ -4,6 +4,7 @@ import {
     type RpcConfig,
 } from "@omni-oss/bridge-rpc-bootstrap";
 import type { Transport } from "@omni-oss/bridge-rpc-core";
+
 import { createServices } from "./services";
 
 export function createRpcInstance(transport: Transport, config?: RpcConfig) {

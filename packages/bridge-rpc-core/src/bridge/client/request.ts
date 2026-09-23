@@ -1,5 +1,7 @@
 import type { MpscSender, OneshotReceiver } from "@omni-oss/channels";
+
 import type { Id } from "@/id";
+
 import type { Headers, Trailers } from "../dyn-map";
 import type { RequestErrorCode } from "../error-code";
 import { throwIfError } from "../error-utils";

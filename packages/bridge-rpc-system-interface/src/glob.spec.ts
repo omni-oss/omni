@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+
 import { globMatches, globToRegExp } from "./glob";
 
 describe("globMatches", () => {

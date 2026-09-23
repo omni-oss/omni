@@ -12,6 +12,7 @@
  */
 
 import { expect } from "vitest";
+
 import type { OmniResult } from "./run-omni";
 
 function isOmniResult(value: unknown): value is OmniResult {

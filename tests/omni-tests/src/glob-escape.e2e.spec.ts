@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 function escaperSpec(files: unknown): WorkspaceSpec {
@@ -33,57 +34,61 @@ function escaperSpec(files: unknown): WorkspaceSpec {
     };
 }
 
-describe("+generator @generator (structured include/exclude globs)", {
-    tags: ["generator"],
-}, () => {
-    it("a leading `!` matches a name that begins with a literal `!`", async () => {
-        // No `*`/`**` catch-all: only the literal `!keep.txt` is an include, so
-        // a copied `!keep.txt` proves the leading `!` is a literal character and
-        // nothing else could have matched it.
-        const ws = makeWorkspace(escaperSpec(["!keep.txt", "normal.txt"]));
+describe(
+    "+generator @generator (structured include/exclude globs)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("a leading `!` matches a name that begins with a literal `!`", async () => {
+            // No `*`/`**` catch-all: only the literal `!keep.txt` is an include, so
+            // a copied `!keep.txt` proves the leading `!` is a literal character and
+            // nothing else could have matched it.
+            const ws = makeWorkspace(escaperSpec(["!keep.txt", "normal.txt"]));
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "escaper",
-                "-o",
-                "out",
-                "--use-defaults",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "escaper",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/!keep.txt")).toBe("kept\n");
-        expect(ws.exists("out/normal.txt")).toBe(true);
-        // Listed by neither pattern, so it stays out.
-        expect(ws.exists("out/other.txt")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/!keep.txt")).toBe("kept\n");
+            expect(ws.exists("out/normal.txt")).toBe(true);
+            // Listed by neither pattern, so it stays out.
+            expect(ws.exists("out/other.txt")).toBe(false);
+        });
 
-    it("the object form excludes and `exclude` wins", async () => {
-        // `*.txt` includes everything; `exclude` drops `other.txt`.
-        const ws = makeWorkspace(
-            escaperSpec({ include: ["*.txt"], exclude: ["other.txt"] }),
-        );
+        it("the object form excludes and `exclude` wins", async () => {
+            // `*.txt` includes everything; `exclude` drops `other.txt`.
+            const ws = makeWorkspace(
+                escaperSpec({ include: ["*.txt"], exclude: ["other.txt"] }),
+            );
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "escaper",
-                "-o",
-                "out",
-                "--use-defaults",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "escaper",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.exists("out/normal.txt")).toBe(true);
-        expect(ws.read("out/!keep.txt")).toBe("kept\n");
-        expect(ws.exists("out/other.txt")).toBe(false);
-    });
-});
+            expect(result).toHaveSucceeded();
+            expect(ws.exists("out/normal.txt")).toBe(true);
+            expect(ws.read("out/!keep.txt")).toBe("kept\n");
+            expect(ws.exists("out/other.txt")).toBe(false);
+        });
+    },
+);

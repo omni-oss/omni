@@ -32,7 +32,12 @@ http = { workspace = true }
 http-body = { workspace = true }
 omni_remote_cache_storage = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
-rust-embed = { workspace = true, features = ["compression", "include-exclude", "deterministic-timestamps", "axum-ex"] }
+rust-embed = { workspace = true, features = [
+    "compression",
+    "include-exclude",
+    "deterministic-timestamps",
+    "axum-ex",
+] }
 utoipa = { workspace = true }
 utoipa-scalar = { workspace = true }
 shadow-rs = { workspace = true }

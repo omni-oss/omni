@@ -3,6 +3,7 @@ export type { SetVersionConfig } from "./config";
 export type { SetVersionOptions } from "./set-version";
 
 import { OptimizedSystem } from "@omni-oss/system-interface";
+
 import type { SetVersionConfig } from "./config";
 import { findConfigAtDir } from "./find-config";
 import type { Profile } from "./profile";

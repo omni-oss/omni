@@ -14,20 +14,20 @@
             }
         }
     },
-    "dependencies": {
-        "@omni-oss/channels": "catalog:",
-        "@omni-oss/bridge-rpc-core": "workspace:^"
-    },
     "publishConfig": {
         "access": "public"
+    },
+    "dependencies": {
+        "@omni-oss/bridge-rpc-core": "workspace:^",
+        "@omni-oss/channels": "catalog:"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
-        "vite": "catalog:",
-        "vitest": "catalog:",
+        "@types/node": "catalog:",
         "typescript": "catalog:",
-        "@types/node": "catalog:"
+        "vite": "catalog:",
+        "vitest": "catalog:"
     }
 }

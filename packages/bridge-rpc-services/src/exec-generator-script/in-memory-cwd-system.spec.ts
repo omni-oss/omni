@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path, { resolve } from "node:path";
+
 import type {
     FileStat,
     FileSystem,
@@ -8,6 +9,7 @@ import type {
     System,
 } from "@omni-oss/system-interface";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+
 import { InMemoryCwdSystem } from "./in-memory-cwd-system";
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -190,7 +192,9 @@ describe("InMemoryCwdSystem", () => {
             await sys.fs.createDirectory("nested", { recursive: true });
             expect(inner.fs.createDirectory).toHaveBeenCalledWith(
                 resolve(OUTPUT_DIR, "nested"),
-                { recursive: true },
+                {
+                    recursive: true,
+                },
             );
         });
 

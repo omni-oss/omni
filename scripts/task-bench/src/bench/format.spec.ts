@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { pad, renderTable, renderVersionList } from "./format";
 
 describe("pad", () => {

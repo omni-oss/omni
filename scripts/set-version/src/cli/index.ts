@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "@commander-js/extra-typings";
+
 import { BUILT_IN_PROFILES, findConfig, setVersion } from "@/index";
+
 import { description, name, version } from "../../package.json";
 
 const program = new Command();

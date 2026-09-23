@@ -1,5 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
+
 import { test as baseTest } from "vitest";
+
 import { resolveServiceBinOrThrow } from "./binary";
 import { getHost, sleep, withTimeout } from "./utils";
 
@@ -13,7 +15,7 @@ export const test = baseTest.extend<{
     childProcess: ChildProcess;
 }>({
     port: [
-        // biome-ignore lint/correctness/noEmptyPattern: expected to have empty pattern
+        // oxlint-disable-next-line no-empty-pattern
         async ({}, use) => {
             const maxPort = ports
                 .entries()
@@ -116,9 +118,7 @@ export const test = baseTest.extend<{
                     throw error;
                 }
                 throw new Error(
-                    `Failed to connect to server: ${apiBaseUrl}\n${output.join(
-                        "\n",
-                    )}\n${compileInfo}`,
+                    `Failed to connect to server: ${apiBaseUrl}\n${output.join("\n")}\n${compileInfo}`,
                 );
             }
 

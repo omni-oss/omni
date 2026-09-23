@@ -1,6 +1,8 @@
 import { type Config, configure, configureSync } from "@logtape/logtape";
+
 import type { CategoryParam } from "@/core";
 import { Log } from "@/log";
+
 import { LogTapeLoggerFactory } from "./logtape-logger";
 
 export * from "@logtape/logtape";

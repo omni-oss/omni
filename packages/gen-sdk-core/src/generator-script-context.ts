@@ -1,4 +1,5 @@
 import type { Logger } from "@omni-oss/log";
+
 import type { EnforcedSystem } from "./enforced-system";
 
 export type GeneratorScriptContext = Readonly<{

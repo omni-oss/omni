@@ -1,8 +1,9 @@
 import type { Report } from "../../chart/ir";
 import type { Renderer, RenderOutput } from "../types";
 import CLIENT_JS from "./assets/client.js?raw";
-import STYLES from "./assets/styles.css?raw";
 import TEMPLATE from "./template.html?raw";
+
+import STYLES from "./assets/styles.css?raw";
 
 /**
  * Renders a whole {@link Report} to an interactive HTML page: the report JSON

@@ -35,7 +35,7 @@ system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",
     "memory-sync",
-    "memory-async"
+    "memory-async",
 ] }
 requestty = { workspace = true }
 value-bag = { workspace = true }

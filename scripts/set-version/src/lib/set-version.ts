@@ -1,7 +1,9 @@
 import path from "node:path";
+
 import type { System } from "@omni-oss/system-interface";
 import picomatch from "picomatch";
 import YAML from "yaml";
+
 import { autoDetectFormat, deserialize, serialize } from "./codec-utils";
 import { Format } from "./format";
 import type { PathProfile, Profile } from "./profile";

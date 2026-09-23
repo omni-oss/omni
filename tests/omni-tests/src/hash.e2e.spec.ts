@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, singleProjectSpec } from "@/harness";
 
 // Hashes are long base58-ish tokens; the "Loaded context" log has no such run.
@@ -166,11 +167,15 @@ describe("+hash @output (raw vs formatted)", () => {
 
         const ab = await runOmni(
             ["hash", "-r", "project", "app", "-t", "build", "-t", "test"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         const ba = await runOmni(
             ["hash", "-r", "project", "app", "-t", "test", "-t", "build"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(ab).toHaveSucceeded();

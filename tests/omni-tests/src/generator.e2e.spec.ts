@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import {
     makeWorkspace,
     mutualRecursionGeneratorSpec,
@@ -37,615 +38,643 @@ interface SessionEntry {
     inputs: Record<string, unknown>;
 }
 
-describe("+generator @cli (list)", {
-    tags: ["generator"],
-}, () => {
-    it("`generator list` shows each generator's name and description", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @cli (list)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("`generator list` shows each generator's name and description", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(["generator", "list"], { cwd: ws.cwd });
+            const result = await runOmni(["generator", "list"], {
+                cwd: ws.cwd,
+            });
 
-        expect(result).toHaveSucceeded();
-        expect(result).toOutputContaining("scaffold");
-        expect(result).toOutputContaining("scaffolds a greeting file");
-    });
+            expect(result).toHaveSucceeded();
+            expect(result).toOutputContaining("scaffold");
+            expect(result).toOutputContaining("scaffolds a greeting file");
+        });
 
-    it("`generator ls` is an alias of `list`", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("`generator ls` is an alias of `list`", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const list = await runOmni(["generator", "list"], { cwd: ws.cwd });
-        const ls = await runOmni(["generator", "ls"], { cwd: ws.cwd });
+            const list = await runOmni(["generator", "list"], { cwd: ws.cwd });
+            const ls = await runOmni(["generator", "ls"], { cwd: ws.cwd });
 
-        expect(ls).toHaveSucceeded();
-        expect(ls.out).toBe(list.out);
-    });
+            expect(ls).toHaveSucceeded();
+            expect(ls.out).toBe(list.out);
+        });
 
-    it("only discovers generators declared by the workspace `generators` config", async () => {
-        // Same generator files on disk, but no `generators` source configured.
-        const spec = scaffoldGeneratorSpec();
-        const ws = makeWorkspace({ ...spec, workspace: { projects: ["**"] } });
+        it("only discovers generators declared by the workspace `generators` config", async () => {
+            // Same generator files on disk, but no `generators` source configured.
+            const spec = scaffoldGeneratorSpec();
+            const ws = makeWorkspace({
+                ...spec,
+                workspace: { projects: ["**"] },
+            });
 
-        const result = await runOmni(["generator", "list"], { cwd: ws.cwd });
+            const result = await runOmni(["generator", "list"], {
+                cwd: ws.cwd,
+            });
 
-        expect(result).toHaveSucceeded();
-        expect(result.stdout).not.toContain("scaffold");
-    });
+            expect(result).toHaveSucceeded();
+            expect(result.stdout).not.toContain("scaffold");
+        });
 
-    it("omits generators with `user_invocable: false` from the list", async () => {
-        // Add a hidden helper generator alongside the user-invocable
-        // `scaffold`. It can only be called by other generators, so it must
-        // not surface in the user-facing listing.
-        const spec = scaffoldGeneratorSpec();
-        if (spec.projects) {
-            spec.projects["generators/internal/generator.omni.yaml"] = {
-                name: "internal-helper",
-                description: "only callable by other generators",
-                user_invocable: false,
-                actions: [],
-            };
-        }
-        const ws = makeWorkspace(spec);
+        it("omits generators with `user_invocable: false` from the list", async () => {
+            // Add a hidden helper generator alongside the user-invocable
+            // `scaffold`. It can only be called by other generators, so it must
+            // not surface in the user-facing listing.
+            const spec = scaffoldGeneratorSpec();
+            if (spec.projects) {
+                spec.projects["generators/internal/generator.omni.yaml"] = {
+                    name: "internal-helper",
+                    description: "only callable by other generators",
+                    user_invocable: false,
+                    actions: [],
+                };
+            }
+            const ws = makeWorkspace(spec);
 
-        const result = await runOmni(["generator", "list"], { cwd: ws.cwd });
+            const result = await runOmni(["generator", "list"], {
+                cwd: ws.cwd,
+            });
 
-        expect(result).toHaveSucceeded();
-        // The user-invocable generator is still listed...
-        expect(result).toOutputContaining("scaffold");
-        // ...but the non-user-invocable one is filtered out.
-        expect(result.stdout).not.toContain("internal-helper");
-    });
-});
+            expect(result).toHaveSucceeded();
+            // The user-invocable generator is still listed...
+            expect(result).toOutputContaining("scaffold");
+            // ...but the non-user-invocable one is filtered out.
+            expect(result.stdout).not.toContain("internal-helper");
+        });
+    },
+);
 
-describe("+generator @cli (run)", {
-    tags: ["generator"],
-}, () => {
-    it("scaffolds files non-interactively with -n/-o/--use-defaults", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @cli (run)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("scaffolds files non-interactively with -n/-o/--use-defaults", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // `dest` target resolves to `@output/src`.
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-    });
+            expect(result).toHaveSucceeded();
+            // `dest` target resolves to `@output/src`.
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("-d/--dry-run makes no filesystem changes", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("-d/--dry-run makes no filesystem changes", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--dry-run",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--dry-run",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.exists("out/src/greeting.txt")).toBe(false);
-        expect(ws.exists("out/.omni/generator.json")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.exists("out/src/greeting.txt")).toBe(false);
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
 
-    it("-p/--project writes into the project's directory", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("-p/--project writes into the project's directory", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-p",
-                "app",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-p",
+                    "app",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("app/src/greeting.txt")).toBe("Hello world!");
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("app/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("-v/--value prefills inputs (skipping the prompt) and --use-defaults uses defaults", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("-v/--value prefills inputs (skipping the prompt) and --use-defaults uses defaults", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // -v prefills `subject`, so the prompt is satisfied without input.
-        const prefilled = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "filled",
-                "-v",
-                "subject=Custom",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(prefilled).toHaveSucceeded();
-        expect(ws.read("filled/src/greeting.txt")).toBe("Hello Custom!");
+            // -v prefills `subject`, so the prompt is satisfied without input.
+            const prefilled = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "filled",
+                    "-v",
+                    "subject=Custom",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(prefilled).toHaveSucceeded();
+            expect(ws.read("filled/src/greeting.txt")).toBe("Hello Custom!");
 
-        const defaulted = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "defaulted",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(defaulted).toHaveSucceeded();
-        expect(ws.read("defaulted/src/greeting.txt")).toBe("Hello world!");
-    });
+            const defaulted = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "defaulted",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(defaulted).toHaveSucceeded();
+            expect(ws.read("defaulted/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("-t/--target overrides the generator's target output path", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("-t/--target overrides the generator's target output path", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-t",
-                "dest=lib",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-t",
+                    "dest=lib",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // Override redirects `dest` from `@output/src` to `out/lib`.
-        expect(ws.read("out/lib/greeting.txt")).toBe("Hello world!");
-        expect(ws.exists("out/src/greeting.txt")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            // Override redirects `dest` from `@output/src` to `out/lib`.
+            expect(ws.read("out/lib/greeting.txt")).toBe("Hello world!");
+            expect(ws.exists("out/src/greeting.txt")).toBe(false);
+        });
 
-    it("--overwrite never/always controls existing-file behavior", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
-        ws.write("out/src/greeting.txt", "OLD");
+        it("--overwrite never/always controls existing-file behavior", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write("out/src/greeting.txt", "OLD");
 
-        const never = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--overwrite",
-                "never",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(never).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("OLD");
+            const never = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--overwrite",
+                    "never",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(never).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("OLD");
 
-        const always = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--overwrite",
-                "always",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(always).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-    });
+            const always = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--overwrite",
+                    "always",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(always).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("--save-session writes .omni/generator.json with inputs and targets", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--save-session writes .omni/generator.json with inputs and targets", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-t",
-                "dest=lib",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-t",
+                    "dest=lib",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        const session = parseSession(ws.read("out/.omni/generator.json"));
-        // Only `remember: true` inputs and overridden targets are persisted.
-        expect(session?.scaffold?.inputs.subject).toBe("world");
-        expect(session?.scaffold?.targets.dest).toBe("lib");
-    });
+            expect(result).toHaveSucceeded();
+            const session = parseSession(ws.read("out/.omni/generator.json"));
+            // Only `remember: true` inputs and overridden targets are persisted.
+            expect(session?.scaffold?.inputs.subject).toBe("world");
+            expect(session?.scaffold?.targets.dest).toBe("lib");
+        });
 
-    it("re-runs restore the saved session; --ignore-session bypasses it", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("re-runs restore the saved session; --ignore-session bypasses it", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // Seed a session by running once with a non-default subject.
-        const seed = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=Alice",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(seed).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello Alice!");
+            // Seed a session by running once with a non-default subject.
+            const seed = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Alice",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(seed).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Alice!");
 
-        // Re-run with no value and no --use-defaults: the session restores
-        // `subject=Alice`, so the prompt is skipped instead of blocking.
-        ws.write("out/src/greeting.txt", "STALE");
-        const restored = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--overwrite",
-                "always",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(restored).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello Alice!");
+            // Re-run with no value and no --use-defaults: the session restores
+            // `subject=Alice`, so the prompt is skipped instead of blocking.
+            ws.write("out/src/greeting.txt", "STALE");
+            const restored = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--overwrite",
+                    "always",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(restored).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Alice!");
 
-        // `--ignore-session=true` skips the saved value and falls back to the
-        // default.
-        const ignored = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--ignore-session=true",
-                "--use-defaults",
-                "--overwrite",
-                "always",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(ignored).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-    });
+            // `--ignore-session=true` skips the saved value and falls back to the
+            // default.
+            const ignored = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--ignore-session=true",
+                    "--use-defaults",
+                    "--overwrite",
+                    "always",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(ignored).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("prevents non-user invocable generators from being run", async () => {
-        const spec = scaffoldGeneratorSpec();
-        if (spec.projects) {
-            spec.projects["generators/non-user-invocable/generator.omni.yaml"] =
-                {
+        it("prevents non-user invocable generators from being run", async () => {
+            const spec = scaffoldGeneratorSpec();
+            if (spec.projects) {
+                spec.projects[
+                    "generators/non-user-invocable/generator.omni.yaml"
+                ] = {
                     name: "non-user-invocable",
                     description: "a generator that can't be run by the user",
                     user_invocable: false,
                     actions: [],
                 };
-        }
-        const ws = makeWorkspace(spec);
+            }
+            const ws = makeWorkspace(spec);
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "non-user-invocable", "-o", "out"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                ["generator", "run", "-n", "non-user-invocable", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result.stderr).toContain(
-            "generator 'non-user-invocable' is not invocable by the user",
-        );
-    });
-});
+            expect(result).toHaveExitCode(1);
+            expect(result.stderr).toContain(
+                "generator 'non-user-invocable' is not invocable by the user",
+            );
+        });
+    },
+);
 
-describe("+generator @cli (--save-session/--ignore-session value handling)", {
-    tags: ["generator"],
-}, () => {
-    // Both flags are optional-value booleans: bare = true, `=true`/`=false`
-    // explicit, and the space-separated form is rejected (require_equals).
-    it("bare --save-session defaults to true and writes the session", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @cli (--save-session/--ignore-session value handling)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        // Both flags are optional-value booleans: bare = true, `=true`/`=false`
+        // explicit, and the space-separated form is rejected (require_equals).
+        it("bare --save-session defaults to true and writes the session", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.exists("out/.omni/generator.json")).toBe(true);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.exists("out/.omni/generator.json")).toBe(true);
+        });
 
-    it("--save-session=false skips writing the session", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--save-session=false skips writing the session", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-        expect(ws.exists("out/.omni/generator.json")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
 
-    it("--save-session=true writes the session", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--save-session=true writes the session", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session=true",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session=true",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.exists("out/.omni/generator.json")).toBe(true);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.exists("out/.omni/generator.json")).toBe(true);
+        });
 
-    it("--save-session with a space-separated value is rejected (require_equals)", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--save-session with a space-separated value is rejected (require_equals)", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session",
-                "false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session",
+                    "false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(2);
-    });
+            expect(result).toHaveExitCode(2);
+        });
 
-    it("--ignore-session=true bypasses the saved session; =false restores it", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--ignore-session=true bypasses the saved session; =false restores it", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // Seed a session whose subject differs from the default.
-        const seed = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=Seeded",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(seed).toHaveSucceeded();
+            // Seed a session whose subject differs from the default.
+            const seed = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Seeded",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(seed).toHaveSucceeded();
 
-        // =true ignores the session and uses the prompt default instead.
-        const ignored = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--ignore-session=true",
-                "--use-defaults",
-                "--overwrite",
-                "always",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(ignored).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+            // =true ignores the session and uses the prompt default instead.
+            const ignored = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--ignore-session=true",
+                    "--use-defaults",
+                    "--overwrite",
+                    "always",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(ignored).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
 
-        // =false (the default) honors the saved session value.
-        const restored = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--ignore-session=false",
-                "--overwrite",
-                "always",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(restored).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello Seeded!");
-    });
+            // =false (the default) honors the saved session value.
+            const restored = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--ignore-session=false",
+                    "--overwrite",
+                    "always",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(restored).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Seeded!");
+        });
 
-    it("bare --ignore-session defaults to true and bypasses the saved session", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("bare --ignore-session defaults to true and bypasses the saved session", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const seed = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=Seeded",
-                "--use-defaults",
-                "--save-session",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(seed).toHaveSucceeded();
+            const seed = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Seeded",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(seed).toHaveSucceeded();
 
-        const ignored = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--ignore-session",
-                "--use-defaults",
-                "--overwrite",
-                "always",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
-        expect(ignored).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-    });
+            const ignored = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--ignore-session",
+                    "--use-defaults",
+                    "--overwrite",
+                    "always",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
+            expect(ignored).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+        });
 
-    it("--ignore-session with a space-separated value is rejected (require_equals)", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--ignore-session with a space-separated value is rejected (require_equals)", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--ignore-session",
-                "true",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--ignore-session",
+                    "true",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(2);
-    });
-});
+            expect(result).toHaveExitCode(2);
+        });
+    },
+);
 
-describe("+generator @exitcode (run errors)", {
-    tags: ["generator"],
-}, () => {
-    it("-p/--project with an unknown project errors with `Project <x> not found`", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @exitcode (run errors)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("-p/--project with an unknown project errors with `Project <x> not found`", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-p",
-                "nope",
-                "--use-defaults",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-p",
+                    "nope",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result).toHaveStderrContaining("Project nope not found");
-    });
+            expect(result).toHaveExitCode(1);
+            expect(result).toHaveStderrContaining("Project nope not found");
+        });
 
-    it("-o and -p together is rejected as a clap conflict", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("-o and -p together is rejected as a clap conflict", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // The `project` arg declares `conflicts_with = "output"`, so clap
-        // rejects the combination before the runtime "use --output" warning
-        // branch in generator.rs can ever run.
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-p",
-                "app",
-                "--use-defaults",
-            ],
-            { cwd: ws.cwd },
-        );
+            // The `project` arg declares `conflicts_with = "output"`, so clap
+            // rejects the combination before the runtime "use --output" warning
+            // branch in generator.rs can ever run.
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-p",
+                    "app",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(2);
-        expect(result).toHaveStderrContaining(
-            "cannot be used with '--project <PROJECT>'",
-        );
-    });
-});
+            expect(result).toHaveExitCode(2);
+            expect(result).toHaveStderrContaining(
+                "cannot be used with '--project <PROJECT>'",
+            );
+        });
+    },
+);
 
 /**
  * A workspace whose `pipeline` generator writes lowercase files and then pipes
@@ -693,28 +722,34 @@ function transformSpec() {
     };
 }
 
-describe("+generator @e2e (transform actions)", {
-    tags: ["generator"],
-}, () => {
-    it.skipIf(process.platform === "win32")(
-        "transform/transform-many pipe generated files through a command",
-        async () => {
-            const ws = makeWorkspace(transformSpec());
+describe(
+    "+generator @e2e (transform actions)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it.skipIf(process.platform === "win32")(
+            "transform/transform-many pipe generated files through a command",
+            async () => {
+                const ws = makeWorkspace(transformSpec());
 
-            const result = await runOmni(
-                ["generator", "run", "-n", "pipeline", "-o", "out"],
-                { cwd: ws.cwd },
-            );
+                const result = await runOmni(
+                    ["generator", "run", "-n", "pipeline", "-o", "out"],
+                    {
+                        cwd: ws.cwd,
+                    },
+                );
 
-            expect(result).toHaveSucceeded();
-            // `transform` uppercases the single named file...
-            expect(ws.read("out/greeting.txt")).toBe("HELLO WORLD");
-            // ...and `transform-many` uppercases every glob match except the
-            // excluded `greeting.txt`.
-            expect(ws.read("out/nested/again.txt")).toBe("ABC DEF");
-        },
-    );
-});
+                expect(result).toHaveSucceeded();
+                // `transform` uppercases the single named file...
+                expect(ws.read("out/greeting.txt")).toBe("HELLO WORLD");
+                // ...and `transform-many` uppercases every glob match except the
+                // excluded `greeting.txt`.
+                expect(ws.read("out/nested/again.txt")).toBe("ABC DEF");
+            },
+        );
+    },
+);
 
 /**
  * A workspace whose `copier` generator uses an `add-many` action to copy every
@@ -758,142 +793,154 @@ function addManyGeneratorSpec(
     };
 }
 
-describe("+generator @e2e (add-many discovery)", {
-    tags: ["generator"],
-}, () => {
-    it("consumes hidden template files that standard filters would skip", async () => {
-        const ws = makeWorkspace(
-            addManyGeneratorSpec({
-                "visible.txt": "visible",
-                ".hidden.txt": "hidden dotfile",
-                ".config/settings.ini": "under a dot-directory",
-                "nested/.env": "SECRET=1",
-            }),
-        );
+describe(
+    "+generator @e2e (add-many discovery)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("consumes hidden template files that standard filters would skip", async () => {
+            const ws = makeWorkspace(
+                addManyGeneratorSpec({
+                    "visible.txt": "visible",
+                    ".hidden.txt": "hidden dotfile",
+                    ".config/settings.ini": "under a dot-directory",
+                    "nested/.env": "SECRET=1",
+                }),
+            );
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "copier", "-o", "out"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                ["generator", "run", "-n", "copier", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/visible.txt")).toBe("visible");
-        // Dotfiles and files nested under dot-directories are copied because
-        // add-many discovery disables the walker's standard filters, which
-        // would otherwise treat these as hidden and skip them.
-        expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
-        expect(ws.read("out/.config/settings.ini")).toBe(
-            "under a dot-directory",
-        );
-        expect(ws.read("out/nested/.env")).toBe("SECRET=1");
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/visible.txt")).toBe("visible");
+            // Dotfiles and files nested under dot-directories are copied because
+            // add-many discovery disables the walker's standard filters, which
+            // would otherwise treat these as hidden and skip them.
+            expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
+            expect(ws.read("out/.config/settings.ini")).toBe(
+                "under a dot-directory",
+            );
+            expect(ws.read("out/nested/.env")).toBe("SECRET=1");
+        });
 
-    it("still honors .omniignore even with standard filters disabled", async () => {
-        const ws = makeWorkspace(
-            addManyGeneratorSpec({
-                ".omniignore": "ignored.txt\nsecret/\n",
-                "kept.txt": "kept",
-                ".hidden.txt": "hidden dotfile",
-                "ignored.txt": "should not be copied",
-                "secret/token.txt": "should not be copied",
-            }),
-        );
+        it("still honors .omniignore even with standard filters disabled", async () => {
+            const ws = makeWorkspace(
+                addManyGeneratorSpec({
+                    ".omniignore": "ignored.txt\nsecret/\n",
+                    "kept.txt": "kept",
+                    ".hidden.txt": "hidden dotfile",
+                    "ignored.txt": "should not be copied",
+                    "secret/token.txt": "should not be copied",
+                }),
+            );
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "copier", "-o", "out"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                ["generator", "run", "-n", "copier", "-o", "out"],
+                {
+                    cwd: ws.cwd,
+                },
+            );
 
-        expect(result).toHaveSucceeded();
-        // Regular and hidden files are still copied...
-        expect(ws.read("out/kept.txt")).toBe("kept");
-        expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
-        // ...but `.omniignore` patterns are honored: add-many disables the
-        // *standard* filters, not the custom ignore file passed to discovery.
-        expect(ws.exists("out/ignored.txt")).toBe(false);
-        expect(ws.exists("out/secret/token.txt")).toBe(false);
-    });
-});
+            expect(result).toHaveSucceeded();
+            // Regular and hidden files are still copied...
+            expect(ws.read("out/kept.txt")).toBe("kept");
+            expect(ws.read("out/.hidden.txt")).toBe("hidden dotfile");
+            // ...but `.omniignore` patterns are honored: add-many disables the
+            // *standard* filters, not the custom ignore file passed to discovery.
+            expect(ws.exists("out/ignored.txt")).toBe(false);
+            expect(ws.exists("out/secret/token.txt")).toBe(false);
+        });
+    },
+);
 
-describe("+generator @tui (interactive run via PTY)", {
-    tags: ["generator"],
-}, () => {
-    it("prompts for output target, generator name, inputs, then save", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @tui (interactive run via PTY)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("prompts for output target, generator name, inputs, then save", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // No -o/-p/-n: omni must drive the whole interactive chain.
-        const pty = spawnOmniPty(["generator", "run"], { cwd: ws.cwd });
+            // No -o/-p/-n: omni must drive the whole interactive chain.
+            const pty = spawnOmniPty(["generator", "run"], { cwd: ws.cwd });
 
-        // 1. Output-target select: move to "Project directory" and confirm.
-        await pty.waitFor("Where should the generator output be written?");
-        pty.press("down");
-        pty.press("enter");
+            // 1. Output-target select: move to "Project directory" and confirm.
+            await pty.waitFor("Where should the generator output be written?");
+            pty.press("down");
+            pty.press("enter");
 
-        // 2. Project select (only `app`).
-        await pty.waitFor("Select project");
-        pty.press("enter");
+            // 2. Project select (only `app`).
+            await pty.waitFor("Select project");
+            pty.press("enter");
 
-        // 3. Generator-name select (only `scaffold`).
-        await pty.waitFor("Select generator");
-        pty.press("enter");
+            // 3. Generator-name select (only `scaffold`).
+            await pty.waitFor("Select generator");
+            pty.press("enter");
 
-        // 4. The generator's own `subject` prompt.
-        await pty.waitFor("Who to greet?");
-        pty.type("PTY");
-        pty.press("enter");
+            // 4. The generator's own `subject` prompt.
+            await pty.waitFor("Who to greet?");
+            pty.type("PTY");
+            pty.press("enter");
 
-        // 5. Post-run "save session?" confirm (defaults to yes).
-        await pty.waitFor("save inputs and targets");
-        pty.press("enter");
+            // 5. Post-run "save session?" confirm (defaults to yes).
+            await pty.waitFor("save inputs and targets");
+            pty.press("enter");
 
-        const exit = await pty.waitForExit();
+            const exit = await pty.waitForExit();
 
-        expect(exit.exitCode).toBe(0);
-        // Output landed in the chosen project's `dest` target dir, and the save
-        // confirm persisted the session.
-        expect(ws.read("app/src/greeting.txt")).toBe("Hello PTY!");
-        expect(ws.exists("app/.omni/generator.json")).toBe(true);
-    });
+            expect(exit.exitCode).toBe(0);
+            // Output landed in the chosen project's `dest` target dir, and the save
+            // confirm persisted the session.
+            expect(ws.read("app/src/greeting.txt")).toBe("Hello PTY!");
+            expect(ws.exists("app/.omni/generator.json")).toBe(true);
+        });
 
-    it("prompts for a free-form output directory, generator name, inputs, then save", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("prompts for a free-form output directory, generator name, inputs, then save", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        // No -o/-p/-n: omni drives the whole interactive chain, this time
-        // taking the "Output directory" branch instead of "Project directory".
-        const pty = spawnOmniPty(["generator", "run"], { cwd: ws.cwd });
+            // No -o/-p/-n: omni drives the whole interactive chain, this time
+            // taking the "Output directory" branch instead of "Project directory".
+            const pty = spawnOmniPty(["generator", "run"], { cwd: ws.cwd });
 
-        // 1. Output-target select: "Output directory" is the default (first)
-        //    option, so confirm it without moving the cursor.
-        await pty.waitFor("Where should the generator output be written?");
-        pty.press("enter");
+            // 1. Output-target select: "Output directory" is the default (first)
+            //    option, so confirm it without moving the cursor.
+            await pty.waitFor("Where should the generator output be written?");
+            pty.press("enter");
 
-        // 2. Free-form output-directory path prompt (resolved against cwd).
-        await pty.waitFor("Output directory path");
-        pty.type("gen-out");
-        pty.press("enter");
+            // 2. Free-form output-directory path prompt (resolved against cwd).
+            await pty.waitFor("Output directory path");
+            pty.type("gen-out");
+            pty.press("enter");
 
-        // 3. Generator-name select (only `scaffold`).
-        await pty.waitFor("Select generator");
-        pty.press("enter");
+            // 3. Generator-name select (only `scaffold`).
+            await pty.waitFor("Select generator");
+            pty.press("enter");
 
-        // 4. The generator's own `subject` prompt.
-        await pty.waitFor("Who to greet?");
-        pty.type("PTY");
-        pty.press("enter");
+            // 4. The generator's own `subject` prompt.
+            await pty.waitFor("Who to greet?");
+            pty.type("PTY");
+            pty.press("enter");
 
-        // 5. Post-run "save session?" confirm (defaults to yes).
-        await pty.waitFor("save inputs and targets");
-        pty.press("enter");
+            // 5. Post-run "save session?" confirm (defaults to yes).
+            await pty.waitFor("save inputs and targets");
+            pty.press("enter");
 
-        const exit = await pty.waitForExit();
+            const exit = await pty.waitForExit();
 
-        expect(exit.exitCode).toBe(0);
-        // Output landed under the typed directory (`dest` => `@output/src`), and
-        // the save confirm persisted the session at that directory's root.
-        expect(ws.read("gen-out/src/greeting.txt")).toBe("Hello PTY!");
-        expect(ws.exists("gen-out/.omni/generator.json")).toBe(true);
-    });
-});
+            expect(exit.exitCode).toBe(0);
+            // Output landed under the typed directory (`dest` => `@output/src`), and
+            // the save confirm persisted the session at that directory's root.
+            expect(ws.read("gen-out/src/greeting.txt")).toBe("Hello PTY!");
+            expect(ws.exists("gen-out/.omni/generator.json")).toBe(true);
+        });
+    },
+);
 
 /**
  * A workspace whose `generators` config points at a real git remote. Pulling
@@ -938,145 +985,167 @@ function parseLockfile(raw: string): {
     return JSON.parse(raw);
 }
 
-describe("+generator @e2e (git sources)", {
-    tags: ["generator"],
-}, () => {
-    const CLONE_TIMEOUT_MS = 10_000;
+describe(
+    "+generator @e2e (git sources)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        const CLONE_TIMEOUT_MS = 10_000;
 
-    it(
-        "pulls a git source, locks it, and exposes its generators to `list`",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
+        it(
+            "pulls a git source, locks it, and exposes its generators to `list`",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
 
-            const ws = makeWorkspace(gitGeneratorSourceSpec());
+                const ws = makeWorkspace(gitGeneratorSourceSpec());
 
-            const result = await runOmni(["generator", "list"], {
-                cwd: ws.cwd,
-                timeout: CLONE_TIMEOUT_MS,
+                const result = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+
+                expect(result).toHaveSucceeded();
+                // The git-sourced generator is discovered and listed.
+                expect(result).toOutputContaining(
+                    workspaceMinimalRepo.generatorDisplayName,
+                );
+                expect(result).toOutputContaining(
+                    workspaceMinimalRepo.generatorId,
+                );
+
+                // The pull is recorded in the shared lockfile with a resolved commit.
+                const lockPath = ".omni/sources/lock.json";
+                expect(ws.exists(lockPath)).toBe(true);
+                const lock = parseLockfile(ws.read(lockPath));
+                const revs = lock.git[workspaceMinimalRepo.https];
+                expect(revs).toBeDefined();
+                expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
+                    /^[0-9a-f]{40}$/,
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
+
+        it(
+            "runs a generator resolved from a git source",
+            async (ctx) => {
+                await skipUnlessRemoteReachable(ctx);
+
+                const ws = makeWorkspace(gitGeneratorSourceSpec());
+
+                const result = await runOmni(
+                    [
+                        "generator",
+                        "run",
+                        "-n",
+                        workspaceMinimalRepo.generatorId,
+                        "-o",
+                        "out",
+                        "-v",
+                        `${workspaceMinimalRepo.promptName}=from-git`,
+                        "--use-defaults",
+                        "--save-session=false",
+                    ],
+                    { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                );
+
+                expect(result).toHaveSucceeded();
+                // The git generator's `add` action renders the workspace template
+                // with our prefilled prompt value.
+                expect(ws.read("out/workspace.omni.yaml")).toContain(
+                    "name: from-git",
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
+
+        it(
+            "pulls and locks an `ssh://` git source using the machine's keys",
+            async (ctx) => {
+                // The SSH transport goes through the system `ssh` (gix shells out
+                // to it). Only the `ssh://` URL form is a valid `uri`; the SCP form
+                // isn't a URL. Gated on SSH access so it skips on CI.
+                await skipUnlessSshReachable(ctx);
+
+                const ws = makeWorkspace(sshGitGeneratorSourceSpec());
+
+                const result = await runOmni(["generator", "list"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+
+                expect(result).toHaveSucceeded();
+                expect(result).toOutputContaining(
+                    workspaceMinimalRepo.generatorId,
+                );
+
+                const lockPath = ".omni/sources/lock.json";
+                const lock = parseLockfile(ws.read(lockPath));
+                // The lockfile keys the source by its `ssh://` URI.
+                const revs = lock.git[workspaceMinimalRepo.sshUrl];
+                expect(revs).toBeDefined();
+                expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
+                    /^[0-9a-f]{40}$/,
+                );
+            },
+            CLONE_TIMEOUT_MS,
+        );
+    },
+);
+
+describe(
+    "+generator @exitcode (validation)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("errors when two generators share the same name", async () => {
+            // `validate` runs at the top of `run_named`, before any prompting, so a
+            // duplicate name fails fast regardless of the generators' inputs.
+            const dupGenerator = (greeting: string) => ({
+                name: "dup",
+                description: "duplicate-named generator",
+                actions: [
+                    {
+                        type: "add-content",
+                        output_path: "greeting.txt",
+                        content: greeting,
+                    },
+                ],
             });
-
-            expect(result).toHaveSucceeded();
-            // The git-sourced generator is discovered and listed.
-            expect(result).toOutputContaining(
-                workspaceMinimalRepo.generatorDisplayName,
-            );
-            expect(result).toOutputContaining(workspaceMinimalRepo.generatorId);
-
-            // The pull is recorded in the shared lockfile with a resolved commit.
-            const lockPath = ".omni/sources/lock.json";
-            expect(ws.exists(lockPath)).toBe(true);
-            const lock = parseLockfile(ws.read(lockPath));
-            const revs = lock.git[workspaceMinimalRepo.https];
-            expect(revs).toBeDefined();
-            expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
-                /^[0-9a-f]{40}$/,
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
-
-    it(
-        "runs a generator resolved from a git source",
-        async (ctx) => {
-            await skipUnlessRemoteReachable(ctx);
-
-            const ws = makeWorkspace(gitGeneratorSourceSpec());
+            const ws = makeWorkspace({
+                workspace: {
+                    projects: ["**"],
+                    generators: [{ source: "local", path: "generators/**" }],
+                },
+                projects: {
+                    "generators/a/generator.omni.yaml": dupGenerator("from a"),
+                    "generators/b/generator.omni.yaml": dupGenerator("from b"),
+                },
+                files: { ".omni/sources/generator/.keep": "" },
+            });
 
             const result = await runOmni(
                 [
                     "generator",
                     "run",
                     "-n",
-                    workspaceMinimalRepo.generatorId,
+                    "dup",
                     "-o",
                     "out",
-                    "-v",
-                    `${workspaceMinimalRepo.promptName}=from-git`,
                     "--use-defaults",
-                    "--save-session=false",
                 ],
-                { cwd: ws.cwd, timeout: CLONE_TIMEOUT_MS },
+                { cwd: ws.cwd },
             );
 
-            expect(result).toHaveSucceeded();
-            // The git generator's `add` action renders the workspace template
-            // with our prefilled prompt value.
-            expect(ws.read("out/workspace.omni.yaml")).toContain(
-                "name: from-git",
+            expect(result).toHaveFailed();
+            expect(result).toHaveStderrContaining(
+                "generator names must be unique",
             );
-        },
-        CLONE_TIMEOUT_MS,
-    );
-
-    it(
-        "pulls and locks an `ssh://` git source using the machine's keys",
-        async (ctx) => {
-            // The SSH transport goes through the system `ssh` (gix shells out
-            // to it). Only the `ssh://` URL form is a valid `uri`; the SCP form
-            // isn't a URL. Gated on SSH access so it skips on CI.
-            await skipUnlessSshReachable(ctx);
-
-            const ws = makeWorkspace(sshGitGeneratorSourceSpec());
-
-            const result = await runOmni(["generator", "list"], {
-                cwd: ws.cwd,
-                timeout: CLONE_TIMEOUT_MS,
-            });
-
-            expect(result).toHaveSucceeded();
-            expect(result).toOutputContaining(workspaceMinimalRepo.generatorId);
-
-            const lockPath = ".omni/sources/lock.json";
-            const lock = parseLockfile(ws.read(lockPath));
-            // The lockfile keys the source by its `ssh://` URI.
-            const revs = lock.git[workspaceMinimalRepo.sshUrl];
-            expect(revs).toBeDefined();
-            expect(revs?.[workspaceMinimalRepo.rev]?.commit).toMatch(
-                /^[0-9a-f]{40}$/,
-            );
-        },
-        CLONE_TIMEOUT_MS,
-    );
-});
-
-describe("+generator @exitcode (validation)", {
-    tags: ["generator"],
-}, () => {
-    it("errors when two generators share the same name", async () => {
-        // `validate` runs at the top of `run_named`, before any prompting, so a
-        // duplicate name fails fast regardless of the generators' inputs.
-        const dupGenerator = (greeting: string) => ({
-            name: "dup",
-            description: "duplicate-named generator",
-            actions: [
-                {
-                    type: "add-content",
-                    output_path: "greeting.txt",
-                    content: greeting,
-                },
-            ],
         });
-        const ws = makeWorkspace({
-            workspace: {
-                projects: ["**"],
-                generators: [{ source: "local", path: "generators/**" }],
-            },
-            projects: {
-                "generators/a/generator.omni.yaml": dupGenerator("from a"),
-                "generators/b/generator.omni.yaml": dupGenerator("from b"),
-            },
-            files: { ".omni/sources/generator/.keep": "" },
-        });
-
-        const result = await runOmni(
-            ["generator", "run", "-n", "dup", "-o", "out", "--use-defaults"],
-            { cwd: ws.cwd },
-        );
-
-        expect(result).toHaveFailed();
-        expect(result).toHaveStderrContaining("generator names must be unique");
-    });
-});
+    },
+);
 
 /**
  * A `multi` generator with two `remember: true` inputs (`subject`,
@@ -1133,187 +1202,191 @@ function multiSlotGeneratorSpec(): WorkspaceSpec {
     };
 }
 
-describe("+generator @cli (run flag combinations)", {
-    tags: ["generator"],
-}, () => {
-    it("-v + -t + --use-defaults combine prefill and target override non-interactively", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+describe(
+    "+generator @cli (run flag combinations)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("-v + -t + --use-defaults combine prefill and target override non-interactively", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=Custom",
-                "-t",
-                "dest=lib",
-                "--use-defaults",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Custom",
+                    "-t",
+                    "dest=lib",
+                    "--use-defaults",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // -v wins over the prompt default even with --use-defaults, and -t
-        // redirects `dest` from @output/src to out/lib.
-        expect(ws.read("out/lib/greeting.txt")).toBe("Hello Custom!");
-        expect(ws.exists("out/src/greeting.txt")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            // -v wins over the prompt default even with --use-defaults, and -t
+            // redirects `dest` from @output/src to out/lib.
+            expect(ws.read("out/lib/greeting.txt")).toBe("Hello Custom!");
+            expect(ws.exists("out/src/greeting.txt")).toBe(false);
+        });
 
-    it("multiple -v and multiple -t flags all apply", async () => {
-        const ws = makeWorkspace(multiSlotGeneratorSpec());
+        it("multiple -v and multiple -t flags all apply", async () => {
+            const ws = makeWorkspace(multiSlotGeneratorSpec());
 
-        // Both prompts are prefilled, so the run is non-interactive without
-        // --use-defaults.
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "multi",
-                "-o",
-                "out",
-                "-v",
-                "subject=Alice",
-                "-v",
-                "salutation=Hi",
-                "-t",
-                "dest=a",
-                "-t",
-                "other=b",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            // Both prompts are prefilled, so the run is non-interactive without
+            // --use-defaults.
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "multi",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Alice",
+                    "-v",
+                    "salutation=Hi",
+                    "-t",
+                    "dest=a",
+                    "-t",
+                    "other=b",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // Both prefilled values and both target overrides take effect.
-        expect(ws.read("out/a/greeting.txt")).toBe("Hi Alice!");
-        expect(ws.read("out/b/other.txt")).toBe("Alice");
-    });
+            expect(result).toHaveSucceeded();
+            // Both prefilled values and both target overrides take effect.
+            expect(ws.read("out/a/greeting.txt")).toBe("Hi Alice!");
+            expect(ws.read("out/b/other.txt")).toBe("Alice");
+        });
 
-    it("-p with -v and --overwrite always overwrites files in the project directory", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
-        // Pre-create the file the `dest` target resolves to inside the project.
-        ws.write("app/src/greeting.txt", "OLD");
+        it("-p with -v and --overwrite always overwrites files in the project directory", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            // Pre-create the file the `dest` target resolves to inside the project.
+            ws.write("app/src/greeting.txt", "OLD");
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-p",
-                "app",
-                "-v",
-                "subject=Bob",
-                "--overwrite",
-                "always",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-p",
+                    "app",
+                    "-v",
+                    "subject=Bob",
+                    "--overwrite",
+                    "always",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // `always` replaces the pre-existing file with the generated content.
-        expect(ws.read("app/src/greeting.txt")).toBe("Hello Bob!");
-    });
+            expect(result).toHaveSucceeded();
+            // `always` replaces the pre-existing file with the generated content.
+            expect(ws.read("app/src/greeting.txt")).toBe("Hello Bob!");
+        });
 
-    it("--use-defaults --save-session=false runs with defaults and writes no session", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
+        it("--use-defaults --save-session=false runs with defaults and writes no session", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
-        // The session is skipped even though `subject` is `remember: true`.
-        expect(ws.exists("out/.omni/generator.json")).toBe(false);
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+            // The session is skipped even though `subject` is `remember: true`.
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
 
-    it("-o --overwrite never leaves pre-existing target files untouched", async () => {
-        const ws = makeWorkspace(scaffoldGeneratorSpec());
-        ws.write("out/src/greeting.txt", "OLD");
+        it("-o --overwrite never leaves pre-existing target files untouched", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write("out/src/greeting.txt", "OLD");
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "--overwrite",
-                "never",
-                "-v",
-                "subject=Bob",
-                "--save-session=false",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--overwrite",
+                    "never",
+                    "-v",
+                    "subject=Bob",
+                    "--save-session=false",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        // `never` keeps the existing file even though -v would have changed it.
-        expect(ws.read("out/src/greeting.txt")).toBe("OLD");
-    });
+            expect(result).toHaveSucceeded();
+            // `never` keeps the existing file even though -v would have changed it.
+            expect(ws.read("out/src/greeting.txt")).toBe("OLD");
+        });
 
-    it("-v KEY= (empty) and -v KEY=a=b mirror parse_key_value edge cases", async () => {
-        // Empty value: parse_key_value allows an empty value, so the prompt is
-        // prefilled with "" (and therefore skipped, not asked).
-        const empty = makeWorkspace(scaffoldGeneratorSpec());
-        const emptyResult = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=",
-                "--save-session=false",
-            ],
-            { cwd: empty.cwd },
-        );
-        expect(emptyResult).toHaveSucceeded();
-        expect(empty.read("out/src/greeting.txt")).toBe("Hello !");
+        it("-v KEY= (empty) and -v KEY=a=b mirror parse_key_value edge cases", async () => {
+            // Empty value: parse_key_value allows an empty value, so the prompt is
+            // prefilled with "" (and therefore skipped, not asked).
+            const empty = makeWorkspace(scaffoldGeneratorSpec());
+            const emptyResult = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=",
+                    "--save-session=false",
+                ],
+                { cwd: empty.cwd },
+            );
+            expect(emptyResult).toHaveSucceeded();
+            expect(empty.read("out/src/greeting.txt")).toBe("Hello !");
 
-        // Value containing `=`: parse_key_value splits on the FIRST `=`, so the
-        // remainder (`a=b`) is kept verbatim as the value.
-        const eq = makeWorkspace(scaffoldGeneratorSpec());
-        const eqResult = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "scaffold",
-                "-o",
-                "out",
-                "-v",
-                "subject=a=b",
-                "--save-session=false",
-            ],
-            { cwd: eq.cwd },
-        );
-        expect(eqResult).toHaveSucceeded();
-        expect(eq.read("out/src/greeting.txt")).toBe("Hello a=b!");
-    });
-});
+            // Value containing `=`: parse_key_value splits on the FIRST `=`, so the
+            // remainder (`a=b`) is kept verbatim as the value.
+            const eq = makeWorkspace(scaffoldGeneratorSpec());
+            const eqResult = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=a=b",
+                    "--save-session=false",
+                ],
+                { cwd: eq.cwd },
+            );
+            expect(eqResult).toHaveSucceeded();
+            expect(eq.read("out/src/greeting.txt")).toBe("Hello a=b!");
+        });
+    },
+);
 
 // ---------------------------------------------------------------------------
 // Recursion detection + --max-depth (configurable nesting limit)
@@ -1327,98 +1400,132 @@ describe("+generator @cli (run flag combinations)", {
 // mutualRecursionGeneratorSpec, nestedGeneratorSpec.
 // ---------------------------------------------------------------------------
 
-describe("+generator @exitcode (recursion)", {
-    tags: ["generator"],
-}, () => {
-    it("rejects a generator that directly invokes itself", async () => {
-        // loop → loop. detect_recursion fails before any action runs, so no
-        // output is produced.
-        const ws = makeWorkspace(selfRecursiveGeneratorSpec());
+describe(
+    "+generator @exitcode (recursion)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("rejects a generator that directly invokes itself", async () => {
+            // loop → loop. detect_recursion fails before any action runs, so no
+            // output is produced.
+            const ws = makeWorkspace(selfRecursiveGeneratorSpec());
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "loop", "-o", "out", "--use-defaults"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "loop",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result.stderr).toContain("will recurse into itself");
-        expect(ws.exists("out")).toBe(false);
-    });
+            expect(result).toHaveExitCode(1);
+            expect(result.stderr).toContain("will recurse into itself");
+            expect(ws.exists("out")).toBe(false);
+        });
 
-    it("rejects a generator caught in an indirect (mutual) recursion cycle", async () => {
-        // ping → pong → ping.
-        const ws = makeWorkspace(mutualRecursionGeneratorSpec());
+        it("rejects a generator caught in an indirect (mutual) recursion cycle", async () => {
+            // ping → pong → ping.
+            const ws = makeWorkspace(mutualRecursionGeneratorSpec());
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "ping", "-o", "out", "--use-defaults"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "ping",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result.stderr).toContain("will recurse into itself");
-    });
-});
+            expect(result).toHaveExitCode(1);
+            expect(result.stderr).toContain("will recurse into itself");
+        });
+    },
+);
 
-describe("+generator @cli (--max-depth)", {
-    tags: ["generator"],
-}, () => {
-    it("aborts a legitimate (acyclic) chain when --max-depth is below its nesting", async () => {
-        // parent → child is non-cyclic; child runs at depth 1. With
-        // --max-depth 0 the nested run exceeds the cap and is rejected even
-        // though there is no recursion.
-        const ws = makeWorkspace(nestedGeneratorSpec());
+describe(
+    "+generator @cli (--max-depth)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        it("aborts a legitimate (acyclic) chain when --max-depth is below its nesting", async () => {
+            // parent → child is non-cyclic; child runs at depth 1. With
+            // --max-depth 0 the nested run exceeds the cap and is rejected even
+            // though there is no recursion.
+            const ws = makeWorkspace(nestedGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "parent",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--max-depth",
-                "0",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "parent",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--max-depth",
+                    "0",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveExitCode(1);
-        expect(result.stderr).toContain("exceeded the maximum nesting depth");
-        expect(ws.exists("out/nested.txt")).toBe(false);
-    });
+            expect(result).toHaveExitCode(1);
+            expect(result.stderr).toContain(
+                "exceeded the maximum nesting depth",
+            );
+            expect(ws.exists("out/nested.txt")).toBe(false);
+        });
 
-    it("runs the chain when --max-depth is raised to allow the nesting", async () => {
-        const ws = makeWorkspace(nestedGeneratorSpec());
+        it("runs the chain when --max-depth is raised to allow the nesting", async () => {
+            const ws = makeWorkspace(nestedGeneratorSpec());
 
-        const result = await runOmni(
-            [
-                "generator",
-                "run",
-                "-n",
-                "parent",
-                "-o",
-                "out",
-                "--use-defaults",
-                "--max-depth",
-                "5",
-            ],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "parent",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                    "--max-depth",
+                    "5",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/nested.txt")).toContain("from child");
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/nested.txt")).toContain("from child");
+        });
 
-    it("runs the chain with the default depth when --max-depth is omitted", async () => {
-        const ws = makeWorkspace(nestedGeneratorSpec());
+        it("runs the chain with the default depth when --max-depth is omitted", async () => {
+            const ws = makeWorkspace(nestedGeneratorSpec());
 
-        const result = await runOmni(
-            ["generator", "run", "-n", "parent", "-o", "out", "--use-defaults"],
-            { cwd: ws.cwd },
-        );
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "parent",
+                    "-o",
+                    "out",
+                    "--use-defaults",
+                ],
+                { cwd: ws.cwd },
+            );
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("out/nested.txt")).toContain("from child");
-    });
-});
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/nested.txt")).toContain("from child");
+        });
+    },
+);

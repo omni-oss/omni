@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { Process } from "./interfaces";
 
 export type ProcessTestDeclarationsArgs = {

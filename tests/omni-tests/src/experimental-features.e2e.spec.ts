@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 type Capability = {
@@ -93,87 +94,91 @@ function runCapgen(ws: ReturnType<typeof makeWorkspace>) {
     );
 }
 
-describe("+generator @e2e (experimental: capabilities gate)", {
-    tags: ["generator"],
-    timeout: 60_000,
-}, () => {
-    it("off by default: a write outside the declared allow-list is committed (unconfined)", async () => {
-        const ws = makeWorkspace(
-            experimentalSpec({
-                capabilities: FS_SCOPED,
-                script: WRITE_OUTSIDE_SCRIPT,
-            }),
-        );
+describe(
+    "+generator @e2e (experimental: capabilities gate)",
+    {
+        tags: ["generator"],
+        timeout: 60_000,
+    },
+    () => {
+        it("off by default: a write outside the declared allow-list is committed (unconfined)", async () => {
+            const ws = makeWorkspace(
+                experimentalSpec({
+                    capabilities: FS_SCOPED,
+                    script: WRITE_OUTSIDE_SCRIPT,
+                }),
+            );
 
-        const result = await runCapgen(ws);
+            const result = await runCapgen(ws);
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("escaped.txt")).toBe("leak");
-        expect(result).toOutputContaining(
-            "capabilities feature is experimental and disabled",
-        );
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("escaped.txt")).toBe("leak");
+            expect(result).toOutputContaining(
+                "capabilities feature is experimental and disabled",
+            );
+        });
 
-    it("enforces capabilities when enabled via the boolean form", async () => {
-        const ws = makeWorkspace(
-            experimentalSpec({
-                enableExperimental: true,
-                capabilities: FS_SCOPED,
-                script: WRITE_OUTSIDE_SCRIPT,
-            }),
-        );
+        it("enforces capabilities when enabled via the boolean form", async () => {
+            const ws = makeWorkspace(
+                experimentalSpec({
+                    enableExperimental: true,
+                    capabilities: FS_SCOPED,
+                    script: WRITE_OUTSIDE_SCRIPT,
+                }),
+            );
 
-        const result = await runCapgen(ws);
+            const result = await runCapgen(ws);
 
-        expect(result).toHaveFailed();
-        expect(ws.exists("escaped.txt")).toBe(false);
-    });
+            expect(result).toHaveFailed();
+            expect(ws.exists("escaped.txt")).toBe(false);
+        });
 
-    it("enforces capabilities when toggled on via the per-feature map", async () => {
-        const ws = makeWorkspace(
-            experimentalSpec({
-                enableExperimental: { capabilities: true },
-                capabilities: FS_SCOPED,
-                script: WRITE_OUTSIDE_SCRIPT,
-            }),
-        );
+        it("enforces capabilities when toggled on via the per-feature map", async () => {
+            const ws = makeWorkspace(
+                experimentalSpec({
+                    enableExperimental: { capabilities: true },
+                    capabilities: FS_SCOPED,
+                    script: WRITE_OUTSIDE_SCRIPT,
+                }),
+            );
 
-        const result = await runCapgen(ws);
+            const result = await runCapgen(ws);
 
-        expect(result).toHaveFailed();
-        expect(ws.exists("escaped.txt")).toBe(false);
-    });
+            expect(result).toHaveFailed();
+            expect(ws.exists("escaped.txt")).toBe(false);
+        });
 
-    it("does not enforce when the capabilities feature is explicitly off", async () => {
-        const ws = makeWorkspace(
-            experimentalSpec({
-                enableExperimental: { capabilities: false },
-                capabilities: FS_SCOPED,
-                script: WRITE_OUTSIDE_SCRIPT,
-            }),
-        );
+        it("does not enforce when the capabilities feature is explicitly off", async () => {
+            const ws = makeWorkspace(
+                experimentalSpec({
+                    enableExperimental: { capabilities: false },
+                    capabilities: FS_SCOPED,
+                    script: WRITE_OUTSIDE_SCRIPT,
+                }),
+            );
 
-        const result = await runCapgen(ws);
+            const result = await runCapgen(ws);
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("escaped.txt")).toBe("leak");
-        expect(result).toOutputContaining(
-            "capabilities feature is experimental and disabled",
-        );
-    });
+            expect(result).toHaveSucceeded();
+            expect(ws.read("escaped.txt")).toBe("leak");
+            expect(result).toOutputContaining(
+                "capabilities feature is experimental and disabled",
+            );
+        });
 
-    it("an unrelated experimental toggle does not enable capabilities", async () => {
-        const ws = makeWorkspace(
-            experimentalSpec({
-                enableExperimental: { "some-other-feature": true },
-                capabilities: FS_SCOPED,
-                script: WRITE_OUTSIDE_SCRIPT,
-            }),
-        );
+        it("an unrelated experimental toggle does not enable capabilities", async () => {
+            const ws = makeWorkspace(
+                experimentalSpec({
+                    enableExperimental: { "some-other-feature": true },
+                    capabilities: FS_SCOPED,
+                    script: WRITE_OUTSIDE_SCRIPT,
+                }),
+            );
 
-        const result = await runCapgen(ws);
+            const result = await runCapgen(ws);
 
-        expect(result).toHaveSucceeded();
-        expect(ws.read("escaped.txt")).toBe("leak");
-    });
-});
+            expect(result).toHaveSucceeded();
+            expect(ws.read("escaped.txt")).toBe("leak");
+        });
+    },
+);

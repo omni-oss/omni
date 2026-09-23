@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+
 import { version } from "../../package.json";
 import { type BenchEvent, type BenchmarkResult, runBenchmark } from "../bench";
 import { installWorkspace } from "../bench/install";

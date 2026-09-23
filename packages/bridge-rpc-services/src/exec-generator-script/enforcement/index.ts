@@ -4,6 +4,7 @@ import type {
     FetchFn,
 } from "@omni-oss/gen-sdk-core";
 import type { System } from "@omni-oss/system-interface";
+
 import { CapabilityPolicy } from "./capability-policy";
 import {
     defineEnforcedGlobal,

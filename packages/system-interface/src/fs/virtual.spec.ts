@@ -1,5 +1,7 @@
 import { memfs } from "memfs";
+
 import { VirtualProcess } from "@/proc/virtual";
+
 import { declareFsTests } from "./test-declarations";
 import { VirtualFileSystem } from "./virtual";
 

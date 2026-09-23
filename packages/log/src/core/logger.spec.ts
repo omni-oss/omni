@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+
 import { LOG_LEVELS, type LogLevel } from "./level";
 import {
     AbstractLogger,

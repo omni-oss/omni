@@ -17,7 +17,9 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni } from "@/harness";
 
 describe("+hash @hashing (golden workspace hash)", () => {

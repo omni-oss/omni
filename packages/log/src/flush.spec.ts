@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { flushLogs, type LogDrain, registerLogDrain } from "./flush";
 
 describe("flushLogs / registerLogDrain", () => {

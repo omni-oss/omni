@@ -19,7 +19,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import { execaSync } from "execa";
+
 import { findRepoRoot } from "./paths";
 
 const BIN_NAME = process.platform === "win32" ? "omni.exe" : "omni";

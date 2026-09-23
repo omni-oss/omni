@@ -1,5 +1,7 @@
 import { createRequire } from "node:module";
+
 import { afterEach, describe, expect, test, vi } from "vitest";
+
 import { CapabilityPolicy } from "./capability-policy";
 import {
     defaultShellProgram,
@@ -71,7 +73,10 @@ describe("netTargetFromConnectArgs", () => {
     test("options object with port and host", () => {
         expect(
             netTargetFromConnectArgs([{ port: 5432, host: "db.internal" }]),
-        ).toEqual({ host: "db.internal", port: 5432 });
+        ).toEqual({
+            host: "db.internal",
+            port: 5432,
+        });
     });
 
     test("unwraps the normalized [options, callback] array net.connect produces", () => {
@@ -81,7 +86,10 @@ describe("netTargetFromConnectArgs", () => {
             netTargetFromConnectArgs([
                 [{ port: 443, host: "example.com" }, null],
             ]),
-        ).toEqual({ host: "example.com", port: 443 });
+        ).toEqual({
+            host: "example.com",
+            port: 443,
+        });
         expect(
             netTargetFromConnectArgs([[{ path: "/tmp/x.sock" }, null]]),
         ).toBeNull();
@@ -494,7 +502,10 @@ describe("dgram target extraction", () => {
         // The 6-arg form's leading numbers are offset+length, not the port.
         expect(
             netTargetFromDgramSend(["payload", 0, 7, 8125, "metrics.internal"]),
-        ).toEqual({ host: "metrics.internal", port: 8125 });
+        ).toEqual({
+            host: "metrics.internal",
+            port: 8125,
+        });
     });
 
     test("send with an omitted address defaults the host", () => {

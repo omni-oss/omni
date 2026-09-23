@@ -1,4 +1,5 @@
 import { join } from "node:path";
+
 import {
     type BridgeRpc,
     ResponseStatusCode,
@@ -15,6 +16,7 @@ import {
     type WithFunction,
 } from "@omni-oss/log";
 import { describe, expect, it, vi } from "vitest";
+
 import { createRpcInstance } from "..";
 
 const __dirname = import.meta.dirname;
@@ -22,49 +24,53 @@ const __dirname = import.meta.dirname;
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
 
-describe("integration test", {
-    timeout: 10_000,
-}, () => {
-    it(
-        "should respond to /exec-generator-script requests",
-        withRpcs(async ({ rpc1: rpc, logger }) => {
-            const request = await rpc.clientHandle
-                .request("/exec-generator-script")
-                .then((req) => req.start());
-            const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
-            await request.writeBodyChunk(
-                json([
-                    {
-                        path: scriptPath,
-                        params: {
-                            dry_run: true,
-                            data: null,
-                            output_dir: join(
-                                __dirname,
-                                "__fixtures__",
-                                "output",
-                            ),
+describe(
+    "integration test",
+    {
+        timeout: 10_000,
+    },
+    () => {
+        it(
+            "should respond to /exec-generator-script requests",
+            withRpcs(async ({ rpc1: rpc, logger }) => {
+                const request = await rpc.clientHandle
+                    .request("/exec-generator-script")
+                    .then((req) => req.start());
+                const scriptPath = join(__dirname, "__fixtures__", "test.mjs");
+                await request.writeBodyChunk(
+                    json([
+                        {
+                            path: scriptPath,
+                            params: {
+                                dry_run: true,
+                                data: null,
+                                output_dir: join(
+                                    __dirname,
+                                    "__fixtures__",
+                                    "output",
+                                ),
+                            },
                         },
-                    },
-                ]),
-            );
-            const end = await request.end().then((x) => x.wait());
-
-            const body = await readBody(end);
-            if (!end.status.equals(ResponseStatusCode.SUCCESS)) {
-                console.error(
-                    "Error response body:",
-                    TEXT_DECODER.decode(body),
+                    ]),
                 );
-            }
+                const end = await request.end().then((x) => x.wait());
 
-            expect(end.status).toEqual(ResponseStatusCode.SUCCESS);
-            expect(logger.info).toHaveBeenCalledWith(
-                "Hello from the generator script!",
-            );
-        }),
-    );
-});
+                const body = await readBody(end);
+                if (!end.status.equals(ResponseStatusCode.SUCCESS)) {
+                    console.error(
+                        "Error response body:",
+                        TEXT_DECODER.decode(body),
+                    );
+                }
+
+                expect(end.status).toEqual(ResponseStatusCode.SUCCESS);
+                expect(logger.info).toHaveBeenCalledWith(
+                    "Hello from the generator script!",
+                );
+            }),
+        );
+    },
+);
 
 function createRpcs(): Rpcs {
     const rctSide = new TransformStream<Uint8Array, Uint8Array>();

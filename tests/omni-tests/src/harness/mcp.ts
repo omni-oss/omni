@@ -9,6 +9,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { onTestFinished } from "vitest";
+
 import { resolveOmniBin } from "./binary";
 
 export interface McpClient {

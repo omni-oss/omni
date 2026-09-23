@@ -1,6 +1,7 @@
-import { mergeConfig, type UserWorkspaceConfig } from "vitest/config";
-import baseConfig from "./vite.config";
 import unitTestConfig from "@omni-oss/vitest-config/unit";
+import { mergeConfig, type UserWorkspaceConfig } from "vitest/config";
+
+import baseConfig from "./vite.config";
 
 export default mergeConfig(mergeConfig(baseConfig, unitTestConfig), {
     test: {

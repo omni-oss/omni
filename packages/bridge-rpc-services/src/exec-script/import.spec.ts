@@ -1,5 +1,6 @@
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
 import { describe, expect, test } from "vitest";
 
 import { importScript } from "./import";

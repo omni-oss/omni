@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni } from "@/harness";
 
 /** Workspace whose root `.env` defines the given vars. */
@@ -162,7 +163,10 @@ describe("+env @env (precedence & combined flags)", () => {
 
         const result = await runOmni(
             ["-l", "off", "-i", "env", "get", "SHARED"],
-            { cwd: ws.cwd, env: { SHARED: "fromparent" } },
+            {
+                cwd: ws.cwd,
+                env: { SHARED: "fromparent" },
+            },
         );
 
         expect(result).toHaveSucceeded();
@@ -213,7 +217,9 @@ describe("+env @env (precedence & combined flags)", () => {
 
         const result = await runOmni(
             ["-l", "off", "-r", "mark.txt", "env", "all"],
-            { cwd: ws.path("sub") },
+            {
+                cwd: ws.path("sub"),
+            },
         );
 
         expect(result).toHaveSucceeded();

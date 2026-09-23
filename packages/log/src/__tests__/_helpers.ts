@@ -4,6 +4,7 @@ import {
     type LogRecord,
     type LogLevel as LogTapeLogLevel,
 } from "@logtape/logtape";
+
 import { LogTapeLoggerFactory } from "../logtape/logtape-logger";
 
 // ---------------------------------------------------------------------------

@@ -180,9 +180,7 @@ export function resolveServiceBinOrThrow(options: ResolveServiceBinOptions): {
 
     if (!resolved) {
         throw new Error(
-            `Could not find ${options.binName}${EXT} in:\n${candidates.join(
-                "\n",
-            )}\n${compileInfo}`,
+            `Could not find ${options.binName}${EXT} in:\n${candidates.join("\n")}\n${compileInfo}`,
         );
     }
 

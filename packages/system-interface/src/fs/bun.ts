@@ -1,4 +1,5 @@
 import { throwIfBunNotAvailable } from "@/platform-helpers";
+
 import type { FileStat, FileSystem } from "./interfaces";
 import { NodeFileSystem } from "./node";
 

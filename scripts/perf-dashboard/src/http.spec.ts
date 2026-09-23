@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { fetchWithRetry } from "./http";
 
 /** A fetch that yields the given responses/errors in order (last repeats). */

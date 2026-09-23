@@ -6,7 +6,6 @@ import type {
     ResponseError,
     ResponseStart,
 } from "../frame";
-
 import type { ResponseStatusCode } from "../status-code";
 
 // --- Enums and Unions ---

@@ -1,4 +1,5 @@
 import type { UserConfig } from "vite";
+
 import {
     type BaseConfigOptions,
     createConfig as baseCreateConfig,

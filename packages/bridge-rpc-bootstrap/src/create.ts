@@ -1,12 +1,12 @@
 import process from "node:process";
 import { Readable, Writable } from "node:stream";
+
 import {
     BridgeRpc,
     type Service as RpcService,
     StreamTransport,
     type Transport,
 } from "@omni-oss/bridge-rpc-core";
-
 import { type HandlerFn, Router } from "@omni-oss/bridge-rpc-router";
 
 export type { Service as RpcService } from "@omni-oss/bridge-rpc-core";

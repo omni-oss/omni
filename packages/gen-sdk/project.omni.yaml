@@ -2,9 +2,7 @@
 name: "@omni-oss/gen-sdk"
 
 extends:
-
   - "@workspace/omni/presets/ts-vite-lib.omni.yaml"
-
 
 dependencies:
   append:
@@ -13,7 +11,6 @@ dependencies:
     - "@omni-oss/gen-sdk-core"
 
 tasks:
-
   test:unit:
     enabled: false
 
@@ -28,9 +25,6 @@ tasks:
 
   publish:
     enabled: true
-
-
-
 
 meta:
   publish: false

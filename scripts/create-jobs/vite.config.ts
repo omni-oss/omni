@@ -1,4 +1,5 @@
 import { createConfig } from "@omni-oss/vite-config/script";
+
 import packageJson from "./package.json";
 
 export default createConfig({

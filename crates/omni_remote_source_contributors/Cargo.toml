@@ -18,7 +18,11 @@ omni_configuration_discovery = { workspace = true }
 omni_meta = { workspace = true }
 omni_constants = { workspace = true }
 omni_file_data_serde = { workspace = true }
-system_traits = { workspace = true, features = ["async", "real-async-tokio", "memory-async"] }
+system_traits = { workspace = true, features = [
+    "async",
+    "real-async-tokio",
+    "memory-async",
+] }
 url = { workspace = true }
 eyre = { workspace = true }
 async-trait = { workspace = true }

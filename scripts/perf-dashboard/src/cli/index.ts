@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+
 import { Command } from "@commander-js/extra-typings";
+
 import { FLAG_KEYS } from "@/analyze/ai";
+
 import { description, name, version } from "../../package.json";
 import { resolveAiConfig } from "../analyze";
 import { normalize, parseSuite } from "../ingest";

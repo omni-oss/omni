@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { Report } from "../chart/ir";
 import { composeReport } from "../pipeline";
 import { makeRun } from "../testing/run-factory";

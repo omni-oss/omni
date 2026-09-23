@@ -474,7 +474,9 @@ class PosixProbe implements ProcessProbe {
             const { stdout } = await execFileAsync(
                 "ps",
                 ["-axo", "pid=,ppid="],
-                { maxBuffer: 16 * 1024 * 1024 },
+                {
+                    maxBuffer: 16 * 1024 * 1024,
+                },
             );
             return parsePosixParents(stdout);
         } catch {

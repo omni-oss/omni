@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+
 import { Id } from "@/id";
+
 import { decode, decodeFrame, encode, encodeFrame } from "./codec-utils";
 import { Frame } from "./frame";
 import { FrameSchema } from "./frame-schema";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { Mpsc } from "./mpsc"; // Assume the code from previous response is here
 
 describe("Mpsc", () => {

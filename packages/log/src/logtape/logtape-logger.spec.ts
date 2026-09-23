@@ -1,5 +1,6 @@
 import type { Logger as LogTapeLoggerImpl } from "@logtape/logtape";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { LOG_LEVELS, type LogLevel } from "../core";
 import { LogTapeLogger, LogTapeLoggerFactory } from "./logtape-logger";
 

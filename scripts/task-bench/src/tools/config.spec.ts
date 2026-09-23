@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
+
 import { resolveConfig } from "../config";
 import { buildModel, type ProjectModel, renderOmni } from "../model";
 import { moonProjectConfig } from "./moon";

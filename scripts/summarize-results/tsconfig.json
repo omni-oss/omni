@@ -1,23 +1,21 @@
 {
-	"extends": ["@omni-oss/tsconfig/with-paths.json"],
-	"compilerOptions": {
-		"outDir": "./dist",
+    "extends": ["@omni-oss/tsconfig/with-paths.json"],
+    "compilerOptions": {
+        "outDir": "./dist",
         "types": ["bun", "node"],
-        "module": "ESNext",
-	},
-    "include": [
-        "src/**/*",
-    ],
-	"exclude": [
+        "module": "ESNext"
+    },
+    "include": ["src/**/*"],
+    "exclude": [
         "coverage",
-		"dist",
-		"node_modules",
-		"output",
-		".output",
-		".vercel",
-		".solid",
-		"public",
-		"build",
+        "dist",
+        "node_modules",
+        "output",
+        ".output",
+        ".vercel",
+        ".solid",
+        "public",
+        "build",
         "bin/**"
-	]
+    ]
 }

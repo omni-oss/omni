@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { normalize, parseSuite } from "../ingest";
 import { GitHubDataSource } from "./github";
 

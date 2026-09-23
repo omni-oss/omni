@@ -8,9 +8,7 @@ import type { LogLevel } from "./level";
 // compute. Callers that wrap async functions should pass them directly.
 const AsyncFunction = (async () => {
     /* noop */
-}).constructor as new (
-    ...args: unknown[]
-) => unknown;
+}).constructor as new (...args: unknown[]) => unknown;
 
 function isAsyncFunction(
     value: unknown,

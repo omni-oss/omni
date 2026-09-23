@@ -2,9 +2,6 @@
     "name": "@omni-oss/create-jobs",
     "version": "0.1.12",
     "bin": "./dist/create-jobs.mjs",
-    "publishConfig": {
-        "access": "public"
-    },
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
@@ -18,17 +15,20 @@
             }
         }
     },
+    "publishConfig": {
+        "access": "public"
+    },
     "dependencies": {
-        "zod": "catalog:",
+        "@commander-js/extra-typings": "catalog:",
         "commander": "catalog:",
-        "@commander-js/extra-typings": "catalog:"
+        "zod": "catalog:"
     },
     "devDependencies": {
         "@omni-oss/tsconfig": "catalog:",
         "@omni-oss/vite-config": "catalog:",
         "@omni-oss/vitest-config": "catalog:",
-        "typescript": "catalog:",
+        "@types/bun": "catalog:",
         "@types/node": "catalog:",
-        "@types/bun": "catalog:"
+        "typescript": "catalog:"
     }
 }

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+
 import { OptimizedProcess } from "./optimized";
 import { declareProcTests } from "./test-declarations";
 

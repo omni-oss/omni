@@ -1,6 +1,9 @@
 import path from "node:path";
+
 import { describe, expect } from "vitest";
+
 import { it } from "@/test-helpers";
+
 import type { System } from "./interfaces";
 
 export type SystemTestDeclarationsArgs = {

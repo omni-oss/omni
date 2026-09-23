@@ -8,7 +8,9 @@
  */
 
 import { readdirSync, rmSync, writeFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
 import { makeWorkspace, runOmni, type WorkspaceSpec } from "@/harness";
 
 function projectionWorkspace(): WorkspaceSpec {
@@ -647,7 +649,9 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
 
         const result = await runOmni(
             ["projection", "unlink", "local-skills", "--restore-backups"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(result).toHaveSucceeded();
         expect(result.stdout).toContain("restored");
@@ -730,7 +734,9 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
         // The ledger keys the members by their composed identity.
         const ledger = JSON.parse(
             ws.read(".omni/sources/projection/links.json"),
-        ) as { links: { source_id: string }[] };
+        ) as {
+            links: { source_id: string }[];
+        };
         const ids = ledger.links.map((l) => l.source_id).sort();
         expect(ids).toEqual(["org::rules", "org::skills"]);
     });
@@ -752,7 +758,9 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
 
         const result = await runOmni(
             ["projection", "sync", "--source", "org::skills"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(result).toHaveSucceeded();
         expect(ws.read(".agents/skills/a.md")).toBe("# a\n");
@@ -794,7 +802,9 @@ describe("+projection @e2e", { tags: ["projection"] }, () => {
 
         const result = await runOmni(
             ["projection", "sync", "--source", "does-not-exist"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(result).toHaveFailed();
     });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { ScenarioResult, ToolResult } from "./index";
 import { cacheHitRatio, isFullyCached } from "./metrics";
 

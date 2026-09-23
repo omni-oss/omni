@@ -9,7 +9,14 @@ repository.workspace = true
 default = ["enable-tracing", "s3", "local-disk", "in-memory", "utoipa"]
 utoipa = ["dep:utoipa"]
 enable-tracing = ["trace/enabled"]
-s3 = ["dep:aws-config", "dep:aws-sdk-s3", "dep:http", "dep:http-body", "dep:aws-credential-types", "dep:aws-types"]
+s3 = [
+    "dep:aws-config",
+    "dep:aws-sdk-s3",
+    "dep:http",
+    "dep:http-body",
+    "dep:aws-credential-types",
+    "dep:aws-types",
+]
 local-disk = []
 in-memory = []
 

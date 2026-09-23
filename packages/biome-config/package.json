@@ -1,11 +1,11 @@
 {
     "name": "@omni-oss/biome-config",
-    "publishConfig": {
-        "access": "public"
-    },
     "version": "0.1.0",
     "description": "",
     "keywords": [],
+    "license": "MIT",
     "author": "",
-    "license": "MIT"
+    "publishConfig": {
+        "access": "public"
+    }
 }

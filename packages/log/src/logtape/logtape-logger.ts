@@ -3,6 +3,7 @@ import {
     type LogLevel as LogTapeLevel,
     type Logger as LogTapeLoggerImpl,
 } from "@logtape/logtape";
+
 import {
     AbstractLogger,
     type CategoryParam,

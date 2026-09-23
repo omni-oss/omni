@@ -2,7 +2,6 @@
 name: "@omni-oss/omni-tests"
 
 extends:
-
   - "@workspace/omni/presets/ts-vite-test.omni.yaml"
 
 dependencies:

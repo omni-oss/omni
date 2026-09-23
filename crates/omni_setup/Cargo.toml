@@ -29,7 +29,12 @@ base64 = { workspace = true }
 rmp-serde = { workspace = true }
 tokio = { workspace = true }
 omni_file_data_serde = { workspace = true }
-system_traits = { workspace = true, features = ["memory-async", "memory-sync", "real-sync", "real-async-tokio"] }
+system_traits = { workspace = true, features = [
+    "memory-async",
+    "memory-sync",
+    "real-sync",
+    "real-async-tokio",
+] }
 bon = { workspace = true }
 regex = { workspace = true }
 uuid = { workspace = true }

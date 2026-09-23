@@ -1,6 +1,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
 import { describe, expect, test } from "vitest";
+
 import { computeClosure, type ResolveFn } from "./closure";
 import { makeResolver } from "./resolvers";
 
@@ -67,9 +69,9 @@ describe("computeClosure (strategy C)", () => {
 
         // Exactly one package root recorded (dedup across the root + subpath).
         expect(result.packageRoots.length).toBe(1);
-        expect(endsWith(result.packageRoots, "node_modulesexports-fixture")).toBe(
-            true,
-        );
+        expect(
+            endsWith(result.packageRoots, "node_modulesexports-fixture"),
+        ).toBe(true);
         // The resolved package entry files are granted but the package is not
         // walked (only the real entry file was read → visitedFiles === 1).
         expect(result.visitedFiles).toBe(1);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { composeReport } from "../pipeline";
 import { makeRun } from "../testing/run-factory";
 import { MarkdownRenderer } from "./markdown";

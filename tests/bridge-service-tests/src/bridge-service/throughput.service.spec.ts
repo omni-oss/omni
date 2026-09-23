@@ -10,9 +10,11 @@
  * visible in verbose runs and CI artefacts without causing flaky failures.
  */
 import { join } from "node:path";
+
 import { ResponseStatusCode } from "@omni-oss/bridge-rpc-core";
 import { readBody } from "@omni-oss/bridge-rpc-utils/body";
 import { describe, expect, it } from "vitest";
+
 import { json, TEXT } from "@/helpers";
 
 // ---------------------------------------------------------------------------
@@ -59,151 +61,188 @@ function logThroughput(label: string, count: number, elapsedMs: number) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("bridge-service – throughput (/exec-generator-script)", {
-    timeout: 20_000,
-    concurrent: false,
-}, () => {
-    it("handles 50 concurrent requests without errors", async () => {
-        const COUNT = 50;
-        const payload: ScriptInvocation[] = [
-            {
-                path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null, output_dir: __dirname },
-            },
-        ];
+describe(
+    "bridge-service – throughput (/exec-generator-script)",
+    {
+        timeout: 20_000,
+        concurrent: false,
+    },
+    () => {
+        it("handles 50 concurrent requests without errors", async () => {
+            const COUNT = 50;
+            const payload: ScriptInvocation[] = [
+                {
+                    path: FIXTURE_SCRIPT,
+                    params: {
+                        dry_run: true,
+                        data: null,
+                        output_dir: __dirname,
+                    },
+                },
+            ];
 
-        const start = performance.now();
-        const results = await Promise.all(
-            Array.from({ length: COUNT }, () => execScript(payload)),
-        );
-        const elapsed = performance.now() - start;
-        logThroughput("50 concurrent /exec-generator-script", COUNT, elapsed);
-
-        expect(results).toHaveLength(COUNT);
-        for (const r of results) {
-            if (!r.status.equals(ResponseStatusCode.SUCCESS)) {
-                console.error("Unexpected error body:", TEXT.decode(r.body));
-            }
-            expect(r.status).toEqual(ResponseStatusCode.SUCCESS);
-        }
-    });
-
-    it("handles 200 sequential requests without framing errors", async () => {
-        const COUNT = 200;
-        const payload: ScriptInvocation[] = [
-            {
-                path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null, output_dir: __dirname },
-            },
-        ];
-
-        const start = performance.now();
-        for (let i = 0; i < COUNT; i++) {
-            const r = await execScript(payload);
-            if (!r.status.equals(ResponseStatusCode.SUCCESS)) {
-                console.error(`Request ${i} failed:`, TEXT.decode(r.body));
-            }
-            expect(r.status).toEqual(ResponseStatusCode.SUCCESS);
-        }
-        const elapsed = performance.now() - start;
-        logThroughput("200 sequential /exec-generator-script", COUNT, elapsed);
-    });
-
-    it("handles 100 concurrent requests with dry_run=true without message misrouting", async () => {
-        // All requests use dry_run=true; this validates that responses are
-        // routed back to the correct request ID under high concurrency.
-        const COUNT = 100;
-        const payload: ScriptInvocation[] = [
-            {
-                path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null, output_dir: __dirname },
-            },
-        ];
-
-        const start = performance.now();
-        const results = await Promise.all(
-            Array.from({ length: COUNT }, () => execScript(payload)),
-        );
-        const elapsed = performance.now() - start;
-        logThroughput(
-            "100 concurrent /exec-generator-script (dry_run=false)",
-            COUNT,
-            elapsed,
-        );
-
-        // Every request must complete and the status must be consistent
-        // (SUCCESS or a known application-level code – not a framing
-        // error that would manifest as an exception or a wrong body).
-        for (const r of results) {
-            // We just assert we got *a* response without an exception –
-            // not necessarily SUCCESS, because execution may fail in the
-            // application layer, but the framing must be intact.
-            expect(r.status).toBeDefined();
-            expect(r.body).toBeDefined();
-        }
-    });
-
-    it("responds to pings while exec-generator-script requests are in flight", async () => {
-        const COUNT = 30;
-        const payload: ScriptInvocation[] = [
-            {
-                path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null, output_dir: __dirname },
-            },
-        ];
-
-        // Start a wave of requests without awaiting them yet.
-        const loadPromise = Promise.all(
-            Array.from({ length: COUNT }, () => execScript(payload)),
-        );
-
-        // Issue pings while the load is running to confirm the
-        // control-plane is not starved by data-plane traffic.
-        const pings = await Promise.all([
-            TsRpc.ping(5_000),
-            TsRpc.ping(5_000),
-            TsRpc.ping(5_000),
-        ]);
-
-        await loadPromise;
-
-        for (const pong of pings) {
-            expect(pong).toBe(true);
-        }
-    });
-
-    it("handles back-to-back request bursts separated by a brief pause", async () => {
-        // Simulate a real-world usage pattern where the client fires a
-        // batch of requests, pauses, then fires another batch.
-        const BATCH_SIZE = 40;
-        const BATCHES = 3;
-        const payload: ScriptInvocation[] = [
-            {
-                path: FIXTURE_SCRIPT,
-                params: { dry_run: true, data: null, output_dir: __dirname },
-            },
-        ];
-
-        const start = performance.now();
-
-        for (let batch = 0; batch < BATCHES; batch++) {
+            const start = performance.now();
             const results = await Promise.all(
-                Array.from({ length: BATCH_SIZE }, () => execScript(payload)),
+                Array.from({ length: COUNT }, () => execScript(payload)),
+            );
+            const elapsed = performance.now() - start;
+            logThroughput(
+                "50 concurrent /exec-generator-script",
+                COUNT,
+                elapsed,
             );
 
+            expect(results).toHaveLength(COUNT);
             for (const r of results) {
+                if (!r.status.equals(ResponseStatusCode.SUCCESS)) {
+                    console.error(
+                        "Unexpected error body:",
+                        TEXT.decode(r.body),
+                    );
+                }
                 expect(r.status).toEqual(ResponseStatusCode.SUCCESS);
             }
+        });
 
-            // Brief yield between batches (mimics a real client think-time).
-            await new Promise<void>((resolve) => setTimeout(resolve, 20));
-        }
+        it("handles 200 sequential requests without framing errors", async () => {
+            const COUNT = 200;
+            const payload: ScriptInvocation[] = [
+                {
+                    path: FIXTURE_SCRIPT,
+                    params: {
+                        dry_run: true,
+                        data: null,
+                        output_dir: __dirname,
+                    },
+                },
+            ];
 
-        const elapsed = performance.now() - start;
-        logThroughput(
-            `${BATCHES} batches of ${BATCH_SIZE} /exec-generator-script`,
-            BATCHES * BATCH_SIZE,
-            elapsed,
-        );
-    });
-});
+            const start = performance.now();
+            for (let i = 0; i < COUNT; i++) {
+                const r = await execScript(payload);
+                if (!r.status.equals(ResponseStatusCode.SUCCESS)) {
+                    console.error(`Request ${i} failed:`, TEXT.decode(r.body));
+                }
+                expect(r.status).toEqual(ResponseStatusCode.SUCCESS);
+            }
+            const elapsed = performance.now() - start;
+            logThroughput(
+                "200 sequential /exec-generator-script",
+                COUNT,
+                elapsed,
+            );
+        });
+
+        it("handles 100 concurrent requests with dry_run=true without message misrouting", async () => {
+            // All requests use dry_run=true; this validates that responses are
+            // routed back to the correct request ID under high concurrency.
+            const COUNT = 100;
+            const payload: ScriptInvocation[] = [
+                {
+                    path: FIXTURE_SCRIPT,
+                    params: {
+                        dry_run: true,
+                        data: null,
+                        output_dir: __dirname,
+                    },
+                },
+            ];
+
+            const start = performance.now();
+            const results = await Promise.all(
+                Array.from({ length: COUNT }, () => execScript(payload)),
+            );
+            const elapsed = performance.now() - start;
+            logThroughput(
+                "100 concurrent /exec-generator-script (dry_run=false)",
+                COUNT,
+                elapsed,
+            );
+
+            // Every request must complete and the status must be consistent
+            // (SUCCESS or a known application-level code – not a framing
+            // error that would manifest as an exception or a wrong body).
+            for (const r of results) {
+                // We just assert we got *a* response without an exception –
+                // not necessarily SUCCESS, because execution may fail in the
+                // application layer, but the framing must be intact.
+                expect(r.status).toBeDefined();
+                expect(r.body).toBeDefined();
+            }
+        });
+
+        it("responds to pings while exec-generator-script requests are in flight", async () => {
+            const COUNT = 30;
+            const payload: ScriptInvocation[] = [
+                {
+                    path: FIXTURE_SCRIPT,
+                    params: {
+                        dry_run: true,
+                        data: null,
+                        output_dir: __dirname,
+                    },
+                },
+            ];
+
+            // Start a wave of requests without awaiting them yet.
+            const loadPromise = Promise.all(
+                Array.from({ length: COUNT }, () => execScript(payload)),
+            );
+
+            // Issue pings while the load is running to confirm the
+            // control-plane is not starved by data-plane traffic.
+            const pings = await Promise.all([
+                TsRpc.ping(5_000),
+                TsRpc.ping(5_000),
+                TsRpc.ping(5_000),
+            ]);
+
+            await loadPromise;
+
+            for (const pong of pings) {
+                expect(pong).toBe(true);
+            }
+        });
+
+        it("handles back-to-back request bursts separated by a brief pause", async () => {
+            // Simulate a real-world usage pattern where the client fires a
+            // batch of requests, pauses, then fires another batch.
+            const BATCH_SIZE = 40;
+            const BATCHES = 3;
+            const payload: ScriptInvocation[] = [
+                {
+                    path: FIXTURE_SCRIPT,
+                    params: {
+                        dry_run: true,
+                        data: null,
+                        output_dir: __dirname,
+                    },
+                },
+            ];
+
+            const start = performance.now();
+
+            for (let batch = 0; batch < BATCHES; batch++) {
+                const results = await Promise.all(
+                    Array.from({ length: BATCH_SIZE }, () =>
+                        execScript(payload),
+                    ),
+                );
+
+                for (const r of results) {
+                    expect(r.status).toEqual(ResponseStatusCode.SUCCESS);
+                }
+
+                // Brief yield between batches (mimics a real client think-time).
+                await new Promise<void>((resolve) => setTimeout(resolve, 20));
+            }
+
+            const elapsed = performance.now() - start;
+            logThroughput(
+                `${BATCHES} batches of ${BATCH_SIZE} /exec-generator-script`,
+                BATCHES * BATCH_SIZE,
+                elapsed,
+            );
+        });
+    },
+);

@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+
 import {
     dependencyChainSpec,
     makeWorkspace,
@@ -135,7 +136,9 @@ describe("+run @e2e (dependencies)", () => {
 
         const withDependents = await runOmni(
             ["run", "build", "-p", "lib", "-w", "--output-logs=all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(withDependents).toHaveSucceeded();
         expect(withDependents).toOutputContaining("LIB-BUILD");
@@ -157,7 +160,9 @@ describe("+run @e2e (dependencies)", () => {
 
         const result = await runOmni(
             ["run", "build", "--ignore-deps", "--with-dependents"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveExitCode(2);
@@ -558,7 +563,9 @@ describe("+run @cache (force + cache flag combinations)", () => {
         // Forced + non-persisted: executes fresh and writes nothing to the cache.
         const forced = await runOmni(
             ["run", "build", "--force", "--no-cache", "--output-logs=all"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
         expect(forced).toHaveSucceeded();
         expect(forced).toOutputContaining("BUILD-MARK");
@@ -645,7 +652,9 @@ describe("+run @output (dry-run + result file)", () => {
 
         const result = await runOmni(
             ["run", "build", "--dry-run", "--result", "results.json"],
-            { cwd: ws.cwd },
+            {
+                cwd: ws.cwd,
+            },
         );
 
         expect(result).toHaveSucceeded();

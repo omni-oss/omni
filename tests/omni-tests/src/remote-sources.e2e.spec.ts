@@ -9,7 +9,9 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+
 import { describe, expect, it } from "vitest";
+
 import {
     makeLocalGitRepoWithAnnotatedTag,
     makeWorkspace,
@@ -42,75 +44,81 @@ function countCommitDirs(storeGit: string): number {
     return count;
 }
 
-describe("+remote-sources @e2e (shared store)", {
-    tags: ["remote-sources"],
-}, () => {
-    it(
-        "install fetches a shared source once and a later sync reuses it",
-        async (ctx) => {
-            await skipUnlessGitCliAvailable(ctx);
+describe(
+    "+remote-sources @e2e (shared store)",
+    {
+        tags: ["remote-sources"],
+    },
+    () => {
+        it(
+            "install fetches a shared source once and a later sync reuses it",
+            async (ctx) => {
+                await skipUnlessGitCliAvailable(ctx);
 
-            const repo = await makeLocalGitRepoWithAnnotatedTag({
-                files: {
-                    "generator.omni.yaml": "name: shared\n",
-                    "content.md": "# shared\n",
-                },
-            });
-            const uri = pathToFileURL(repo.url).href;
+                const repo = await makeLocalGitRepoWithAnnotatedTag({
+                    files: {
+                        "generator.omni.yaml": "name: shared\n",
+                        "content.md": "# shared\n",
+                    },
+                });
+                const uri = pathToFileURL(repo.url).href;
 
-            // The same repo is referenced by both a generator source and a
-            // projection source, so the second subsystem must dedupe.
-            const ws = makeWorkspace({
-                workspace: {
-                    projects: ["**"],
-                    generators: [{ source: "git", uri, rev: "main" }],
-                    projections: [
-                        {
-                            source: "git",
-                            uri,
-                            rev: "main",
-                            id: "shared",
-                            routes: [
-                                {
-                                    strategy: "mirror",
-                                    allow_git: true,
-                                    allow_omni_config: true,
-                                    target: "@workspace/.agents/shared",
-                                },
-                            ],
-                        },
-                    ],
-                },
-            });
+                // The same repo is referenced by both a generator source and a
+                // projection source, so the second subsystem must dedupe.
+                const ws = makeWorkspace({
+                    workspace: {
+                        projects: ["**"],
+                        generators: [{ source: "git", uri, rev: "main" }],
+                        projections: [
+                            {
+                                source: "git",
+                                uri,
+                                rev: "main",
+                                id: "shared",
+                                routes: [
+                                    {
+                                        strategy: "mirror",
+                                        allow_git: true,
+                                        allow_omni_config: true,
+                                        target: "@workspace/.agents/shared",
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                });
 
-            const install = await runOmni(["remote-sources", "install"], {
-                cwd: ws.cwd,
-                timeout: CLONE_TIMEOUT_MS,
-            });
-            expect(install).toHaveSucceeded();
-            expect(install).toOutputContaining("materialized");
-            expect(install).toOutputContaining("deduplicated");
+                const install = await runOmni(["remote-sources", "install"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(install).toHaveSucceeded();
+                expect(install).toOutputContaining("materialized");
+                expect(install).toOutputContaining("deduplicated");
 
-            // The single committed lockfile lives at .omni/sources/lock.json,
-            // and the shared store holds exactly one commit-keyed checkout.
-            expect(ws.exists(".omni/sources/lock.json")).toBe(true);
-            const storeGit = ws.path(".omni/sources/store/git");
-            expect(countCommitDirs(storeGit)).toBe(1);
+                // The single committed lockfile lives at .omni/sources/lock.json,
+                // and the shared store holds exactly one commit-keyed checkout.
+                expect(ws.exists(".omni/sources/lock.json")).toBe(true);
+                const storeGit = ws.path(".omni/sources/store/git");
+                expect(countCommitDirs(storeGit)).toBe(1);
 
-            const lockAfterInstall = ws.read(".omni/sources/lock.json");
+                const lockAfterInstall = ws.read(".omni/sources/lock.json");
 
-            // A following projection sync is a cache hit: it applies the mirror
-            // but re-clones nothing and leaves the lockfile byte-identical.
-            const sync = await runOmni(["projection", "sync"], {
-                cwd: ws.cwd,
-                timeout: CLONE_TIMEOUT_MS,
-            });
-            expect(sync).toHaveSucceeded();
-            expect(ws.exists(".agents/shared/content.md")).toBe(true);
+                // A following projection sync is a cache hit: it applies the mirror
+                // but re-clones nothing and leaves the lockfile byte-identical.
+                const sync = await runOmni(["projection", "sync"], {
+                    cwd: ws.cwd,
+                    timeout: CLONE_TIMEOUT_MS,
+                });
+                expect(sync).toHaveSucceeded();
+                expect(ws.exists(".agents/shared/content.md")).toBe(true);
 
-            expect(ws.read(".omni/sources/lock.json")).toBe(lockAfterInstall);
-            expect(countCommitDirs(storeGit)).toBe(1);
-        },
-        CLONE_TIMEOUT_MS,
-    );
-});
+                expect(ws.read(".omni/sources/lock.json")).toBe(
+                    lockAfterInstall,
+                );
+                expect(countCommitDirs(storeGit)).toBe(1);
+            },
+            CLONE_TIMEOUT_MS,
+        );
+    },
+);
