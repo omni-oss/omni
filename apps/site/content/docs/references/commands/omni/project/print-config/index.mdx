@@ -1,0 +1,53 @@
+---
+
+title: "print-config"
+
+---
+
+
+
+## Usage
+
+```bash
+omni project print-config [OPTIONS] <project_name>
+```
+
+---
+
+## Positional arguments
+
+### `<project_name>`
+
+- **Required:** Yes
+
+---
+
+## Options
+
+### `-f`, `--format`
+
+Format to use when serializing
+
+- **Required:** No
+
+- **Default:** `json`
+
+- **Possible values:** `json`, `yaml`, `toml`
+
+### `-r`, `--raw`
+
+Only print the raw configuration syntax, no logs will be added
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni project print-config [OPTIONS] <project_name>
+```
+
+---

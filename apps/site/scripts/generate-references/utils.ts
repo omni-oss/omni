@@ -1,6 +1,7 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import nodePath from "node:path";
+
 import type { VirtualFileSystem } from "./fs";
 
 export async function copyToVfsIfExists(

@@ -1,26 +1,32 @@
-node_modules
-.DS_Store
 dist
-dist-ssr
-*.local
-.env
-.nitro
-.tanstack
 .wrangler
-content/*
-.vercel
 .output
-dist
+.vercel
+.netlify
+.vinxi
+app.config.timestamp_*.js
 
-## Panda
-styled-system/css
-styled-system/jsx
-styled-system/patterns
-styled-system/recipes
-styled-system/tokens
-styled-system/types
-styled-system/helpers.mjs
+# Environment
+.env
+.env*.local
 
-styled-system-studio
+# dependencies
+/node_modules
 
+# IDEs and editors
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+
+# Temp
+gitignore
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Generated files
 omni-declspec.json
+styled-system

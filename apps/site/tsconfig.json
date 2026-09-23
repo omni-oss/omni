@@ -1,28 +1,25 @@
 {
-  "include": ["**/*.ts", "**/*.tsx", "src", "styled-system"],
-  "compilerOptions": {
-    "target": "ES2022",
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "module": "ESNext",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "extends": ["@omni-oss/tsconfig/base.json"],
+    "compilerOptions": {
+        // General
+        "jsx": "preserve",
+        "jsxImportSource": "@solidjs/web",
+        "target": "ESNext",
 
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
+        // Modules
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "noEmit": true,
 
-    /* Linting */
-    "skipLibCheck": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "paths": {
-        "~/*": ["./styled-system/*"]
+        // Type Checking & Safety
+        "strict": true,
+        "skipLibCheck": true,
+        "types": ["vite/client"],
+        "paths": {
+          "$/*": ["./styled-system/*"]
+        }
     }
-  }
 }

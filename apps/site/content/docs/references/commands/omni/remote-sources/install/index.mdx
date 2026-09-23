@@ -1,0 +1,69 @@
+---
+
+title: "install"
+
+description: "Prefetch and pin every remote source declared in the workspace"
+
+---
+
+
+
+## Usage
+
+```bash
+omni remote-sources install [OPTIONS]
+```
+
+---
+
+## Options
+
+### `--update`
+
+Advance mutable refs by re-resolving branches or tags and re-pinning them
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--generators`
+
+Process generator sources
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--tools`
+
+Process tool sources
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--projections`
+
+Process projection sources
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni remote-sources install [OPTIONS]
+```
+
+---

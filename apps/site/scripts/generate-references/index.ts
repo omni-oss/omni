@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import nodePath from "node:path";
+
 import { Command } from "@commander-js/extra-typings";
+
 import { generateRefDocsFromSpec } from "./declspec-docgen";
 import { VirtualFileSystem } from "./fs";
 import { copyToVfsIfExists } from "./utils";

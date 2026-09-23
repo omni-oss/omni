@@ -11,3 +11,20 @@ tasks:
     persistent: true
     cache:
       enabled: false
+
+  test:e2e:
+    exec: bun run vitest --config ./vitest.config.e2e.ts run
+    cache:
+      key:
+        files:
+          append:
+            - "./vite.config.ts"
+            - "./vitest.config.e2e.ts"
+    dependencies:
+      append:
+        - ^test:e2e
+
+  test:
+    dependencies:
+      append:
+        - test:e2e

@@ -1,0 +1,175 @@
+---
+
+title: "omni"
+
+description: "omni is development workflow orchestration tool"
+
+version: "0.21.0"
+
+author: "Clarence Manuel &lt;rencedm112@gmail.com&gt;"
+
+---
+
+
+
+
+Flexible task runner and scaffolding CLI for streamlined development workflows.
+
+
+## Usage
+
+```bash
+omni [OPTIONS] <SUBCOMMAND>
+```
+
+---
+
+## Options
+
+### `-l`, `--stdout-log-level`
+
+Max level of logs to stdout
+
+- **Required:** No
+
+- **Default:** `info`
+
+- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
+
+- **Environment variable:** `OMNI_STDOUT_LOG_LEVEL`
+
+### `-t`, `--stdout-show-traces`
+
+Include traces to stdout
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+- **Environment variable:** `OMNI_STDOUT_SHOW_TRACES`
+
+### `--stderr-log-level`
+
+Max level of logs to stderr
+
+- **Required:** No
+
+- **Default:** `off`
+
+- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
+
+- **Environment variable:** `OMNI_STDERR_LOG_LEVEL`
+
+### `--stderr-show-traces`
+
+Include error traces to stderr
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+- **Environment variable:** `OMNI_STDERR_SHOW_TRACES`
+
+### `--file-trace-output`
+
+The file to write traces to
+
+- **Required:** No
+
+- **Default:** `./.omni/trace/omni.log`
+
+### `-f`, `--file-trace-level`
+
+The trace level to use for file traces
+
+- **Required:** No
+
+- **Default:** `off`
+
+- **Possible values:** `off`, `error`, `warn`, `info`, `debug`, `trace`
+
+- **Environment variable:** `OMNI_FILE_TRACE_LEVEL`
+
+### `-r`, `--env-root-dir-marker`
+
+The file which marks the root dir where to stop looking for env files
+
+- **Required:** No
+
+- **Default:** `workspace.omni.yaml`
+
+### `-e`, `--env-file`
+
+The env files to load per directory
+
+- **Required:** No
+
+### `--env`
+
+The environment to use
+
+- **Required:** No
+
+- **Environment variable:** `OMNI_ENV`
+
+### `-i`, `--inherit-env-vars`
+
+Inherit environment variables from the parent process
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Subcommands
+
+- [`env`](omni/env) - Output environment variabls values
+
+- [`exec`](omni/exec) - Execute an ad-hoc command in projects
+
+- [`config`](omni/config) - Print configuration schemas in JSON
+
+- [`completion`](omni/completion) - Print shell completions
+
+- [`run`](omni/run) - Execute specified task in projects
+
+- [`hash`](omni/hash) - Get hash for workspace or projects
+
+- [`declspec`](omni/declspec) - Generate machine readable CLI specification
+
+- [`cache`](omni/cache) - Cache related subcommands
+
+- [`generator`](omni/generator) - Code generation related subcommands
+
+- [`init`](omni/init) - Initialize a new workspace in the current directory
+
+- [`project`](omni/project) - Project related commands
+
+- [`projection`](omni/projection) - Materialize files from sources into the workspace via links
+
+- [`pack`](omni/pack) - Inspect source packs declared in the workspace
+
+- [`tool`](omni/tool) - Tool related subcommands
+
+- [`remote-sources`](omni/remote-sources) - Prefetch and pin remote sources for every subsystem
+
+- [`ignore`](omni/ignore) - Maintain omni's managed block in ignore files (.gitignore, .ignore, .omniignore)
+
+- [`mcp`](omni/mcp) - Start an MCP server for AI agent integration
+
+---
+
+## Examples
+
+```bash
+omni [OPTIONS] <SUBCOMMAND>
+```
+
+---

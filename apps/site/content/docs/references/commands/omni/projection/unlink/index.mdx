@@ -1,0 +1,59 @@
+---
+
+title: "unlink"
+
+description: "Remove the links recorded for a projection source"
+
+---
+
+
+
+## Usage
+
+```bash
+omni projection unlink [OPTIONS] <id>
+```
+
+---
+
+## Positional arguments
+
+### `<id>`
+
+The id of the projection source to tear down
+
+- **Required:** Yes
+
+---
+
+## Options
+
+### `--clean-backups`
+
+Also remove any backups taken when the links were created
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--restore-backups`
+
+Restore any backups taken when the links were created to their original destinations
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni projection unlink [OPTIONS] <id>
+```
+
+---

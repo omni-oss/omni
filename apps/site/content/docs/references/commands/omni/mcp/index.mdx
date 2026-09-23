@@ -1,0 +1,37 @@
+---
+
+title: "mcp"
+
+description: "Start an MCP server for AI agent integration"
+
+---
+
+
+
+## Usage
+
+```bash
+omni mcp [OPTIONS]
+```
+
+---
+
+## Options
+
+### `--root-dir`
+
+Workspace root directory. When omitted, omni walks up from the current working directory to find an `workspace.omni.yaml` file. MCP clients should set this to the workspace root so the server works correctly regardless of the client's own working directory. It also sets the current dir of the process. Can also be set via the `OMNI_ROOT_DIR` environment variable
+
+- **Required:** No
+
+- **Environment variable:** `OMNI_ROOT_DIR`
+
+---
+
+## Examples
+
+```bash
+omni mcp [OPTIONS]
+```
+
+---

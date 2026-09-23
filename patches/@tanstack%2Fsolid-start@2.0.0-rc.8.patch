@@ -1,0 +1,351 @@
+diff --git a/LICENSE b/LICENSE
+old mode 100644
+new mode 100755
+diff --git a/README.md b/README.md
+old mode 100644
+new mode 100755
+diff --git a/dist/default-entry/esm/server.d.ts b/dist/default-entry/esm/server.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/default-entry/esm/server.js b/dist/default-entry/esm/server.js
+old mode 100644
+new mode 100755
+diff --git a/dist/default-entry/esm/server.js.map b/dist/default-entry/esm/server.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/default-entry/esm/start.d.ts b/dist/default-entry/esm/start.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client-only.d.ts b/dist/esm/client-only.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client-only.js b/dist/esm/client-only.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client-rpc.d.ts b/dist/esm/client-rpc.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client-rpc.js b/dist/esm/client-rpc.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client-rpc.js.map b/dist/esm/client-rpc.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client.d.ts b/dist/esm/client.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/client.js b/dist/esm/client.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/createSolidStartHandler.d.ts b/dist/esm/createSolidStartHandler.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/createSolidStartHandler.js b/dist/esm/createSolidStartHandler.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/createSolidStartHandler.js.map b/dist/esm/createSolidStartHandler.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-plugin-adapters.d.ts b/dist/esm/empty-plugin-adapters.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-plugin-adapters.js b/dist/esm/empty-plugin-adapters.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-plugin-adapters.js.map b/dist/esm/empty-plugin-adapters.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-start-entry.d.ts b/dist/esm/empty-start-entry.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-start-entry.js b/dist/esm/empty-start-entry.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/empty-start-entry.js.map b/dist/esm/empty-start-entry.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/hydration.d.ts b/dist/esm/hydration.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/hydration.js b/dist/esm/hydration.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/rsbuild.d.ts b/dist/esm/plugin/rsbuild.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/rsbuild.js b/dist/esm/plugin/rsbuild.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/rsbuild.js.map b/dist/esm/plugin/rsbuild.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/shared.d.ts b/dist/esm/plugin/shared.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/shared.js b/dist/esm/plugin/shared.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/shared.js.map b/dist/esm/plugin/shared.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/vite.d.ts b/dist/esm/plugin/vite.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/vite.js b/dist/esm/plugin/vite.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/plugin/vite.js.map b/dist/esm/plugin/vite.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-functions-handler.d.ts b/dist/esm/server-functions-handler.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-functions-handler.js b/dist/esm/server-functions-handler.js
+old mode 100644
+new mode 100755
+index fc6d49794629fddf4241aa8548d819a332fa24da..61893ebef2b0761b142c72972e5063bdf3eaa1fa
+--- a/dist/esm/server-functions-handler.js
++++ b/dist/esm/server-functions-handler.js
+@@ -1,7 +1,7 @@
+ import { getSolidStartServerFunctionCodec } from "./solid-rpc-codec.js";
+ import { collectSolidStartFlightData } from "./solid-rpc-flight-server.js";
+ import { redirect } from "@tanstack/solid-router";
+-import { configureServerFunctionsServer, createNoJSHandler, handleServerFunctionRequest, parseServerFunctionUrl, registerFlightDataSource, serverFunctionUrl } from "@solidjs/web/server-functions/server";
++import { configureServerFunctionsServer, createNoJSHandler, handleServerFunctionRequest, parseServerFunctionActionUrl, registerFlightDataSource, serverFunctionUrl } from "@solidjs/web/server-functions/server";
+ import { getServerFnById } from "#tanstack-start-server-fn-resolver";
+ import { provideRequestEvent } from "@solidjs/web/storage";
+ import { getStartContext, runWithStartContext } from "@tanstack/start-storage-context";
+@@ -47,7 +47,7 @@ async function handleSolidServerFunctionRequest(request, options = {}) {
+ 	}, handleRequest);
+ }
+ function getSolidServerFunctionId(request) {
+-	const parsedId = parseServerFunctionUrl(request.url);
++	const parsedId = parseServerFunctionActionUrl(request.url);
+ 	if (parsedId) return parsedId;
+ 	const url = new URL(request.url);
+ 	const queryId = url.searchParams.get("id");
+@@ -56,7 +56,7 @@ function getSolidServerFunctionId(request) {
+ 	if (serverFnBase && url.pathname.startsWith(serverFnBase)) return url.pathname.slice(serverFnBase.length).split("/")[0];
+ }
+ function withSolidServerFunctionId(request, serverFnId) {
+-	if (parseServerFunctionUrl(request.url) === serverFnId) return request;
++	if (parseServerFunctionActionUrl(request.url) === serverFnId) return request;
+ 	const url = new URL(request.url);
+ 	const canonicalUrl = new URL(serverFunctionUrl(serverFnId), url.origin);
+ 	canonicalUrl.search = url.search;
+diff --git a/dist/esm/server-functions-handler.js.map b/dist/esm/server-functions-handler.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-only.d.ts b/dist/esm/server-only.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-only.js b/dist/esm/server-only.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-rpc.d.ts b/dist/esm/server-rpc.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-rpc.js b/dist/esm/server-rpc.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server-rpc.js.map b/dist/esm/server-rpc.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server.d.ts b/dist/esm/server.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/server.js b/dist/esm/server.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-codec.d.ts b/dist/esm/solid-rpc-codec.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-codec.js b/dist/esm/solid-rpc-codec.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-codec.js.map b/dist/esm/solid-rpc-codec.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-client.d.ts b/dist/esm/solid-rpc-flight-client.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-client.js b/dist/esm/solid-rpc-flight-client.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-client.js.map b/dist/esm/solid-rpc-flight-client.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-server.d.ts b/dist/esm/solid-rpc-flight-server.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-server.js b/dist/esm/solid-rpc-flight-server.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight-server.js.map b/dist/esm/solid-rpc-flight-server.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight.d.ts b/dist/esm/solid-rpc-flight.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight.js b/dist/esm/solid-rpc-flight.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-flight.js.map b/dist/esm/solid-rpc-flight.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-payload.d.ts b/dist/esm/solid-rpc-payload.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-payload.js b/dist/esm/solid-rpc-payload.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/solid-rpc-payload.js.map b/dist/esm/solid-rpc-payload.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/ssr-rpc.d.ts b/dist/esm/ssr-rpc.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/ssr-rpc.js b/dist/esm/ssr-rpc.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/ssr-rpc.js.map b/dist/esm/ssr-rpc.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/useServerFn.d.ts b/dist/esm/useServerFn.d.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/useServerFn.js b/dist/esm/useServerFn.js
+old mode 100644
+new mode 100755
+diff --git a/dist/esm/useServerFn.js.map b/dist/esm/useServerFn.js.map
+old mode 100644
+new mode 100755
+diff --git a/dist/plugin/default-entry/client.tsx b/dist/plugin/default-entry/client.tsx
+old mode 100644
+new mode 100755
+diff --git a/dist/plugin/default-entry/server.ts b/dist/plugin/default-entry/server.ts
+old mode 100644
+new mode 100755
+diff --git a/dist/plugin/default-entry/start.ts b/dist/plugin/default-entry/start.ts
+old mode 100644
+new mode 100755
+diff --git a/package.json b/package.json
+old mode 100644
+new mode 100755
+diff --git a/skills/solid-start/SKILL.md b/skills/solid-start/SKILL.md
+old mode 100644
+new mode 100755
+diff --git a/src/client-only.ts b/src/client-only.ts
+old mode 100644
+new mode 100755
+diff --git a/src/client-rpc.ts b/src/client-rpc.ts
+old mode 100644
+new mode 100755
+diff --git a/src/client.tsx b/src/client.tsx
+old mode 100644
+new mode 100755
+diff --git a/src/createSolidStartHandler.ts b/src/createSolidStartHandler.ts
+old mode 100644
+new mode 100755
+diff --git a/src/default-entry/client.tsx b/src/default-entry/client.tsx
+old mode 100644
+new mode 100755
+diff --git a/src/default-entry/server.ts b/src/default-entry/server.ts
+old mode 100644
+new mode 100755
+diff --git a/src/default-entry/start.ts b/src/default-entry/start.ts
+old mode 100644
+new mode 100755
+diff --git a/src/empty-plugin-adapters.ts b/src/empty-plugin-adapters.ts
+old mode 100644
+new mode 100755
+diff --git a/src/empty-start-entry.ts b/src/empty-start-entry.ts
+old mode 100644
+new mode 100755
+diff --git a/src/hydration.ts b/src/hydration.ts
+old mode 100644
+new mode 100755
+diff --git a/src/index.ts b/src/index.ts
+old mode 100644
+new mode 100755
+diff --git a/src/plugin/rsbuild.ts b/src/plugin/rsbuild.ts
+old mode 100644
+new mode 100755
+diff --git a/src/plugin/shared.ts b/src/plugin/shared.ts
+old mode 100644
+new mode 100755
+diff --git a/src/plugin/vite.ts b/src/plugin/vite.ts
+old mode 100644
+new mode 100755
+diff --git a/src/server-functions-handler.ts b/src/server-functions-handler.ts
+old mode 100644
+new mode 100755
+index 6dd10d49001d3a1e62ff18f21725b3226554d24a..372df4f2974585f4a2ba05a25c2341a73bb56f42
+--- a/src/server-functions-handler.ts
++++ b/src/server-functions-handler.ts
+@@ -2,7 +2,7 @@ import {
+   configureServerFunctionsServer,
+   createNoJSHandler,
+   handleServerFunctionRequest,
+-  parseServerFunctionUrl,
++  parseServerFunctionActionUrl,
+   registerFlightDataSource,
+   serverFunctionUrl,
+ } from '@solidjs/web/server-functions/server'
+@@ -94,7 +94,7 @@ export async function handleSolidServerFunctionRequest(
+ }
+ 
+ function getSolidServerFunctionId(request: Request) {
+-  const parsedId = parseServerFunctionUrl(request.url)
++  const parsedId = parseServerFunctionActionUrl(request.url)
+   if (parsedId) {
+     return parsedId
+   }
+@@ -117,7 +117,7 @@ function withSolidServerFunctionId(request: Request, serverFnId: string) {
+   // Solid resolves the function id from the request URL's pathname
+   // (endpoint mount + id segment). Requests that carried the id some other
+   // way (e.g. an `?id=` query) are rewritten onto that canonical shape.
+-  if (parseServerFunctionUrl(request.url) === serverFnId) {
++  if (parseServerFunctionActionUrl(request.url) === serverFnId) {
+     return request
+   }
+ 
+diff --git a/src/server-only.ts b/src/server-only.ts
+old mode 100644
+new mode 100755
+diff --git a/src/server-rpc.ts b/src/server-rpc.ts
+old mode 100644
+new mode 100755
+diff --git a/src/server.tsx b/src/server.tsx
+old mode 100644
+new mode 100755
+diff --git a/src/solid-rpc-codec.ts b/src/solid-rpc-codec.ts
+old mode 100644
+new mode 100755
+diff --git a/src/solid-rpc-flight-client.ts b/src/solid-rpc-flight-client.ts
+old mode 100644
+new mode 100755
+diff --git a/src/solid-rpc-flight-server.ts b/src/solid-rpc-flight-server.ts
+old mode 100644
+new mode 100755
+diff --git a/src/solid-rpc-flight.ts b/src/solid-rpc-flight.ts
+old mode 100644
+new mode 100755
+diff --git a/src/solid-rpc-payload.ts b/src/solid-rpc-payload.ts
+old mode 100644
+new mode 100755
+diff --git a/src/ssr-rpc.ts b/src/ssr-rpc.ts
+old mode 100644
+new mode 100755
+diff --git a/src/tanstack-start.d.ts b/src/tanstack-start.d.ts
+old mode 100644
+new mode 100755
+diff --git a/src/useServerFn.ts b/src/useServerFn.ts
+old mode 100644
+new mode 100755

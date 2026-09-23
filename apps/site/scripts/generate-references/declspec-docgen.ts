@@ -1,5 +1,7 @@
 import nodePath from "node:path";
+
 import { z } from "zod";
+
 import type { FileSystem } from "./fs";
 
 const CliArgSchema = z.object({
@@ -37,45 +39,42 @@ type CliArg = z.infer<typeof CliArgSchema>;
 type CliCommand = z.infer<typeof CliCommandSchema>;
 
 class DeclspecMdxDocGenerator {
+    private basePath: string;
+
     constructor(
         private fs: FileSystem,
-        private basePath?: string,
-    ) {}
-
-    async generateDocs(command: CliCommand, basePath: string = "") {
-        await this.generateCommandDocs([], command, basePath);
+        fsBasePath?: string,
+    ) {
+        this.basePath = fsBasePath ?? "";
     }
 
-    private async generateCommandDocs(
-        parents: string[],
-        command: CliCommand,
-        currentPath: string,
-    ) {
-        const commandPath = currentPath
-            ? `${currentPath}/${command.name}`
-            : command.name;
+    async generateDocs(command: CliCommand) {
+        await this.generateCommandDocs([], command);
+    }
 
-        const p = parents.concat(command.name);
+    private async generateCommandDocs(parents: string[], command: CliCommand) {
+        const commandFsPath =
+            parents.length !== 0
+                ? `${parents.join("/")}/${command.name}`
+                : command.name;
+        const hasSubcommands = command.subcommands.length > 0;
+        const path = hasSubcommands
+            ? `${commandFsPath}.mdx`
+            : `${commandFsPath}/index.mdx`;
 
-        if (command.subcommands.length > 0) {
-            const indexPath = `${commandPath}/index.mdx`;
+        const content = this.generateCommandMdx(
+            parents,
+            command,
+            hasSubcommands,
+        );
+        await this.writeFile(path, content);
 
-            const indexContent = this.generateCommandMdx(
-                parents,
-                command,
-                true,
-            );
-            await this.writeFile(indexPath, indexContent);
-
-            // Generate docs for each subcommand
+        // Generate docs for each subcommand
+        if (hasSubcommands) {
+            const newParents = parents.concat(command.name);
             for (const subcommand of command.subcommands) {
-                await this.generateCommandDocs(p, subcommand, commandPath);
+                await this.generateCommandDocs(newParents, subcommand);
             }
-        } else {
-            // Leaf command - create individual mdx file
-            const filePath = `${commandPath}.mdx`;
-            const content = this.generateCommandMdx(parents, command, false);
-            await this.writeFile(filePath, content);
         }
     }
 
@@ -171,7 +170,7 @@ class DeclspecMdxDocGenerator {
             mdx.push("---");
             mdx.push("## Subcommands");
             for (const subcommand of command.subcommands) {
-                const subcommandLink = `./${subcommand.name}`;
+                const subcommandLink = `${command.name}/${subcommand.name}`;
                 mdx.push(
                     `- [\`${subcommand.name}\`](${subcommandLink}) - ${subcommand.about || "No description"}`,
                 );

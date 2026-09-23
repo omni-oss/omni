@@ -1,0 +1,38 @@
+---
+title: "hello"
+description: "MDX rendering spike for the Solid + TanStack docs site"
+---
+
+# Hello from MDX
+
+This page is compiled from `content/docs/hello.mdx` by `@mdx-js/rollup` and
+rendered with **Solid** components supplied through the `MDXProvider`. If the
+heading above is styled and this text renders, the whole pipeline works
+end-to-end under SSR.
+
+## Why this proves the pipeline
+
+- Standard markdown elements render through custom Solid components.
+- Frontmatter (`title`, `description`) is parsed by `remark-mdx-frontmatter`
+  instead of being rendered as a thematic break.
+- Fenced code blocks work and flow through the custom `pre`/`code` components:
+
+```bash
+omni run build --project @omni-oss/site
+```
+
+- [An internal link](/docs/hello) and an [external link](https://mdxjs.com)
+  are handled differently by the custom `a` component (the external one opens
+  in a new tab).
+
+## A GFM table
+
+| Flag | Description         |
+| ---- | ------------------- |
+| `-d` | delete output first |
+| `-h` | print help and exit |
+
+---
+
+Text after a thematic break (`---`), confirming that only the leading block is
+treated as frontmatter.

@@ -1,0 +1,53 @@
+---
+
+title: "stats"
+
+description: "Show statistics about the cache"
+
+---
+
+
+
+## Usage
+
+```bash
+omni cache stats [OPTIONS]
+```
+
+---
+
+## Options
+
+### `-p`, `--project`
+
+Filter the cache entries by project name, accepts glob patterns
+
+- **Required:** No
+
+### `-t`, `--task`
+
+Filter the cache entries by task name, accepts glob patterns
+
+- **Required:** No
+
+### `--dir`
+
+Filter the cache entries by the directory the owning project resides in, accepts glob patterns. Only matches tasks present in the current workspace
+
+- **Required:** No
+
+### `-m`, `--meta`
+
+Filter the cache entries by the task meta configuration, accepts CEL syntax. Only matches tasks present in the current workspace
+
+- **Required:** No
+
+---
+
+## Examples
+
+```bash
+omni cache stats [OPTIONS]
+```
+
+---

@@ -1,0 +1,49 @@
+---
+
+title: "sync"
+
+description: "Patch omni's managed block into every configured ignore file"
+
+---
+
+
+
+## Usage
+
+```bash
+omni ignore sync [OPTIONS]
+```
+
+---
+
+## Options
+
+### `--dry-run`
+
+Print the block that would be written without touching any file
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--check`
+
+Exit non-zero if any file is missing the block or out of date; writes nothing
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni ignore sync [OPTIONS]
+```
+
+---

@@ -1,0 +1,73 @@
+---
+
+title: "run"
+
+description: "Run a tool"
+
+---
+
+
+
+## Usage
+
+```bash
+omni tool run [OPTIONS] <name>
+```
+
+---
+
+## Positional arguments
+
+### `<name>`
+
+Name of the tool to run
+
+- **Required:** Yes
+
+---
+
+## Options
+
+### `--args-json`
+
+Tool arguments as a JSON object; merged under any --arg flags
+
+- **Required:** No
+
+### `--arg`
+
+A single k=v argument (repeatable); overrides matching --args-json keys. The value is parsed as JSON when possible, else treated as a string
+
+- **Required:** No
+
+### `--cwd`
+
+Directory the tool operates in (relative paths resolve here); mutually exclusive with --project
+
+- **Required:** No
+
+### `-p`, `--project`
+
+Run the tool in this project's directory; mutually exclusive with --cwd
+
+- **Required:** No
+
+### `--pretty`
+
+Pretty-print the JSON output
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni tool run [OPTIONS] <name>
+```
+
+---

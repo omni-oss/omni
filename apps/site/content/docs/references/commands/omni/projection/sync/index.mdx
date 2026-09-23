@@ -1,0 +1,71 @@
+---
+
+title: "sync"
+
+description: "Materialize configured projections into the workspace"
+
+---
+
+
+
+## Usage
+
+```bash
+omni projection sync [OPTIONS]
+```
+
+---
+
+## Options
+
+### `--dry-run`
+
+Compute the plan without touching the filesystem
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--force`
+
+Re-apply and repair every link even when its pin is unchanged
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--update`
+
+Re-resolve mutable git revisions (e.g. branches) before applying
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--source`
+
+Limit the pass to the projection source with this id
+
+- **Required:** No
+
+### `--max-depth`
+
+Override the maximum meta-bundle nesting depth (default 16)
+
+- **Required:** No
+
+---
+
+## Examples
+
+```bash
+omni projection sync [OPTIONS]
+```
+
+---

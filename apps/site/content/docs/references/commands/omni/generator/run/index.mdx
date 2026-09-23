@@ -1,0 +1,107 @@
+---
+
+title: "run"
+
+---
+
+
+
+## Usage
+
+```bash
+omni generator run [OPTIONS]
+```
+
+---
+
+## Options
+
+### `-n`, `--name`
+
+Generator name
+
+- **Required:** No
+
+### `-p`, `--project`
+
+If provided, it will use the project's directory as output path
+
+- **Required:** No
+
+### `-o`, `--output`
+
+Output path
+
+- **Required:** No
+
+### `-t`, `--target`
+
+Override target paths
+
+- **Required:** No
+
+### `-d`, `--dry-run`
+
+Dry run
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+### `--overwrite`
+
+How to handle overwriting existing files, takes precedence over the generator's configuration
+
+- **Required:** No
+
+- **Possible values:** `prompt`, `always`, `never`
+
+### `--save-session`
+
+Save inputs and targets to the output directory so they can be reused future invocations
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+### `--ignore-session`
+
+Don't load the session from the output directory
+
+- **Required:** No
+
+- **Possible values:** `true`, `false`
+
+### `--max-depth`
+
+Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default.
+
+- **Required:** No
+
+### `-v`, `--value`
+
+Prefill values to inputs
+
+- **Required:** No
+
+### `--use-defaults`
+
+Use default values for inputs
+
+- **Required:** No
+
+- **Default:** `false`
+
+- **Possible values:** `true`, `false`
+
+---
+
+## Examples
+
+```bash
+omni generator run [OPTIONS]
+```
+
+---
