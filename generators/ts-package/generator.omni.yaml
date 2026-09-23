@@ -165,7 +165,7 @@ actions:
         pattern: "@anchor:new-typescript-package"
 
   - type: transform-many
-    command: bun x biome format --stdin-file-path=$FILEPATH
+    command: bun x oxfmt --stdin-filepath=$FILEPATH
     supports_dry_run: true
     files:
       - "**/*.ts"
