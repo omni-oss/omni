@@ -17,6 +17,7 @@
         "@typescript/typescript6": "catalog:",
         "@vitest/coverage-v8": "catalog:",
         "oxfmt": "catalog:",
+        "oxlint": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
         "vitest": "catalog:",
