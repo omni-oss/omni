@@ -471,8 +471,9 @@ pub enum DeltaSaveOutcome {
     Clone, serde::Serialize, serde::Deserialize, Default, Debug, PartialEq,
 )]
 struct DataImpl {
+    #[serde(default)]
     targets: UnorderedMap<String, OmniPath>,
-    #[serde(alias = "prompts")]
+    #[serde(default, alias = "prompts")]
     inputs: UnorderedMap<String, serde_json::Value>,
 }
 
@@ -1732,6 +1733,22 @@ mod tests {
         };
         let json = serde_json::to_string(&with_root).unwrap();
         assert!(json.contains("\"root\":true"));
+    }
+
+    #[tokio::test]
+    async fn test_hand_written_entry_without_targets_parses() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true, "scaffold": { "inputs": { "scope": "@acme" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
+        assert!(file.root);
+        let entry = file.generators.get("scaffold").unwrap();
+        assert!(entry.targets.is_empty());
+        assert_eq!(
+            entry.inputs.get("scope"),
+            Some(&serde_json::json!("@acme"))
+        );
     }
 
     #[tokio::test]
