@@ -100,6 +100,11 @@ pub struct GeneratorRunParams {
         description = "When true, the generator will ignore any sessions's saved inputs and targets for current run."
     )]
     pub ignore_session: bool,
+    #[serde(default = "default_true")]
+    #[schemars(
+        description = "When true, session files from the output directory up to the workspace root are merged when restoring (deeper files win). When false, only the output directory's own session file is read and written."
+    )]
+    pub inherit_session: bool,
     #[serde(default)]
     #[schemars(
         description = "Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default."
