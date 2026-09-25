@@ -80,6 +80,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 omni_context = { workspace = true }
 omni_tracing_subscriber = { workspace = true }
+omni_input_provider = { workspace = true, features = ["test-utils"] }
 system_traits = { workspace = true, features = [
     "real-sync",
     "real-async-tokio",

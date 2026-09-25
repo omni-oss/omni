@@ -34,6 +34,7 @@ use omni_context::{Context, ContextSys, LoadedContext};
 use omni_generator::{GeneratorSys, RunConfig};
 use omni_messages::GeneratorEventSubscriber;
 use omni_remote_source::{RemoteSource, RemoteSourceRef, sys::RemoteSourceSys};
+use sets::UnorderedSet;
 use tokio::task::JoinSet;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -60,6 +61,10 @@ pub struct GeneratorRunRequest {
     pub save_session: Option<bool>,
     /// Skip loading an existing session from disk even if one exists.
     pub ignore_session: Option<bool>,
+    /// Merge session files from `output_dir` up to the workspace root when
+    /// restoring (deeper files win). `None` enables it; `Some(false)` restricts
+    /// restore and save to the output directory's own session file.
+    pub inherit_session: Option<bool>,
     /// Pre-filled prompt values (key → value bag).
     #[schemars(with = "UnorderedMap<String, serde_json::Value>")]
     pub input_values: UnorderedMap<String, OwnedValueBag>,
@@ -180,22 +185,73 @@ where
     let gen_output_dir = output_dir.join(GEN_DIR);
     let session_file = output_dir.join(GEN_FILE);
 
+    let pinned_targets: UnorderedSet<String> =
+        target_overrides.keys().cloned().collect();
+    let pinned_inputs: UnorderedSet<String> =
+        req.input_values.keys().cloned().collect();
+
     let mut pre_exec_values = req.input_values;
     let mut target_overrides = target_overrides;
 
-    // Restore saved session unless caller asked us to ignore it.
-    let mut had_existing_session = false;
-    if !req.ignore_session.unwrap_or(false)
-        && sys.fs_exists_no_err_async(&session_file).await
-    {
-        let session =
-            omni_generator::GenSession::from_disk(session_file.as_path(), &sys)
-                .await?;
-        had_existing_session = true;
-        session
+    // Restore saved sessions unless the caller asked us to ignore them. When
+    // inheritance is enabled (the default), walk from the output directory up to
+    // the workspace root collecting every `.omni/generator.json`, stopping after
+    // a file marked `root: true`. Deeper files win over shallower ancestors.
+    let ignore_session = req.ignore_session.unwrap_or(false);
+    let inherit_session = req.inherit_session.unwrap_or(true);
+
+    let mut session_chain: Vec<PathBuf> = Vec::new();
+    if !ignore_session {
+        let mut dir = output_dir.clone();
+        loop {
+            let file = dir.join(GEN_FILE);
+            if sys.fs_exists_no_err_async(&file).await {
+                let rooted =
+                    omni_generator::GenSession::is_root_marked(&file, &sys)
+                        .await?;
+                session_chain.push(file);
+                if rooted {
+                    break;
+                }
+            }
+
+            if !inherit_session || dir == workspace_dir {
+                break;
+            }
+
+            match dir.parent() {
+                Some(parent) if parent.starts_with(&workspace_dir) => {
+                    dir = parent.to_path_buf();
+                }
+                _ => break,
+            }
+        }
+    }
+
+    let had_existing_session = !session_chain.is_empty();
+
+    // `session_chain` is ordered deepest-first. Fold shallow-to-deep so deeper
+    // files win. `effective` seeds the run; `baseline` excludes the output
+    // directory's own file so the delta can be computed against inherited values.
+    let effective = omni_generator::GenSession::new();
+    let baseline = omni_generator::GenSession::new();
+    for file in session_chain.iter().rev() {
+        let loaded =
+            omni_generator::GenSession::from_disk(file.as_path(), &sys).await?;
+        if *file != session_file {
+            let for_baseline =
+                omni_generator::GenSession::from_disk(file.as_path(), &sys)
+                    .await?;
+            baseline.merge(for_baseline).await;
+        }
+        effective.merge(loaded).await;
+    }
+
+    if had_existing_session {
+        effective
             .restore_targets(&name, &mut target_overrides, false)
             .await;
-        session
+        effective
             .restore_inputs_as_value_bag(&name, &mut pre_exec_values, false)
             .await;
     }
@@ -256,25 +312,30 @@ where
 
     let mut session_saved = false;
 
-    if !req.dry_run
-        && !result.session.is_empty().await
-        && (!sys.fs_exists_no_err_async(session_file.as_path()).await
-            || result
-                .session
-                .has_changes(session_file.as_path(), &sys)
-                .await?)
-        && (should_save_session(req.save_session, &req.input_provider).await?
-            || had_existing_session)
-    {
-        if !sys.fs_exists_no_err_async(&gen_output_dir).await {
-            sys.fs_create_dir_all_async(&gen_output_dir).await?;
-        }
+    if !req.dry_run {
         result
             .session
-            .write_to_disk(session_file.as_path(), &sys)
-            .await?;
+            .retain_delta_against(&baseline, &pinned_inputs, &pinned_targets)
+            .await;
 
-        session_saved = true;
+        if result
+            .session
+            .delta_differs_from_disk(session_file.as_path(), &sys)
+            .await?
+            && (should_save_session(req.save_session, &req.input_provider)
+                .await?
+                || had_existing_session)
+        {
+            let outcome = result
+                .session
+                .write_delta_or_prune(
+                    session_file.as_path(),
+                    gen_output_dir.as_path(),
+                    &sys,
+                )
+                .await?;
+            session_saved = outcome == omni_generator::DeltaSaveOutcome::Wrote;
+        }
     }
 
     Ok(GeneratorRunResponse {
