@@ -3,7 +3,11 @@ use std::path::Path;
 use maps::UnorderedMap;
 use omni_generator_configurations::OmniPath;
 use serde::Serialize;
-use system_traits::{FsReadAsync, FsWriteAsync};
+use sets::UnorderedSet;
+use system_traits::{
+    FsCreateDirAllAsync, FsMetadataAsync, FsReadAsync, FsRemoveFileAsync,
+    FsWriteAsync,
+};
 use tokio::sync::Mutex;
 use value_bag::{OwnedValueBag, ValueBag};
 
@@ -41,11 +45,11 @@ impl GenSession {
         TSys: FsReadAsync + Send + Sync,
         TPath: AsRef<Path>,
     {
-        let result: UnorderedMap<String, DataImpl> =
+        let result: SessionFile =
             omni_file_data_serde::read_async(path, sys).await?;
 
         Ok(Self {
-            data: Mutex::new(result),
+            data: Mutex::new(result.generators),
         })
     }
 }
@@ -313,8 +317,9 @@ impl GenSession {
         TPath: AsRef<Path>,
     {
         let data = self.data.lock().await.clone();
-        let original: UnorderedMap<String, DataImpl> =
+        let original: SessionFile =
             omni_file_data_serde::read_async(serialized_file_path, sys).await?;
+        let original = original.generators;
 
         if data.len() != original.len() {
             return Ok(true);
@@ -336,6 +341,130 @@ impl GenSession {
 
         Ok(false)
     }
+
+    pub async fn is_root_marked<TPath, TSys>(
+        path: TPath,
+        sys: &TSys,
+    ) -> Result<bool, omni_file_data_serde::Error>
+    where
+        TSys: FsReadAsync + FsMetadataAsync + Send + Sync,
+        TPath: AsRef<Path>,
+    {
+        Ok(SessionFile::load_or_default(path, sys).await?.root)
+    }
+
+    pub async fn retain_delta_against(
+        &self,
+        baseline: &GenSession,
+        pinned_inputs: &UnorderedSet<String>,
+        pinned_targets: &UnorderedSet<String>,
+    ) {
+        let mut data = self.data.lock().await;
+        let baseline = baseline.data.lock().await;
+
+        let generator_names: Vec<String> = data.keys().cloned().collect();
+
+        for generator in generator_names {
+            let Some(base) = baseline.get(&generator) else {
+                continue;
+            };
+
+            let entry = data
+                .get_mut(&generator)
+                .expect("generator name taken from this map");
+
+            let target_keys: Vec<String> =
+                entry.targets.keys().cloned().collect();
+            for key in target_keys {
+                if pinned_targets.contains(&key) {
+                    continue;
+                }
+                if base.targets.get(&key) == entry.targets.get(&key) {
+                    entry.targets.remove(&key);
+                }
+            }
+
+            let input_keys: Vec<String> =
+                entry.inputs.keys().cloned().collect();
+            for key in input_keys {
+                if pinned_inputs.contains(&key) {
+                    continue;
+                }
+                if base.inputs.get(&key) == entry.inputs.get(&key) {
+                    entry.inputs.remove(&key);
+                }
+            }
+
+            if entry.targets.is_empty() && entry.inputs.is_empty() {
+                data.remove(&generator);
+            }
+        }
+    }
+
+    pub async fn delta_differs_from_disk<TPath, TSys>(
+        &self,
+        path: TPath,
+        sys: &TSys,
+    ) -> Result<bool, omni_file_data_serde::Error>
+    where
+        TSys: FsReadAsync + FsMetadataAsync + Send + Sync,
+        TPath: AsRef<Path>,
+    {
+        let existing = SessionFile::load_or_default(&path, sys).await?;
+        let data = self.data.lock().await;
+        Ok(*data != existing.generators)
+    }
+
+    pub async fn write_delta_or_prune<TSys>(
+        &self,
+        session_file_path: impl AsRef<Path>,
+        gen_dir: impl AsRef<Path>,
+        sys: &TSys,
+    ) -> Result<DeltaSaveOutcome, omni_file_data_serde::Error>
+    where
+        TSys: FsReadAsync
+            + FsWriteAsync
+            + FsMetadataAsync
+            + FsRemoveFileAsync
+            + FsCreateDirAllAsync
+            + Send
+            + Sync,
+    {
+        let path = session_file_path.as_ref();
+        let existing = SessionFile::load_or_default(path, sys).await?;
+        let data = self.data.lock().await;
+
+        if *data == existing.generators {
+            return Ok(DeltaSaveOutcome::Unchanged);
+        }
+
+        let is_empty = data
+            .values()
+            .all(|d| d.targets.is_empty() && d.inputs.is_empty());
+
+        if is_empty && !existing.root {
+            sys.fs_remove_file_async(path).await?;
+            return Ok(DeltaSaveOutcome::Pruned);
+        }
+
+        let out = SessionFile {
+            root: existing.root,
+            generators: data.clone(),
+        };
+        drop(data);
+
+        sys.fs_create_dir_all_async(gen_dir.as_ref()).await?;
+        omni_file_data_serde::write_async(path, &out, sys).await?;
+
+        Ok(DeltaSaveOutcome::Wrote)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaSaveOutcome {
+    Unchanged,
+    Wrote,
+    Pruned,
 }
 
 #[derive(
@@ -347,13 +476,46 @@ struct DataImpl {
     inputs: UnorderedMap<String, serde_json::Value>,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Clone, Default, PartialEq,
+)]
+struct SessionFile {
+    #[serde(default, skip_serializing_if = "is_false")]
+    root: bool,
+    #[serde(flatten)]
+    generators: UnorderedMap<String, DataImpl>,
+}
+
+impl SessionFile {
+    async fn load_or_default<TPath, TSys>(
+        path: TPath,
+        sys: &TSys,
+    ) -> Result<Self, omni_file_data_serde::Error>
+    where
+        TSys: FsReadAsync + FsMetadataAsync + Send + Sync,
+        TPath: AsRef<Path>,
+    {
+        if !sys.fs_exists_no_err_async(path.as_ref()).await {
+            return Ok(Self::default());
+        }
+        omni_file_data_serde::read_async(path, sys).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use omni_types::OmniPath;
     use serde::{Deserialize, Serialize};
-    use system_traits::{FsCreateDirAll as _, impls::InMemorySys};
+    use system_traits::{
+        FsCreateDirAll as _, FsMetadataAsync as _, FsReadAsync as _,
+        FsWriteAsync as _, impls::InMemorySys,
+    };
     use value_bag::{OwnedValueBag, ValueBag};
 
     use super::*;
@@ -1539,5 +1701,313 @@ mod tests {
         session.unset_targets("gen_b", ["b"]).await;
 
         assert!(session.is_empty().await);
+    }
+
+    // ── SessionFile envelope: format compatibility and root ───────────────────
+
+    #[tokio::test]
+    async fn test_legacy_bare_map_parses_with_root_false() {
+        let (sys, path) = make_sys();
+        let legacy =
+            br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, legacy.to_vec()).await.unwrap();
+
+        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
+        assert!(!file.root);
+        assert_eq!(
+            file.generators.get("gen_a").and_then(|g| g.inputs.get("k")),
+            Some(&serde_json::json!("v"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_root_is_omitted_when_false_and_emitted_when_true() {
+        let without_root = SessionFile::default();
+        let json = serde_json::to_string(&without_root).unwrap();
+        assert!(!json.contains("root"));
+
+        let with_root = SessionFile {
+            root: true,
+            generators: UnorderedMap::default(),
+        };
+        let json = serde_json::to_string(&with_root).unwrap();
+        assert!(json.contains("\"root\":true"));
+    }
+
+    #[tokio::test]
+    async fn test_top_level_root_key_is_not_read_as_generator() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let file = SessionFile::load_or_default(path, &sys).await.unwrap();
+        assert!(file.root);
+        assert_eq!(file.generators.len(), 1);
+        assert!(file.generators.contains_key("gen_a"));
+        assert!(!file.generators.contains_key("root"));
+    }
+
+    #[tokio::test]
+    async fn test_from_disk_ignores_top_level_root_key() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::from_disk(path, &sys).await.unwrap();
+        assert_eq!(
+            session.get_input_raw("gen_a", "k").await,
+            Some(serde_json::json!("v"))
+        );
+        assert_eq!(session.get_input_raw("root", "k").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_has_changes_reads_file_with_top_level_root_key() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::from_disk(path, &sys).await.unwrap();
+        assert!(!session.has_changes(path, &sys).await.unwrap());
+
+        session
+            .set_input_raw("gen_a", "k", serde_json::json!("changed"))
+            .await;
+        assert!(session.has_changes(path, &sys).await.unwrap());
+    }
+
+    // ── is_root_marked() ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_is_root_marked_true() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+        assert!(GenSession::is_root_marked(path, &sys).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_is_root_marked_false_for_bare_file() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "gen_a": { "targets": {}, "inputs": {} } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+        assert!(!GenSession::is_root_marked(path, &sys).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_is_root_marked_false_on_missing_file() {
+        let sys = InMemorySys::default();
+        assert!(
+            !GenSession::is_root_marked(Path::new("/nope.json"), &sys)
+                .await
+                .unwrap()
+        );
+    }
+
+    // ── retain_delta_against() ────────────────────────────────────────────────
+
+    fn empty_set() -> UnorderedSet<String> {
+        UnorderedSet::default()
+    }
+
+    #[tokio::test]
+    async fn test_delta_drops_inherited_keeps_local_prunes_emptied() {
+        let baseline = GenSession::new();
+        baseline
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+        baseline
+            .set_input_raw("gen_b", "only", serde_json::json!("base"))
+            .await;
+
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+        session
+            .set_input_raw("gen_a", "name", serde_json::json!("widget"))
+            .await;
+        session
+            .set_input_raw("gen_b", "only", serde_json::json!("base"))
+            .await;
+
+        session
+            .retain_delta_against(&baseline, &empty_set(), &empty_set())
+            .await;
+
+        assert_eq!(session.get_input_raw("gen_a", "scope").await, None);
+        assert_eq!(
+            session.get_input_raw("gen_a", "name").await,
+            Some(serde_json::json!("widget"))
+        );
+        assert_eq!(session.get_input_raw("gen_b", "only").await, None);
+    }
+
+    #[tokio::test]
+    async fn test_delta_pins_explicit_value_even_when_equal_to_baseline() {
+        let baseline = GenSession::new();
+        baseline
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+
+        let mut pinned_inputs = UnorderedSet::default();
+        pinned_inputs.insert("scope".to_string());
+
+        session
+            .retain_delta_against(&baseline, &pinned_inputs, &empty_set())
+            .await;
+
+        assert_eq!(
+            session.get_input_raw("gen_a", "scope").await,
+            Some(serde_json::json!("@acme"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delta_removes_generator_when_all_keys_inherited() {
+        let baseline = GenSession::new();
+        baseline
+            .set_target("gen_a", "dest", OmniPath::new("src"))
+            .await;
+        baseline
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+
+        let session = GenSession::new();
+        session
+            .set_target("gen_a", "dest", OmniPath::new("src"))
+            .await;
+        session
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+
+        session
+            .retain_delta_against(&baseline, &empty_set(), &empty_set())
+            .await;
+
+        assert!(session.is_empty().await);
+    }
+
+    #[tokio::test]
+    async fn test_delta_keeps_value_that_differs_even_if_textually_close() {
+        let baseline = GenSession::new();
+        baseline
+            .set_target("gen_a", "dest", OmniPath::new("./src"))
+            .await;
+
+        let session = GenSession::new();
+        session
+            .set_target("gen_a", "dest", OmniPath::new("src"))
+            .await;
+
+        session
+            .retain_delta_against(&baseline, &empty_set(), &empty_set())
+            .await;
+
+        assert_eq!(
+            session.get_target("gen_a", "dest").await,
+            Some(OmniPath::new("src"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delta_keeps_generator_absent_from_baseline() {
+        let baseline = GenSession::new();
+
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "scope", serde_json::json!("@acme"))
+            .await;
+
+        session
+            .retain_delta_against(&baseline, &empty_set(), &empty_set())
+            .await;
+
+        assert_eq!(
+            session.get_input_raw("gen_a", "scope").await,
+            Some(serde_json::json!("@acme"))
+        );
+    }
+
+    // ── write_delta_or_prune() / delta_differs_from_disk() ────────────────────
+
+    #[tokio::test]
+    async fn test_write_delta_writes_and_creates_dir() {
+        let sys = InMemorySys::default();
+        let gen_dir = Path::new("/repo/pkg/.omni");
+        let path = Path::new("/repo/pkg/.omni/generator.json");
+
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "name", serde_json::json!("widget"))
+            .await;
+
+        assert!(session.delta_differs_from_disk(path, &sys).await.unwrap());
+        let outcome = session
+            .write_delta_or_prune(path, gen_dir, &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Wrote);
+        assert!(sys.fs_exists_no_err_async(path).await);
+    }
+
+    #[tokio::test]
+    async fn test_write_delta_unchanged_when_matching_disk() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "k", serde_json::json!("v"))
+            .await;
+
+        assert!(!session.delta_differs_from_disk(path, &sys).await.unwrap());
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/sessions"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Unchanged);
+    }
+
+    #[tokio::test]
+    async fn test_write_delta_prunes_emptied_non_root_file() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::new();
+
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/sessions"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Pruned);
+        assert!(!sys.fs_exists_no_err_async(path).await);
+    }
+
+    #[tokio::test]
+    async fn test_write_delta_preserves_root_seal_when_generators_emptied() {
+        let (sys, path) = make_sys();
+        let raw = br#"{ "root": true, "gen_a": { "targets": {}, "inputs": { "k": "v" } } }"#;
+        sys.fs_write_async(path, raw.to_vec()).await.unwrap();
+
+        let session = GenSession::new();
+
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/sessions"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Wrote);
+        assert!(sys.fs_exists_no_err_async(path).await);
+
+        let reloaded = SessionFile::load_or_default(path, &sys).await.unwrap();
+        assert!(reloaded.root);
+        assert!(reloaded.generators.is_empty());
     }
 }
