@@ -519,6 +519,14 @@ impl GenSession {
                 inner.generators.remove(&generator);
             }
         }
+
+        // An entry with no targets and no inputs carries nothing to persist,
+        // even when the generator was absent from the baseline. Drop it so the
+        // delta is truly empty and the save gate does not treat a data-less run
+        // as a change.
+        inner.generators.retain(|_, entry| {
+            !(entry.targets.is_empty() && entry.inputs.is_empty())
+        });
     }
 
     pub async fn delta_differs_from_disk<TPath, TSys>(
@@ -565,8 +573,11 @@ impl GenSession {
             .all(|d| d.targets.is_empty() && d.inputs.is_empty());
 
         if is_empty && existing.shared.is_empty() && !existing.root {
-            sys.fs_remove_file_async(path).await?;
-            return Ok(DeltaSaveOutcome::Pruned);
+            if sys.fs_exists_no_err_async(path).await {
+                sys.fs_remove_file_async(path).await?;
+                return Ok(DeltaSaveOutcome::Pruned);
+            }
+            return Ok(DeltaSaveOutcome::Unchanged);
         }
 
         let out = SessionFile::V1_0_0(SessionFileV1_0_0 {
@@ -2274,6 +2285,56 @@ mod tests {
             session.get_input_raw("gen_a", "scope").await,
             Some(serde_json::json!("@acme"))
         );
+    }
+
+    #[tokio::test]
+    async fn test_delta_drops_empty_entry_absent_from_baseline() {
+        let sys = InMemorySys::default();
+        let path = Path::new("/repo/.omni/generator.json");
+
+        let baseline = GenSession::new();
+        let session = GenSession::new();
+        // A generator that produced no remembered inputs and no targets leaves
+        // an empty entry behind.
+        session
+            .set_input_raw("gen_a", "k", serde_json::json!("v"))
+            .await;
+        session.unset_inputs("gen_a", ["k"]).await;
+
+        session
+            .retain_delta_against(&baseline, &empty_set(), &empty_set())
+            .await;
+
+        // The empty entry is dropped, so an absent file is not a difference and
+        // nothing is written or pruned.
+        assert!(!session.delta_differs_from_disk(path, &sys).await.unwrap());
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/repo/.omni"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Unchanged);
+        assert!(!sys.fs_exists_no_err_async(path).await);
+    }
+
+    #[tokio::test]
+    async fn test_write_delta_prune_of_absent_file_is_unchanged() {
+        let sys = InMemorySys::default();
+        let path = Path::new("/repo/.omni/generator.json");
+
+        // An effectively-empty session (empty entry) against a file that does
+        // not exist must not error trying to remove a missing file.
+        let session = GenSession::new();
+        session
+            .set_input_raw("gen_a", "k", serde_json::json!("v"))
+            .await;
+        session.unset_inputs("gen_a", ["k"]).await;
+
+        let outcome = session
+            .write_delta_or_prune(path, Path::new("/repo/.omni"), &sys)
+            .await
+            .unwrap();
+        assert_eq!(outcome, DeltaSaveOutcome::Unchanged);
+        assert!(!sys.fs_exists_no_err_async(path).await);
     }
 
     // ── write_delta_or_prune() / delta_differs_from_disk() ────────────────────
