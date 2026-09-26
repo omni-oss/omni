@@ -231,20 +231,28 @@ where
     let had_existing_session = !session_chain.is_empty();
 
     // `session_chain` is ordered deepest-first. Fold shallow-to-deep so deeper
-    // files win. `effective` seeds the run; `baseline` excludes the output
-    // directory's own file so the delta can be computed against inherited values.
+    // files win. Each file is first collapsed to a per-generator view (its
+    // `shared` block, then the generator-specific entry overriding it) so a
+    // nearer file's shared value beats a farther file's generator-specific one.
+    // `effective` seeds the run; `baseline` is the same fold except the output
+    // directory's own file contributes only its `shared` block, so the delta is
+    // computed against inherited values without flattening the file's own
+    // per-generator entry back into itself.
     let effective = omni_generator::GenSession::new();
     let baseline = omni_generator::GenSession::new();
     for file in session_chain.iter().rev() {
         let loaded =
             omni_generator::GenSession::from_disk(file.as_path(), &sys).await?;
-        if *file != session_file {
-            let for_baseline =
-                omni_generator::GenSession::from_disk(file.as_path(), &sys)
-                    .await?;
-            baseline.merge(for_baseline).await;
-        }
-        effective.merge(loaded).await;
+        effective
+            .overlay_generator(name.clone(), loaded.resolved_for(&name).await)
+            .await;
+
+        let contribution = if *file == session_file {
+            loaded.shared_dataimpl().await
+        } else {
+            loaded.resolved_for(&name).await
+        };
+        baseline.overlay_generator(name.clone(), contribution).await;
     }
 
     if had_existing_session {

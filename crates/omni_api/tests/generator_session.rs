@@ -128,7 +128,7 @@ async fn inherited_value_writes_no_leaf_file() {
     let (_tmp, root) = setup();
     write_session(
         &session_file(&root),
-        r#"{ "scaffold": { "inputs": { "subject": "inherited", "scope": "@acme" } } }"#,
+        r#"{ "version": "1.0.0", "generators": { "scaffold": { "inputs": { "subject": "inherited", "scope": "@acme" } } } }"#,
     );
 
     let out = root.join("app/web");
@@ -151,7 +151,7 @@ async fn leaf_override_persists_only_the_delta() {
     let (_tmp, root) = setup();
     write_session(
         &session_file(&root),
-        r#"{ "scaffold": { "inputs": { "subject": "inherited", "scope": "@acme" } } }"#,
+        r#"{ "version": "1.0.0", "generators": { "scaffold": { "inputs": { "subject": "inherited", "scope": "@acme" } } } }"#,
     );
 
     let out = root.join("app/web");
@@ -167,7 +167,7 @@ async fn leaf_override_persists_only_the_delta() {
     assert!(resp.session_saved);
 
     let leaf = read_session(&session_file(&out));
-    let inputs = &leaf["scaffold"]["inputs"];
+    let inputs = &leaf["generators"]["scaffold"]["inputs"];
     assert_eq!(inputs["subject"], serde_json::json!("local"));
     // `scope` was inherited unchanged and must not be copied into the leaf.
     assert!(inputs.get("scope").is_none(), "leaf leaked scope: {leaf}");
@@ -178,7 +178,7 @@ async fn explicit_value_equal_to_inherited_is_pinned() {
     let (_tmp, root) = setup();
     write_session(
         &session_file(&root),
-        r#"{ "scaffold": { "inputs": { "subject": "inherited" } } }"#,
+        r#"{ "version": "1.0.0", "generators": { "scaffold": { "inputs": { "subject": "inherited" } } } }"#,
     );
 
     let out = root.join("app/web");
@@ -196,7 +196,7 @@ async fn explicit_value_equal_to_inherited_is_pinned() {
 
     let leaf = read_session(&session_file(&out));
     assert_eq!(
-        leaf["scaffold"]["inputs"]["subject"],
+        leaf["generators"]["scaffold"]["inputs"]["subject"],
         serde_json::json!("inherited")
     );
 }
@@ -207,12 +207,12 @@ async fn root_true_seals_inheritance_above_it() {
     // Workspace root carries `scope`; the sealing mid-file does not.
     write_session(
         &session_file(&root),
-        r#"{ "scaffold": { "inputs": { "subject": "root-subject", "scope": "root-scope" } } }"#,
+        r#"{ "version": "1.0.0", "generators": { "scaffold": { "inputs": { "subject": "root-subject", "scope": "root-scope" } } } }"#,
     );
     let mid = root.join("mid");
     write_session(
         &session_file(&mid),
-        r#"{ "root": true, "scaffold": { "inputs": { "subject": "mid-subject" } } }"#,
+        r#"{ "version": "1.0.0", "root": true, "generators": { "scaffold": { "inputs": { "subject": "mid-subject" } } } }"#,
     );
 
     let out = mid.join("leaf");
@@ -228,11 +228,15 @@ async fn root_true_seals_inheritance_above_it() {
     // workspace root and resolves to its default instead.
     let leaf = read_session(&session_file(&out));
     assert_eq!(
-        leaf["scaffold"]["inputs"]["scope"],
+        leaf["generators"]["scaffold"]["inputs"]["scope"],
         serde_json::json!("none"),
         "root-level scope must not cross the seal: {leaf}"
     );
-    assert!(leaf["scaffold"]["inputs"].get("subject").is_none());
+    assert!(
+        leaf["generators"]["scaffold"]["inputs"]
+            .get("subject")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -240,7 +244,7 @@ async fn inherit_session_false_ignores_ancestors() {
     let (_tmp, root) = setup();
     write_session(
         &session_file(&root),
-        r#"{ "scaffold": { "inputs": { "subject": "inherited" } } }"#,
+        r#"{ "version": "1.0.0", "generators": { "scaffold": { "inputs": { "subject": "inherited" } } } }"#,
     );
 
     let out = root.join("app/web");
@@ -259,7 +263,7 @@ async fn inherit_session_false_ignores_ancestors() {
     // `subject` is a full local delta rather than an inherited-equal value.
     let leaf = read_session(&session_file(&out));
     assert_eq!(
-        leaf["scaffold"]["inputs"]["subject"],
+        leaf["generators"]["scaffold"]["inputs"]["subject"],
         serde_json::json!("world")
     );
 }
@@ -310,4 +314,68 @@ async fn unchanged_rerun_is_idempotent() {
 
     assert!(!resp.session_saved, "an unchanged re-run must not save");
     assert_eq!(read_session(&session_file(&out)), written);
+}
+
+#[tokio::test]
+async fn ancestor_shared_value_is_not_rewritten_in_leaf() {
+    let (_tmp, root) = setup();
+    write_session(
+        &session_file(&root),
+        r#"{ "version": "1.0.0", "shared": { "inputs": { "scope": "@acme" } } }"#,
+    );
+
+    let out = root.join("app/web");
+    std::fs::create_dir_all(&out).unwrap();
+
+    let resp = make_api(&root)
+        .generator_run(base_req(out.clone()))
+        .await
+        .expect("run succeeds");
+    assert!(resp.session_saved);
+
+    // `scope` was provided by the ancestor's shared block and must not be copied
+    // into the leaf; `subject` resolves to its default and is a genuine local
+    // delta.
+    let leaf = read_session(&session_file(&out));
+    let inputs = &leaf["generators"]["scaffold"]["inputs"];
+    assert_eq!(inputs["subject"], serde_json::json!("world"));
+    assert!(
+        inputs.get("scope").is_none(),
+        "shared scope leaked into the leaf: {leaf}"
+    );
+}
+
+#[tokio::test]
+async fn leaf_equal_to_own_shared_writes_nothing() {
+    let (_tmp, root) = setup();
+
+    let out = root.join("app/web");
+    std::fs::create_dir_all(&out).unwrap();
+    // The output directory's own file carries a shared block covering every
+    // remembered input, so a plain run resolves entirely from it and the delta
+    // is empty.
+    write_session(
+        &session_file(&out),
+        r#"{ "version": "1.0.0", "shared": { "inputs": { "subject": "shared-subject", "scope": "shared-scope" } } }"#,
+    );
+
+    let resp = make_api(&root)
+        .generator_run(base_req(out.clone()))
+        .await
+        .expect("run succeeds");
+
+    assert!(
+        !resp.session_saved,
+        "a run equal to the file's own shared block writes nothing"
+    );
+    // The shared block is preserved and no generator entry is added.
+    let file = read_session(&session_file(&out));
+    assert_eq!(
+        file["shared"]["inputs"]["scope"],
+        serde_json::json!("shared-scope")
+    );
+    assert!(
+        file.get("generators").is_none(),
+        "leaf gained a generator entry: {file}"
+    );
 }
