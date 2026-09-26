@@ -51,7 +51,7 @@ pub async fn clone_repo(
         &repo.objects,
         Default::default(),
     )
-    .map_err(gix::Error::from_error)?;
+    .map_err(gix::Error::from)?;
 
     repo.reference(
         "HEAD",
@@ -78,7 +78,7 @@ pub async fn clone_repo(
             ..Default::default()
         },
     )
-    .map_err(gix::Error::from_error)?;
+    .map_err(gix::Error::from)?;
 
     Ok(CloneInfo::new(oid.to_string()))
 }

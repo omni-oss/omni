@@ -90,7 +90,7 @@ embed-manifest = { version = "^1.3" }
 convert_case = { version = "^0.12.0" }
 schemars = { version = "^1.2.1", features = ["indexmap2", "either1", "url2"] }
 walkdir = { version = "^2.5.0" }
-noyalib = { version = "^0.0.45" }
+noyalib = { version = "^0.0.51" }
 ignore = { version = "^0.4.25" }
 regex = { version = "^1.12.3" }
 lazy-regex = { version = "^3.6.0" }
@@ -305,7 +305,7 @@ linux-keyutils-keyring-store = { version = "^1.0.0" }
 machine-uid = { version = "^0.6.0" }
 rand = { version = "^0.10.1" }
 ring = { version = "^0.17.14" }
-gix = { version = "^0.87.1", features = [
+gix = { version = "^0.88.0", features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
 ] }
