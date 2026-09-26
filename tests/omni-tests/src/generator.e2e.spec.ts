@@ -28,9 +28,22 @@ import {
     workspaceMinimalRepo,
 } from "@/harness";
 
-/** Parse a generator session file (`.omni/generator.json`) as JSON. */
+/** The versioned session envelope written to `.omni/generator.json`. */
+interface SessionFile {
+    version: string;
+    root?: boolean;
+    generators?: Record<string, SessionEntry>;
+    shared?: SessionEntry;
+}
+
+/** Parse the full versioned session envelope (`.omni/generator.json`). */
+function parseSessionFile(raw: string): SessionFile {
+    return JSON.parse(raw) as SessionFile;
+}
+
+/** Parse the per-generator entries of a session file (`.omni/generator.json`). */
 function parseSession(raw: string): Record<string, SessionEntry> {
-    return JSON.parse(raw) as Record<string, SessionEntry>;
+    return parseSessionFile(raw).generators ?? {};
 }
 
 interface SessionEntry {
@@ -617,6 +630,330 @@ describe(
             );
 
             expect(result).toHaveExitCode(2);
+        });
+    },
+);
+
+describe(
+    "+generator @cli (hierarchical sessions / --inherit-session)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        // A session file placed above the output directory seeds defaults for
+        // runs beneath it; the output directory only ever persists its own delta.
+        it("a leaf run inherits an ancestor session value and writes no leaf file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+                },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Ancestor!");
+            // Everything was inherited unchanged, so no output-dir file is written.
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
+
+        it("a leaf override persists only the delta and leaves the ancestor untouched", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+                },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Local",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Local!");
+
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("Local");
+
+            // The ancestor file is never rewritten by a descendant run.
+            const ancestor = parseSession(ws.read(".omni/generator.json"));
+            expect(ancestor?.scaffold?.inputs.subject).toBe("Ancestor");
+        });
+
+        it("an explicit -v value equal to the inherited value is pinned (persisted)", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+                },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Ancestor",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // Provided explicitly, so it persists even though it equals the ancestor.
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("Ancestor");
+        });
+
+        it("`root: true` seals inheritance above the marked file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            // The workspace root defines a subject that must NOT cross the seal.
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: {
+                        targets: {},
+                        inputs: { subject: "RootSubject" },
+                    },
+                },
+            });
+            // A sealing file between root and leaf defines no subject of its own.
+            ws.write("sub/.omni/generator.json", {
+                version: "1.0.0",
+                root: true,
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "sub/leaf",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // The walk stops at the seal, so the root subject is never inherited
+            // and `subject` falls back to its generator default.
+            expect(ws.read("sub/leaf/src/greeting.txt")).toBe("Hello world!");
+        });
+
+        it("--inherit-session=false ignores ancestor sessions", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+                },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--inherit-session=false",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // The ancestor is invisible, so the default wins instead of "Ancestor".
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("world");
+        });
+
+        it("a root `shared` value is inherited by a leaf and writes no leaf file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                shared: { targets: {}, inputs: { subject: "SharedSubject" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // The shared block seeds `subject`, so the run resolves it without a
+            // prompt and the value is inherited, not rewritten into the leaf.
+            expect(ws.read("out/src/greeting.txt")).toBe(
+                "Hello SharedSubject!",
+            );
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
+
+        it("a generator-specific entry overrides `shared` within the same file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: {
+                        targets: {},
+                        inputs: { subject: "SpecificSubject" },
+                    },
+                },
+                shared: { targets: {}, inputs: { subject: "SharedSubject" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // Within one file the generator-specific value wins over shared.
+            expect(ws.read("out/src/greeting.txt")).toBe(
+                "Hello SpecificSubject!",
+            );
+        });
+
+        it("a nearer file's `shared` beats a farther file's generator-specific value", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            // Farther (workspace root): generator-specific subject.
+            ws.write(".omni/generator.json", {
+                version: "1.0.0",
+                generators: {
+                    scaffold: {
+                        targets: {},
+                        inputs: { subject: "FartherSpecific" },
+                    },
+                },
+            });
+            // Nearer (mid): a shared subject.
+            ws.write("sub/.omni/generator.json", {
+                version: "1.0.0",
+                shared: { targets: {}, inputs: { subject: "NearerShared" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "sub/leaf",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // Depth-major precedence: the nearer shared value wins.
+            expect(ws.read("sub/leaf/src/greeting.txt")).toBe(
+                "Hello NearerShared!",
+            );
+        });
+
+        it("a generator literally named `root` runs and round-trips", async () => {
+            const spec = scaffoldGeneratorSpec();
+            if (spec.projects) {
+                spec.projects["generators/rootgen/generator.omni.yaml"] = {
+                    name: "root",
+                    description: "a generator literally named root",
+                    inputs: [
+                        {
+                            type: "string",
+                            name: "subject",
+                            message: "Who to greet?",
+                            default: "world",
+                            remember: true,
+                        },
+                    ],
+                    targets: { dest: "@output/src" },
+                    actions: [
+                        {
+                            type: "add-content",
+                            output_path: "greeting.txt",
+                            target: "dest",
+                            content: "Hello {{ inputs.subject }}!",
+                        },
+                    ],
+                };
+            }
+            const ws = makeWorkspace(spec);
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "root",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Hi",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Hi!");
+            // The name `root` is an ordinary `generators` entry, not the file's
+            // `root` seal marker.
+            const file = parseSessionFile(ws.read("out/.omni/generator.json"));
+            expect(file.root).toBeUndefined();
+            expect(file.generators?.root?.inputs.subject).toBe("Hi");
         });
     },
 );

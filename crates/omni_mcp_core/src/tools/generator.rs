@@ -82,6 +82,7 @@ where
             overwrite: None,
             save_session: Some(params.save_session),
             ignore_session: Some(params.ignore_session),
+            inherit_session: Some(params.inherit_session),
             input_values: deserialize_input_values(params.input_values),
             use_defaults: params.use_defaults,
             input_provider: Arc::new(NeverInputProvider),

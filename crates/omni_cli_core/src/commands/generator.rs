@@ -112,6 +112,15 @@ pub struct GeneratorRunArgs {
 
     #[arg(
         long,
+        num_args(0..=1),
+        require_equals(true),
+        help = "Merge session files from the output directory up to the workspace root when restoring (deeper files win). Use --inherit-session=false to read and write only the output directory's own session file.",
+        default_missing_value = "true"
+    )]
+    pub inherit_session: Option<bool>,
+
+    #[arg(
+        long,
         help = "Maximum run-generator nesting depth before the run is aborted. Omit to use the default. Raise it if a generator legitimately nests deeper than the default."
     )]
     pub max_depth: Option<usize>,
@@ -199,6 +208,7 @@ async fn run_generator_run(
         overwrite: command.args.overwrite.map(|o| o.value()),
         save_session: command.args.save_session,
         ignore_session: command.args.ignore_session,
+        inherit_session: command.args.inherit_session,
         input_values: get_input_values(&command.args.common.value),
         use_defaults: command.args.common.use_defaults,
         input_provider: Arc::new(CliInputProvider::default()),
