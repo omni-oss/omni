@@ -622,6 +622,157 @@ describe(
 );
 
 describe(
+    "+generator @cli (hierarchical sessions / --inherit-session)",
+    {
+        tags: ["generator"],
+    },
+    () => {
+        // A session file placed above the output directory seeds defaults for
+        // runs beneath it; the output directory only ever persists its own delta.
+        it("a leaf run inherits an ancestor session value and writes no leaf file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Ancestor!");
+            // Everything was inherited unchanged, so no output-dir file is written.
+            expect(ws.exists("out/.omni/generator.json")).toBe(false);
+        });
+
+        it("a leaf override persists only the delta and leaves the ancestor untouched", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Local",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello Local!");
+
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("Local");
+
+            // The ancestor file is never rewritten by a descendant run.
+            const ancestor = parseSession(ws.read(".omni/generator.json"));
+            expect(ancestor?.scaffold?.inputs.subject).toBe("Ancestor");
+        });
+
+        it("an explicit -v value equal to the inherited value is pinned (persisted)", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "-v",
+                    "subject=Ancestor",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // Provided explicitly, so it persists even though it equals the ancestor.
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("Ancestor");
+        });
+
+        it("`root: true` seals inheritance above the marked file", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            // The workspace root defines a subject that must NOT cross the seal.
+            ws.write(".omni/generator.json", {
+                scaffold: { targets: {}, inputs: { subject: "RootSubject" } },
+            });
+            // A sealing file between root and leaf defines no subject of its own.
+            ws.write("sub/.omni/generator.json", { root: true });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "sub/leaf",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // The walk stops at the seal, so the root subject is never inherited
+            // and `subject` falls back to its generator default.
+            expect(ws.read("sub/leaf/src/greeting.txt")).toBe("Hello world!");
+        });
+
+        it("--inherit-session=false ignores ancestor sessions", async () => {
+            const ws = makeWorkspace(scaffoldGeneratorSpec());
+            ws.write(".omni/generator.json", {
+                scaffold: { targets: {}, inputs: { subject: "Ancestor" } },
+            });
+
+            const result = await runOmni(
+                [
+                    "generator",
+                    "run",
+                    "-n",
+                    "scaffold",
+                    "-o",
+                    "out",
+                    "--inherit-session=false",
+                    "--use-defaults",
+                    "--save-session",
+                ],
+                { cwd: ws.cwd },
+            );
+
+            expect(result).toHaveSucceeded();
+            // The ancestor is invisible, so the default wins instead of "Ancestor".
+            expect(ws.read("out/src/greeting.txt")).toBe("Hello world!");
+            const leaf = parseSession(ws.read("out/.omni/generator.json"));
+            expect(leaf?.scaffold?.inputs.subject).toBe("world");
+        });
+    },
+);
+
+describe(
     "+generator @exitcode (run errors)",
     {
         tags: ["generator"],
