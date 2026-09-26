@@ -202,6 +202,14 @@ where
 
     let mut session_chain: Vec<PathBuf> = Vec::new();
     if !ignore_session {
+        // `workspace_dir` is canonicalized, so on Windows it carries the `\\?\`
+        // verbatim prefix that the process CWD (and thus `output_dir`) never
+        // has. Comparing the two lexically would break on the first hop and
+        // stop the walk at the output directory, so the ancestry checks are
+        // done against normalized forms. The walked `dir` itself keeps its
+        // natural form so the deepest collected file still equals
+        // `session_file`.
+        let workspace_bound = omni_utils::path::clean(&workspace_dir);
         let mut dir = output_dir.clone();
         loop {
             let file = dir.join(GEN_FILE);
@@ -215,12 +223,17 @@ where
                 }
             }
 
-            if !inherit_session || dir == workspace_dir {
+            if !inherit_session
+                || omni_utils::path::clean(&dir) == workspace_bound
+            {
                 break;
             }
 
             match dir.parent() {
-                Some(parent) if parent.starts_with(&workspace_dir) => {
+                Some(parent)
+                    if omni_utils::path::clean(parent)
+                        .starts_with(&workspace_bound) =>
+                {
                     dir = parent.to_path_buf();
                 }
                 _ => break,

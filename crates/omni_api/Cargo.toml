@@ -73,6 +73,7 @@ omni_tracing_subscriber = { workspace = true }
 omni_core = { workspace = true }
 omni_tera = { workspace = true }
 omni_config_types = { workspace = true }
+omni_utils = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

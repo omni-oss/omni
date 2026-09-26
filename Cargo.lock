@@ -6855,6 +6855,7 @@ dependencies = [
  "omni_tool",
  "omni_tool_configurations",
  "omni_tracing_subscriber",
+ "omni_utils",
  "path-clean",
  "schemars",
  "serde",
